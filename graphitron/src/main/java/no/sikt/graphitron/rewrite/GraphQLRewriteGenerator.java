@@ -330,26 +330,34 @@ public class GraphQLRewriteGenerator {
             // raised it, which is the exception this path has always failed with.
             GraphitronSchemaBuilder.assembleOrFail(assembly);
         }
-        return new ReadSchema(assembleForPipeline(attributed, assembly), verdicts, assembly);
+        var pipeline = assemblyForPipeline(attributed, assembly);
+        if (!(pipeline instanceof SchemaAssembly.Assembled)) {
+            // graphitron's own rewrite broke a document the author wrote correctly, the assembly
+            // above having succeeded on the registry the store transcribes. Capture from that
+            // assembly before failing: the author's facts are all still true, and withholding them
+            // is the "one broken thing blanks every fact beside it" failure this file argues
+            // against, here caused by our own defect rather than by anything they wrote. The
+            // verdicts written are still the pre-synthesis ones, so no ASSEMBLY row blames them.
+            captureFacts(attributed, assembly, verdicts);
+        }
+        return new ReadSchema(GraphitronSchemaBuilder.assembleOrFail(pipeline), verdicts, assembly);
     }
 
     /**
-     * The schema the pipeline classifies, which is the post-synthesis one: the federation key and
-     * node declarations {@link KeyNodeSynthesiser} injected are part of what the generator emits.
-     * A second assembly is paid for only when that rewrite ran at all; with no injected names the
-     * pre-synthesis registry is the same document, so the assembly above is reused.
+     * The assembly the pipeline classifies, which is over the post-synthesis registry: the
+     * federation key and node declarations {@link KeyNodeSynthesiser} injected are part of what the
+     * generator emits. A second assembly is paid for only when that rewrite ran at all; with no
+     * injected names the pre-synthesis registry is the same document, so the assembly above is
+     * reused and this can only be its {@code Assembled} arm.
      *
-     * <p>A post-synthesis registry that will not assemble while the pre-synthesis one did is
-     * graphitron's own rewrite breaking a schema the author wrote correctly. That fails the build
-     * loudly, as it always has, and deliberately leaves no {@code ASSEMBLY} verdict row: the store's
-     * verdicts are about the author's document.
+     * <p>Returned as the outcome value rather than assembled-or-thrown, because a refusal here is
+     * graphitron's own defect and the caller has something to do about it before failing.
      */
-    private static GraphQLSchema assembleForPipeline(AttributedRegistry attributed,
-                                                     SchemaAssembly preSynthesis) {
-        if (attributed.injectedNames().isEmpty()) {
-            return GraphitronSchemaBuilder.assembleOrFail(preSynthesis);
-        }
-        return GraphitronSchemaBuilder.assembleOrFail(SchemaAssembly.of(attributed.registry()));
+    private static SchemaAssembly assemblyForPipeline(AttributedRegistry attributed,
+                                                      SchemaAssembly preSynthesis) {
+        return attributed.injectedNames().isEmpty()
+            ? preSynthesis
+            : SchemaAssembly.of(attributed.registry());
     }
 
     /**

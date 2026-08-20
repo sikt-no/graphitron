@@ -1,7 +1,7 @@
 ---
 id: R743
 title: "The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: classification-model
@@ -109,7 +109,7 @@ reads, not where the containment boundary sits.
 
 ## What landed, and where to check it
 
-Three implementation commits, in order:
+Three implementation commits plus the gate's rework pass, in order:
 
 [cols="1,2,3"]
 |===
@@ -131,6 +131,12 @@ Three implementation commits, in order:
 | the four `graphql_*_coordinate` anchors, the whole foreign-key web re-pointed onto them,
   `SdlCoordinates`, and the census pin against graphql-java
 | the implementation finding below
+
+| the rework pass
+| the retirement sweep closed, the census pin extended to the fourth grain and every merge-ordered
+  ordinal family, the pre-synthesis split no longer dropping the author's facts on graphitron's own
+  defect, and the seed scan widened to interface carriers
+| "The gate's rework pass" at the end of this item
 |===
 
 Stages 1 and 2 are unchanged: they were already the gatherer's, and the item touches them only in
@@ -409,25 +415,33 @@ Each is the requirement acting as the specification; none ships unnoticed.
   enumerated changes: the emitted sources over the classified corpus are byte-identical, asserted
   by the existing pipeline-tier expectations. The enumerated changes land with their own fixtures:
   a multi-extension fixture pinning every merge-ordered ordinal family by value across
-  base-then-extension merge and the coordinate set against graphql-java's composed one
-  (`SdlCoordinateCensusTest`, which subsumes the filed two-file duplicate fixture: the merge it
-  pins is the same one the duplicate case would have exercised), an assembly-failure case pinning
-  the domain's emptiness and the declaration facts' survival beside it, a conflict
-  fixture at a coordinate where the consumers disagree (a type no field reaches carrying two
-  claims: the editor surfaces it, the build does not), and seed fixtures pinning the widened
+  base-then-extension merge and the coordinate set at all four grains against graphql-java's
+  composed one (`SdlCoordinateCensusTest`, which subsumes the filed two-file duplicate fixture: the
+  merge it pins is the same one the duplicate case would have exercised). All five counters
+  `ElementOrdinals` holds are merge-ordered, being per type and carried across the declaration
+  sites, so all five are pinned, each on a shape written out of document order: the field, argument,
+  enum-value and union-member ordinals, and the per-name type-directive ordinals. Beside it, an
+  assembly-failure case pinning the domain's emptiness and the declaration facts' survival, a
+  conflict fixture at a coordinate where the consumers disagree (a type no field reaches carrying
+  two claims: the editor surfaces it, the build does not), and seed fixtures pinning the widened
   domain (an `implements Node` type with no `@table`, and one over defective node metadata, each
-  reached by no field: domain members with diagnostics rather than silent prunes).
+  reached by no field: domain members with diagnostics rather than silent prunes, plus an interface
+  that is the sole carrier of its own declaration).
 * **Error parity per verdict stage**: `graphql_syntax_error` and `graphql_schema_error` keep
   message, location and stage on the fixtures that trip them across the restructure.
 * **The naming check per new or reshaped relation** (`fact-model.adoc`): one sentence stating what
   a row asserts, naming no consumer and no producer class.
-* **The containment boundary**: the graphql-java objects stay inside the capture collaborators.
-  That rule is today written only in the `principles-architect` agent brief (whose
+* **The containment boundary**: at capture the graphql-java objects are read down to rows and do not
+  cross into the store. That rule was written only in the `principles-architect` agent brief (whose
   classification-leaks check names graphql-java schema types beside `Table<?>` and
-  `java.lang.reflect.Type`); `development-principles.adoc`'s capture-boundary section names the
+  `java.lang.reflect.Type`); `development-principles.adoc`'s capture-boundary section named the
   catalog and reflection types and not the graphql-java ones, so writing them into that section is
   a deliverable here rather than a citation. The restructure's review checks the boundary
-  explicitly, since the staged design multiplies the places a `GraphQLSchema` is in hand.
+  explicitly, since the staged design multiplies the places a `GraphQLSchema` is in hand. Both texts
+  state the rule at altitude rather than as a roster of permitted holders: the review pass found the
+  roster both wrong (forty-five files in the generator hold one of these types) and forbidden by the
+  same document's rule against unguarded inventories, so the rule is structural at capture and a
+  question of direction off it, with grep recipes instead of a list.
 * **Documentation**: `fact-model.adoc`'s stage pipeline paragraph is revised, not merely grown:
   its claim that only the first stage produces declarations and the later stages contribute
   nothing but verdicts stops being the whole truth once stage 4 transcribes the composed census,
@@ -565,93 +579,78 @@ alone, the owner's original formulation taken at its word: the declaration yield
 superset, later work digs into what each member's nodehood amounts to, and behaviour change 5 now
 enumerates both widenings (no `@table` at all, and `@table` over absent or defective metadata).
 
-## Gate review: rework requested
 
-An independent In Review to Done review found the delivery sound in architecture and green in the
-build, and two things short of what the item promised. Both are cheap and neither touches a decision
-that landed; the item goes back to Ready for a pass that closes them.
+## The gate's rework pass
 
-What the gate verified and passed. `mvn install -Plocal-db` green, 14 of 14 modules, `BUILD SUCCESS`.
-Reviewer rule satisfied by session trailer on all three implementation commits. No code-string
-assertions on generated method bodies anywhere in the delivered tests. User-facing-doc check clean:
-no `R<n>`, phase marker, TODO or slug reference in any `docs/` line the item added. The anchor-family
-split is a better answer than any of the three options the item filed against the availability cliff,
-and the finding argues why rather than asserting it. The gate dissolution is the consumer-split shape
-the fact model ships, and the disagreement fixture in `AuthoredClaimConflictsTest` makes the two
-populations observable rather than reasoned about. `ClassifiedRun` replacing a null-check
-discriminator, and the both-directions anchor for the invariant no constraint can see, are both the
-right shape. `fact-model.adoc` is revised rather than grown, and R714's census table landed in it.
+An independent In Review to Done review passed the delivery's architecture, the build and the
+code-string and user-facing-doc checks, and held it on two things: the retirement sweep did not
+pass, and the census pin covered less than the Coverage section and `fact-model.adoc` claimed of it.
+Both are closed here, along with three of the review's four non-blocking observations. Nothing that
+had landed was reversed.
 
-### 1. The retirement sweep does not pass
+**The sweep now passes.** `WalkReach` left one test name behind and three item bodies were still
+reasoning over the deleted membership relations, two of them saying things that had become false
+rather than merely dated:
 
-The item declares `walk_claim_domain_type`, `walk_claim_domain_field`, `ClaimDomainRows` and
-`WalkReach` retired. The terms are still live on prose surfaces the sweep names, and in two places
-the surviving prose is not merely stale but false in a way that misdirects the next implementer:
+* `FactCaptureAgreementTest`'s lifecycle anchor for the `walk_` family is named for the binding
+  grain it actually asserts over, the family having one relation left.
+* R682 (`roadmap/planners-read-facts-emitters-read-commands.md`) had the domain gate as pending work
+  and told its implementer that what remained for the terminal deletion was "`WalkReach` and its
+  components". The first bullet is rewritten as the discharged case it is; the family-boundary
+  bullet now names what is actually left, which is nothing `walk_`-shaped, R740 owning the rest.
+* R740 (`roadmap/retire-oracle-diff-shadow-tests.md`) carved the two relations out of its scope as a
+  live gate that would move only on an author-facing reason. The carve-out is closed in place, and
+  the drainage paragraph gains the family's new shape and the `ClaimDomain` value R743 left it.
+* The two `roadmap/nodeid-effective-at-every-coordinate.md` mentions already read as deleted-past and
+  are correct as they stand. The `roadmap/changelog.md` hits are frozen records of what shipped when
+  it shipped and are deliberately untouched.
 
-* `graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/FactCaptureAgreementTest.java:2077`,
-  `oracleLifecycleClearsTheOwnedWalkReachPartitionOnly`, a test name carrying the dissolved pairing.
-  The partition it clears is `walk_type_backing_class`'s now, which is what the name should say.
-* `roadmap/planners-read-facts-emitters-read-commands.md:786-793` (R682) says what is left for that
-  item's terminal deletion is "the `derive/` projections that write them (`WalkReach` and its
-  components)". `WalkReach` does not exist; what is actually left is `ClaimDomain`,
-  `TypeBackingClasses` and `TypeBackingClassRows`. Its `:601-609` bullet still describes the gate in
-  the present tense as work R743 will carry.
-* `roadmap/retire-oracle-diff-shadow-tests.md:45` (R740) asserts the two relations "are a live gate",
-  that removing them "moves when a diagnostics bug report or feature request gives a reason", and
-  that it "is not a scheduled prerequisite of this cleanup". All three are now false. `:41` says the
-  `WalkReach` pairing goes with `walk_type_backing_class`; the pairing is already gone.
-* `roadmap/nodeid-effective-at-every-coordinate.md:137` and `:779` reason over both deleted relations.
-* The `roadmap/changelog.md` hits are frozen historical records of what shipped when it shipped.
-  Leave them; the sweep should not touch them.
+**The census pin now covers what it claims.** The pin is what this item substituted for deleting
+capture's merge, so a partial pin was a partial substitution:
 
-### 2. The census anchor under-covers what Coverage and `fact-model.adoc` claim
+* `SdlCoordinateCensusTest` gains the argument grain, making all four anchors compared against
+  graphql-java's composition. It is a real arm rather than a corollary of the field one: capture
+  numbers a type's arguments with one type-wide counter running across the declaration sites, so the
+  grain has its own way to disagree.
+* Every merge-ordered ordinal family is now pinned by value. `ElementOrdinals` holds five counters
+  per type and carries each across the sites, so all five are merge-ordered; the fixture pinned three
+  of them and carried no union at all. `MERGED` gains a union extended from above its own base, a
+  base field with arguments beside an extension field with one, and a repeatable type directive
+  applied on the base and on two extensions, one written above the base. The type-directive family
+  was already pinned by value by `MacroCaptureTest`; what was missing there and is added here is the
+  out-of-order case, which is the whole point of pinning by value rather than by density.
+* `fact-model.adoc`'s `*Enforced by:*` line said "at each grain" while one grain was uncompared. It
+  now says four grains and every ordinal family, and states why the families are merge-ordered.
 
-This one matters more than a coverage nit because the pin is load-bearing: the item withdrew
-"delete capture's merge" and substituted "pin it against graphql-java", calling the pin the stronger
-form. As delivered the pin is partial, and one of the claims about it is in a document.
+**Three observations acted on.**
 
-* `SdlCoordinateCensusTest` compares three of the four anchor grains against graphql-java's
-  composition (type at `:70`, field at `:100`, enum value at `:110`). `graphql_argument_coordinate` is
-  uncompared, though the `MERGED` fixture exercises the grain (`films(match: FilmFilter)` at `:194`).
-  `docs/architecture/explanation/fact-model.adoc`'s `*Enforced by:*` line says the test pins the merge
-  "at each grain", so the doc over-claims its own named enforcer.
-* Coverage promises "every merge-ordered ordinal family by value". `ElementOrdinals`
-  (`SdlFactCapture.java:480-495`) makes five counters type-wide and therefore merge-order-dependent:
-  `field`, `enumValue`, `argument`, `unionMember`, and the per-name `typeDirective` map whose own
-  comment says it is type-wide precisely so a repeatable directive on base and extension numbers 0
-  and 1. `theMergeOrderIsTheDocumentsOrder` (`:132`) pins `merge_ordinal`, the field ordinals and the
-  enum-value ordinals by value. Argument, union-member and type-directive ordinals are unpinned by
-  value, and `MERGED` carries no union at all, so that family is not even exercised.
+* The pre-synthesis assembly split dropped the whole fact capture on one narrow path: where the
+  pre-synthesis registry assembles and the post-synthesis one does not, neither refusal branch fired
+  and the pipeline assembly threw before anything was written. That is graphitron's own rewrite
+  breaking a document the author wrote correctly, and withholding their facts for it is the failure
+  this item argues against throughout. `assembleForPipeline` becomes `assemblyForPipeline`, returning
+  the outcome rather than assembling-or-throwing, and the caller captures from the pre-synthesis
+  assembly before failing. The build still fails as loudly, and still records no `ASSEMBLY` verdict
+  row against the author, which was the deliberate half.
+* The seed scan was narrowed to object types, where two of the three declaration arms are legal on an
+  interface: federation's `@key` is defined `on OBJECT | INTERFACE`, and an interface may sit in
+  another interface's `implements` clause. It scans implementing types now, keyed off the two
+  capabilities the arms need rather than off a concrete kind, with a `ClassificationDomainTest` case
+  where the interface is the sole carrier and has no reached implementor. This restores seeds the
+  retired closure had (it read `@key` carriers at the type grain) rather than widening past it, so
+  behaviour change 5 covers it and it earns no number of its own.
+* `development-principles.adoc`'s containment section listed the classes permitted to hold a
+  graphql-java schema object. Forty-five files in the generator reference one, so the roster was
+  wrong, and it was an unguarded inventory in the document that forbids them. The rule is restated at
+  altitude: structural at capture, and off capture a question of direction rather than of a permitted
+  holder list, with the grep recipes the earlier text had carried. The `principles-architect` brief's
+  classification-leaks check is aligned to the same wording. `DocSizeBudgetTest` caught the first
+  attempt at 3613 words against a 3500 budget, which is the gate working: the restatement is now
+  shorter than the roster it replaces, at one word under where trunk stood. Naming the graphql-java
+  types is still the deliverable it was, and they are named, in the containment sentence as a
+  category and in the `*Enforced by:*` grep list concretely.
 
-Closing it: add the argument-grain equality arm, add value assertions for the argument, union-member
-and type-directive ordinals, and grow `MERGED` with a union plus an `extend union` and a repeatable
-type directive applied on both a base definition and an extension. If a family turns out not to be
-merge-order-dependent after all, say which and why, and narrow the Coverage bullet and the doc's
-`*Enforced by:*` line to what the test actually holds. Either resolution is fine; the two must agree.
-
-### Observations, none of them blocking
-
-* `GraphQLRewriteGenerator.assembleAndCaptureVerdicts` drops the whole fact capture on one narrow
-  path. Where the pre-synthesis registry assembles and the post-synthesis one does not,
-  `verdicts.anyRefusal()` is false and `assembly.errors()` is empty, so the branch carrying
-  `captureFacts` is skipped and `assembleForPipeline` throws before `ReadSchema` exists. Before this
-  item the assembly errors came from the post-synthesis registry, so that case took the capture
-  branch and the store kept its declarations. The commit message covers the missing verdict row
-  deliberately; the lost capture beside it looks incidental. It is a graphitron-defect path that
-  fails the build loudly either way, so nothing an author sees turns on it.
-* `ClassificationDomainCapture.seeds` narrows the `@key` arm to `GraphQLObjectType`, where the
-  retired closure seeded from `graphitron_federation_key` at the type grain and the federation
-  vocabulary declares `@key` `on OBJECT | INTERFACE`. Effectively unobservable, since descent runs
-  object to interface through `obj.getInterfaces()`, so a keyed interface with any reached
-  implementor is reached anyway and one with none resolves nothing. A clause in the class javadoc
-  would close the reader's question.
-* `development-principles.adoc:57-61` states the graphql-java containment as "may be held only by the
-  capture collaborators (...) and, on the walk, by ..." while 45 files under
-  `graphitron/src/main/java` reference `GraphQLSchema` or `TypeDefinitionRegistry`, `FactCapture`
-  among them. Mostly pre-existing, and the deliverable asked only that the types be written into the
-  section, which it did. But the list is an unguarded inventory with no test pinning it, in the
-  document whose own "Principles are stated at altitude" section forbids exactly that.
-* Two nits: the conflict view's `SELECT DISTINCT ... FROM intent_authored_type_claim a) c` wrappers
-  (`graphitron-model.sql`, both grains) are single-table leftovers of the dropped join; and
-  `ClassificationDomainTest:190` fully-qualifies `no.sikt.graphitron.model.test.FactStores.inMemory()`
-  inline instead of importing it.
+**One observation withdrawn.** The review called the conflict view's `SELECT DISTINCT ... FROM
+intent_authored_type_claim a) c` subqueries leftovers of the dropped join. They are not: the
+`DISTINCT` deduplicates repeated classifier-and-trigger pairs so `COUNT(*)` counts distinct claims,
+and flattening it would change the predicate. The subqueries stay as they are.

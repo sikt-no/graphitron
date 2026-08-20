@@ -598,18 +598,17 @@ last reader moves, and the final commits remove what nothing references.
 
 Five obligations are owed before the last cut, named now so nobody discovers them at the end:
 
-* **The already-migrated detection's domain gate goes first, and R743 owns it.**
-  `intent_authored_claim_conflict` is the one detection that has already moved, and its accept line
-  is still walk-derived: the view inner-joins `walk_claim_domain_type` / `walk_claim_domain_field`,
-  whose rows `FactCapture` writes from `WalkReach.of(schema)` off the walked model. Deleting the walk
-  makes those rows unwritable, so the view's population would silently empty rather than fail. This
-  is the only walk reader whose removal moves an author-facing surface that has already been
-  migrated, which is why it is named first. R743
-  (`roadmap/sdl-fact-gatherer-staged-pipeline.md`, Spec) carries the fix: the detection becomes
-  total over authored claims, consumers apply their own population joins, and both grains are
-  deleted. So this is a sequencing constraint rather than work of this item's own: the terminal
-  deletion lands after R743, and if that item stalls, this one repoints the join before cutting
-  rather than discovering the empty population afterwards.
+* **The already-migrated detection's domain gate is discharged; R743 did it.** This obligation is
+  settled and is kept here as the discharged case, because it is the shape the remaining four are
+  read against. `intent_authored_claim_conflict` is the one detection that had already moved, and
+  its accept line was walk-derived: the view inner-joined two membership relations whose rows the
+  capture-and-detect pass wrote off the walked model, so deleting the walk would have left them
+  unwritable and the view's population would have silently emptied rather than failed. R743
+  (`roadmap/sdl-fact-gatherer-staged-pipeline.md`) removed the coupling instead of re-pointing it:
+  the detection is now total over the authored claims, each consumer applies its own population join
+  (the build-error surface joins `intent_type_domain`, the editor's diagnostic arm reads the view
+  ungated), and both membership relations are gone. Nothing on this item's terminal path stands on
+  them any more, so the sequencing constraint that used to sit here is discharged too.
 * **The per-relation anchor gate needs a successor before it dissolves.** Coverage below leans on
   `FactCaptureAgreementTest`'s mechanical driver to anchor every new relation, and that class is
   premised on the walk: its arms compare captured rows against the walked model, and its own closing
@@ -782,14 +781,18 @@ derivation lives.
 * `roadmap/retire-oracle-diff-shadow-tests.md` (R740) is the doctrine this item's verification
   stance applies, stated in "What output identity is, and what it is not" above: no oracle-diff
   scaffolding is built here.
-* **Three items now share the `walk_` and `rejection_` families, and the boundaries are worth
-  stating** so none of them cuts another's relation. R740 drains `walk_type_backing_class`, whose
-  only reader is the shadow test it retires. R743 deletes `walk_claim_domain_type` and
-  `walk_claim_domain_field` with the gate that reads them. What is left for this item's terminal
-  deletion is the `derive/` projections that write them (`WalkReach` and its components), plus
-  `RejectionFacts` and the `rejection_` relations once the migrated verdicts have a stated
-  permanent home in the `diagnostic` union. Whichever order they land in, each family leaves with
-  its last reader, and no item here deletes a relation another still writes.
+* **Two items still share the `walk_` and `rejection_` families, and the boundaries are worth
+  stating** so neither cuts the other's relation. R743 already took the membership half: it deleted
+  the two claim-domain relations with the gate that read them, and the `derive/` projection that
+  wrote them went in the same change, so the pairing that used to hold the family's grains together
+  is gone and `walk_type_backing_class` is the family's last resident. R740 drains that one, whose
+  only reader is the shadow test it retires, and takes `TypeBackingClasses`, `TypeBackingClassRows`,
+  `DemandResidue` and the `ClaimDomain` value the demand shadow still diffs against with it. So no
+  `walk_`-shaped projection is left for this item's terminal deletion; what remains here is
+  `SchemaReachability` and the walk itself, plus `RejectionFacts` and the `rejection_` relations once
+  the migrated verdicts have a stated permanent home in the `diagnostic` union. Whichever order they
+  land in, each family leaves with its last reader, and neither item deletes a relation the other
+  still writes.
 * R638 (`lsp-reads-the-fact-store`, Done, see `roadmap/changelog.md`; its 4,795-line body was
   deleted at the Done transition in `a5b667b` and is readable there) is the shape to copy: one item,
   many increments, each arm landing on its own commit with what it settled written down. It also

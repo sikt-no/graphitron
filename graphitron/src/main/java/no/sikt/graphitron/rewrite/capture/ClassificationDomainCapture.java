@@ -1,7 +1,9 @@
 package no.sikt.graphitron.rewrite.capture;
 
 import graphql.schema.GraphQLDirective;
+import graphql.schema.GraphQLDirectiveContainer;
 import graphql.schema.GraphQLFieldDefinition;
+import graphql.schema.GraphQLImplementingType;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInterfaceType;
 import graphql.schema.GraphQLNamedType;
@@ -46,6 +48,13 @@ import static org.jooq.impl.DSL.val;
  * the authored {@code @key} carriers, and the argument types of every directive definition that
  * survives into the emitted schema. Nothing here reads the catalog, which is what makes this a
  * one-corpus producer and a stage of the SDL gatherer rather than a derivation over two censuses.
+ *
+ * <p>The three declaration arms scan every {@link GraphQLImplementingType} rather than objects
+ * alone, because two of the three declarations are legal on an interface: federation's {@code @key}
+ * is defined {@code on OBJECT | INTERFACE}, and an interface may sit in another interface's
+ * {@code implements} clause. Narrowing to objects would have made an interface's own declaration
+ * seed nothing, which the arms are not about; an object arm reaches its interfaces anyway, so the
+ * widening only bites where the interface is the carrier.
  *
  * <p>The node seed is the declaration and not the inference. Inferred nodehood conjoins
  * {@code implements Node} with a {@code @table} binding and well-formed node metadata on the bound
@@ -251,11 +260,8 @@ final class ClassificationDomainCapture {
         // generator route the entry point at all; its fields reach no supported target.
         addIfPresent(seeds, schema.getSubscriptionType());
         for (var type : schema.getAllTypesAsList()) {
-            if (type instanceof GraphQLObjectType obj && !isIntrospection(obj.getName())
-                    && (obj.hasAppliedDirective(DIR_NODE)
-                        || declaresNodeContract(obj)
-                        || obj.hasAppliedDirective(DIR_KEY))) {
-                seeds.add(obj);
+            if (!isIntrospection(type.getName()) && carriesASeedDeclaration(type)) {
+                seeds.add(type);
             }
         }
         for (GraphQLDirective directive : schema.getDirectives()) {
@@ -275,9 +281,24 @@ final class ClassificationDomainCapture {
         }
     }
 
+    /**
+     * Whether the type carries one of the three declarations that seed on their own arm. Both kinds
+     * that can carry one qualify, which is why the test is the pair of capabilities rather than a
+     * concrete kind: applying a directive and having an {@code implements} clause.
+     */
+    private static boolean carriesASeedDeclaration(GraphQLNamedType type) {
+        if (!(type instanceof GraphQLImplementingType carrier)
+                || !(type instanceof GraphQLDirectiveContainer applied)) {
+            return false;
+        }
+        return applied.hasAppliedDirective(DIR_NODE)
+            || applied.hasAppliedDirective(DIR_KEY)
+            || declaresNodeContract(carrier);
+    }
+
     /** Whether the type declares the Relay {@code Node} contract in its {@code implements} clause. */
-    private static boolean declaresNodeContract(GraphQLObjectType obj) {
-        return obj.getInterfaces().stream()
+    private static boolean declaresNodeContract(GraphQLImplementingType carrier) {
+        return carrier.getInterfaces().stream()
             .anyMatch(i -> i instanceof GraphQLNamedType named && NODE_INTERFACE.equals(named.getName()));
     }
 

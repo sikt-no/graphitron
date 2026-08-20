@@ -22,12 +22,16 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
 import static no.sikt.graphitron.rewrite.CapturedStore.withCapturedStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -105,6 +109,25 @@ class SdlCoordinateCensusTest {
                 .isEqualTo(assembledFields(assemble())));
     }
 
+    /**
+     * The argument grain, which is a genuine arm rather than a corollary of the field one: capture
+     * numbers a type's arguments with one type-wide counter that runs across the declaration sites,
+     * so a base field's arguments and an extension field's arguments land in the same sequence and
+     * the grain has its own way to disagree with the composed set.
+     *
+     * <p>Output-field arguments only, on both sides. Input-object fields take none, and a directive
+     * definition's arguments are a different relation with a different key.
+     */
+    @Test
+    @DisplayName("the argument coordinates are the assembled schema's effective field arguments")
+    void argumentCoordinatesMatchTheAssembledSchema() {
+        withCapturedStore(tmp, MERGED, dsl ->
+            assertThat(argumentCoordinates(dsl))
+                .as("capture's merge against graphql-java's, at the argument grain: a base field's "
+                    + "arguments and an extension field's belong to one type")
+                .isEqualTo(assembledArguments(assemble())));
+    }
+
     @Test
     @DisplayName("the enum value coordinates are the assembled schema's effective values")
     void enumValueCoordinatesMatchTheAssembledSchema() {
@@ -126,6 +149,12 @@ class SdlCoordinateCensusTest {
      * <p>Written out per type because the property is per type: the base definition is merge ordinal
      * 0 wherever it sits in the file, extensions follow in document order, and each element family's
      * ordinal continues across the site boundary rather than restarting at each site.
+     *
+     * <p>Every merge-ordered family is here, because every one of them is numbered by a counter
+     * {@code SdlFactCapture.ElementOrdinals} holds per type and carries across the sites: the field,
+     * argument, enum-value and union-member ordinals, and the per-name type-directive ordinals whose
+     * counter is type-wide for exactly this reason. A family pinned only by density would pass on all
+     * five with the merge order inverted.
      */
     @Test
     @DisplayName("the base definition is merge ordinal zero, and extensions follow in document order")
@@ -145,7 +174,7 @@ class SdlCoordinateCensusTest {
                 .as("field ordinals run across the site boundary in merge order")
                 .containsExactly("title=0", "rating=1", "released=2", "language=3");
             assertThat(fieldOrdinals(dsl, "Query"))
-                .containsExactly("film=0", "films=1");
+                .containsExactly("film=0", "films=1", "screen=2");
             assertThat(fieldOrdinals(dsl, "FilmFilter"))
                 .as("an extended input object numbers the same way")
                 .containsExactly("title=0", "released=1");
@@ -158,6 +187,40 @@ class SdlCoordinateCensusTest {
                 .fetch(r -> r.value1() + "=" + r.value2()))
                 .as("an extended enum numbers the same way")
                 .containsExactly("G=0", "PG=1", "R=2");
+
+            assertThat(dsl.select(GRAPHQL_ARGUMENT.FIELD_NAME, GRAPHQL_ARGUMENT.ARGUMENT_NAME,
+                    GRAPHQL_ARGUMENT.ORDINAL)
+                .from(GRAPHQL_ARGUMENT)
+                .where(GRAPHQL_ARGUMENT.GRAPH_NAME.eq(CapturedStore.GRAPH))
+                .and(GRAPHQL_ARGUMENT.TYPE_NAME.eq("Query"))
+                .orderBy(GRAPHQL_ARGUMENT.ORDINAL)
+                .fetch(r -> r.value1() + "." + r.value2() + "=" + r.value3()))
+                .as("the argument counter is the type's, not the field's: the extension's argument "
+                    + "continues the base field's sequence rather than restarting at 0")
+                .containsExactly("film.title=0", "film.limit=1", "films.match=2");
+
+            assertThat(dsl.select(GRAPHQL_UNION_MEMBER.MEMBER_TYPE_NAME, GRAPHQL_UNION_MEMBER.ORDINAL)
+                .from(GRAPHQL_UNION_MEMBER)
+                .where(GRAPHQL_UNION_MEMBER.GRAPH_NAME.eq(CapturedStore.GRAPH))
+                .and(GRAPHQL_UNION_MEMBER.UNION_NAME.eq("Screen"))
+                .orderBy(GRAPHQL_UNION_MEMBER.ORDINAL)
+                .fetch(r -> r.value1() + "=" + r.value2()))
+                .as("the base union's members come first though its extension is written above it")
+                .containsExactly("Film=0", "Poster=1", "Trailer=2");
+
+            // MacroCaptureTest.repeatedApplicationsNumberAcrossSites already pins this family by
+            // value; what it cannot pin is the out-of-order case, its own fixture writing the base
+            // above the extension. This arm is that case and nothing more.
+            assertThat(dsl.select(GRAPHQL_TYPE_DIRECTIVE_ARG.ORDINAL, GRAPHQL_TYPE_DIRECTIVE_ARG.VALUE_SDL)
+                .from(GRAPHQL_TYPE_DIRECTIVE_ARG)
+                .where(GRAPHQL_TYPE_DIRECTIVE_ARG.GRAPH_NAME.eq(CapturedStore.GRAPH))
+                .and(GRAPHQL_TYPE_DIRECTIVE_ARG.TYPE_NAME.eq("Film"))
+                .and(GRAPHQL_TYPE_DIRECTIVE_ARG.DIRECTIVE_NAME.eq("tag"))
+                .orderBy(GRAPHQL_TYPE_DIRECTIVE_ARG.ORDINAL)
+                .fetch(r -> r.value1() + "=" + r.value2()))
+                .as("a repeatable type directive numbers across the sites, the base's application "
+                    + "first though an extension carrying one is written above it")
+                .containsExactly("0=\"base\"", "1=\"early\"", "2=\"late\"");
         });
     }
 
@@ -171,27 +234,45 @@ class SdlCoordinateCensusTest {
     }
 
     /**
-     * A document exercising every merge shape the rule has: a type extended more than once, an
-     * extension arriving before the base definition it extends, an input object and an enum
-     * extended too, and an interface whose implementor picks up a field from an extension.
+     * A document exercising every merge shape the rule has, and exercising each one out of document
+     * order where the shape allows it: a type extended more than once with an extension arriving
+     * before the base definition it extends, an input object and an enum extended too, an interface
+     * whose implementor picks up a field from an extension, a union extended from above its own base,
+     * arguments contributed by both a base field and an extension's field, and a repeatable type
+     * directive applied on the base and on two extensions, one of them written above the base.
+     *
+     * <p>Every added type is reachable from a root, because the assembled side of the comparison
+     * reads {@code getAllTypesAsList()} and an unreferenced declaration would make the two censuses
+     * differ for a reason that has nothing to do with the merge. Only {@code String} and {@code Int}
+     * are referenced among the specified scalars, which is what
+     * {@link #specifiedScalarsAreCoordinatesWhetherReferencedOrNot} stands on.
      */
     private static final String MERGED = """
-        extend type Film { rating: Rating }
+        directive @tag(name: String!) repeatable on OBJECT
+
+        extend union Screen = Trailer
+
+        extend type Film @tag(name: "early") { rating: Rating }
 
         interface Titled { title: String }
 
         type Query {
-            film: Film
+            film(title: String, limit: Int): Film
         }
 
-        type Film implements Titled {
+        type Film implements Titled @tag(name: "base") {
             title: String
         }
 
-        extend type Film { released: Int }
+        extend type Film @tag(name: "late") { released: Int }
         extend type Film { language: String }
 
-        extend type Query { films(match: FilmFilter): [Film!] }
+        extend type Query { films(match: FilmFilter): [Film!], screen: Screen }
+
+        union Screen = Film | Poster
+
+        type Poster { caption: String }
+        type Trailer { url: String }
 
         input FilmFilter { title: String }
         extend input FilmFilter { released: Int }
@@ -217,6 +298,16 @@ class SdlCoordinateCensusTest {
             .where(GRAPHQL_FIELD_COORDINATE.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .orderBy(GRAPHQL_FIELD_COORDINATE.TYPE_NAME, GRAPHQL_FIELD_COORDINATE.FIELD_NAME)
             .fetch(r -> r.value1() + "." + r.value2()));
+    }
+
+    private static Set<String> argumentCoordinates(DSLContext dsl) {
+        return new LinkedHashSet<>(dsl.select(GRAPHQL_ARGUMENT_COORDINATE.TYPE_NAME,
+                GRAPHQL_ARGUMENT_COORDINATE.FIELD_NAME, GRAPHQL_ARGUMENT_COORDINATE.ARGUMENT_NAME)
+            .from(GRAPHQL_ARGUMENT_COORDINATE)
+            .where(GRAPHQL_ARGUMENT_COORDINATE.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .orderBy(GRAPHQL_ARGUMENT_COORDINATE.TYPE_NAME, GRAPHQL_ARGUMENT_COORDINATE.FIELD_NAME,
+                GRAPHQL_ARGUMENT_COORDINATE.ARGUMENT_NAME)
+            .fetch(r -> r.value1() + "." + r.value2() + "(" + r.value3() + ":)"));
     }
 
     private static Set<String> enumValueCoordinates(DSLContext dsl) {
@@ -258,6 +349,19 @@ class SdlCoordinateCensusTest {
                 case GraphQLInputObjectType input -> input.getFieldDefinitions()
                     .forEach(field -> names.add(type.getName() + "." + field.getName()));
                 default -> { }
+            }
+        });
+        return names;
+    }
+
+    /** Output-field arguments only, the population {@code graphql_argument_coordinate} holds. */
+    private static Set<String> assembledArguments(GraphQLSchema schema) {
+        var names = new TreeSet<String>();
+        authored(schema).forEach(type -> {
+            if (type instanceof GraphQLFieldsContainer container) {
+                container.getFieldDefinitions().forEach(field -> field.getArguments()
+                    .forEach(argument -> names.add(
+                        type.getName() + "." + field.getName() + "(" + argument.getName() + ":)")));
             }
         });
         return names;

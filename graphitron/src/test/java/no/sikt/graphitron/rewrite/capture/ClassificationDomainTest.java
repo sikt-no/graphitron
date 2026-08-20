@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -143,6 +144,24 @@ class ClassificationDomainTest {
                 .contains("Declared", "Entity"));
     }
 
+    @Test
+    @DisplayName("an interface carrying the declaration seeds on its own arm, not through an implementor")
+    void anInterfaceCarrierSeedsOnItsOwnArm() {
+        // Two of the three declaration arms are legal on an interface, so the scan is over
+        // implementing types rather than objects. Neither carrier here has a reached implementor,
+        // which is what makes this the interface's own arm and not an object's edge to it.
+        var sdl = NODE_INTERFACE + """
+            directive @key(fields: String!) repeatable on OBJECT | INTERFACE
+            type Query { ping: String }
+            interface Keyed @key(fields: "id") { id: ID! }
+            interface Identified implements Node { id: ID! }
+            """;
+        withCapturedStore(tmp, sdl, dsl ->
+            assertThat(domain(dsl, CapturedStore.GRAPH))
+                .as("the interface is the carrier, so narrowing the scan to objects would seed neither")
+                .contains("Keyed", "Identified"));
+    }
+
     // ===== The directive seed =====
 
     @Test
@@ -202,7 +221,7 @@ class ClassificationDomainTest {
         // readable: it is the assembly verdict's consequence and not the census's absence.
         // Driven through FactCapture directly: the refused-schema fixtures are about the two
         // stages ahead of assembly, and a dangling type reference is refused by assembly alone.
-        try (var store = no.sikt.graphitron.model.test.FactStores.inMemory()) {
+        try (var store = FactStores.inMemory()) {
             FactCapture.capture(store.dsl(), CapturedStore.graph(tmp),
                 FactCapture.SubjectConfig.none(),
                 CapturedStore.registryOf(tmp, "type Query { gone: Nope }\n"),
