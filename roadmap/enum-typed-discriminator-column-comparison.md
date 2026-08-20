@@ -16,9 +16,12 @@ last-updated: 2026-08-20
 > every `@discriminator(value:)` literal in a discriminator comparison binds as
 > `DSL.val("<value>", <tableLocal>.<COL>.getDataType())`, the generator's established
 > typed-bind idiom, so the value reaches Postgres through the column's registered
-> converter as an enum-typed bind while the qualified-name field reference, the routing
-> projection, the `TypeResolver` read-back, and every frozen SQL baseline stay exactly as
-> they are. Two build-time guards make the mechanism total: an unresolvable
+> converter as an enum-typed bind. jOOQ renders that bind as
+> `cast(? as "<schema>"."<enum_type>")` on an enum column, which is exactly the operand
+> Postgres accepts, and as a plain `?` on a varchar column, so varchar families are
+> untouched. The qualified-name field reference, the routing projection and the
+> `TypeResolver` read-back all stay as they are. Two build-time guards make the mechanism
+> total: an unresolvable
 > `@discriminate(on:)` column becomes a classify-time rejection instead of today's silent
 > raw-string fallback, and when the column's value domain is closed (a jOOQ-generated
 > enum), each `@discriminator(value:)` is validated against the enum's literal set. The
@@ -113,16 +116,62 @@ comparison sites, each `@discriminator(value:)` literal is emitted as
 DSL.val("<value>", <tableLocal>.<javaName>.getDataType())
 ```
 
-which is the generator's standing typed-bind idiom (`ValuesJoinRowBuilder.cellsCode`'s
-javadoc: every VALUES cell "binds as `DSL.val(value, col.getDataType())` through the
-column's registered Converter and renders a plain JDBC bind, no SQL `CAST`"; the same
-shape serves `ConditionGlueRenderer`'s `JooqConvert` arm, `LookupRows`, and
-`ReentryRowsFragments`). For a jOOQ-generated enum column, `getDataType()` carries
-`asEnumDataType(<EnumClass>)`, so the literal converts via the enum's `lookupLiteral` and
-binds enum-typed. For a plain varchar column the conversion is the identity and the bind
-is byte-identical to today. Rendered SQL text does not change in either case (binds stay
-`?`), so the frozen execution-tier SQL baseline pins need zero edits, and any baseline
-diff during implementation is a defect in the approach, not test maintenance.
+which is the generator's standing typed-bind idiom (`ValuesJoinRowBuilder.cellsCode` routes
+every VALUES cell through `DSL.val(value, col.getDataType())` so the value passes the
+column's registered Converter; `LookupRows` builds its `DSL.row(...)` cells the same way,
+and `ReentryRowsFragments` reaches the same typing through
+`keysInput.field("<sqlName>", <target>.<COL>.getDataType())`). For a jOOQ-generated enum
+column, `getDataType()` carries `asEnumDataType(<EnumClass>)`, so the literal converts via
+the enum's `lookupLiteral` and binds enum-typed. For a plain varchar column the conversion
+is the identity and the bind is byte-identical to today.
+
+One precedent needs its shape stated precisely, because this item depends on the part it
+does not cover: `ConditionGlueRenderer`'s `JooqConvert` arm spells
+`DSL.val(args.get("x"), table.<COL>.getDataType()).getValue()`, unwrapping the `Param` and
+passing the converted *value* into a condition method. It is precedent for the conversion,
+not for a `Param` surviving as a rendered comparison operand. This item keeps the `Param`,
+which is what makes the rendered-SQL question below live rather than settled.
+
+### What the rendered SQL becomes: a cast on the enum arm
+
+jOOQ renders a SQL `CAST` around a Postgres-enum bind. The operand is a `Param` whose
+`DataType` carries the enum, so `DefaultBinding.DefaultEnumTypeBinding.sqlBind0` routes
+through `Cast.renderCastIf` and emits the enum's qualified type name. Measured against this
+repo's own catalog on jOOQ 3.20.11, over `film.rating` (`mpaa_rating`):
+
+[cols="1,3"]
+|===
+| Operand | Rendered
+
+| today, `.in("G", "PG")`
+| `"film"."rating" in (?, ?)`
+
+| typed, `.in(DSL.val("G", RATING.getDataType()), ...)`
+| `"film"."rating" in (cast(? as "public"."mpaa_rating"), cast(? as "public"."mpaa_rating"))`
+
+| typed, `.eq(DSL.val("G", RATING.getDataType()))`
+| `"film"."rating" = cast(? as "public"."mpaa_rating")`
+
+| typed, over a varchar column
+| `"film"."title" in (?)`, byte-identical to today
+|===
+
+The cast is not incidental; it is the mechanism. `mpaa_rating = cast(? as mpaa_rating)` is
+what Postgres accepts where `mpaa_rating = character varying` is the error this item kills.
+The tree already pins the shape from the enum-filter path
+(`ConditionSqlBaselineTest`'s `where "public"."film"."rating" in (cast(? as
+"public"."mpaa_rating"))`, and the `=` form in `RootLauncherSqlBaselineTest`), so this is an
+established rendering the baselines already carry, not a new one this item invents.
+
+Two consequences the implementer must not misread. **Enum arm:** converting a fixture
+family's discriminator to a Postgres enum *does* move that family's frozen baseline strings,
+at every comparison site, and those edits are expected test maintenance rather than a defect
+in the approach. **Varchar arm:** the control-group families' baselines must come back
+byte-identical, and a diff there *is* a defect. Note also that `ValuesJoinRowBuilder`'s class
+javadoc currently promises "a plain JDBC bind, no SQL `CAST`". That is true of the columns it
+serves today (no VALUES cell targets an enum column) but is not a general property of
+`DSL.val(v, dataType)`; if the retype makes an enum column reachable through it, narrow that
+sentence in the same commit rather than leaving a promise the binding does not keep.
 
 The qualified-name reference itself
 (`DSL.field(<tableLocal>.getQualifiedName().append(DSL.name("<sqlName>")), Object.class)`)
@@ -160,9 +209,14 @@ rather than engineered around.
 
 Emitting `<tableLocal>.<javaName>` requires the column to exist as a generated field, so
 the silent raw-string fallback in `TypeBuilder.buildTableInterfaceType` must go. On a
-failed `findColumn`, the builder returns `UnclassifiedType` carrying
-`Rejection.unknownName` with the interface's table columns as candidates, exactly
-mirroring the unknown-table sibling two lines above it (`ctx.unknownTableRejection`).
+failed `findColumn`, the builder returns `UnclassifiedType` carrying the
+`AuthorError.UnknownName` rejection minted by `Rejection.unknownColumn(summary, attempt,
+candidates)` (the `AttemptKind.COLUMN` factory), with the interface's table columns from
+`ctx.catalog.columnJavaNamesOf(...)` as candidates. This mirrors the unknown-table sibling
+a few lines above it, which reads `ctx.unknownTableRejection(tableName)`. There is no
+`ctx.unknownColumnRejection` counterpart on `BuildContext` today; call the `Rejection`
+factory directly rather than adding one, since a single caller does not yet earn the
+`BuildContext` helper that the table and foreign-key spaces have.
 This is a rejection variant, not a diagnostic beside a surviving verdict: a
 `TableInterfaceType` whose discriminator did not resolve becomes a shape the classifier
 cannot produce, which is what makes the `ColumnRef` carrier slot below total with no
@@ -260,17 +314,22 @@ than as matching literals a future edit can split.
 * `DiscriminatedTableFragments` (`discriminatorRef` mint; typed binds in
   `discriminatorFilter` and `joinedDetailJoinChain`; axis-split javadoc paragraph).
 * `PathFragments.parentColumnEquals` (typed bind through the gate's `ColumnRef`).
-* `graphitron-sakila-db/src/main/resources/init.sql` (fixture conversion below).
+* `graphitron-sakila-db/src/main/resources/init.sql` (fixture conversion below), and the
+  baseline pins the conversion moves: `RootLauncherSqlBaselineTest`, `DmlSqlBaselineTest`,
+  and `BatchedChildSqlBaselineTest` for the converted families' statements.
 * `docs/manual/reference/directives/discriminate.adoc` and `discriminator.adoc`
   (documentation below).
 
 ## Tests
 
-**Fixture conversion is the execution-tier strategy.** Because binds render as `?`, the
-fix is invisible at the SQL-baseline tier by construction, so execution is the only
-enforcer and it has to reach all four sites. Rather than adding a sixth discriminated
-family, two existing families' discriminator columns convert to new Postgres enum types
-in `init.sql` (literal sets identical to the values already seeded):
+**Fixture conversion is the test strategy, and it enforces at two tiers.** Because the
+typed bind renders a visible cast on an enum column (see the rendering table above), the
+SQL-baseline tier is the precise enforcer: converting a family's discriminator column makes
+the cast appear at exactly the comparison sites the fix touches, and nowhere else. Execution
+adds what the baseline cannot see, the value actually round-tripping through the enum's
+converter and the routing read-back. Rather than adding a sixth discriminated family, two
+existing families' discriminator columns convert to new Postgres enum types in `init.sql`
+(literal sets identical to the values already seeded):
 
 * `content.content_type`: covers the `IN` filter, the routing projection and read-back,
   the cross-table participant gate (`FilmContent.rating` via `content_film_id_fkey` is
@@ -282,14 +341,32 @@ in `init.sql` (literal sets identical to the values already seeded):
 
 `party_kind`, `fan_kind` (the batched-child baselines), and `signal_kind` (named schema)
 stay varchar as the control group, so both value-domain shapes stay exercised. The
-existing execution tests and SQL baselines over the converted families become the
-enforcer for every site: they must pass with byte-identical baseline strings. One
-implementation caution: both converted families expose the discriminator as a queryable
-`String!` field (`Subject.subjectKind`, `contentType`); jOOQ converts an `EnumType` read
-to its literal on `String` reads, and the existing execution assertions pin that this
-holds through classification and runtime. If a classifier gate unexpectedly rejects
-`String` over the now-enum column, that finding is surfaced to the reviewer before
-retyping any fixture SDL.
+converted families' baselines gain the enum cast at each comparison site; the control
+group's baselines must come back byte-identical.
+
+The two converted families put a `String`-typed SDL field on the now-enum column, in
+opposite directions, and each direction resolves differently:
+
+* **Read.** `Subject.subjectKind: String!` is a queryable projection of `jti_subject.subject_kind`
+  (declared on the interface and both participants). jOOQ converts an `EnumType` read to its
+  literal on a `String` read, and no classifier gate stands in the way:
+  `EnumMappingResolver.validateEnumFilter`, the check that rejects "column is a jOOQ enum but
+  the GraphQL type is not", is reached only from argument classification (two `FieldBuilder`
+  call sites) and the condition-field path, never from a projection. So the field survives the
+  conversion and needs no SDL retype. Worth knowing that the tree has no other instance of this
+  shape: the one existing enum-column participant field, `FilmContent.rating`, is typed as the
+  GraphQL enum `MpaaRating`, not `String`.
+* **Write.** `content.content_type` carries no queryable field at all (the `Content` interface
+  projects only `contentId` and `title`); its `String` field is `ContentInput.contentType`, a
+  mutation *input* on the INSERT/UPSERT path. That path already binds values as
+  `DSL.val(in.get("<name>"), Tables.<T>.<COL>.getDataType())`, so a `String` input converts to
+  the enum and the generated code compiles unchanged. The consequence is a baseline one: the
+  DML `values(...)` pins move to the cast form alongside the SELECT pins. For `content_type`,
+  therefore, the routing read-back is pinned through `__discriminator__` rather than through a
+  queryable field, which is the site that actually matters for the `TypeResolver`.
+
+Neither direction is left for the implementer to discover; if either turns out otherwise in
+practice, that is a finding to surface rather than a fixture to retype.
 
 Tier by tier:
 
@@ -301,14 +378,26 @@ Tier by tier:
 * **Unit (guards):** the lifted `EnumMappingResolver` core gets direct coverage including
   a dashed literal (`MpaaRating`'s `PG-13` versus constant `PG_13`); Guard 2's rejection
   message pins column, enum type name, value, and candidates. Guard 1 pins
-  `UnclassifiedType` with `unknownName` candidates for an unresolvable `on:`.
+  `UnclassifiedType` with `AuthorError.UnknownName` candidates for an unresolvable `on:`.
 * **Pipeline:** `GraphitronSchemaBuilderTest`'s three assertion sites on the
   `@discriminate(on: "kind")`-over-`film` fixture update: the fixtures name a real
   column (the unresolvable shape is no longer a classified verdict), and a rejection row
   covers the old shape. A classification row asserts `TableInterfaceType` carries the
   typed `ColumnRef` (enum `columnClass`) for an enum-discriminated interface.
+* **Mechanical retype fallout.** The `String` to `ColumnRef` change breaks every existing
+  assertion that compares a discriminator accessor to a bare string, and every hand-built
+  fixture that passes one positionally. Beyond `GraphitronSchemaBuilderTest` above, the known
+  sites are `LauncherCommandsPipelineTest` (two `isEqualToIgnoringCase` assertions, on
+  `discriminatorColumn()` and on `gate().column()`),
+  `BatchedDiscriminatedInterfaceChildPipelineTest` (one), and the `LaunchSource.DiscriminatedTable`
+  constructions in `RootLauncherRendererTest` / `TypeFetcherGeneratorTest`. These are compile
+  failures, not silent drift, so the compiler enumerates the rest; the list is here so the
+  blast radius is known before the retype starts rather than discovered as build noise.
+  `GraphitronSchemaClassGeneratorTest`'s `doesNotContain("\"content_type\"")` pin reads the
+  emitted `TypeResolver` rather than the model, so it should survive untouched; confirm rather
+  than assume.
 * **Execution:** the existing discriminated suites over the converted fixtures, plus the
-  frozen baselines, as above. No new execution class is expected.
+  baselines, as above. No new execution class is expected.
 
 ## Documentation
 
@@ -323,7 +412,12 @@ columns, the enum literal as spelled in the database, not a Java constant name).
 * The reproduction schema (an interface over `film` discriminating on `rating`)
   generates, compiles, and answers queries correctly, with rows routing to the right
   concrete types.
-* All existing SQL baseline pins pass byte-identical over the converted enum fixtures.
+* The converted families' SQL baselines show the enum cast
+  (`cast(? as "public"."<enum_type>")`) at each discriminator comparison site: the `IN`
+  filter, the joined-detail ON clause, the cross-table participant gate, and the DML
+  `values(...)` write of `content_type`. The routing projection stays uncast.
+* The varchar control group's baselines (`party_kind`, `fan_kind`, `signal_kind`) pass
+  byte-identical. A diff there is a defect in the approach, not test maintenance.
 * An unknown `@discriminator(value:)` on an enum column fails the build with an author
   error naming the column, type, value, and literal set; an unresolvable
   `@discriminate(on:)` fails the build naming candidates.
@@ -331,9 +425,14 @@ columns, the enum literal as spelled in the database, not a Java constant name).
 
 ## Settled design notes
 
-1. *Cast-at-comparison rejected.* Rendering a SQL `CAST` (either side) would change every
-   discriminated statement in the tree against the frozen baseline contract, and the
-   emitter convention already prefers converter-typed binds over rendered casts.
+1. *Authoring a cast rejected; jOOQ deriving one is the mechanism.* The rejected option is
+   emitting a `CAST` ourselves, from the generator, on either side of the comparison: that
+   would put cast text into every discriminated statement in the tree, varchar families
+   included, for no gain on the ones that already work. What this item does instead is type
+   the bind and let jOOQ's enum binding decide the rendering, which yields a cast on exactly
+   the enum arm and plain `?` everywhere else. The distinction is *who* decides and *which
+   statements pay*, not whether a cast ever appears; it does appear, and the rendering table
+   above is the record of it.
 2. *Reject-only rejected.* A build-time rejection of enum columns was the cheap
    alternative and is strictly better than the redacted runtime failure, but support is
    the right end state and costs little more once the binds are typed. Guard 1 and
