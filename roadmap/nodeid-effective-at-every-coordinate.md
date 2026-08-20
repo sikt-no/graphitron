@@ -829,7 +829,7 @@ stage 3 expresses it there.
   to one
   directive, ahead of R682 rather than against it. Worth telling that item's author, because the
   `@nodeId` decode and encode facts are one fewer thing its planner rewrite has to source.
-* **R742** (`determinism-ratchet-run-count`, In Review) is why this item states its own derivation depth.
+* **R742** (shipped; see `roadmap/changelog.md`) is why this item states its own derivation depth.
   It measured the precedent this plan follows, `intent_argmapping_projection_defect`, at 2066 relation
   instantiations and 24.5 seconds for one read, and diagnosed the cause as H2 inlining views with no
   common-subexpression elimination over a tree eight levels deep across seventeen views. Two of its

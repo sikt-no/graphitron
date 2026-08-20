@@ -5,7 +5,7 @@ status: Spec
 bucket: dx
 priority: 4
 theme: tooling
-depends-on: [determinism-ratchet-run-count]
+depends-on: []
 created: 2026-08-20
 last-updated: 2026-08-20
 ---

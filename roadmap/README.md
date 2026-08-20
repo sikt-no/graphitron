@@ -14,7 +14,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R742` | The determinism ratchet costs 229 seconds: too many generator runs, and each run too expensive | In Review | 2026-08-20 | [plan](determinism-ratchet-run-count.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
@@ -29,7 +28,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R744` | TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion | In Review | 2026-08-20 | [plan](scatter-test-syncs-on-mid-pin-connect-event.md) |
 | `R743` | The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves | In Review | 2026-08-20 | [plan](sdl-fact-gatherer-staged-pipeline.md) |
 | `R753` | Accept @deprecated alias fields sharing a write column on jOOQ-record inputs | Spec | 2026-08-20 | [plan](write-input-deprecated-column-alias.md) |
-| `R746` | Order the materialization registry, so a target may be derived from another target <sub>blocked by: [determinism-ratchet-run-count](determinism-ratchet-run-count.md)</sub> | Spec | 2026-08-20 | [plan](materialization-dependency-order.md) |
+| `R746` | Order the materialization registry, so a target may be derived from another target | Spec | 2026-08-20 | [plan](materialization-dependency-order.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
@@ -577,7 +576,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
 - `R759` [**Every fact-store boot compiles Java source, because one CREATE ALIAS carries its body inline**](store-boot-compiles-java.md) — Backlog, dx
-- `R742` [**The determinism ratchet costs 229 seconds: too many generator runs, and each run too expensive**](determinism-ratchet-run-count.md) — In Review, dx
 - `R733` [**Hold the build wall clock with a budget, and take the derived-read slices R732 left unmeasured**](build-wall-clock-guardrail.md) — Backlog, dx
 - `R298` [**Leverage Rover and GraphOS: composition checks in CI, contract verification, rover lsp in the dev loop**](rover-graphos-integration.md) — Backlog, feature, blocked by [oneof-augment-defeated-by-descriptions](oneof-augment-defeated-by-descriptions.md)
 - `R594` [**Snapshot axis keys are consistent across the snapshot-reporting MCP tools**](mcp-snapshot-axis-key-naming.md) — Backlog, cleanup
@@ -586,7 +584,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R538` [**BgeEmbedderOnnxTest fails nondeterministically under full-reactor parallel load**](onnx-embedder-nondeterminism-under-parallel-load.md) — Backlog, testing
 - `R741` [**Date or refresh the parallelism figure in graphitron's junit-platform.properties**](parallelism-figure-in-junit-properties.md) — Backlog, dx
 - `R593` [**Fail CI loudly when init.sql seeding fails**](ci-init-sql-error-stop.md) — Backlog, dx
-- `R746` [**Order the materialization registry, so a target may be derived from another target**](materialization-dependency-order.md) — Spec, dx, blocked by [determinism-ratchet-run-count](determinism-ratchet-run-count.md)
+- `R746` [**Order the materialization registry, so a target may be derived from another target**](materialization-dependency-order.md) — Spec, dx
 - `R623` [**Redirect Maven output to a log file in web sessions via .mvn/maven.config**](web-session-maven-build-log.md) — Spec, dx
 - `R736` [**The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering**](trace-writer-disabled-for-rest-of-fork.md) — Spec, bug
 - `R755` [**srp review prompts lead with commit bookkeeping where the gate turns on goal, design fit, fidelity, and completeness**](srp-review-prompts-lead-with-gate-questions.md) — In Review, improvement
