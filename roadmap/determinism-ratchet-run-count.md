@@ -86,7 +86,7 @@ rows.
 
 **Two things are not cheap to reverse, and they are the parts to review hardest.** The fixture's
 derivation boundary changes the shape of thirteen test classes, and the doctrine paragraphs change
-what the schema says about itself in two places. Neither is large, but neither is a row of data, and
+what the schema says about itself in three places. Neither is large, but neither is a row of data, and
 if either is wrong it is wrong for everything that follows rather than for this item.
 
 ## What the test is actually for
@@ -228,7 +228,9 @@ It ranked the two relations worth reducing before any of them were measured.
 | `intent_bound_table` | 8 |
 | `intent_argmapping_binding_leaf` | 7 |
 
-And where the 2066 come from, which prices what a rewrite could buy:
+And where the 2066 come from, which prices what a rewrite could buy. Subtree size excludes the
+relation itself, so a contribution is `times named x (subtree + 1)`; the four contributions come to
+2060, and the remaining six are the defect view's own direct references to a base table:
 
 | Direct child of the defect view | Times named | Subtree size | Contribution |
 |---|---|---|---|
@@ -262,7 +264,7 @@ A registration produces **three relations**, and stating them as DDL settles the
 else in this item hangs off. Taking `intent_argmapping_pair`:
 
 ```sql
--- Before: one view, named from eleven FROM/JOIN sites in other view bodies.
+-- Before: one view, named from sixteen FROM/JOIN sites in other view bodies.
 CREATE VIEW intent_argmapping_pair (graph_name, site, ...) AS SELECT ... ;
 
 -- After: the rule keeps its text verbatim and gives up the canonical name.
@@ -282,7 +284,9 @@ COMMENT ON TABLE intent_argmapping_pair IS '<what the relation means, plus: mate
 
 **The canonical name moving to the table is the whole mechanism, not an implementation detail.** The
 cost being attacked is inline expansion inside *other view bodies*: `intent_argmapping_pair` is named
-from eleven `FROM`/`JOIN` sites in the DDL and from no Java at all. Populating a table under a
+from sixteen `FROM`/`JOIN` sites in the DDL, and from one Java call site
+(`ArgmappingProjectionDefects.unemittableProjections`, the same read the duplicate-read section
+below is about). Populating a table under a
 different name would leave every one of those bodies naming the view and would buy nothing. Readers
 are untouched precisely because the name they already use is the one the target takes, and the rule
 is still stated exactly once, in a view, under a name that says what it is.
@@ -313,8 +317,8 @@ and could not fail. The observed failure is the evidence for this shape.
     this relation, and one that does is asking for on-demand evaluation and will get it.';
   COMMENT ON COLUMN meta_materialize.target_table_name IS 'The table the rows are materialized into,
     under the name every existing reader already uses. That is what makes a registration invisible to
-    consumers: the eleven other view bodies naming this relation are not edited, they simply stop
-    hitting a view and start hitting a table. A registration that gave the target a new name would
+    consumers: the other view bodies naming this relation are not edited, they simply stop
+    hitting a view and start hitting a table, and so does any Java reader of the same name. A registration that gave the target a new name would
     change no reader''s cost and would be pointless.';
   COMMENT ON COLUMN meta_materialize.reason IS 'Why this relation is materialized rather than left to
     derive on read. Required, because this column is where the materialization doctrine lives: the
@@ -368,7 +372,7 @@ sink.flush();
 // The capture-cadence derivation stratum: materialized derivations re-derive from
 // the flushed rows inside the same transaction, so they are current exactly when
 // the partition they derive from is.
-ReachabilityRows.derive(txDsl, graph.name());
+ClassificationDomainCapture.derive(txDsl, graph.name(), schema, synthesizedEdges);
 InputOccurrencePaths.derive(txDsl, graph.name());
 TypeBackingRows.derive(txDsl, graph.name());
 ```
@@ -405,11 +409,10 @@ population is that a reader picking the slow name is a performance bug and nothi
 multiplicity check below is what finds it.
 
 `fact-model.adoc` sanctions the mechanism and the store already has four written `intent_` tables
-behind three writers: `intent_type_domain` (`ReachabilityRows.derive`),
+behind three writers: `intent_type_domain` (`ClassificationDomainCapture.derive`),
 `intent_type_backing_class` (`TypeBackingRows.derive`), and `intent_input_occurrence_path` with its
-step sibling (`InputOccurrencePaths.derive`). `ClaimDomainRows.write` and
-`TypeBackingClassRows.write` are the delete-then-insert shape to copy. Do not lean on
-`ReachabilityRows` as the precedent: R743 retires it outright.
+step sibling (`InputOccurrencePaths.derive`). `TypeBackingClassRows.write` is the delete-then-insert
+shape to copy.
 
 What `fact-model.adoc` does not sanction is the *justification*, which is the reviewable part and has
 its own section below.
@@ -521,8 +524,8 @@ has a perfectly good view form that returns the right answer; it is merely expen
 extends the doctrine from "materialise what a view cannot express" to "materialise what a view
 expresses too slowly", and that extension is the reviewable decision.
 
-Two places say the narrow version today and both have to move, which is convenient, because it means
-the doctrine is written down rather than assumed.
+Three places say the narrow version today and all three have to move, which is convenient, because
+it means the doctrine is written down rather than assumed.
 
 * The DDL header's cadence paragraph says a post-capture family has its own writer on its own
   cadence, and says nothing about why a family would be post-capture in the first place. The
@@ -531,6 +534,13 @@ the doctrine is written down rather than assumed.
   derivations **whose table comments own why they cannot be views**". Under a registry the reason is
   no longer per-table prose and no longer "cannot": it is a registration, and the charter should say
   so.
+* The `meta_` family charter in `meta_family` says the family is the roster, the placement
+  exemptions and the census, "authored as constant rows stated as views". The registry is a fourth
+  resident and it is a table, so both clauses go stale the moment it lands. The charter has no
+  enforcer, which is exactly why it has to move in the same change rather than wait: nothing would
+  fail, and the generated schema reference would render the schema describing itself wrongly. What
+  the two forms share is the property the sentence was reaching for, that the rows are versioned
+  with the DDL and cannot be refreshed apart from it, so that is what it should say.
 
 The incumbents' shape also differs, and the registry is what reconciles them rather than leaving two
 variants side by side. This is four relations and three writers, not one: `intent_type_domain`,
@@ -538,12 +548,12 @@ variants side by side. This is four relations and three writers, not one: `inten
 Java and written, with no view stating the rule, so there is nothing for a registry to point at.
 Whether they stay outside the mechanism, keeping their Java derivations and their own comments, or
 acquire views and join the registry, is a decision this item should take explicitly rather than leave
-to whoever notices the asymmetry next. `ReachabilityRows` is the one that answers itself: R743 retires
-it, so `intent_type_domain` should not be rewritten here.
+to whoever notices the asymmetry next. `intent_type_domain` answers itself: its writer was rewritten
+out from under this item while it sat in Spec, so it should not be rewritten here again.
 
 ### Gates the change has to clear, none of them optional
 
-Four beyond the compile, and the item should not discover them one build at a time.
+Beyond the compile, and the item should not discover them one build at a time.
 
 * **`FactSchemaGateTest`, comments.** Every relation and every column in `PUBLIC` must carry a
   non-null `REMARKS`. Each materialized target is a new relation and arrives uncommented.
@@ -551,9 +561,21 @@ Four beyond the compile, and the item should not discover them one build at a ti
   page through `meta_relation_family`, or carry an exemption row in `meta_prefixless_relation`, and
   no relation may match two family prefixes. An `intent_`-prefixed rule view should house itself,
   but that is a prediction and the gate is the authority.
-* **`FactCaptureAgreementTest`, arm registration.** Every relation is classified into an arm, and the
-  `DERIVED` arm's javadoc enumerates "views, and the materialized capture-cadence derivation
-  `intent_type_domain`". Each new reduction joins that sentence and that registration.
+* **`FactCaptureAgreementTest`, arm registration.** `everyRelationIsRegistered` is a total,
+  bidirectional census: every relation needs an arm and every arm must name a live relation. A
+  registration adds *two* relations to it, the `_live` view and the target, and `meta_materialize`
+  is a third. The `DERIVED` arm's javadoc enumerates "views, and the materialized capture-cadence
+  derivation `intent_type_domain`", which covers the `_live` views under "views" and the targets
+  under the second clause but not an authored constant-row registry table, so the sentence widens
+  in two directions rather than one.
+* **`StoreRefresh.wholesale()`.** Written in exemption polarity, so it empties any base relation
+  nobody excluded. The registry's rows are authored DDL that no run rewrites, so a warm capture
+  would clear them and nothing would put them back. The `meta_` family needs an exemption whose
+  reason is authorship rather than cadence. The family's three views were never at risk, being
+  views; the register is the first `meta_` base table and the first to reach this code.
+* **The boot's commit.** The DDL file gains its first `INSERT`. H2 commits a schema statement
+  implicitly and ordinary DML not at all, so a file-backed store would open, create the schema,
+  seed the register, close, and reopen to find the register empty.
 * **`CommentRenderabilityGateTest` and `SchemaReferencePagesTest`.** The comment text has to render,
   not merely exist.
 * **`FactSchemaGateTest.everyGraphKeyedRelationReachesTheAnchor`.** Every non-view relation carrying
@@ -626,7 +648,7 @@ version lives.
    five seconds rather than about sixty.
 5. **The clean-removal coverage decision**, and the javadoc correction it implies either way.
 6. **Route B**, flattening the defect view's five `binding_leaf` arms into one `CASE` pass. Priced at
-   28% of the instantiations above and independent of everything else here, so it can land whenever;
+   29% of the instantiations above and independent of everything else here, so it can land whenever;
    listed because an item that calls it worthwhile and then never schedules it is how a good idea
    goes missing.
 7. **The duplicate-read merge and the `Files.mismatch` cleanup**, both re-measured against the shape
@@ -674,9 +696,16 @@ number is quotable as landed.
 | R733 + run reduction | 3 | 62.91s | 21.0s | green |
 | R733 + the two reductions | 4 | **20.66s** | 5.2s | **red: 13 classes** |
 | all three | 3 | about 16s, projected | 5.2s | not run |
+| landed: the two registrations, on trunk | 4 | **15.46s** | 3.9s | **green** |
 
-The last row is arithmetic rather than a measurement, and worth stating plainly: once a run costs
-5.2 seconds instead of 57, removing the fourth run saves about five seconds rather than about sixty.
+The landed row is the mechanism and both registrations as they shipped, with the fixture work in the
+same step, measured on a full green `mvn install -Plocal-db`. It beats the prototype's 20.66s because
+trunk moved underneath this item while it sat in Spec. `FixtureWarningsGateTest` fell from 56.8s to
+2.63s in the same build, which is the same reads in a different consumer and the better evidence that
+this was never one test's problem.
+
+The projected row above it is arithmetic rather than a measurement, and worth stating plainly: once a
+run costs about four seconds instead of 57, removing the fourth run saves about five seconds rather than about sixty.
 The run-count work is still worth doing, on the grounds that a test should not perform work its
 contract does not need, but it stops being the lever it looks like today and the Spec pass should
 sequence the store work first.
