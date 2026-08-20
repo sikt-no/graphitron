@@ -17,9 +17,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 /**
- * Pins the derived refresh order on synthetic registrations, because the production DDL registers
- * no dependent derivation: zero rows in {@code meta_materialize_dependency} is the shipped state,
- * and what this class exercises is exactly what that state leaves unexercised. A scratch store can
+ * Pins the derived refresh order on synthetic registrations, because the production DDL's own
+ * dependent derivations do not span the shapes the design claims: one registered target reading
+ * another's is now the shipped state rather than a hypothetical, but it is a single edge, and a
+ * cycle, a walk through an unregistered intermediate view and a row-free relation are all states no
+ * shipped registration produces. A scratch store can
  * {@code CREATE} ordinary tables and views and register them, which is enough to drive
  * {@link MaterializeDependencies#populate} and {@link Materializations#refreshOrder} through every
  * shape the design claims: the parse that finds an edge, the walk through an unregistered
@@ -162,7 +164,13 @@ class MaterializationOrderTest {
             dsl.execute("CREATE TABLE scratch_a (v INT)");
             register(dsl, "scratch_a_live", "scratch_a");
             MaterializeDependencies.populate(dsl);
-            assertThat(dependencyRows(dsl)).as("no registration reads another's target").isEmpty();
+            assertThat(dependencyRows(dsl))
+                .as("neither synthetic registration reads the other's target")
+                .isEmpty();
+            // The subject here is the row-free relation, which the production DDL's own dependent
+            // registration means no longer arises on its own. Emptying it is what puts the case back
+            // in front of the state it is about, rather than asserting the shipped edge's order.
+            dsl.deleteFrom(META_MATERIALIZE_DEPENDENCY).execute();
             assertThat(Materializations.refreshOrder(dsl).registrations())
                 .as("the empty relation is the identity case: today's order, byte for byte")
                 .isEqualTo(Materializations.registrations(dsl));
@@ -201,10 +209,17 @@ class MaterializationOrderTest {
             .execute();
     }
 
+    /**
+     * The synthetic registrations' edges alone. Scoped to the {@code scratch_} prefix because the
+     * production DDL now registers a dependent derivation of its own, so the relation is no longer
+     * empty on an untouched store and a case about what a fixture's reads state would otherwise be
+     * asserting over the shipped edge as well.
+     */
     private static List<org.assertj.core.groups.Tuple> dependencyRows(DSLContext dsl) {
         return dsl.select(META_MATERIALIZE_DEPENDENCY.SOURCE_VIEW_NAME,
                 META_MATERIALIZE_DEPENDENCY.DEPENDS_ON)
             .from(META_MATERIALIZE_DEPENDENCY)
+            .where(META_MATERIALIZE_DEPENDENCY.SOURCE_VIEW_NAME.like("scratch\\_%"))
             .orderBy(META_MATERIALIZE_DEPENDENCY.SOURCE_VIEW_NAME,
                 META_MATERIALIZE_DEPENDENCY.DEPENDS_ON)
             .fetch(row -> tuple(row.value1(), row.value2()));

@@ -103,14 +103,29 @@ class FactSchemaGateTest {
 
     /**
      * The slice the materialization gate needs, which is a different slice: a table spelling for
-     * {@code intent_spelled_table} to resolve against the catalog, and a {@code @routine}
-     * application carrying an {@code argMapping} so {@code intent_argmapping_pair} has an arm that
-     * fires. Separate from {@code FIXTURE} because the structural gates above want breadth of
-     * declaration sites, and this one wants two specific derived relations to be non-empty.
+     * {@code intent_spelled_table} to resolve against the catalog, a {@code @routine} application
+     * carrying an {@code argMapping} so {@code intent_argmapping_pair} has an arm that fires, and a
+     * {@code @nodeId} argument whose decode actually walks a foreign key so the two decode targets
+     * are non-empty. Separate from {@code FIXTURE} because the structural gates above want breadth
+     * of declaration sites, and this one wants every registered target to be non-empty.
+     *
+     * <p>Populating all of them is a property of this fixture and the fixture catalog together, and
+     * it has to be maintained as registrations are added: a target the fixture leaves empty makes
+     * the gate assert nothing about it, which is why the gate names the relation rather than merely
+     * comparing what it found.
+     *
+     * <p>{@code inCategory} is the one that walks. Its scope table is {@code film_category}, the
+     * node type's is {@code category}, and exactly one foreign key connects them, which is what the
+     * unwritten-path resolution demands. The obvious shorter pairing does not work: {@code film}
+     * declares two foreign keys to {@code language}, so a decode between them is ambiguous and
+     * contributes no hop at all. {@code sequelTo} stays for the instruction population's sake and
+     * contributes no hop either, its own type being what it binds against.
      */
     private static final String MATERIALIZED_FIXTURE = """
         type Query {
           films(sequelTo: ID @nodeId(typeName: "Film")): [Film!]!
+          filmCategories(inCategory: ID @nodeId(typeName: "Category")): [FilmCategory!]!
+          categories: [Category!]!
           filmsForActor(actorId: ID!, minLength: Int): [Film!]!
             @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
         }
@@ -118,6 +133,15 @@ class FactSchemaGateTest {
         type Film @table(name: "film") @node {
           filmId: ID! @field(name: "film_id")
           title: String
+        }
+
+        type FilmCategory @table(name: "film_category") {
+          film: Film
+        }
+
+        type Category @table(name: "category") @node {
+          categoryId: ID! @field(name: "category_id")
+          name: String
         }
         """;
 
