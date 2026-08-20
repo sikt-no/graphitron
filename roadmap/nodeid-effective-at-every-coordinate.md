@@ -377,22 +377,40 @@ sides of the column match, neither of which is an equality H2 can drive an index
 predicate in the final join costs nothing, because there it is evaluated once over 54 rows rather
 than once per row of a growing relation.
 
-Two levers, and the measurement sizes both rather than leaving the choice to taste. Registering
-`intent_node_id_decode_hop_column` as a materialization takes the per-evaluation cost to about
-nothing, so 21 evaluations stop mattering whatever the plan is; this is the lever stage 2b deferred
-for want of a reader, and the recursion naming its input twice is that reader. Giving the step a
-plannable predicate, which means carrying the `use_site` column the endpoint relation already has
-down through the two hop relations and joining on it instead of on the five-column null-safe match,
-plus folding column-name case once at the producing relation instead of at the join, turns 21
-evaluations into about 2; that is roughly 14 s, better and not enough on its own. Both, and the
-recursion stops being the term. The serialized-key precedent for the first half is
-`intent_input_occurrence_path`, whose step relation already joins its parent on exactly such a
-column, with the components sitting beside it so nothing parses the key.
+Two levers suggested themselves, and both were built and measured rather than argued. **Only one of
+them does anything, and it is not the one this item predicted.**
 
-The endpoint subtree is then the remaining floor, every relation in the chain costing about what its
-parent costs plus a little, which is around 5 s of instruction and scope re-derivation repeated per
-level. Whether that wants the same treatment is a question to ask with a number after the recursion
-is fixed, not before.
+The lever that was predicted to help and does not: give the recursive step a predicate a planner can
+drive an index from, by carrying the `use_site` column the endpoint relation already has down through
+the two hop relations and joining on it instead of on the five-column null-safe match, and folding
+column-name case once where the walk records the arriving name rather than on both sides of the
+comparison. Built, all 60 model-tier cases green on it, and the destination relation still gives no
+answer in 300 s. Reverted. A control then measured the pre-change predicate against a *table* holding
+the same 20 rows: also instant. So the predicate shape is not a factor at either end, and the
+prediction of "21 evaluations down to about 2" was arithmetic over a mechanism that was not there.
+
+The lever that fixes it outright: **make the recursion's input a table.** Snapshotting
+`intent_node_id_decode_hop_column` into an indexed table takes the lift from 146 s to **0.00 s** for
+the same 20 rows, and the whole destination relation to 6.5 s, of which the lift contributes 0.2 s
+and the endpoint subtree the rest. Registering that relation as a materialization is therefore the
+increment, and it is the lever stage 2b deferred for want of a reader: the recursion naming its input
+once per accumulated row is that reader, and no rewriting of how it names it helps.
+
+A second registration is worth making at the same time, and its case is separate rather than
+additional. Snapshotting `intent_node_id_decode_endpoint` costs 5.4 s and takes the hop relation from
+7.5 s to 2.4 s and its column child from 7.5 s to 2.4 s, because three relations read the endpoint
+and each was paying for its whole subtree. That is the shared-departure argument the relation was
+factored out on, arriving as a cost. It does not substitute for the first: with the endpoint
+materialized and the hop column relation still a view, the recursion reads a 2.4 s view once per
+accumulated row and is no better off. With both, the refresh is about 8 s and every read below is
+close to free; with only the hop column relation, the refresh is 7.5 s and the destination still pays
+the live endpoint's 5 s on every read.
+
+The general reading, which is the third correction this measurement forced: what makes a relation
+expensive here is being a view that something reads many times, and how the reader spells the read
+does not enter into it. Two of the three transforms tried in this item were rewrites of a predicate
+and both bought exactly nothing; the one that worked in the scope table's case worked because it
+changed which relation was re-evaluated, not because it changed a join key's shape.
 
 **One piece of navigation has to be authored first.** `intent_field_reference_step_hop` and
 `intent_field_reference_step_target` resolve reference-path hops, and they are field-site only. An
