@@ -17,10 +17,10 @@ across two test methods, which is a third of the whole build. It is not slow bec
 anything expensive. It is slow because it runs the entire generator over the entire fixture schema
 four times, and the contract it guards needs two of those runs at most.
 
-This item is the run count and the coverage question next to it. It is deliberately not the
-generator's own cost: that is R733's, and the two compound rather than compete. R733's measured
-changes take the same class from 229.0s to about 86s by making a run cheaper; this item removes
-runs. Either alone is worth having and neither waits on the other.
+This item is the run count, the per-run cost that survives R733, and the coverage question next to
+them. R733 owns the generator's store reads and the two measured changes that make a run cheaper;
+this item removes runs. They compound rather than compete and neither waits on the other:
+**together, measured, they take the class from 229.0s to 62.91s.**
 
 ## What the test is actually for
 
@@ -77,6 +77,84 @@ schema has two types.
 
 For scale, the whole build pays for six full-fixture runs: four here, one in
 `FixtureWarningsGateTest`, and one in the module's default `graphitron:generate` execution.
+
+### The test itself costs nothing measurable
+
+Worth establishing before looking for savings inside a run, because it decides where to look. With
+R733's two changes applied and the run count at three, the class measures 62.91s and a run measures
+21.0s. Three times 21.0 is 63.0. The test's own scaffolding, which is reading 798 files into a map
+twice to compare them, copying a tree, and walking it twice for modification times, disappears into
+the noise between those two figures.
+
+So there is no version of this item that speeds the class up by tidying the test. Every second is a
+generator run, and the only two levers are how many runs there are (the rest of this item) and what
+a run costs (below).
+
+### What a run is made of, after R733
+
+Profiling one run with R733's two changes already applied, so this is the residual rather than the
+original: **88.1% of a 21.0s run is four store reads**, and no single thing outside them reaches two
+percent.
+
+| Call site | Share of the run | Reads |
+|---|---|---|
+| `ArgmappingProjectionDefects.authorDefects` | 38.3% | `intent_argmapping_projection_defect` |
+| `ArgmappingProjectionDefects.unemittableProjections` | 18.6% | `intent_resolved_node_key_projection` |
+| `ResolvedKeyProjections.read` | 18.6% | `intent_resolved_node_key_projection`, again |
+| `StoreNodeTables.bindings` | 12.6% | `intent_resolved_node_type_id` joined to `intent_resolved_type_binding` |
+| `GraphitronModelStore.create` | 1.8% | the store's own DDL, 140 tables and 56 views per run |
+| javapoet emission | 0.6% | |
+| schema parse | 0.4% | |
+| everything else | under 0.4% each | |
+
+That table is the answer to "are there other easy fixes", and mostly the answer is no. Store boot at
+1.8% is 0.4 seconds and would need a template-clone mechanism H2 does not offer in memory. Emission
+and the writing of 798 files together are under one percent. The schema parse and the classpath
+scan do not register. There is no low-hanging fruit outside the store.
+
+### One exception, and it is worth taking: the same view is read twice per run
+
+Rows three and two of that table read the *same relation* over the *same graph*, from two calls
+`FactCapture.detect` makes back to back on the same `DSLContext`.
+
+Reads of that view are fully additive, which is the fact that makes this worth fixing rather than a
+curiosity. Two measurements pin it. Adding a redundant third read of it costs **+8.1s per run** (the
+view plus the `StoreNodeTables.read` that `ResolvedKeyProjections.read` performs first). Removing
+one of the two existing reads saves **4.5s per run**, which is 19% of the residual. Nothing caches,
+nothing reuses a plan, and the view carries a window so no outer predicate prunes it.
+
+The two reads are not identical, which is why this is a small piece of work rather than a deletion:
+
+* `unemittableProjections` selects twelve columns and inner-joins `intent_argmapping_pair` on
+  (graph, site, use site, position).
+* `ResolvedKeyProjections.read` selects five columns and does not join.
+
+One fetch serves both: select the union of the columns with the pair table `LEFT JOIN`ed, then
+recover each caller's result in Java. The inner join becomes a filter on the pair columns being
+present, and each caller re-applies its own `DISTINCT` over its own column set. That is sound rather
+than approximate: a left join never drops a row of the view, so the five-column distinct is
+unchanged, and it produces the same row multiset the inner join did for the rows that do match, so
+the twelve-column distinct is unchanged too.
+
+**A scope note the reviewer should settle.** This is derived-read work, and its natural home is
+R733, which already carries the store's read discipline and the other two measured fixes. It is
+recorded here because it is the honest answer to "why is this test slow", and because R742 is the
+item in motion while R733 is still Backlog. Moving it to R733 and leaving R742 purely about run
+count is a defensible call and costs nothing but a cross-reference.
+
+### What the three changes come to together
+
+| Configuration | Runs | Class total | Per run |
+|---|---|---|---|
+| trunk | 4 | 229.0s | 57.3s |
+| R742's run reduction alone | 3 | 167.3s | 55.8s |
+| R733's two changes alone | 4 | about 93s, derived | 23.3s |
+| R733 + R742, measured | 3 | **62.91s** | 21.0s |
+| and the duplicate read removed | 3 | about 56s, ceiling | 18.8s |
+
+229.0s to 62.91s is measured with both tests green. The last row is a ceiling rather than a
+measurement: it was taken by skipping one read outright, which is not a legal implementation, and
+the merged query will land slightly above it by the cost of the left join.
 
 ## Why four runs, and how many the contract needs
 
@@ -142,9 +220,12 @@ which is a materially weaker case for adding public API.
   runs. R733 already carries the rule for this kind of change: one module at a time, and each module
   answers its own shared-state question first. Note it here, do it there.
 * **`readAll` slurps both trees into memory.** Two maps of 798 file contents, built to compare them
-  entry by entry. `Files.mismatch` per path would allocate nothing and report the differing byte
-  offset, which is a better failure message than an AssertJ string diff over a generated Java file.
-  Small, and worth doing while the class is open.
+  entry by entry. This is *not* a performance item and the section above has the number that says
+  so: the whole of the test's scaffolding is below measurement noise against the generator runs. It
+  is a failure-message item. `Files.mismatch` per path allocates nothing and reports the differing
+  byte offset, which beats an AssertJ string diff over a generated Java file when this ratchet
+  actually fires, which is the moment it exists for. Worth doing while the class is open, on those
+  grounds and not on speed.
 
 ## How to re-measure
 
