@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import no.sikt.graphitron.model.derive.MaterializeDependencies;
 import no.sikt.graphitron.model.derive.Materializations;
 import org.jooq.DSLContext;
 import org.jooq.Record;
@@ -32,6 +33,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.META_FAMILY;
+import static no.sikt.graphitron.model.Tables.META_MATERIALIZE;
 import static no.sikt.graphitron.model.Tables.META_PREFIXLESS_RELATION;
 import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
@@ -521,7 +523,7 @@ class FactSchemaGateTest {
                     };
                 } else if (table.startsWith("meta_")) {
                     expected = switch (table) {
-                        case "meta_materialize" -> "source_view_name";
+                        case "meta_materialize", "meta_materialize_dependency" -> "source_view_name";
                         default -> "graph_name";
                     };
                 } else {
@@ -661,6 +663,23 @@ class FactSchemaGateTest {
         Path ownDir = Files.createDirectories(tmp.resolve("own"));
         try (var store = GraphitronModelStore.open()) {
             var dsl = store.dsl();
+            // A fixture registration whose view reads another registration's target, the shape the
+            // derived refresh order exists for. Its name sorts ahead of its prerequisite's, so an
+            // unordered refresh would fill it from the not-yet-refreshed intent_spelled_table and
+            // fail the equality below on the first capture; the re-population is what a fixture
+            // registered after boot owes, the DDL's own registrations having been walked already.
+            dsl.execute("CREATE TABLE intent_fixture_binding AS SELECT * FROM intent_spelled_table"
+                + " WITH NO DATA");
+            dsl.execute("CREATE VIEW intent_fixture_binding_live AS"
+                + " SELECT * FROM intent_spelled_table");
+            dsl.insertInto(META_MATERIALIZE, META_MATERIALIZE.SOURCE_VIEW_NAME,
+                    META_MATERIALIZE.TARGET_TABLE_NAME, META_MATERIALIZE.REASON)
+                .values("intent_fixture_binding_live", "intent_fixture_binding",
+                    "fixture: a registration reading a registered target, so this gate exercises"
+                        + " the derived refresh order on real store machinery")
+                .execute();
+            MaterializeDependencies.populate(dsl);
+
             captureMaterializationFixture(dsl, "sibling", siblingDir);
 
             var registrations = Materializations.registrations(dsl);

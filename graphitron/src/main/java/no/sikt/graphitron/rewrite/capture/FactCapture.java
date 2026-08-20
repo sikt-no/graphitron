@@ -494,7 +494,10 @@ public final class FactCapture {
             sink.flush();
             // The capture-cadence derivation stratum: materialized derivations re-derive from
             // the flushed rows inside the same transaction, so they are current exactly when
-            // the partition they derive from is.
+            // the partition they derive from is. Statement order is load-bearing one way only:
+            // the hand-written producers run before the registered refresh, and the derived
+            // dependency order cannot see a hand-written derivation's reads, those being jOOQ
+            // code rather than stored view definitions.
             ClassificationDomainCapture.derive(txDsl, graph.name(),
                 assembly instanceof SchemaAssembly.Assembled a ? a.schema() : null,
                 expansions.synthesizedEdges());

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.boot;
 
+import no.sikt.graphitron.model.derive.MaterializeDependencies;
 import org.h2.jdbcx.JdbcDataSource;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
@@ -114,6 +115,7 @@ public final class GraphitronModelStore implements AutoCloseable {
         Connection connection = connect(url);
         create(connection);
         stamp(connection);
+        deriveDependencies(connection);
         return new GraphitronModelStore(connection, false, null, true, url);
     }
 
@@ -174,6 +176,7 @@ public final class GraphitronModelStore implements AutoCloseable {
             }
             create(connection);
             stamp(connection);
+            deriveDependencies(connection);
             return new GraphitronModelStore(connection, false, directory, false, url);
         } catch (RuntimeException e) {
             // Whatever went wrong is about the file, not the schema: a DDL this module cannot
@@ -431,6 +434,17 @@ public final class GraphitronModelStore implements AutoCloseable {
             return;
         }
         statements.add(sql);
+    }
+
+    /**
+     * The boot-time derivation: rewrites {@code meta_materialize_dependency} from the freshly
+     * created schema's stored view definitions, before any refresh can read it. Runs where the
+     * schema is created rather than on every open, because the rows are a function of the DDL
+     * alone: a warm store persisted them under a stamp naming this same DDL and generator
+     * version, so what it holds is byte for byte what this call would write.
+     */
+    private static void deriveDependencies(Connection connection) {
+        MaterializeDependencies.populate(DSL.using(connection, SQLDialect.H2));
     }
 
     private static void stamp(Connection connection) {

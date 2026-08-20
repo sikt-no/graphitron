@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model;
 
+import no.sikt.graphitron.model.derive.MaterializeDependencies;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.test.FactStores;
 import org.jooq.DSLContext;
@@ -7,11 +8,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.field;
@@ -29,9 +28,10 @@ import static org.jooq.impl.DSL.table;
  * mismatched column list would break it silently in the one direction nobody reads: the target
  * would hold rows, they would simply be the wrong ones.
  *
- * <p>Structural only, over a booted schema with no rows in it. Whether a target's rows actually
- * equal its view's rows is the other half of the claim, and answering it needs a capture rather
- * than a schema, so it sits with the schema gates that already have one.
+ * <p>Structural only, over a booted schema with no captured rows in it; the only rows in play are
+ * the DDL's own registry and the dependency edges the bootstrap derived from it. Whether a
+ * target's rows actually equal its view's rows is the other half of the claim, and answering it
+ * needs a capture rather than a schema, so it sits with the schema gates that already have one.
  */
 class MaterializeRegistryGateTest {
 
@@ -88,27 +88,61 @@ class MaterializeRegistryGateTest {
         });
     }
 
+    /**
+     * The bootstrap has already run {@link MaterializeDependencies#populate} by the time a test
+     * store opens, so this asserts over the populated relation, and failing means the DDL now
+     * registers a cycle: a set of registrations no refresh order can settle, each needing
+     * another's target current first. {@link Materializations#refreshOrder} is what throws,
+     * naming the cycle; the completeness assertion is what the call buys when it does not.
+     */
     @Test
-    @DisplayName("no registered view reads another registration's target")
-    void theRegistryNeedsNoOrderingYet() {
+    @DisplayName("the derived dependency rows are acyclic, so a refresh order exists")
+    void theDerivedDependenciesAdmitARefreshOrder() {
+        withStore(dsl -> assertThat(Materializations.refreshOrder(dsl).registrations())
+            .as("every registration placed exactly once in the refresh order")
+            .containsExactlyInAnyOrderElementsOf(Materializations.registrations(dsl)));
+    }
+
+    @Test
+    @DisplayName("the refresh order respects every derived dependency row")
+    void theRefreshOrderRespectsEveryDependencyRow() {
         withStore(dsl -> {
-            var registrations = Materializations.registrations(dsl);
-            var targets = registrations.stream()
-                .map(Materializations.Registration::targetTableName)
-                .collect(java.util.stream.Collectors.toSet());
-            var offenders = new ArrayList<String>();
-            for (var registration : registrations) {
-                for (String read : closureOf(dsl, registration.sourceViewName())) {
-                    if (targets.contains(read)) {
-                        offenders.add(registration.sourceViewName() + " reads " + read
-                            + ", which is itself a registered target, so the two refreshes are"
-                            + " ordered and the registry records no order");
-                    }
-                }
+            var order = Materializations.refreshOrder(dsl).registrations();
+            var position = new java.util.HashMap<String, Integer>();
+            for (int i = 0; i < order.size(); i++) {
+                position.put(order.get(i).sourceViewName(), i);
             }
-            assertThat(offenders).as("registrations that need an ordering the registry cannot state")
-                .isEmpty();
+            var offenders = new ArrayList<String>();
+            dsl.select(field(name("SOURCE_VIEW_NAME"), String.class),
+                    field(name("DEPENDS_ON"), String.class))
+                .from(table(name("META_MATERIALIZE_DEPENDENCY")))
+                .fetch()
+                .forEach(row -> {
+                    if (position.get(row.value1()) < position.get(row.value2())) {
+                        offenders.add(row.value1() + " refreshes before " + row.value2()
+                            + ", whose target its view reads");
+                    }
+                });
+            assertThat(offenders).as("dependency rows the refresh order violates").isEmpty();
         });
+    }
+
+    /**
+     * The one cross-boundary direction the derived order can check. A registered view reading a
+     * hand-written table is safe because the hand-written producers run first in the capture, and
+     * the population walk sees such a read; what would invert the boundary is a hand-written
+     * table being itself a registered target, which is what this refuses. The other direction, a
+     * hand-written derivation reading a registered target, is jOOQ code rather than a stored view
+     * definition, so no catalog parse can see it; the capture's own stratum comment discloses
+     * that.
+     */
+    @Test
+    @DisplayName("no hand-written derivation is a registered target")
+    void noOrderingNeedCrossesTheHandWrittenBoundary() {
+        withStore(dsl -> assertThat(Materializations.registrations(dsl).stream()
+                .map(Materializations.Registration::targetTableName))
+            .as("hand-written derivations registered as materializer targets")
+            .doesNotContainAnyElementsOf(HAND_WRITTEN));
     }
 
     @Test
@@ -170,51 +204,6 @@ class MaterializeRegistryGateTest {
             .fetch(0, String.class).stream()
             .map(relation -> relation.toLowerCase(Locale.ROOT))
             .toList();
-    }
-
-    /**
-     * Every relation the view reads, transitively, read out of the engine's own view definitions.
-     * A textual scan of the stored SQL rather than a dependency catalog, because H2 publishes no
-     * such catalog; the names it looks for are the observed relation names, so a false positive
-     * would need a relation whose name appears in a view body meaning something else.
-     */
-    private static Set<String> closureOf(DSLContext dsl, String viewName) {
-        var relations = dsl.select(field(name("TABLE_NAME"), String.class))
-            .from(table(name("INFORMATION_SCHEMA", "TABLES")))
-            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
-            .fetch(0, String.class).stream()
-            .map(relation -> relation.toLowerCase(Locale.ROOT))
-            .toList();
-        var reached = new LinkedHashSet<String>();
-        var frontier = new ArrayList<String>();
-        frontier.add(viewName.toLowerCase(Locale.ROOT));
-        while (!frontier.isEmpty()) {
-            String current = frontier.removeLast();
-            String body = viewBody(dsl, current);
-            if (body == null) {
-                continue;
-            }
-            String stripped = body.toLowerCase(Locale.ROOT);
-            for (String candidate : relations) {
-                if (candidate.equals(current) || reached.contains(candidate)) {
-                    continue;
-                }
-                if (Pattern.compile("(?<![\\w.])" + Pattern.quote(candidate) + "(?![\\w])")
-                        .matcher(stripped).find()) {
-                    reached.add(candidate);
-                    frontier.add(candidate);
-                }
-            }
-        }
-        return reached;
-    }
-
-    private static String viewBody(DSLContext dsl, String relationName) {
-        return dsl.select(field(name("VIEW_DEFINITION"), String.class))
-            .from(table(name("INFORMATION_SCHEMA", "VIEWS")))
-            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
-            .and(field(name("TABLE_NAME"), String.class).eq(fold(relationName)))
-            .fetchOne(0, String.class);
     }
 
     private static String fold(String relationName) {

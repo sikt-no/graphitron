@@ -134,8 +134,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       materialization is two relations under one rule and both are derived: the {@code _live}
  *       view stating it, and the canonically named target the materializer refills from that view
  *       on the same cadence. The {@code meta_} rows are derived in the widest sense of the arm,
- *       being authored constants the DDL supplies rather than anything a run reads, which is why
- *       {@code meta_materialize} sits here beside the three rosters. A pure re-projection
+ *       being rows the DDL alone determines rather than anything a run reads, which is why
+ *       {@code meta_materialize} sits here beside the three rosters and why
+ *       {@code meta_materialize_dependency}, whose rows the bootstrap derives from the stored
+ *       view definitions, sits beside it. A pure re-projection
  *       ({@code graphql_directive_site}) registers the base relations it projects and its
  *       agreement is vacuous by construction; a semantic derivation (the {@code intent_} claim
  *       views and the demand stratum) registers with its own anchor instead, which lives with
@@ -472,6 +474,7 @@ class FactCaptureAgreementTest {
         registrations.put("meta_prefixless_relation", Arm.DERIVED);
         registrations.put("meta_relation_family", Arm.DERIVED);
         registrations.put("meta_materialize", Arm.DERIVED);
+        registrations.put("meta_materialize_dependency", Arm.DERIVED);
         registrations.put("javac_diagnostic", Arm.ORACLE);
         registrations.put("walk_type_backing_class", Arm.ORACLE);
         registrations.put("rejection_validation_error", Arm.ORACLE);
