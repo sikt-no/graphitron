@@ -1654,6 +1654,27 @@ public final class SeededStore {
     }
 
     /**
+     * A unique constraint and the ordered columns under it. The sibling of {@link #seedPrimaryKey}
+     * without the table's claim on it, which is the shape a case reaches for when what matters is
+     * that a foreign key can point at something other than the primary key.
+     */
+    public static void seedUniqueKey(DSLContext dsl, String sourceName, String tableSchema,
+                                     String tableName, String constraintName,
+                                     String... columnNames) {
+        seedConstraint(dsl, sourceName, tableSchema, tableName, constraintName, "UNIQUE", null);
+        for (int position = 0; position < columnNames.length; position++) {
+            dsl.insertInto(SQL_CONSTRAINT_COLUMN)
+                .set(SQL_CONSTRAINT_COLUMN.SOURCE_NAME, sourceName)
+                .set(SQL_CONSTRAINT_COLUMN.TABLE_SCHEMA, tableSchema)
+                .set(SQL_CONSTRAINT_COLUMN.TABLE_NAME, tableName)
+                .set(SQL_CONSTRAINT_COLUMN.CONSTRAINT_NAME, constraintName)
+                .set(SQL_CONSTRAINT_COLUMN.POSITION, position)
+                .set(SQL_CONSTRAINT_COLUMN.COLUMN_NAME, columnNames[position])
+                .execute();
+        }
+    }
+
+    /**
      * A foreign key and the ordered columns under it, in one call: the constraint, its own columns
      * in written order, and where it points. The referenced key must already exist, and the columns
      * must too, the constraint's rows being anchored on them.

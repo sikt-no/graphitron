@@ -189,6 +189,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code intent_node_id_decode_hop}, the hop child pinned through the endpoint relation's
  *       navigation column rather than twice), one case per navigation and one per shape that
  *       contributes no hop, the two silences meaning different things being the claim;
+ *       {@code no.sikt.graphitron.model.intent.NodeIdDecodeColumnTest} binds where the decoded
+ *       values land ({@code intent_node_id_decode_column}, and with it the foreign-key pairing
+ *       ({@code intent_foreign_key_column_pair}) and its walk-oriented reading
+ *       ({@code intent_node_id_decode_hop_column}) that the lift walks over), one case per shape
+ *       the lift either carries or drops, the absent local column being the claim rather than the
+ *       present one;
  *       {@code no.sikt.graphitron.rewrite.derive.ChainTerminusTest} binds
  *       {@code intent_field_chain_terminus}, where a {@code @routine} chain lands and what kind of
  *       table that is, and with it the hop view's name-matched arm, which only a chain departing a
@@ -427,6 +433,9 @@ class FactCaptureAgreementTest {
         registrations.put("intent_node_id_instruction", Arm.DERIVED);
         registrations.put("intent_node_id_decode_endpoint", Arm.DERIVED);
         registrations.put("intent_node_id_decode_hop", Arm.DERIVED);
+        registrations.put("intent_node_id_decode_hop_column", Arm.DERIVED);
+        registrations.put("intent_node_id_decode_column", Arm.DERIVED);
+        registrations.put("intent_foreign_key_column_pair", Arm.DERIVED);
         registrations.put("intent_argmapping_pair", Arm.DERIVED);
         registrations.put("intent_argmapping_pair_live", Arm.DERIVED);
         registrations.put("intent_spelled_table_live", Arm.DERIVED);
