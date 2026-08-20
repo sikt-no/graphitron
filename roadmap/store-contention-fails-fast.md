@@ -1,13 +1,13 @@
 ---
 id: R706
 title: "A build that meets a held fact store fails fast and says so"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: dev-loop
 depends-on: []
 created: 2026-08-18
-last-updated: 2026-08-18
+last-updated: 2026-08-20
 ---
 
 # A build that meets a held fact store fails fast and says so
