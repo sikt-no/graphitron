@@ -86,12 +86,12 @@ from an empty one, differing from what the view would have returned, with every 
 target against its view passing on the second run and failing on the first. Getting ahead of that is
 what this item is for.
 
-## Settled at the Spec pass: the order is derived, not authored
+## Settled at the Spec pass: the dependency is derived, and it lives in a relation
 
-The Backlog draft of this item leaned the other way. It proposed an authored edge relation beside
-`meta_materialize`, on the argument that the registry is a statement of intent the gates close
-against observed reality, with an agreement gate comparing the authored edges to the edges a parse
-of the view bodies finds. A principles consultation at this pass inverted that argument, and the
+Three shapes were on the table at this pass. The Backlog draft proposed a *hand-authored* edge
+relation beside `meta_materialize`, on the argument that the registry is a statement of intent the
+gates close against observed reality, with an agreement gate comparing the authored edges to the
+edges a parse of the view bodies finds. A principles consultation inverted that argument, and the
 inversion is decisive rather than a preference.
 
 Trace the failure the authored copy is meant to defend against. Call the parsed edge set P and the
@@ -111,43 +111,60 @@ it from" and attributed the sentence to `fact-model.adoc`; the sentence actually
 roadmap item's body (a transient document, not doctrine), and what `fact-model.adoc` itself says, in
 the materialized-view ruling, is the opposite polarity: a refresh chain whose ordering is
 hand-maintained is a shape the store refuses, the universe of relations coming from the booted store
-and never from reading the DDL. The design below is the one that page sanctions: the order is a
-function of the schema's own catalog, computed from it in one place.
+and never from reading the DDL.
+
+The first Spec draft over-corrected into the third shape: derive the edges but keep them only as a
+Java computation, no relation at all. The settled design pulls back to the middle: the edges are
+derived (the parse is the single source, so the inversion argument cannot apply; there is no second
+spelling to disagree with) *and* they live in a relation the parse populates. Two reasons, both from
+the fact model's own doctrine. A derivation gets a relational home as soon as a second reader asks,
+and here three do: the materializer orders by it, the gate asserts over it, and a person debugging a
+refresh can `SELECT` it instead of re-running a parser in their head. And the dependency is a
+function of the DDL alone, so there is no reason to parse the view bodies on every refresh; parse
+once per booted store, store the rows, and let every refresh read them. The order is a function of
+the schema's own catalog, computed from it in one place, materialized into a relation whose only
+writer is that computation.
 
 ## What it adds
 
-**A single-sourced dependency computation in `graphitron-model` main.**
-`MaterializeRegistryGateTest.closureOf` already computes each registered view's transitive
-dependency closure from the engine's stored view definitions (`INFORMATION_SCHEMA.VIEWS`), reaching
-through unregistered intermediate views and stopping at base tables, which is exactly the reach the
-order needs: a registered target is a table, so it surfaces in the closure of any registered view
-that reads it, directly or through helper views. Promote that computation out of the test and into
-main, beside `Materializations`, as the one answer to "which registrations must refresh before this
-one". Both the materializer and the gates read it; the test-local copy retires. An edge exists from
-registration A to registration B exactly when B's source view's closure contains A's target.
+**`meta_materialize_dependency (source_view_name, depends_on)`, a derived relation with one
+mechanical writer.** Both columns reference `meta_materialize (source_view_name)`, which is that
+table's primary key, so no scaffolding constraint is needed to make the references legal; the pair
+is the primary key, and a `CHECK (source_view_name <> depends_on)` refuses the length-one cycle
+declaratively. A row asserts: the registration named by `source_view_name` has a source view that
+reads, directly or through unregistered intermediate views, the target table of the registration
+named by `depends_on`, so `depends_on` must refresh first. The DDL ships the relation empty with a
+comment saying who writes it; no hand ever inserts a row.
 
-One fidelity question to verify during implementation, with both outcomes acceptable: H2 stores a
-normalized `VIEW_DEFINITION` whose identifiers are quoted, so extracting quoted-identifier tokens
-may be an exact tokenization rather than a word-boundary regex over text. If it is, tokenize and the
-heuristic-scan worry dissolves; if it is not, keep the regex the existing gate uses and state in the
-computation's javadoc that a false positive needs a relation's name appearing in a view body meaning
-something else.
+**The population routine, in `graphitron-model` main beside `Materializations`.** For each
+registration, take the stored view definition from `INFORMATION_SCHEMA.VIEWS`, parse it with jOOQ's
+SQL parser, and collect the table references from the query object model rather than from text; a
+reference that is an unregistered view recurses into that view's definition, a reference that is a
+registered target becomes a row, and base tables end the walk. This replaces the word-boundary regex
+`MaterializeRegistryGateTest.closureOf` scans with today: an AST walk has no false positives to
+disclaim, and a view definition the parser refuses is a loud failure at population rather than a
+silently missing edge. (One thing for implementation to verify, expected to hold: H2's normalized
+`VIEW_DEFINITION` output parses under jOOQ's H2 dialect settings; the gate's fixtures make the
+verification mechanical.) The dependency is a function of the DDL alone, so the routine runs once
+per booted store, before the first refresh, rewriting the relation idempotently in a deterministic
+row order; refreshes and gates read rows and never re-parse.
 
 **A topological refresh order, typed apart from the census.** `Materializations.registrations`
 today returns a `List` whose alphabetical order every caller happens to be indifferent to; after
 this item the order is a correctness property for the refresh and irrelevant to the census readers,
 and one `List` cannot serve both without the contract living only in javadoc. Keep the census
 reader as it is, and add a distinct producer for the ordered sequence (a `refreshOrder` method
-returning its own type is the sketch; the implementer names it). Kahn's algorithm with an
-alphabetical tie-break on `source_view_name`, so that an edge-free registry yields exactly today's
-order and the refresh stays deterministic. Both `refresh` and `refreshAll` consume it.
+returning its own type is the sketch; the implementer names it). Kahn's algorithm over the
+relation's rows with an alphabetical tie-break on `source_view_name`, so that a row-free relation
+yields exactly today's order and the refresh stays deterministic. Both `refresh` and `refreshAll`
+consume it.
 
 **Gates.** The acyclicity enforcer is the build-time gate, in `MaterializeRegistryGateTest`, over
-the derived edges; the materializer additionally refuses a cycle at refresh time with a message
+the populated relation; the materializer additionally refuses a cycle at refresh time with a message
 naming it, but that throw is defense in depth, not the invariant's home, since every store boots the
 same DDL the gate ran against. `theRegistryNeedsNoOrderingYet` retires: the condition it forbids
-becomes the condition the order exists to handle. Its replacement pins the new claims: the derived
-edge set is acyclic, and the refresh order respects every derived edge.
+becomes the condition the order exists to handle. Its replacement pins the new claims: the populated
+relation is acyclic, and the refresh order respects every row.
 
 ## A cycle is expressible, and it is a registration error
 
@@ -168,7 +185,7 @@ The capture-cadence derivation stratum has five producers, ordered today by Java
 directions:
 
 * **A registered view reading a hand-written table** is safe by the existing statement order, the
-  hand-written producers running first, and the derived closure sees such a read, so the safe
+  hand-written producers running first, and the population walk sees such a read, so the safe
   direction is checkable: the gate asserts no *ordering* need crosses the boundary the wrong way,
   which today means nothing more than that the hand-written tables are not registered targets.
 * **A hand-written derivation reading a registered target** would read the previous run's rows, and
@@ -195,17 +212,20 @@ registration, with only the registration sequence reordered.
 * **`UNIQUE` on `meta_materialize.target_table_name`**, on its own merits rather than as
   scaffolding: two registrations filling one target is nonsense and nothing currently rejects it.
 * **The `meta_materialize` table comment's closing sentence** promises "an ordering column is the
-  additive change that lifts it"; this item lifts it without one, so the sentence is rewritten to
-  say the order is derived from the registered views' own bodies and where the computation lives.
+  additive change that lifts it"; this item lifts it with a sibling relation instead, so the
+  sentence is rewritten to point at `meta_materialize_dependency` and say who populates it.
 * **`fact-model.adoc`'s materialized-view ruling** counts hand-maintained refresh ordering as a
   cost of materialization. The ruling's objection was to an ordering with no derivable source; the
   reduction's order is single-sourced from the catalog, and the page gains the sentence that
   reconciles the two so it stops reading as refusing what the store does.
-* **No new relation lands.** The derived design needs no edge table and no edge view (a relational
-  form was considered; transitive reach through unregistered intermediate views is what a plain SQL
-  view cannot express cleanly, and a recursive one buys nothing over the Java computation the gate
-  already trusts). So no census arm, no comment budget, no `meta_` charter edit, no
-  partition-dimension case: the schema footprint is one constraint and one comment edit.
+* **`meta_materialize_dependency` pays the usual residency costs.** The census arm, the comment
+  budget, and the `meta_` charter sentence, which should name it as the family's machine-written
+  resident: unlike its authored siblings its rows come from one routine and a hand edit is a bug,
+  the same standing `meta_relation_family`'s comment claims for its derivation, here as a table
+  because transitive reach through unregistered intermediate views is not a plain SQL view's to
+  express. Rows carry no `graph_name` and are whole-relation by nature, DDL-derived rather than
+  capture-derived, so the partition question does not arise; the determinism ratchet sees identical
+  rows run to run because the population order is fixed.
 
 ## Tests
 
@@ -214,28 +234,33 @@ instrument, since zero dependent registrations exist in production DDL and this 
 adds none. A scratch store can `CREATE` ordinary tables and views and `INSERT` rows into
 `meta_materialize`, which is enough to pin:
 
+* population itself: the parse finds the direct edge, finds the edge that runs through an
+  unregistered intermediate view (the transitivity the walk exists for), writes no row for a view
+  reading only base tables, and rewrites identical rows when run twice on the same store;
 * a dependent target refreshed after its prerequisite, observed through rows (the dependent's rows
   derive from the prerequisite's fresh rows, not its stale ones), in both `refresh` and
   `refreshAll`;
-* an edge found through an unregistered intermediate view, which is the transitivity the closure
-  exists for;
 * a registered cycle failing, with the cycle named;
-* an edge-free registry refreshing in exactly today's alphabetical order.
+* a row-free relation refreshing in exactly today's alphabetical order.
 
 If a fixture reaches for temporary tables, say `LOCAL` explicitly; H2's bare
 `CREATE TEMPORARY TABLE` defaults to `GLOBAL`, which shares rows across attached sessions.
 
 ## Deliverables
 
-1. The dependency computation, promoted from the gate test into `graphitron-model` main as the
-   single source, with the tokenization question above verified and recorded in its javadoc.
-2. The typed refresh order in `Materializations`, Kahn with alphabetical tie-break, consumed by
-   `refresh` and `refreshAll`, refusing a cycle defensively.
-3. The gates: acyclicity and order-respects-edges replacing `theRegistryNeedsNoOrderingYet`; the
-   stratum disclosure sentence on `FactCapture`'s derivation comment.
-4. The `UNIQUE` constraint, the `meta_materialize` comment rewrite, and the `fact-model.adoc`
-   reconciliation.
-5. The synthetic-registration tests above.
+1. The DDL: `meta_materialize_dependency` with its two references onto the registry's key, the
+   composite primary key, the self-edge `CHECK`, its comment, plus the `UNIQUE` on
+   `meta_materialize.target_table_name` and the registry comment rewrite.
+2. The population routine in `graphitron-model` main, jOOQ-parser based, transitive through
+   unregistered views, idempotent and deterministic, run once per booted store before the first
+   refresh; the gate test's regex `closureOf` retires into it.
+3. The typed refresh order in `Materializations`, Kahn over the relation's rows with alphabetical
+   tie-break, consumed by `refresh` and `refreshAll`, refusing a cycle defensively.
+4. The gates: acyclicity and order-respects-rows replacing `theRegistryNeedsNoOrderingYet`, the new
+   relation's census and charter arms, and the stratum disclosure sentence on `FactCapture`'s
+   derivation comment.
+5. The `fact-model.adoc` reconciliation.
+6. The synthetic-registration tests above.
 
 ## What this item is not
 
@@ -252,5 +277,5 @@ the second sentence here as "changes no timing itself" rather than as "no timing
 
 * `theRegistryNeedsNoOrderingYet` (a `MaterializeRegistryGateTest` case): the no-dependency claim it
   pinned stops being an invariant and becomes the empty case of the derived order.
-* The test-local `closureOf` in `MaterializeRegistryGateTest`, absorbed into the promoted
-  computation.
+* The test-local `closureOf` in `MaterializeRegistryGateTest`, and with it the word-boundary regex
+  scan of `VIEW_DEFINITION` text, both absorbed into the jOOQ-parser population routine.
