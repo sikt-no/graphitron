@@ -42,10 +42,10 @@ private in-memory H2 and timing each.
 
 The schema is 1894 statements and boots in about 0.21 to 0.38 seconds. The alias is **64.5ms of a
 212ms boot**, which is 30% of the boot and seven and a half times the next most expensive statement
-(a `CREATE TABLE` at 8.5ms). The cost does not amortise: five consecutive alias-only boots in one
-warm JVM measured 85.9, 65.9, 62.9 and 51.1ms, because each store gets its own compilation. The same
-alias bound to a compiled method measured 1.7 to 8.4ms, and returned identical values on a path and
-on null.
+(a `CREATE TABLE` at 8.5ms). The cost does not amortise, each store getting its own compilation: four
+consecutive alias-only boots in one JVM, after a cold first at 721ms that pays H2's class loading,
+measured 85.9, 65.9, 62.9 and 51.1ms. The same alias bound to a compiled method measured 1.7 to
+8.4ms, and returned identical values on a path and on null.
 
 The boot count is what turns 60 milliseconds into a minute. `graphitron-model`'s tests alone open a
 store 152 times, once per `withSeededStore` call, and the module's summed test class time is 41.3
@@ -53,7 +53,7 @@ seconds; with the alias repointed it is 30.7. Across the reactor every module th
 pays it, and so does every consumer: one boot per `graphitron:generate`, one per language-server
 session, one per MCP server start.
 
-Measured end to end, `mvn install -Plocal-db` green on all 14 modules and 3720 tests:
+Measured end to end, `mvn install -Plocal-db` green on all 14 modules and 5970 tests:
 
 | | Build | `graphitron` | `graphitron-model` | `graphitron-mcp` | `graphitron-lsp` | `docs` |
 |---|---|---|---|---|---|---|

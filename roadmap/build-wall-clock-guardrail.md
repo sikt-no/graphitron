@@ -24,8 +24,10 @@ body is deleted when R732 reaches Done.
 ## A third measurement pass has run, and it is the current word
 
 Two passes are recorded below this section. Read this one first: it was taken after R742 landed,
-which moved the cost again, and it settles two of the slices below with numbers rather than
-reordering them. Where this section and a later one disagree, this one is later.
+which moved the cost again, and unlike them it settles slices with numbers rather than reordering
+them. One is refuted, one loses its performance case, one is promoted from a footnote, and one that
+neither earlier pass considered is now the largest thing here. Where this section and a later one
+disagree, this one is later.
 
 All figures were taken on one 4 vCPU, 15 GB sandbox against a warm local repository, with
 sequential `mvn install -Plocal-db`. Ratios transfer between machines and absolute seconds do not.
@@ -48,6 +50,10 @@ The second-pass column is the point. Every module except `graphitron-sakila-exam
 seconds of where it was when the build took 706 seconds; that module alone fell from 410.6s to 93.6s,
 and it is what R742 bought. So the build is now flat, and an item that wants to take a big slice out
 of it has to find something every module pays rather than one class that is slow.
+
+One caveat on reading that table too closely: `graphitron-maven-plugin` measured 39.6s, 46.1s, 30.8s
+and 32.0s across four runs of identical work, its integration tests forking Maven builds of their own.
+Treat any single figure for it as ±8s, and do not attribute a change to it without repeating the run.
 
 `GeneratorDeterminismTest` is 18.99s (R742's landed 18.13s, remeasured here) and
 `FixtureWarningsGateTest`, which is one full-fixture generator run and nothing else, is 2.862s.
@@ -107,6 +113,14 @@ Per read, and this is the part that reorders the slices below: the defect read g
 72.4ms, the two projection reads 601.0ms to 36.2ms, the key-column loop 415.6ms to **1.3ms**, and the
 type-id read 213.6ms to 1.7ms. The registration's own refresh costs 59ms per run, which is the whole
 of the new cost.
+
+**One small thing the mechanism does per refresh, which matters more as the store gets faster.**
+`Materializations` decides a target's refresh shape by asking `INFORMATION_SCHEMA.COLUMNS` whether it
+carries a `graph_name` column, once per registration per refresh. The instrument prices that at about
+13ms a call: 26.5ms per run at R742's two registrations, 79.9ms across five runs at three. It is 1% of
+a 2.55 second run and 7% of a 0.40 second one, and it grows linearly with the registry. The answer is
+a property of the schema and invariant for a store's lifetime, so it wants computing once rather than
+per refresh. Small, but it belongs to whoever touches the materializer next, which is R746.
 
 **The metric under-predicts a registration's value, badly, and the report should say so.** Linear in
 instantiations removed, the projection was 1.18 seconds per run; the measurement was 2.15. Removing a
@@ -206,11 +220,11 @@ because it is one line of DDL and touches nothing else here.
 
 The fact schema is 1894 statements and boots in about 0.21 to 0.38 seconds. One statement is 64.5ms
 of a 212ms boot, seven times the next most expensive: `CREATE ALIAS canonical_uri AS '<inline Java
-source>'`, which H2 compiles with javac on every boot and never amortises (five consecutive
-alias-only boots in one JVM: 85.9, 65.9, 62.9, 51.1ms). The same alias bound to a compiled static
-method costs 1.7 to 8.4ms.
+source>'`, which H2 compiles with javac on every boot and never amortises (four warm alias-only boots
+in one JVM: 85.9, 65.9, 62.9, 51.1ms). The same alias bound to a compiled static method costs 1.7 to
+8.4ms.
 
-Measured end to end, green on a full `mvn install -Plocal-db`: **410.1s to 367.4s**, 42.7 seconds and
+Measured end to end, green on a full `mvn install -Plocal-db`, 5970 tests: **410.1s to 367.4s**, 42.7 seconds and
 10% of the build, landing exactly where the theory says it should (`graphitron` −14.3s,
 `graphitron-model` −12.7s, `graphitron-mcp` −8.2s, `graphitron-lsp` −7.9s, `docs` −5.7s,
 `roadmap-tool` −1.8s; `WarmStartRefreshTest` −6.6s, `PersistentStoreTest` −5.0s,
