@@ -1,7 +1,7 @@
 ---
 id: R742
 title: "The determinism ratchet costs 229 seconds: too many generator runs, and each run too expensive"
-status: Ready
+status: In Review
 bucket: dx
 priority: 2
 theme: tooling
@@ -14,66 +14,49 @@ last-updated: 2026-08-20
 
 ## Where this item stands
 
-**Sent back from the Done gate for one fix.** Everything below describes what shipped and is
-accurate; the delivery is otherwise clean and the reviewer's findings are in the next section. One
-gate this item promised was delivered vacuous, and that is the whole of the rework. Read
-**Rework from the Done gate** first, then the shortcut below for what landed.
+**Reworked and back for the Done gate.** The reviewer sent this back for one defect, a gate that
+asserted nothing; it is fixed and the fix is verified by the mutation the reviewer used to expose it.
+Everything else in the delivery was verified clean and should not be re-litigated. Read **Rework from
+the Done gate** for the one change since the last pass, then the shortcut below for what landed.
 
 ## Rework from the Done gate
 
-*Independent-session In Review review, 2026-08-20. Full reactor green under `mvn install -Plocal-db`,
-14/14 modules. No code-string assertions on generated method bodies anywhere in the delivered tests.
-No `docs/` changes, so the user-facing-doc check does not apply; no `Retired vocabulary` section, so
-the retirement sweep does not apply. One defect holds the gate.*
+*Independent-session In Review review, 2026-08-20, verdict rework. Full reactor green, 14/14 modules.
+No code-string assertions on generated method bodies. No `docs/` changes and no `Retired vocabulary`
+section, so neither the user-facing-doc check nor the retirement sweep applied. One defect held the
+gate; the reviewer's own list of what they verified clean is retained below.*
 
-**`FactSchemaGateTest.everyMaterializedTargetEqualsItsRule` asserts nothing.** Its fixture produces
-zero rows for both registered relations, so every assertion in it compares an empty list to an empty
-list. Measured directly, by printing the counts the case then asserts on:
+**The finding, which was correct.** `FactSchemaGateTest.everyMaterializedTargetEqualsItsRule`
+asserted nothing: that class's `FIXTURE` declares no `argMapping`-bearing directive and the capture
+attached no jOOQ catalog, so both registered relations produced zero rows and every assertion in the
+case compared an empty list to an empty list. The reviewer proved it by mutation rather than by
+inference, replacing the per-graph `DELETE` in `Materializations.refreshPartition` with an unscoped
+one so that capturing any graph wipes every sibling's rows, and finding all twenty cases still green.
+That is precisely the failure the case's javadoc claims to catch. It is also the same defect
+deliverable 5 was filed to fix elsewhere in this item, a javadoc asserting coverage its class does
+not have, which is what made it worth a cycle rather than a follow-up.
 
-```
-intent_argmapping_pair  own-target=0  own-view=0  sibling-target=0
-intent_spelled_table    own-target=0  own-view=0  sibling-target=0
-```
+**What was done.** The case now captures a fixture written for it, `MATERIALIZED_FIXTURE`, carrying a
+`@table` spelling for `intent_spelled_table` to resolve against the catalog and a `@routine` with an
+`argMapping` so `intent_argmapping_pair` has an arm that fires; the capture attaches `fixtureCatalog()`,
+without which the spelling resolves against an empty census. Both graphs are populated, because an
+empty sibling partition cannot tell "left the sibling alone" from "there was nothing to disturb". The
+case asserts non-emptiness per registration before asserting equality, rather than in aggregate, so a
+third registration whose view this fixture happens to leave empty fails here instead of quietly
+contributing nothing. The javadoc records the vacuity as the reason the fixture and the catalog are
+both load-bearing, so the next reader cannot simplify either away.
 
-Mutation-checked rather than inferred: replacing the per-graph `DELETE` in
-`Materializations.refreshPartition` with an unscoped one, so that capturing any graph wipes every
-sibling's rows, leaves all 20 cases of `FactSchemaGateTest` green. That is exactly the failure the
-case's own javadoc names ("a refresh scoped to the wrong partition") and exactly the one its second
-assertion claims to catch.
-
-Why the fixture yields nothing: `FIXTURE` in that class declares no `@routine`, `@service`,
-`@condition` or `@reference` application, so `intent_argmapping_pair_live` has no arm that fires; and
-the capture attaches no jOOQ catalog, so `sql_table` is empty and `intent_spelled_table_live`'s join
-against the catalog census returns nothing even though the fixture does write `@table(name: "film")`.
-
-This is a contract clause rather than a nice-to-have. The gate list in *Gates the change has to
-clear* names it as "the equality the whole design rests on and the one thing no amount of prose can
-substitute for", and the case's javadoc tells the next reader it is "checked against a real capture".
-It is the same defect this item's own deliverable 5 was filed to fix on `GeneratorDeterminismTest`:
-a javadoc asserting coverage the class does not have. Introducing a fresh one while retiring that one
-is what makes it worth a cycle rather than a follow-up.
-
-The behaviour itself is not unpinned, which is why this is one fix and not a redesign. The same
-mutation fails `TypeBackingTest.aGraphIsBackedAndContestedOnItsOwnRowsOnly` and
-`ResolvedNodeKeyColumnTest.aSiblingGraphsPinnedListDoesNotAnswerHere`, so the seeded fixture catches
-a partition-scoping break incidentally. What is missing is coverage at capture scale, under the gate
-that claims to provide it, and coverage that a third or fourth registration inherits: a registration
-whose view is empty under this fixture gets nothing from this gate and no signal that it got nothing.
-
-What closes it, and it should be small:
-
-* give the case a capture that actually populates both registered relations, or move it to a fixture
-  that already has one, and
-* assert non-emptiness before asserting equality, so the case cannot silently return to vacuity when
-  a later registration or fixture edit empties it. Per registration rather than in aggregate, since
-  the point is that each registration is covered.
-
-Re-run the mutation above at the end; a gate that survives an unscoped `DELETE` has not landed.
+**Re-run of the reviewer's mutation, which is the check that matters.** With the unscoped `DELETE`
+in place the case now fails on `capturing 'own' must leave the sibling's partition of
+intent_argmapping_pair alone`. Restored, all twenty cases pass. A gate that survives that mutation
+has not landed; this one no longer does.
 
 ### Not blocking, and not asked for here
 
 Filed observations rather than rework. None of these is a contract clause and each is a reasonable
-follow-up for whoever is next in the area.
+follow-up for whoever is next in the area. *What became of each is noted inline; the two that were a
+line of work are done, the rest are deliberately left rather than folded into a rework diff a
+reviewer has to re-check.*
 
 * `docs/architecture/explanation/fact-model.adoc` never learns the registry. The page already
   sanctions the shape this item shipped (`INSERT INTO derived SELECT ... FROM <view>`), which is why
@@ -82,17 +65,22 @@ follow-up for whoever is next in the area.
   and no authored page under `docs/` mentions `meta_materialize`, the `_live` convention, or the
   refresh entry point. `Materializations`'s class javadoc points a contributor at that page for "the
   contributor-facing rationale". The item's contract named only the three DDL paragraphs and all
-  three moved, so this is a gap rather than a miss.
+  three moved, so this is a gap rather than a miss. **Filed as R757.**
 * Each `_live` view carries one mechanically-worded column comment per column, twenty in all, whose
   only content is a redirect to the target's comment. The redirect is the right call (one home for
   the meaning) but the comment gate is what forces the twenty lines, and it could instead learn that
-  a registered source view inherits its target's column comments.
+  a registered source view inherits its target's column comments. **Left**: teaching the gate an
+  inheritance rule is a change to the gate, not to this item.
 * `GeneratorDeterminismTest.readAll` survives only to support an `isNotEmpty()` check in
-  `@BeforeAll`, reading 798 files to answer a question `index()` already answers.
+  `@BeforeAll`, reading 798 files to answer a question `index()` already answers. **Left**, and
+  worth someone's five minutes.
 * `Materializations.graphKeyed` queries `INFORMATION_SCHEMA` once per registration per refresh; the
-  answer is a property of the schema and could be resolved once.
+  answer is a property of the schema and could be resolved once. **Left**: two registrations make
+  it two extra catalog reads per capture, which does not register against the reads this item
+  removed.
 * The `FactSchemaGateTest` additions spell `java.util.List`, `org.jooq.impl.DSL.table` and
-  `Materializations` fully qualified inline where the file imports elsewhere.
+  `Materializations` fully qualified inline where the file imports elsewhere. **Fixed**, the case
+  having been rewritten anyway.
 
 ### Verified and not to be re-litigated next cycle
 
@@ -109,7 +97,9 @@ follow-up for whoever is next in the area.
   trunk for two). The item's own caveat that absolute seconds do not transfer between machines holds;
   the 16.24s figure was not reproduced exactly and does not need to be.
 * One cosmetic drift, not worth a commit on its own: the item reports `FixtureWarningsGateTest` at
-  2.53s where commit `1f87258`'s message says 2.63s.
+  2.53s where commit `1f87258`'s message says 2.63s. *Both are real, from different full-reactor
+  runs; the item carries the later one, which is the run every other landed figure comes from. The
+  commit message is history and stays as written.*
 
 **Closing this item also owes one piece of bookkeeping.** `roadmap/materialization-dependency-order.md`
 (R746) carries `depends-on: [determinism-ratchet-run-count]`, and the roadmap validator fails the

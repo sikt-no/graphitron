@@ -9,7 +9,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import no.sikt.graphitron.model.derive.Materializations;
+import org.jooq.DSLContext;
+import org.jooq.Record;
+
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Locale;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SUPERGRAPH;
@@ -29,6 +37,7 @@ import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.jooq.impl.DSL.asterisk;
 import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.max;
@@ -88,6 +97,26 @@ class FactSchemaGateTest {
         }
 
         union Searchable = Film
+        """;
+
+    /**
+     * The slice the materialization gate needs, which is a different slice: a table spelling for
+     * {@code intent_spelled_table} to resolve against the catalog, and a {@code @routine}
+     * application carrying an {@code argMapping} so {@code intent_argmapping_pair} has an arm that
+     * fires. Separate from {@code FIXTURE} because the structural gates above want breadth of
+     * declaration sites, and this one wants two specific derived relations to be non-empty.
+     */
+    private static final String MATERIALIZED_FIXTURE = """
+        type Query {
+          films: [Film!]!
+          filmsForActor(actorId: ID!, minLength: Int): [Film!]!
+            @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+        }
+
+        type Film @table(name: "film") {
+          filmId: ID! @field(name: "film_id")
+          title: String
+        }
         """;
 
     @Test
@@ -613,65 +642,87 @@ class FactSchemaGateTest {
      * scoped to the wrong partition, a delete clearing more or less than the insert refills, a
      * target whose column list drifted from its view's. So it is checked against a real capture.
      *
-     * <p>Two graphs, borrowing the fusion fixture above for the same reason it has two: the refresh
-     * is scoped per graph, and one graph cannot tell "refilled this graph" from "refilled
-     * everything". The structural half of the registry's gates needs no capture at all and lives in
-     * the store's own module, beside the DDL it closes over.
+     * <p>Two graphs, both populated, because the refresh is scoped per graph: one graph cannot tell
+     * "refilled this graph" from "refilled everything", and an unpopulated sibling cannot tell
+     * "left the sibling alone" from "there was nothing to disturb". The fixture and the catalog are
+     * both load-bearing for the same reason, and the non-emptiness assertions below are what say so
+     * out loud. An earlier version of this case asserted over two empty partitions and survived an
+     * unscoped {@code DELETE} in the materializer; the assertions are per registration rather than
+     * in aggregate so that a third registration whose view this fixture leaves empty fails here
+     * instead of quietly adding nothing.
+     *
+     * <p>The structural half of the registry's gates needs no capture at all and lives in the
+     * store's own module, beside the DDL it closes over.
      */
     @Test
     @DisplayName("a registered target holds its rule's rows, under its own graph only")
-    void everyMaterializedTargetEqualsItsRule(@TempDir Path tmp) throws java.io.IOException {
-        Path siblingDir = java.nio.file.Files.createDirectories(tmp.resolve("sibling"));
-        Path ownDir = java.nio.file.Files.createDirectories(tmp.resolve("own"));
+    void everyMaterializedTargetEqualsItsRule(@TempDir Path tmp) throws IOException {
+        Path siblingDir = Files.createDirectories(tmp.resolve("sibling"));
+        Path ownDir = Files.createDirectories(tmp.resolve("own"));
         try (var store = GraphitronModelStore.open()) {
             var dsl = store.dsl();
-            FactCapture.capture(dsl, new FactCapture.GraphIdentity("sibling", siblingDir),
-                FactCapture.SubjectConfig.none(),
-                CapturedStore.registryOf(siblingDir, "type Query { actors: [String!]! }"),
-                CapturedStore.attributionOf(siblingDir));
+            captureMaterializationFixture(dsl, "sibling", siblingDir);
 
-            var registrations = no.sikt.graphitron.model.derive.Materializations.registrations(dsl);
+            var registrations = Materializations.registrations(dsl);
+            assertThat(registrations).as("registrations to check").isNotEmpty();
             var siblingBefore = registrations.stream()
                 .map(r -> materializedRows(dsl, r.targetTableName(), "sibling"))
                 .toList();
 
-            FactCapture.capture(dsl, new FactCapture.GraphIdentity("own", ownDir),
-                FactCapture.SubjectConfig.none(), CapturedStore.registryOf(ownDir, FIXTURE),
-                CapturedStore.attributionOf(ownDir));
+            captureMaterializationFixture(dsl, "own", ownDir);
 
             for (int i = 0; i < registrations.size(); i++) {
                 var registration = registrations.get(i);
-                assertThat(materializedRows(dsl, registration.targetTableName(), "own"))
+                String target = registration.targetTableName();
+                String source = registration.sourceViewName();
+
+                assertThat(siblingBefore.get(i))
+                    .as("the fixture must populate %s, or this case asserts nothing about it", target)
+                    .isNotEmpty();
+                assertThat(materializedRows(dsl, target, "own"))
                     .as("%s should hold exactly what %s computes for the capturing graph",
-                        registration.targetTableName(), registration.sourceViewName())
-                    .isEqualTo(materializedRows(dsl, registration.sourceViewName(), "own"));
-                assertThat(materializedRows(dsl, registration.targetTableName(), "sibling"))
-                    .as("capturing 'own' must leave the sibling's partition of %s alone",
-                        registration.targetTableName())
+                        target, source)
+                    .isNotEmpty()
+                    .isEqualTo(materializedRows(dsl, source, "own"));
+                assertThat(materializedRows(dsl, target, "sibling"))
+                    .as("capturing 'own' must leave the sibling's partition of %s alone", target)
                     .isEqualTo(siblingBefore.get(i));
             }
         }
     }
 
     /**
+     * A capture that populates every registered target. The catalog is what
+     * {@code intent_spelled_table} resolves its table spellings against, and the {@code @routine}
+     * application is what gives {@code intent_argmapping_pair} an arm that fires; without either,
+     * the case above passes over empty relations.
+     */
+    private static void captureMaterializationFixture(DSLContext dsl, String graphName,
+                                                      Path directory) {
+        FactCapture.capture(dsl, new FactCapture.GraphIdentity(graphName, directory),
+            FactCapture.SubjectConfig.none(),
+            CapturedStore.registryOf(directory, MATERIALIZED_FIXTURE),
+            CapturedStore.attributionOf(directory),
+            fixtureCatalog(), List.of());
+    }
+
+    /**
      * A relation's rows for one graph, sorted, as strings. Content rather than order: a target is a
      * bag its view fills, and neither side promises an order.
      */
-    private static java.util.List<String> materializedRows(org.jooq.DSLContext dsl,
-                                                           String relationName, String graphName) {
-        var relation = org.jooq.impl.DSL.table(
-            name(relationName.toUpperCase(java.util.Locale.ROOT)));
+    private static List<String> materializedRows(DSLContext dsl, String relationName,
+                                                 String graphName) {
+        var relation = table(name(relationName.toUpperCase(Locale.ROOT)));
         var graph = field(name("GRAPH_NAME"), String.class);
         boolean partitioned = dsl.fetchExists(dsl.selectOne()
             .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
             .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
-            .and(field(name("TABLE_NAME"), String.class)
-                .eq(relationName.toUpperCase(java.util.Locale.ROOT)))
+            .and(field(name("TABLE_NAME"), String.class).eq(relationName.toUpperCase(Locale.ROOT)))
             .and(field(name("COLUMN_NAME"), String.class).eq("GRAPH_NAME")));
-        var query = dsl.select(org.jooq.impl.DSL.asterisk()).from(relation);
+        var query = dsl.select(asterisk()).from(relation);
         var rows = partitioned
-            ? query.where(graph.eq(graphName)).fetch(org.jooq.Record::toString)
-            : query.fetch(org.jooq.Record::toString);
+            ? query.where(graph.eq(graphName)).fetch(Record::toString)
+            : query.fetch(Record::toString);
         return rows.stream().sorted().toList();
     }
 
