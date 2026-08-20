@@ -26,6 +26,23 @@ dissolves the leaf zoo, because the generator is the zoo's final consumer.
 
 ## Goal and strategy
 
+**What changes for a consumer of graphitron when this lands: nothing, and that is the gate.** Every
+half below holds behaviour exactly, byte-identical generated output for the emit tiers and identical
+message, location and severity for the validator. A schema author sees the same files and the same
+errors the day after as the day before. Anyone reading this item for a user-visible outcome should
+stop here; the payoff is entirely internal, and stating it plainly is the only honest way to justify
+the largest item on the roadmap.
+
+The payoff is the cost of the next change. Today a fact about a coordinate can be reached two ways,
+joined onto a command row or read off the leaf the emitter happens to be holding, and only one is
+right. Both are reachable, nothing forbids the wrong one, and a recent design took it: a feature
+routed a fact into `LaunchSource.RoutineChain`, a carrier its own motivating case never reaches,
+because the emitter it actually needed reads a leaf directly. That is not a mistake anyone can be
+careful enough to avoid at 131 dispatch sites; it is what a missing boundary produces. After this
+item there is one way, because the other one does not compile. The same move retires roughly 50,000
+lines of walk, deletes a taxonomy of 72 leaves that every new field kind currently has to be
+threaded through, and puts the emit path under the same structural guard `render` already has.
+
 The migration is systematic and component-at-a-time, not a strangler: the language server came off
 the leaf model, then the MCP, and the generator is what remains. When it is done, the
 classification walk and the sealed leaf hierarchies it mints are deleted. Four points fix the
@@ -358,6 +375,21 @@ do, stated here because the trap is exactly the shape of the code being converte
 * **Materialization is a measured escalation, not a default.** The MCP moved one closure to capture
   cadence after measuring the recursive form; everything else stayed views. A producer that finds a
   read slow says so with a number before anything moves cadence.
+* **Nothing here sees the cost of reading one view from seven producers, and that is a real hole.**
+  The two rules above compose badly and the item should say so rather than discover it. "Planners
+  share relations, not queries" makes duplicated query text the accepted cost, so several producers
+  legitimately read the same derived view; "deep derived views are read once and paired on their
+  key" then says each of those reads evaluates the view whole. A view carrying a window function or
+  a recursive term therefore gets evaluated once per producer that wants it, and the per-producer
+  statement-count pin below is blind to it by construction: seven producers reading one view each is
+  a count that is a function of each producer's arms and not of the corpus, so every pin stays
+  green while the plan tier's wall clock multiplies. This is the same species of defect as the MCP's
+  twenty-four seconds, one tier up and split across files so no single reviewer sees it. The
+  per-producer pin is necessary and not sufficient; the aggregate instrument is a plan-tier wall
+  clock, which `roadmap/build-wall-clock-guardrail.md` (R733) owns and which is still Backlog. Until
+  that guardrail exists, each planner increment states its own contribution to plan-tier wall clock
+  as a number in its commit message, and a producer that adds a read of a view another producer
+  already reads says so explicitly, because that is the pairing no gate here can see.
 * **The pin is a counted test, not a benchmark.** The LSP's enforcement is
   `DeclarationHoverStatementCountTest`: an execute listener asserting statement counts, no timing,
   no fixture scale, because the N+1 was invisible to every behavioural assertion (a fan-out into
@@ -400,8 +432,13 @@ than a modelling problem, which is why one item owns them.
 Four success criteria, and every deliverable is a step toward one of them:
 
 1. `EmitPlan.produce` takes a `StoreHandle` and no `GraphitronSchema`.
-2. No emitter reads a classification leaf, and `PackageImportDirectionTest` covers the emitters'
-   packages the way it already covers `render`.
+2. No emitter reads a classification leaf **and no emitter calls a planner**, with
+   `PackageImportDirectionTest` covering the emitters' packages the way it already covers `render`.
+   The second clause is not redundant: the tier rule in the opening sentence forbids both, the body
+   names five live sites where an emitter invokes a producer (one of them handing it the whole
+   model), and a criterion about leaf *reads* alone would leave the inversion standing. The
+   emitters' positive dial therefore excludes `plan`, which is also what makes the criterion
+   checkable.
 3. Validation derives from the store: a view where SQL can state the check, a query-then-insert
    where it cannot, the error surface reading their rows either way, with the minted-name
    collision checks as the one stated exception (settled in the validator half).
@@ -441,12 +478,17 @@ and they sit at opposite ends of the work:
   `ProjectedKeyReads` / `ProjectedKeyHost`. Its shape is what every step below repeats: read the
   relation, transform the shape, no lookup and no throw. Read its commit before starting the next
   producer.
-* **Sequenced outside the order: routine writes** (`RoutineWriteCommands`, 134 lines, 11 sites). Not
-  converted: `produce(GraphitronSchema, String)` still takes the schema, with a `produceWithoutSchema`
-  overload beside it, the same transitional pair `LauncherCommands` carries. It moves with the
-  routine-write family's emitter stage rather than by relation size, that family's migration being
-  already scoped as a worked example on another item (see "Relationship to other items"); whichever
-  lands first, the producer and its emitter move together.
+* **Inside the fetcher family, not beside it: routine writes** (`RoutineWriteCommands`, 134 lines,
+  11 sites). Not converted: `produce(GraphitronSchema, String)` still takes the schema, with a
+  `produceWithoutSchema` overload beside it, the same transitional pair `LauncherCommands` carries.
+  An earlier draft sequenced this producer outside the order, on the ground that it moves with the
+  routine-write family's emitter stage, which another item had scoped. That pointer is now dangling:
+  the other item (R668) is Done, its stage landed the *emitter* half, and nothing in this item's own
+  ordering schedules the producer. The tree settles it. `TypeFetcherGenerator` calls
+  `RoutineWriteCommands` at three of the five planner-inversion sites named in the emitter half
+  below, one of them passing the whole schema, so this producer's conversion and the fetcher
+  family's cutover are the same piece of work and are sequenced together with it. It is not a
+  separate step and not an exception to the order.
 
 The six in between, in dependency order, because later relations reference the earlier ones' rows.
 Line and site counts read off trunk `7f2ff35`, the sites counted under `CommandSeamRatchetTest`'s own
@@ -518,8 +560,14 @@ fetcher family, which is the item's real weight and subsumes what remains of the
 through `RootLauncherRenderer` and its fragments, but `TypeFetcherGenerator` still emits the
 `DataFetcher` entry points that wrap them, drains the per-class scatter helpers
 (`SplitRowsMethodEmitter`) and the DataLoader registration wrappers (`RowsMethodCall`,
-`DataLoaderFetcherEmitter`), and calls `LauncherCommands.produceWithoutSchema` mid-emission, an
-emitter invoking a planner, which the tier rule forbids. That host tier is not a separate family;
+`DataLoaderFetcherEmitter`), and invokes planners mid-emission, which the tier rule forbids. That
+inversion is wider than an earlier draft of this section said, and the width is what puts routine
+writes inside this family rather than beside it: `TypeFetcherGenerator` calls into *two* producers at
+*five* sites, `LauncherCommands.produceWithoutSchema` twice and `RoutineWriteCommands` three times,
+and one of the three is `produce(schema, outputPackage)`, an emitter handing a planner the whole
+walked model. So the emitter half cannot retire the inversion without converting
+`RoutineWriteCommands`, and the planner half cannot convert `RoutineWriteCommands` without the
+fetcher family's cutover deleting these call sites. That host tier is not a separate family;
 it is part of the fetcher family's cutover. The fetcher family's membership rows exist
 (`TypeUnitCommand.FetchersUnit`), but no relation says what a coordinate's fetcher method body is,
 for the read entry points or the DML write statements alike, so the per-coordinate fetcher command
@@ -617,11 +665,12 @@ deletion lands: the sealed classification taxonomy in `rewrite.model`, `Graphitr
 of tens of thousands of lines. Deletion is not a big bang; it falls out family by family as each
 last reader moves, and the final commits remove what nothing references.
 
-Five obligations are owed before the last cut, named now so nobody discovers them at the end:
+Four obligations are owed before the last cut, named now so nobody discovers them at the end. A
+fifth is listed first and is already discharged, kept because it is the shape the other four are
+read against:
 
-* **The already-migrated detection's domain gate is discharged; R743 did it.** This obligation is
-  settled and is kept here as the discharged case, because it is the shape the remaining four are
-  read against. `intent_authored_claim_conflict` is the one detection that had already moved, and
+* **Discharged: the already-migrated detection's domain gate; R743 did it.** This obligation is
+  settled. `intent_authored_claim_conflict` is the one detection that had already moved, and
   its accept line was walk-derived: the view inner-joined two membership relations whose rows the
   capture-and-detect pass wrote off the walked model, so deleting the walk would have left them
   unwritable and the view's population would have silently emptied rather than failed. R743
@@ -852,9 +901,11 @@ derivation lives.
   reference for how a family migrates and what holding output identical costs.
 * R668 (`nodeid-key-projection-on-routine-params`, Done, see `roadmap/changelog.md`) carried the
   routine-write family's migration as a stage, because a feature there needed a carrier and the leaf
-  was the wrong one. That stage is the worked example the emitter half generalises from, and it
-  landed first, so this item inherits a proven recipe and one fewer family rather than having to
-  lift the stage onto itself.
+  was the wrong one. That stage is the worked example the emitter half generalises from. It covered
+  the emitter half only: `RoutineWriteCommands` still takes a `GraphitronSchema` and still carries 11
+  dispatch sites, so this item inherits a proven recipe but not one fewer family, and the producer is
+  sequenced with the fetcher family's cutover (see the planner half). Landing first is still the win
+  it was: this item lifts a proven recipe instead of inventing one.
 * **The read-side twin of that stage is this item's, handed over at its author's request.** R704
   (`routine-composition-surface-from-facts`, Done, see `roadmap/changelog.md`) planned re-sourcing
   `LauncherCommands.routineRow` off facts as its own plan-tier pilot and then declined to keep it,
