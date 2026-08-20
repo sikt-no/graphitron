@@ -161,13 +161,13 @@ comment says "Neither direction throws". Under this design no SQL NULL reaches i
 documentation correction rather than a correctness constraint, and it is worth making either way.
 `McpWire.uri`, a fourth private restatement of the same three lines, delegates to `SourceUri.of`.
 
-**`ValidationReport` holds source names.** Its `sourceUris` component is a precomputed set for the LSP
-short-circuit in `Diagnostics.compute`, built by mapping every location's source name through
-`canonicalUri`. It is in-memory and no stored column, so the invariant below does not reach it, but
-leaving it as URIs would put a URI-keyed set and a source-name-keyed filter in the same method, which is
-the confusion this item exists to remove. The component becomes source names, the short-circuit compares
-the source name it already derives for the replay filter, and `ValidationReport.canonicalUri` retires
-with its last caller.
+**`ValidationReport.sourceUris` retires rather than converts.** Its javadoc calls it a precomputed set
+for the LSP short-circuit in `Diagnostics.compute`, but that consumer is gone: diagnostics went
+store-based, no main source in `graphitron-lsp` references `ValidationReport` at all, and nothing in
+production calls `sourceUris()`; its only readers are its own unit tests. A dead URI-keyed set is not
+worth respelling. The component retires with its `addCanonical` builder, `ValidationReport.from` stops
+computing it, `ValidationReportTest`'s `sourceUris` cases go with it, and `ValidationReport.canonicalUri`
+retires with its last caller.
 
 ## Tests
 
@@ -189,6 +189,12 @@ side, and the MCP tools' `location.uri` assertions. Where those tests compute an
 `SourceUri.of` directly instead of the retired delegate. A diff that changes what any of them expects is
 a diff that moved the wire, and should be read as a defect in this item rather than a test update.
 
+**The spelling pin becomes a round trip where a render exists.** `DiagnosticsAggregateTest`'s
+`everyStoredDimensionValueIsAlreadyInItsDeclaredSpelling` asserts each declared spelling is the identity
+on the values the store holds, which a URI spelling deliberately is not: it stores a path and renders a
+URI. On a dimension declaring a render the pinned property is `normalise(render(stored))` giving back
+the stored value; identity stays the assertion for the rest.
+
 **The directory trap gets its own case.** An MCP-side assertion that the published `directory` for a
 diagnostic whose parent directory exists on disk is byte-identical to what trunk publishes, which is the
 one thing convert-then-strip and strip-then-convert disagree about.
@@ -200,7 +206,8 @@ below, recorded in the In Review commit message.
 
 * `canonical_uri`, the SQL alias, and the DDL comment calling it "its verbatim restatement" of "the
   declared single home".
-* `ValidationReport.canonicalUri`, and the `sourceUris` component name.
+* `ValidationReport.canonicalUri`, the `sourceUris` component, and its javadoc's story of a
+  short-circuit path in `Diagnostics.compute`, whose consumer predates store-based diagnostics.
 * "canonical file URI" and "normalised once at the loader" as column-comment prose on the four `file`
   columns and the view.
 * `McpWire.uri` as a private restatement, and its comment's appeal to "what the store's own
