@@ -1,7 +1,7 @@
 ---
 id: R750
 title: "@discriminate over an enum-typed discriminator column emits an uncast varchar comparison Postgres rejects"
-status: Spec
+status: Ready
 bucket: bug
 priority: 6
 theme: codegen-correctness

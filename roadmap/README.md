@@ -40,8 +40,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R724` | The stated key-column match spends its ambiguity silently; make it state its arity | Ready | 2026-08-19 | [plan](stated-key-column-match-states-its-arity.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
-| `R750` | @discriminate over an enum-typed discriminator column emits an uncast varchar comparison Postgres rejects | Spec | 2026-08-20 | [plan](enum-typed-discriminator-column-comparison.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
+| `R750` | @discriminate over an enum-typed discriminator column emits an uncast varchar comparison Postgres rejects | Ready | 2026-08-20 | [plan](enum-typed-discriminator-column-comparison.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R749` | Same-named fields on two participants of one discriminated interface collide on the __rk_ alias, and one join path is silently dropped | Spec | 2026-08-20 | [plan](participant-projection-alias-collision.md) |
@@ -521,7 +521,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
 - `R534` [**Record key decodes erase explicit-null column writes via jOOQ from() flag reset**](record-key-decode-null-write-erasure.md) — Backlog, architecture
 - `R708` [**The $project selection gate fires on names selected at any depth below its unit**](projection-selection-gate-depth-leak.md) — Backlog, correctness
-- `R750` [**@discriminate over an enum-typed discriminator column emits an uncast varchar comparison Postgres rejects**](enum-typed-discriminator-column-comparison.md) — Spec, bug
+- `R750` [**@discriminate over an enum-typed discriminator column emits an uncast varchar comparison Postgres rejects**](enum-typed-discriminator-column-comparison.md) — Ready, bug
 - `R752` [**JoinedTableReprojection dedupes same-named participant terms first-wins, silently dropping a divergent projection**](joined-table-reprojection-first-wins-drop.md) — Backlog, bug
 - `R412` [**Nested backing class emits $-qualified names at the no-Class-in-hand emit sites (backingClassOf, recordColumnReadArgs, FetcherEmitter, ChildField)**](nested-backing-class-emitter-lift.md) — Backlog, bug
 - `R749` [**Same-named fields on two participants of one discriminated interface collide on the __rk_ alias, and one join path is silently dropped**](participant-projection-alias-collision.md) — Spec, bug
