@@ -12,17 +12,24 @@ last-updated: 2026-08-20
 
 # The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves
 
-The SDL capture load is restructured into a five-stage pipeline whose last two stages read the
-assembled `GraphQLSchema`. The composed census, the `graphql_` family's coordinate-keyed account
-of what the schema declares with extensions merged, transcribes from assembly instead of the
-uncomposed registry, absorbing R714 (discarded in this item's favour, see `roadmap/changelog.md`).
-A rooted traversal writes the classification domain, the set of types the generator intends to
+The SDL capture load is restructured into a five-stage pipeline, with assembly becoming the
+gatherer's own stage rather than a verdict a caller hands it. The `graphql_` family's
+coordinate-keyed account of what the schema declares with extensions merged gets its own anchor
+relations, pinned against graphql-java's composition instead of reimplementing it, which is R714's
+question answered (that item is discarded in this item's favour, see `roadmap/changelog.md`). A
+rooted traversal writes the classification domain, the set of types the generator intends to
 classify, from SDL-only seeds. And the authored-claim conflict detection, the rule that two
 classifying directives may not claim one coordinate, becomes total over authored claims with each
 consumer applying its own population join, so the `walk_` membership gate leaves the `intent_`
 stratum and its two relations are deleted. One change, landed as a big bang: no shadow
 scaffolding, no strangler increments, and every place the new derivation differs from the walk's
 behaviour is decided from requirements rather than transcribed from the legacy code.
+
+Stage 4 landed differently from how it was filed, and the difference is load-bearing for reading
+the rest of this item. It was filed as a full-schema traversal transcribing a composed census from
+the assembled schema; it landed as an ownership change to the family's keys, which answers the same
+question at an earlier cadence and at no availability cost. "Implementation finding" below carries
+the argument, and the sections between here and there are marked where the finding supersedes them.
 
 ## Problem
 
@@ -79,11 +86,12 @@ fact model's own law that a stage's refusal never cancels the next stage
 | the single registry assembled into a `GraphQLSchema`; failure to assemble emits validation-error
   facts (`graphql_schema_error` at stage `ASSEMBLY`)
 
-| 4. Full-schema traversal
-| the assembled schema
-| a depth-first traversal over the full assembled schema populates the composed census: the
-  coordinate-keyed relations, primary key the graph name plus the coordinate, holding what
-  composition adds over the per-site declarations
+| 4. Coordinate-keyed census
+| the file set
+| the merged effective element set: one row per coordinate in the `graphql_*_coordinate` anchors,
+  the losing occurrence of a duplicated one quarantined in `graphql_duplicate_declaration`. Filed
+  as a full-schema traversal transcribing this from the assembled schema; landed as the anchor
+  family, per "Implementation finding" below
 
 | 5. Rooted traversal
 | the assembled schema
@@ -98,6 +106,37 @@ and the whole of stages 2 through 5. Throughout, the graphql-java objects
 (`TypeDefinitionRegistry`, `GraphQLSchema`, the traversal's elements) stay inside the capture
 collaborators, which are the only classes permitted to hold them; the staging changes what capture
 reads, not where the containment boundary sits.
+
+## What landed, and where to check it
+
+Three implementation commits, in order:
+
+[cols="1,2,3"]
+|===
+| Commit | Carries | Reviewable against
+
+| `227a199`
+| the gate deletion: `intent_authored_claim_conflict` total, per-consumer population joins, the two
+  `walk_` membership grains and `ClaimDomainRows` deleted, `WalkReach` dissolved into
+  `ClassifiedRun`
+| behaviour change 1; the gate section and its three named seams
+
+| `f8b7dab`
+| stage 3 as the gatherer's own stage with the `ASSEMBLY` verdict moved to the pre-synthesis
+  registry, and stage 5 as a rooted traversal (`ClassificationDomainCapture`) replacing
+  `ReachabilityRows`
+| behaviour changes 3, 5 and 6; the stage 5 section
+
+| `bfa41ab`
+| the four `graphql_*_coordinate` anchors, the whole foreign-key web re-pointed onto them,
+  `SdlCoordinates`, and the census pin against graphql-java
+| the implementation finding below
+|===
+
+Stages 1 and 2 are unchanged: they were already the gatherer's, and the item touches them only in
+the documentation. Two of the filed deliverables are deliberately not in the tree, each marked at
+its own section: the composed census as a transcription from assembly, and the availability-cliff
+provenance rows. Behaviour changes 2 and 4 fall with them.
 
 ## Strategy: big bang, semantics from requirements
 
@@ -129,7 +168,10 @@ captured.
 
 ## Stage 4: assembly owns the composed census
 
-Absorbed from R714; its analysis holds and lands here.
+Absorbed from R714. Filed as below; two of these bullets are superseded by the implementation
+finding and say so where they sit. What survived unchanged is the registry question (which registry
+gets assembled, and the verdict that follows from it) and the composed-versus-written split, which
+is the rule the anchor family then let stage 4 apply without an availability cost.
 
 * **The object is already in hand.** `SchemaAssembly.of` runs on every pass and returns a sealed
   `Assembled(GraphQLSchema)` / `Rejected(errors, cause)`; an always-produced, read-only,
@@ -155,10 +197,14 @@ Absorbed from R714; its analysis holds and lands here.
   Under this split `graphql_duplicate_declaration` keeps a producer: the quarantine of what the
   primary path declines belongs to the stage that sees the losing site, enumerated below as a
   decision to make.
-* **What this deletes.** Capture's own extension merge, and with it the first-wins claim on a
-  coordinate two files declare. A duplicate is then either graphql-java's merge or graphql-java's
-  refusal, and the refusal is already a fact in `graphql_schema_error`.
-* **Decisions to make in the open, not discover.** Introspection types: assembly adds `__Schema`
+* **What this deletes.** *(Superseded: the merge stays, and is pinned instead. See "What stage 4
+  becomes under the anchor family".)* Capture's own extension merge, and with it the first-wins
+  claim on a coordinate two files declare. A duplicate is then either graphql-java's merge or
+  graphql-java's refusal, and the refusal is already a fact in `graphql_schema_error`.
+* **Decisions to make in the open, not discover.** *(All four are settled; the finding below says
+  how. Two dropped out with the composed census, the ordinal question landed pinned by value rather
+  than by density, and the composed-versus-written line is drawn at the anchors.)* Introspection
+  types: assembly adds `__Schema`
   and friends, the current census holds the five built-in scalars and no introspection types;
   filter them or admit them, decided deliberately, together with declaration-site attribution for
   composed elements that have no authored site. Ordinal stability: every merge-ordered ordinal
@@ -168,7 +214,10 @@ Absorbed from R714; its analysis holds and lands here.
   rather than assumed of graphql-java's iteration order. The duplicate quarantine's producer under
   the composed/written split. Which relations are composed-only and which stay written, relation
   by relation.
-* **The availability cliff shrinks, and what remains is provenance rather than a flag.** Under the
+* **The availability cliff shrinks, and what remains is provenance rather than a flag.**
+  *(Superseded: no relation sits behind the cliff, so there is no generation to retain and no
+  provenance to stamp. The finding below carries why retention was structurally unavailable and
+  what replaced the need for it. The retired freshness axis stays retired.)* Under the
   split above only the composed-only relations sit behind assembly, which is the population that
   genuinely cannot exist without it. For those, a failed assembly leaves the previous composed
   generation in place and the store says so by provenance: one row per graph per composed
@@ -290,14 +339,16 @@ Each is the requirement acting as the specification; none ships unnoticed.
    coordinates the editor newly surfaces, are enumerated on the corpus in the landing commit, with
    each difference argued from the requirement and attributed to its actual cause (the gate, not
    the claim masks that stay in place).
-2. **Duplicate composition becomes graphql-java's.** A coordinate two files declare is merged or
-   refused by the registry and assembly rather than by capture's first-wins;
-   `graphql_duplicate_declaration` keeps quarantining what the primary path declines, per its own
-   charter.
+2. **Withdrawn: duplicate composition becomes graphql-java's.** No such change shipped. Capture's
+   first-wins still merges and still quarantines the losing site in
+   `graphql_duplicate_declaration`, and the equivalence with graphql-java's composition is asserted
+   rather than assumed. Numbering kept so the citations elsewhere in this item stay valid.
 3. **`ASSEMBLY` verdicts judge the pre-synthesis registry**, so an author is no longer blamed for
    a failure graphitron's own rewrite caused.
-4. **The census's population question (introspection types) is settled openly**, whichever way it
-   goes.
+4. **Withdrawn: the census's population question (introspection types) is settled openly.** The
+   question dissolved with the composed census: nothing transcribes from the assembled schema, so
+   no introspection type is ever offered to the census and none needs filtering. Numbering kept for
+   the same reason as 2.
 5. **The domain widens at the SDL-only node seeds.** A type that declares `implements Node` and is
    reached by no field is silently pruned today unless the full inference conjunction holds; under
    stage 5's seed rule it is a domain member whether it binds no `@table` at all or a table whose
@@ -305,6 +356,14 @@ Each is the requirement acting as the specification; none ships unnoticed.
    what the author's declared contract is owed. The demand reductions
    (`intent_resolved_field_demand`, `intent_resolved_type_demand`) join the domain, so their
    populations widen with it; both diffs are enumerated on the corpus in the landing commit.
+6. **The classification domain is empty when the registry does not assemble.** Not filed, and found
+   while landing stage 5: the SQL closure answered from captured rows and so had a population on a
+   refused read, while a traversal over the assembled schema has no schema to walk. This is the
+   composed-versus-written split doing what it says (only what genuinely needs assembly sits behind
+   it), and the emptiness is read together with the `ASSEMBLY` verdict rather than alone. Its
+   readers are the demand reductions and the conflict detection's build-error population, and the
+   latter runs only on a classified pass, which an assembly refusal has already ruled out.
+   `ClassificationDomainTest` carries the cliff as its own case.
 
 ## Out of scope
 
@@ -332,8 +391,11 @@ Each is the requirement acting as the specification; none ships unnoticed.
 * `ReachabilityRows` and its semi-naive closure, replaced by stage 5's traversal; with it,
   `DeclaredDirectives.names()` as the survivor-seed's query-parameter binding, replaced by the
   definition-source discriminator.
-* `SdlFactCapture`'s extension merge and the first-wins claim path on doubly-declared coordinates,
-  and its registry parameter as the composed census's transcription source.
+* Nothing from `SdlFactCapture`'s merge. Filed as a retirement of its extension merge, the
+  first-wins claim path on doubly-declared coordinates, and its registry parameter; all three stay,
+  and the sweep must not go looking for them. What did move is where the claim is taken:
+  `SdlCoordinates` owns every coordinate's first-wins claim, and taking one directly off `FactSink`
+  at an SDL coordinate is the retired spelling.
 * The `walk_` family header's gate-flip-onto-demand plan, superseded here.
 * `intent_node_type`'s role as the domain's node seed: `ReachabilityRows`' javadoc conjoins it
   deliberately, and after stage 5 the domain seeds on the SDL declarations instead. The relation
@@ -346,9 +408,11 @@ Each is the requirement acting as the specification; none ships unnoticed.
 * **Pipeline output identity where behaviour is unchanged**, which is everywhere outside the
   enumerated changes: the emitted sources over the classified corpus are byte-identical, asserted
   by the existing pipeline-tier expectations. The enumerated changes land with their own fixtures:
-  a multi-extension fixture pinning every dense ordinal family across base-then-extension merge, a
-  two-file duplicate fixture pinning composition-by-assembly and the quarantine's producer, an
-  assembly-failure fixture pinning the provenance rows and the stale-generation read, a conflict
+  a multi-extension fixture pinning every merge-ordered ordinal family by value across
+  base-then-extension merge and the coordinate set against graphql-java's composed one
+  (`SdlCoordinateCensusTest`, which subsumes the filed two-file duplicate fixture: the merge it
+  pins is the same one the duplicate case would have exercised), an assembly-failure case pinning
+  the domain's emptiness and the declaration facts' survival beside it, a conflict
   fixture at a coordinate where the consumers disagree (a type no field reaches carrying two
   claims: the editor surfaces it, the build does not), and seed fixtures pinning the widened
   domain (an `implements Node` type with no `@table`, and one over defective node metadata, each
