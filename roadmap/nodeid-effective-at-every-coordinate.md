@@ -411,70 +411,51 @@ service does not know that node ids exist, and neither does the bean that feeds 
 `@nodeId`, so the value the consumer receives is decoded, and there is no arm in which the generator
 hands a `@service` method the wire string and calls it done.
 
-That rules out both of the answers a plan might reach for. Passing the base64 through is the bug.
-Refusing the coordinate outright is also wrong, because the instruction is carriable whenever the
-node type has one key column: the decode yields exactly one value, nothing about which value is
-ambiguous, and a single-valued slot takes it. So the decode resolves at these coordinates under two
-preconditions, and refuses naming which one failed:
+The evidence that neither coordinate honours that today is the classified carrier rather than a
+reading of the source. `ServiceCatalog.argExtraction` is the whole story at site 1: it takes the
+parameter's Java type and the SDL leaf type and no directive container at all, checks enum parity and
+wire coercion, and resolves every scalar to `CallSiteExtraction.Direct`. It cannot see `@nodeId` even
+in principle. At site 2 an `ID` field carrying `@nodeId(typeName:)` on an input type backing a
+consumer bean generates `java.lang.String title = (java.lang.String) raw.get("title");` inside the
+`create<Bean>` helper. That is the shape the reporter reached for as the workaround for site 1 and
+found equally inert. What exists today is the tuple-shaped destination, `JOOQ_RECORD`: a `@service`
+parameter typed as a generated `*Record`, and a record-typed member of a consumer bean.
+`InputBeanResolver` shows the asymmetry directly. Its `buildJooqRecordLeaf` reads `@nodeId` on a
+record-typed bean member and rejects a missing `typeName:` there; `collectJooqBindings` and
+`buildRecordKeyDecode` do the same on the record-param axis; and neither has an arm for the
+single-valued member.
 
-* **The node type's key is one column.** `COUNT(*)` over `intent_resolved_node_key_column` for the
-  node type. A composite key has N values and the slot has one place, so the refusal names the type
-  and the count.
-* **That column's type matches the slot's own type.** The column's Java type as jOOQ binds it,
-  against the `@service` parameter's or the bean member's declared type. A `Long` key column and a
-  `String` parameter is a refusal naming both types, not a pass-through, because a pass-through is
-  exactly the bug: the only value a `String` parameter could receive there is the base64.
+**That arm is the whole of what this item adds here, and the gate it stands behind already exists.**
+Passing the base64 through is the bug; refusing the coordinate outright is also wrong, because the
+instruction is carriable whenever the node type has one key column, the decode yielding exactly one
+value that a single-valued slot takes. R668 shipped both halves of deciding that, one directive over,
+and this item reads them rather than restating them:
 
-Neither precondition is minted here. R668 shipped both operands and the rule that joins them, and
-this item reuses them rather than restating them one directive over.
-`intent_argmapping_key_column_candidate` already carries a matched key column with "that column's
-Java type beside it where the catalog can say", reached by an outer join precisely so an untypeable
-column is a NULL and not a missing row. `intent_resolved_node_key_projection` already makes the
-agreement a *join predicate* rather than a check after the fact, at **equality of the erased Java
-type with no widening admitted**, which is the user-visible half of this rule: a `SMALLINT` key column
-against an `Integer` slot is a disagreement, and softening it is what would let a narrowing through.
+* **Arity.** `COUNT(*)` over `intent_resolved_node_key_column` for the node type. A composite key has
+  N values and the slot has one place, so the refusal names the type and the count.
+* **Type agreement.** `intent_argmapping_key_column_candidate` already carries a matched key column
+  with "that column's Java type beside it where the catalog can say", and
+  `intent_resolved_node_key_projection` already makes the agreement a *join predicate* rather than a
+  check after the fact, at **equality of the erased Java type with no widening admitted**. A
+  `SMALLINT` key column against an `Integer` slot is a disagreement, and softening that is what would
+  let a narrowing through. So this item supplies the slot's own type at two new coordinates, the
+  `@service` parameter's and the bean member's, and the existing predicate decides.
 
-**And this item inherits R668's stand-aside rule verbatim, which is the half easiest to get wrong.**
-The type gate fires only where *both* operands are known. Where the catalog cannot type the key column
-(a pinned key column on an unbound or ambiguously-bound node type, which
-`intent_resolved_node_key_column` deliberately admits as a row) or the classpath census cannot type
-the slot (a consumer compiled without `-parameters`, a reference resolving no method), the pair
-resolves exactly as it did before the predicate existed, with javac's own error as the backstop it
-always was. So the gate strictly adds refusals and removes no emission, which is what makes it landable
-as a join rather than as a staged flip, and stage 4 states it as the exit condition rather than
-discovering it when a fixture without `-parameters` starts failing.
+**One property of that gate is easy to lose in the reuse, and it is load-bearing: it fires only where
+both operands are known.** Where the catalog cannot type the key column (a pinned key column on an
+unbound or ambiguously-bound node type, which `intent_resolved_node_key_column` deliberately admits as
+a row) or the classpath census cannot type the slot (a consumer compiled without `-parameters`, a
+reference resolving no method), the pair resolves exactly as it did before the predicate existed, with
+javac's own error as the backstop it always was. Both relations reach the type by outer join for
+precisely this reason, so an untypeable operand is a NULL and never a missing row. The gate therefore
+strictly adds refusals and removes no emission, which is what makes it landable as a join rather than
+as a staged flip, and stage 5 states it as an exit condition rather than discovering it when a fixture
+built without `-parameters` starts failing.
 
-One operand is weaker than it reads, and this item should say so rather than assume it.
-`intent_resolved_node_key_column.column_name` hands out a *spelling*, the winning tier's own, and its
-comment says outright that whether the name is a column the table actually has "is deliberately not
-asked here". Reaching the column's Java type therefore crosses from a spelled reference to a catalog
-reading, which is why the candidate relation folds case on both crossings. That crossing is R731's
-subject, and R724 is the machinery it names (`intent_stated_key_column_match`, carrying the matched
-`sql_column`'s own spelling alongside the arity that says whether the match was unambiguous). Neither
-is a dependency: this item reads the candidate relation's payload as it stands. What changes if they
-land first is that the type this item refuses on comes off a column decided rather than picked.
-
-The second precondition is what makes the reporter's own code fail rather than quietly keep working,
-and that is the intended outcome. Their method takes `String plasstildelingId` and today receives
-base64; afterwards the build tells them the key column binds as `Long` and asks for a parameter of
-the column's own type. The remedy is one line of Java in their own signature and no SDL change at
-all.
-
-The evidence that neither happens today is the classified carrier rather than a reading of the
-source. `ServiceCatalog.argExtraction` is the whole story at site 1: it takes the parameter's Java
-type and the SDL leaf type and no directive container at all, checks enum parity and wire coercion,
-and resolves every scalar to `CallSiteExtraction.Direct`. It cannot see `@nodeId` even in principle.
-At site 2 an `ID` field carrying `@nodeId(typeName:)` on an input type backing a consumer bean
-generates `java.lang.String title = (java.lang.String) raw.get("title");` inside the `create<Bean>`
-helper. That is the shape the reporter reached for as the workaround for site 1 and found equally
-inert.
-
-What exists today is the tuple-shaped destination, `JOOQ_RECORD`: a `@service` parameter typed as a
-generated `*Record`, and a record-typed member of a consumer bean. `InputBeanResolver` shows the
-asymmetry directly. Its `buildJooqRecordLeaf` reads `@nodeId` on a record-typed bean member and
-rejects a missing `typeName:` there; `collectJooqBindings` and `buildRecordKeyDecode` do the same on
-the record-param axis; and neither has an arm for the single-valued member. That arm is what this
-item adds, under the two preconditions above.
+The arity half is what makes the reporter's own code fail rather than quietly keep working, and that is
+the intended outcome. Their method takes `String plasstildelingId` and today receives base64;
+afterwards the build tells them the key column binds as `Long` and asks for a parameter of the column's
+own type. The remedy is one line of Java in their own signature and no SDL change at all.
 
 **The authored and inferred forms are one destination, not two.** R668's capability is the author
 naming a key column as a trailing `argMapping` segment; the rule above reaches the same column by
@@ -493,11 +474,21 @@ key column" to the arity fact. The type-disagreement half needs no new wording a
 the parameter it binds to takes Y; bind a parameter of the column's own type, or project a key column
 the parameter can take", and the second clause of that remedy simply has nothing to offer at arity 1.
 
+**The stated limit, since reuse inherits weaknesses too.**
+`intent_resolved_node_key_column.column_name` hands out a *spelling*, the winning tier's own, its
+comment saying outright that whether the name is a column the table actually has "is deliberately not
+asked here". Reaching that column's Java type therefore crosses from a spelled reference to a catalog
+reading, which is why the candidate relation folds case on both sides of it. R731 is that crossing's
+item and R724 is the machinery it names. Neither is a dependency and this item does not wait: it reads
+the candidate relation's payload as it stands, on the same terms R668 already ships it. What changes if
+they land first is that the type a refusal names comes off a column decided rather than picked, which
+matters because a refusal is text an author has to be able to check.
+
 ### The detection is a verdict view, and it partitions the population
 
-Once the two preconditions above are facts, the refusals stop being absences and become statements.
-A composite key at a single-valued slot and a type disagreement are both things the store can say,
-with the operands to say them. So the detection is not a bare anti-join: it is a view over the
+Once arity and type agreement are facts in the relations, the refusals stop being absences and become
+statements. A composite key at a single-valued slot and a type disagreement are both things the store
+can say, with the operands to say them. So the detection is not a bare anti-join: it is a view over the
 instruction population whose rows are the instructions with no resolution, each carrying which
 precondition failed, in a closed vocabulary. That is `intent_argmapping_projection_defect`'s shape
 one directive over, and following it is what lets the message text converge on
@@ -512,29 +503,28 @@ above. The verdicts the census yields:
 * `KEY_COLUMN_TYPE_DISAGREEMENT`. One key column, and its Java type is not the slot's. Names both
   types and the column, on `KEY_COLUMN_TYPE_MISMATCH`'s existing wording.
 
-**The two views partition the instruction population, and that is the invariant worth stating.**
+**The view carries no accept line of its own, and the schema has settled that this is how a detection
+is shaped.** `intent_authored_claim_conflict` used to gate on the walk's reach as a join and now states
+its whole predicate and nothing else, its comment giving the reason in one sentence: "a filter wearing
+the view's name would substitute one consumer's population for the fact." Each consumer then applies the
+population its own question needs, and the two genuinely differ. The build-error surface joins
+`intent_type_domain`, because only the emitted surface can fail a build. The editor's diagnostic arm
+reads the rows ungated, a coordinate nothing reaches being precisely where an author most needs the
+signal. This item inherits that split unamended: a refused instruction at an unreached coordinate is
+still a refused instruction and the LSP should say so, while the build fails on the ones the emitted
+surface reaches. The use-site grain is not a competing filter, it is what makes a row answerable at all.
+
+**With no accept line the refusals partition the population, and that is the invariant worth stating.**
 Every instruction either resolves, with a row in its direction's relation, or is refused, with a row
 here. An instruction in neither is not an author error at all: it is a coordinate the model cannot
 account for, which means the census missed a shape. Stating the partition is how a gap announces
 itself as a defect in this item's own work rather than as a silent pass at a consumer, and it is why
 the detection reads the population rather than the captured `@nodeId` rows.
 
-The stand-aside rule above is not a third arm of that partition, and it is worth saying so because it
-reads like one. An instruction whose type gate stood aside for want of an operand *resolves*: it emits
-exactly as it does today and lands in its direction's relation, with javac as the backstop. It is only
-the refusal that requires two known types, never the resolution.
-
-**The refusal view carries no accept line of its own.** Trunk settled this shape one detection over
-while this item was being written: `intent_authored_claim_conflict` used to gate on the walk's reach as
-a join, and now states the whole predicate and nothing else, its own comment putting the reason plainly,
-that "a filter wearing the view's name would substitute one consumer's population for the fact". Each
-consumer then applies the population its question needs, and the two differ: the build-error surface
-joins `intent_type_domain` because only the emitted surface can fail a build, while the editor's
-diagnostic arm reads the rows ungated, a coordinate nothing reaches being where an author most needs the
-signal. The same split applies here without amendment. A refused instruction at an unreached coordinate
-is still a refused instruction, and the LSP should say so; the build fails on the ones the emitted
-surface reaches. The use-site grain does not conflict with this: it is what makes a row answerable at
-all, not a filter on which rows exist.
+The type gate's stand-aside is not a third arm of that partition, and it reads like one, so the
+relation's own comment should say it is not. An instruction whose type gate stood aside for want of an
+operand *resolves*: it emits exactly as it does today and lands in its direction's relation, with javac
+as the backstop. Only the refusal needs two known types; the resolution never did.
 
 The projector is small and its home exists: a further component on `StoreDetections` beside the two
 detection families already there, `AuthoredClaimConflicts` and `ArgmappingProjectionDefects`, decoded
