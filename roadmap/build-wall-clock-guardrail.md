@@ -348,8 +348,18 @@ sum.
 
 In the order the numbers argue for, and every one of them is now measured rather than bounded.
 
+0. **The store-boot *count*, which is larger than everything else on this list put together and was
+   not considered by any of the three passes.** A fourth measurement, taken after the alias below had
+   landed, counted the boots rather than pricing one: a full `mvn install -Plocal-db` executes the
+   1894-statement schema **1051 times** and spends **395.8 seconds** in it, which is 44% of the
+   test-class time of the four store-heavy modules and about **80 seconds of a 339-second build**.
+   Emptying every clearable table costs 0.85 ms and a reset including re-materialization 9.3 ms,
+   against a 138 ms boot, so the boots are almost all replaceable. R768 carries it. Its priority over
+   the entries below is not close, and the instrument is six lines, so a Spec pass on this item should
+   re-run it rather than trust the projection.
 1. **The store-boot alias.** 42.7s, one line, green, its own item, and a design improvement
-   independently of speed.
+   independently of speed. Cuts the price of a boot; R768 above cuts their number, and the two
+   compose, with the alias already banked in R768's figures.
 2. ~~**Test parallelism in the three modules.**~~ **Landed directly against trunk for
    `graphitron-model` only**, on the user's explicit call that a change consisting only of a
    `junit-platform.properties` file did not warrant a pipeline cycle. **The three-module figure this
