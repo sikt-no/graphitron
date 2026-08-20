@@ -153,7 +153,8 @@ Absorbed from R714; its analysis holds and lands here.
   deliberately one join away today, and filling it in at capture would store a derivation where a
   view answers) or its own coordinate-keyed relation whose comment owns why it is not a view.
   Under this split `graphql_duplicate_declaration` keeps a producer: the quarantine of what the
-  primary path declines belongs to the stage that sees the losing site, decided below.
+  primary path declines belongs to the stage that sees the losing site, enumerated below as a
+  decision to make.
 * **What this deletes.** Capture's own extension merge, and with it the first-wins claim on a
   coordinate two files declare. A duplicate is then either graphql-java's merge or graphql-java's
   refusal, and the refusal is already a fact in `graphql_schema_error`.
@@ -245,7 +246,12 @@ move.
 
 The two `walk_` membership grains then have no reader. Their DDL (`walk_claim_domain_type`,
 `walk_claim_domain_field`) and their row writer (`ClaimDomainRows`) are deleted in the same
-change. Three seams around that deletion are named rather than discovered:
+change. Three seams around that deletion are named rather than discovered. The seam inventory
+describes end states, not the present tree: today `ClaimDomain` or `WalkReach` is also constructed
+by `AuthoredClaimConflictsTest`, `DiagnosticFactsTest`, `FactCaptureAgreementTest` (the `walk_`
+partition-lifecycle and oracle-content tests) and `TypeBackingClassesTest`, each of which this
+item re-points or updates as its subject moves, so the implementer's grep does not finish at
+`DemandShadowTest`.
 
 * `ClaimDomain`, the Java projection of the walk's registries, survives this item with exactly one
   consumer left: `DemandShadowTest` diffs the demand relations against `ClaimDomain.of`. Retiring
@@ -319,6 +325,9 @@ Each is the requirement acting as the specification; none ships unnoticed.
 * `SdlFactCapture`'s extension merge and the first-wins claim path on doubly-declared coordinates,
   and its registry parameter as the composed census's transcription source.
 * The `walk_` family header's gate-flip-onto-demand plan, superseded here.
+* `intent_node_type`'s role as the domain's node seed: `ReachabilityRows`' javadoc conjoins it
+  deliberately, and after stage 5 the domain seeds on the SDL declarations instead. The relation
+  itself stays, and every other reader of nodehood is unaffected.
 
 ## Coverage
 
@@ -338,12 +347,19 @@ Each is the requirement acting as the specification; none ships unnoticed.
   message, location and stage on the fixtures that trip them across the restructure.
 * **The naming check per new or reshaped relation** (`fact-model.adoc`): one sentence stating what
   a row asserts, naming no consumer and no producer class.
-* **The containment boundary**: the graphql-java objects stay inside the capture collaborators,
-  which the principles document's classification-leak rule already names; the restructure's review
-  checks it explicitly since the staged design multiplies the places a `GraphQLSchema` is in hand.
-* **Documentation**: `fact-model.adoc`'s stage pipeline paragraph grows stages 4 and 5 and the
-  composed/written split; the `walk_` family header rewrite; R714's census table lands in the
-  architecture docs rather than surviving only in a discarded item.
+* **The containment boundary**: the graphql-java objects stay inside the capture collaborators.
+  That rule is today written only in the `principles-architect` agent brief (whose
+  classification-leaks check names graphql-java schema types beside `Table<?>` and
+  `java.lang.reflect.Type`); `development-principles.adoc`'s capture-boundary section names the
+  catalog and reflection types and not the graphql-java ones, so writing them into that section is
+  a deliverable here rather than a citation. The restructure's review checks the boundary
+  explicitly, since the staged design multiplies the places a `GraphQLSchema` is in hand.
+* **Documentation**: `fact-model.adoc`'s stage pipeline paragraph is revised, not merely grown:
+  its claim that only the first stage produces declarations and the later stages contribute
+  nothing but verdicts stops being the whole truth once stage 4 transcribes the composed census,
+  and the paragraph gains stages 4 and 5 and the composed/written split. Also the `walk_` family
+  header rewrite, and R714's census table landing in the architecture docs rather than surviving
+  only in a discarded item.
 
 ## Provenance
 
