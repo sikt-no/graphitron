@@ -220,9 +220,56 @@ IllegalArgumentException: object of type GraphQLOverHttpConformanceTest
 
 Worth being precise about what is *not* broken. Sharing the running Quarkus application across test
 classes is deliberate and works; the augmentation cost is why it exists. What is not thread-safe is
-the per-test bookkeeping beside it. That is a property of the extension, not of these five tests and
-not of anything this repository can fix, so the only lever here is scheduling: exclude the
-`@QuarkusTest` classes from each other while leaving them free to overlap everything else.
+the per-test bookkeeping beside it. That is a property of the extension, not of anything this
+repository can fix, so for a class that genuinely needs a container the only lever is scheduling.
+
+### But one of the five does not need a container, and that changes the size of the problem
+
+Running GraphQL operations against a Graphitron-generated schema needs no Quarkus at all, and 46 of
+the module's 47 `querydb` classes already prove it: `Graphitron.newGraphQL().build()` plus
+`Graphitron.newExecutionInput(dsl, "{}", "test-user")`, straight to GraphQL-Java over a jOOQ
+`DSLContext`. `GraphQLQueryTest` alone runs 363 such cases in 7 seconds.
+
+Read against that, four of the five `@QuarkusTest` classes argue in their own javadoc that the
+container *is* the subject, and they are right. `GraphQLOverHttpConformanceTest` cites normative
+sentences from the GraphQL-over-HTTP specification. `GraphqlResourceSmokeTest` checks the endpoint,
+the self-hosted GraphiQL page and its asset route. `MountedEndpointTest` pins "the operation-policy
+decision reaches the wire with the right status and shape". `OverlappingMountTest` pins Jakarta REST's
+root-resource matching algorithm across two `@Path` classes. None of those is a GraphQL query test
+wearing HTTP clothes; they are HTTP tests.
+
+`TutorialSmokeTest` is the exception, and its assertions say so. Every one is on GraphQL response
+shape:
+
+```java
+var body = post("{ customers(active: true) { firstName } }");
+assertThat(body).contains("\"firstName\":\"Mary\"").doesNotContain("\"firstName\":\"Barbara\"");
+```
+
+The only HTTP-shaped assertions in the class are `statusCode(200)` and `errors == null`, both in the
+shared `post` helper and incidental to every case. What it exists to catch, per its own javadoc, is
+schema and resolver drift under the user-manual tutorial, and the operations it replays (`customers`,
+`storeAddress`, `createFilm`, `updateFilm`) are already driven directly by `GraphQLQueryTest` in the
+same JVM against the same schema. So the move is mechanical rather than a rewrite.
+
+Two things it would give up, and only one of them matters. The tutorial pages do teach `curl -s -X
+POST http://localhost:8080/graphql`, so replaying at engine level stops asserting that the exact body
+a reader types still works over the wire. That specific claim is already held by
+`GraphqlResourceSmokeTest`, which posts to the same endpoint and checks a non-empty response, and by
+the conformance suite. The clause in `TutorialSmokeTest`'s javadoc about an endpoint moving is the one
+sentence that has to move with it.
+
+**And moving it fixes a second defect.** Its `@AfterEach` runs `DELETE FROM film WHERE film_id > 5`
+against the shared table. That is the only unscoped destructive cleanup in the module: every `querydb`
+writer deletes by UUID marker, title or a specific id. Under concurrency this class silently deletes
+other classes' fixture rows, which is the same failure `GraphQLQueryTest` suffers, pointed the other
+way. It did not fire in the run above, so it is latent rather than observed, and it is a reason to
+move the class that stands on its own whatever happens to the parallelism.
+
+What is left after the move is four container-bound classes totalling **5.8 seconds** of test time
+(4.714, 0.544, 0.489, 0.040). Holding four classes worth six seconds mutually exclusive while the
+other 67 run concurrently is not a trade worth arguing about, which is the point: the scheduling
+question shrinks from contentious to trivial.
 
 ### `GraphQLQueryTest`: seven cases assert a property of the whole database
 
@@ -264,14 +311,23 @@ assertion rather than correct it.
   number today, which is exactly why the distinction is invisible and worth fixing now: a wall-clock
   budget on a 4 vCPU runner silently conflates "the build got slower" with "the build got wider", and
   a change that trades 20 s of critical path for 40 s of off-path work would read as a regression.
-* **How the `@QuarkusTest` classes are excluded from each other.** `@Execution(SAME_THREAD)` is the
-  wrong tool and worth naming so nobody reaches for it: it pins a class to its parent's thread and
-  says nothing about which *other* classes run beside it. A shared `@ResourceLock` in `READ_WRITE`
-  mode is the built-in that expresses "these five are mutually exclusive, and free to overlap the
-  other 67". The alternative is a second surefire execution holding just those five, which is heavier
-  but keeps the reason in the pom where a reader looks. Either way the same-key discipline has to
-  survive the sixth `@QuarkusTest` class somebody adds later, and this repository's habit for that is
-  a meta-test that fails the build when a class carries the annotation without the lock.
+* **Whether `TutorialSmokeTest` moves off Quarkus to the direct GraphQL-Java harness the module's
+  other 46 execution classes use.** My reading is that it should, on two counts that are independent
+  of the parallelism: its assertions are all on GraphQL response shape, and its `@AfterEach` is the
+  module's only unscoped `DELETE`. The question a Spec pass has to answer is what carries the tutorial
+  pages' `curl` framing afterwards, and whether `GraphqlResourceSmokeTest` posting to the same
+  endpoint is enough or whether one replay should stay on the wire as a token.
+* **How the remaining `@QuarkusTest` classes are excluded from each other.**
+  `@Execution(SAME_THREAD)` is the wrong tool and worth naming so nobody reaches for it: it pins a
+  class to its parent's thread and says nothing about which *other* classes run beside it. A shared
+  `@ResourceLock` in `READ_WRITE` mode is the built-in that expresses "these four are mutually
+  exclusive, and free to overlap the other 67". The alternative is a second surefire execution holding
+  just those four, which is heavier but keeps the reason in the pom where a reader looks. Either way
+  the same-key discipline has to survive the fifth `@QuarkusTest` class somebody adds later, and this
+  repository's habit for that is a meta-test that fails the build when a class carries the annotation
+  without the lock. A second meta-test is worth considering beside it: a `@QuarkusTest` whose
+  assertions never touch status, headers or a non-GraphQL route probably should not be one, and that is
+  the rule `TutorialSmokeTest` would have failed.
 * **How the seven `GraphQLQueryTest` cases stop asserting a global row count.** The seed is five films
   at ids 1 through 5, so scoping the assertion is available; whether it is a filter in the GraphQL
   document, a narrowed assertion, or a distinct set of fixture rows those cases own is the design
