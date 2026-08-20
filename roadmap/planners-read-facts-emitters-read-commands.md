@@ -68,9 +68,9 @@ the emitted output, unproven.
 The validator is the same story one stage earlier. `GraphitronSchemaValidator` is 2,023 lines and
 73 `validate*` methods reading nothing but the leaf model: it re-wraps the `Rejection` each
 `Unclassified*` leaf carries, runs fourteen structural checks over the classified types and fields,
-and drains `schema.diagnostics()`. It even reads *upward*: it calls
-`ProjectionCommands.addressCollisions` and imports two emitters, a validator depending on a planner
-and the shell. The successor channel already ships beside it: `StoreDetections.violations()` folds
+and drains `schema.diagnostics()`. It even reads *upward*: it calls two planners' collision checks
+(`ProjectionCommands.addressCollisions`, `LauncherCommands.methodCollisions`) and imports two
+emitters, a validator depending on planners and the shell. The successor channel already ships beside it: `StoreDetections.violations()` folds
 store-derived detections (`AuthoredClaimConflicts`, `ArgmappingProjectionDefects`) into the same
 `ValidationReport`, minting user-facing errors with no leaf anywhere in the derivation. And
 validation runs after `captureFactsAndDetect` in the pipeline, so the store is available to every
@@ -279,6 +279,14 @@ genuinely belongs to everyone, that is the signal it is a missing derived view; 
 store as one, at its own grain, per "What the store must provide" below. It does not land in the
 plan as a shared helper.
 
+Reader-count is the promotion trigger for *projections* only, and after the walk is gone it cannot
+be the trigger for verdicts: the generator may then be a verdict's only reader, and a second-reader
+test would license burying the derivation in one producer's `SELECT` text, the leaf-zoo failure
+restated one tier down (the decision living in the consumer). The nature test is stronger: a
+*verdict* (which arm fired, which table stands for the type, which resolution won) gets a named
+view at its own grain even with one reader, while joining, filtering and shaping stay in the
+producer's query, duplicated freely.
+
 Two things this rule does not forbid. A later relation referencing an earlier relation's rows by
 glue key is the plan's own foreign keys, command referencing command, not a store query shared
 between producers; the dependency order in the Scope section stays. And the scoping predicate
@@ -371,8 +379,9 @@ Four success criteria, and every deliverable is a step toward one of them:
 1. `EmitPlan.produce` takes a `StoreHandle` and no `GraphitronSchema`.
 2. No emitter reads a classification leaf, and `PackageImportDirectionTest` covers the emitters'
    packages the way it already covers `render`.
-3. Every validation check derives from the store: a view where SQL can state the check, a
-   query-then-insert where it cannot, the error surface reading their rows either way.
+3. Validation derives from the store: a view where SQL can state the check, a query-then-insert
+   where it cannot, the error surface reading their rows either way, with the minted-name
+   collision checks as the one stated exception (settled in the validator half).
    `GraphitronSchemaValidator` stops taking a `GraphitronSchema`.
 4. The classification walk and the sealed leaf hierarchies are deleted, along with every resolver
    and transcription writer that existed only to feed or shadow them.
@@ -461,15 +470,37 @@ ships in `rewrite/derive`.
 
 * **A check expressible as a relation becomes a view.** Most of the fourteen structural checks and
   most of the per-leaf arms are joins and anti-joins over facts capture already holds, which is a
-  detection view in the `intent_authored_claim_conflict` mould: the check lands at its own grain,
-  its literals form a closed vocabulary declared where it is read, and every other consumer (the
-  LSP squiggle, the MCP diagnostics tool) inherits it through the `diagnostic` surface for free.
+  detection view in the `intent_authored_claim_conflict` mould: the check lands at its own grain
+  and its literals form a closed vocabulary declared where it is read.
 * **A check that genuinely cannot be a view runs as a query whose findings are inserted back into
   the fact model as rows.** That is the `StoreDetections` shape `AuthoredClaimConflicts` and
   `ArgmappingProjectionDefects` already have: derivation in SQL plus Java where SQL cannot state
   it, findings landing as rows, `ValidationReport` assembled from rows. "Cannot be a view" is a
   claim to justify per check (a recursion H2 views cannot carry, a reflection probe), not a
   default to reach for.
+
+Reaching the editor and the MCP is not free, and must not be claimed as such. The `diagnostic`
+surface is a hand-written `UNION ALL` with one arm per source relation, and
+`intent_argmapping_projection_defect` is *not* an arm of it today, so of the two exemplars above
+only the claim conflict reaches the LSP squiggle. Each migrated check's commit therefore states
+where its rows surface: joining `diagnostic` is part of the migrating commit wherever the defect is
+author-facing, and the union's arm set gains a mechanical pin so an unjoined detection is a build
+failure rather than a silent editor gap. And since this item retires `rejection_validation_error`,
+the arm the editor's build diagnostics ride today, the migrated verdicts' stated permanent home
+must exist before that transcription family can go.
+
+**One class of check is the stated exception to success criterion 3, and it is two checks, not
+one.** `validateProjectionUnitAddresses` and `validateLauncherMethodNames` (through
+`ProjectionCommands.addressCollisions` and `LauncherCommands.methodCollisions`) assert that two
+*minted unit names* do not collide after case folding. A store detection for those would put the
+naming formula in SQL beside the producer that mints it, one invariant with two mints, which is
+the drift shape the single-mint naming regime exists to prevent; and the alternative homes are
+closed by this item's own rules (a check over committed command rows reads a record family upward,
+and validation-after-planning is a pipeline reorder). So the collision invariant stays at the
+mint, as the producer's hard failure, and any author-facing rejection for it derives from the
+*inputs* to the formula, a folded-name agreement between captured SDL coordinates, which is a
+schema-grain fact needing no minted name. The validator's upward reads dissolve either way: no
+plan or emitter import survives in validation.
 
 The classify-time rejections are the same two moves seen from the other end. Today a rule the
 schema breaks demotes the coordinate to `Unclassified*` inside the walk, and the validator re-wraps
@@ -478,12 +509,10 @@ facts that reports the same error at the same location. The `Rejection` hierarch
 leaves plus 9 error sub-seals) is re-expressed as those detections' closed literal vocabularies, the
 way `rejection_validation_error.kind` already transcribes it for the editor.
 
-Three properties keep this half honest. Each check migrates one at a time, behaviour held: message,
+Two properties keep this half honest. Each check migrates one at a time, behaviour held: message,
 location and severity survive on the fixture that trips the check, and a check with no fixture gains
-one in the migrating commit. The validator's upward reads dissolve rather than move
-(`addressCollisions` becomes a detection at its own grain, not a plan import wearing a view's name).
-And the ordering is already paid for: validation runs downstream of capture today, so no pipeline
-change is needed for any of it.
+one in the migrating commit. And the ordering is already paid for: validation runs downstream of
+capture today, so no pipeline change is needed for any of it.
 
 ### The terminal deliverable: delete the walk
 
@@ -497,32 +526,52 @@ deletion lands: the sealed classification taxonomy in `rewrite.model`, `Graphitr
 of tens of thousands of lines. Deletion is not a big bang; it falls out family by family as each
 last reader moves, and the final commits remove what nothing references.
 
-Two audits are owed before the last cut, both cheap and both named now so nobody discovers them at
-the end:
+Three obligations are owed before the last cut, named now so nobody discovers them at the end:
 
-* **Capture must be walk-free.** The per-concern fact visitors under `no.sikt.graphitron.facts`
-  project leaves into `sql_` / `graphitron_` rows, so parts of capture read the walk's output
-  today. Each such visitor re-sources from the registry, the catalog, or an earlier fact before
-  the walk goes; audit the package at pickup and carry the re-sourcing inside the families whose
-  facts it writes.
-* **The classification test estate recasts or retires.** Verdict-anchored tests
-  (`GraphitronSchemaBuilderTest`'s enum rows, `VariantCoverageTest`, the classification traces)
-  exist to pin the walk; as consumers move, each either recasts onto store relations and emitted
-  output or retires with the walk. The classified-corpus programme already moves verdict rows into
-  spec-by-example documentation, and this item follows its lead rather than inventing a second
-  mechanism.
+* **Confirm capture is walk-free, which it already essentially is.** The per-concern visitors
+  under `no.sikt.graphitron.facts` import nothing of the tree and feed `BuildContext` *upstream*
+  of the model, and the store's capture layer touches `rewrite.model` in exactly one place
+  (`MacroCapture` importing `ConnectionNaming`, a naming helper). The real write-side coupling is
+  the walk-side folds feeding `DeliveryFactRelation` and `OperationMemberRelation`, which are two
+  of the four folds this item re-sources anyway. The audit at the last cut is a confirmation pass,
+  not a re-sourcing project.
+* **The completeness gates re-key before the last leaf reader moves, not with the deletion
+  commit.** Output identity is only as strong as the corpus, and the corpus's completeness is
+  today enforced by vocabularies this item deletes: `VariantCoverageTest` covers
+  `ClassifiedCorpus.coveredLeaves()` against the sealed leaf sets, and `GeneratorCoverageTest`'s
+  dispatch partition is closed by the compiler because the vocabulary is sealed. Rows of a command
+  relation are closed by nothing, so after the deletion an unhandled shape would simply produce no
+  command row, which output identity cannot see and nothing would refuse. The
+  corpus-completeness and dispatch-partition obligations therefore re-key onto vocabularies that
+  survive (each command relation's declared arm set, each detection's closed verdict vocabulary,
+  the emitted-unit census), as a deliverable of the migration rather than of the deletion. The
+  remaining verdict-anchored tests (`GraphitronSchemaBuilderTest`'s enum rows, the classification
+  traces) recast onto store relations and emitted output or retire with the walk; the
+  classified-corpus programme already moves verdict rows into spec-by-example documentation, and
+  this item follows its lead rather than inventing a second mechanism.
+* **The doc estate is a terminal-step deliverable beside the test estate.** The deletion
+  invalidates named exemplars in the principle documents: the leaf-keyed dispatch partition under
+  "validator mirrors classifier invariants" in
+  `docs/architecture/explanation/development-principles.adoc` (a rewrite under that file's size
+  budget, so a displacement decision), `GraphitronSchemaBuilder`'s top comment as the
+  orientation-javadoc exemplar, the transitional-walk sentence in the fact-model page,
+  `pipeline-overview.adoc`'s transitional classification stage, and `code-generation-triggers`
+  with `index.adoc`'s pointer to it. Sweep them in the deletion's commits.
 
 ### The closer
 
-Extend `PackageImportDirectionTest` over both packages once they are empty of leaf readers. The
-two dials differ: `render` keeps its existing restriction to commands plus the named pure-data
-refs, while `plan` gets store reads (`StoreHandle` and the generated store tables) plus the command
-vocabulary it produces, with the seven leaf hierarchies forbidden by name. The ratchet pins retire
-in the same commit that extends the guard over the package each pin measures: a zeroed pin the
-guard makes unraisable is a second mechanism for one invariant, and two mechanisms for one
-invariant drift apart. The leaf-forbidding dials are themselves transitional: the terminal
-deletion removes the hierarchies they name, at which point each dial reduces to the permanent tier
-rule (`render` reads commands, `plan` reads the store and the command vocabulary it produces).
+Extend `PackageImportDirectionTest` over both packages once they are empty of leaf readers, giving
+each the same *positive* dial `render` already has: an enumerated allow-list of what the package
+may import, everything else a finding, the closure pinned by reflection the way
+`borrowDialComponentClosureIsPinned` does it. `render` keeps its restriction to commands plus the
+named pure-data refs; `plan` gets store reads (`StoreHandle` and the generated store tables) plus
+the command vocabulary it produces. A deny-list of the seven leaf hierarchies is explicitly the
+wrong shape: an eighth hierarchy, a relocated leaf, or a leaf taken as a parameter and never
+dispatched on all pass it, which is the same blindness the pins have. The positive dial also makes
+the guard permanent by construction: when the terminal deletion removes the hierarchies, nothing
+about the dial changes. The ratchet pins retire in the same commit that extends the guard over the
+package each pin measures: a zeroed pin the guard makes unraisable is a second mechanism for one
+invariant, and two mechanisms for one invariant drift apart.
 
 Prove each extended dial non-vacuous at the gate, the way the MCP's boundary guard was proven at
 its Done review: plant a forbidden leaf reference, watch the build fail, remove it. A guard that
@@ -554,6 +603,14 @@ columns. Each fact lands at its own grain and every other consumer inherits it, 
 are enumerated under "The facts to plan against are available" above, and the validator half's
 detections land under the same rule: a check's relation states the defect at the defect's grain,
 never a validator-shaped payload.
+
+The two halves carry opposite instructions about store views (the validator half adds them, the
+planner half is banned from asking for them), and the discriminator is worth stating once so the
+item reads as one architecture. A defect is a fact about the *schema*: permanent, many-consumer,
+so it lives in the store as a detection relation. A command row is a fact about *this run*:
+one-consumer, run-scoped, so the store never serves it, and `MULTISET` composition stays in the
+producer's `SELECT`. That line, not the identity of the consumer, is what decides where a
+derivation lives.
 
 ## Risks
 
@@ -701,11 +758,16 @@ Provisional; the Done-gate sweep greps for these, and the list grows as incremen
   move; `DeliveryFactPinTest`, when the delivery fold's consumer flips.
 * At the terminal step, the walk and its taxonomy wholesale: `GraphitronSchemaBuilder`,
   `TypeBuilder`, `FieldBuilder`, `BuildContext`, the sealed classification hierarchies
-  (`GraphitronType`, `GraphitronField` and everything under them), `Rejection` and its error
-  sub-seals, and the walk-transcription writers (`RejectionFacts` with the `rejection_` relations,
-  the `walk_` family and its `derive/` projections). Enumerate the survivors, not the deletions,
-  when the sweep runs: anything in `rewrite.model` still referenced is a value record that moved
-  below the boundary, not a leaf that escaped.
+  (`GraphitronType`, `GraphitronField` and everything under them), and the walk-transcription
+  writers (`RejectionFacts` with the `rejection_` relations, the `walk_` family and its `derive/`
+  projections). `Rejection` and its error sub-seals are deliberately *not* on this line: they are
+  the consumer-facing verdict axis, not walk scaffolding (a store detection with no leaf anywhere
+  in its derivation decodes them today, the editor's `lsp_code` is sourced from their `lspCode()`,
+  and a doc-coverage gate pins their permits), so they either survive below the boundary as the
+  decode target or hand the code-declaration and doc-coverage duties to a named successor, a fork
+  settled when the last classify-time rejection migrates rather than silently by the deletion.
+  Enumerate the survivors, not the deletions, when the sweep runs: anything in `rewrite.model`
+  still referenced is a value record that moved below the boundary, not a leaf that escaped.
 
 ## Coverage
 
@@ -734,6 +796,13 @@ Provisional; the Done-gate sweep greps for these, and the list grows as incremen
 * **The registered agreement anchor** for every new relation, through `FactCaptureAgreementTest`'s
   mechanical driver, which has no skip list, so a relation added for this item cannot arrive
   unchecked.
+* **The naming check, per new relation.** Each new fact or detection relation's commit states in
+  one sentence what a single row asserts, without naming a consumer, a generator pass, or an
+  existing class (`docs/architecture/explanation/fact-model.adoc`'s check). All four absorbed
+  folds are named today for the plan's question, delivery most clearly, and the page predicts what
+  the check finds in that situation: several facts where the question suggested one. Absorbing
+  R666 removed the external design pass those relations would have had; this obligation, applied
+  where the DDL lands, is its replacement.
 * **The ratchet pins** move down in the same commit as the work that lowers them, never raised on the
   generators side, and the plan-side pin falls rather than rises once the producers re-source.
 
@@ -772,3 +841,15 @@ terminal deliverable rather than a state some other item inherits. The same pass
 ratchet pins, censused the leaf model's full blast radius (nine consuming packages outside the
 walk; `command` and `render` already below the boundary), and replaced the row-identity coverage
 obligation with output identity per R740's doctrine.
+
+A principles pass the same day sharpened the rewrite in seven places: the minted-name collision
+checks became the stated exception to success criterion 3 (a store detection there would give one
+invariant two mints); the `diagnostic` union's growth story was made explicit, since joining it is
+a per-check DDL edit rather than free and the item retires the arm the editor rides today; the
+`Rejection` axis was pulled out of the terminal deletion line, being the consumer-facing verdict
+vocabulary rather than walk scaffolding; the extended guards became positive dials rather than a
+deny-list of hierarchies; the completeness gates' re-keying onto surviving vocabularies became a
+migration deliverable, because output identity is only as strong as the corpus and the gates that
+close the corpus are keyed on vocabularies this item deletes; the fact-model naming check became a
+per-relation coverage obligation, replacing the external design pass the discard removed; and the
+capture audit was corrected to a confirmation pass, capture being already essentially walk-free.
