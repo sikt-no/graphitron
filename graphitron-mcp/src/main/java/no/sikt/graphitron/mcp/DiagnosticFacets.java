@@ -36,6 +36,15 @@ import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
  * absence is uniformly SQL {@code NULL} and every comparison is {@code IS NOT DISTINCT FROM},
  * so {@code where} and {@code groupBy} cannot disagree about the absent bucket.
  *
+ * <p>The bet covers the argument values too, in the two shapes the ownership of a vocabulary
+ * allows. A value drawn from a vocabulary this module owns, a dimension name or an
+ * {@link Ordering}, is refused with the whole set named. A value drawn from a column taxonomy the
+ * store owns is read into the {@link Spelling} that column is stored in, refusing there meaning
+ * copying a value set this module does not define and that grows as detections migrate. Neither
+ * shape silently answers a different question than the one asked: a filter value outside the data
+ * is a question with an honest empty answer, while an ordering outside the two is a different
+ * answer to the question asked, which is why one normalises and the other refuses.
+ *
  * <p>{@code messageTemplate} is deliberately not a dimension: a template groups on the
  * rendering rather than the fact, its substrate (the two {@code Structural} catch-alls and the
  * advisory arm) shrinks as detections take over rejection families, and the surviving residue
@@ -71,14 +80,14 @@ final class DiagnosticFacets {
      * data.
      */
     enum Dimension {
-        SEVERITY("severity", DIAGNOSTIC.SEVERITY, ""),
-        SOURCE("source", DIAGNOSTIC.SOURCE, ""),
+        SEVERITY("severity", DIAGNOSTIC.SEVERITY, "", Spelling.LOWER_CASE),
+        SOURCE("source", DIAGNOSTIC.SOURCE, "", Spelling.LOWER_CASE),
         ACTIONABLE("actionable", DIAGNOSTIC.ACTIONABLE, "can you fix this in the schema?"),
-        KIND("kind", DIAGNOSTIC.KIND, ""),
+        KIND("kind", DIAGNOSTIC.KIND, "", Spelling.UPPER_SNAKE),
         VARIANT("variant", DIAGNOSTIC.VARIANT, "the rejection's own class"),
         LSP_CODE("lspCode", DIAGNOSTIC.LSP_CODE, ""),
         ATTEMPT_KIND("attemptKind", DIAGNOSTIC.ATTEMPT_KIND,
-            "which lookup space a name resolution failed in"),
+            "which lookup space a name resolution failed in", Spelling.UPPER_SNAKE),
         ATTEMPT("attempt", DIAGNOSTIC.ATTEMPT, "the name the author wrote"),
         STUB_KEY("stubKey", DIAGNOSTIC.STUB_KEY, ""),
         DIRECTIVES("directives", DIAGNOSTIC.DIRECTIVES,
@@ -92,11 +101,18 @@ final class DiagnosticFacets {
         private final String wireName;
         private final Field<?> column;
         private final String gloss;
+        private final Spelling spelling;
 
+        /** A dimension making no spelling claim: the wire value compares as the caller wrote it. */
         Dimension(String wireName, Field<?> column, String gloss) {
+            this(wireName, column, gloss, Spelling.AS_STORED);
+        }
+
+        Dimension(String wireName, Field<?> column, String gloss, Spelling spelling) {
             this.wireName = wireName;
             this.column = column;
             this.gloss = gloss;
+            this.spelling = spelling;
         }
 
         String wireName() {
@@ -140,7 +156,16 @@ final class DiagnosticFacets {
                 throw new BadRequest("dimension '" + wireName + "' takes true or false, not '"
                     + wireValue + "'.");
             }
-            return String.valueOf(wireValue);
+            return normalise(String.valueOf(wireValue));
+        }
+
+        /**
+         * The wire value read into this dimension's own spelling. Package-private because it is
+         * also the pin's subject: a declared spelling has to be the identity on every value the
+         * store holds, or the {@code where} boundary would drop rows a raw comparison matches.
+         */
+        String normalise(String wireValue) {
+            return spelling.normalise(wireValue);
         }
 
         /** Resolves a wire name, failing with the full closed vocabulary rather than a bare miss. */
@@ -156,6 +181,76 @@ final class DiagnosticFacets {
 
         static List<String> wireNames() {
             return java.util.Arrays.stream(values()).map(Dimension::wireName).toList();
+        }
+    }
+
+    /**
+     * The spelling a dimension's column is stored in, and therefore the spelling a wire value is
+     * read into. Naming a spelling is a weaker claim than naming a value set: the store owns which
+     * severities exist, this owns only that the {@code diagnostic} view writes them in one case,
+     * so a spelling cannot go stale when a taxonomy grows. It is safe for the same reason it is
+     * weak, being the identity on every value the store holds, a property
+     * {@code DiagnosticsAggregateTest} pins against the store's own group keys rather than against
+     * this reading. A group key never enters the path: a drill-down re-feeds stored values through
+     * {@link Dimension#matchesStored}, so the aggregate and its drill-down stay exact whatever is
+     * declared here.
+     */
+    enum Spelling {
+        /** No claim; the default, and every open-text or author-written column. */
+        AS_STORED,
+        /** Lower case, the case the view writes its own {@code severity} and {@code source} literals in. */
+        LOWER_CASE,
+        /**
+         * Upper case with hyphens folded to underscores: an enum {@code name()}, which is what the
+         * kind and attempt-kind columns hold. The fold is what lets the kebab-case spelling the
+         * {@code diagnostics} entries render ({@code invalid-schema}) read back as a filter.
+         */
+        UPPER_SNAKE;
+
+        String normalise(String value) {
+            return switch (this) {
+                case AS_STORED -> value;
+                case LOWER_CASE -> value.toLowerCase(Locale.ROOT);
+                case UPPER_SNAKE -> value.toUpperCase(Locale.ROOT).replace('-', '_');
+            };
+        }
+    }
+
+    /**
+     * How an aggregate orders its groups: by descending count, which is the triage reading, or by
+     * the composite group key. Two values, owned outright by the code that sorts the rows and
+     * defined nowhere else, so an unknown one is refused with both named rather than defaulting to
+     * the other. Defaulting was the whole defect: an ordering names the shape of the answer, so
+     * ignoring it hands back an answer to a question nobody asked with nothing in the response
+     * saying so, which is the guess-and-retry cost a closed vocabulary exists to remove.
+     */
+    enum Ordering {
+        COUNT("count"),
+        KEY("key");
+
+        private final String wireName;
+
+        Ordering(String wireName) {
+            this.wireName = wireName;
+        }
+
+        String wireName() {
+            return wireName;
+        }
+
+        /** Resolves a wire name, failing with both orderings rather than silently picking one. */
+        static Ordering of(String wireName) {
+            for (Ordering ordering : values()) {
+                if (ordering.wireName.equals(wireName)) {
+                    return ordering;
+                }
+            }
+            throw new BadRequest("unknown orderBy '" + wireName + "'; the orderings are "
+                + wireNames() + ".");
+        }
+
+        static List<String> wireNames() {
+            return java.util.Arrays.stream(values()).map(Ordering::wireName).toList();
         }
     }
 
@@ -282,14 +377,14 @@ final class DiagnosticFacets {
             limit = DEFAULT_GROUP_LIMIT;
         }
         limit = Math.min(limit, MAX_GROUP_LIMIT);
-        boolean orderByKey = McpWire.stringArg(args, "orderBy").map("key"::equals).orElse(false);
+        Ordering groupOrder = ordering(args);
 
         List<Field<?>> groupFields = dims.stream().map(Dimension::column).toList();
         Field<Integer> count = DSL.count();
         var selected = new ArrayList<Field<?>>(groupFields);
         selected.add(count);
         var ordering = new ArrayList<SortField<?>>();
-        if (!orderByKey) {
+        if (groupOrder == Ordering.COUNT) {
             ordering.add(count.desc());
         }
         groupFields.forEach(f -> ordering.add(f.asc().nullsLast()));
@@ -383,6 +478,19 @@ final class DiagnosticFacets {
                 .append(elidedCount).append(" diagnostic(s)");
         }
         return summary.append(".").toString();
+    }
+
+    /**
+     * The requested group ordering, or {@code COUNT} when {@code orderBy} is absent. Read off the
+     * argument map the way {@code groupBy} is, rather than through
+     * {@link McpWire#stringArg}: that reader answers absent for a blank or non-string value, which
+     * for a closed vocabulary is the silent default this refuses to give. Lenient coercion is what
+     * the numeric arguments want, and they keep it, a clamped {@code limit} reporting itself
+     * through the elision accounting where a defaulted ordering reports nothing.
+     */
+    private static Ordering ordering(Map<String, Object> args) {
+        Object orderBy = args == null ? null : args.get("orderBy");
+        return orderBy == null ? Ordering.COUNT : Ordering.of(String.valueOf(orderBy));
     }
 
     /** The requested dimensions, or the triage preset when {@code groupBy} is absent or empty. */

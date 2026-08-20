@@ -12,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -218,7 +219,139 @@ class DiagnosticsAggregateTest {
         }
     }
 
+    @Test
+    void anUnknownOrderByIsRefusedWithBothOrderings() {
+        try (var store = FactStores.inMemory()) {
+            var handle = volumeHandle(store.dsl(), List.of());
+            // A typo, a fuller sort expression, the enum-ish spelling, and a non-string: each one
+            // used to mean count, which is an answer to a question the caller did not ask.
+            for (Object written : List.<Object>of("cuont", "count desc", "COUNT", 5)) {
+                var result = DiagnosticFacets.aggregateResult(
+                    handle, Map.<String, Object>of("orderBy", written));
+                assertThat(result.isError()).as("orderBy '%s' is refused", written).isTrue();
+                assertThat(firstLine(result))
+                    .contains("unknown orderBy '" + written + "'")
+                    .as("the refusal carries both orderings, so the retry needs no second guess")
+                    .contains("count").contains("key");
+            }
+        }
+    }
+
+    @Test
+    void orderByCountIsTheDefaultAndOrderByKeySortsOnTheGroupKey() {
+        try (var build = StoreBackedBuild.run(tmp, "aggregate-ordering", SDL)) {
+            var byDefault = groups(structured(aggregate(
+                build.handle(), Map.of("groupBy", List.of("coordinate")))));
+            var byCount = groups(structured(aggregate(build.handle(),
+                Map.of("groupBy", List.of("coordinate"), "orderBy", "count"))));
+            assertThat(byCount)
+                .as("spelling the default out loud answers exactly as omitting it")
+                .isEqualTo(byDefault);
+            assertThat(byDefault.stream().map(group -> (Integer) group.get("count")).toList())
+                .isSortedAccordingTo(Comparator.reverseOrder());
+
+            var byKey = groups(structured(aggregate(build.handle(),
+                Map.of("groupBy", List.of("coordinate"), "orderBy", "key"))));
+            var keys = byKey.stream().map(group -> (String) key(group).get("coordinate")).toList();
+            assertThat(keys).containsExactlyInAnyOrderElementsOf(
+                byDefault.stream().map(group -> (String) key(group).get("coordinate")).toList());
+            assertThat(keys.stream().filter(java.util.Objects::nonNull).toList())
+                .as("by key means ascending on the group key")
+                .isSorted();
+            if (keys.contains(null)) {
+                assertThat(keys.getLast())
+                    .as("the absent bucket keeps its stated place at the tail")
+                    .isNull();
+            }
+        }
+    }
+
+    @Test
+    void theSeveritySugarAndTheWhereFilterReadTheSameSpelling() {
+        try (var build = StoreBackedBuild.run(tmp, "aggregate-severity-casing", SDL)) {
+            var sugar = entries(structured(DiagnosticsTool.diagnosticsResult(
+                build.handle(), Map.of("severity", "ERROR", "limit", 10_000))));
+            assertThat(sugar).isNotEmpty();
+            for (String written : List.of("ERROR", "error", "Error")) {
+                assertThat(entries(structured(filtered(build.handle(), "severity", written))))
+                    .as("where reads a closed-taxonomy value into the spelling its column is "
+                        + "stored in, so '%s' filters the rows the sugar filters", written)
+                    .hasSameSizeAs(sugar);
+            }
+
+            // The aggregate answers the same filter, and its group key comes back in the store's
+            // own spelling rather than the caller's, which is what keeps a key a drill-down.
+            var grouped = structured(aggregate(build.handle(), Map.of(
+                "groupBy", List.of("severity"), "where", Map.of("severity", "ERROR"))));
+            assertThat(groups(grouped)).singleElement().satisfies(group -> {
+                assertThat(key(group)).containsEntry("severity", "error");
+                assertThat(group.get("count")).isEqualTo(sugar.size());
+            });
+        }
+    }
+
+    @Test
+    void theKindSpellingTheEntriesRenderReadsBackThroughWhere() {
+        try (var build = StoreBackedBuild.run(tmp, "aggregate-kind-spelling", SDL)) {
+            var kinds = groups(structured(aggregate(
+                build.handle(), Map.of("groupBy", List.of("kind"))))).stream()
+                .filter(group -> key(group).get("kind") != null)
+                .toList();
+            assertThat(kinds).isNotEmpty();
+            for (var group : kinds) {
+                String stored = (String) key(group).get("kind");
+                int count = (Integer) group.get("count");
+                var byStored = entries(structured(filtered(build.handle(), "kind", stored)));
+                assertThat(byStored).hasSize(count);
+
+                // The entries render the stored kind kebab-cased. That spelling is what an agent
+                // has in hand to paste back, so it has to filter the same rows.
+                String rendered = (String) byStored.getFirst().get("rejectionKind");
+                assertThat(rendered).isNotNull().isNotEqualTo(stored);
+                assertThat(entries(structured(filtered(build.handle(), "kind", rendered))))
+                    .as("the kind spelling the entries render ('%s') reads back as a filter", rendered)
+                    .hasSize(count);
+            }
+        }
+    }
+
+    @Test
+    void everyStoredDimensionValueIsAlreadyInItsDeclaredSpelling() {
+        try (var build = StoreBackedBuild.run(tmp, "aggregate-spelling-pin", SDL)) {
+            for (var dimension : DiagnosticFacets.Dimension.values()) {
+                var groups = groups(structured(aggregate(build.handle(), Map.of(
+                    "groupBy", List.of(dimension.wireName()),
+                    "limit", DiagnosticFacets.MAX_GROUP_LIMIT))));
+                for (var group : groups) {
+                    Object value = key(group).get(dimension.wireName());
+                    if (value == null) {
+                        continue;
+                    }
+                    String stored = String.valueOf(value);
+                    assertThat(dimension.normalise(stored))
+                        .as("a declared spelling has to be the identity on the values the store "
+                            + "holds, or the where boundary would drop rows a raw comparison "
+                            + "matches; dimension '%s'", dimension.wireName())
+                        .isEqualTo(stored);
+                }
+            }
+        }
+    }
+
     // ---- helpers ----
+
+    /** The {@code diagnostics} answer for one {@code where} dimension, unpaged. */
+    private static McpSchema.CallToolResult filtered(
+        StoreHandle handle, String dimension, Object value
+    ) {
+        var where = new LinkedHashMap<String, Object>();
+        where.put(dimension, value);
+        var args = new LinkedHashMap<String, Object>();
+        args.put("where", where);
+        args.put("limit", 10_000);
+        return DiagnosticsTool.diagnosticsResult(handle, args);
+    }
+
 
     private McpSchema.CallToolResult aggregate(StoreHandle handle, Map<String, Object> args) {
         var result = DiagnosticFacets.aggregateResult(handle, args);

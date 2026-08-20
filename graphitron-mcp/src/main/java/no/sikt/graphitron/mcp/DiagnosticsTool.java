@@ -25,7 +25,9 @@ import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
  * ({@link DiagnosticFacets#conditions}), which is what makes an aggregate group's key the exact
  * drill-down filter for this tool: the same columns, the same {@code IS NOT DISTINCT FROM}
  * comparisons, so the two tools cannot disagree about a group's membership. The {@code severity}
- * and {@code coordinate} arguments stay as sugar over the same mechanism.
+ * and {@code coordinate} arguments stay as sugar over the same mechanism, and do no
+ * normalising of their own: the shared boundary reads a wire value into the spelling its column
+ * is stored in, so either casing of a severity filters the same rows through either argument.
  *
  * <p>Reads go through the session's store handle and are scoped to the session's graph; a
  * server booted without the handle refuses rather than answering an empty list that would read
@@ -56,8 +58,7 @@ final class DiagnosticsTool {
         Optional<String> severity = McpWire.stringArg(args, "severity");
         Optional<String> coordinate = McpWire.stringArg(args, "coordinate");
         List<Condition> conditions = DiagnosticFacets.conditions(graphName, args);
-        severity.ifPresent(s -> conditions.add(
-            DiagnosticFacets.Dimension.SEVERITY.matches(s.toLowerCase(Locale.ROOT))));
+        severity.ifPresent(s -> conditions.add(DiagnosticFacets.Dimension.SEVERITY.matches(s)));
         coordinate.ifPresent(c -> conditions.add(DiagnosticFacets.Dimension.COORDINATE.matches(c)));
 
         var entries = dsl.selectFrom(DIAGNOSTIC)

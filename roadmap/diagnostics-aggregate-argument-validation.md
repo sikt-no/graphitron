@@ -1,7 +1,7 @@
 ---
 id: R633
 title: "The aggregate rejects unknown argument values instead of defaulting"
-status: Spec
+status: In Review
 bucket: feature
 priority: 7
 theme: diagnostics
@@ -82,57 +82,35 @@ the difference is not inconsistency: a clamped `limit` reports itself. `elidedGr
 `elidedCount` say exactly what the cap folded, which is the property that keeps a truncated
 aggregate from reading as a complete one. A silently defaulted `orderBy` reports nothing.
 
-## Implementation
+## Landed
 
-`DiagnosticFacets`:
+`DiagnosticFacets` grew two nested vocabularies beside `Dimension`. `Ordering` (`count`, `key`)
+resolves through an `of` in `Dimension.of`'s shape, refusing an unknown value with both named;
+the aggregate reads it off the argument map the way `groupBy` is read, so a blank or non-string
+value is a refusal too rather than the silent default `McpWire.stringArg` would have given.
+`Spelling` (`AS_STORED`, `LOWER_CASE`, `UPPER_SNAKE`) is a fourth `Dimension` constructor
+argument, defaulted by a delegating three-argument constructor so only the four declaring rows
+carry one: `severity` and `source` lower-case, `kind` and `attemptKind` upper-case with hyphens
+folded to underscores. It applies in `coerce`, the one boundary both diagnostics tools already
+share, so `DiagnosticsTool`'s `severity` sugar dropped its own `toLowerCase` and now agrees with
+`where` by construction. `matchesStored` is untouched, which is what keeps an aggregate group key
+out of the normalisation path and the drill-down exact. The aggregate tool's input schema declares
+`enum` on `orderBy`, so the two values are discoverable without a failed call.
 
-* Add an `Ordering` enum beside `Dimension` with `COUNT("count")` and `KEY("key")`, an `of`
-  resolver in `Dimension.of`'s shape (exact match, refusing with both values named), and a
-  `wireNames()` for the input schema. Exact match rather than case-insensitive, on
-  `Dimension.of`'s standing precedent: the refusal carries the whole set, so a `"COUNT"` costs
-  one retry with the answer already in hand, and the server stays no more lenient than the
-  `enum` its input schema declares.
-* Read the argument the way `groupByDimensions` reads `groupBy`: the raw value from the map,
-  absent means `COUNT`, anything present goes through `String.valueOf` into `Ordering.of`. This
-  is what makes a non-string (`orderBy: 5`) a refusal too, where `McpWire.stringArg` would drop
-  it to the default; `stringArg` is the lenient coercion the numeric arguments want and the
-  wrong reader for a closed vocabulary.
-* Add a nested `Spelling` enum (`AS_STORED`, `LOWER_CASE`, `UPPER_SNAKE`) with a
-  `normalise(String)`, root-locale throughout, and a fourth `Dimension` constructor argument
-  carrying it. A three-argument constructor delegates with `AS_STORED`, so the four declaring
-  rows are the whole diff and the default is the no-op: normalising is the claim that needs a
-  justification, storing as written is not. `SEVERITY` and `SOURCE` take `LOWER_CASE`, `KIND` and
-  `ATTEMPT_KIND` take `UPPER_SNAKE`.
-* Apply the spelling in `coerce`, so the one boundary both tools already share is the one place
-  it happens. `matchesStored` stays untouched, which is what keeps the aggregate's own group keys
-  out of the normalisation path entirely.
+Five pins in `DiagnosticsAggregateTest`: an unknown `orderBy` refused with both orderings named
+(a typo, a fuller sort expression, `"COUNT"`, and a non-string); `orderBy: "count"` answering
+identically to the argument being absent while `"key"` sorts ascending on the group key with the
+absent bucket at the tail; the `severity` sugar and three casings of the `where` value filtering
+the same rows, with the group key coming back in the store's spelling; the kebab-case `kind` an
+entry renders reading back through `where` as the same count; and, over every dimension, every
+distinct value the store holds being its own normal form, which is the pin that makes a declared
+spelling safe rather than merely plausible.
 
-`DiagnosticsTool`: drop the `severity` sugar's own `toLowerCase(Locale.ROOT)`, now redundant
-against the boundary, and the `Locale` import with it if nothing else needs it.
+## Workflow note for the Done gate
 
-`GraphitronMcpServer`: declare `"enum", DiagnosticFacets.Ordering.wireNames()` on the aggregate
-tool's `orderBy` property, beside its description, the way `groupBy` declares the dimension
-names.
-
-No documentation change. `docs/manual/how-to/mcp-agent-context.adoc` describes the tool one
-sentence deep and names no arguments; the input schema and the tool description are the contract
-here, and both are rendered from the code this item edits.
-
-## Tests
-
-`DiagnosticsAggregateTest`, on the existing SDL fixture and its store-backed build, asserting on
-tool answers rather than internals as the class already does:
-
-* An unknown `orderBy` is refused, with both orderings named in the message, for `"cuont"` and
-  for `"COUNT"`.
-* `orderBy: "count"` answers identically to the argument being absent, and `orderBy: "key"`
-  orders by the group key. This is the first coverage the argument has had either way.
-* The `severity` sugar and the `where` path agree on casing: `severity: "ERROR"`,
-  `where: {severity: "ERROR"}` and `where: {severity: "error"}` all return the same entries.
-* The kind spelling `diagnostics` renders (`invalid-schema`) reads back through
-  `where: {kind: ...}` as the same count the aggregate reports for the stored `INVALID_SCHEMA`
-  group.
-* Every distinct value the store holds for every dimension is its own normal form, read through
-  the aggregate's group keys. This is the pin that makes normalisation safe: it fires if a
-  dimension declares a spelling the store contradicts, which is the only way normalisation could
-  drop a row that a raw comparison would have matched.
+This item went Backlog to In Review in one session at the user's direction ("create a worktree
+and implement R633"), so the `Spec -> Ready` sign-off was not an independent review: the author,
+the reviewer of record and the implementer are the same session. The spec body above is therefore
+un-gated design, and the reviewer at this gate is the first fresh context to read it. Read the
+"What decides the answer" section as a proposal rather than as an approved design, and reopen to
+`Spec` if the refuse-what-you-own / normalise-what-the-store-owns split is the wrong rule.

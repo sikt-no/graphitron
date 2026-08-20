@@ -873,7 +873,9 @@ public final class GraphitronMcpServer implements AutoCloseable {
                             + DiagnosticFacets.DEFAULT_EXAMPLES + ", max "
                             + DiagnosticFacets.MAX_EXAMPLES + ")."),
                     "orderBy", Map.of("type", "string",
-                        "description", "\"count\" (default, largest first) or \"key\"."),
+                        "enum", DiagnosticFacets.Ordering.wireNames(),
+                        "description", "\"count\" (default, largest first) or \"key\"; any other "
+                            + "value is refused rather than read as the default."),
                     "limit", Map.of("type", "integer",
                         "description", "Maximum groups returned (default "
                             + DiagnosticFacets.DEFAULT_GROUP_LIMIT + ", capped at "
