@@ -223,6 +223,53 @@ classes is deliberate and works; the augmentation cost is why it exists. What is
 the per-test bookkeeping beside it. That is a property of the extension, not of anything this
 repository can fix, so for a class that genuinely needs a container the only lever is scheduling.
 
+#### Upstream has this, and it is a feature request rather than a bug
+
+Checked so that a Spec pass does not go looking for a fix or wait for one. All of this is public and
+was read rather than recalled.
+
+* **It is tracked as an open enhancement, not a defect.**
+  `quarkusio/quarkus#42296`, "Support parallel/concurrent testing with JUnit", opened 2 August 2024,
+  still open, labelled `area/testing` and `kind/enhancement`. Parallel `@QuarkusTest` execution has
+  never been supported, so there is nothing regressed to restore.
+* **The maintainers' answer is explicit.** The community thread is discussion `#29218`, "Running
+  @QuarkusTest in Parallel", from November 2022. The maintainer answer in January 2023 is "Currently,
+  it will not work properly." A Quarkus committer's 2025 note on the same thread describes the goal as
+  restoring the earlier level of accidental success, with the caveat that "it's not supported, and it
+  won't work in all cases, but it will sometimes work". That is the state as of the 3.34 line this
+  reactor builds against.
+* **The symptom most people hit is a different one than ours.** The usual report is
+  `IllegalStateException: SRCFG00017: Configuration already registered for the given class loader`,
+  out of SmallRye Config's `SmallRyeConfigProviderResolver.registerConfig`, roughly half of runs in
+  `#42296`. `#24524` is the sharpest version: a module of *plain* unit tests, no `@QuarkusTest` at all,
+  failing under class-level parallelism merely because `quarkus-junit5` was on the classpath and its
+  `BasicLoggingEnabler.beforeAll` registered config. Our failure did not take that shape, which is
+  worth knowing: two independent races live in this extension and hitting one says nothing about the
+  other.
+* **Our exact symptom has a closed precedent with a non-parallel trigger.** `#25812`, May 2022, is the
+  same `IllegalArgumentException: object is not an instance of declaring class` from the same
+  `QuarkusTestExtension.runExtensionMethod`, reached through `@Nested` classes with a per-class
+  instance lifecycle rather than through threads. It was fixed by patching that path. The shared slot
+  stayed, which is why the same class of failure is still reachable from a different direction.
+* **Nothing in the documentation warns about it.** The testing guide's only occurrence of "parallel"
+  is `@QuarkusTestResource(parallel = true)`, which starts *test resources* concurrently and is
+  unrelated. So there was no note to have read before trying this.
+* **The recommended workaround is process-level and does not fit here.** Surefire `forkCount` with
+  `reuseForks=false` and `quarkus.http.test-port=0` gives each class its own JVM. That trades one
+  shared Quarkus boot for N of them, on a box this item has just measured as saturated, so it is the
+  wrong direction for us even though it is the right answer for a module that is mostly
+  `@QuarkusTest`. The other workaround in `#29218`, a single `@QuarkusTest` driver class that launches
+  JUnit programmatically inside the one instance, took one reporter from 15 minutes to 1; it is a
+  heavier version of the same idea as merging the four classes.
+* **One JUnit-side hazard checked and cleared.** `@Isolated` and `@ResourceLock` did not coordinate,
+  so an `@Isolated` class could run beside a lock-holding one (`junit-team` `#2605`). Fixed in JUnit
+  5.7.2; this reactor is on 6.0.3, so a `@ResourceLock` plan is safe on that count. Worth noting
+  because `graphitron` does use `@Isolated` elsewhere, so the two mechanisms will coexist in the
+  reactor even if not in one module.
+
+The conclusion for a Spec pass is that scheduling is the whole of the available answer, and that it
+should be written as a standing constraint rather than a workaround awaiting an upstream fix.
+
 ### But one of the five does not need a container, and that changes the size of the problem
 
 Running GraphQL operations against a Graphitron-generated schema needs no Quarkus at all, and 46 of
