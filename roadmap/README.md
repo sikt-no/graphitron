@@ -27,7 +27,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R743` | The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves | Ready | 2026-08-20 | [plan](sdl-fact-gatherer-staged-pipeline.md) |
 | `R728` | @nodeId encode and decode become store relations, and an instruction the generator drops fails the build | In Progress | 2026-08-20 <sub>created 2026-08-19</sub> | [plan](nodeid-effective-at-every-coordinate.md) |
-| `R706` | A build that meets a held fact store fails fast and says so | In Review | 2026-08-20 <sub>created 2026-08-18</sub> | [plan](store-contention-fails-fast.md) |
 | `R744` | TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion | In Review | 2026-08-20 | [plan](scatter-test-syncs-on-mid-pin-connect-event.md) |
 | `R753` | Accept @deprecated alias fields sharing a write column on jOOQ-record inputs | Spec | 2026-08-20 | [plan](write-input-deprecated-column-alias.md) |
 | `R746` | Order the materialization registry, so a target may be derived from another target <sub>blocked by: [determinism-ratchet-run-count](determinism-ratchet-run-count.md)</sub> | Spec | 2026-08-20 | [plan](materialization-dependency-order.md) |
@@ -504,7 +503,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### dev-loop
 
 - `R522` [**Reconcile the emitted-code seam-pin assertion convention with the testing doc**](emitted-seam-pin-assertion-convention.md) — Backlog, tech-debt
-- `R706` [**A build that meets a held fact store fails fast and says so**](store-contention-fails-fast.md) — In Review, bug
 - `R462` [**Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder**](nested-fetcher-outgoing-field-edges.md) — Spec, bug
 - `R685` [**The class census scans the transitive dependency closure**](census-scans-transitive-closure.md) — Spec, architecture
 - `R620` [**The dev loop reads the whole classpath twice per pass**](dev-loop-duplicate-classpath-scan.md) — Backlog, architecture
