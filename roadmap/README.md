@@ -27,8 +27,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R744` | TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion | In Progress | 2026-08-20 | [plan](scatter-test-syncs-on-mid-pin-connect-event.md) |
 | `R743` | The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves | In Progress | 2026-08-20 | [plan](sdl-fact-gatherer-staged-pipeline.md) |
+| `R744` | TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion | In Review | 2026-08-20 | [plan](scatter-test-syncs-on-mid-pin-connect-event.md) |
 | `R753` | Accept @deprecated alias fields sharing a write column on jOOQ-record inputs | Spec | 2026-08-20 | [plan](write-input-deprecated-column-alias.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -603,7 +603,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R550` [**Pin around the Quarkus ArC unused-bean removal flake**](quarkus-arc-removal-flake.md) — Backlog, bug
 - `R554` [**Retire the generated-body string-scan helpers in TypeSpecAssertions**](generated-body-string-assertion-helpers.md) — Backlog, test-quality
 - `R669` [**RootLauncherRendererTest asserts on generated body strings**](renderer-test-code-string-sweep.md) — Backlog, tech-debt
-- `R744` [**TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion**](scatter-test-syncs-on-mid-pin-connect-event.md) — In Progress, bug
+- `R744` [**TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion**](scatter-test-syncs-on-mid-pin-connect-event.md) — In Review, bug
 - `R136` [**Execution-tier coverage for FK-target/NodeType-keyColumns permutation**](nodeid-fk-permutation-execution-tier.md) — Backlog, validation
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation
 - `R170` [**Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R98-blocked)**](validator-integration-execute-coverage.md) — Backlog, testing, blocked by [multi-source-input-validation](multi-source-input-validation.md)
