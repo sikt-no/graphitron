@@ -493,6 +493,18 @@ populations are enumerated under "The facts to plan against are available" above
   verdict and deliberately stops short of flipping consumers, naming the planning-stage consumers as
   the eligible ones. Those consumers are this item. It is also the worked example the per-coordinate
   verdicts follow, so it lands first for the pattern as much as for the view.
+
+  **Whether that edge should exist is an open question, recorded in that item's scope section and
+  owed to one of the two Spec reviews.** Delivery is one of four folds this item needs with no home
+  in the store, beside operation members, connection synthesis and tenant bindings. The other three
+  are built inside the slice that consumes them; delivery is the only one extracted, and the only
+  one whose item plans a shadow test and a residue record naming the walk's holes. Extraction is the
+  likely cause: a fold built by an item that changes no production read has no consumer to validate
+  against, leaving the walk as the only oracle. The alternative is that this item absorbs the
+  delivery fold as a slice on the same footing as the other three, building the relation and flipping
+  the planner onto it together, so the slice's own test is the specification and nothing is owed to
+  the walk. `roadmap/retire-oracle-diff-shadow-tests.md` argues the general case and retires the
+  shadow tests the delivery item cites as precedent.
 * `roadmap/lsp-reads-the-fact-store.md` is the shape to copy: one item, many increments, each arm
   landing on its own commit with what it settled written down. It also owns `StoreHandle`, which the
   planner half's producers take. Not a declared dependency: the earlier edge existed because both

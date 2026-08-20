@@ -843,6 +843,43 @@ two-switch model structurally cannot have.
 The deliverable is therefore not "the store also knows about delivery". It is **the delivery rule
 set acquiring an enforcer that is not another switch.**
 
+### Open question on this scope, raised from outside the item
+
+Raised while filing `roadmap/retire-oracle-diff-shadow-tests.md`, which retires the shadow tests
+this section names as its precedent. Recorded here for the Spec review to settle rather than decided
+here.
+
+The concern is the carve-out itself. `roadmap/planners-read-facts-emitters-read-commands.md` needs
+four folds that have no home in the store: operation members, connection synthesis, tenant bindings
+and delivery. Three of them it builds inside the slice that consumes them, with no separate item, no
+shadow test and no residue record. Delivery is the only one extracted into its own item, and it is
+the only one that acquires both. That looks like cause rather than coincidence: an item that changes
+no production read has no consumer to validate against, so the walk becomes the only available
+oracle and a residue enumeration becomes structurally necessary.
+
+Both arguments this section makes read differently under that lens. "A flip requires the shadow
+residues to be empty over the consumed population" assumes fidelity to the walk is the flip's
+precondition; the alternative is that the flip requires the *consumer* to behave correctly, so a
+coordinate where the two derivations disagree is a question about which answer the consumer should
+give, settled by a test written from that requirement. The stalling risk the section names is then
+what a piece-by-piece churn absorbs: the slice that meets the disagreement decides it there. And the
+integrity argument, that the shadow catches a batched delivery added leaf-side with no rule arm,
+protects a rule set that no consumer reads yet; once a consumer reads it, the consumer's own test is
+that enforcer.
+
+The review record is itself evidence worth weighing. Six Spec passes have landed on this body, and
+several are corrections to the residue enumeration rather than to the rule set: a declared residue
+with no shape and an accounting that said two, a renamed-root residue empty by construction, and a
+cardinality narrowing that would have put a boundary in the residue record no shape can exercise.
+Each finding is sound and the reviews caught real defects. The question the pattern raises is why an
+item whose delivery changes no production read is accumulating its review cost in the description of
+another component's holes.
+
+If the review agrees, the delivery fold becomes a slice of the planner item on the same footing as
+the other three, this body survives as that slice's design analysis, and neither `DeliveryResidue`
+nor `DeliveryShadowTest` is built. If it disagrees, the reasons belong in this section, because the
+sibling item now argues the general case against oracle-anchored derivations.
+
 ## Implementation
 
 * The three views in the DDL, in the demand stratum's shape:
