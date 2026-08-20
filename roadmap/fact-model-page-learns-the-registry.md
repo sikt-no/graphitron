@@ -1,5 +1,5 @@
 ---
-id: R757
+id: R758
 title: "The fact model page never learns the materialization registry"
 status: Backlog
 bucket: dx

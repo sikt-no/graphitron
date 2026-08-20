@@ -65,7 +65,7 @@ reviewer has to re-check.*
   and no authored page under `docs/` mentions `meta_materialize`, the `_live` convention, or the
   refresh entry point. `Materializations`'s class javadoc points a contributor at that page for "the
   contributor-facing rationale". The item's contract named only the three DDL paragraphs and all
-  three moved, so this is a gap rather than a miss. **Filed as R757.**
+  three moved, so this is a gap rather than a miss. **Filed as R758.**
 * Each `_live` view carries one mechanically-worded column comment per column, twenty in all, whose
   only content is a redirect to the target's comment. The redirect is the right call (one home for
   the meaning) but the comment gate is what forces the twenty lines, and it could instead learn that
