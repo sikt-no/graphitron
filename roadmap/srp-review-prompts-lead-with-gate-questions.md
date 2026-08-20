@@ -1,7 +1,7 @@
 ---
 id: R755
 title: "srp review prompts lead with commit bookkeeping where the gate turns on goal, design fit, fidelity, and completeness"
-status: Ready
+status: In Progress
 bucket: improvement
 priority: 4
 theme: tooling
@@ -25,6 +25,9 @@ rather than the reverse, and the In Review template points the reviewer at the d
 the tree instead of at the commit series that produced it.
 
 ## Why the current shape produces nits
+
+This section diagnoses the shape as it stood before the rewrite; the line counts it quotes are the
+ones the change replaced.
 
 Count the sections of the emitted Spec-stage template. "Sync first", "Reviewer rule" (with its
 recent-commits block and disqualified-ID paragraph), and "Outcomes (exactly two)" come to 35 of the
@@ -160,14 +163,27 @@ would have to re-plural is not.
 * `.claude/skills/srp/SKILL.md`:
   * Rewrite the Spec-stage template to the section order above. The draft below is the intended
     output; land it as the template with the values re-tokenised.
-  * Rewrite the Implementation-stage template to the same order, with questions 3 and 4 verbatim
-    from workflow.adoc, keeping the existing "Approval preconditions" section (build passes, no
+  * Rewrite the Implementation-stage template to the same order, carrying questions 3 and 4 from
+    workflow.adoc, keeping the existing "Approval preconditions" section (build passes, no
     code-string assertions on generated method bodies, spec body reflects what shipped) as an
     appendix to the Verdict section rather than a peer of the questions.
+
+    Questions 3 and 4 land restated in reviewer voice with the observable attached, the same
+    treatment the Spec-stage draft gives questions 1 and 2, rather than quoted verbatim as an
+    earlier wording of this bullet had it. Verbatim quoting contradicts *What the templates become*,
+    which makes the restatement deliberate and labelled, and it would resurrect the predicate the
+    struck drift check failed on: a template that quotes cannot also carry the observable in second
+    person. The definition stays single-source by the pointer line, not by string identity.
   * The Implementation-stage Materials section names the touched tree as the review surface and
     relabels the commit list as provenance. No new token; see *The delivery, not the commit series*.
-  * The "Template design intent" section gains one sentence: the gate questions are restated from
-    `roadmap/workflow.adoc`, which owns them, and changing them there is the way to change them.
+  * The "Template design intent" section states that the gate questions are restated from
+    `roadmap/workflow.adoc`, which owns them, and that changing them there is the way to change
+    them. It also reconciles its own framing with the rewrite: the section previously said the
+    reviewer "is asked for opportunities that would make the item land better alongside blocking
+    problems", which is the invitation the new *What is out of scope* section withdraws. Left
+    standing, that sentence would have re-authorised the nits from inside the document explaining
+    why the templates no longer solicit them. It now records scope as a permission to report rather
+    than an invitation, and names the ordering itself as load-bearing.
   * "Output rules" takes the Spec-stage disqualified-token list plural, matching the Implementation
     stage.
 
@@ -184,13 +200,21 @@ which is why its figures differ by a line or two; either grouping shows roughly 
 
 Two things must hold in the diff, both readable off it:
 
-* Mechanics fall below a third of each template body.
-* The gate-questions section is the longest single section in each template.
+* Mechanics come to at most a third of each template body.
+* The gate-questions section is the longest single section in each template. A heading-bearing
+  subsection counts as its own section, so the Implementation stage's *Approval preconditions*
+  appendix is measured apart from the Verdict it hangs under.
 
 The Spec-stage draft below meets both: 27 of its 81 lines are mechanics (13 preamble and sync, 14
 Bookkeeping), and the questions section's 18 lines beat Materials' 13 and Verdict's 11. The
 Implementation-stage template has no draft here, so whoever lands it measures it the same way and
 names in the commit message which sections gave up the lines.
+
+The threshold reads "at most" rather than "below" because 27 of 81 is exactly a third, and the draft
+that lands on that boundary is the one the Spec review approved. The alternative was to shave a line
+off Bookkeeping, which is the same move the paragraph above rejects for absolute length: the
+reviewer rule is a hard requirement and should not be compressed to satisfy a ratio. The constraint
+still bites where it matters, since the shape it exists to prevent is a mechanics share near half.
 
 Absolute length is deliberately not the constraint. The Spec-stage body grows from 71 lines to 81
 because the section that gained is the one the gate turns on; a flat-total ceiling would have to come
