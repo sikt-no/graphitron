@@ -1,0 +1,280 @@
+package no.sikt.graphitron.rewrite.capture;
+
+import graphql.schema.GraphQLEnumType;
+import graphql.schema.GraphQLFieldsContainer;
+import graphql.schema.GraphQLInputObjectType;
+import graphql.schema.GraphQLNamedType;
+import graphql.schema.GraphQLSchema;
+import graphql.schema.idl.ScalarInfo;
+import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.rewrite.schema.SchemaAssembly;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
+import org.jooq.DSLContext;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
+import static no.sikt.graphitron.rewrite.CapturedStore.withCapturedStore;
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * The coordinate census against graphql-java's own composition, which is what makes capture's
+ * merge trustworthy rather than merely present.
+ *
+ * <p>Capture merges a type's declaration sites itself: the base definition, then each extension in
+ * document order, first-wins on a coordinate two sites declare. graphql-java does the same merge
+ * during assembly, from the same registry, and the two are independent implementations of one
+ * specification rule. The obvious way to remove the risk of them disagreeing is to delete ours and
+ * transcribe the assembled schema instead, and that is the wrong trade: the assembled schema does
+ * not exist on the schemas an author is halfway through writing, and a census that vanishes with it
+ * takes the editor's answers along. So both stand, and this is the anchor that holds them together:
+ * wherever a document assembles, the coordinates capture claimed are exactly the coordinates
+ * graphql-java composed.
+ *
+ * <p>Equality, not containment, and in both directions: a coordinate capture invents is a phantom
+ * every relation hanging off it inherits, and a coordinate capture drops is a fact the store cannot
+ * be asked about at all. Two populations are carved out of the comparison and each is carved out in
+ * the open. Introspection is filtered on the assembled side, the {@code __} prefix being
+ * graphql-java's own marker: those types are the engine's contribution to an executable schema, no
+ * source declares them, and the census is of what sources declare. The specified scalars are
+ * compared separately, by the case that states why the two censuses genuinely differ there.
+ *
+ * <p>The merge's own output, the ordinals, is pinned here too, by value rather than by density:
+ * where the equality arms ask whether the merge reaches the same set, the ordinal arm asks whether
+ * it reached it in the document's order.
+ */
+@PipelineTier
+class SdlCoordinateCensusTest {
+
+    private static final String INTROSPECTION_PREFIX = "__";
+
+    @TempDir
+    Path tmp;
+
+    @Test
+    @DisplayName("the type coordinates are the assembled schema's declared types")
+    void typeCoordinatesMatchTheAssembledSchema() {
+        withCapturedStore(tmp, MERGED, dsl ->
+            assertThat(declared(typeCoordinates(dsl)))
+                .as("capture's merge against graphql-java's, at the type grain")
+                .isEqualTo(declared(assembledTypes(assemble()))));
+    }
+
+    /**
+     * The one place the two censuses differ, stated rather than carved out silently. The registry
+     * hands over all five specified scalars whether or not the document mentions them, and capture
+     * transcribes what the registry holds; assembly keeps only the ones something references. The
+     * store's reading is the useful one for a reader asking what a field may be typed as, and
+     * nothing is merged into a specified scalar, so it is not a merge disagreement and the anchor
+     * above compares the declared types.
+     */
+    @Test
+    @DisplayName("every specified scalar is a coordinate, referenced or not")
+    void specifiedScalarsAreCoordinatesWhetherReferencedOrNot() {
+        withCapturedStore(tmp, MERGED, dsl -> {
+            assertThat(typeCoordinates(dsl))
+                .as("all five, though this document names three")
+                .contains("String", "Boolean", "Int", "Float", "ID");
+            assertThat(assembledTypes(assemble()))
+                .as("assembly keeps the referenced ones only, which is the difference")
+                .doesNotContain("Float", "ID");
+        });
+    }
+
+    @Test
+    @DisplayName("the field coordinates are the assembled schema's effective fields")
+    void fieldCoordinatesMatchTheAssembledSchema() {
+        withCapturedStore(tmp, MERGED, dsl ->
+            assertThat(fieldCoordinates(dsl))
+                .as("capture's merge against graphql-java's, at the field grain: a base body and "
+                    + "three extensions of one type contribute one field set")
+                .isEqualTo(assembledFields(assemble())));
+    }
+
+    @Test
+    @DisplayName("the enum value coordinates are the assembled schema's effective values")
+    void enumValueCoordinatesMatchTheAssembledSchema() {
+        withCapturedStore(tmp, MERGED, dsl ->
+            assertThat(enumValueCoordinates(dsl))
+                .as("capture's merge against graphql-java's, at the enum value grain")
+                .isEqualTo(assembledEnumValues(assemble())));
+    }
+
+    // ===== The merge order the ordinals record =====
+
+    /**
+     * The ordinals the merge assigns, on the same fixture, stated as values rather than as a
+     * density gate. Density says the sequence has no holes; only the values say the sequence is the
+     * document's own order, and the fixture is built so the two answers differ: an extension of
+     * {@code Film} is written above the base definition, so a walk that numbered sites in the order
+     * it met them would put the base at 1 and pass every density check on the way.
+     *
+     * <p>Written out per type because the property is per type: the base definition is merge ordinal
+     * 0 wherever it sits in the file, extensions follow in document order, and each element family's
+     * ordinal continues across the site boundary rather than restarting at each site.
+     */
+    @Test
+    @DisplayName("the base definition is merge ordinal zero, and extensions follow in document order")
+    void theMergeOrderIsTheDocumentsOrder() {
+        withCapturedStore(tmp, MERGED, dsl -> {
+            assertThat(dsl.select(GRAPHQL_TYPE_DECLARATION.MERGE_ORDINAL,
+                    GRAPHQL_TYPE_DECLARATION.IS_EXTENSION)
+                .from(GRAPHQL_TYPE_DECLARATION)
+                .where(GRAPHQL_TYPE_DECLARATION.GRAPH_NAME.eq(CapturedStore.GRAPH))
+                .and(GRAPHQL_TYPE_DECLARATION.TYPE_NAME.eq("Film"))
+                .orderBy(GRAPHQL_TYPE_DECLARATION.MERGE_ORDINAL)
+                .fetch(r -> r.value1() + (r.value2() ? ":extension" : ":base")))
+                .as("the base is 0 though an extension of Film is written above it")
+                .containsExactly("0:base", "1:extension", "2:extension", "3:extension");
+
+            assertThat(fieldOrdinals(dsl, "Film"))
+                .as("field ordinals run across the site boundary in merge order")
+                .containsExactly("title=0", "rating=1", "released=2", "language=3");
+            assertThat(fieldOrdinals(dsl, "Query"))
+                .containsExactly("film=0", "films=1");
+            assertThat(fieldOrdinals(dsl, "FilmFilter"))
+                .as("an extended input object numbers the same way")
+                .containsExactly("title=0", "released=1");
+
+            assertThat(dsl.select(GRAPHQL_ENUM_VALUE.VALUE_NAME, GRAPHQL_ENUM_VALUE.ORDINAL)
+                .from(GRAPHQL_ENUM_VALUE)
+                .where(GRAPHQL_ENUM_VALUE.GRAPH_NAME.eq(CapturedStore.GRAPH))
+                .and(GRAPHQL_ENUM_VALUE.TYPE_NAME.eq("Rating"))
+                .orderBy(GRAPHQL_ENUM_VALUE.ORDINAL)
+                .fetch(r -> r.value1() + "=" + r.value2()))
+                .as("an extended enum numbers the same way")
+                .containsExactly("G=0", "PG=1", "R=2");
+        });
+    }
+
+    private static List<String> fieldOrdinals(DSLContext dsl, String typeName) {
+        return dsl.select(GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.ORDINAL)
+            .from(GRAPHQL_FIELD)
+            .where(GRAPHQL_FIELD.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .and(GRAPHQL_FIELD.TYPE_NAME.eq(typeName))
+            .orderBy(GRAPHQL_FIELD.ORDINAL)
+            .fetch(r -> r.value1() + "=" + r.value2());
+    }
+
+    /**
+     * A document exercising every merge shape the rule has: a type extended more than once, an
+     * extension arriving before the base definition it extends, an input object and an enum
+     * extended too, and an interface whose implementor picks up a field from an extension.
+     */
+    private static final String MERGED = """
+        extend type Film { rating: Rating }
+
+        interface Titled { title: String }
+
+        type Query {
+            film: Film
+        }
+
+        type Film implements Titled {
+            title: String
+        }
+
+        extend type Film { released: Int }
+        extend type Film { language: String }
+
+        extend type Query { films(match: FilmFilter): [Film!] }
+
+        input FilmFilter { title: String }
+        extend input FilmFilter { released: Int }
+
+        enum Rating { G, PG }
+        extend enum Rating { R }
+        """;
+
+    // ===== The store side =====
+
+    private static Set<String> typeCoordinates(DSLContext dsl) {
+        return new LinkedHashSet<>(dsl.select(GRAPHQL_TYPE_COORDINATE.TYPE_NAME)
+            .from(GRAPHQL_TYPE_COORDINATE)
+            .where(GRAPHQL_TYPE_COORDINATE.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .orderBy(GRAPHQL_TYPE_COORDINATE.TYPE_NAME)
+            .fetch(0, String.class));
+    }
+
+    private static Set<String> fieldCoordinates(DSLContext dsl) {
+        return new LinkedHashSet<>(dsl.select(GRAPHQL_FIELD_COORDINATE.TYPE_NAME,
+                GRAPHQL_FIELD_COORDINATE.FIELD_NAME)
+            .from(GRAPHQL_FIELD_COORDINATE)
+            .where(GRAPHQL_FIELD_COORDINATE.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .orderBy(GRAPHQL_FIELD_COORDINATE.TYPE_NAME, GRAPHQL_FIELD_COORDINATE.FIELD_NAME)
+            .fetch(r -> r.value1() + "." + r.value2()));
+    }
+
+    private static Set<String> enumValueCoordinates(DSLContext dsl) {
+        return new LinkedHashSet<>(dsl.select(GRAPHQL_ENUM_VALUE_COORDINATE.TYPE_NAME,
+                GRAPHQL_ENUM_VALUE_COORDINATE.VALUE_NAME)
+            .from(GRAPHQL_ENUM_VALUE_COORDINATE)
+            .where(GRAPHQL_ENUM_VALUE_COORDINATE.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .orderBy(GRAPHQL_ENUM_VALUE_COORDINATE.TYPE_NAME, GRAPHQL_ENUM_VALUE_COORDINATE.VALUE_NAME)
+            .fetch(r -> r.value1() + "." + r.value2()));
+    }
+
+    /** The census with the specified scalars removed, which is the population the merge shapes. */
+    private static Set<String> declared(Set<String> names) {
+        return names.stream().filter(name -> !ScalarInfo.isGraphqlSpecifiedScalar(name))
+            .collect(Collectors.toCollection(TreeSet::new));
+    }
+
+    // ===== The assembled side =====
+
+    private GraphQLSchema assemble() {
+        var assembly = SchemaAssembly.of(CapturedStore.registryOf(tmp, MERGED));
+        assertThat(assembly)
+            .as("the fixture has to assemble for this anchor to say anything")
+            .isInstanceOf(SchemaAssembly.Assembled.class);
+        return ((SchemaAssembly.Assembled) assembly).schema();
+    }
+
+    private static Set<String> assembledTypes(GraphQLSchema schema) {
+        return authored(schema).map(GraphQLNamedType::getName)
+            .collect(Collectors.toCollection(TreeSet::new));
+    }
+
+    private static Set<String> assembledFields(GraphQLSchema schema) {
+        var names = new TreeSet<String>();
+        authored(schema).forEach(type -> {
+            switch (type) {
+                case GraphQLFieldsContainer container -> container.getFieldDefinitions()
+                    .forEach(field -> names.add(type.getName() + "." + field.getName()));
+                case GraphQLInputObjectType input -> input.getFieldDefinitions()
+                    .forEach(field -> names.add(type.getName() + "." + field.getName()));
+                default -> { }
+            }
+        });
+        return names;
+    }
+
+    private static Set<String> assembledEnumValues(GraphQLSchema schema) {
+        var names = new TreeSet<String>();
+        authored(schema).forEach(type -> {
+            if (type instanceof GraphQLEnumType enumType) {
+                enumType.getValues().forEach(value -> names.add(type.getName() + "." + value.getName()));
+            }
+        });
+        return names;
+    }
+
+    private static Stream<GraphQLNamedType> authored(GraphQLSchema schema) {
+        return schema.getAllTypesAsList().stream()
+            .filter(type -> !type.getName().startsWith(INTROSPECTION_PREFIX));
+    }
+}

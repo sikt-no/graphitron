@@ -48,11 +48,14 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
@@ -231,6 +234,10 @@ public final class SeededStore {
                 .and(GRAPHQL_TYPE.TYPE_NAME.eq(typeName)))) {
             return;
         }
+        dsl.insertInto(GRAPHQL_TYPE_COORDINATE)
+            .set(GRAPHQL_TYPE_COORDINATE.GRAPH_NAME, graphName)
+            .set(GRAPHQL_TYPE_COORDINATE.TYPE_NAME, typeName)
+            .execute();
         dsl.insertInto(GRAPHQL_TYPE)
             .set(GRAPHQL_TYPE.GRAPH_NAME, graphName)
             .set(GRAPHQL_TYPE.TYPE_NAME, typeName)
@@ -283,6 +290,11 @@ public final class SeededStore {
     public static void seedField(DSLContext dsl, String graphName, String typeName, String fieldName,
                                  String namedType, boolean isList) {
         seedDeclaredType(dsl, graphName, typeName, "OBJECT");
+        dsl.insertInto(GRAPHQL_FIELD_COORDINATE)
+            .set(GRAPHQL_FIELD_COORDINATE.GRAPH_NAME, graphName)
+            .set(GRAPHQL_FIELD_COORDINATE.TYPE_NAME, typeName)
+            .set(GRAPHQL_FIELD_COORDINATE.FIELD_NAME, fieldName)
+            .execute();
         dsl.insertInto(GRAPHQL_FIELD)
             .set(GRAPHQL_FIELD.GRAPH_NAME, graphName)
             .set(GRAPHQL_FIELD.TYPE_NAME, typeName)
@@ -320,6 +332,12 @@ public final class SeededStore {
     public static void seedArgument(DSLContext dsl, String graphName, String typeName,
                                     String fieldName, String argumentName, String namedType,
                                     int ordinal, int sourceLine) {
+        dsl.insertInto(GRAPHQL_ARGUMENT_COORDINATE)
+            .set(GRAPHQL_ARGUMENT_COORDINATE.GRAPH_NAME, graphName)
+            .set(GRAPHQL_ARGUMENT_COORDINATE.TYPE_NAME, typeName)
+            .set(GRAPHQL_ARGUMENT_COORDINATE.FIELD_NAME, fieldName)
+            .set(GRAPHQL_ARGUMENT_COORDINATE.ARGUMENT_NAME, argumentName)
+            .execute();
         dsl.insertInto(GRAPHQL_ARGUMENT)
             .set(GRAPHQL_ARGUMENT.GRAPH_NAME, graphName)
             .set(GRAPHQL_ARGUMENT.TYPE_NAME, typeName)

@@ -96,7 +96,14 @@ import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_RETURN_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT_TYPE_REF;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -309,6 +316,11 @@ class FactCaptureAgreementTest {
     private static Map<String, Arm> registrations() {
         var registrations = new LinkedHashMap<String, Arm>();
         for (String relation : List.of(
+            // The coordinate anchors ride their attribute siblings' arm: one walk claims a
+            // coordinate and writes both rows, so the containment claim below transfers, and
+            // coordinatesAgreeWithTheirAttributeRelations makes the transfer a fact.
+            "graphql_type_coordinate", "graphql_field_coordinate",
+            "graphql_argument_coordinate", "graphql_enum_value_coordinate",
             "graphql_type", "graphql_type_declaration", "graphql_field", "graphql_argument",
             "graphql_enum_value", "graphql_union_member", "graphql_implements",
             "graphql_root_operation", "graphql_duplicate_declaration", "graphql_directive",
@@ -585,6 +597,48 @@ class FactCaptureAgreementTest {
             .as("registrations for relations the DDL no longer declares")
             .allSatisfy(relation -> assertThat(Public.PUBLIC.getTables().stream()
                 .anyMatch(t -> t.getName().equalsIgnoreCase(relation))).isTrue());
+    }
+
+    /**
+     * The split the coordinate family introduced, stated as the invariant it rests on: an anchor
+     * exists exactly where its attribute sibling has a row, in both directions. The equality is
+     * what lets the containment arm above cover four relations with one claim, and it is the thing
+     * a producer can break without any constraint noticing: a foreign key stops an attribute row
+     * with no anchor, and nothing at all stops an anchor with no attributes. Both directions of
+     * every pair, so a coordinate the walk claims and then declines to describe is caught here
+     * rather than read downstream as a type or field with no properties.
+     *
+     * <p>Written as one query per pair rather than a join over the DDL, because the pairing is a
+     * modelling decision and a reader should be able to see which relations it names.
+     */
+    @Test
+    @DisplayName("every coordinate anchor pairs with its attribute relation, both ways")
+    void coordinatesAgreeWithTheirAttributeRelations(@TempDir Path tmp) {
+        try (var store = CapturedStore.of(tmp, FIXTURE)) {
+            var dsl = store.dsl();
+            assertThat(dsl.select(GRAPHQL_TYPE_COORDINATE.TYPE_NAME).from(GRAPHQL_TYPE_COORDINATE).fetch())
+                .as("type anchors against type attributes")
+                .containsExactlyInAnyOrderElementsOf(
+                    dsl.select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE).fetch());
+            assertThat(dsl.select(GRAPHQL_FIELD_COORDINATE.TYPE_NAME, GRAPHQL_FIELD_COORDINATE.FIELD_NAME)
+                .from(GRAPHQL_FIELD_COORDINATE).fetch())
+                .as("field anchors against field attributes")
+                .containsExactlyInAnyOrderElementsOf(
+                    dsl.select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME).from(GRAPHQL_FIELD).fetch());
+            assertThat(dsl.select(GRAPHQL_ARGUMENT_COORDINATE.TYPE_NAME,
+                    GRAPHQL_ARGUMENT_COORDINATE.FIELD_NAME, GRAPHQL_ARGUMENT_COORDINATE.ARGUMENT_NAME)
+                .from(GRAPHQL_ARGUMENT_COORDINATE).fetch())
+                .as("argument anchors against argument attributes")
+                .containsExactlyInAnyOrderElementsOf(
+                    dsl.select(GRAPHQL_ARGUMENT.TYPE_NAME, GRAPHQL_ARGUMENT.FIELD_NAME,
+                        GRAPHQL_ARGUMENT.ARGUMENT_NAME).from(GRAPHQL_ARGUMENT).fetch());
+            assertThat(dsl.select(GRAPHQL_ENUM_VALUE_COORDINATE.TYPE_NAME,
+                    GRAPHQL_ENUM_VALUE_COORDINATE.VALUE_NAME).from(GRAPHQL_ENUM_VALUE_COORDINATE).fetch())
+                .as("enum value anchors against enum value attributes")
+                .containsExactlyInAnyOrderElementsOf(
+                    dsl.select(GRAPHQL_ENUM_VALUE.TYPE_NAME, GRAPHQL_ENUM_VALUE.VALUE_NAME)
+                        .from(GRAPHQL_ENUM_VALUE).fetch());
+        }
     }
 
     @Test

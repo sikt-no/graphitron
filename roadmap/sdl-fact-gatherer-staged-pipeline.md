@@ -371,14 +371,14 @@ Each is the requirement acting as the specification; none ships unnoticed.
   header rewrite, and R714's census table landing in the architecture docs rather than surviving
   only in a discarded item.
 
-## Implementation finding: stage 4's availability cliff has no retention
+## Implementation finding: the anchor tables become ours
 
 Landed so far: the gate deletion (the conflict relation total, per-consumer populations, the two
 `walk_` membership grains and `ClaimDomainRows` deleted, `WalkReach` dissolved into
 `ClassifiedRun`), stage 3 as the gatherer's own stage with the `ASSEMBLY` verdict moved to the
-pre-synthesis registry, and stage 5 as a rooted traversal replacing `ReachabilityRows`. Stage 4 is
-blocked on a decision the spec's stage-4 section cannot make, because its mitigation turns out to be
-structurally unavailable.
+pre-synthesis registry, and stage 5 as a rooted traversal replacing `ReachabilityRows`. Stage 4's
+mitigation for the availability cliff turned out to be structurally unavailable, and the way out
+reshapes the `graphql_` family's keys.
 
 The problem is the FK web inside the `graphql_` family. `graphql_type_declaration` references
 `graphql_type`, and `graphql_field` references both `graphql_type` and the declaration site it hangs
@@ -398,26 +398,57 @@ mid-edit would blank `graphql_field` and the whole `graphitron_` decode family, 
 This is not hypothetical for the editor path: the dev loop's catalog refresh already captures on a
 refused read *specifically* so the author keeps answers while the buffer is broken.
 
-Three ways out, for the owner to choose between:
+The owner settled it with an option none of the three above named: **take ownership of the anchor
+tables.** A `graphql_*_coordinate` family, written by the gatherer, holds each SDL coordinate's
+existence and nothing else, and every foreign key naming an SDL coordinate names one of those
+relations instead of an attribute relation. The attribute relations beside them (`graphql_type`,
+`graphql_field`, `graphql_argument`, `graphql_enum_value`) are then referenced by nothing, so any of
+them can change hands, be withheld or drain without the reference web following. The cliff does not
+need retention because nothing hangs off what falls.
 
-1. **Composed half on its own clock, no cross-clock foreign keys.** Keeps the producer change and
-   the editor's answers; costs the structural FK guarantee across the `graphql_` family, with the
-   `walk_` family's cross-clock precedent as the argument that it is a known shape rather than a new
-   one.
-2. **Keep the coordinate-keyed relations written.** The per-site union capture already computes is
-   the composed set on every schema that assembles, and a duplicated coordinate's verdict is already
-   a recorded `ASSEMBLY` fact, so what stage 4 buys is already had while what it costs is the census
-   behind the cliff. Under this option R714's absorption needs revisiting: its deliverable becomes
-   the verdict correction (landed) plus whatever composition genuinely adds beyond a view.
-3. **One clock for the whole family.** Assembly refuses, nothing in `graphql_` is rewritten, and the
-   verdict relations say why. Rejected here rather than offered: it contradicts stage 1's own claim
-   that an assembly refusal cannot cost the per-site declaration facts.
+This is a better answer than the first option rather than a variant of it. Option 1 bought
+availability by dropping foreign keys, trading a structural guarantee for a cadence; the anchor
+family keeps every foreign key and satisfies each of them at the earliest cadence any SDL fact has,
+so a coordinate's existence is settled by the per-file parse and can never be conditional on a stage
+it owes nothing to. The reason the original design could not do this is that it conflated two
+assertions in one relation: `graphql_type` asserted both that a name exists and what its kind and
+description are, and the reference web had no choice but to anchor on the pair.
 
-Still owed with stage 4 whichever way it goes: the introspection-population decision, the ordinal
-stability fixtures, the duplicate quarantine's producer, the deletion of capture's extension merge
-and first-wins claim path, and R714's census table landing in the architecture docs. The
-composed-versus-written split as implemented is written into `fact-model.adoc` already, stating the
-split the code actually has rather than the one stage 4 would introduce.
+Landed with it: the four coordinate relations, the whole FK web re-pointed onto them (52 foreign
+keys), `SdlCoordinates` as the single producer of an anchor row and the owner of the first-wins claim
+on every coordinate, and a both-directions agreement anchor in `FactCaptureAgreementTest` for the
+invariant no constraint can see (a foreign key stops an attribute row with no anchor; nothing stops
+an anchor with no attributes).
+
+### What stage 4 becomes under the anchor family
+
+The anchor question being settled structurally changes what is left to decide, and shrinks it. The
+element attribute relations stay written, at the per-site cadence, because their readers cannot
+afford the cliff: an author mid-edit needs a field's type expression to get a completion, and the
+coordinate alone does not carry one. What composition genuinely adds beyond those relations is then
+added per relation when a consumer needs it, at no foreign-key cost, which is the freedom the anchor
+family buys.
+
+That leaves capture's extension merge in place, and it should be: the merge is what produces the
+coordinate set and the ordinals in the first place. The correctness worry stage 4 raised against it
+(our merge versus graphql-java's) is answered by pinning rather than by deletion, which is the
+stronger form anyway: on any schema that assembles, the claimed coordinate set must equal the
+assembled schema's effective set, as an `EQUALITY` agreement anchor. A schema that does not assemble
+has no effective set to compare against, and its refusal is already a row in `graphql_schema_error`.
+
+Landed with it: `SdlCoordinateCensusTest`, which pins each grain of capture's merge against
+graphql-java's composition on a fixture whose base definitions and extensions are deliberately out
+of document order, and pins the merge order by ordinal value rather than by density (density passes
+on a walk that numbers sites in the order it meets them; only the values catch a base definition
+numbered 1 because an extension was written above it). It also records the one place the two
+censuses genuinely differ: the registry hands over all five specified scalars whether or not the
+document names them, and assembly keeps only the referenced ones, so the equality arms compare the
+declared types and a separate case states the scalar difference. R714's census table lands in
+`fact-model.adoc` as the four anchors and what hangs off each.
+
+Two owed items drop out rather than being deferred: the introspection-population decision (nothing
+composes the census, so no introspection type is ever offered to it) and the duplicate quarantine's
+producer (the walk still sees the losing site, so the quarantine keeps the producer it has).
 
 ## Provenance
 

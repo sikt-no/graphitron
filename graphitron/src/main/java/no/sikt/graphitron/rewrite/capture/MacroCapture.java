@@ -80,10 +80,12 @@ final class MacroCapture {
     private static final String DESC_END_CURSOR = "When paginating forwards, the cursor to continue.";
 
     private final FactSink sink;
+    private final SdlCoordinates coordinates;
     private final TypeDefinitionRegistry registry;
 
-    MacroCapture(FactSink sink, TypeDefinitionRegistry registry) {
+    MacroCapture(FactSink sink, SdlCoordinates coordinates, TypeDefinitionRegistry registry) {
         this.sink = sink;
+        this.coordinates = coordinates;
         this.registry = registry;
     }
 
@@ -271,7 +273,7 @@ final class MacroCapture {
                 at.getSourceName(), at.getLine(), at.getColumn())) {
             return false;
         }
-        if (minted.add(typeName) && sink.claim(GRAPHQL_TYPE, typeName)) {
+        if (minted.add(typeName) && coordinates.claimType(typeName)) {
             var type = sink.dsl().newRecord(GRAPHQL_TYPE);
             type.setTypeName(typeName);
             type.setKind(OBJECT);
@@ -312,7 +314,7 @@ final class MacroCapture {
         }
 
         void add(String fieldName, String description, Type<?> type) {
-            if (!sink.claim(GRAPHQL_FIELD, typeName, fieldName)) {
+            if (!coordinates.claimField(typeName, fieldName)) {
                 return;
             }
             var wrapping = SdlFactCapture.Wrapping.of(type);

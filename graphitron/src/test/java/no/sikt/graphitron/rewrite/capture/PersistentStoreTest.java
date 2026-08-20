@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -150,8 +151,10 @@ class PersistentStoreTest {
 
         var held = GraphitronModelStore.openAt(directory);
         assertThat(held.location()).as("the test holds the file store").isPresent();
-        held.dsl().execute("INSERT INTO graphql_type (graph_name, type_name, kind) "
-            + "VALUES ('" + GRAPH_NAME + "', 'HeldWritten', 'OBJECT')");
+        // The coordinate anchor, not the attribute relation beside it: the probe's subject is
+        // that a write lands and survives, and the anchor is the relation with no parent to seed.
+        held.dsl().execute("INSERT INTO graphql_type_coordinate (graph_name, type_name) "
+            + "VALUES ('" + GRAPH_NAME + "', 'HeldWritten')");
 
         Process child = new ProcessBuilder(
             Path.of(System.getProperty("java.home"), "bin", "java").toString(),
@@ -178,7 +181,8 @@ class PersistentStoreTest {
         }
 
         try (var reopened = GraphitronModelStore.openAt(directory)) {
-            assertThat(reopened.dsl().select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE)
+            assertThat(reopened.dsl().select(GRAPHQL_TYPE_COORDINATE.TYPE_NAME)
+                .from(GRAPHQL_TYPE_COORDINATE)
                 .fetch(0, String.class))
                 .as("both processes' rows are in the file")
                 .contains("HeldWritten", "ChildWrittenBefore", "ChildWrittenAfter");
@@ -197,13 +201,13 @@ class PersistentStoreTest {
                     System.out.println("attached onto an empty store");
                     System.exit(3);
                 }
-                store.dsl().execute("INSERT INTO graphql_type (graph_name, type_name, kind) "
-                    + "VALUES ('" + args[1] + "', 'ChildWrittenBefore', 'OBJECT')");
+                store.dsl().execute("INSERT INTO graphql_type_coordinate (graph_name, type_name) "
+                    + "VALUES ('" + args[1] + "', 'ChildWrittenBefore')");
                 System.out.println("ATTACHED");
                 System.out.flush();
                 int ignored = System.in.read();
-                store.dsl().execute("INSERT INTO graphql_type (graph_name, type_name, kind) "
-                    + "VALUES ('" + args[1] + "', 'ChildWrittenAfter', 'OBJECT')");
+                store.dsl().execute("INSERT INTO graphql_type_coordinate (graph_name, type_name) "
+                    + "VALUES ('" + args[1] + "', 'ChildWrittenAfter')");
             }
         }
     }

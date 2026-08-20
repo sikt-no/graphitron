@@ -165,6 +165,35 @@ Assembly is the gatherer's own stage, not something a caller hands it a verdict 
 
 Composed versus written is decided per relation, never per stage. The per-site declaration facts are stage 1's and stay verbatim at their source's cadence. What composition *adds* over them is either a view (an argument default is deliberately one join away, and filling it in at capture would store a derivation where a view answers) or its own coordinate-keyed relation whose comment owns why it is not a view. Stage 5 is the case that earned a relation: the closure over a cyclic type graph has no safe H2 view form, and the descent rule is graphql-java's own child semantics rather than something SQL should restate edge kind by edge kind. Only what genuinely cannot exist without an assembled schema sits behind the assembly stage, which is why `intent_type_domain` is empty on a run whose registry did not assemble while every declaration fact beside it is current: absence there is read together with the `ASSEMBLY` verdict, never alone.
 
+The reference web anchors on existence, never on attributes. Each SDL coordinate has a `graphql_*_coordinate` relation carrying its key and nothing else, every foreign key in the schema that names an SDL coordinate names one of those, and the attribute relations beside them (`graphql_type`, `graphql_field`, `graphql_argument`, `graphql_enum_value`) are referenced by nothing at all. The reason is cadence and the failure it prevents is concrete. A coordinate's existence is settled by the per-file parse, while an attribute may be owned by a later stage that can be withheld, rewritten or refused, so a foreign key across that boundary makes every per-site fact's existence conditional on a stage it owes nothing to: one dangling type reference in a half-typed file would take the whole `graphitron_` decode family with it, which is the failure above in its worst form. Before the split, `graphql_type` asserted both that a name exists and what its kind and description are, and the decode families and site rows had no choice but to anchor on the pair; a stage wanting the attribute half could not take it without taking the family's availability too. Reading it: join the coordinate to ask what exists, join the attribute relation to ask what it is, and expect the two populations to agree wherever no later stage has taken an attribute over. One direction of that agreement is a foreign key (an attribute row with no anchor cannot be written); the other has no constraint that could see it, so `FactCaptureAgreementTest` pins both.
+
+The four anchors and what hangs off each:
+
+[cols="1,2,3"]
+|===
+| Element | Anchor relation | Attributes and dependents keyed on the anchor
+
+| type
+| `graphql_type_coordinate`
+| `graphql_type` (kind and description), `graphql_type_declaration` (every declaration site), `graphql_union_member`, `graphql_implements`, `graphql_type_directive`, the type-keyed `graphitron_` decodes, `intent_type_domain`, `intent_type_backing_class`
+
+| field
+| `graphql_field_coordinate`
+| `graphql_field` (type expression, description, default, contributing site), `graphql_field_directive`, the field-keyed `graphitron_` decodes, `intent_input_occurrence_path_step`
+
+| argument
+| `graphql_argument_coordinate`
+| `graphql_argument`, `graphql_argument_directive`, the argument-keyed `graphitron_` decodes, `intent_input_occurrence_path`
+
+| enum value
+| `graphql_enum_value_coordinate`
+| `graphql_enum_value`, `graphql_enum_value_directive`, `graphitron_enum_value_binding`, `graphitron_order`, `graphitron_index`
+|===
+
+The directive-definition family has no anchor of its own and needs none: a directive is defined once, nothing merges into a definition, and only its own two children reference it.
+
+*Enforced by:* `SdlCoordinateCensusTest` pins capture's merge against graphql-java's own composition at each grain, and the merge order by ordinal value rather than by density, on a fixture whose base definitions and extensions are deliberately out of order; `FactCaptureAgreementTest` pins each anchor against its attribute relation in both directions, the direction no foreign key can see.
+
 Freshness is not a property any consumer carries. It used to be carried once, on the snapshot handle a consumer held, along two axes: whether a pass had produced a projection at all, and whether the one in hand was the latest parse or the last good one before a regression. The consumer split was purely which precondition each read imposed, and the editor's was to tolerate the previous projection and tag what it showed, rather than punish an author for a half-typed edit. Two-stage capture removed the state that axis described. A file the parser refuses and a schema the assembler refuses are both rows, so there is no moment at which the store withholds an answer and nothing for a consumer to tag; the axis retired with its last reader. What is left is a lag of stated size rather than a state to switch on: the store answers for a file's last saved content, one save behind the buffer, and a surface needing the unsaved text reads the buffer for it directly. The referenced namespaces (the jOOQ catalog, the classpath census) still lag their sources, and that lag is now visible as each family's own capture cadence rather than as an axis on a handle.
 
 Location is a fact about an entity, and the rule is cadence rather than storage. A position stored on a relation that refreshes more slowly than the position does freezes stale, which is why Java positions and Javadoc are not columns on `jvm_class`: the classfile census refreshes when a build produces classes, and a declaration moves when somebody saves a file. What follows from that is not that the position cannot be stored, but that it is stored on its own cadence. The `java_` family holds one row per declaration a source parse read, keyed by the file it is written in and refreshed per file when that file changes, and a consumer joins it by name to the census, or to a captured generated-class FQN for the jOOQ half the census deliberately excludes. The relation is partial by design (a built-in has no position, and a headless session that walks no sources has none of these rows at all; a read allowed to be empty must not be a key), and the join is outer on both sides, because the two populations answer as of different moments and a view asserting they agree would assert something neither walk knows. SDL positions were always the same rule's sanctioned side: the SDL is what capture parses, so its positions arrive in the same pass as the facts they locate and are stored as capture columns (`source_name`, `source_line`, `source_column`), in the declaration-site key even, because two extensions of one type can share a line. "Joined, not stored" is the law for positions that move on a cadence the fact does not; the principle underneath it is that a fact refreshes on the cadence of its own source.

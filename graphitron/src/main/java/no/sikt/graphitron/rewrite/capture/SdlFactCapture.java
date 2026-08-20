@@ -102,6 +102,10 @@ public final class SdlFactCapture {
 
     private final FactSink sink;
     private final TypeDefinitionRegistry registry;
+
+    /** The coordinate anchors, and the first-wins claim on every one of them. */
+    private final SdlCoordinates coordinates;
+
     private final GraphitronFactCapture decode;
 
     /**
@@ -137,8 +141,9 @@ public final class SdlFactCapture {
                            Set<String> refusedSources) {
         this.sink = sink;
         this.registry = registry;
+        this.coordinates = new SdlCoordinates(sink);
         this.decode = new GraphitronFactCapture(sink);
-        this.macros = new MacroCapture(sink, registry);
+        this.macros = new MacroCapture(sink, coordinates, registry);
         this.sources = sources;
         this.attribution = attribution;
         this.refusedSources = refusedSources;
@@ -454,7 +459,7 @@ public final class SdlFactCapture {
             typeRecord.setTypeName(typeName);
             typeRecord.setKind(first.kind());
             typeRecord.setDescription(first.extension() ? null : descriptionOf(first.description()));
-            sink.claim(GRAPHQL_TYPE, typeName);
+            coordinates.claimType(typeName);
             sink.add(typeRecord);
 
             var elements = ordinalsByType.computeIfAbsent(typeName, ignored -> new ElementOrdinals());
@@ -577,7 +582,7 @@ public final class SdlFactCapture {
     private void captureEnumValues(SiteRef site, List<EnumValueDefinition> values, ElementOrdinals ordinals) {
         for (EnumValueDefinition value : values) {
             String name = value.getName();
-            if (!sink.claim(GRAPHQL_ENUM_VALUE, site.typeName(), name)) {
+            if (!coordinates.claimEnumValue(site.typeName(), name)) {
                 quarantine("ENUM_VALUE", site.typeName() + "." + name, value);
                 continue;
             }
@@ -598,7 +603,7 @@ public final class SdlFactCapture {
     private void captureFields(SiteRef site, List<FieldDefinition> fields, ElementOrdinals ordinals) {
         for (FieldDefinition field : fields) {
             String name = field.getName();
-            if (!sink.claim(GRAPHQL_FIELD, site.typeName(), name)) {
+            if (!coordinates.claimField(site.typeName(), name)) {
                 quarantine("FIELD", site.typeName() + "." + name, field);
                 continue;
             }
@@ -636,7 +641,7 @@ public final class SdlFactCapture {
     private void captureInputFields(SiteRef site, List<InputValueDefinition> fields, ElementOrdinals ordinals) {
         for (InputValueDefinition field : fields) {
             String name = field.getName();
-            if (!sink.claim(GRAPHQL_FIELD, site.typeName(), name)) {
+            if (!coordinates.claimField(site.typeName(), name)) {
                 quarantine("FIELD", site.typeName() + "." + name, field);
                 continue;
             }
@@ -666,7 +671,7 @@ public final class SdlFactCapture {
                                   List<InputValueDefinition> arguments, ElementOrdinals ordinals) {
         for (InputValueDefinition argument : arguments) {
             String name = argument.getName();
-            if (!sink.claim(GRAPHQL_ARGUMENT, typeName, fieldName, name)) {
+            if (!coordinates.claimArgument(typeName, fieldName, name)) {
                 quarantine("ARGUMENT", typeName + "." + fieldName + "(" + name + ":)", argument);
                 continue;
             }
