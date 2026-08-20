@@ -3561,6 +3561,102 @@ COMMENT ON COLUMN intent_field_reference_step_hop.to_table IS 'the arriving tabl
 COMMENT ON COLUMN intent_field_reference_step_hop.constraint_name IS 'the foreign key the hop joins on, named or discovered. Its own sql_referential_constraint key is this name under whichever endpoint declares it, which fk_on_from says. NULL on a NAME_MATCH hop, which joins on no foreign key. The constraint such a hop does key by is the arriving table''s primary key, and that is left to the join rather than carried: sql_primary_key is keyed by the table, so the arriving triple this row already carries reaches it directly, and repeating it here would be the denormalisation the referenced-side discipline declines';
 COMMENT ON COLUMN intent_field_reference_step_hop.fk_on_from IS 'TRUE when the departing table declares the foreign key, FALSE when the arriving one does; the hop''s direction, and what completes the constraint''s key from the two endpoint triples. NULL on a NAME_MATCH hop, where there is no foreign key to sit on either side and the direction is fixed by the arms themselves, a function result being always the departure';
 
+CREATE VIEW intent_argument_reference_step_hop
+  (graph_name, type_name, field_name, argument_name, ordinal, position, via, key_matched_by,
+   from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table, constraint_name, fk_on_from) AS
+SELECT s.graph_name, s.type_name, s.field_name, s.argument_name, s.ordinal, s.position, 'KEY',
+       CASE WHEN c.constraint_name_upper = s.key_ref_name_part_upper
+            THEN 'SQL_NAME' ELSE 'JOOQ_NAME' END,
+       CASE WHEN o.fk_on_from THEN rc.source_name ELSE rc.referenced_source_name END,
+       CASE WHEN o.fk_on_from THEN rc.table_schema ELSE rc.referenced_schema END,
+       CASE WHEN o.fk_on_from THEN rc.table_name ELSE rc.referenced_table END,
+       CASE WHEN o.fk_on_from THEN rc.referenced_source_name ELSE rc.source_name END,
+       CASE WHEN o.fk_on_from THEN rc.referenced_schema ELSE rc.table_schema END,
+       CASE WHEN o.fk_on_from THEN rc.referenced_table ELSE rc.table_name END,
+       rc.constraint_name, o.fk_on_from
+  FROM graphitron_argument_reference_step s
+  JOIN store_graph_source m ON m.graph_name = s.graph_name
+  JOIN sql_constraint c ON c.source_name = m.source_name
+   AND CASE WHEN s.key_ref_namespace_part IS NOT NULL
+        THEN c.table_schema_upper = s.key_ref_namespace_part_upper
+         AND c.constraint_name_upper = s.key_ref_name_part_upper
+        ELSE c.constraint_name_upper = s.key_ref_name_part_upper
+          OR (c.jooq_name_upper = s.key_ref_name_part_upper
+              AND NOT EXISTS (SELECT 1
+                                FROM sql_constraint c2
+                                JOIN store_graph_source m2
+                                  ON m2.source_name = c2.source_name
+                               WHERE m2.graph_name = s.graph_name
+                                 AND c2.constraint_name_upper = s.key_ref_name_part_upper))
+        END
+  JOIN sql_referential_constraint rc
+    ON rc.source_name = c.source_name AND rc.table_schema = c.table_schema
+   AND rc.table_name = c.table_name AND rc.constraint_name = c.constraint_name
+  JOIN (VALUES (TRUE), (FALSE)) o (fk_on_from) ON 1 = 1
+ WHERE s.key_ref IS NOT NULL
+   AND (o.fk_on_from OR rc.source_name <> rc.referenced_source_name
+        OR rc.table_schema <> rc.referenced_schema OR rc.table_name <> rc.referenced_table)
+UNION ALL
+SELECT s.graph_name, s.type_name, s.field_name, s.argument_name, s.ordinal, s.position,
+       'TABLE', NULL,
+       CASE WHEN o.fk_on_from THEN rc.source_name ELSE rc.referenced_source_name END,
+       CASE WHEN o.fk_on_from THEN rc.table_schema ELSE rc.referenced_schema END,
+       CASE WHEN o.fk_on_from THEN rc.table_name ELSE rc.referenced_table END,
+       sp.table_source_name, sp.table_schema, sp.table_name,
+       rc.constraint_name, o.fk_on_from
+  FROM graphitron_argument_reference_step s
+  JOIN intent_spelled_table sp
+    ON sp.graph_name = s.graph_name AND sp.spelling = s.table_ref
+  JOIN (VALUES (TRUE), (FALSE)) o (fk_on_from) ON 1 = 1
+  JOIN sql_referential_constraint rc
+    ON CASE WHEN o.fk_on_from
+         THEN rc.referenced_source_name = sp.table_source_name
+          AND rc.referenced_schema = sp.table_schema
+          AND rc.referenced_table = sp.table_name
+         ELSE rc.source_name = sp.table_source_name
+          AND rc.table_schema = sp.table_schema
+          AND rc.table_name = sp.table_name
+       END
+ WHERE s.table_ref IS NOT NULL AND s.key_ref IS NULL
+   AND (o.fk_on_from OR rc.source_name <> rc.referenced_source_name
+        OR rc.table_schema <> rc.referenced_schema OR rc.table_name <> rc.referenced_table)
+UNION ALL
+SELECT s.graph_name, s.type_name, s.field_name, s.argument_name, s.ordinal, s.position,
+       'NAME_MATCH', NULL,
+       fn.source_name, fn.table_schema, fn.table_name,
+       sp.table_source_name, sp.table_schema, sp.table_name, NULL, CAST(NULL AS BOOLEAN)
+  FROM graphitron_argument_reference_step s
+  JOIN intent_spelled_table sp
+    ON sp.graph_name = s.graph_name AND sp.spelling = s.table_ref
+  JOIN store_graph_source m ON m.graph_name = s.graph_name
+  JOIN sql_table fn ON fn.source_name = m.source_name AND fn.table_type = 'FUNCTION'
+ WHERE s.table_ref IS NOT NULL AND s.key_ref IS NULL
+   AND EXISTS (
+         SELECT 1 FROM intent_name_matched_key_pair p
+          WHERE p.from_source_name = fn.source_name AND p.from_schema = fn.table_schema
+            AND p.from_table = fn.table_name
+            AND p.to_source_name = sp.table_source_name AND p.to_schema = sp.table_schema
+            AND p.to_table = sp.table_name
+            AND p.unmatched_columns = 0);
+COMMENT ON VIEW intent_argument_reference_step_hop IS 'One argument-site @reference path element''s local resolution: the field-site sibling''s rule at the other coordinate a @reference can be written on. Every arm, every namespace precedence and every orientation is that view''s, and its comment is where they are argued; what differs here is only the relation the elements come from and the key they are keyed by, an argument being its own site. A sibling relation rather than an argument_name column on the field-site view, on the discipline intent_input_occurrence_path_step states for its own shape: the two sites'' coordinates are different lengths, so one relation over both would carry a column that is NULL by kind on half its rows and every reader of either site would then have to say which kind it meant. Two relations say it once each. The duplication is the SQL body and not the rule, which is the trade this schema makes wherever a rule is coordinate-shaped: a reader comparing the two finds them textually identical arm for arm, and the anchor test asserts that the two answer the same path shape the same way rather than leaving the agreement to inspection. Where a resolution genuinely is shared it is already a relation of its own and both views join it, intent_spelled_table for a written table name and intent_name_matched_key_pair for a function result''s column pairing, so what remains here is the coordinate-shaped part alone. Separate from intent_argument_reference_step_target for the reason its field-site counterpart is: the local resolution has no recursion in it, and keeping the two apart lets that view''s recursive term be a single join rather than a copy of these arms.';
+COMMENT ON COLUMN intent_argument_reference_step_hop.graph_name IS 'the owning graph''s partition, carried from graphitron_argument_reference_step';
+COMMENT ON COLUMN intent_argument_reference_step_hop.type_name IS 'the type owning the field the argument sits on';
+COMMENT ON COLUMN intent_argument_reference_step_hop.field_name IS 'the field owning the argument the @reference is applied to';
+COMMENT ON COLUMN intent_argument_reference_step_hop.argument_name IS 'the argument the @reference is applied to; the coordinate column the field-site sibling does not have, and the reason this is its own relation';
+COMMENT ON COLUMN intent_argument_reference_step_hop.ordinal IS 'the owning @reference application''s ordinal. Carried for parity with the field-site sibling and with the captured relation''s own key, not because an argument composes a chain: repeated @reference on an argument is a stated conflict rather than an ordered composition, order having no meaning at a site that is not a projection';
+COMMENT ON COLUMN intent_argument_reference_step_hop.position IS 'the element''s 0-based position within its application''s path';
+COMMENT ON COLUMN intent_argument_reference_step_hop.via IS 'which arm resolved the element: KEY, TABLE or NAME_MATCH, as on the field-site sibling';
+COMMENT ON COLUMN intent_argument_reference_step_hop.key_matched_by IS 'for a KEY hop, which namespace answered: SQL_NAME or JOOQ_NAME. NULL on a TABLE or NAME_MATCH hop, as on the field-site sibling';
+COMMENT ON COLUMN intent_argument_reference_step_hop.from_source_name IS 'the departing table''s catalog partition, first column of its sql_table key';
+COMMENT ON COLUMN intent_argument_reference_step_hop.from_schema IS 'the departing table''s SQL schema';
+COMMENT ON COLUMN intent_argument_reference_step_hop.from_table IS 'the departing table''s SQL name; a candidate departure, not yet a fact about the chain';
+COMMENT ON COLUMN intent_argument_reference_step_hop.to_source_name IS 'the arriving table''s catalog partition, first column of its sql_table key';
+COMMENT ON COLUMN intent_argument_reference_step_hop.to_schema IS 'the arriving table''s SQL schema';
+COMMENT ON COLUMN intent_argument_reference_step_hop.to_table IS 'the arriving table''s SQL name';
+COMMENT ON COLUMN intent_argument_reference_step_hop.constraint_name IS 'the foreign key the hop joins on, named or discovered; NULL on a NAME_MATCH hop, as on the field-site sibling';
+COMMENT ON COLUMN intent_argument_reference_step_hop.fk_on_from IS 'TRUE when the departing table declares the foreign key, FALSE when the arriving one does; NULL on a NAME_MATCH hop, as on the field-site sibling';
+
 CREATE VIEW intent_field_chain_terminus
   (graph_name, type_name, field_name, via, ordinal, position,
    table_source_name, table_schema, table_name, table_type, candidates) AS
@@ -3854,6 +3950,78 @@ COMMENT ON COLUMN intent_field_reference_step_target.constraint_name IS 'the for
 COMMENT ON COLUMN intent_field_reference_step_target.fk_on_from IS 'TRUE when the departing table declares the foreign key; the element''s direction. NULL on a NAME_MATCH element, as on the hop view';
 COMMENT ON COLUMN intent_field_reference_step_target.targets IS 'how many distinct tables this element reaches, this row''s arrival being one of them; 1 where the destination is certain. Separate from candidates because the two arities answer different questions and genuinely differ: a table element with three foreign keys connecting the two tables reaches one table by three routes, so a reader that only needs the destination can trust it while a reader that has to render the join cannot';
 COMMENT ON COLUMN intent_field_reference_step_target.candidates IS 'how many rows this element resolved to, counting routes and not just destinations; 1 is the walk''s requirement for an expressible hop, and a larger number is what its own "which foreign key did you mean" rejection counts';
+
+CREATE VIEW intent_argument_reference_step_target
+  (graph_name, type_name, field_name, argument_name, ordinal, position, via, key_matched_by,
+   from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table, constraint_name, fk_on_from,
+   targets, candidates) AS
+WITH RECURSIVE chain (graph_name, type_name, field_name, argument_name, ordinal, position,
+   via, key_matched_by, from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table, constraint_name, fk_on_from) AS (
+  SELECT h.graph_name, h.type_name, h.field_name, h.argument_name, h.ordinal, h.position,
+         h.via, h.key_matched_by, h.from_source_name, h.from_schema, h.from_table,
+         h.to_source_name, h.to_schema, h.to_table, h.constraint_name, h.fk_on_from
+    FROM intent_argument_reference_step_hop h
+    JOIN graphql_field f
+      ON f.graph_name = h.graph_name AND f.type_name = h.type_name
+     AND f.field_name = h.field_name
+    LEFT JOIN graphitron_field_synthesis fs
+      ON fs.graph_name = f.graph_name AND fs.type_name = f.type_name
+     AND fs.field_name = f.field_name
+    JOIN intent_resolved_type_binding bt
+      ON bt.graph_name = h.graph_name
+     AND bt.type_name = COALESCE(
+           REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''), '!', ''),
+           f.named_type)
+     AND bt.table_source_name = h.from_source_name AND bt.table_schema = h.from_schema
+     AND bt.table_name = h.from_table
+   WHERE h.position = 0
+  UNION
+  SELECT h.graph_name, h.type_name, h.field_name, h.argument_name, h.ordinal, h.position,
+         h.via, h.key_matched_by, h.from_source_name, h.from_schema, h.from_table,
+         h.to_source_name, h.to_schema, h.to_table, h.constraint_name, h.fk_on_from
+    FROM chain p
+    JOIN intent_argument_reference_step_hop h
+      ON h.graph_name = p.graph_name AND h.type_name = p.type_name
+     AND h.field_name = p.field_name AND h.argument_name = p.argument_name
+     AND h.ordinal = p.ordinal AND h.position = p.position + 1
+     AND h.from_source_name = p.to_source_name AND h.from_schema = p.to_schema
+     AND h.from_table = p.to_table
+)
+SELECT graph_name, type_name, field_name, argument_name, ordinal, position, via, key_matched_by,
+       from_source_name, from_schema, from_table,
+       to_source_name, to_schema, to_table, constraint_name, fk_on_from,
+       CAST(MAX(target_rank) OVER (
+         PARTITION BY graph_name, type_name, field_name, argument_name,
+                      ordinal, position) AS INT),
+       CAST(COUNT(*) OVER (
+         PARTITION BY graph_name, type_name, field_name, argument_name,
+                      ordinal, position) AS INT)
+  FROM (SELECT c.*, DENSE_RANK() OVER (
+                 PARTITION BY c.graph_name, c.type_name, c.field_name, c.argument_name,
+                              c.ordinal, c.position
+                 ORDER BY c.to_source_name, c.to_schema, c.to_table) AS target_rank
+          FROM chain c) ranked;
+COMMENT ON VIEW intent_argument_reference_step_target IS 'Where each element of an argument-site @reference path actually lands: intent_argument_reference_step_hop walked one element at a time, so a row exists only for an element the chain can be shown to reach. The field-site sibling''s comment argues the walk, and everything it says about recursion, about absence meaning "not reached" rather than "resolves to nothing in particular", and about an element naming neither key nor table not being a hop this view knows, holds here unchanged. One thing does not, and it is the whole reason this view is not that one with a column added: the departure. A field-site path departs from the enclosing type''s own binding, because the field is a projection off that type''s row. An argument-site path departs from the table the field''s named type is bound to, because an argument filters what the field returns rather than what its parent is; the resolver states the same thing by passing the field''s target table as the path''s source. So a filter argument on a root field, whose parent type is bound to nothing at all, has a departure here where the field-site rule would give it none, and reading one view for both sites would have made that departure a case rather than the rule. The named type is read the way the two other views that navigate to one read it, with its list and non-null wrappers stripped and taken off graphitron_field_synthesis where a macro rewrote the field''s type expression, so a connection-returning field departs its element type''s table and not the wrapper''s. The binding is intent_resolved_type_binding and not the @table population, for that relation''s own stated reason: what the walk needs is a table for the type, and a type standing for a @routine chain''s result has one whether or not the author also wrote the directive. No arity is demanded of it, ambiguity being rows here as everywhere: a named type two tables stand for departs from each, and the arities below count what that reached.';
+COMMENT ON COLUMN intent_argument_reference_step_target.graph_name IS 'the owning graph''s partition, carried from the hop view';
+COMMENT ON COLUMN intent_argument_reference_step_target.type_name IS 'the type owning the field the argument sits on. Not the type whose binding started the chain, which is the field''s named type: the difference from the field-site sibling, where the two are one';
+COMMENT ON COLUMN intent_argument_reference_step_target.field_name IS 'the field owning the argument the @reference is applied to; also the field whose named type''s binding started the chain';
+COMMENT ON COLUMN intent_argument_reference_step_target.argument_name IS 'the argument the @reference is applied to';
+COMMENT ON COLUMN intent_argument_reference_step_target.ordinal IS 'the owning @reference application''s ordinal, as on the hop view';
+COMMENT ON COLUMN intent_argument_reference_step_target.position IS 'the element''s 0-based position within its application''s path; positions are contiguous from 0 up to wherever the chain stopped';
+COMMENT ON COLUMN intent_argument_reference_step_target.via IS 'which arm resolved the element, as on the hop view: KEY, TABLE or NAME_MATCH';
+COMMENT ON COLUMN intent_argument_reference_step_target.key_matched_by IS 'for a KEY element, the namespace that answered; NULL on a TABLE or NAME_MATCH element. As on the hop view';
+COMMENT ON COLUMN intent_argument_reference_step_target.from_source_name IS 'the departing table''s catalog partition; the field''s named type''s bound table at position 0, the previous element''s arrival after that';
+COMMENT ON COLUMN intent_argument_reference_step_target.from_schema IS 'the departing table''s SQL schema';
+COMMENT ON COLUMN intent_argument_reference_step_target.from_table IS 'the departing table''s SQL name';
+COMMENT ON COLUMN intent_argument_reference_step_target.to_source_name IS 'the arriving table''s catalog partition, first column of its sql_table key';
+COMMENT ON COLUMN intent_argument_reference_step_target.to_schema IS 'the arriving table''s SQL schema';
+COMMENT ON COLUMN intent_argument_reference_step_target.to_table IS 'the arriving table''s SQL name. At the path''s last position this is the table the argument''s own column name resolves against, which is where a filter predicate binds';
+COMMENT ON COLUMN intent_argument_reference_step_target.constraint_name IS 'the foreign key this element joins on, named or discovered; NULL on a NAME_MATCH element, as on the hop view';
+COMMENT ON COLUMN intent_argument_reference_step_target.fk_on_from IS 'TRUE when the departing table declares the foreign key; the element''s direction. NULL on a NAME_MATCH element, as on the hop view';
+COMMENT ON COLUMN intent_argument_reference_step_target.targets IS 'how many distinct tables this element reaches, this row''s arrival being one of them; 1 where the destination is certain. Separate from candidates for the reason the field-site sibling states: an element with three foreign keys connecting the same pair of tables reaches one table by three routes, and a reader that only needs the destination can trust that where one that has to render the join cannot';
+COMMENT ON COLUMN intent_argument_reference_step_target.candidates IS 'how many rows this element resolved to, counting routes and not just destinations; 1 is the requirement for an expressible hop';
 
 CREATE VIEW intent_field_column_scope
   (graph_name, type_name, field_name, basis,

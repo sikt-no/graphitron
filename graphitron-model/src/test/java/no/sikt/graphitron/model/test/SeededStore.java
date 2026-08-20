@@ -569,6 +569,71 @@ public final class SeededStore {
     }
 
     /**
+     * One {@code @reference} application on an argument that already exists. Repetition on an
+     * argument is a stated conflict rather than a chain, so a case seeding a second ordinal is
+     * stating that shape deliberately.
+     */
+    public static void seedArgumentReference(DSLContext dsl, String graphName, String typeName,
+                                             String fieldName, String argumentName, int ordinal) {
+        dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE.ORDINAL, ordinal)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_LINE, 2)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_COLUMN, 3)
+            .execute();
+    }
+
+    /**
+     * One element of an argument-site path, spelling a key, a table, or both, exactly as the author
+     * wrote them. The argument-site twin of {@link #seedFieldReferenceStep}, and the qualifier split
+     * is capture's on both sides, so a case states one spelling and the resolution under assertion
+     * reads the parts.
+     */
+    public static void seedArgumentReferenceStep(DSLContext dsl, String graphName, String typeName,
+                                                 String fieldName, String argumentName,
+                                                 int ordinal, int position,
+                                                 String tableRef, String keyRef) {
+        dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_STEP)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ORDINAL, ordinal)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.POSITION, position)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TABLE_REF, tableRef)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.KEY_REF, keyRef)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.KEY_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(keyRef))
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.KEY_REF_NAME_PART, QualifiedNameGrammar.namePart(keyRef))
+            .execute();
+    }
+
+    /**
+     * One element of an argument-site path spelling a condition method instead of a hop: neither a
+     * key nor a table, the shape the resolution relations decline on.
+     */
+    public static void seedArgumentReferenceCall(DSLContext dsl, String graphName, String typeName,
+                                                 String fieldName, String argumentName,
+                                                 int ordinal, int position,
+                                                 String className, String method) {
+        dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_STEP)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ORDINAL, ordinal)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.POSITION, position)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.CLASS_NAME, className)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.METHOD, method)
+            .execute();
+    }
+
+    /**
      * A {@code @condition} application on a field or an input field, stated by its cascade flag
      * alone. The reference is left unnamed, which a relation reading only the flag does not miss;
      * a case whose subject is the reference states it with the other overload.

@@ -166,6 +166,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       of tables, a key pointing back at its own table, a constraint name two schemas both
  *       declare, a table name two schemas both declare) being ones no one real catalog offers side
  *       by side;
+ *       {@code no.sikt.graphitron.model.intent.ArgumentReferenceStepTargetTest} binds the
+ *       argument-site pair ({@code intent_argument_reference_step_hop} and
+ *       {@code intent_argument_reference_step_target}, the hop view pinned through the chain for the
+ *       same reason) against that same catalog, and additionally binds the two views to each other:
+ *       the arms are textually parallel, so one case seeds one path shape at both sites and asserts
+ *       the shared columns come back equal, which is what keeps a change to one from silently
+ *       leaving the other behind;
  *       {@code no.sikt.graphitron.rewrite.derive.ChainTerminusTest} binds
  *       {@code intent_field_chain_terminus}, where a {@code @routine} chain lands and what kind of
  *       table that is, and with it the hop view's name-matched arm, which only a chain departing a
@@ -392,6 +399,8 @@ class FactCaptureAgreementTest {
         registrations.put("intent_synthesized_federation_key", Arm.DERIVED);
         registrations.put("intent_federation_key", Arm.DERIVED);
         registrations.put("intent_field_reference_step_target", Arm.DERIVED);
+        registrations.put("intent_argument_reference_step_hop", Arm.DERIVED);
+        registrations.put("intent_argument_reference_step_target", Arm.DERIVED);
         registrations.put("intent_field_chain_terminus", Arm.DERIVED);
         registrations.put("intent_field_reference_discovery", Arm.DERIVED);
         registrations.put("intent_routine_return_binding", Arm.DERIVED);
