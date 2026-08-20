@@ -1,7 +1,7 @@
 ---
 id: R682
 title: "Planners read facts, emitters read commands: dissolve the walk and the leaf zoo"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: classification-model
