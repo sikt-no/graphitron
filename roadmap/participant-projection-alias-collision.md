@@ -168,7 +168,7 @@ paths at build time, so the collision is detectable before emission.
 The survey the Backlog body asked for is done; its facts are inlined where they bind. The fix is
 three coordinated parts: the discriminated fold hands each participant a selection map restricted
 to that type (reusing an existing generated helper), every `__rk_` alias minted inside a
-`TableBound` participant's projection unit carries the coordinate that owns the projection
+`TableBound` participant's own projection unit carries the coordinate that owns the projection
 decision, and a validator census turns the residual silent shape into a build error. Vocabulary
 used below: a *participant* is a type that appears as `ParticipantRef.TableBound` in some
 single-table discriminated interface's `GraphitronType.TableInterfaceType.participants()`; the
@@ -178,8 +178,12 @@ participant here and keeps today's bare alias for the same reason non-participan
 stage-2 per-typename SELECT never merges with a sibling's select list, so qualification would be
 pure churn. A field on a participant is *participant-local* when no discriminated interface the
 type participates in declares it, and *interface-declared* when one does (SDL forces interface
-fields onto every implementer, so every participant field name is exactly one of the two). This spec revision incorporates a principles consultation; the joined-table
-route's sibling defect it surfaced is split out (see Out of scope).
+fields onto every implementer, so every participant field name is exactly one of the two). The
+scope is per declaring type, which makes it exactly the participant's own anchor projection unit;
+fields that reach that unit from a *spliced* nesting unit are declared on a non-participant type
+and stay bare, for the read-side reason part 2's spliced-units bullet gives. This spec revision
+incorporates a principles consultation; the joined-table route's sibling defect it surfaced is
+split out (see Out of scope).
 
 Where the mechanism lives, from the survey: the participant fold (`fields.addAll(...)` into a
 `LinkedHashSet<Field<?>>`, one `$project` call per branch with the shared grouped map) is one
@@ -230,9 +234,12 @@ still fire and still mint one alias. Hence part 2.
 ### 2. Every `__rk_` arm in a participant unit is keyed by the coordinate that owns the projection
 
 The rule, one formula with no unqualified fork inside participant units: an `__rk_` alias minted
-in a `TableBound` participant's projection unit is `"__rk_" + <owner> + "$" + <resultKey>`, where
-*owner* is the declaring interface's name for an interface-declared field and the participant
-type's name for a participant-local field. Applies to the four `ResultKeyAliasedField` families
+in a `TableBound` participant's own projection unit is `"__rk_" + <owner> + "$" + <resultKey>`,
+where *owner* is the declaring interface's name for an interface-declared field and the
+participant type's name for a participant-local field. Spell the concept `aliasOwner` in code:
+`ProjectionCommands.collectContributions` and `contributionFor` already carry a `UnitRef owner`
+parameter meaning the enclosing unit, and two `owner`s in one signature is a reading hazard at
+the exact site this item edits. Applies to the four `ResultKeyAliasedField` families
 (`TableField`, `PivotField`, `ComputedField`, Direct-compaction `ColumnBackedReferenceField`),
 write and read alike. Non-participant types keep today's bare `"__rk_" + <resultKey>`; their
 select lists never merge with a sibling's, so the bare form stays sound there and churns nothing.
@@ -251,23 +258,62 @@ nothing rejects double participation): under this rule a field declared by sever
 interfaces takes a deterministic representative owner (the lexicographically first declaring
 interface), and backstop 3's agreement census spans every declaring interface's participant set,
 which transitively forces one projection identity, so any two aliases that coexist in one fold
-carry identical SQL and reads stay consistent whichever fold produced the row.
+carry identical SQL and reads stay consistent whichever fold produced the row. The representative
+rule's cost, stated so it is chosen rather than discovered: a field two of a type's interfaces
+both declare projects once per distinct representative, so a sibling participant of only the
+second interface contributes a second term over identical SQL under a different alias. Correct
+(backstop 3 forces the identity) and bounded at one term per declaring interface rather than the
+per-participant blow-up the rejected uniform rule carries, but it is a real, if exotic,
+redundancy on the same axis.
 
 * **The owner is per `(type, field)` and unconditional.** This is forced by the model, not
   convenience: `LaunchSource.DiscriminatedTable.Branch.SingleTable.projection` is the
   participant type's *own* anchor unit, shared with direct queries on that type, so a
   context-dependent alias would make the unit's address a cross-product of type and host. A
   participant queried directly writes and reads the same alias as through the fold.
-* **The decision is minted once, in the plan.** The owner (or its absence, for non-participant
-  units) is a fact the plan computes and carries; nothing re-evaluates the predicate on the read
-  side. Carrier: `TermAlias` stays the two-value addressing enum (its own javadoc says the
-  subselect-shaped terms carry no alias slot, so it cannot host a value), and the fact rides
-  `Contribution` instead, which every arm already carries, as a small sealed type with
-  `Shared` and `QualifiedBy(owner)` arms. `ProjectionCommands.contributionFor` (which has
-  `schema` and `anchorTypeName` in hand) mints it; `ProjectionUnitRenderer` emits what is
-  carried. No new walk-side registry or `GraphitronSchema` accessor: the naming decision is
-  derived in the plan from facts the walk already carries
-  (`GraphitronType.TableInterfaceType.participants()`, `schema.fieldsOf`).
+* **Spliced nesting units stay bare, and part 3 is what makes them safe.** A `CallWrap.Splice`
+  arm renders as `fields.addAll(<nestingUnit>.$project(...))`, so a nesting unit's terms land in
+  the participant's own field set and from there in the fold's `LinkedHashSet`: the collision
+  this item fixes recurs one level down. It is reachable whenever two participants embed
+  *different* nesting types that declare a same-named `__rk_`-minting field over divergent paths.
+  Embedding the *same* nesting type is already safe, because
+  `GeneratedUnits.nestingUnit(anchorTypeName, nestedTypeName)` mints one unit per anchor with
+  identical contributions and the set dedupes them correctly. Qualification cannot reach these
+  arms: the fields are declared on a non-participant type, graphql-java registers one data
+  fetcher per coordinate, and one nesting type may be embedded under several anchors, so an
+  anchor-dependent alias has no single read site to agree with. That is the read-divergence shape
+  R556 tracks, and buying into it here would be taking on that item's problem to fix this one.
+  So these arms keep the bare alias, and part 3's census is extended to cover the keys they
+  contribute, which turns the residual case into a build error rather than a silent drop. The
+  correct-or-build-error promise holds across the split: qualification for what a participant
+  declares, census for what is spliced into it.
+* **The decision is minted once, at capture, on the model.** The owner is a pure function of
+  `(declaring type, field name)`, and both halves of the alias need it, so by "decide once, at
+  capture" and its rule of thumb ("if two consumers evaluate the same predicate over a model
+  field, the branch belongs in the model") it is a model fact, not a plan derivation.
+  Declaration site: the `ResultKeyAliasedField` marker gains an `AliasOwner aliasOwner()`
+  accessor, `AliasOwner` being a small sealed type (`Shared`, `QualifiedBy(String owner)`)
+  beside it in `rewrite/model`. Homing it on that marker is what makes the invariant enforced
+  rather than reviewed: the marker is exactly the membership of the four `__rk_`-minting
+  families, so a new family fails compilation until it declares its namespace verdict, the same
+  discipline the marker's existing write/read fall-through throws already enforce for membership.
+  The marker's javadoc currently asserts the opposite ("The marker carries no method: the alias
+  basis is entirely runtime-keyed ... with no per-variant model value to expose"); retiring that
+  sentence is part of this edit. Capture stamps the value where the sibling precedent already
+  stamps a type-qualified alias: `TypeBuilder`'s participant walk mints
+  `ParticipantRef.TableBound.CrossTableField.aliasName` as
+  `participantTypeName + "_" + fieldName`, and both the writer (`LauncherCommands`) and the
+  reader (`FetcherEmitter`) consume the stamped string rather than recomputing it.
+* **Downstream carriers copy, never re-derive.** `TermAlias` stays the two-value addressing enum
+  (its own javadoc says the subselect-shaped terms carry no alias slot, so it cannot host a
+  value); the plan copies the stamped `AliasOwner` onto `Contribution`, which every arm already
+  carries, so `ProjectionUnitRenderer` emits what it is handed and `ProjectionCommands` computes
+  no predicate of its own. This is what closes the drift a plan-homed fact would have opened:
+  `FetcherEmitter.bind` has two call sites, `TypeFetcherGenerator` and
+  `FetcherRegistrationsEmitter`, and the latter's `emit` entry point builds its own
+  `GeneratedUnits` and carries no `ProjectionRelation`, so a plan-homed owner would have to be
+  either plumbed through a public signature or re-derived there. Reading it off the field needs
+  neither.
 * **The string is composed in one place.** A single mint function beside
   `ReservedAliases.RESULT_KEY_PREFIX` (with the `GeneratorUtils` re-read for the legacy tree)
   takes the owner and returns the emitted prefix; neither side spells the delimiter or the
@@ -275,23 +321,27 @@ carry identical SQL and reads stay consistent whichever fold produced the row.
   class javadoc rather than being restated at minting sites. JavaPoet rider: `$` is JavaPoet's
   format placeholder, so the delimiter only ever arrives as an `$S` argument, never inside a
   format string; the mint function's javadoc states this.
-* **Read side.** `FetcherEmitter.bind` has no schema handle, so the fetcher side consumes the
-  minted owner as data (threaded from a caller that has the plan fact, or stamped on the
-  `ChildField`); it must not re-run the predicate. The existing membership guards
-  (`requireAliasedWriteArm`, `FetcherEmitter`'s `ResultKeyAliasedField` fall-through throw) keep
-  covering *whether* both halves handle a family; they do not guard the owner *value*, so the
-  write/read agreement on the value needs its own enforcer: a pipeline-tier test asserting the
-  plan's carried owner equals what the fetcher binding derives, per coordinate. The qualified
-  reads use by-name lookups (`record.get(String, ...)` or a `DSL.name`-based field);
-  `columnByAlias` currently builds a plain-SQL `DSL.field(String)` and moves to the name-based
-  form in the same change.
+* **Read side.** `FetcherEmitter.bind` has no schema handle and needs none: it receives the
+  `ChildField`, so all three read sites (the single-record unwrap, the pivot unwrap,
+  `columnByAlias`) read `aliasOwner()` off the field they are already binding, and both `bind`
+  call sites get the fact for free. The existing membership guards (`requireAliasedWriteArm`,
+  `FetcherEmitter`'s `ResultKeyAliasedField` fall-through throw) keep covering *whether* both
+  halves handle a family; the owner *value* is single-sourced by construction rather than by two
+  agreeing derivations, so its enforcer is a pipeline-tier test that both emitted halves spell
+  the stamped owner (write alias equals read alias, per coordinate), not a test that two
+  computations match. The qualified reads use by-name lookups (`record.get(String, ...)` or a
+  `DSL.name`-based field); `columnByAlias` currently builds a plain-SQL `DSL.field(String)` and
+  moves to the name-based form in the same change.
 * **Delimiter `$`, not `_`.** GraphQL names cannot contain `$`, so the alias is injective by
   construction, up to PostgreSQL's 63-byte identifier limit which this item does not address,
   and disjoint from every bare `__rk_<key>` (a client alias spelling `Owner$x` is
   unrepresentable). With `_`, participants named `Fan` and `Fan_X` plus crafted client aliases
   re-admit exactly the silent name-equality dedupe this item exists to kill, and no build-time
-  census can see runtime result keys, so that invariant would have no enforcer. `$` is legal in
-  a PostgreSQL identifier and in the emitted Java string literal.
+  census can see runtime result keys, so that invariant would have no enforcer. That asymmetry is
+  also why the `<TypeName>_<fieldName>` precedent keeps its `_` and is not migrated: it composes
+  two SDL names, both visible at build time, so a collision there is censusable, while this
+  namespace composes a client-minted result key that no build-time check can enumerate. `$` is
+  legal in a PostgreSQL identifier and in the emitted Java string literal.
 
 **Why not uniform per-type qualification** (keying every arm on the participant type,
 interface-declared included): it needs no agreement census and makes divergent re-declarations
@@ -301,7 +351,7 @@ with many implementers, purely to serve a shape (participants contradicting thei
 resolved path) that should stay a loud deferral until someone needs it. The owner-keyed rule
 keeps the shared single term for the agreeing case; backstop 3 makes the disagreeing case loud.
 
-### 3. Validator backstop: sibling agreement on interface-declared names
+### 3. Validator backstop: sibling agreement on every key two participants share
 
 The interface-keyed shared term is sound only while every participant's arm for an
 interface-declared field name mints an identical term. A participant re-declaring such a field
@@ -313,8 +363,19 @@ with its siblings' (projection identity: resolved path, condition, arguments); w
 declared by several discriminated interfaces of one type, the census spans every declaring
 interface's participant set (part 2's transitivity argument rests on this).
 
-Severity is `Deferred`, not author error: two participants resolving one interface field over
-divergent paths is a legal, meaningful schema that uniform qualification would support, so the
+The census has a second, wider arm, for the keys part 2 deliberately leaves bare. Every `__rk_`
+key that two `TableBound` participants of one interface can contribute to the same fold must
+resolve to one projection identity. For a key a participant declares itself, that is the arm
+above and the alias already satisfies it. For a key reaching the fold through a spliced nesting
+unit, the census is the only guard there is, so it walks each participant's spliced units and
+censuses the keys they contribute the same way. Two participants embedding *different* nesting
+types that declare the same key over divergent paths is the shape this arm rejects; embedding the
+same nesting type agrees trivially and stays silent.
+
+The rejection kind is `Rejection.Deferred` (`RejectionKind.DEFERRED`), not an author error, and
+not the unrelated `Severity` enum, whose values are `Error` / `Warning` / `Information` / `Hint`.
+Two participants resolving one interface field over divergent paths is a legal, meaningful schema
+that uniform qualification would support, so the
 rejection means "the generator does not emit this yet" and retires cleanly if that route is ever
 built, rather than pinning the schema as illegal and later retracting. The rejection text states
 the fact standalone (which declarations disagree and on what), no roadmap citation. Shape: follow
@@ -327,10 +388,15 @@ formula.
 
 File-by-file, from the survey:
 
+* `rewrite/model/AliasOwner.java` (new), `rewrite/model/ResultKeyAliasedField.java` and
+  `rewrite/model/ChildField.java`: the sealed owner fact (`Shared` / `QualifiedBy(owner)`), the
+  marker's new `aliasOwner()` accessor, and the component on the four families; retire the
+  marker javadoc's "carries no method" sentence, which this change falsifies.
+* `rewrite/TypeBuilder.java` and `rewrite/FieldBuilder.java`: stamp the owner at capture, beside
+  the `CrossTableField.aliasName` precedent that already composes a type-qualified alias there.
 * `command/Contribution.java` (and the rows `plan/ProjectionCommands.java` mints in
-  `contributionFor`): the sealed owner fact (`Shared` / `QualifiedBy(owner)`), computed once in
-  the plan from facts the walk already carries; the agreement census behind backstop 3 lives
-  beside it with a producer-side backstop throw.
+  `contributionFor`): carry the stamped fact through to the renderer, copied, never re-derived;
+  the agreement census behind backstop 3 lives beside it with a producer-side backstop throw.
 * `render/ProjectionUnitRenderer.java`: emit the carried owner in the `BY_RESULT_KEY` column
   arm and the multiset, lookup-multiset, pivot-multiset, helper-call, and scalar-subselect arms.
 * `render/DiscriminatedTableFragments.java` and
@@ -338,13 +404,20 @@ File-by-file, from the survey:
   site): `restrictTo` at the fold, per branch; assembly javadoc stating the two type-scoping
   mechanisms' ownership.
 * `rewrite/generators/FetcherEmitter.java`: owner-keyed reads in the single-record unwrap, the
-  pivot unwrap, and `columnByAlias` (moved to a by-name lookup), consuming the owner as data.
+  pivot unwrap, and `columnByAlias` (moved to a by-name lookup), reading `aliasOwner()` off the
+  field. `bind`'s other call site, `rewrite/generators/schema/FetcherRegistrationsEmitter.java`,
+  needs no edit for the same reason: the fact arrives on the field, not through the caller.
 * `command/ReservedAliases.java` plus the `GeneratorUtils` re-read: the one mint function for
   the composed prefix, the extended namespace-disjointness javadoc, the JavaPoet `$` rider.
 * `rewrite/GraphitronSchemaValidator.java`: the validator mirror of backstop 3, draining the
   plan-side census.
 * `rewrite/generators/util/PolymorphicSelectionSetClassGenerator.java`: consumer list in the
   class javadoc; verify its `EmitPlan` gating covers discriminated-interface-only schemas.
+* `PolymorphicProjectionFilterPinTest` (test source): its javadoc and assertion message state
+  that the one stage-2 site is every `restrictTo` emit site. Part 1 makes that false without
+  making the test fail, because the fold's emit site lands in `render/`, outside the pin's
+  non-recursive `rewrite/generators/` scan. Amend both strings in the same commit as the
+  generator's class javadoc; the assertion itself still holds at 1.
 * `docs/architecture/reference/code-generation-triggers.adoc`: the discriminated-interface
   section gains a statement of the per-participant alias namespace (it currently describes the
   fold's projection with none).
@@ -367,16 +440,24 @@ File-by-file, from the survey:
   client alias against the qualified namespace.
 * **SQL baseline** (`RootLauncherSqlBaselineTest`): both qualified terms present, each
   correlated on its own FK; and the over-projection pin: a query selecting the field on only
-  one fragment carries only that participant's term.
+  one fragment carries only that participant's term. Implementer heads-up on that second
+  baseline: after part 1, a participant whose restricted selection comes back empty returns
+  `ProjectionUnitRenderer`'s `DSL.inline(1).as("__row_present__")` sentinel, so a query that
+  selects no interface-declared field will show that column. The sentinels dedupe across
+  participants in the fold's set, so this is a baseline expectation, not a defect.
 * **Render unit** (`RootLauncherRendererTest`): a two-branch discriminated row (every existing
   case builds exactly one branch, which is why the fold's drop was never pinned), asserting the
-  restricted-map call per branch and the distinct aliases.
-* **Pipeline**: the owner fact's verdicts as plan data (participant-local, interface-declared,
+  restricted-map call per branch and the distinct aliases; plus a spliced arm asserting its
+  alias stays bare, so the unit-scope split is pinned at the renderer and not only argued.
+* **Pipeline**: the owner fact's verdicts as model data (participant-local, interface-declared,
   non-participant, a type participating while also queried directly, the multi-interface
-  representative, and a `TableBound` implementer of a multi-table interface or union staying
-  `Shared`, pinning the vocabulary's scope); the write/read value enforcer (the plan's carried
-  owner equals the fetcher binding's, per coordinate); backstop 3's deferral plus an
-  agreeing-redeclaration control. The
+  representative, a `TableBound` implementer of a multi-table interface or union staying
+  `Shared`, and a field declared on a nesting type spliced under a participant anchor staying
+  `Shared`, the two verdicts that pin the vocabulary's scope on each axis); the write/read
+  enforcer (both emitted halves spell the stamped owner, per coordinate); backstop 3's two
+  deferrals (a divergent interface-declared redeclaration, and two participants embedding
+  different nesting types that collide on one key) each with an agreeing control (an agreeing
+  redeclaration, and two participants embedding the same nesting type). The
   per-type `requireConsistentArguments` behaviour change is its own pin (execution tier), not a
   rider on the correctness cases.
 
@@ -403,6 +484,8 @@ File-by-file, from the survey:
 * A one-fragment query projects only that participant's term.
 * Sibling disagreement on an interface-declared name fails the build as a deferred rejection
   naming the disagreeing declarations.
-* The owner fact is asserted as plan data at the pipeline tier, and the write/read value
-  enforcer holds.
+* Two participants that collide on one `__rk_` key through *spliced* nesting units fail the build
+  the same way, so no shape covered by this item's promise resolves to a silent drop.
+* The owner fact is asserted as model data at the pipeline tier, and the write/read enforcer
+  holds: both emitted halves spell the one stamped owner.
 * Full `mvn install -Plocal-db` green.
