@@ -153,9 +153,15 @@ is currently supported only on `@service` jOOQ-record params.
 - `graphitron/src/main/java/no/sikt/graphitron/rewrite/MutationInputResolver.java` and
   `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/UpdateRowsError.java`: message
   re-grounding per the Design section (text only, no behavioural change).
+- `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ColumnOverlap.java`: no
+  behavioural change, but two live prose claims state the invariant this item narrows and
+  must be re-grounded in the same commit: the class javadoc and the `ColumnWriter.decode()`
+  javadoc both say "an all-plain overlap is a build-time reject", which stops being a blanket
+  truth once the `@service` path merges an admitted alias group instead.
 - Docs touchpoint: whichever user-manual page documents write-input column binding (grep at
-  implementation time; `docs/manual/reference/directives/pivot.adoc` quotes the message
-  phrase today).
+  implementation time; no manual page quotes the rejection message today, so the carve-out
+  likely earns a short note where `@service` jOOQ-record params are documented, e.g.
+  `docs/manual/how-to/external-code.adoc`).
 
 ## Tests
 
