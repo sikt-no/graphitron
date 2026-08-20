@@ -5586,11 +5586,11 @@ COMMENT ON COLUMN intent_node_id_decode_endpoint.to_table IS 'the arriving table
 CREATE VIEW intent_node_id_decode_hop
   (graph_name, site, type_name, field_name, argument_name, path, position, via,
    from_source_name, from_schema, from_table,
-   to_source_name, to_schema, to_table, constraint_name, fk_on_from, hops) AS
+   to_source_name, to_schema, to_table, constraint_name, fk_on_from, last_position) AS
 SELECT graph_name, site, type_name, field_name, argument_name, path, position, via,
        from_source_name, from_schema, from_table,
        to_source_name, to_schema, to_table, constraint_name, fk_on_from,
-       CAST(COUNT(*) OVER (
+       CAST(MAX(position) OVER (
          PARTITION BY graph_name, site, type_name, field_name, argument_name, path) AS INT)
   FROM (SELECT e.graph_name, e.site, e.type_name, e.field_name, e.argument_name, e.path,
                CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.position ELSE 0 END AS position,
@@ -5649,16 +5649,16 @@ COMMENT ON COLUMN intent_node_id_decode_hop.to_schema IS 'the arriving table''s 
 COMMENT ON COLUMN intent_node_id_decode_hop.to_table IS 'the arriving table''s SQL name';
 COMMENT ON COLUMN intent_node_id_decode_hop.constraint_name IS 'the foreign key the hop joins on, written or discovered. Its own sql_referential_constraint key is this name under whichever endpoint declares it, which fk_on_from says. NULL on a NAME_MATCH hop, which joins on no foreign key';
 COMMENT ON COLUMN intent_node_id_decode_hop.fk_on_from IS 'TRUE when the departing table declares the foreign key, FALSE when the arriving one does; the hop''s direction, and what says which side of the key''s column pairing is the local column. Always TRUE on a discovered key, the discovery demanding a key the departing table declares, which is the classifier''s own rule and not a simplification here. NULL on a NAME_MATCH hop';
-COMMENT ON COLUMN intent_node_id_decode_hop.hops IS 'how many hops this coordinate''s path has, so the terminal hop is identified locally as the row where position is one less than this. Carried because the lift the key-column child computes has to know where the chain ends and asking the question outside would name this relation a second time; the same reason the reference-target views carry their own arities';
+COMMENT ON COLUMN intent_node_id_decode_hop.last_position IS 'the greatest position this coordinate''s path reached, so the terminal hop is the row whose position equals this. Carried because the lift the key-column child computes has to know where the chain ends and asking the question outside would name this relation a second time, which is the same reason the reference-target views carry their own arities. The greatest position rather than a count of rows, because the two agree only where the positions are contiguous, and they need not be: a position whose route is ambiguous contributes no hop, so a chain can have a gap, and a count would then point at a position that is not the terminal. Under a gap nothing lifts either way, the walk being unable to cross it, so this is a statement that stays true rather than a behaviour that changes';
 
 CREATE VIEW intent_node_id_decode_hop_column
   (graph_name, site, type_name, field_name, argument_name, path, position, pair_position,
-   from_column_name, to_column_name, hops) AS
+   from_column_name, to_column_name, last_position) AS
 SELECT h.graph_name, h.site, h.type_name, h.field_name, h.argument_name, h.path,
        h.position, fk.position,
        CASE WHEN h.fk_on_from THEN fk.column_name ELSE fk.referenced_column_name END,
        CASE WHEN h.fk_on_from THEN fk.referenced_column_name ELSE fk.column_name END,
-       h.hops
+       h.last_position
   FROM intent_node_id_decode_hop h
   JOIN intent_foreign_key_column_pair fk
     ON fk.constraint_name = h.constraint_name
@@ -5672,7 +5672,7 @@ SELECT h.graph_name, h.site, h.type_name, h.field_name, h.argument_name, h.path,
          AND fk.table_name = h.to_table
          AND fk.referenced_source_name = h.from_source_name
          AND fk.referenced_schema = h.from_schema AND fk.referenced_table = h.from_table));
-COMMENT ON VIEW intent_node_id_decode_hop_column IS 'One hop of a decode path oriented along the walk: for each position of the hop''s foreign key, the column on the table the hop departs beside the column on the table it arrives at. intent_node_id_decode_hop says which key a hop joins on and which end declares it; this relation is that key''s column pairing turned the walk''s way round, so a reader takes departing and arriving without having to know which end the catalog put the key on. That reorientation is the only thing here, and it is worth a relation rather than a CASE at each reader because two readers need it and they would express it differently. The lift the key-column child computes walks these rows forward, and a rendered join reads them as its ON clause. Orientation is fk_on_from''s whole purpose: on a hop whose departing table declares the key the departing column is the key''s own and the arriving one is what it references, and on a reverse hop the two swap. The two branches are disjoint on that column and not on the endpoints, which is what keeps a self-referencing key one pairing rather than two mirrored ones. A hop joining on no foreign key contributes nothing, which is the name-matched element over a function result: it keys by column name and declares no constraint, so there is no pairing to state and the shape is refused above rather than modelled here. The arity travels with the rows, hops being carried through from the parent hop so the terminal hop is identified without naming that relation again, which is the same reason it carries it.';
+COMMENT ON VIEW intent_node_id_decode_hop_column IS 'One hop of a decode path oriented along the walk: for each position of the hop''s foreign key, the column on the table the hop departs beside the column on the table it arrives at. intent_node_id_decode_hop says which key a hop joins on and which end declares it; this relation is that key''s column pairing turned the walk''s way round, so a reader takes departing and arriving without having to know which end the catalog put the key on. That reorientation is the only thing here, and it is worth a relation rather than a CASE at each reader because two readers need it and they would express it differently. The lift the key-column child computes walks these rows forward, and a rendered join reads them as its ON clause. Orientation is fk_on_from''s whole purpose: on a hop whose departing table declares the key the departing column is the key''s own and the arriving one is what it references, and on a reverse hop the two swap. The two branches are disjoint on that column and not on the endpoints, which is what keeps a self-referencing key one pairing rather than two mirrored ones. A hop joining on no foreign key contributes nothing, which is the name-matched element over a function result: it keys by column name and declares no constraint, so there is no pairing to state and the shape is refused above rather than modelled here. The path''s extent travels with the rows, the greatest position being carried through from the parent hop so the terminal hop is identified without naming that relation again, which is the same reason it carries it.';
 COMMENT ON COLUMN intent_node_id_decode_hop_column.graph_name IS 'the owning graph''s partition, carried from the hop';
 COMMENT ON COLUMN intent_node_id_decode_hop_column.site IS 'ARGUMENT or INPUT_FIELD, as on the hop';
 COMMENT ON COLUMN intent_node_id_decode_hop_column.type_name IS 'the type owning the slot, as on the hop';
@@ -5683,20 +5683,20 @@ COMMENT ON COLUMN intent_node_id_decode_hop_column.position IS 'the hop''s own 0
 COMMENT ON COLUMN intent_node_id_decode_hop_column.pair_position IS 'the 0-based position within the hop''s foreign key, the same position on both sides of the pair. The order a tuple predicate over this hop has to preserve, and what makes the walk positional rather than a name lookup that happens to agree';
 COMMENT ON COLUMN intent_node_id_decode_hop_column.from_column_name IS 'the column on the table this hop departs: the key''s own column where the departing table declares it, the column it references where the arriving table does';
 COMMENT ON COLUMN intent_node_id_decode_hop_column.to_column_name IS 'the column on the table this hop arrives at, the other half of the pair. What the next hop''s departing column is matched against, and at the terminal hop what a node key column is matched against';
-COMMENT ON COLUMN intent_node_id_decode_hop_column.hops IS 'how many hops the path has, carried from the hop; the terminal hop is the one whose position is one less than this';
+COMMENT ON COLUMN intent_node_id_decode_hop_column.last_position IS 'the greatest position the path reached, carried from the hop; the terminal hop is the one whose position equals this';
 
 CREATE VIEW intent_node_id_decode_column
   (graph_name, site, type_name, field_name, argument_name, path, position, tier,
    key_column_name, local_column_name) AS
 WITH RECURSIVE lifted (graph_name, site, type_name, field_name, argument_name, path,
-                       position, hops, local_column_name, arrived_column_name) AS (
+                       position, last_position, local_column_name, arrived_column_name) AS (
   SELECT hc.graph_name, hc.site, hc.type_name, hc.field_name, hc.argument_name, hc.path,
-         hc.position, hc.hops, hc.from_column_name, hc.to_column_name
+         hc.position, hc.last_position, hc.from_column_name, hc.to_column_name
     FROM intent_node_id_decode_hop_column hc
    WHERE hc.position = 0
   UNION
   SELECT l.graph_name, l.site, l.type_name, l.field_name, l.argument_name, l.path,
-         hc.position, l.hops, l.local_column_name, hc.to_column_name
+         hc.position, l.last_position, l.local_column_name, hc.to_column_name
     FROM lifted l
     JOIN intent_node_id_decode_hop_column hc
       ON hc.graph_name = l.graph_name AND hc.site = l.site AND hc.type_name = l.type_name
@@ -5720,7 +5720,7 @@ SELECT e.graph_name, e.site, e.type_name, e.field_name, e.argument_name, e.path,
    AND (l.argument_name = e.argument_name
         OR (l.argument_name IS NULL AND e.argument_name IS NULL))
    AND (l.path = e.path OR (l.path IS NULL AND e.path IS NULL))
-   AND l.position = l.hops - 1
+   AND l.position = l.last_position
    AND UPPER(l.arrived_column_name) = UPPER(k.column_name);
 COMMENT ON VIEW intent_node_id_decode_column IS 'Where each value a decode yields lands: one row per position of the node type''s key, carrying that key column and the column on the slot''s own table the value lifts back to, or nothing where no such column exists. The relation site 4b dissolves into. A decode whose every position carries a local column binds locally on a tuple of the row''s own table; one whose positions carry none binds the node type''s own key columns on the node type''s own table inside a correlated EXISTS; and a junction chain is the second because the lift contributes no local column, not because anything rejects it. Those were one conjunct in the resolution this replaces, which picked the local shape when the terminal key''s referenced columns were the node key as a multiset and rejected a chain that translated a column before the question was reached, so the remote shape was unreachable for a multi-hop path. Here they are two facts and the second is a column being null. The lift is a forward walk and not the backward one it reads as. Walking back from the terminal hop is how a reader thinks about it and it has no recursive form; the same fact stated forward does, and it is an invariant carried along the chain: a row says "this column of the departing table is, after this many hops, this column of the table reached". The seed is the first hop''s own pairing, and each step keeps the local column and replaces the arrived one, joining on the next hop''s departing column matching the current arrived one by name. A hop that translates a column is therefore not a rejection and not a special case: the chain for that position simply has nothing to join to and stops, which is exactly what a lift failing means. Matching is by SQL name folded on both sides, which is the same comparison the resolution it replaces makes and inherits its reason: two columns of one table are the same column when their names agree, whatever the catalog''s case. Permutation needs no separate treatment either. The terminal arrival is matched against the key column rather than against a position, so a foreign key declared in a different column order from an @node(keyColumns:) list lands each column at the position the key states, and the transposition the key-column relation''s own comment warns about cannot arise from a positional pairing here. A position with several arrivals is several rows, which takes a malformed catalog to produce, and this relation counts nothing and prefers nothing. Total over the endpoint population crossed with the resolved key, which is the property the destination above depends on: every position of every decode has a row, so all-carry and none-carry are readings of a complete set rather than of whatever survived a join. A partial lift is therefore visible as such, and it is a real shape rather than a modelling gap: a terminal hop whose arriving columns cover only part of the node''s key lifts the part it reaches, which a compound key pinned wider than the constraint produces and a reverse hop produces routinely, that hop arriving on the key''s own columns and reaching whichever of the node''s key columns the departure happens to share. No destination vocabulary names that case, and the reduction above treats anything short of every position as binding remotely, which is always correct where a tuple predicate is not; recording it position by position is what lets a diagnostic say which position was the one that did not arrive. A node type resolving no key columns has no rows at all, absence there being the key relation''s own statement that no tier answered rather than anything about this decode.';
 COMMENT ON COLUMN intent_node_id_decode_column.graph_name IS 'the owning graph''s partition, carried from the endpoint relation';

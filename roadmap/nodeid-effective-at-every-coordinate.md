@@ -239,6 +239,44 @@ that as a `roadmap-tool` build gate. Whether that gate has landed or not, the nu
 this item adds is computable the same way, and stage 2 states it rather than discovering it in a
 profile later.
 
+**Measured, and the number is worse than the precedent.** That gate has landed:
+`roadmap-tool report-inline-multiplicity` computes the metric with no database and no profiler, and
+it reports rather than fails, on the stated ground that an honest ceiling has no basis yet. Its
+figures for the relations stage 2 has added so far:
+
+* `intent_argument_scope_table` 83, `intent_foreign_key_column_pair` 4. Both shallow, both read
+  from several places, which is what they were lifted out of inline spellings to be.
+* `intent_node_id_instruction` 590. Every relation below is a multiple of this one, so it is the
+  term that matters and not the ones above it.
+* `intent_node_id_decode_endpoint` 715, `intent_node_id_decode_hop` 823,
+  `intent_node_id_decode_hop_column` 828, `intent_node_id_encode` 808. Each is its child plus a
+  little, which is what a chain of single namings looks like and is the shape the CASE-in-one-pass
+  rule was there to keep.
+* `intent_node_id_decode_column` 2528, now the heaviest read in the schema. The previous heaviest
+  was `intent_argmapping_projection_defect` at 765, which is the same view R742 measured at 24.5
+  seconds before its own reductions, so this is 3.3 times the tree's worst case rather than a
+  comparable one.
+
+Where it comes from is not the rule the section above warns about. No relation here mints a
+per-value `UNION ALL` arm, and the one place a relation is named twice is the lift's recursion,
+which references its input in both the seed and the step because that is what a recursive walk is:
+1656 of the 2528 is two namings of `intent_node_id_decode_hop_column`. The rest is the instruction
+population multiplying up the chain three times over.
+
+Neither is reducible by rewriting. A recursive walk cannot name its input once, and every
+alternative spelling of the lift names more rather than fewer relations. The reduction the fact
+model prescribes is to materialize, and the relation to materialize is the instruction population,
+which every number here is a multiple of: registering it takes the deepest read to roughly 900 by
+arithmetic alone, and registering the hop-column relation beside it takes it near the shallow end.
+Both registrations are blocked, and blocked by a gate rather than by judgement.
+`MaterializeRegistryGateTest` fails the build when a registered view reads another registration's
+target, and `intent_node_id_instruction` reaches `intent_spelled_table` through the argument scope
+relation. So this is exactly the case the section above predicted, arriving: a relation this item
+would register whose source reads a registered target, which is what makes R746's ordering column
+load-bearing rather than additive. R746 is a live item rather than a hypothetical, so the sequence
+is R746 first and the two registrations after it, and stage 2 records the number in the meantime
+rather than leaving it to a profile.
+
 **One piece of navigation has to be authored first.** `intent_field_reference_step_hop` and
 `intent_field_reference_step_target` resolve reference-path hops, and they are field-site only. An
 argument-site `@reference` path has no equivalent, over
