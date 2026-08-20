@@ -135,7 +135,11 @@ nothing reaches produces no occurrence path, so no use site, so no row and no ve
 reachability gate and it is not an exemption: a decode is "these values go here", and with no
 consuming coordinate there is no here. The earlier draft argued instead for a detection deliberately
 ungated by walk reach, reasoning over `walk_claim_domain_type` / `walk_claim_domain_field`. That
-reasoning is retired: those two relations are draining (R743), and this rule never needed them.
+reasoning is retired twice over: this rule never needed those relations, and they no longer exist,
+R743 having deleted both when `intent_authored_claim_conflict` stopped gating on the walk's reach.
+The shape that replaced them is the one this item follows, and the detection section below states it
+as such: the relation carries no accept line of its own, and each consumer applies the population its
+own question needs.
 
 **`intent_node_id_decode`** carries the coordinate, the use site, the resolved node type, and the
 destination that receives the decoded tuple. Four destinations, a closed vocabulary:
@@ -183,12 +187,16 @@ directive rather than being retrofitted onto a Java sealed hierarchy a release l
 by hand.** The lift is a positional-subset check between adjacent hops, and computing the lifted tuple
 walks the chain back from the terminal hop. Where that has no safe recursive H2 view form it lands as
 a materialized relation, which `intent_input_occurrence_path` and `intent_type_domain` both already do
-and both state in their own comments. What has changed since those two is that R742 is minting a
-registry for it: authored `meta_` rows naming each view, its target table, and the views it must be
-materialized after, with one materializer in `graphitron-model` that topologically sorts and refreshes
-them. Anything this item materializes registers there rather than growing a second writer with its own
-ordering. If R742 has not landed when this one does, the registration is authored in that shape so the
-two meet rather than collide.
+and both state in their own comments. What has changed since those two is that R742, now Ready, mints a
+registry for it: `meta_materialize`, a constrained table carrying one row per registration, the source
+view under a `_live` suffix and the target table under the canonical name every existing reader already
+uses, plus a required `reason` that is where the materialization doctrine lives. One materializer in
+`graphitron-model` empties each target and refills it from its source on the capture cadence. Anything
+this item materializes registers there rather than growing a second writer. Refresh *ordering* is
+deliberately not in that registry, R742 having established that neither of its two registrations sits in
+the other's closure and left the general case to R746; a relation this item registers whose source reads
+another registered target is therefore the case that makes R746 real rather than additive, and stage 2
+says so if it arrives.
 
 ### The derivation depth is a design constraint, not an afterthought
 
@@ -336,6 +344,16 @@ the built-in `path` / `message` arm) and the wire direction, `buildErrorTypeFiel
 fold over that one list, and the classified `RecordReadField` and the type-level override list stop
 being two spellings of one per-field read.
 
+R686 landed the same move on the neighbouring field while this was being written, which makes the shape
+a precedent rather than a proposal. `message` used to carry an `Optional<String> description` on each
+handler and fall back at runtime; it now carries a sealed `ClientMessage` resolved once at lift time,
+`Static` or `FromSource`, so the emitted body picks its statement per arm rather than "carrying a
+runtime null test over a decided value", and the arm sits on the three dispatch variants rather than on
+`Handler` because `ValidationHandler` has no client message to carry and "would have to fake one". The
+wire direction this item adds to a per-field read is the same kind of fact, decided at lift and read per
+arm, and that argument says it belongs on the slot that can carry it rather than on a supertype that
+cannot.
+
 **The encode side takes the same two preconditions, for the same reason.** `encode<TypeName>` takes
 N key values positionally and a read yields one Java value, so a `READ_VALUE` source carries the
 encode out exactly when the node type's key is one column and that column's Java type matches what
@@ -407,14 +425,41 @@ preconditions, and refuses naming which one failed:
   `String` parameter is a refusal naming both types, not a pass-through, because a pass-through is
   exactly the bug: the only value a `String` parameter could receive there is the base64.
 
+Neither precondition is minted here. R668 shipped both operands and the rule that joins them, and
+this item reuses them rather than restating them one directive over.
+`intent_argmapping_key_column_candidate` already carries a matched key column with "that column's
+Java type beside it where the catalog can say", reached by an outer join precisely so an untypeable
+column is a NULL and not a missing row. `intent_resolved_node_key_projection` already makes the
+agreement a *join predicate* rather than a check after the fact, at **equality of the erased Java
+type with no widening admitted**, which is the user-visible half of this rule: a `SMALLINT` key column
+against an `Integer` slot is a disagreement, and softening it is what would let a narrowing through.
+
+**And this item inherits R668's stand-aside rule verbatim, which is the half easiest to get wrong.**
+The type gate fires only where *both* operands are known. Where the catalog cannot type the key column
+(a pinned key column on an unbound or ambiguously-bound node type, which
+`intent_resolved_node_key_column` deliberately admits as a row) or the classpath census cannot type
+the slot (a consumer compiled without `-parameters`, a reference resolving no method), the pair
+resolves exactly as it did before the predicate existed, with javac's own error as the backstop it
+always was. So the gate strictly adds refusals and removes no emission, which is what makes it landable
+as a join rather than as a staged flip, and stage 4 states it as the exit condition rather than
+discovering it when a fixture without `-parameters` starts failing.
+
+One operand is weaker than it reads, and this item should say so rather than assume it.
+`intent_resolved_node_key_column.column_name` hands out a *spelling*, the winning tier's own, and its
+comment says outright that whether the name is a column the table actually has "is deliberately not
+asked here". Reaching the column's Java type therefore crosses from a spelled reference to a catalog
+reading, which is why the candidate relation folds case on both crossings. That crossing is R731's
+subject, and R724 is the machinery it names (`intent_stated_key_column_match`, carrying the matched
+`sql_column`'s own spelling alongside the arity that says whether the match was unambiguous). Neither
+is a dependency: this item reads the candidate relation's payload as it stands. What changes if they
+land first is that the type this item refuses on comes off a column decided rather than picked.
+
 The second precondition is what makes the reporter's own code fail rather than quietly keep working,
 and that is the intended outcome. Their method takes `String plasstildelingId` and today receives
 base64; afterwards the build tells them the key column binds as `Long` and asks for a parameter of
 the column's own type. The remedy is one line of Java in their own signature and no SDL change at
 all.
 
-The evidence is the classified carrier rather than a reading of the source.
-`ServiceCatalog.argExtraction` is the whole story at site 1: it takes the parameter's Java type and the
 The evidence that neither happens today is the classified carrier rather than a reading of the
 source. `ServiceCatalog.argExtraction` is the whole story at site 1: it takes the parameter's Java
 type and the SDL leaf type and no directive container at all, checks enum parity and wire coercion,
@@ -474,6 +519,23 @@ account for, which means the census missed a shape. Stating the partition is how
 itself as a defect in this item's own work rather than as a silent pass at a consumer, and it is why
 the detection reads the population rather than the captured `@nodeId` rows.
 
+The stand-aside rule above is not a third arm of that partition, and it is worth saying so because it
+reads like one. An instruction whose type gate stood aside for want of an operand *resolves*: it emits
+exactly as it does today and lands in its direction's relation, with javac as the backstop. It is only
+the refusal that requires two known types, never the resolution.
+
+**The refusal view carries no accept line of its own.** Trunk settled this shape one detection over
+while this item was being written: `intent_authored_claim_conflict` used to gate on the walk's reach as
+a join, and now states the whole predicate and nothing else, its own comment putting the reason plainly,
+that "a filter wearing the view's name would substitute one consumer's population for the fact". Each
+consumer then applies the population its question needs, and the two differ: the build-error surface
+joins `intent_type_domain` because only the emitted surface can fail a build, while the editor's
+diagnostic arm reads the rows ungated, a coordinate nothing reaches being where an author most needs the
+signal. The same split applies here without amendment. A refused instruction at an unreached coordinate
+is still a refused instruction, and the LSP should say so; the build fails on the ones the emitted
+surface reaches. The use-site grain does not conflict with this: it is what makes a row answerable at
+all, not a filter on which rows exist.
+
 The projector is small and its home exists: a further component on `StoreDetections` beside the two
 detection families already there, `AuthoredClaimConflicts` and `ArgmappingProjectionDefects`, decoded
 into located `ValidationError`s the same way. One rule, every coordinate, and the same fact available
@@ -523,7 +585,11 @@ replacement.
    detection families already there (`AuthoredClaimConflicts` and `ArgmappingProjectionDefects`;
    `ResolvedKeyProjections` is the record's third component and not a detection family). Both arms are
    `Rejection.structural`. Exit: a composite key at a single-valued slot and a type disagreement each
-   fail the build naming their own operands; the resolution relations and this view partition the
+   fail the build naming their own operands; a pair whose key column or whose slot the census cannot
+   type still emits exactly as it did before this stage, so the view strictly adds refusals and removes
+   no emission, which is R668's stand-aside rule and is checked here rather than assumed; the view
+   carries no population filter of its own, the build-error surface applying one and the editor's arm
+   reading it ungated; the resolution relations and this view partition the
    instruction population, so no instruction falls in neither; and the same fact is available to the
    LSP and the MCP context rather than living inside two walk classes. The message vocabulary
    converges with `ArgmappingProjectionDefects.rejectionOf`, which is shipped text to read rather than
@@ -575,7 +641,14 @@ That is what makes a total census safe to attempt.
   calling that shape shipped.
 
 The spike's rendered SQL was the right evidence for a spike and is the wrong assertion to ship:
-code-string matching on generated bodies is banned at every tier.
+code-string matching on generated bodies is banned at every tier. Where an emission claim genuinely has
+to be made about a rendered body, R668's Done-gate rework is now the worked shape and this item follows
+it rather than re-deciding: `TypeSpecAssertions` grew a projected-key section, so the call site asks a
+typed question ("does this method materialise the decoded record once?", "is the column named rather
+than indexed?") and the rendered spelling lives in the one file the ban allows. The behavioural half of
+each such claim moves to the tier that owns behaviour, which is where that rework put "the decode
+precedes the write transaction": a malformed or wrong-type node id surfaces as a request-level error with
+a null payload and no committed row.
 
 ## Risks
 
@@ -602,9 +675,10 @@ code-string matching on generated bodies is banned at every tier.
   message an exit condition of stage 3 rather than a follow-up.
 * **Editing a verdict while its own item is still open.** The arity rule makes `BARE_NODE_ID` wrong
   for single-key node types, so stage 2 edits its text down to the arity fact rather than leaving two
-  answers to one question standing. R668 is back in Ready over a test finding with no production
-  change requested, so the text is stable to edit but the item is not closed, and whoever does the
-  rework should hear that its verdict population is shrinking. The mitigation on the substance is that
+  answers to one question standing. R668's own Done gate sent it back over a test finding with no
+  production change requested; that rework has since landed and the item is In Review again, so the
+  text is stable to edit while the item is still open, and whoever takes the Done gate should hear that
+  its verdict population is shrinking. The mitigation on the substance is that
   the two items are the only producers on either side of the partition: R668's remaining population is
   composite keys at authored `argMapping` sites, this item's is composite keys and type disagreements
   everywhere, and the boundary has a test in the Tests section rather than only an argument here. The
@@ -662,8 +736,10 @@ code-string matching on generated bodies is banned at every tier.
   of those carriers, so the refusal is stated in the encode relation instead.
 * The previous draft's own claim that the detection is "capture-total and deliberately ungated by walk
   reach", along with its reasoning over `walk_claim_domain_type` / `walk_claim_domain_field`. The
-  use-site grain answers the question those relations were being consulted about, and R743 is draining
-  them.
+  use-site grain answers the question those relations were being consulted about, and both relations
+  have since been deleted outright rather than re-pointed. Nothing in this item's vocabulary survives
+  from that draft, so the sweep has nothing to find here; the entry stands so a reader of the earlier
+  draft knows the argument was withdrawn and not merely reworded.
 
 `CONDITION_STEP_MARKER` is deliberately *not* retired here, and neither is the rejection it anchors;
 see the emitter argument under Design. The Done-gate sweep should read a surviving
@@ -691,7 +767,7 @@ stage 3 expresses it there.
   to one
   directive, ahead of R682 rather than against it. Worth telling that item's author, because the
   `@nodeId` decode and encode facts are one fewer thing its planner rewrite has to source.
-* **R742** (`determinism-ratchet-run-count`, Spec) is why this item states its own derivation depth.
+* **R742** (`determinism-ratchet-run-count`, Ready) is why this item states its own derivation depth.
   It measured the precedent this plan follows, `intent_argmapping_projection_defect`, at 2149 relation
   instantiations and 24.5 seconds for one read, and diagnosed the cause as H2 inlining views with no
   common-subexpression elimination over a stratum twenty-two views deep. Two of its findings are
@@ -703,19 +779,31 @@ stage 3 expresses it there.
   metric as a build gate, which this item's new relations are computable under whether or not that
   gate has landed. A notification in both directions: R742 gains relations to price, and this item
   gains its ceiling.
-* **R743** (`sdl-fact-gatherer-staged-pipeline`, Spec) settles the question the previous draft
-  of this item argued at length. Its staged SDL gatherer puts coordinate facts in stage 4 and
-  reachability facts in stage 5, and it drains `walk_claim_domain_type` /
-  `walk_claim_domain_field`. This item reads neither, so nothing here blocks or waits on it; recorded
-  because the earlier draft's reachability argument leaned on relations R743 is retiring.
-* **R668** (`nodeid-key-projection-on-routine-params`, Ready) is the nearest neighbour. It makes a
+* **R743** (`sdl-fact-gatherer-staged-pipeline`, In Progress) settled the question the previous draft
+  of this item argued at length, and has already landed the part that mattered here. Its gatherer now
+  owns its assembly stage and closes with a rooted traversal that writes `intent_type_domain`
+  (`ClassificationDomainCapture`), and the walk's two membership grains are deleted rather than
+  re-pointed, `intent_authored_claim_conflict` having stopped gating on the walk's reach. This item
+  reads none of those relations, so nothing here blocks or waits on it. What it does inherit is that
+  traversal's own doctrine, stated in its class javadoc and worth quoting because this item applies it
+  to the same subject: the node seed is the *declaration* and not the inference, seeding being monotone,
+  so "what each member's nodehood amounts to is a question for the readers of the captured node facts,
+  one join away". This item is one of those readers.
+* **R668** (`nodeid-key-projection-on-routine-params`, In Review) is the nearest neighbour. It makes a
   node type's key columns nameable as a trailing `argMapping` path segment, which is the
   `SINGLE_KEY_COLUMN` destination above. Its production surfaces are in the tree and this item reads
-  them; its status went back to Ready at its Done gate over a test, not a design. The finding was that
-  `ArgmappingKeyProjectionEmissionPipelineTest` asserts raw generated-method-body strings, the pattern
+  them; its Done gate sent it back over a test rather than a design, and that rework has since landed,
+  so it is In Review again awaiting a third session. The finding was that
+  `ArgmappingKeyProjectionEmissionPipelineTest` asserted raw generated-method-body strings, the pattern
   `development-principles.adoc` bans at every tier and `TypeSpecAssertions` exists to replace, with no
-  production change requested. So the surfaces below are stable to converge on, and the reopen is a
-  live worked example of the rule this item's own Tests section states. What has landed: the resolution views, the rejection
+  production change requested. So the surfaces below are stable to converge on, and the round trip is a
+  live worked example of the rule this item's own Tests section states, which is why that section now
+  names the helper the rework grew rather than re-deciding the question. Two of R668's relations do more
+  than neighbour this item: it reads
+  `intent_argmapping_key_column_candidate` for a key column's Java type and
+  `intent_resolved_node_key_projection` for the erased-type-equality rule and its stand-aside
+  behaviour, which are the two preconditions' operands and not a parallel invention. What has landed:
+  the resolution views, the rejection
   family (`intent_argmapping_projection_defect` plus `ArgmappingProjectionDefects`, six verdicts across
   three `Rejection` channels), the carrier move, and the `@routine` emitter with its execution round
   trip. Outstanding is the `@service` emitter, a named empty slot rather than an open question:
@@ -764,6 +852,21 @@ stage 3 expresses it there.
   edits that page in two stages already, so the correction rides along and R691 is discarded at the
   Done gate rather than sending a third pass over one file. Its `status: Backlog` file is a tombstone
   in the meantime.
+* **R731** (`resolved-key-column-forwards-a-spelling`, Backlog) is the weakness under this item's type
+  precondition, and naming it here is how this item avoids pretending otherwise.
+  `intent_resolved_node_key_column` answers with the winning tier's *spelling*, not a resolved column,
+  so every reader that has to match against it folds case at the crossing. This item's type refusal
+  reads a Java type reached through exactly that crossing. Not a dependency, and not a blocker: the fold
+  is correct today and R668's candidate relation already performs it on both sides. What R731 would
+  change is the payload, so the type comes off a column rather than a name.
+* **R724** (`stated-key-column-match-states-its-arity`, Ready) is the machinery R731 names, and it
+  matters here for one reason. Its subject is `intent_node_metadata_defect`'s `KEY_COLUMN_UNRESOLVED`
+  arm spending an ambiguity silently: on a table with two columns differing only by case, which one
+  resolved the entry is decided by whichever the join reached. A type refusal minted by this item on a
+  silently-picked column would name a type the author cannot check. R724 lands the arity, so if it goes
+  first this item refuses on a column decided rather than picked; if it goes second, nothing here is
+  wrong, the ambiguity being upstream of the operand rather than introduced by it. A notification in
+  R724's direction: this item adds a consumer that turns that pick into a build failure's text.
 * **R262** (Done) rejects `@nodeId` on a non-`ID` coordinate at validate time: the precedent for the
   rejection half, and the reason its vocabulary is already established. This item extends the same
   judgement from the slot's *type* to what the slot can *hold*.
