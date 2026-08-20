@@ -1,7 +1,7 @@
 ---
 id: R755
 title: "srp review prompts lead with commit bookkeeping where the gate turns on goal, design fit, fidelity, and completeness"
-status: In Progress
+status: In Review
 bucket: improvement
 priority: 4
 theme: tooling
