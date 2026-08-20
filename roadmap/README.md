@@ -24,6 +24,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | Spec | 2026-08-20 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
+| `R742` | The determinism ratchet pays for four full-fixture generator runs and needs two | Spec | 2026-08-20 | [plan](determinism-ratchet-run-count.md) |
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | In Review | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
@@ -562,6 +563,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R594` [**Snapshot axis keys are consistent across the snapshot-reporting MCP tools**](mcp-snapshot-axis-key-naming.md) — Backlog, cleanup
 - `R643` [**Supergraph peer surface for the dev loop**](supergraph-peer-surface.md) — Backlog, feature
 - `R716` [**The MCP boundary guard names one generator package of five**](mcp-boundary-guard-generator-package-coverage.md) — Backlog, architecture
+- `R742` [**The determinism ratchet pays for four full-fixture generator runs and needs two**](determinism-ratchet-run-count.md) — Spec, dx
 - `R538` [**BgeEmbedderOnnxTest fails nondeterministically under full-reactor parallel load**](onnx-embedder-nondeterminism-under-parallel-load.md) — Backlog, testing
 - `R741` [**Date or refresh the parallelism figure in graphitron's junit-platform.properties**](parallelism-figure-in-junit-properties.md) — Backlog, dx
 - `R593` [**Fail CI loudly when init.sql seeding fails**](ci-init-sql-error-stop.md) — Backlog, dx
