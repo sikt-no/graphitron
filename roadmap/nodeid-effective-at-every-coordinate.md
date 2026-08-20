@@ -179,12 +179,45 @@ relations resolve them and the classifier reads the rows, which is R682's direct
 (`roadmap/planners-read-facts-emitters-read-commands.md`: planners read facts) arriving early for one
 directive rather than being retrofitted onto a Java sealed hierarchy a release later.
 
-**Where a view cannot express the walk, materialize it.** The lift is a positional-subset check
-between adjacent hops, and computing the lifted tuple walks the chain back from the terminal hop.
-Where that has no safe recursive H2 view form, it lands as a capture-cadence derivation writer rather
-than being bent into a view; `intent_input_occurrence_path` and `intent_type_domain` are both
-materialized for exactly that reason and both state it in their own comments. The choice is the
-implementer's, per relation, on that precedent.
+**Where a view cannot express the walk, materialize it, through the registered mechanism rather than
+by hand.** The lift is a positional-subset check between adjacent hops, and computing the lifted tuple
+walks the chain back from the terminal hop. Where that has no safe recursive H2 view form it lands as
+a materialized relation, which `intent_input_occurrence_path` and `intent_type_domain` both already do
+and both state in their own comments. What has changed since those two is that R742 is minting a
+registry for it: authored `meta_` rows naming each view, its target table, and the views it must be
+materialized after, with one materializer in `graphitron-model` that topologically sorts and refreshes
+them. Anything this item materializes registers there rather than growing a second writer with its own
+ordering. If R742 has not landed when this one does, the registration is authored in that shape so the
+two meet rather than collide.
+
+### The derivation depth is a design constraint, not an afterthought
+
+R742 measured the precedent this item follows and the number is the reason to read it first. One read
+of `intent_argmapping_projection_defect` expands to **2149 relation instantiations** and 24.5 seconds,
+because H2 inlines a view wherever it is named and does no common-subexpression elimination, so
+multiplicities compound down a stratum twenty-two views deep. Two of its costs are directly
+instructive here.
+
+**The six `UNION ALL` arms are most of the bill.** Each arm re-joins the same driving relations with a
+different `WHERE` and a different verdict literal, which is where the 1036 and 745 contributions come
+from. The defect view below has two verdicts and must not be written that way: it computes both
+preconditions in one pass over the population and picks the verdict with a `CASE`, so the driving
+relations are named once. Same for the two resolution relations, whose destination and source
+vocabularies are tempting to write as one arm per value.
+
+**`intent_resolved_node_key_column` is windowed, so predicates do not push into it.** It carries a
+`DENSE_RANK() OVER` for its tier precedence, and a window sees its whole partition whatever predicate
+a reader applies outside. This item joins it twice by nature, once for the key columns and once for
+the arity count, which is exactly the shape the fact model already prescribes a remedy for: take the
+relation once and pair it on its key. The arity is then a count over the rows already taken, not a
+second read.
+
+Both points are exit conditions rather than advice, because the metric is checkable without a
+database: inline multiplicity is computable statically from `graphitron-model.sql` by parsing the
+`CREATE VIEW` bodies and multiplying textual reference counts down the tree, and R742 proposes exactly
+that as a `roadmap-tool` build gate. Whether that gate has landed or not, the number for each relation
+this item adds is computable the same way, and stage 2 states it rather than discovering it in a
+profile later.
 
 **One piece of navigation has to be authored first.** `intent_field_reference_step_hop` and
 `intent_field_reference_step_target` resolve reference-path hops, and they are field-site only. An
@@ -425,7 +458,9 @@ precondition failed, in a closed vocabulary. That is `intent_argmapping_projecti
 one directive over, and following it is what lets the message text converge on
 `ArgmappingProjectionDefects.rejectionOf` rather than be renegotiated.
 
-The verdicts the census yields:
+Written in one pass over the population, with the verdict picked by a `CASE` rather than one
+`UNION ALL` arm per verdict, for the reason under "The derivation depth is a design constraint"
+above. The verdicts the census yields:
 
 * `KEY_ARITY_EXCEEDS_SLOT`. The node type's key is several columns and the destination or source
   holds one value. Names the type, the count, and the coordinate.
@@ -468,7 +503,9 @@ replacement.
    stage. `NodeIdLeafResolver` becomes a reader of the rows rather than the resolver of the facts. Exit: every `@nodeId` shape that generates today has a row naming the
    destination or source it actually uses; a `@service` method whose parameter type matches a
    single-column node key receives the decoded value and never the base64; and the tree's existing
-   `@nodeId` behaviour suite stays green without modification.
+   `@nodeId` behaviour suite stays green without modification. Each relation added here states its
+   own inline multiplicity, computed statically from the DDL, and none of them introduces a
+   per-verdict or per-destination `UNION ALL` arm that re-joins the driving relations.
 3. **The junction chain.** With the relation in place this is the absence of a rejection rather than
    an addition: `validateLift` stops rejecting and its absent lift becomes absent local columns, so
    the chain binds remotely and reaches the hop-general `EXISTS`. Exit: a junction chain returns each
@@ -652,7 +689,19 @@ stage 3 expresses it there.
   to one
   directive, ahead of R682 rather than against it. Worth telling that item's author, because the
   `@nodeId` decode and encode facts are one fewer thing its planner rewrite has to source.
-* **R743** (`sdl-fact-gatherer-staged-pipeline`, Backlog) settles the question the previous draft
+* **R742** (`determinism-ratchet-run-count`, Spec) is why this item states its own derivation depth.
+  It measured the precedent this plan follows, `intent_argmapping_projection_defect`, at 2149 relation
+  instantiations and 24.5 seconds for one read, and diagnosed the cause as H2 inlining views with no
+  common-subexpression elimination over a stratum twenty-two views deep. Two of its findings are
+  design constraints here rather than context, both stated under "The derivation depth is a design
+  constraint": the per-verdict `UNION ALL` arms that carry most of that bill, which this item's defect
+  view must not reproduce, and the non-pushdown behaviour of the windowed
+  `intent_resolved_node_key_column` this item joins by nature. R742 also mints the materialization
+  registry anything here materializes should register into, and proposes the static multiplicity
+  metric as a build gate, which this item's new relations are computable under whether or not that
+  gate has landed. A notification in both directions: R742 gains relations to price, and this item
+  gains its ceiling.
+* **R743** (`sdl-fact-gatherer-staged-pipeline`, Spec) settles the question the previous draft
   of this item argued at length. Its staged SDL gatherer puts coordinate facts in stage 4 and
   reachability facts in stage 5, and it drains `walk_claim_domain_type` /
   `walk_claim_domain_field`. This item reads neither, so nothing here blocks or waits on it; recorded
