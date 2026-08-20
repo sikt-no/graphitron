@@ -107,10 +107,16 @@ percent.
 | schema parse | 0.4% | |
 | everything else | under 0.4% each | |
 
-That table is the answer to "are there other easy fixes", and mostly the answer is no. Store boot at
-1.8% is 0.4 seconds and would need a template-clone mechanism H2 does not offer in memory. Emission
-and the writing of 798 files together are under one percent. The schema parse and the classpath
-scan do not register. There is no low-hanging fruit outside the store.
+Nothing *outside* the store is worth attacking: store boot at 1.8% is 0.4 seconds, emission and the
+writing of 798 files are together under one percent, and the schema parse and classpath scan do not
+register.
+
+But that is a statement about where the time is not, and it should not be read as "a run cannot get
+cheaper". It can, by a lot, and R745 is that finding: the four rows above are deep view stacks that
+H2 inlines without common-subexpression elimination, one of them expanding to 2149 relation
+instantiations per read. Reducing two relations takes that read from 24.5s to 0.72s and this class
+from 229.0s to **20.66s**, measured. Read R745 before assuming the per-run figure in this item is
+fixed; the run-count arithmetic here holds whatever a run ends up costing.
 
 ### One exception, and it is worth taking: the same view is read twice per run
 
@@ -151,6 +157,7 @@ count is a defensible call and costs nothing but a cross-reference.
 | R733's two changes alone | 4 | about 93s, derived | 23.3s |
 | R733 + R742, measured | 3 | **62.91s** | 21.0s |
 | and the duplicate read removed | 3 | about 56s, ceiling | 18.8s |
+| R733 + R745's two reductions, 4 runs, measured | 4 | **20.66s** | 5.2s |
 
 229.0s to 62.91s is measured with both tests green. The last row is a ceiling rather than a
 measurement: it was taken by skipping one read outright, which is not a legal implementation, and
