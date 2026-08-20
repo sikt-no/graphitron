@@ -159,33 +159,36 @@ would have to re-plural is not.
 
 ## Implementation
 
-* `roadmap/workflow.adoc`: add the *What each gate decides* starred paragraph after *Reviewer rule*.
-* `.claude/skills/srp/SKILL.md`:
-  * Rewrite the Spec-stage template to the section order above. The draft below is the intended
-    output; land it as the template with the values re-tokenised.
-  * Rewrite the Implementation-stage template to the same order, carrying questions 3 and 4 from
-    workflow.adoc, keeping the existing "Approval preconditions" section (build passes, no
-    code-string assertions on generated method bodies, spec body reflects what shipped) as an
-    appendix to the Verdict section rather than a peer of the questions.
+Shipped at `1c4028d`, one commit covering both files. What landed, against what was planned:
 
-    Questions 3 and 4 land restated in reviewer voice with the observable attached, the same
-    treatment the Spec-stage draft gives questions 1 and 2, rather than quoted verbatim as an
-    earlier wording of this bullet had it. Verbatim quoting contradicts *What the templates become*,
-    which makes the restatement deliberate and labelled, and it would resurrect the predicate the
-    struck drift check failed on: a template that quotes cannot also carry the observable in second
-    person. The definition stays single-source by the pointer line, not by string identity.
-  * The Implementation-stage Materials section names the touched tree as the review surface and
-    relabels the commit list as provenance. No new token; see *The delivery, not the commit series*.
-  * The "Template design intent" section states that the gate questions are restated from
-    `roadmap/workflow.adoc`, which owns them, and that changing them there is the way to change
-    them. It also reconciles its own framing with the rewrite: the section previously said the
-    reviewer "is asked for opportunities that would make the item land better alongside blocking
-    problems", which is the invitation the new *What is out of scope* section withdraws. Left
-    standing, that sentence would have re-authorised the nits from inside the document explaining
-    why the templates no longer solicit them. It now records scope as a permission to report rather
-    than an invitation, and names the ordering itself as load-bearing.
-  * "Output rules" takes the Spec-stage disqualified-token list plural, matching the Implementation
-    stage.
+* `roadmap/workflow.adoc`: the *What each gate decides* starred paragraph sits after *Reviewer rule*,
+  verbatim from the draft above.
+* `.claude/skills/srp/SKILL.md`: both templates rewritten to the section order above, the
+  Spec-stage one from the draft below with values re-tokenised. Measurements under *How we know the
+  item is complete*.
+
+Three points the plan left underdetermined, settled during implementation:
+
+* **Questions 3 and 4 are restated, not quoted.** An earlier wording of this section asked for them
+  "verbatim from workflow.adoc", which contradicts *What the templates become* (the restatement is
+  deliberate and labelled) and would have resurrected the predicate the struck drift check failed
+  on: a template that quotes cannot also carry the observable in second person. They land in
+  reviewer voice, the same treatment the Spec-stage draft gives questions 1 and 2. The definition
+  stays single-source by the pointer line, not by string identity.
+* **"Approval preconditions" is a heading-bearing subsection of Verdict** (`##` under the Verdict
+  `#`), which is what makes it measurable apart from the Verdict it hangs under. See the amended
+  second criterion below.
+* **"Template design intent" lost its standing invitation to surface opportunities.** The section
+  said the reviewer "is asked for opportunities that would make the item land better alongside
+  blocking problems", which is the invitation the new *What is out of scope* section withdraws. Left
+  in place it would have re-authorised the nits from inside the document explaining why the templates
+  no longer solicit them. It now records scope as a permission to report rather than a request, names
+  the ordering as load-bearing, and carries the sentence this plan asked for: the questions are
+  restated from `roadmap/workflow.adoc`, which owns them, and changing them there is the way to
+  change them.
+
+Both disqualified tokens are plural at both stages, and step 4 and "Output rules" say the Spec-stage
+resolution fills them as a list of one.
 
 ## How we know the item is complete
 
@@ -205,10 +208,29 @@ Two things must hold in the diff, both readable off it:
   subsection counts as its own section, so the Implementation stage's *Approval preconditions*
   appendix is measured apart from the Verdict it hangs under.
 
-The Spec-stage draft below meets both: 27 of its 81 lines are mechanics (13 preamble and sync, 14
-Bookkeeping), and the questions section's 18 lines beat Materials' 13 and Verdict's 11. The
-Implementation-stage template has no draft here, so whoever lands it measures it the same way and
-names in the commit message which sections gave up the lines.
+Both hold on what shipped, measured off the landed file:
+
+[cols="2,1,1,1,1"]
+|===
+| Template | Body | Mechanics | Share | Questions vs next-longest
+
+| Spec stage, before
+| 71 | 34 | 47.9% | n/a
+
+| Spec stage, after
+| 81 | 27 | 33.3% | 18 vs Materials 13
+
+| Implementation stage, before
+| 82 | 35 | 42.7% | n/a
+
+| Implementation stage, after
+| 103 | 28 | 27.2% | 22 vs Materials 19
+|===
+
+The Spec-stage numbers are the draft's, landed unchanged. At the Implementation stage the lines came
+out of the reviewer-rule section (18 to 15 as Bookkeeping) and the two identification-plus-sync
+blocks (17 to 13); Materials gained five for the delivered-state bullet and Verdict four absorbing
+the outcome list, and the questions and out-of-scope sections are new.
 
 The threshold reads "at most" rather than "below" because 27 of 81 is exactly a third, and the draft
 that lands on that boundary is the one the Spec review approved. The alternative was to shave a line
