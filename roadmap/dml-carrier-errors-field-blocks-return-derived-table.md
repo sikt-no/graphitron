@@ -7,7 +7,7 @@ priority: 5
 theme: mutation-write
 depends-on: []
 created: 2026-08-17
-last-updated: 2026-08-19
+last-updated: 2026-08-20
 ---
 
 # A DML carrier payload with an errors field loses its return-derived write target
@@ -238,10 +238,12 @@ facts, not a mechanical edit, and it changes a live `@service` diagnostic that c
 
 Two components, because the arm is reachable from any of the three scans:
 
-* **The whole `DmlPayloadScan.Admit`**, not a bare `DmlElementKind`. `IdElement` is a
-  no-component record and `Table` carries only the element type name, so neither can name the
-  offending data field, which the `IdElement` wording below wants; `Admit.dataField()` is the
-  only source for it.
+* **The whole `DmlPayloadScan.Admit`**, not a bare `DmlElementKind`. The three element arms
+  disagree on whether they can name the offending data field: `RecordElement(String fieldName)`
+  can, `Table(TableRef, String elementTypeName)` names the element type instead, and
+  `IdElement()` is a no-component record. `Admit.dataField()` is the one source that holds for
+  all three, so taking the whole `Admit` keeps the wording free to name the field on any
+  population instead of only on `RecordElement`.
 * **Which scan admitted.** More than one scan can admit the same payload, so the recorded family
   is the first that admits in `carrierBinding`'s existing DML → routine → `@service` order; that
   is the order the method already runs, so it needs no rule of its own. The DML seat below forks
@@ -338,10 +340,27 @@ both verbs. No further work unless the fixed build still rejects their real sche
   supported verb, else the input's `@table`". That is already false independently of this bug.
   Rung 1 is the return-derived table, and the input `@table` bridge is not a rung of
   `resolveDmlWriteTableRef` at all. It sits in the middle of the comments this sweep exists to
-  fix, so correct it here rather than leaving it to the next reader. The same phantom rung is
-  spelled a second time on `MutationInputResolver.RETURN_DERIVED_TABLE_VERBS` ("preferred over
-  `@mutation(table:)` and the input `@table` bridge"); correct both spellings or the sweep leaves
-  the claim standing where the next reader will look for it.
+  fix, so correct it here rather than leaving it to the next reader.
+
+  The same phantom rung is spelled at six sites, not two, so the sweep has to be driven off a
+  grep for the bridge rather than off a shortlist. Fix all six or the claim stands exactly where
+  the next reader will look for it, which is the classify-time resolvers most of all:
+
+  * `RecordBindingResolver.groundDmlMutationField`'s javadoc, above.
+  * `MutationInputResolver.RETURN_DERIVED_TABLE_VERBS`'s javadoc ("preferred over
+    `@mutation(table:)` and the input `@table` bridge").
+  * `FieldBuilder.classifyMutationField`'s INSERT-dispatch comment ("return-derived rung
+    preferred, then `@mutation(table:)`, then the deprecated input `@table` bridge").
+  * `FieldBuilder.classifyUpdateTableField`'s javadoc, same three-rung paraphrase.
+  * `FieldBuilder.resolveUpdateWriteTarget`'s javadoc, same three-rung paraphrase.
+  * `FieldBuilder.classifyDeleteTableField`'s javadoc, which spells the bridge as DELETE's
+    second rung ("`@mutation(table:)`, then the input's `@table`"). DELETE has one rung.
+
+  All six describe paths that bottom out in `resolveDmlWriteTableRef`, directly or through
+  `FieldBuilder.resolveReturnCapableWriteTarget`, and neither of those has a third rung.
+  `FieldBuilder.resolveInsertWriteTarget`'s javadoc already states the precedence correctly
+  ("the return's own `@table`, then `@mutation(table:)`"); use it as the wording template so the
+  six corrected sites agree by copying one phrasing rather than by six independent rewrites.
 
 The deeper fix, a typed not-yet-built arm on the indices so a pre-index read refuses instead of
 answering, is filed as R689 and out of scope here.
