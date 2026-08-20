@@ -782,9 +782,53 @@ deliverable) applies three times over. In order:
   pins that stay until the field switch itself goes with the fetcher family. The generator-side
   pins are expected to move barely or not at all in slice one, and a reviewer reading them as
   the slice's progress metric is reading the wrong dial: the slice's numeric story is plan-side
-  minus 11, one new statement-count pin, and three new relations under the agreement anchor and
-  the naming check. The emitters' positive dial still gets its dry run on one file before it is
-  asked to cover a package.
+  minus 11, one new statement-count pin, and four new relations (see the pickup notes below) under
+  the agreement anchor and the naming check. The emitters' positive dial still gets its dry run on
+  one file before it is asked to cover a package.
+
+**Three things pickup settled that the inventory above states too lightly.** Recorded here rather
+than left to the implementer's session, because each one shapes work the rest of the programme
+inherits.
+
+* **The producer's `StoreHandle` is a lifecycle change, not a signature change, and the dev loop
+  already shows what shape it takes.** Success criterion 1 reads as a parameter edit. It is not:
+  the store is opened and closed entirely inside `FactCapture`'s capture pass, across three arms
+  with an in-memory fallback whose rows vanish at close, and the pipeline order is capture,
+  validate, plan, so by the time a producer runs the store is gone and the facts survive only as
+  the `StoreDetections` value. `runWithDetections`' own javadoc states the invariant this breaks
+  ("the store handle never escapes"), as does `CapturedStore`'s ("in the pipeline the store dies
+  with the pass, because nothing is meant to read it yet"); both are prose the change has to
+  revise. Store ownership therefore hoists out of the capture pass and into the pipeline, which
+  opens once and hands the same handle to capture, detection and the plan. Producing the plan
+  inside the capture window instead is refused: it would run producers against a schema that has
+  not passed validation. Carrying the rows on `StoreDetections` is also refused, as the settled
+  rule that a producer's run-scoped SQL lives beside the producer in `plan/`. The dev loop is what
+  makes the hoist ordinary rather than novel: `DevMojo` already opens a session store for the whole
+  session, refreshes materializations on it, mints the editor's and the MCP's readers off it, and
+  runs generator passes inside that window, so the build path converges on a shape the dev path has
+  had all along. Two consequences to hold: a second *process* opening the store is refused and
+  falls back rather than waiting, so a wider build-side window costs a concurrent opener its warmth
+  and never its correctness; and the plan tier now issues SQL on every dev round, which is the wall
+  clock the reflection has to state a number for.
+* **Promoting the walk costs four relations, not three, and each states one sentence.** The
+  recursive term moves cleanly. The chain's *start* does not travel with it: the terminus view
+  resolves the last `@routine` application to a FUNCTION-typed table in its own non-recursive
+  terms, and its routine arm, a chain with no `@reference` tail, is that node alone, which a
+  relation of hops has no row for. Folding the start into the hop relation as a zeroth row with the
+  join basis null there would mix two sentences in one grain to save a naming it does not actually
+  save, since the terminus would then name the hop relation anyway. So the start lands as its own
+  small relation, the hop relation walks from it, and the terminus becomes a two-armed union of
+  selections carrying no recursion at all.
+* **Each relation states its inline multiplicity when it lands.** The static metric has a reporting
+  gate in the roadmap tool, and the precedent that a stage states the number for the relations it
+  adds rather than discovering it in a profile is already set. Two readings from that precedent bind
+  here. The metric ranks breadth and never cost, so it is stated and not optimised against. And the
+  one shape it cannot see is the one this slice mints: a recursive walk names its input in both seed
+  and step, so a view input is evaluated once per accumulated row, which cost the decode family 146
+  seconds for 20 rows and was fixed only by making that input a table. The chain walk shares its
+  step input with the shipped field-site reference walk, measured at 0.07 s for 62 rows over a
+  larger population than fields carrying `@routine`, so the risk is low and the number is still
+  measured rather than assumed.
 
 **Then stop.** Slice one ends at a written reflection, not at the next producer, and the reflection
 is a deliverable with the same weight as the code. It answers, with numbers from the slice rather
