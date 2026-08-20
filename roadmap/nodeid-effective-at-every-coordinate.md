@@ -187,7 +187,7 @@ directive rather than being retrofitted onto a Java sealed hierarchy a release l
 by hand.** The lift is a positional-subset check between adjacent hops, and computing the lifted tuple
 walks the chain back from the terminal hop. Where that has no safe recursive H2 view form it lands as
 a materialized relation, which `intent_input_occurrence_path` and `intent_type_domain` both already do
-and both state in their own comments. What has changed since those two is that R742, now Ready, mints a
+and both state in their own comments. What has changed since those two is that R742, now In Progress, mints a
 registry for it: `meta_materialize`, a constrained table carrying one row per registration, the source
 view under a `_live` suffix and the target table under the canonical name every existing reader already
 uses, plus a required `reason` that is where the materialization doctrine lives. One materializer in
@@ -681,13 +681,13 @@ a null payload and no committed row.
   loud, and its rule does not reach here and does not need to; see "Relationship to other items".
 * **The write-side diagnostic gets worse before the audit fixes it.** Handled by making the per-rail
   message an exit condition of stage 3 rather than a follow-up.
-* **Editing a verdict while its own item is still open.** The arity rule makes `BARE_NODE_ID` wrong
-  for single-key node types, so stage 2 edits its text down to the arity fact rather than leaving two
-  answers to one question standing. R668's own Done gate sent it back over a test finding with no
-  production change requested; that rework has since landed and the item is In Review again, so the
-  text is stable to edit while the item is still open, and whoever takes the Done gate should hear that
-  its verdict population is shrinking. The mitigation on the substance is that
-  the two items are the only producers on either side of the partition: R668's remaining population is
+* **Editing a shipped verdict's text.** The arity rule makes `BARE_NODE_ID` wrong for single-key node
+  types, so stage 2 edits its text down to the arity fact rather than leaving two answers to one
+  question standing. R668 has since gone Done, which removes the coordination hazard this entry
+  originally named (its file is deleted, so there is no open item whose author needs telling) and
+  leaves the ordinary one: the verdict is shipped text with shipped tests, so the edit lands with its
+  own test rather than as a wording change. The mitigation on the substance is that
+  the two rules are the only producers on either side of the partition: R668's remaining population is
   composite keys at authored `argMapping` sites, this item's is composite keys and type disagreements
   everywhere, and the boundary has a test in the Tests section rather than only an argument here. The
   wording itself needs no negotiation, `ArgmappingProjectionDefects.rejectionOf` being text already in
@@ -775,7 +775,7 @@ stage 3 expresses it there.
   to one
   directive, ahead of R682 rather than against it. Worth telling that item's author, because the
   `@nodeId` decode and encode facts are one fewer thing its planner rewrite has to source.
-* **R742** (`determinism-ratchet-run-count`, Ready) is why this item states its own derivation depth.
+* **R742** (`determinism-ratchet-run-count`, In Progress) is why this item states its own derivation depth.
   It measured the precedent this plan follows, `intent_argmapping_projection_defect`, at 2149 relation
   instantiations and 24.5 seconds for one read, and diagnosed the cause as H2 inlining views with no
   common-subexpression elimination over a stratum twenty-two views deep. Two of its findings are
@@ -812,9 +812,10 @@ stage 3 expresses it there.
   `intent_resolved_node_key_projection` for the erased-type-equality rule, which are the two
   preconditions' operands and not a parallel invention. That relation's stand-aside rule is inherited
   in principle and deliberately *not* in wording, for the reason "Sites 1 and 2" gives: R668 falls back
-  to an unchecked projection and this item would be falling back to the pass-through. Worth telling that
-  item's author, since the divergence is easy to read as a disagreement about the rule when it is an
-  agreement about it. What has landed:
+  to an unchecked projection and this item would be falling back to the pass-through. With that item
+  shipped there is nobody to notify, so the divergence is stated in this body and belongs in the new
+  relation's own comment when stage 2 writes it, since a later reader comparing the two rules will
+  otherwise read an agreement about the principle as a disagreement about it. What has landed:
   the resolution views, the rejection
   family (`intent_argmapping_projection_defect` plus `ArgmappingProjectionDefects`, six verdicts across
   three `Rejection` channels), the carrier move, and the `@routine` emitter with its execution round
@@ -824,12 +825,15 @@ stage 3 expresses it there.
   `depends-on:` stays empty; the field means "must ship first" and renders as *blocked by*, and this
   item reads R668's shipped surface rather than waiting on it.
 
-  R668 also names a coordinate it cannot reach and states why, which under this item's total rule
-  becomes this item's to answer: the input-field `@condition`. Its pair rows are keyed by the input
-  type and input field while the condition row rendering them is keyed by the consuming output field,
-  so "the coordinate never matches and the lookup misses by construction rather than by omission".
-  Under the use-site grain above the two coordinates are one row, so this is a keying fix rather than
-  an emitter, and it is why the census counts that coordinate as answerable rather than deferred.
+  That delivery also names a coordinate it cannot reach and says why, and the statement is in the
+  shipped code rather than in the deleted spec, so it stands as a fact to read:
+  `ArgmappingProjectionDefects`' `EMITTING_SITES` javadoc holds the input-field `@condition` out
+  because "its pair rows are keyed by the input type and input field, while the condition row rendering
+  it is keyed by the consuming output field, so the projection relation's coordinate never matches and
+  the lookup misses by construction rather than by omission". Under this item's total rule that
+  coordinate becomes this item's to answer, and under the use-site grain above the two coordinates are
+  one row, so it is a keying fix rather than an emitter. That is why the census counts it as answerable
+  rather than deferred.
 * **R57** (Done, see `roadmap/changelog.md`) shipped the single-hop translated-FK `EXISTS` and filed
   multi-hop translated paths as deferred. The junction case is that deferral. Its reasoning that
   `EXISTS` is the semantically right shape rather than a convenient one is the argument stage 3
