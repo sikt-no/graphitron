@@ -24,9 +24,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R705` | A condition-join hop in a reference filter path is rejected, though the emitter it needs already ships | Spec | 2026-08-20 <sub>created 2026-08-18</sub> | [plan](condition-join-hops-in-reference-filter-paths.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | Spec | 2026-08-20 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
-| `R744` | TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion | Spec | 2026-08-20 | [plan](scatter-test-syncs-on-mid-pin-connect-event.md) |
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
+| `R744` | TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion | Ready | 2026-08-20 | [plan](scatter-test-syncs-on-mid-pin-connect-event.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R743` | The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves | In Progress | 2026-08-20 | [plan](sdl-fact-gatherer-staged-pipeline.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | In Review | 2026-08-20 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
@@ -605,7 +605,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R550` [**Pin around the Quarkus ArC unused-bean removal flake**](quarkus-arc-removal-flake.md) — Backlog, bug
 - `R554` [**Retire the generated-body string-scan helpers in TypeSpecAssertions**](generated-body-string-assertion-helpers.md) — Backlog, test-quality
 - `R669` [**RootLauncherRendererTest asserts on generated body strings**](renderer-test-code-string-sweep.md) — Backlog, tech-debt
-- `R744` [**TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion**](scatter-test-syncs-on-mid-pin-connect-event.md) — Spec, bug
+- `R744` [**TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion**](scatter-test-syncs-on-mid-pin-connect-event.md) — Ready, bug
 - `R136` [**Execution-tier coverage for FK-target/NodeType-keyColumns permutation**](nodeid-fk-permutation-execution-tier.md) — Backlog, validation
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation
 - `R170` [**Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R98-blocked)**](validator-integration-execute-coverage.md) — Backlog, testing, blocked by [multi-source-input-validation](multi-source-input-validation.md)
