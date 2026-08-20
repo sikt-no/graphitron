@@ -142,29 +142,67 @@ is currently supported only on `@service` jOOQ-record params.
 - `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/CallSiteExtraction.java`:
   `ColumnBinding` moves from one `path` to an ordered read-path list (single-path stays the
   common case; compact constructor validates non-empty paths and distinct path sets; javadoc
-  states precedence semantics).
+  states precedence semantics). Keeping a derived primary-path accessor is worth considering:
+  the existing `columnBindings()` assertions in `JooqRecordServiceParamPipelineTest` read
+  `path()`, and a primary is what the emitter's single-path helpers below need anyway.
 - `graphitron/src/main/java/no/sikt/graphitron/rewrite/InputBeanResolver.java`:
   `collectJooqBindings` gathers per-leaf deprecation alongside path and column (gathering
   state, dies before the carrier); `buildJooqRecord` folds through
   `ColumnOverlap.groupByColumn`, merges admitted groups, rejects two-live groups via the new
   typed arm.
-- A typed rejection arm on the `@service` axis (home per `ServiceMethodCallError`'s
-  sub-seal note; new `lspCode()` under its namespace) replacing the untyped
-  `Rejection.structural` at the collision site.
+- A typed rejection arm replacing the untyped `Rejection.structural` at the collision site. Its
+  home is a **new sibling sub-seal** of `Rejection.AuthorError`, not an arm on
+  `ServiceMethodCallError`: that seal's javadoc scopes it to `ServiceMethodCallWalker`, and this
+  reject is minted in the classify phase by `InputBeanResolver`, so folding it in would break the
+  one-producer-per-seal scoping its own sibling sub-seal note asks for. Suggested name
+  `JooqRecordInputError` with the `graphitron.jooq-record-input.` `lspCode()` namespace; the name
+  is the implementer's call, the registration surface below is not.
+- Registering a new sub-seal is a closed, build-enforced surface. Six sites move in the same
+  commit:
+  - `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/Rejection.java`: add the sub-seal
+    to the `AuthorError` `permits` clause.
+  - `graphitron/src/main/java/no/sikt/graphitron/rewrite/diagnostics/RejectionFacts.java`: a
+    `case <Seal> e -> coded(e.lspCode())` arm in `typedColumns`. That switch has no `default`, so
+    omitting it is a compile error rather than a silent NULL column.
+  - `docs/architecture/explanation/typed-rejection.adoc`: a paragraph naming the new leaf.
+    `SealedHierarchyDocCoverageTest` fails both directions (a leaf with no prose, prose with no
+    leaf), so this is authoring work, not a mechanical fill-in.
+  - `graphitron/src/test/java/no/sikt/graphitron/rewrite/diagnostics/RejectionResidueDrainageTest.java`:
+    add the leaf to `RESIDUE_LEAVES`, which is asserted as an exact set, and correct the
+    "nine lspCode()-bearing sub-seals" count in the comment above it.
+  - `graphitron-lsp/src/test/java/no/sikt/graphitron/lsp/RejectionSeverityCoverageTest.java`: a
+    `sampleFor` sample for the new arm, else the permit reports as unmapped.
+  - `graphitron/src/test/java/no/sikt/graphitron/rewrite/HierarchyKindRegistryTest.java`: a kind
+    label, since the scan requires every top-level sealed type in scope to be labelled once.
+
+  If the implementer lands the arm on an existing sub-seal after all, only that seal's `permits`
+  clause plus the `typed-rejection.adoc`, drainage and severity-coverage entries apply.
 - `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/JooqRecordInstantiationEmitter.java`:
-  `emitColumnBinding` (and the agreement path's plain-writer read) iterate the binding's read
-  paths in precedence order, first-present wins; the `emitWithAgreement` encoder-availability
-  comment re-grounds on the classify-time merge.
+  `emitColumnBinding` and `emitPrepare` (the agreement path's plain-writer read) iterate the
+  binding's read paths in precedence order, first-present wins, where "present" is the existing
+  `containsKey` guard: an explicitly-sent `null` on the winning path still writes SQL NULL and
+  marks the column touched, exactly as a single-path binding does today. `emitLoadPrepared` needs
+  no change, since it reads the local `emitPrepare` already resolved. Four helpers assume one path
+  per binding and need a stated primary: `Writer.path()`, `WriterView.label()` (the agreement
+  message label), `localBase(cb.path())` (the local-name base), and `ColumnBinding.leaf()`. The
+  `emitWithAgreement` encoder-availability comment re-grounds on the classify-time merge.
 - `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/JooqRecordHelperNames.java`:
   `canonicalRender` renders every read path.
 - `graphitron/src/main/java/no/sikt/graphitron/rewrite/MutationInputResolver.java` and
   `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/UpdateRowsError.java`: message
   re-grounding per the Design section (text only, no behavioural change).
-- `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ColumnOverlap.java`: no
-  behavioural change, but two live prose claims state the invariant this item narrows and
-  must be re-grounded in the same commit: the class javadoc and the `ColumnWriter.decode()`
-  javadoc both say "an all-plain overlap is a build-time reject", which stops being a blanket
-  truth once the `@service` path merges an admitted alias group instead.
+- Javadoc re-grounding, no behavioural change, same commit. Six live claims say the thing this
+  item narrows, and stop being blanket truths once the `@service` path merges an admitted alias
+  group instead of rejecting it:
+  - `model/ColumnOverlap.java`, three places: the class javadoc and the `ColumnWriter.decode()`
+    javadoc both say "an all-plain overlap is a build-time reject", and `OverlapColumn`'s javadoc
+    calls `allPlain()` "the validator's build-time reject when also shared".
+  - `MutationInputResolver.rejectPlainColumnCollision`'s javadoc calls itself "the mutation-path
+    mirror of the `@service` reject".
+  - `model/UpdateRowsError.java`'s `PlainColumnCollision` javadoc calls itself "the UPDATE mirror
+    of the INSERT-path / `@service` reject".
+  - `InputBeanResolver.buildJooqRecord`'s own javadoc lists "two plain fields on one column"
+    among the shapes that reject structurally.
 - Docs touchpoint: whichever user-manual page documents write-input column binding (grep at
   implementation time; no manual page quotes the rejection message today, so the carve-out
   likely earns a short note where `@service` jOOQ-record params are documented, e.g.
@@ -190,7 +228,9 @@ body text), with execution proving the end-to-end behaviour.
   `@deprecated` remedy.
 - **Execution**: a `@service` mutation with an alias pair; send old only (old value lands),
   new only (new value lands), both (new value wins), neither (column untouched,
-  `changed=false` contract preserved).
+  `changed=false` contract preserved), and the winning path sent as an explicit `null` while the
+  loser carries a value (column written NULL, not the loser's value), which pins presence as
+  `containsKey` rather than non-null.
 - Existing tests asserting the INSERT/UPDATE message prose update with the re-grounded text.
 
 ## Out of scope
@@ -204,15 +244,26 @@ body text), with execution proving the end-to-end behaviour.
 - Warning on alias overlaps on read/output types (already accepted silently; not this item's
   concern).
 
-## Open questions for the reviewer
+## Reviewer decisions
 
-1. The acceptance rule admits an all-deprecated group (no live writer), with precedence
-   stated as reverse declaration order. Harmless under presence guards, but arguably an
-   authoring smell; should it warn?
-2. Precedence-order read paths (live wins regardless of declaration order) versus Graphitron
-   9's pure later-declared-wins: this spec picks stated precedence for author-order
-   independence. Push back if declaration-order fidelity matters more than footgun removal.
-3. The read-path list on `ColumnBinding` versus a sibling carrier variant (a dedicated
-   `AliasedColumnBinding`): the spec folds it into the existing record because single-path is
-   the degenerate case of the same fact, not a different kind of binding. Flag if the seal
-   discipline argues for a variant instead.
+The three forks the draft left open, resolved at the Spec review. The design they resolve is
+unchanged; each confirms the draft's own pick and records why, so the implementer inherits a
+decision rather than a question.
+
+1. **An all-deprecated group does not warn.** Every writer of a column being deprecated is the
+   legitimate state a rename chain passes through on its way to removal, and the author has no
+   remedy while the removal dates are still in the future, so a warning would be unactionable
+   noise on a correct schema. If a signal is ever wanted it belongs on the lint surface
+   `DeprecationRecognizer` already serves, not on the classify path.
+2. **Precedence stays live-first, not Graphitron 9's later-declared-wins.** Declaration order in
+   SDL is an editing accident: a reformat, a field reorder, or schema stitching changes it without
+   changing what the author said. Making the resolved value depend on it is the footgun, and
+   live-first is also the only order that stays stable when a further deprecated alias is added
+   later. Graphitron 9's rule survives where it is the only rule available: an all-deprecated
+   group has no live path, so it orders by reverse declaration, which is later-declared-wins by
+   construction.
+3. **The read-path list stays on `ColumnBinding`; no `AliasedColumnBinding` variant.** Per "Shape
+   the type as precisely as the fact allows", a new sub-taxonomy earns its place with a one-line
+   note on what it carries that a sibling cannot, and an aliased binding carries nothing a
+   one-element path list does not. A variant would instead force every `columnBindings()` consumer
+   to fork on cardinality to reach the same fact.
