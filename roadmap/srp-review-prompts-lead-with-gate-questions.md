@@ -90,8 +90,11 @@ with the current names in parentheses where they survive:
 1. Item identification, then a two-line sync imperative. Sync stays at the top because it is an
    ordering requirement, not bookkeeping: a reviewer who reads the questions first and syncs later
    has already read a stale spec. Only the explanatory paragraph moves down.
-2. **The questions this gate decides.** The gate's two questions, verbatim from workflow.adoc, each
-   with the observable that answers it. This is the section that carries the most words.
+2. **The questions this gate decides.** The gate's two questions, restated from workflow.adoc in
+   reviewer voice under a line naming workflow.adoc as the definition, each with the observable that
+   answers it. This is the section that carries the most words. The restatement is deliberate and
+   labelled: the definition is written as definition prose, and the prompt needs it in second person
+   with the observable attached, so the templates paraphrase rather than quote.
 3. **What is out of scope.** Named explicitly: naming preferences, phrasing, formatting,
    micro-refactors, restating the diff, speculative features. Reportable only when they bear on one
    of the questions, and the reviewer says which. New scope goes in a fresh Backlog item.
@@ -109,12 +112,25 @@ out of sections 5 and 6, and the questions are phrased as the decision the revie
 
 ### The delivery, not the commit series
 
-In the Implementation-stage template, replace the `git log` / `git show` pointer with the cumulative
-delivery range. The skill already scans recent commits referencing the item in its step 4; the same
-scan yields the oldest implementation commit, so the skill can pre-fill a `{{delivery-range}}` token
-of `<oldest-implementation-commit>^...HEAD` and hand the reviewer one diff of the delivered state.
-Intermediate commits stay available for anyone who wants provenance; they stop being the suggested
-reading.
+In the Implementation-stage template, the Materials section stops suggesting a commit walk and starts
+naming the tree. The delivered state is the files the item touched as they now stand; the commit list
+stays, relabelled as provenance for anyone who wants it rather than as the thing to read.
+
+The Spec review struck the mechanism first drafted for this, a `{{delivery-range}}` token of
+`<oldest-implementation-commit>^...HEAD` resolved from the skill's step-4 commit scan. Trunk
+interleaves items: within twenty-five commits of trunk at review time, seven items were landing
+concurrently. On a linear trunk `oldest^...HEAD` is therefore the diff of everything since that
+point, not this item's delivery, so the token would hand the reviewer a materials pointer strictly
+worse than today's, which at least filters to the item. The endpoint is unreliable for a second
+reason: step 4 resolves it by grepping `git log -50` for a bare `R<n>`, and R553 already records that
+this scan both misses commits whose subjects omit the ID and picks up commits that merely mention it.
+Its oldest hit is usually the Backlog-filing commit, not an implementation commit.
+
+No cheap SHA range isolates one item's cumulative delivery on an interleaved trunk, and inventing one
+is not what this item is for. The fix here is the framing, which is what produced the symptom: point
+the reviewer at the touched paths as they stand, and say that the commit series is provenance. That
+removes the suggestion to read forward through superseded states without adding a token that cannot
+be resolved correctly.
 
 ### What this item does not change
 
@@ -141,11 +157,12 @@ would have to re-plural is not.
     from workflow.adoc, keeping the existing "Approval preconditions" section (build passes, no
     code-string assertions on generated method bodies, spec body reflects what shipped) as an
     appendix to the Verdict section rather than a peer of the questions.
-  * Step 5 of the Procedure additionally resolves `{{delivery-range}}` for the Implementation stage.
-  * The "Template design intent" section gains one sentence: the gate questions are quoted from
+  * The Implementation-stage Materials section names the touched tree as the review surface and
+    relabels the commit list as provenance. No new token; see *The delivery, not the commit series*.
+  * The "Template design intent" section gains one sentence: the gate questions are restated from
     `roadmap/workflow.adoc`, which owns them, and changing them there is the way to change them.
-  * "Output rules" gains `{{delivery-range}}`, and its disqualified-token list goes plural at both
-    stages.
+  * "Output rules" takes the Spec-stage disqualified-token list plural, matching the Implementation
+    stage.
 
 ## How we know the item is complete
 
@@ -153,16 +170,29 @@ The primary evidence is the diff plus a measurement, because a skill document ha
 the two templates' Bookkeeping-plus-Verdict line count must be less than their gate-questions
 section, inverting today's ratio, and neither template's total body may exceed its current 71 and 82
 lines. That is checkable by reading the diff and stated here so the reviewer does not have to take
-it on faith.
+it on faith. The two baselines were verified at the Spec review: the Spec-stage template body is 71
+lines and the Implementation-stage body 82, so the ceiling has real anchors.
 
-The drift risk is real and worth a mechanical check: the question text lives in `workflow.adoc` as
-the definition and is restated in two templates, so the templates can silently keep an old wording.
-A `check-gate-questions` step in `roadmap-tool`, sibling to the existing `check-adoc-tables`,
-`check-transient-citations`, and `check-module-enumeration` steps, asserts that each question
-sentence appearing in `.claude/skills/srp/SKILL.md` also appears in `roadmap/workflow.adoc` after
-whitespace normalisation. This is the phase most likely to be judged not worth its weight; the spec
-reviewer should say so if they think that, because the alternative is accepting that the two
-documents drift and are reconciled by whoever next notices.
+The drift risk is real: the question text lives in `workflow.adoc` as the definition and is restated
+in two templates, so a template can silently keep an old wording. The Spec review struck the
+`check-gate-questions` step drafted as the guard against it, a `roadmap-tool` sibling to
+`check-adoc-tables`, `check-transient-citations`, and `check-module-enumeration` asserting that each
+question sentence in `.claude/skills/srp/SKILL.md` also appears in `roadmap/workflow.adoc` after
+whitespace normalisation. Two reasons. The predicate does not hold on this item's own output: the
+templates restate the definition in second person with the observable attached ("Say in your own
+words ... If you cannot, that is the finding"), which no whitespace normalisation reaches, so the
+drafted first-client prompt would fail the step the same draft proposed. Forcing verbatim quoting to
+satisfy the step would spend the reviewer voice that is the point of the rewrite. And the three named
+siblings each guard a crisp predicate over content that rots invisibly and renders wrong when it
+does; string containment across two documents with deliberately different voices is not that shape,
+and it would be the first build gate to reach into `.claude/skills/`, a habitat
+`check-transient-citations` deliberately stays out of.
+
+What holds the two documents together instead is already in the design and costs nothing: the
+templates carry a line naming `roadmap/workflow.adoc` § "What each gate decides" as the definition,
+and the "Template design intent" sentence says changing them there is the way to change them. A
+future editor of the question text is told where the base is. Drift then costs a reconciliation by
+whoever notices, which for two paragraphs in adjacent documents is proportionate.
 
 The behavioural evidence, that reviews come back answering the four questions, arrives on the next
 few gate uses and cannot be produced at Done time. Saying that plainly is better than pointing at
