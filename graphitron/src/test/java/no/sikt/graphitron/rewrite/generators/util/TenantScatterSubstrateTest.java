@@ -292,6 +292,7 @@ class TenantScatterSubstrateTest {
         Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofSeconds(10));
         Object tc = newTenantConnections(runtime);
         var hold = new CountDownLatch(1);
+        var pinned = new CountDownLatch(2);
         var outcomes = new java.util.concurrent.atomic.AtomicReference<List<?>>();
         var scatterFailure = new java.util.concurrent.atomic.AtomicReference<Throwable>();
 
@@ -300,19 +301,21 @@ class TenantScatterSubstrateTest {
                 // Both workers hold, so neither future is complete when the interrupt lands:
                 // the first get throws on the interrupt, and the re-set flag makes the second
                 // get throw immediately too (a completed future would return its value instead).
-                outcomes.set(scatter(tc, List.of("A", "B"), dsl -> awaitThen(hold, "late")));
+                outcomes.set(scatter(tc, List.of("A", "B"), dsl -> {
+                    pinned.countDown();
+                    return awaitThen(hold, "late");
+                }));
             } catch (Throwable t) {
                 scatterFailure.set(t);
             }
         });
         dispatch.start();
-        // Interrupt only once both workers have pinned, so the interrupt lands in the join (the
-        // workers themselves are never interrupted; nothing stops a JDBC call safely).
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (!(events.contains("connect:A") && events.contains("connect:B"))
-                && System.nanoTime() < deadline) {
-            Thread.sleep(10);
-        }
+        // Interrupt only once both workers are parked in their per-tenant body. A worker reaches
+        // the body only after entryFor has returned, which is after its quarantine post-check, so
+        // the self-abort path is unreachable from here on and releaseAll is the only remaining
+        // aborter. (The workers themselves are never interrupted; the interrupt lands in the join,
+        // since nothing stops a JDBC call safely.)
+        assertThat(pinned.await(5, TimeUnit.SECONDS)).as("both workers reach their body").isTrue();
         dispatch.interrupt();
         dispatch.join(5_000);
 
@@ -345,18 +348,21 @@ class TenantScatterSubstrateTest {
             return thread;
         });
         var submits = new AtomicInteger();
+        var pinned = new CountDownLatch(1);
         Executor rejecting = task -> {
             if (submits.incrementAndGet() > 1) {
-                // Hold the rejection until the first worker has pinned, so the quarantine-vs-pin
-                // race cannot flake the release assertion below.
-                long dl = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-                while (!events.contains("connect:A") && System.nanoTime() < dl) {
-                    try {
-                        Thread.sleep(5);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException(e);
+                // Hold the rejection until worker A is parked in its per-tenant body: it reaches
+                // the body only after entryFor has returned, which is after its quarantine
+                // post-check, so the quarantine below cannot trigger a self-abort. This await runs
+                // on the submitting thread while the accepted worker runs on the delegate pool, so
+                // it cannot self-block.
+                try {
+                    if (!pinned.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("worker A never reached its per-tenant body");
                     }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException(e);
                 }
                 throw new java.util.concurrent.RejectedExecutionException("saturated");
             }
@@ -369,7 +375,10 @@ class TenantScatterSubstrateTest {
         Object tc = newTenantConnections(runtime);
         var hold = new CountDownLatch(1);
 
-        assertThatThrownBy(() -> scatter(tc, List.of("A", "B"), dsl -> awaitThen(hold, "late")))
+        assertThatThrownBy(() -> scatter(tc, List.of("A", "B"), dsl -> {
+            pinned.countDown();
+            return awaitThen(hold, "late");
+        }))
             .as("the fanned field fails as one unit; the rejection is not swallowed")
             .isInstanceOf(java.util.concurrent.RejectedExecutionException.class);
 
@@ -493,6 +502,8 @@ class TenantScatterSubstrateTest {
                 // SQL is the one that clears to the empty string. Label the hook phase off the SQL.
                 case "prepareStatement" -> {
                     boolean disconnect = ((String) args[0]).contains("'', false");
+                    // The connect event fires mid-pin, before entryFor's quarantine post-check:
+                    // it is not a worker-is-settled signal, so never synchronize a test on it.
                     events.add((disconnect ? "disconnect:" : "connect:") + label);
                     yield fakePreparedStatement(disconnect && failDisconnect);
                 }
