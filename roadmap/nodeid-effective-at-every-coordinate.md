@@ -266,16 +266,33 @@ population multiplying up the chain three times over.
 Neither is reducible by rewriting. A recursive walk cannot name its input once, and every
 alternative spelling of the lift names more rather than fewer relations. The reduction the fact
 model prescribes is to materialize, and the relation to materialize is the instruction population,
-which every number here is a multiple of: registering it takes the deepest read to roughly 900 by
-arithmetic alone, and registering the hop-column relation beside it takes it near the shallow end.
-Both registrations are blocked, and blocked by a gate rather than by judgement.
-`MaterializeRegistryGateTest` fails the build when a registered view reads another registration's
-target, and `intent_node_id_instruction` reaches `intent_spelled_table` through the argument scope
-relation. So this is exactly the case the section above predicted, arriving: a relation this item
-would register whose source reads a registered target, which is what makes R746's ordering column
-load-bearing rather than additive. R746 is a live item rather than a hypothetical, so the sequence
-is R746 first and the two registrations after it, and stage 2 records the number in the meantime
-rather than leaving it to a profile.
+which every number here is a multiple of.
+
+**And that registration is the case this item predicted would make R746 load-bearing, arriving.**
+`intent_node_id_instruction` reaches `intent_spelled_table`, a registered target, through the
+argument scope relation, so registering it was the first dependent derivation in the registry. Under
+the gate as it stood that was a build failure rather than a judgement call; R746's ordering landed
+first, derived from the catalog rather than declared, so the registration is ordinary. One
+registration, and the numbers after it:
+
+* `intent_node_id_decode_column` 2528 to **761**, `intent_node_id_decode_hop_column` 828 to 239,
+  `intent_node_id_decode_hop` 823 to 234, `intent_node_id_encode` 808 to 219, and the endpoint
+  relation out of the ranking entirely.
+* The whole family now sits under the tree's existing heaviest read,
+  `intent_argmapping_projection_defect` at 765, rather than at 3.3 times it. The instruction
+  population is evaluated once per capture instead of once per naming, which is the trade a
+  registration is, and it pays here because the family already has two readers and the decode
+  parent and the defect view make four.
+
+The hop-column relation is the next lever if a profile ever asks: registering it would take the
+deepest read to roughly 320. It is deliberately not taken now, because the case for a registration
+is a read count and the readers that would justify it do not exist yet.
+
+Registering the first dependent derivation also falsified the premise `MaterializationOrderTest`
+was written on, that the production registry holds no edges, so its assertions about the dependency
+relation's contents are now scoped to their own fixture and its identity case establishes the
+row-free state rather than inheriting it. That is the consumer audit the same-commit rule asks for,
+and it makes those cases about the mechanism rather than about what the registry happens to hold.
 
 **One piece of navigation has to be authored first.** `intent_field_reference_step_hop` and
 `intent_field_reference_step_target` resolve reference-path hops, and they are field-site only. An

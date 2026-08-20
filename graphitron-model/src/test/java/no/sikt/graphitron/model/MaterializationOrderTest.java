@@ -17,14 +17,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 /**
- * Pins the derived refresh order on synthetic registrations, because the production DDL registers
- * no dependent derivation: zero rows in {@code meta_materialize_dependency} is the shipped state,
- * and what this class exercises is exactly what that state leaves unexercised. A scratch store can
+ * Pins the derived refresh order on synthetic registrations, because the production registry
+ * exercises one edge and this class has to exercise every shape the design claims. A scratch store
+ * can
  * {@code CREATE} ordinary tables and views and register them, which is enough to drive
  * {@link MaterializeDependencies#populate} and {@link Materializations#refreshOrder} through every
  * shape the design claims: the parse that finds an edge, the walk through an unregistered
  * intermediate view, the refresh that respects the order, the cycle that fails naming itself, and
  * the row-free relation that orders exactly as the census does.
+ *
+ * <p>Every assertion about the dependency relation's contents is scoped to the scratch
+ * registrations, and that scoping is the point rather than a convenience: the subject here is the
+ * mechanism, so a case that read the whole relation would assert what the production registry
+ * happens to hold and would go red the day a real registration gains an edge. It did, which is how
+ * the scoping got here.
  *
  * <p>The fixture names are chosen so the dependent sorts ahead of its prerequisite
  * ({@code scratch_d_live} before {@code scratch_p_live}): an unordered refresh would fill the
@@ -162,7 +168,12 @@ class MaterializationOrderTest {
             dsl.execute("CREATE TABLE scratch_a (v INT)");
             register(dsl, "scratch_a_live", "scratch_a");
             MaterializeDependencies.populate(dsl);
-            assertThat(dependencyRows(dsl)).as("no registration reads another's target").isEmpty();
+            assertThat(dependencyRows(dsl))
+                .as("neither scratch registration reads the other's target")
+                .isEmpty();
+            // The identity case is the empty relation, which the production registry no longer is,
+            // so it is established here rather than inherited from the shipped state.
+            dsl.deleteFrom(META_MATERIALIZE_DEPENDENCY).execute();
             assertThat(Materializations.refreshOrder(dsl).registrations())
                 .as("the empty relation is the identity case: today's order, byte for byte")
                 .isEqualTo(Materializations.registrations(dsl));
@@ -201,10 +212,12 @@ class MaterializationOrderTest {
             .execute();
     }
 
+    /** The fixture's own edges: production registrations are another case's subject. */
     private static List<org.assertj.core.groups.Tuple> dependencyRows(DSLContext dsl) {
         return dsl.select(META_MATERIALIZE_DEPENDENCY.SOURCE_VIEW_NAME,
                 META_MATERIALIZE_DEPENDENCY.DEPENDS_ON)
             .from(META_MATERIALIZE_DEPENDENCY)
+            .where(META_MATERIALIZE_DEPENDENCY.SOURCE_VIEW_NAME.like("scratch_%"))
             .orderBy(META_MATERIALIZE_DEPENDENCY.SOURCE_VIEW_NAME,
                 META_MATERIALIZE_DEPENDENCY.DEPENDS_ON)
             .fetch(row -> tuple(row.value1(), row.value2()));
