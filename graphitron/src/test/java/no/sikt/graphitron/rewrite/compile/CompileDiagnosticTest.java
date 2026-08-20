@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.compile;
 
-import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,19 +13,20 @@ import java.util.Locale;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The flattening's own pins: the canonical file spelling shared with the schema channel, javac's
- * sentinel transcription, and the severity projection's totality over {@link Diagnostic.Kind}.
+ * The flattening's own pins: the path form shared with the schema channel and with every
+ * {@code file} column in the store, javac's sentinel transcription, and the severity projection's
+ * totality over {@link Diagnostic.Kind}.
  */
 @UnitTier
 class CompileDiagnosticTest {
 
     @Test
-    @DisplayName("the flattening spells the file exactly as the schema channel's canonical site does")
+    @DisplayName("the flattening keeps javac's own path, the form every file column stores")
     void fileSpellingAgreesWithTheSchemaChannels() {
         String path = "/work/target/generated-sources/graphitron/gen/pkg/FilmFetchers.java";
         var flattened = CompileDiagnostic.from(diagnostic(path, 12, 7, Diagnostic.Kind.ERROR,
             "compiler.err.cant.resolve"));
-        assertThat(flattened.file()).isEqualTo(ValidationReport.canonicalUri(path));
+        assertThat(flattened.file()).isEqualTo(path);
     }
 
     @Test
@@ -66,7 +66,7 @@ class CompileDiagnosticTest {
             .containsExactlyInAnyOrder(Diagnostic.Kind.ERROR, Diagnostic.Kind.WARNING,
                 Diagnostic.Kind.MANDATORY_WARNING, Diagnostic.Kind.NOTE, Diagnostic.Kind.OTHER);
         for (Diagnostic.Kind kind : Diagnostic.Kind.values()) {
-            var diagnostic = new CompileDiagnostic("file:///gen/A.java", 1, 1, kind.name(), null, "m");
+            var diagnostic = new CompileDiagnostic("/gen/A.java", 1, 1, kind.name(), null, "m");
             assertThat(diagnostic.severity())
                 .as("severity of kind %s", kind)
                 .isIn("error", "warning");

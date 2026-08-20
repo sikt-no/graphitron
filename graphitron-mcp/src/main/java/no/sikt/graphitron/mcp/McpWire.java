@@ -1,8 +1,8 @@
 package no.sikt.graphitron.mcp;
 
+import no.sikt.graphitron.model.read.SourceUri;
+
 import java.nio.charset.StandardCharsets;
-import java.nio.file.InvalidPathException;
-import java.nio.file.Path;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -188,16 +188,12 @@ final class McpWire {
     }
 
     /**
-     * A source name as a {@code file:} URI. A source name that is not a path round-trips unchanged,
-     * which is what the store's own {@code canonical_uri} does for the same reason: a graph's sources
-     * are files today and the families do not promise it.
+     * A source name as a {@code file:} URI, through the one site that owns the conversion in the
+     * module declaring the columns it happens on. A source name that is not a path round-trips
+     * unchanged: a graph's sources are files today and the families do not promise it.
      */
     private static String uri(String sourceName) {
-        try {
-            return Path.of(sourceName).toUri().toString();
-        } catch (InvalidPathException ignored) {
-            return sourceName;
-        }
+        return SourceUri.of(sourceName);
     }
 
     /** Writes an optional position onto {@code entry} under {@code key}, omitting it where absent. */

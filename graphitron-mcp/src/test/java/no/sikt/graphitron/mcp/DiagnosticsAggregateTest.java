@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
 import static no.sikt.graphitron.rewrite.FactWriters.rejectionFacts;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -316,7 +317,7 @@ class DiagnosticsAggregateTest {
     }
 
     @Test
-    void everyStoredDimensionValueIsAlreadyInItsDeclaredSpelling() {
+    void everyPublishedDimensionValueReadsBackToTheValueTheStoreHolds() {
         try (var build = StoreBackedBuild.run(tmp, "aggregate-spelling-pin", SDL)) {
             for (var dimension : DiagnosticFacets.Dimension.values()) {
                 var groups = groups(structured(aggregate(build.handle(), Map.of(
@@ -327,13 +328,69 @@ class DiagnosticsAggregateTest {
                     if (value == null) {
                         continue;
                     }
-                    String stored = String.valueOf(value);
-                    assertThat(dimension.normalise(stored))
-                        .as("a declared spelling has to be the identity on the values the store "
-                            + "holds, or the where boundary would drop rows a raw comparison "
-                            + "matches; dimension '%s'", dimension.wireName())
-                        .isEqualTo(stored);
+                    String wire = String.valueOf(value);
+                    // The round trip, stated from the wire end because that is what a group key
+                    // holds. On every spelling that publishes what it stores the render is the
+                    // identity and this is the older assertion unchanged: the declared spelling is
+                    // the identity on the values the store holds, or the where boundary would drop
+                    // rows a raw comparison matches.
+                    assertThat(dimension.render(dimension.normalise(wire)))
+                        .as("the value the aggregate publishes has to read back as the value the "
+                            + "store holds; dimension '%s'", dimension.wireName())
+                        .isEqualTo(wire);
                 }
+            }
+        }
+    }
+
+    @Test
+    void theFileAxisPublishesAUriOverAStoredPathAndBackAgain() {
+        try (var build = StoreBackedBuild.run(tmp, "aggregate-file-axis", SDL)) {
+            for (var dimension : List.of(
+                    DiagnosticFacets.Dimension.FILE, DiagnosticFacets.Dimension.DIRECTORY)) {
+                var stored = build.handle().dsl()
+                    .selectDistinct(dimension.column())
+                    .from(DIAGNOSTIC)
+                    .where(DIAGNOSTIC.GRAPH_NAME.eq(build.handle().graphName()))
+                    .and(dimension.column().isNotNull())
+                    .fetch(dimension.column(), String.class);
+                assertThat(stored).isNotEmpty();
+                for (String path : stored) {
+                    assertThat(path)
+                        .as("the store holds a path; the URI is the wire's spelling")
+                        .doesNotStartWith("file:");
+                    String published = (String) dimension.render(path);
+                    assertThat(published).startsWith("file:");
+                    assertThat(dimension.normalise(published))
+                        .as("the trip out and back has to land on the stored value, or a caller "
+                            + "filtering by what it was handed loses rows; dimension '%s'",
+                            dimension.wireName())
+                        .isEqualTo(path);
+                }
+            }
+        }
+    }
+
+    @Test
+    void thePublishedDirectoryIsThePublishedFileTruncated() {
+        try (var build = StoreBackedBuild.run(tmp, "aggregate-directory-render", SDL)) {
+            var groups = groups(structured(aggregate(build.handle(), Map.of(
+                "groupBy", List.of("file", "directory"),
+                "limit", DiagnosticFacets.MAX_GROUP_LIMIT))));
+            assertThat(groups).isNotEmpty();
+            var located = groups.stream().filter(g -> key(g).get("file") != null).toList();
+            assertThat(located).as("the fixture has located rows to render").isNotEmpty();
+            for (var group : located) {
+                String file = (String) key(group).get("file");
+                assertThat(file).startsWith("file:");
+                // The one thing convert-then-strip and strip-then-convert disagree about: the
+                // fixture's schema sits in a directory that exists, and converting that path
+                // would append a trailing slash where the truncation appends nothing.
+                assertThat((String) key(group).get("directory"))
+                    .as("the published directory is the published file truncated at its last "
+                        + "segment, never a converted directory path")
+                    .isEqualTo(file.substring(0, file.lastIndexOf('/')))
+                    .doesNotEndWith("/");
             }
         }
     }

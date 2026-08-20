@@ -1,18 +1,15 @@
 package no.sikt.graphitron.rewrite.compile;
 
-import no.sikt.graphitron.rewrite.ValidationReport;
-
 import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
 import java.util.Locale;
 
 /**
  * One compiler diagnostic from an incremental compile round, flattened to the fields the dev
- * loop surfaces: the generated {@code .java} javac reported it on (as a canonical file URI),
+ * loop surfaces: the generated {@code .java} javac reported it on (as the path javac named),
  * {@code line:col}, javac's own {@link Diagnostic.Kind}, its stable diagnostic {@code code}, and
  * the rendered message. One flattening, two sinks: the console error block and the fact store's
- * {@code javac_diagnostic} relation (via {@link CompileFacts}) both read this record, which is
- * why the file spelling is normalised here at the javac boundary rather than per sink. Every
+ * {@code javac_diagnostic} relation (via {@link CompileFacts}) both read this record. Every
  * reader that wants a round rather than a console line reads that relation, through the
  * {@code diagnostic} view, where a {@code source} of {@code "compile"} is what separates these
  * from the schema-anchored arms. These stay anchored on the generated file, deliberately
@@ -23,15 +20,15 @@ public record CompileDiagnostic(String file, long line, long column, String kind
                                 String message) {
 
     /**
-     * Flattens a javac {@link Diagnostic}. The file is normalised through the single
-     * canonical-URI site ({@link ValidationReport#canonicalUri}) so every sink agrees on one
-     * spelling by construction; a diagnostic with no source keeps the {@code "(no source)"}
-     * placeholder, and {@link Diagnostic#NOPOS} line/column stay as {@code -1}.
+     * Flattens a javac {@link Diagnostic}. The file is the source's own name, which is the path
+     * form every {@code file} column in the store holds; a diagnostic with no source keeps the
+     * {@code "(no source)"} placeholder, and {@link Diagnostic#NOPOS} line/column stay as
+     * {@code -1}.
      */
     static CompileDiagnostic from(Diagnostic<? extends JavaFileObject> diagnostic) {
         JavaFileObject source = diagnostic.getSource();
         return new CompileDiagnostic(
-            source == null ? "(no source)" : ValidationReport.canonicalUri(source.getName()),
+            source == null ? "(no source)" : source.getName(),
             diagnostic.getLineNumber(),
             diagnostic.getColumnNumber(),
             diagnostic.getKind().name(),

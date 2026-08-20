@@ -10,9 +10,11 @@ import java.util.Optional;
  * The one spelling on which an editor's document URI and a stored {@code source_name} meet, in both
  * directions.
  *
- * <p>Capture writes a schema file's {@code source_name} as the absolute normalized path it read, and
- * several stored columns are the URI form of that same file instead ({@code lint_finding.file} is
- * the one a quick fix matches against). A consumer holding one and needing the other converts here.
+ * <p>Every stored column holds a path: capture writes a schema file's {@code source_name} as the
+ * absolute normalized path it read, and the diagnostics stratum's {@code file} columns hold the same
+ * form. The URI is a wire spelling and lives only on the wires that require it, the language server
+ * protocol's document identity and the MCP tools' published locations, so a boundary holding one
+ * spelling and needing the other converts here.
  *
  * <p>It lives in the module that declares those columns rather than in either module that fills or
  * reads them, for the reason {@link no.sikt.graphitron.model.grammar.QualifiedNameGrammar} states
@@ -32,15 +34,38 @@ public final class SourceUri {
 
     /**
      * The URI form of a stored {@code source_name}. A value the platform will not accept as a path
-     * is returned as written, so a caller comparing against it still gets a total function and an
-     * unmatched row rather than an exception.
+     * is returned as written, and an absent one stays absent, so a caller comparing against it
+     * still gets a total function and an unmatched row rather than an exception.
      */
     public static String of(String sourceName) {
+        if (sourceName == null) {
+            return null;
+        }
         try {
             return Path.of(sourceName).toUri().toString();
         } catch (InvalidPathException e) {
             return sourceName;
         }
+    }
+
+    /**
+     * The URI form of a stored directory path: the URI of a file inside it with that last segment
+     * removed, never the converted directory path itself. {@link Path#toUri()} decides on a trailing
+     * slash by asking the filesystem, so converting a directory that happens to exist on disk yields
+     * one and a directory that does not yields none, which would put the presence of a directory on
+     * the wire. Deriving from a file inside it is the same truncation the {@code diagnostic} view
+     * performs over paths, applied on the URI side.
+     *
+     * <p>Total on the same terms as {@link #of}: whatever the caller holds is what gets rendered, so
+     * a value the truncation left as a whole path renders as that path's URI.
+     */
+    public static String ofDirectory(String directory) {
+        if (directory == null) {
+            return null;
+        }
+        String inside = of(directory + "/x");
+        int lastSlash = inside.lastIndexOf('/');
+        return lastSlash < 0 ? inside : inside.substring(0, lastSlash);
     }
 
     /**

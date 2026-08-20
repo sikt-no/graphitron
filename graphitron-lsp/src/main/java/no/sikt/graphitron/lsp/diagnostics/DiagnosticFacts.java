@@ -8,6 +8,7 @@ import no.sikt.graphitron.lsp.facts.CatalogTables;
 import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.TypeBackingClass;
 import no.sikt.graphitron.lsp.facts.TypeMemberScope;
+import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Condition;
 import org.jooq.Field;
@@ -120,6 +121,17 @@ final class DiagnosticFacts {
      */
     private static final String SCHEMA_CHANNEL = "schema";
 
+    /**
+     * The stored spelling of a document URI. The protocol names a document by URI and the store holds
+     * the path a schema file was read as, so this class decodes at its own edge and every statement
+     * under it compares paths; nothing here converts outbound, a published diagnostic carrying the
+     * document's own URI rather than a row's file. A URI naming no local file decodes to itself, which
+     * matches no stored path and so answers what an untitled buffer already got.
+     */
+    private static String storedFile(String uri) {
+        return SourceUri.sourceNameOf(uri).orElse(uri);
+    }
+
     /** One method an author named, which is the grain the census answers about overloads at. */
     record MethodRef(String className, String methodName) {}
 
@@ -222,7 +234,7 @@ final class DiagnosticFacts {
          * build can have refused, so this is the one question a walk contributes unconditionally.
          */
         void replayFile(String uri) {
-            replayFiles.add(uri);
+            replayFiles.add(storedFile(uri));
         }
 
         /**
@@ -514,7 +526,8 @@ final class DiagnosticFacts {
          * span files; each document takes the rows anchored in it.
          */
         List<ReplayRow> replayFor(String uri) {
-            return replay.stream().filter(row -> row.file().equals(uri)).toList();
+            String file = storedFile(uri);
+            return replay.stream().filter(row -> row.file().equals(file)).toList();
         }
 
         private static Resolution resolution(boolean resolves, boolean populated) {
@@ -817,13 +830,13 @@ final class DiagnosticFacts {
      * it. The order is the document's own, so an editor lists a file's findings the way the file
      * reads.
      */
-    private static Field<List<ReplayRow>> replayArm(StoreHandle store, Collection<String> uris) {
+    private static Field<List<ReplayRow>> replayArm(StoreHandle store, Collection<String> files) {
         return multiset(select(DIAGNOSTIC.FILE, DIAGNOSTIC.SEVERITY, DIAGNOSTIC.MESSAGE,
                 DIAGNOSTIC.LSP_CODE, DIAGNOSTIC.SOURCE_LINE, DIAGNOSTIC.SOURCE_COLUMN)
             .from(DIAGNOSTIC)
             .where(DIAGNOSTIC.GRAPH_NAME.eq(store.graphName()))
             .and(DIAGNOSTIC.SOURCE.eq(SCHEMA_CHANNEL))
-            .and(DIAGNOSTIC.FILE.in(uris))
+            .and(DIAGNOSTIC.FILE.in(files))
             .and(DIAGNOSTIC.SOURCE_LINE.isNotNull())
             .orderBy(DIAGNOSTIC.FILE, DIAGNOSTIC.SOURCE_LINE, DIAGNOSTIC.SOURCE_COLUMN,
                 DIAGNOSTIC.MESSAGE))

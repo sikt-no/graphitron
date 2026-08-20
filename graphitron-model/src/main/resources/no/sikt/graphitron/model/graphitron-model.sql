@@ -2919,7 +2919,7 @@ CREATE TABLE javac_diagnostic (
 );
 COMMENT ON TABLE javac_diagnostic IS 'One javac diagnostic from the latest compile round over a graph''s emitted sources; the round replaces the graph''s rows wholesale, so the relation''s content contract is exactly the published round. Graph-keyed and graph-private: a sibling graph''s compile errors are its internals, not its schema contract, so cross-graph reads never range over this family, and rows exist only between one of the graph''s compile rounds and its next generation (capture clears the graph''s own partition with the rest of its ownership scope). Two key columns transcribe absence as javac''s own sentinels rather than NULL, a primary-key column admitting no NULL: readers compare against the sentinel values, never IS NULL.';
 COMMENT ON COLUMN javac_diagnostic.graph_name IS 'the graph whose emitted sources the round compiled; the partition dimension, anchored by store_graph and the scope of every statement the writer issues';
-COMMENT ON COLUMN javac_diagnostic.file IS 'canonical file URI of the generated .java javac anchored the diagnostic on (normalised once at the javac boundary so the dimension cannot fork on spelling), or the "(no source)" sentinel where javac reported no source; never NULL, this column being part of the key';
+COMMENT ON COLUMN javac_diagnostic.file IS 'path of the generated .java javac anchored the diagnostic on, as javac named it and in java_file.file''s form, or the "(no source)" sentinel where javac reported no source; never NULL, this column being part of the key';
 COMMENT ON COLUMN javac_diagnostic.line_number IS 'javac''s 1-based line, or -1 (javax.tools.Diagnostic.NOPOS) where javac reported no position; a sentinel, never NULL, this column being part of the key';
 COMMENT ON COLUMN javac_diagnostic.column_number IS 'javac''s 1-based column, on the same NOPOS sentinel terms as line_number';
 COMMENT ON COLUMN javac_diagnostic.ordinal IS 'tie-breaker assigned in round order per (graph_name, file, line_number, column_number), so repeated identical diagnostics at one position keep the key natural rather than decoration on a surrogate counter';
@@ -6408,7 +6408,7 @@ COMMENT ON COLUMN rejection_validation_error.stub_key IS 'the Deferred row''s st
 COMMENT ON COLUMN rejection_validation_error.type_name IS 'the coordinate''s owning type at the DDL''s universal grain; NULL on schema-wide rows. The loader is the one site decoding ValidationError''s coordinate convention (forType / forField) into this pair; when the sealed Coordinate component lands, the loader reads a switch instead and no column changes';
 COMMENT ON COLUMN rejection_validation_error.field_name IS 'the coordinate''s field name; NULL on type-level and schema-wide rows, the universal grain''s absent case';
 COMMENT ON COLUMN rejection_validation_error.message IS 'the report''s rendered message, coordinate prefix included; a transcribed fact because the walk authored it, but display material: never a dimension, never an agreement anchor, and expected to change text as detections take over rejection families';
-COMMENT ON COLUMN rejection_validation_error.file IS 'canonical file URI of the SDL source carrying the location, normalised once at the loader through the report''s canonical-URI site so the file dimension cannot fork on spelling; NULL where the error carries no located source';
+COMMENT ON COLUMN rejection_validation_error.file IS 'path of the SDL source carrying the location, as store_source spells a schema file and java_file.file a compiled one: the loader writes the location''s source name as it reads it, so nothing in this stratum computes a spelling and the file dimension cannot fork on one. A consumer whose protocol names a document by URI renders one at its own boundary. NULL where the error carries no located source';
 COMMENT ON COLUMN rejection_validation_error.source_line IS 'source line of the error''s location, 1-based; NULL where unlocated';
 COMMENT ON COLUMN rejection_validation_error.source_column IS 'source column of the error''s location, 1-based; NULL where unlocated';
 
@@ -6442,7 +6442,7 @@ COMMENT ON COLUMN lint_finding.graph_name IS 'the owning graph''s partition, anc
 COMMENT ON COLUMN lint_finding.ordinal IS 'emit order in the suppression-filtered warning list, 0-based; the key''s tie-breaker on the javac_diagnostic convention';
 COMMENT ON COLUMN lint_finding.lint_rule IS 'LintRule.id(), the finding''s stable rule identifier; the vocabulary this family is named for';
 COMMENT ON COLUMN lint_finding.message IS 'the finding''s rendered message; display material, never a dimension';
-COMMENT ON COLUMN lint_finding.file IS 'canonical file URI of the finding''s SDL source, normalised once at the loader; NULL on the whole-build findings that carry no location';
+COMMENT ON COLUMN lint_finding.file IS 'path of the finding''s SDL source, on rejection_validation_error.file''s terms; NULL on the whole-build findings that carry no location';
 COMMENT ON COLUMN lint_finding.source_line IS 'source line of the finding''s location, 1-based; NULL where unlocated';
 COMMENT ON COLUMN lint_finding.source_column IS 'source column of the finding''s location, 1-based; NULL where unlocated';
 
@@ -6494,7 +6494,7 @@ COMMENT ON TABLE build_warning_no_rule IS 'The advisory arm: BuildWarning.NoRule
 COMMENT ON COLUMN build_warning_no_rule.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN build_warning_no_rule.ordinal IS 'emit order in the suppression-filtered warning list''s advisory rows, 0-based; the key''s tie-breaker on the javac_diagnostic convention';
 COMMENT ON COLUMN build_warning_no_rule.message IS 'the advisory''s rendered message; display material, never a dimension';
-COMMENT ON COLUMN build_warning_no_rule.file IS 'canonical file URI of the advisory''s SDL source, normalised once at the loader; NULL where the advisory carries no location';
+COMMENT ON COLUMN build_warning_no_rule.file IS 'path of the advisory''s SDL source, on rejection_validation_error.file''s terms; NULL where the advisory carries no location';
 COMMENT ON COLUMN build_warning_no_rule.source_line IS 'source line of the advisory''s location, 1-based; NULL where unlocated';
 COMMENT ON COLUMN build_warning_no_rule.source_column IS 'source column of the advisory''s location, 1-based; NULL where unlocated';
 
@@ -6509,7 +6509,7 @@ CREATE TABLE graphql_syntax_error (
 );
 COMMENT ON TABLE graphql_syntax_error IS 'One source the parser refused, per row: the first stage of reading a schema, judged one file at a time. Keyed on the source rather than on an emit-order ordinal, alone among this stratum''s arms, because parsing stops at a source''s first syntax error, so at most one row per source is structural rather than incidental, and the key is then the question a reader actually asks ("does this file parse, and where does it fail") answered as a primary-key lookup. The key also satisfies the store header''s requirement that every base relation be partitionable by the source that produced it, which no ordinal-keyed arm of this stratum can claim; that is a property of the key, not a refresh this store performs, since the SDL families are re-walked wholesale per graph from a parse the pipeline pays for anyway and no schema file reaches the source-partitioned refresh path. A row here is what explains a declaration''s absence from the transcription families without implying the author deleted it, which is the difference between an editor reporting a syntax error and an editor reporting every type in the file as unknown. Rows are written by capture on every pass, so emptiness means every source parsed.';
 COMMENT ON COLUMN graphql_syntax_error.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_syntax_error.source_name IS 'the refused source, as the reader spelled it (the store_source spelling, not the canonical URI the union view renders); the key''s second dimension, and always known, because the loader is parsing one named source when the parser refuses it';
+COMMENT ON COLUMN graphql_syntax_error.source_name IS 'the refused source, as the reader spelled it (the store_source spelling, which is what the union view projects as well); the key''s second dimension, and always known, because the loader is parsing one named source when the parser refuses it';
 COMMENT ON COLUMN graphql_syntax_error.message IS 'the refusal''s reason exactly as the parser wrote it; display material, never a dimension. Verbatim rather than the shortened form the build''s exception renders, on the same terms as this stratum''s other message columns: the parser publishes two message shapes, one of which carries its explanation in a trailing clause and the other of which is nothing but that clause, so any mechanical shortening loses the reason on one shape or the other. It does repeat the location in prose, which the stored coordinate columns also carry; that is the rejection arm''s precedent (its message keeps the coordinate prefix too) and it is display material either way. Deliberately not the file-attributed one-liner the build throws: the file is a column here, so prefixing it in would store the same dimension twice and let the two spellings fork';
 COMMENT ON COLUMN graphql_syntax_error.source_line IS 'line the parser refused at, 1-based; NULL where it reported no position, which is the rare case of a source whose very first token is unreadable';
 COMMENT ON COLUMN graphql_syntax_error.source_column IS 'column the parser refused at, on the same terms as source_line';
@@ -6535,13 +6535,6 @@ COMMENT ON COLUMN graphql_schema_error.message IS 'the verdict''s rendered messa
 COMMENT ON COLUMN graphql_schema_error.source_name IS 'the source the verdict points into, as the reader spelled it; NULL where the verdict points nowhere, which is the schema-wide case (a document with no query root names no position). Note the coarseness: graphql-java locates at the enclosing declaration rather than at the offending element, so a field whose type does not resolve is located at its type''s declaration';
 COMMENT ON COLUMN graphql_schema_error.source_line IS 'line of the verdict''s location, 1-based; NULL where unlocated, graphql-java''s own (-1, -1) sentinel having been normalised away at the writer';
 COMMENT ON COLUMN graphql_schema_error.source_column IS 'column of the verdict''s location, on the same terms as source_line';
-
--- The canonical file URI spelling, as SQL. The Java site (ValidationReport.canonicalUri) is
--- the declared single home; this alias is its verbatim restatement for the one arm that needs
--- the spelling computed in a view (the pilot arm below reads capture's raw source names, which
--- no loader normalises), and the two spellings are pinned to each other by a parity assertion
--- in the residue loader's test. Inline source, so the DDL stays self-contained.
-CREATE ALIAS canonical_uri AS 'String canonicalUri(String sourceName) { if (sourceName == null) return null; try { return java.nio.file.Path.of(sourceName).toUri().toString(); } catch (java.nio.file.InvalidPathException e) { return sourceName; } }';
 
 CREATE VIEW diagnostic
   (graph_name, source, severity, actionable, kind, variant, lsp_code, attempt_kind, attempt,
@@ -6572,8 +6565,8 @@ SELECT c.graph_name, 'schema', 'error', c.verdict <> 'DEFERRED',
        c.type_name, c.field_name,
        CASE WHEN c.field_name IS NULL THEN c.type_name
             ELSE c.type_name || '.' || c.field_name END,
-       canonical_uri(c.source_name),
-       REGEXP_REPLACE(canonical_uri(c.source_name), '/[^/]*$', ''),
+       c.source_name,
+       REGEXP_REPLACE(c.source_name, '/[^/]*$', ''),
        c.source_line, c.source_column, c.message
   FROM intent_authored_claim_conflict c
 UNION ALL
@@ -6602,8 +6595,8 @@ SELECT x.graph_name, 'schema', 'error', TRUE,
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
-       canonical_uri(x.source_name),
-       REGEXP_REPLACE(canonical_uri(x.source_name), '/[^/]*$', ''),
+       x.source_name,
+       REGEXP_REPLACE(x.source_name, '/[^/]*$', ''),
        x.source_line, x.source_column, x.message
   FROM graphql_syntax_error x
 UNION ALL
@@ -6612,8 +6605,8 @@ SELECT s.graph_name, 'schema', 'error', TRUE,
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
-       canonical_uri(s.source_name),
-       REGEXP_REPLACE(canonical_uri(s.source_name), '/[^/]*$', ''),
+       s.source_name,
+       REGEXP_REPLACE(s.source_name, '/[^/]*$', ''),
        s.source_line, s.source_column, s.message
   FROM graphql_schema_error s
 UNION ALL
@@ -6631,7 +6624,7 @@ SELECT j.graph_name, 'compile',
        CASE WHEN j.column_number = -1 THEN NULL ELSE CAST(j.column_number AS INT) END,
        j.message
   FROM javac_diagnostic j;
-COMMENT ON VIEW diagnostic IS 'The diagnostics stratum''s one read surface: the union of all seven arms (the rejection residue, the store-native claim-conflict pilot, the lint arm, the advisory arm, the parser and the SDL toolchain''s two document-wide stages, the compile oracle), which the MCP diagnostics tools read and no consumer bypasses. Prefix-less on purpose: a read-side union across vocabularies has no family, and no naming gate says so mechanically, so this comment does. Derived columns live here rather than in the base relations: actionable is the deferred-versus-rest CASE over kind (the same predicate the LSP severity projection documents, pinned by a one-row parity assertion); severity for compile rows mirrors CompileDiagnostic.severity() (ERROR to error, every other javac kind to warning, same parity discipline); coordinate and directory are renderings of the stored pair and the canonical file; the compile arm''s sentinels ("(no source)", -1) normalise to the uniform NULL absent bucket by comparing against the sentinel values, never IS NULL. lsp_code carries the producing oracle''s stable machine code in both namespaces (the rejection sub-seals'' lspCode(), javac''s Diagnostic.getCode()), which cannot collide. Every dimension is single-valued at one row per diagnostic, so group counts sum to the row count; directives renders the canonical sorted spelling in every arm that carries it.';
+COMMENT ON VIEW diagnostic IS 'The diagnostics stratum''s one read surface: the union of all seven arms (the rejection residue, the store-native claim-conflict pilot, the lint arm, the advisory arm, the parser and the SDL toolchain''s two document-wide stages, the compile oracle), which the MCP diagnostics tools read and no consumer bypasses. Prefix-less on purpose: a read-side union across vocabularies has no family, and no naming gate says so mechanically, so this comment does. Derived columns live here rather than in the base relations: actionable is the deferred-versus-rest CASE over kind (the same predicate the LSP severity projection documents, pinned by a one-row parity assertion); severity for compile rows mirrors CompileDiagnostic.severity() (ERROR to error, every other javac kind to warning, same parity discipline); coordinate and directory are renderings of the stored pair and the stored file path; the compile arm''s sentinels ("(no source)", -1) normalise to the uniform NULL absent bucket by comparing against the sentinel values, never IS NULL. lsp_code carries the producing oracle''s stable machine code in both namespaces (the rejection sub-seals'' lspCode(), javac''s Diagnostic.getCode()), which cannot collide. Every dimension is single-valued at one row per diagnostic, so group counts sum to the row count; directives renders the canonical sorted spelling in every arm that carries it.';
 COMMENT ON COLUMN diagnostic.graph_name IS 'the owning graph''s partition, carried through from every arm; the MCP read site filters to the reading session''s graph';
 COMMENT ON COLUMN diagnostic.source IS 'the closed channel taxonomy the shipped tool already speaks: schema for the six validator-side arms, compile for the javac arm';
 COMMENT ON COLUMN diagnostic.severity IS 'error or warning, the wire''s closed pair: the rejection arms are error by the build''s own finality, lint and advisory rows warning by construction, compile rows javac''s verdict projected as the record''s severity() spells it';
@@ -6647,8 +6640,8 @@ COMMENT ON COLUMN diagnostic.lint_rule IS 'LintRule.id() on lint rows; NULL else
 COMMENT ON COLUMN diagnostic.type_name IS 'the coordinate''s owning type, the coarse grain of the coordinate axis; NULL on rows carrying no schema coordinate';
 COMMENT ON COLUMN diagnostic.field_name IS 'the coordinate''s field name, NULL at the type grain and on coordinate-less rows';
 COMMENT ON COLUMN diagnostic.coordinate IS 'the rendered coordinate (a type name or Type.field), computed from the stored pair; the fine grain of the coordinate axis';
-COMMENT ON COLUMN diagnostic.file IS 'canonical file URI of the row''s source (SDL file on schema rows, generated .java on compile rows), one spelling across both channels; NULL in the stated absent bucket (whole-build findings, unlocated rejections, javac''s no-source sentinel)';
-COMMENT ON COLUMN diagnostic.directory IS 'the file''s directory, the canonical URI truncated at its last segment; the coarse grain of the file axis, NULL exactly where file is';
+COMMENT ON COLUMN diagnostic.file IS 'path of the row''s source (SDL file on schema rows, generated .java on compile rows), one spelling across both channels and the one every arm stores, so this column derives from its arm rather than converting it; NULL in the stated absent bucket (whole-build findings, unlocated rejections, javac''s no-source sentinel)';
+COMMENT ON COLUMN diagnostic.directory IS 'the file''s directory, the stored path truncated at its last segment; the coarse grain of the file axis, NULL exactly where file is';
 COMMENT ON COLUMN diagnostic.source_line IS 'the location''s line, 1-based in both channels; NULL in the absent bucket (javac''s NOPOS normalised here)';
 COMMENT ON COLUMN diagnostic.source_column IS 'the location''s column, on the same terms as source_line';
 COMMENT ON COLUMN diagnostic.message IS 'the row''s rendered message, whichever oracle authored it; display material, never a dimension, never an agreement anchor';

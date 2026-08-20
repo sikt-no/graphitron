@@ -1,6 +1,7 @@
 package no.sikt.graphitron.mcp;
 
 import io.modelcontextprotocol.spec.McpSchema;
+import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
@@ -30,10 +31,18 @@ class DiagnosticsToolCompileSourceTest {
 
     private static final String GRAPH = "DiagnosticsToolCompileSourceTest";
 
+    /**
+     * The path javac hands over, which is the form {@code javac_diagnostic.file} stores. Absolute,
+     * as an emitted source's path is: the wire renders it as a URI, and a relative path would
+     * render against whatever directory the test happens to run in.
+     */
+    private static final String GENERATED_ROOT = "/work/target/generated-sources/graphitron/gen/pkg";
+
     private static final CompileDiagnostic ERROR = new CompileDiagnostic(
-        "gen/pkg/FilmFetchers.java", 12, 7, "ERROR", "compiler.err.cant.resolve", "cannot find symbol");
+        GENERATED_ROOT + "/FilmFetchers.java", 12, 7, "ERROR", "compiler.err.cant.resolve",
+        "cannot find symbol");
     private static final CompileDiagnostic WARNING = new CompileDiagnostic(
-        "gen/pkg/Film.java", 3, 1, "WARNING", null, "deprecated API");
+        GENERATED_ROOT + "/Film.java", 3, 1, "WARNING", null, "deprecated API");
 
     @TempDir
     Path tmp;
@@ -60,7 +69,9 @@ class DiagnosticsToolCompileSourceTest {
         assertThat(error.get("message")).isEqualTo("cannot find symbol");
         @SuppressWarnings("unchecked")
         var location = (Map<String, Object>) error.get("location");
-        assertThat(location.get("uri")).isEqualTo("gen/pkg/FilmFetchers.java");
+        assertThat(location.get("uri"))
+            .as("the store holds the path; the tool's location names a document by URI")
+            .isEqualTo(SourceUri.of(GENERATED_ROOT + "/FilmFetchers.java"));
         // javac's 1-based line/column map to the 0-based wire shape the goto-definition consumers read.
         assertThat(location.get("line")).isEqualTo(11);
         assertThat(location.get("column")).isEqualTo(6);

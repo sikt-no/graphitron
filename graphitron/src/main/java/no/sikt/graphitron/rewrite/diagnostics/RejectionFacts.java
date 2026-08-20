@@ -5,7 +5,6 @@ import no.sikt.graphitron.model.tables.records.RejectionValidationErrorDirective
 import no.sikt.graphitron.model.tables.records.RejectionValidationErrorRecord;
 import no.sikt.graphitron.rewrite.RejectionKind;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.model.DeleteRowsError;
 import no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError;
@@ -110,7 +109,7 @@ public final class RejectionFacts {
             SourceLocation location = error.location();
             if (location != null && location.getSourceName() != null
                     && !location.getSourceName().isEmpty()) {
-                row.setFile(ValidationReport.canonicalUri(location.getSourceName()));
+                row.setFile(location.getSourceName());
             }
             if (location != null && location.getLine() > 0) {
                 row.setSourceLine(location.getLine());

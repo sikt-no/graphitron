@@ -6,7 +6,6 @@ import no.sikt.graphitron.model.tables.records.LintFindingFixEditRecord;
 import no.sikt.graphitron.model.tables.records.LintFindingFixRecord;
 import no.sikt.graphitron.model.tables.records.LintFindingRecord;
 import no.sikt.graphitron.rewrite.BuildWarning;
-import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.lint.LintFix;
 import org.jooq.DSLContext;
@@ -157,7 +156,7 @@ public final class BuildWarningFacts {
             return;
         }
         if (location.getSourceName() != null && !location.getSourceName().isEmpty()) {
-            file.accept(ValidationReport.canonicalUri(location.getSourceName()));
+            file.accept(location.getSourceName());
         }
         if (location.getLine() > 0) {
             line.accept(location.getLine());

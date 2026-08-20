@@ -3,8 +3,8 @@ package no.sikt.graphitron.lsp;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
+import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import org.eclipse.lsp4j.Diagnostic;
 import org.junit.jupiter.api.Test;
@@ -61,7 +61,7 @@ class LintSuppressionDiagnosticsParityTest {
         // editor reading them back from there rather than from a report object.
         try (var fixture = StoreFixture.ofBuild(tmp, SDL, lintConfig)) {
             return Diagnostics.compute(BundledVocabulary.get(),
-                ValidationReport.canonicalUri(fixture.sourceName()),
+                SourceUri.of(fixture.sourceName()),
                 WorkspaceFileTestSupport.snapshot(SDL), Optional.of(fixture.handle()));
         }
     }

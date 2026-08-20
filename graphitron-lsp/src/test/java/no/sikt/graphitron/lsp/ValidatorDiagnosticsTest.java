@@ -5,9 +5,9 @@ import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
+import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.lint.LintRule;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import org.eclipse.lsp4j.Diagnostic;
@@ -283,7 +283,7 @@ class ValidatorDiagnosticsTest {
     /** The buffer under test, opened at the URI the fixture's own schema file has. */
     private static List<Diagnostic> replay(StoreFixture fixture, FileSnapshot file) {
         return Diagnostics.compute(BundledVocabulary.get(),
-            ValidationReport.canonicalUri(fixture.sourceName()), file, Optional.of(fixture.handle()));
+            SourceUri.of(fixture.sourceName()), file, Optional.of(fixture.handle()));
     }
 
     /** One walk error at a location in the fixture's own schema file. */

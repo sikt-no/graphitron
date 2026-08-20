@@ -1,8 +1,8 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.state.StoreAccess;
+import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.ValidationReport;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -70,7 +70,7 @@ class StoreAccessTest {
         try (var fixture = StoreFixture.of(tmp, SDL)) {
             // The trip an LSP request makes: the store's source name is rendered as the URI a client
             // sends, and has to come back as the same string or every lookup misses silently.
-            String uri = ValidationReport.canonicalUri(fixture.sourceName());
+            String uri = SourceUri.of(fixture.sourceName());
 
             assertThat(StoreAccess.sourceNameOf(uri)).contains(fixture.sourceName());
         }

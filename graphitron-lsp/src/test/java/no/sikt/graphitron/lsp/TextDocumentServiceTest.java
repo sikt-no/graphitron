@@ -1,10 +1,10 @@
 package no.sikt.graphitron.lsp;
 
-import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.lsp.server.GraphitronLanguageServer;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.StoreAccess;
 import no.sikt.graphitron.lsp.state.Workspace;
+import no.sikt.graphitron.model.read.SourceUri;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
@@ -114,7 +114,7 @@ class TextDocumentServiceTest {
         var proxy = startServer(new GraphitronLanguageServer(workspace));
         proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
 
-        String uri = ValidationReport.canonicalUri(fixture.sourceName());
+        String uri = SourceUri.of(fixture.sourceName());
         proxy.getTextDocumentService()
             .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(uri, "graphql", 1, source)));
 
@@ -171,7 +171,7 @@ class TextDocumentServiceTest {
             var proxy = startServer(new GraphitronLanguageServer(workspace));
             proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
 
-            String uri = ValidationReport.canonicalUri(fixture.sourceName());
+            String uri = SourceUri.of(fixture.sourceName());
             String source = """
                 type Foo @table(name: "MISSING") { bar: Int }
                 """;
@@ -210,7 +210,7 @@ class TextDocumentServiceTest {
             var proxy = startServer(new GraphitronLanguageServer(workspace));
             proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
 
-            String uri = ValidationReport.canonicalUri(fixture.sourceName());
+            String uri = SourceUri.of(fixture.sourceName());
             proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
                 new TextDocumentItem(uri, "graphql", 1, source)));
 
@@ -247,7 +247,7 @@ class TextDocumentServiceTest {
             var proxy = startServer(new GraphitronLanguageServer(workspace));
             proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
 
-            String uri = ValidationReport.canonicalUri(fixture.sourceName());
+            String uri = SourceUri.of(fixture.sourceName());
             String source = "type Foo @table(name: \"film\") { bar: Int }\n";
             proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
                 new TextDocumentItem(uri, "graphql", 1, source)));

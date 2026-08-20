@@ -5,10 +5,10 @@ import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
+import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import org.eclipse.lsp4j.Diagnostic;
 import org.jooq.DSLContext;
@@ -45,7 +45,7 @@ class RejectionSeverityCoverageTest {
             .isNotEmpty();
 
         var path = "/tmp/coverage.graphqls";
-        var uri = ValidationReport.canonicalUri(path);
+        var uri = SourceUri.of(path);
         var loc = new SourceLocation(1, 1, path);
         var file = WorkspaceFileTestSupport.snapshot("type Foo { x: Int }\n");
 
@@ -97,7 +97,7 @@ class RejectionSeverityCoverageTest {
     void everyDeclaredLspCodeReachesTheWire(@TempDir java.nio.file.Path tmp) {
         var permits = collectLeafPermits(Rejection.class);
         var path = "/tmp/coverage.graphqls";
-        var uri = ValidationReport.canonicalUri(path);
+        var uri = SourceUri.of(path);
         var loc = new SourceLocation(1, 1, path);
         var file = WorkspaceFileTestSupport.snapshot("type Foo { x: Int }\n");
 

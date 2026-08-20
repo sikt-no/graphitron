@@ -10,8 +10,8 @@ import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.StoreAccess;
 import no.sikt.graphitron.lsp.state.Workspace;
+import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.ValidationReport;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.Test;
@@ -66,7 +66,7 @@ class CompletionStoreWiringTest {
 
             var workspace = new Workspace();
             workspace.setStore(access);
-            String uri = ValidationReport.canonicalUri(fixture.sourceName());
+            String uri = SourceUri.of(fixture.sourceName());
             workspace.didOpen(uri, 1, SOURCE);
 
             assertThat(completionAt(workspace, uri)).extracting(CompletionItem::getLabel)
@@ -120,7 +120,7 @@ class CompletionStoreWiringTest {
 
             var workspace = new Workspace();
             workspace.setStore(access);
-            String uri = ValidationReport.canonicalUri(fixture.sourceName());
+            String uri = SourceUri.of(fixture.sourceName());
             String broken = """
                 extend type
                 type Query {

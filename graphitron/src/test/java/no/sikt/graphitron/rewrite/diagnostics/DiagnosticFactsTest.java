@@ -4,7 +4,6 @@ import graphql.language.SourceLocation;
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
 import no.sikt.graphitron.rewrite.compile.CompileRound;
@@ -19,7 +18,6 @@ import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import org.jooq.DSLContext;
-import org.jooq.impl.DSL;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -38,7 +36,10 @@ import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
 import static no.sikt.graphitron.rewrite.FactWriters.buildWarningFacts;
 import static no.sikt.graphitron.rewrite.FactWriters.compileFacts;
 import static no.sikt.graphitron.rewrite.FactWriters.rejectionFacts;
+import static no.sikt.graphitron.model.Tables.BUILD_WARNING_NO_RULE;
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
+import static no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC;
+import static no.sikt.graphitron.model.Tables.LINT_FINDING;
 import static no.sikt.graphitron.model.Tables.LINT_FINDING_FIX;
 import static no.sikt.graphitron.model.Tables.LINT_FINDING_FIX_EDIT;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR;
@@ -52,9 +53,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * derived columns against the Java spellings they restate. The parity pins here are the ones
  * the design names: {@code actionable} against the deferred-versus-rest predicate the LSP
  * severity projection documents, the compile arm's {@code severity} against
- * {@link CompileDiagnostic#severity()}, the {@code canonical_uri} alias against
- * {@link ValidationReport#canonicalUri}, the compile sentinels normalising to the uniform NULL
- * absent bucket, and the pilot arm's rendered {@code message} against the report's own.
+ * {@link CompileDiagnostic#severity()}, the compile sentinels normalising to the uniform NULL
+ * absent bucket, and the pilot arm's rendered {@code message} against the report's own. The file
+ * axis has its own pin here too, and it is a property rather than a parity: no arm stores or
+ * projects a URI, so no spelling is computed in this stratum at all.
  */
 @PipelineTier
 class DiagnosticFactsTest {
@@ -87,7 +89,6 @@ class DiagnosticFactsTest {
                 .orderBy(REJECTION_VALIDATION_ERROR.ORDINAL)
                 .fetch();
             assertThat(rows).hasSize(5);
-            String uri = ValidationReport.canonicalUri(source);
 
             var unknown = rows.get(0);
             assertThat(unknown.getKind()).isEqualTo("AUTHOR_ERROR");
@@ -96,7 +97,7 @@ class DiagnosticFactsTest {
             assertThat(unknown.getAttempt()).isEqualTo("id");
             assertThat(unknown.getTypeName()).isEqualTo("Film");
             assertThat(unknown.getFieldName()).isEqualTo("id");
-            assertThat(unknown.getFile()).isEqualTo(uri);
+            assertThat(unknown.getFile()).isEqualTo(source);
             assertThat(unknown.getSourceLine()).isEqualTo(3);
             assertThat(unknown.getSourceColumn()).isEqualTo(5);
             assertThat(unknown.getMessage()).startsWith("Field 'Film.id': column 'id'");
@@ -165,9 +166,9 @@ class DiagnosticFactsTest {
                 .isEqualTo("routine,splitQuery");
             assertThat(conflict.getCoordinate()).isEqualTo("Film");
 
-            String uri = ValidationReport.canonicalUri(source);
-            assertThat(conflict.getFile()).isEqualTo(uri);
-            assertThat(conflict.getDirectory()).isEqualTo(uri.substring(0, uri.lastIndexOf('/')));
+            assertThat(conflict.getFile()).isEqualTo(source);
+            assertThat(conflict.getDirectory())
+                .isEqualTo(source.substring(0, source.lastIndexOf('/')));
         });
     }
 
@@ -202,7 +203,7 @@ class DiagnosticFactsTest {
             var located = rows.stream()
                 .filter(r -> "located finding".equals(r.getMessage())).findFirst().orElseThrow();
             assertThat(located.getLintRule()).isEqualTo(rule.id());
-            assertThat(located.getFile()).isEqualTo(ValidationReport.canonicalUri(source));
+            assertThat(located.getFile()).isEqualTo(source);
             var wholeBuild = rows.stream()
                 .filter(r -> "whole-build finding".equals(r.getMessage())).findFirst().orElseThrow();
             assertThat(wholeBuild.getFile())
@@ -253,9 +254,9 @@ class DiagnosticFactsTest {
     @Test
     @DisplayName("the compile arm projects javac's verdict and normalises its sentinels")
     void compileArmProjectsSeverityAndNormalisesSentinels() {
-        var located = new CompileDiagnostic("file:///gen/A.java", 12, 7, "ERROR",
+        var located = new CompileDiagnostic("/gen/A.java", 12, 7, "ERROR",
             "compiler.err.cant.resolve", "cannot find symbol");
-        var note = new CompileDiagnostic("file:///gen/A.java", 3, 1, "NOTE", null, "a note");
+        var note = new CompileDiagnostic("/gen/A.java", 3, 1, "NOTE", null, "a note");
         var unlocated = new CompileDiagnostic("(no source)", -1, -1, "WARNING", null, "unchecked");
         withStore(dsl -> {
             compileFacts(dsl, GRAPH, tmp).write(new CompileRound(false, List.of(located, note, unlocated)));
@@ -284,22 +285,9 @@ class DiagnosticFactsTest {
             assertThat(sentinel.getSourceColumn()).isNull();
             var locatedRow = rows.stream()
                 .filter(r -> "cannot find symbol".equals(r.getMessage())).findFirst().orElseThrow();
-            assertThat(locatedRow.getFile()).isEqualTo("file:///gen/A.java");
-            assertThat(locatedRow.getDirectory()).isEqualTo("file:///gen");
+            assertThat(locatedRow.getFile()).isEqualTo("/gen/A.java");
+            assertThat(locatedRow.getDirectory()).isEqualTo("/gen");
             assertThat(locatedRow.getSourceLine()).isEqualTo(12);
-        });
-    }
-
-    @Test
-    @DisplayName("the canonical_uri alias restates ValidationReport.canonicalUri, spelling included")
-    void canonicalUriAliasMatchesTheJavaSite() {
-        withStore(dsl -> {
-            for (String path : List.of("/tmp/plain/schema.graphqls", "/tmp/with space/x.graphqls")) {
-                String viaAlias = dsl.select(
-                        DSL.function("canonical_uri", String.class, DSL.val(path)))
-                    .fetchSingle().value1();
-                assertThat(viaAlias).isEqualTo(ValidationReport.canonicalUri(path));
-            }
         });
     }
 
@@ -330,8 +318,9 @@ class DiagnosticFactsTest {
             assertThat(row.getDirectives()).isEqualTo("nodeId,service");
             assertThat(row.getCoordinate()).isEqualTo("Film.id");
             assertThat(row.getFile())
-                .as("the pilot arm's file goes through the alias, one spelling with the loaded arms")
-                .isEqualTo(ValidationReport.canonicalUri(file.toString()));
+                .as("the pilot arm projects capture's own source name, one spelling with the "
+                    + "loaded arms and no conversion between them")
+                .isEqualTo(file.toString());
         });
     }
 
@@ -387,8 +376,9 @@ class DiagnosticFactsTest {
             assertThat(parserRow.getSeverity()).isEqualTo("error");
             assertThat(parserRow.getActionable()).isTrue();
             assertThat(parserRow.getFile())
-                .as("the parser arm's file goes through the alias, one spelling with every other arm")
-                .isEqualTo(ValidationReport.canonicalUri(broken.toString()));
+                .as("the parser arm projects its stored source name, one spelling with every "
+                    + "other arm")
+                .isEqualTo(broken.toString());
             assertThat(parserRow.getSourceLine()).isEqualTo(2);
             assertThat(parserRow.getMessage())
                 .as("the row carries the parser's own words, explanatory clause included")
@@ -397,7 +387,87 @@ class DiagnosticFactsTest {
         });
     }
 
+    /**
+     * The file axis is a path wherever it is stored and wherever the view projects one, so nothing
+     * in this stratum computes a spelling and the two wires that name a document by URI render one
+     * at their own boundary. Stated over rows in all seven arms, which takes three fixtures rather
+     * than one build: the three loaders share a store, while the pilot arm and the SDL toolchain's
+     * arms each need their own capture (a capture clears the graph's partition on the way in), and
+     * no one build both refuses a source at the parser and reaches javac with it.
+     */
+    @Test
+    @DisplayName("no file column, and no projection of one, spells a file as a URI")
+    void noFileColumnSpellsAUri() throws IOException {
+        String source = tmp.resolve("s.graphqls").toString();
+        var loc = new SourceLocation(3, 5, source);
+        withStore(dsl -> {
+            rejectionFacts(dsl, GRAPH, tmp).write(List.of(ValidationError.forField("Film.id",
+                Rejection.unknownColumn("column 'id' could not be resolved", "id",
+                    List.of("film_id")), loc)));
+            buildWarningFacts(dsl, GRAPH, tmp).write(List.of(
+                BuildWarning.LintFinding.of("finding", loc, LintRule.TYPE_NAMES_PASCAL_CASE),
+                new BuildWarning.NoRule("advisory", loc)));
+            compileFacts(dsl, GRAPH, tmp).write(new CompileRound(false, List.of(
+                new CompileDiagnostic("/gen/A.java", 12, 7, "ERROR", null, "cannot find symbol"))));
+            assertEveryFileIsAPath(dsl, 4);
+        });
+
+        Path conflict = write(tmp, """
+            type Film @table(name: "film") {
+                id: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}) @nodeId
+            }
+            type Query { film: Film }
+            """);
+        withStore(dsl -> {
+            FactCapture.capture(dsl, graph(), FactCapture.SubjectConfig.none(),
+                RewriteSchemaLoader.load(List.of(SchemaSource.file(conflict))),
+                TestSchemaHelper.attribution(conflict));
+            assertEveryFileIsAPath(dsl, 1);
+        });
+
+        Path broken = tmp.resolve("broken.graphqls");
+        Files.writeString(broken, "type Extra { id: ID! }\nstrayTokenHere\n");
+        Path dangling = tmp.resolve("dangling.graphqls");
+        Files.writeString(dangling, "type Query { gone: Nope }\n");
+        var sources = List.of(SchemaSource.file(broken), SchemaSource.file(dangling));
+        var read = RewriteSchemaLoader.parsePerSource(sources);
+        withStore(dsl -> {
+            FactCapture.capture(dsl, false, graph(), FactCapture.SubjectConfig.none(),
+                read.registry(), SchemaAssembly.of(read.registry()), SdlVerdicts.of(read),
+                SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),
+                null, List.of());
+            assertEveryFileIsAPath(dsl, 2);
+        });
+    }
+
     // ===== Helpers =====
+
+    /**
+     * Every file this graph holds, gathered from the four columns the arms write and from the view's
+     * own {@code file} and {@code directory}, and asserted to be a path. The row count is asserted
+     * alongside so the case cannot pass by seeding nothing.
+     */
+    private static void assertEveryFileIsAPath(DSLContext dsl, int expectedViewRows) {
+        var files = new java.util.ArrayList<String>();
+        files.addAll(dsl.select(REJECTION_VALIDATION_ERROR.FILE).from(REJECTION_VALIDATION_ERROR)
+            .where(REJECTION_VALIDATION_ERROR.GRAPH_NAME.eq(GRAPH))
+            .fetch(REJECTION_VALIDATION_ERROR.FILE));
+        files.addAll(dsl.select(LINT_FINDING.FILE).from(LINT_FINDING)
+            .where(LINT_FINDING.GRAPH_NAME.eq(GRAPH)).fetch(LINT_FINDING.FILE));
+        files.addAll(dsl.select(BUILD_WARNING_NO_RULE.FILE).from(BUILD_WARNING_NO_RULE)
+            .where(BUILD_WARNING_NO_RULE.GRAPH_NAME.eq(GRAPH)).fetch(BUILD_WARNING_NO_RULE.FILE));
+        files.addAll(dsl.select(JAVAC_DIAGNOSTIC.FILE).from(JAVAC_DIAGNOSTIC)
+            .where(JAVAC_DIAGNOSTIC.GRAPH_NAME.eq(GRAPH)).fetch(JAVAC_DIAGNOSTIC.FILE));
+        var view = dsl.selectFrom(DIAGNOSTIC).where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH)).fetch();
+        assertThat(view).hasSize(expectedViewRows);
+        files.addAll(view.map(row -> row.getFile()));
+        files.addAll(view.map(row -> row.getDirectory()));
+        assertThat(files.stream().filter(java.util.Objects::nonNull).toList())
+            .as("the file axis is a path wherever it is stored or projected; a wire that names a "
+                + "document by URI renders one at its own boundary")
+            .isNotEmpty()
+            .allSatisfy(file -> assertThat(file).doesNotStartWith("file:"));
+    }
 
     private FactCapture.GraphIdentity graph() {
         return new FactCapture.GraphIdentity(GRAPH, tmp);

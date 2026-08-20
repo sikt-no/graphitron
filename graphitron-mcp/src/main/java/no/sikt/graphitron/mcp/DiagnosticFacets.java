@@ -1,6 +1,7 @@
 package no.sikt.graphitron.mcp;
 
 import io.modelcontextprotocol.spec.McpSchema;
+import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -95,8 +96,8 @@ final class DiagnosticFacets {
         LINT_RULE("lintRule", DIAGNOSTIC.LINT_RULE, ""),
         COORDINATE("coordinate", DIAGNOSTIC.COORDINATE, "a type or Type.field"),
         TYPE("type", DIAGNOSTIC.TYPE_NAME, ""),
-        FILE("file", DIAGNOSTIC.FILE, ""),
-        DIRECTORY("directory", DIAGNOSTIC.DIRECTORY, "");
+        FILE("file", DIAGNOSTIC.FILE, "", Spelling.FILE_URI),
+        DIRECTORY("directory", DIAGNOSTIC.DIRECTORY, "", Spelling.DIRECTORY_URI);
 
         private final String wireName;
         private final Field<?> column;
@@ -161,11 +162,21 @@ final class DiagnosticFacets {
 
         /**
          * The wire value read into this dimension's own spelling. Package-private because it is
-         * also the pin's subject: a declared spelling has to be the identity on every value the
-         * store holds, or the {@code where} boundary would drop rows a raw comparison matches.
+         * also the pin's subject: the wire spelling and the stored one have to round-trip, or the
+         * {@code where} boundary would drop rows the value it published names.
          */
         String normalise(String wireValue) {
             return spelling.normalise(wireValue);
+        }
+
+        /**
+         * The stored value in this dimension's wire spelling: what a group key, an example file or
+         * an entry publishes. The identity for every spelling that stores what it publishes, which
+         * is all of them but the file axis, whose columns hold a path where both wires this server
+         * answers on name a document by URI.
+         */
+        Object render(Object storedValue) {
+            return storedValue instanceof String text ? spelling.render(text) : storedValue;
         }
 
         /** Resolves a wire name, failing with the full closed vocabulary rather than a bare miss. */
@@ -185,15 +196,16 @@ final class DiagnosticFacets {
     }
 
     /**
-     * The spelling a dimension's column is stored in, and therefore the spelling a wire value is
-     * read into. Naming a spelling is a weaker claim than naming a value set: the store owns which
-     * severities exist, this owns only that the {@code diagnostic} view writes them in one case,
-     * so a spelling cannot go stale when a taxonomy grows. It is safe for the same reason it is
-     * weak, being the identity on every value the store holds, a property
-     * {@code DiagnosticsAggregateTest} pins against the store's own group keys rather than against
-     * this reading. A group key never enters the path: a drill-down re-feeds stored values through
-     * {@link Dimension#matchesStored}, so the aggregate and its drill-down stay exact whatever is
-     * declared here.
+     * How a dimension's wire spelling relates to the spelling its column is stored in: inbound
+     * through {@link #normalise}, outbound through {@link #render}. Naming a spelling is a weaker
+     * claim than naming a value set: the store owns which severities exist, this owns only that the
+     * {@code diagnostic} view writes them in one case, so a spelling cannot go stale when a taxonomy
+     * grows. What makes it safe is the round trip, {@code normalise(render(stored))} giving back the
+     * stored value, which {@code DiagnosticsAggregateTest} pins against the store's own group keys
+     * rather than against this reading; on the spellings that publish what they store the round trip
+     * is the identity, which is the same pin stated for the same reason. A group key never enters
+     * the filter path: a drill-down re-feeds stored values through {@link Dimension#matchesStored},
+     * so the aggregate and its drill-down stay exact whatever is declared here.
      */
     enum Spelling {
         /** No claim; the default, and every open-text or author-written column. */
@@ -205,13 +217,39 @@ final class DiagnosticFacets {
          * kind and attempt-kind columns hold. The fold is what lets the kebab-case spelling the
          * {@code diagnostics} entries render ({@code invalid-schema}) read back as a filter.
          */
-        UPPER_SNAKE;
+        UPPER_SNAKE,
+        /**
+         * A {@code file:} URI on the wire over a stored path. The one spelling whose render is not
+         * the identity: the store holds the path a reader spelled, while both protocols this server
+         * answers on name a document by URI, so the file axis encodes here and decodes here and the
+         * path never leaves the interior.
+         *
+         * <p>Groups still order by the stored path rather than by the rendered URI, an aggregate
+         * applying its limit in SQL where the render is not available. The two orders agree except
+         * on a path carrying a character the URI encodes, which reorders against its neighbours.
+         */
+        FILE_URI,
+        /**
+         * The directory half of the file axis, rendered as {@link SourceUri#ofDirectory} rather than
+         * as a converted path: whether a directory exists on disk decides a trailing slash and has
+         * no business on the wire.
+         */
+        DIRECTORY_URI;
 
         String normalise(String value) {
             return switch (this) {
                 case AS_STORED -> value;
                 case LOWER_CASE -> value.toLowerCase(Locale.ROOT);
                 case UPPER_SNAKE -> value.toUpperCase(Locale.ROOT).replace('-', '_');
+                case FILE_URI, DIRECTORY_URI -> SourceUri.sourceNameOf(value).orElse(value);
+            };
+        }
+
+        String render(String stored) {
+            return switch (this) {
+                case AS_STORED, LOWER_CASE, UPPER_SNAKE -> stored;
+                case FILE_URI -> SourceUri.of(stored);
+                case DIRECTORY_URI -> SourceUri.ofDirectory(stored);
             };
         }
     }
@@ -408,7 +446,10 @@ final class DiagnosticFacets {
             var groupConditions = new ArrayList<>(base);
             for (Dimension dimension : dims) {
                 Object value = row.get(dimension.column());
-                key.put(dimension.wireName(), value);
+                // The key is rendered and the drill-down filter is not: an agent pastes the key
+                // back and it normalises to this same stored value, while the filter under this
+                // group never leaves the stored spelling and so cannot lose a row to a round trip.
+                key.put(dimension.wireName(), dimension.render(value));
                 groupConditions.add(dimension.matchesStored(value));
             }
             int groupCount = row.get(count);
@@ -428,7 +469,9 @@ final class DiagnosticFacets {
                     .where(groupConditions).and(DIAGNOSTIC.FILE.isNotNull())
                     .orderBy(DIAGNOSTIC.FILE.asc())
                     .limit(examples)
-                    .fetch(DIAGNOSTIC.FILE));
+                    .fetch(DIAGNOSTIC.FILE).stream()
+                    .map(Dimension.FILE::render)
+                    .toList());
             }
             group.put("fileCount", dsl.fetchCount(dsl.selectDistinct(DIAGNOSTIC.FILE)
                 .from(DIAGNOSTIC)

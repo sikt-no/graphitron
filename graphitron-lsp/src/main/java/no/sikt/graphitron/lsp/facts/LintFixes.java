@@ -2,7 +2,6 @@ package no.sikt.graphitron.lsp.facts;
 
 import no.sikt.graphitron.lsp.state.StoreAccess;
 import no.sikt.graphitron.model.read.SourceStamp;
-import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.model.read.StoreHandle;
 
 import java.util.List;
@@ -15,11 +14,10 @@ import static no.sikt.graphitron.model.Tables.LINT_FINDING_FIX_EDIT;
  * The corrections the graph's linter computed for one document, as rows: each fix's label, the
  * finding's own line, and the ordered edits that apply it.
  *
- * <p>Two spellings of one file meet here, so a caller hands over the editor's URI and nothing else.
- * The store keys a source by the path capture read ({@code store_source}), while the diagnostics
- * families carry the canonical URI their read surface renders, and both are rendered here from the
- * one thing the request carried. A caller holding both spellings and picking one per query is how the
- * two drift apart.
+ * <p>A caller hands over the editor's URI and nothing else. The protocol names a document by URI and
+ * the store keys a source by the path capture read ({@code store_source}), which every diagnostics
+ * family carries too, so the decode happens once here and both statements below compare the one path
+ * it produced. A caller holding two spellings and picking one per query is how the two drift apart.
  *
  * <p><b>A fix is offered only for text it was computed against.</b> An edit names a span rather than
  * a declaration, so unlike a coordinate it cannot be re-anchored by resolving the declaration in the
@@ -87,7 +85,7 @@ public final class LintFixes {
             .on(LINT_FINDING_FIX_EDIT.GRAPH_NAME.eq(LINT_FINDING_FIX.GRAPH_NAME))
             .and(LINT_FINDING_FIX_EDIT.FINDING_ORDINAL.eq(LINT_FINDING_FIX.FINDING_ORDINAL))
             .where(LINT_FINDING_FIX.GRAPH_NAME.eq(store.graphName()))
-            .and(LINT_FINDING.FILE.eq(SourceUri.of(sourceName)))
+            .and(LINT_FINDING.FILE.eq(sourceName))
             .and(LINT_FINDING.SOURCE_LINE.isNotNull())
             .orderBy(LINT_FINDING_FIX.FINDING_ORDINAL, LINT_FINDING_FIX_EDIT.POSITION)
             .fetch();

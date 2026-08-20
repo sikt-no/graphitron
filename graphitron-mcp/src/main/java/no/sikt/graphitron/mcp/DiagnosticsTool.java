@@ -92,8 +92,9 @@ final class DiagnosticsTool {
      * Maps one view row onto the wire entry. The shape is the tool's shipped vocabulary
      * unchanged: {@code rejectionKind} renders the stored kind in its kebab-case display form and
      * appears only on rejection-bearing rows, {@code lintRule} only on lint rows, and the location
-     * (the view's canonical file URI plus its 1-based position mapped to the 0-based wire shape
-     * every goto-definition consumer reads) only when the row has one.
+     * (the stored file path rendered as a URI through the file dimension's own spelling, plus its
+     * 1-based position mapped to the 0-based wire shape every goto-definition consumer reads) only
+     * when the row has one.
      *
      * <p>The kind is transformed rather than parsed into an enum first. Parsing added validation the
      * store performs at write time, the {@code rejection_validation_error.kind} column carrying a
@@ -114,7 +115,7 @@ final class DiagnosticsTool {
         McpWire.putIfNotNull(entry, "lintRule", row.getLintRule());
         if (row.getFile() != null) {
             var location = new LinkedHashMap<String, Object>();
-            location.put("uri", row.getFile());
+            location.put("uri", DiagnosticFacets.Dimension.FILE.render(row.getFile()));
             location.put("line", row.getSourceLine() == null ? 0 : Math.max(row.getSourceLine() - 1, 0));
             location.put("column", row.getSourceColumn() == null ? 0 : Math.max(row.getSourceColumn() - 1, 0));
             entry.put("location", location);
