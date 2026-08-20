@@ -90,11 +90,6 @@ public final class ErrorMappingsClassGenerator {
         return ClassName.get(unit.packageName(), unit.simpleName());
     }
 
-    /** The nested {@code ErrorMappings.ByType} holder of the definition-keyed constants. */
-    public static ClassName byTypeHolder(String outputPackage) {
-        return mappingsClass(outputPackage).nestedClass(BY_TYPE_HOLDER);
-    }
-
     /**
      * The {@link #BY_TYPE_HOLDER} constant name for one {@code @error} type: SCREAMING_SNAKE of
      * the SDL type name. One spelling for the mint here and for the read at
