@@ -491,9 +491,25 @@ Four success criteria, and every deliverable is a step toward one of them:
 2. No emitter reads a classification leaf **and no emitter calls a planner**, with
    `PackageImportDirectionTest` covering the emitters' packages the way it already covers `render`.
    The second clause is not redundant: the tier rule in the opening sentence forbids both, the body
-   counts thirteen live sites where an emitter invokes a producer, and a criterion about leaf
+   counts fourteen live sites where an emitter invokes a producer, and a criterion about leaf
    *reads* alone would leave the inversion standing. The emitters' positive dial therefore excludes
    `plan`, which is also what makes the criterion checkable.
+
+   **One carve-out has to be decided before that dial can be written, because the item pulls both
+   ways on it.** Four emitters read `plan.GeneratedUnits` constants at five sites today
+   (`ErrorRouterClassGenerator`, `ConnectionFetcherClassGenerator` twice,
+   `ErrorTypeFetcherClassGenerator`, `ChannelCatchArmEmitter`), and those reads are the naming
+   regime this item endorses rather than an inversion: one minting locus, read instead of restated,
+   which is exactly why slice one moves the error-channel constant's formula *into* `GeneratedUnits`.
+   So a dial that excludes `plan` wholesale forbids the very reads the single-mint rule requires.
+   Two answers are available and the item does not need to pick one now, only to pick one before the
+   guard lands: admit `plan.GeneratedUnits` into the emitters' dial by name (a minting locus is not a
+   producer, and the dial is an enumerated allow-list, so naming it costs nothing structurally), or
+   move the minting locus below the plan/emitter boundary so both tiers read it as pure data. The
+   first keeps one home for the formula and weakens the criterion's one-line statement; the second
+   keeps the criterion clean and relocates a class this item's own retired-vocabulary list does not
+   otherwise touch. Whichever wins, the reads are counted here so the guard extension does not
+   discover them.
 3. Validation derives from the store: a view where SQL can state the check, a query-then-insert
    where it cannot, the error surface reading their rows either way, with the minted-name
    collision checks as the one stated exception (settled in the validator half).
@@ -537,8 +553,14 @@ and they sit at opposite ends of the work:
   of them. `StoreNodeTables.read` issues per-row follow-up statements (the N+1 the
   one-statement-per-grain section forbids), the readers take a bare `(DSLContext, graphName)`
   pair rather than `StoreHandle` (nothing under `graphitron/src/main` uses `StoreHandle` today;
-  only the LSP does), and no `MULTISET` store read exists anywhere in the repo yet, so the
-  composition this item mandates is unproven in this tree until slice one proves it. There is
+  only the LSP does), and it composes nothing with `MULTISET`. The composition itself is not
+  unproven in this tree, and slice one should not price it as if it were: eight files already read
+  the store that way, four in the language server (`DeclarationFacts` alone at ten uses,
+  `ClaimFacts`, `InlayFacts`, `DiagnosticFacts`) and four in the MCP (`SchemaQueries`,
+  `CatalogQueries`, `CodeQueries`, `DirectivesResource`). `DeclarationFacts` is the exemplar to
+  read for the read shape, being the parent-row-plus-child-relations composition at a keyed grain
+  that this item's producers want; what is new in slice one is only that a *generator* producer
+  reads that way. There is
   also a case fold duplicated across `StoreNodeTables.keyColumns` and
   `ResolvedKeyProjections.projectionOf`, the two-spellings-of-one-resolution defect the fact
   model names; the fix is a view yielding the catalog column's exact spelling at the
@@ -601,15 +623,15 @@ shared read. Both statements cannot do work: if the reference survives conversio
 nothing. It does survive, so it constrains nothing, and "in dependency order" was a phantom. Any
 producer may convert whenever its facts are ready.
 
-**The production-path tier inversion is two call sites.** An emitter invokes a producer at thirteen
-sites across six files, which sounds like a thicket and is not one. Eleven are convenience overloads
-whose own javadoc says so, five of them in `generators.schema` ("derives the schema-shape rows
-through the producer so the rendered body set is the flagged-row set production uses") and six in
-`TypeFetcherGenerator`'s test-facing `generate` and `generateTypeSpec` entries. They retire by
-pointing their tests at the plan, which is mechanical and orders nothing. The genuine production
-inversion is one line-pair in `TypeFetcherGenerator`'s fetchers fold:
-`LauncherCommands.produceWithoutSchema` and `RoutineWriteCommands.produceWithoutSchema`, the
-nesting-reached fallback.
+**Most of the production-path tier inversion is two call sites, and the counting rule matters.** An
+emitter calls a producer's `produce*` entry at thirteen sites across six files, which sounds like a
+thicket and is not one. Eleven are convenience overloads whose own javadoc says so, five of them in
+`generators.schema` ("derives the schema-shape rows through the producer so the rendered body set is
+the flagged-row set production uses") and six in `TypeFetcherGenerator`'s test-facing `generate` and
+`generateTypeSpec` entries. They retire by pointing their tests at the plan, which is mechanical and
+orders nothing. The `produce*` production inversion is one line-pair in `TypeFetcherGenerator`'s
+fetchers fold: `LauncherCommands.produceWithoutSchema` and `RoutineWriteCommands.produceWithoutSchema`,
+the nesting-reached fallback.
 
 **And that pair dissolves rather than blocking.** `produceWithoutSchema` exists for exactly one
 reason, stated in its own javadoc: the fetcher generator reaches a nesting-reached type holding
@@ -618,6 +640,21 @@ everywhere the walk is not. So the converted plan produces the relation once and
 `rowFor(type, field)`, an API both relations already expose and which `renderRoutineWrite` already
 uses for the row it renders. Converting a producer *deletes* its inversion site; the coupling that
 looked like the hard ordering constraint is a symptom of the walk, and it goes when the walk does.
+
+**One production-path inversion falls outside that rule and does not dissolve with it.**
+`TypeFetcherGenerator.buildTableInterfaceReprojection` calls `LauncherCommands.discriminatedBranches`
+mid-emission to mint a `LaunchSource.DiscriminatedTable` payload, and hands it to
+`render.DiscriminatedTableFragments`; the fold is reached from `TypeFetcherGenerator`'s
+discriminated-interface assembly and again from `MultiTablePolymorphicEmitter`, so it is production
+emission, not a test overload. Being neither a `produce*` call nor a schema-taking one, it is
+invisible to the census above and to all four ratchet pins, and neither retirement argument reaches
+it: there is no nesting-reached hole to close and no test to repoint. What retires it is the branch
+list arriving *on a command row* instead of being derived at the emitter, which needs the
+discriminated-table reprojection to be part of the fetcher family's command relation. That is inside
+this item's declared scope but is not yet named as a deliverable of any increment, and the family
+that owns it should name it. It is also the item's own motivating anecdote in miniature: a
+`LaunchSource` arm assembled where the emitter stands, because that is reachable and nothing forbids
+it.
 
 What is left is one real constraint, and it is per-producer rather than a chain: **a producer
 converts when the facts it reads are relations.** That is a question asked once per producer, answered
@@ -642,9 +679,11 @@ deliverable) applies three times over. In order:
 
 * **Store, first deliverable: promote the chain walk.** `RoutineChain` needs the ordered resolved
   hop sequence with each hop's join shape, and today only the *terminus* is a relation: the walk
-  lives in recursive CTEs inside `intent_field_chain_terminus`, whose own comment already asks
-  for this promotion ("the chain arm that view is missing should read this relation rather than
-  grow a second copy of the walk"). Land a hop relation keyed `(graph, type, field, seq)`, one
+  lives in recursive CTEs inside `intent_field_chain_terminus`. That view's own comment states
+  the governing rule while asking for a different promotion (it asks the column-scope view's
+  missing chain arm to "read this relation rather than grow a second copy of the walk"), so the
+  rule is the store's and the promotion below is this slice's. Land a hop relation keyed
+  `(graph, type, field, seq)`, one
   row asserting that the chain's nth node is this table, reached from the previous node this
   way, the join basis carried in the closed vocabulary `intent_field_reference_step_hop` already
   uses (`via`, `constraint_name`, `fk_on_from`) so the command's `On` arm is a decode rather
@@ -662,7 +701,12 @@ deliverable) applies three times over. In order:
   the store a second mint of a naming formula, the exact drift the minted-name exception under
   the validator half exists to prevent. The formula's one home is `GeneratedUnits`, and the mint
   currently sitting in the walk (`FieldBuilder`'s screaming-snake fold) moves there in this
-  slice rather than getting copied.
+  slice rather than getting copied. The formula is spelled in three places, not one, so the move
+  has to collect all three: `FieldBuilder`'s fold mints the name,
+  `MappingsConstantNameDedup` applies the hash suffix that disambiguates a collision, and
+  `ErrorMappingsClassGenerator` re-derives the grouping and throws when two channels share a
+  constant without sharing a mapping list. One home means those arrive together; a slice that
+  moves only the fold leaves the suffix pass as a second mint.
 * **Store, third deliverable: the seat verdict, as a reduction and not a membership view.** No
   relation states which seat a mutation field's `@routine` occupies, and none can be derived
   from the claim stratum, which masks mutation roots by design. The wrong fix is a
@@ -911,7 +955,8 @@ read against:
   its accept line was walk-derived: the view inner-joined two membership relations whose rows the
   capture-and-detect pass wrote off the walked model, so deleting the walk would have left them
   unwritable and the view's population would have silently emptied rather than failed. R743
-  (`roadmap/sdl-fact-gatherer-staged-pipeline.md`) removed the coupling instead of re-pointing it:
+  (`sdl-fact-gatherer-staged-pipeline`, Done, see `roadmap/changelog.md`; its body was deleted at
+  the Done transition) removed the coupling instead of re-pointing it:
   the detection is now total over the authored claims, each consumer applies its own population join
   (the build-error surface joins `intent_type_domain`, the editor's diagnostic arm reads the view
   ungated), and both membership relations are gone. Nothing on this item's terminal path stands on
@@ -1410,3 +1455,33 @@ families: per relation, reduction versus new derivation, and admit-arm versus re
 Slice one also gained its missing validator tier, as the verdict relation's refusal arms. Nothing
 in the architecture, the strategy, or the four success criteria changed, and the Spec review this
 body owes an independent reader is still owed.
+
+Spec review 2026-08-20 by an independent session, against trunk `479515c`. Every figure in the
+body was re-derived rather than read: all four ratchet pins, both censuses reproduced under
+`CommandSeamRatchetTest`'s own regex (the emitter side at 83/30/12/5/1 across five files summing
+to 131 = 69 + 62, the plan side at 3/29/17/48/29/1/11 summing to 138), the package line counts,
+the leaf-import census file for file, the 74 `validate*` methods, the 37 `IMPLEMENTED_LEAVES`
+entries, `TenantDslEmitter`'s 39 call sites across five emitters, and every quoted DDL comment
+verbatim. They hold. So does slice one's read of the tree: `renderRoutineWrite` really does reduce
+to `rowFor` plus one `TenantDslEmitter.resolve`, `ChainReread` really carries exactly the two
+compact-constructor throws that the hop relation would retire and the renderer really reads it
+back through three `(JoinStep.Hop)` casts, `intent_name_matched_key_pair` really has no
+`graph_name`, `intent_argmapping_projection_defect` really is not an arm of `diagnostic`, and the
+case-insensitive column fold really is duplicated verbatim between `StoreNodeTables.keyColumns`
+and `ResolvedKeyProjections.projectionOf`.
+
+Two claims did not survive the check, and both are recorded above rather than in a review note
+because they change what an increment has to do. The emitter-to-planner census counts `produce*`
+calls, which is a narrower rule than success criterion 2's "no emitter calls a planner" prices:
+`LauncherCommands.discriminatedBranches` is a fourteenth site, on the production path through two
+callers, and neither the nesting-reached argument nor the repoint-the-tests argument retires it, so
+the family that owns it has to name the command row that does. And the emitters' positive dial
+cannot simply exclude `plan`, because four emitters read `plan.GeneratedUnits` constants at five
+sites and slice one's own third deliverable moves a naming formula *into* that class; the fork is
+stated under criterion 2 for the guard extension to settle. Three smaller corrections: the claim
+that no `MULTISET` store read exists in the tree was false in a way that mis-priced slice one
+(eight files compose that way already, and `DeclarationFacts` is the exemplar), the
+`mappingsConstantName` mint is spelled in three places rather than one, and R743's item path was
+dangling after its Done-gate body deletion. Nothing in the architecture, the strategy, the four
+success criteria, or slice one's shape changed. This pass leaves the item in Spec and its author is
+now this reviewer, so the next Spec gate needs a third session.
