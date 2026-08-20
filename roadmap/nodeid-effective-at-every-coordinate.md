@@ -20,7 +20,10 @@ the carrier."
 
 So there are two states, not three. Either a slot carries the instruction, explicitly or by one of
 the rules below, and the generator owes an encode or a decode; or it does not, and there is nothing
-for the generator to do. Nothing else needs saying, and this item introduces no vocabulary for it:
+for the generator to do. The contract that follows is the one this item enforces everywhere: **a slot
+carrying the instruction never delivers the wire format to consumer code, and never takes it from
+there.** A service does not know that node ids exist, and neither does the bean that feeds it or the
+exception an `@error` type reads. Nothing else needs saying, and this item introduces no vocabulary for it:
 encode and decode are the words the manual uses and the words the code already carries in
 `CallSiteCompaction.NodeIdEncodeKeys`, `CallSiteExtraction.NodeIdDecodeKeys` and the generated
 `encode<TypeName>` / `decode<TypeName>` helpers.
@@ -97,11 +100,13 @@ bug.
 ### The resolution is two relations, one per direction
 
 `intent_node_id_decode` and `intent_node_id_encode` state how one instruction is carried out. An
-instruction with no row in its own direction's relation was dropped, which is the whole of the
-detection; no verdict vocabulary is needed to say it. That absence-means-it-locally reading is the
-model's established idiom, argued in `intent_argmapping_segment_binding`'s own comment: a coordinate
-that has a segment and no row there "means exactly one thing, it means it locally, and no verdict
-vocabulary is needed to say it".
+instruction with no row in its own direction's relation was not carried out, and the defect view
+below says which precondition stopped it. Absence here is therefore never the message: it is the
+membership condition the defect view is keyed on, which is what keeps the two from restating one
+fact. That split follows `intent_argmapping_key_column_candidate`'s own argument for being separated
+from the projection beside it, that stating an unknown column as the absence of a candidate row and a
+type disagreement as a candidate row with no projected row makes the two arms "disjoint by
+construction" so neither has to re-test the other's predicate.
 
 **Two relations rather than one with a direction column**, because the two directions genuinely
 answer different questions and sharing a row shape would make half the columns nullable by kind.
@@ -142,8 +147,10 @@ destination that receives the decoded tuple. Four destinations, a closed vocabul
   columns on its own table inside a correlated `EXISTS`.
 * `JOOQ_RECORD`. A generated `*Record`: a `@service` method parameter, or a record-typed member of a
   consumer bean. A record holds a tuple, which is why these two work today.
-* `NAMED_KEY_COLUMN`. The author named one key column as a trailing `argMapping` segment, so one
-  value reaches one slot and the SDL says which. R668's capability.
+* `SINGLE_KEY_COLUMN`. The destination holds one value, so one key column's value goes in it. Reached
+  two ways that share a shape: the author names the column as a trailing `argMapping` segment
+  (R668's capability), or the node type has exactly one key column and arity names it. Requires the
+  column's Java type to match the slot's own; see "Sites 1 and 2" below.
 
 **Two ordinal-keyed children on the decode relation**, following the parent-plus-steps shape
 `intent_input_occurrence_path` / `_step` already uses:
@@ -296,16 +303,25 @@ the built-in `path` / `message` arm) and the wire direction, `buildErrorTypeFiel
 fold over that one list, and the classified `RecordReadField` and the type-level override list stop
 being two spellings of one per-field read.
 
-**Arity is a fact in the relation, not a validator mirror.** `encode<TypeName>` takes N key values
-positionally and a read yields one Java value. The arity is
-`COUNT(*)` over `intent_resolved_node_key_column` for the node type, and the `READ_VALUE`
-destination's arity is 1, so a composite key at a read coordinate is a disagreement the relation can
-state. It is refused there, with a message naming the type, the coordinate and the count, and one
-place then says everything about that coordinate. The reporter's own case (`opptaksrundeId`) is
-single-key, so this refuses only what it can name. Widening to composite wants a spelling that does
-not exist yet, either a read yielding a jOOQ `Record` of the node's key shape unpacked positionally,
-or a way for the SDL to name N reads, which `@field(name:)` cannot express; that is a later item and
-this one states the refusal rather than inventing the spelling.
+**The encode side takes the same two preconditions, for the same reason.** `encode<TypeName>` takes
+N key values positionally and a read yields one Java value, so a `READ_VALUE` source carries the
+encode out exactly when the node type's key is one column and that column's Java type matches what
+the read yields. Both are facts in the relation rather than a validator mirroring a classifier
+invariant: the arity is `COUNT(*)` over `intent_resolved_node_key_column`, and the read's own type
+comes off the accessor or column the `ValueLocator` names. The refusals name which precondition
+failed, the type and the count on one, both types on the other, and one place then says everything
+about that coordinate.
+
+This is the same rule as sites 1 and 2 read in the other direction, and stating it once in both
+places is deliberate: a consumer neither receives nor supplies the wire format. A read yielding a
+`String` where the key column binds as `Long` is refused rather than encoded off a coerced value,
+because the value the consumer supplied is then not the key.
+
+The reporter's own case (`opptaksrundeId`) is single-key, so this refuses only what it can name.
+Widening to composite wants a spelling that does not exist yet, either a read yielding a jOOQ
+`Record` of the node's key shape unpacked positionally, or a way for the SDL to name N reads, which
+`@field(name:)` cannot express; that is a later item and this one states the refusal rather than
+inventing the spelling.
 
 ### Site 4a: the reverse hop needs a message and a page
 
@@ -335,49 +351,102 @@ Two changes, and one of them has a shape the current signature does not admit.
   mechanism. R691 is discarded at this item's Done gate and its file stays as the redirect until
   then.
 
-### Sites 1 and 2: one Java slot, N decoded values
+### Sites 1 and 2: the consumer never sees the wire format
 
 A plain argument on a `@service` field, and a member of a bean-backed `@service` input, are one
-problem wearing two coordinates. A node id decodes into the node type's key columns, which is a
-tuple; a scalar `@service` parameter and a scalar bean member each hold one value.
+problem wearing two coordinates, and the rule at both follows from the invariant this whole item
+exists to enforce: **a slot carrying the instruction never delivers base64 to consumer code.** A
+service does not know that node ids exist, and neither does the bean that feeds it. The author wrote
+`@nodeId`, so the value the consumer receives is decoded, and there is no arm in which the generator
+hands a `@service` method the wire string and calls it done.
+
+That rules out both of the answers a plan might reach for. Passing the base64 through is the bug.
+Refusing the coordinate outright is also wrong, because the instruction is carriable whenever the
+node type has one key column: the decode yields exactly one value, nothing about which value is
+ambiguous, and a single-valued slot takes it. So the decode resolves at these coordinates under two
+preconditions, and refuses naming which one failed:
+
+* **The node type's key is one column.** `COUNT(*)` over `intent_resolved_node_key_column` for the
+  node type. A composite key has N values and the slot has one place, so the refusal names the type
+  and the count.
+* **That column's type matches the slot's own type.** The column's Java type as jOOQ binds it,
+  against the `@service` parameter's or the bean member's declared type. A `Long` key column and a
+  `String` parameter is a refusal naming both types, not a pass-through, because a pass-through is
+  exactly the bug: the only value a `String` parameter could receive there is the base64.
+
+The second precondition is what makes the reporter's own code fail rather than quietly keep working,
+and that is the intended outcome. Their method takes `String plasstildelingId` and today receives
+base64; afterwards the build tells them the key column binds as `Long` and asks for a parameter of
+the column's own type. The remedy is one line of Java in their own signature and no SDL change at
+all.
 
 The evidence is the classified carrier rather than a reading of the source.
 `ServiceCatalog.argExtraction` is the whole story at site 1: it takes the parameter's Java type and the
-SDL leaf type and no directive container at all, checks enum parity and wire coercion, and resolves
-every scalar to `CallSiteExtraction.Direct`. It cannot see `@nodeId` even in principle. At site 2 an
-`ID` field carrying `@nodeId(typeName:)` on an input type backing a consumer bean generates
-`java.lang.String title = (java.lang.String) raw.get("title");` inside the `create<Bean>` helper. That
-is the shape the reporter reached for as the workaround for site 1 and found equally inert.
+The evidence that neither happens today is the classified carrier rather than a reading of the
+source. `ServiceCatalog.argExtraction` is the whole story at site 1: it takes the parameter's Java
+type and the SDL leaf type and no directive container at all, checks enum parity and wire coercion,
+and resolves every scalar to `CallSiteExtraction.Direct`. It cannot see `@nodeId` even in principle.
+At site 2 an `ID` field carrying `@nodeId(typeName:)` on an input type backing a consumer bean
+generates `java.lang.String title = (java.lang.String) raw.get("title");` inside the `create<Bean>`
+helper. That is the shape the reporter reached for as the workaround for site 1 and found equally
+inert.
 
-The two shapes that do carry the decode out are exactly the two whose destination holds a tuple,
-which is the `JOOQ_RECORD` destination above: a `@service` parameter typed as a generated `*Record`, and a
-record-typed member of a consumer bean. `InputBeanResolver` shows the asymmetry directly. Its
-`buildJooqRecordLeaf` reads `@nodeId` on a record-typed bean member and rejects a missing `typeName:`
-there; `collectJooqBindings` and `buildRecordKeyDecode` do the same on the record-param axis; and
-neither has an arm for the scalar member, because there is nowhere to put the values. The silence is
-not an oversight about the directive. It is an unanswered question about the destination.
+What exists today is the tuple-shaped destination, `JOOQ_RECORD`: a `@service` parameter typed as a
+generated `*Record`, and a record-typed member of a consumer bean. `InputBeanResolver` shows the
+asymmetry directly. Its `buildJooqRecordLeaf` reads `@nodeId` on a record-typed bean member and
+rejects a missing `typeName:` there; `collectJooqBindings` and `buildRecordKeyDecode` do the same on
+the record-param axis; and neither has an arm for the single-valued member. That arm is what this
+item adds, under the two preconditions above.
 
-**One decision is open, and it is the only one in this plan.** Where the named node type has exactly
-one key column, nothing about which value goes in the slot is ambiguous: the decode yields one value
-and the parameter takes it. So the decode at these two coordinates could resolve rather than be refused, with the
-`NAMED_KEY_COLUMN` destination reached by inference instead of by an authored trailing segment, and
-only a composite key left to refuse with a message naming the arity. That would serve the reporter's
-case without them respelling anything.
+**The authored and inferred forms are one destination, not two.** R668's capability is the author
+naming a key column as a trailing `argMapping` segment; the rule above reaches the same column by
+arity when no segment names it. Both put one key column's value in one slot, so both are
+`SINGLE_KEY_COLUMN` with the same column in the key-column child and the same emitted decode.
+Whether a segment named it is provenance rather than shape, and it is already answerable by joining
+`intent_argmapping_pair`, so this relation does not restate it.
 
-What it costs is a verdict that shipped. `ArgmappingProjectionDefects`' `BARE_NODE_ID` rejects
-precisely this shape at `argMapping` sites, with the text "binds a `@nodeId` and names no key column,
-so the encoded node id would reach the database verbatim", and its remedy is to name the column.
-Auto-projection makes that verdict wrong for single-key node types and shrinks its population to
-composites. The case for it is that refusing a case the generator can answer unambiguously is what
-"complete" is meant to rule out, and that a node type later gaining a second key column turns into a
-build error telling the author to name one rather than into wrong generated code. The case against is
-that the SDL should say what it binds, and that one spelling documents more cleanly than "explicit,
-unless the arity happens to be one".
+That has a consequence for a verdict that shipped a week ago, and stage 2 owes the edit.
+`ArgmappingProjectionDefects`' `BARE_NODE_ID` currently rejects an `argMapping` pair that binds a
+`@nodeId` leaf and names no key column, saying the encoded id "would reach the database verbatim".
+Under the arity rule that is no longer true for a single-key node type, where the inferred projection
+carries the decode out. Its population shrinks to composite keys, and its text moves from "names no
+key column" to the arity fact. The type-disagreement half needs no new wording at all: R668's
+`KEY_COLUMN_TYPE_MISMATCH` already says "projects '<column>' of '<type>', which jOOQ binds as X, but
+the parameter it binds to takes Y; bind a parameter of the column's own type, or project a key column
+the parameter can take", and the second clause of that remedy simply has nothing to offer at arity 1.
 
-Until that is settled this section is written to the refusing answer, and stage 5's arms are
-`Rejection.structural` accordingly. If auto-projection is chosen, these two coordinates move out of
-stage 5 into stage 2 as an inference arm on the decode relation, stage 5 keeps only the
-composite-arity refusal at them, and `BARE_NODE_ID`'s own text needs the same edit.
+### The detection is a verdict view, and it partitions the population
+
+Once the two preconditions above are facts, the refusals stop being absences and become statements.
+A composite key at a single-valued slot and a type disagreement are both things the store can say,
+with the operands to say them. So the detection is not a bare anti-join: it is a view over the
+instruction population whose rows are the instructions with no resolution, each carrying which
+precondition failed, in a closed vocabulary. That is `intent_argmapping_projection_defect`'s shape
+one directive over, and following it is what lets the message text converge on
+`ArgmappingProjectionDefects.rejectionOf` rather than be renegotiated.
+
+The verdicts the census yields:
+
+* `KEY_ARITY_EXCEEDS_SLOT`. The node type's key is several columns and the destination or source
+  holds one value. Names the type, the count, and the coordinate.
+* `KEY_COLUMN_TYPE_DISAGREEMENT`. One key column, and its Java type is not the slot's. Names both
+  types and the column, on `KEY_COLUMN_TYPE_MISMATCH`'s existing wording.
+
+**The two views partition the instruction population, and that is the invariant worth stating.**
+Every instruction either resolves, with a row in its direction's relation, or is refused, with a row
+here. An instruction in neither is not an author error at all: it is a coordinate the model cannot
+account for, which means the census missed a shape. Stating the partition is how a gap announces
+itself as a defect in this item's own work rather than as a silent pass at a consumer, and it is why
+the detection reads the population rather than the captured `@nodeId` rows.
+
+The projector is small and its home exists: a further component on `StoreDetections` beside the two
+detection families already there, `AuthoredClaimConflicts` and `ArgmappingProjectionDefects`, decoded
+into located `ValidationError`s the same way. One rule, every coordinate, and the same fact available
+to the LSP and the MCP context rather than living inside two walk classes.
+
+Both verdicts are `Rejection.structural`. Neither is a deferral: a composite key at a single-valued
+slot wants a spelling nobody has minted, and a type disagreement is the author's to fix in one line.
+There is no arm in this item that fails while promising an emitter later.
 
 ## Stages
 
@@ -393,10 +462,13 @@ replacement.
 2. **The instruction population and the two resolution relations.** The population first, all three
    forms of the instruction including the name-carried one that has no captured row; then both
    relations, the use-site grain over `intent_input_occurrence_path`, the four decode destinations and
-   two encode sources, and the decode relation's key-column child with its lift plus its hop child. `NodeIdLeafResolver` becomes a reader of the rows rather than the
-   resolver of the facts. Exit: every `@nodeId` shape that generates today has a row naming the
-   destination or source it actually uses, and the tree's existing `@nodeId` behaviour suite stays green
-   without modification.
+   two encode sources, and the decode relation's key-column child with its lift plus its hop child.
+   The `SINGLE_KEY_COLUMN` destination gains its inferred arm, which is what makes sites 1 and 2
+   resolve rather than refuse, and `BARE_NODE_ID`'s text is edited down to the arity fact in the same
+   stage. `NodeIdLeafResolver` becomes a reader of the rows rather than the resolver of the facts. Exit: every `@nodeId` shape that generates today has a row naming the
+   destination or source it actually uses; a `@service` method whose parameter type matches a
+   single-column node key receives the decoded value and never the base64; and the tree's existing
+   `@nodeId` behaviour suite stays green without modification.
 3. **The junction chain.** With the relation in place this is the absence of a rejection rather than
    an addition: `validateLift` stops rejecting and its absent lift becomes absent local columns, so
    the chain binds remotely and reaches the hop-general `EXISTS`. Exit: a junction chain returns each
@@ -404,21 +476,21 @@ replacement.
    still rejects with its own message; each of the four write rails has a stated message.
 4. **The read-family encode.** The `CallSiteCompaction` slot on `RecordReadField`, the classification
    arm at each construction site, the `ErrorType` per-field unification with its registration swap,
-   and the composite-arity refusal stated in the relation. Exit: an `@error` field carrying
+   and both preconditions stated in the relation. Exit: an `@error` field carrying
    `@nodeId(typeName:)` returns an encoded node id and the reporter's hand-written encoder call sites
    can go; the same holds at the accessor, by-name and typed-column read arms; a composite-key node
-   type at a read coordinate is refused with a message naming the count.
-5. **The dropped-instruction detection.** The anti-join of the instruction population against the
-   two resolution relations, read by a projector into located `ValidationError`s as a further component on
-   `StoreDetections` beside the two detection families already there (`AuthoredClaimConflicts` and
-   `ArgmappingProjectionDefects`; `ResolvedKeyProjections` is the record's third component and not a
-   detection family). Every arm is `Rejection.structural`: by this stage the coordinates that could
-   resolve do, so the ones that remain are destinations that hold one value where a tuple is needed, and
-   no emitter reconciles that. Exit: the reported schemas fail the build with a message naming the
-   slot, the use site, and a spelling that works; and the same fact is available to the LSP and the
-   MCP context rather than living inside two walk classes. The message vocabulary converges with
-   `ArgmappingProjectionDefects.rejectionOf`, which is shipped text to read rather than a wording to
-   negotiate.
+   type at a read coordinate is refused with a message naming the count, and a read whose type
+   disagrees with the key column's is refused naming both.
+5. **The defect view and its projector.** The two verdicts over the instruction population, read by a
+   projector into located `ValidationError`s as a further component on `StoreDetections` beside the two
+   detection families already there (`AuthoredClaimConflicts` and `ArgmappingProjectionDefects`;
+   `ResolvedKeyProjections` is the record's third component and not a detection family). Both arms are
+   `Rejection.structural`. Exit: a composite key at a single-valued slot and a type disagreement each
+   fail the build naming their own operands; the resolution relations and this view partition the
+   instruction population, so no instruction falls in neither; and the same fact is available to the
+   LSP and the MCP context rather than living inside two walk classes. The message vocabulary
+   converges with `ArgmappingProjectionDefects.rejectionOf`, which is shipped text to read rather than
+   a wording to negotiate.
 6. **Site 4a, the message and the page.** The auto-discovery rejection separates its two causes; the
    manual page's single-hop claim is corrected; the reverse filter gets the execution-tier row-count
    pin it has never had. Independent of every other stage and the smallest thing in the item.
@@ -440,11 +512,15 @@ That is what makes a total census safe to attempt.
 * **Pipeline tier**, carrying the primary behavioural weight. The junction chain lowering to a remote
   binding with a two-hop path, on both the argument and the input-field surfaces. Each of the four
   write rails refusing a remote-bound junction carrier, asserting the text that rail actually
-  produces, as cases in `TranslatedFkTargetRailGatesPipelineTest`. The detection firing at the
-  destinations that hold one value and staying silent everywhere the instruction resolves. The read-family
-  encode at each of the four read arms, and the composite-arity refusal. The boundary against R668
-  pinned as a pair: two `@service` arguments carrying `@nodeId`, one with an authored `argMapping` and
-  one without, each drawing exactly one message and from a different family.
+  produces, as cases in `TranslatedFkTargetRailGatesPipelineTest`. The read-family encode at each of
+  the four read arms. And the behaviour the invariant is about, stated as a matrix over the two
+  preconditions at a single-valued slot, on both a `@service` parameter and a bean member: a
+  single-column key whose type matches, which receives the decoded value and never the base64; a
+  composite key, which draws the arity refusal; and a matching-arity type disagreement, which draws
+  the type refusal naming both types. The authored-`argMapping` and inferred spellings of the
+  matching case draw the *same* resolution rather than different ones, which is the claim that the
+  two forms are one destination. The partition against R668 is then over arity rather than over
+  spelling, and is pinned as such.
 * **Unit tier.** `NodeIdLeafResolverTest` gains the junction-chain case, and
   `multiHopLiftTranslationRejected` is *rewritten* from a rejection assertion to a remote-binding
   assertion rather than deleted, so the fixture that proved the old gate proves the new routing. A
@@ -471,26 +547,30 @@ code-string matching on generated bodies is banned at every tier.
   behaviour suite is the accept set, so a missed resolution is a red test during stage 2 and not a
   shipped false rejection. What the guard cannot cover is a shape no fixture exercises, which
   is why stage 2's exit condition is stated over the suite rather than over a count.
-* **Stage 5 breaks schemas that build today.** At the coordinates that remain, the current behaviour
-  is a silent pass: the build succeeds and the raw string flows through. Afterwards those schemas
-  fail. This project has no warning severity to soften it, a `ValidationError` carrying a `Rejection`
-  and nothing weaker, so "tell the author" and "fail the build" are one act here. That is the intended
-  outcome and the reporter's first ask, and it is a breaking change for existing consumers, so the
-  changelog entry has to say so in those words.
+* **A consumer that decodes by hand today stops compiling, and that is the point.** The invariant is
+  that the consumer never sees the wire format, so a `@service` method or an exception constructor
+  typed `String` against a `Long` key column no longer receives base64: it draws a type-disagreement
+  refusal, and the remedy is one line in the consumer's own signature. That is a breaking change for
+  every existing consumer who wrote the hand decode the report is about, which is most of them, and
+  the changelog entry has to say so in those words rather than describing it as a fix. This project
+  has no warning severity to soften it, a `ValidationError` carrying a `Rejection` and nothing
+  weaker, so "tell the author" and "fail the build" are one act. The mitigation available is the
+  message: it names the column, the type it binds as, and the type the slot declares, so the fix is
+  mechanical wherever it fires.
 * **The site-4b relaxation widens what classifies.** Schemas that fail the build today start
   generating, which is the point, but a schema whose author wrote a junction path expecting the
   rejection now gets an `EXISTS` over a fan-out. R723 is the item that says "this path multiplies" out
   loud, and its rule does not reach here and does not need to; see "Relationship to other items".
 * **The write-side diagnostic gets worse before the audit fixes it.** Handled by making the per-rail
   message an exit condition of stage 3 rather than a follow-up.
-* **Two rejections, one condition, two wordings.** Stage 5 and R668's shipped projection defects
-  partition rather than overlap: R668's fires on an authored `argMapping` pair binding a `@nodeId` leaf
-  with no key-column segment, this item's on a coordinate whose destination holds one value. The risk
-  is that an author moving between spellings meets two different messages for one condition, which is
-  the same complaint R668's own plan raises about the two existing "cannot infer a node type here"
-  texts. One vocabulary, minted once, is the mitigation, and it now exists: R668 shipped six verdicts
-  and their prose in `ArgmappingProjectionDefects.rejectionOf`, so this stage converges on read text
-  and the partition has a test rather than only an argument.
+* **Editing a verdict that shipped a week ago.** The arity rule makes `BARE_NODE_ID` wrong for
+  single-key node types, so stage 2 edits its text down to the arity fact rather than leaving two
+  answers to one question standing. The risk is the ordinary one of changing shipped prose while its
+  own item is still In Review, and the mitigation is that the two items are the only producers on
+  either side of the partition: R668's remaining population is composite keys at authored
+  `argMapping` sites, this item's is composite keys and type disagreements everywhere, and the
+  boundary has a test in the Tests section rather than only an argument here. The wording itself
+  needs no negotiation, `ArgmappingProjectionDefects.rejectionOf` being shipped text to read.
 * **A carrier named for the reporter's subject would inherit the question's shape.** The hazard of an
   item scoped by subject is producing a model type to match: a `NodeIdBinding` or `NodeIdEffective`
   spanning coordinates would take its grain from "whatever the sites needed". The check is the one the
@@ -504,10 +584,13 @@ code-string matching on generated bodies is banned at every tier.
 
 ## User documentation
 
-* `docs/manual/reference/directives/nodeId.adoc` gains the coordinate table this item is really about:
-  where `@nodeId` encodes and decodes, what it resolves against, and what happens where it cannot.
-  The destination
-  vocabulary is the table's own spine.
+* `docs/manual/reference/directives/nodeId.adoc` gains the coordinate table this item is really
+  about: where `@nodeId` encodes and decodes, what it resolves against, and what happens where it
+  cannot. The destination and source vocabularies are the table's own spine, and the page states the
+  invariant the table serves, that a consumer neither receives nor supplies the wire format. Its
+  Constraints list gains the two preconditions at a single-valued slot, and its `argMapping` bullet
+  loses the claim that binding a `@nodeId` leaf without opening it "sends the encoded id to the
+  database verbatim", which the arity rule makes false for a single-key node type.
 * `docs/manual/how-to/multi-hop-nodeid-filter.adoc` gains the junction shape as a worked example,
   loses its `=== identity-carrying FKs` rejection section, and loses the false single-hop claim.
 * `docs/manual/reference/directives/error.adoc` gains the `@nodeId` extra-field case.
@@ -576,7 +659,7 @@ stage 3 expresses it there.
   because the earlier draft's reachability argument leaned on relations R743 is retiring.
 * **R668** (`nodeid-key-projection-on-routine-params`, In Review) is the nearest neighbour. It makes a
   node type's key columns nameable as a trailing `argMapping` path segment, which is the
-  `NAMED_KEY_COLUMN` destination above. Most of it has landed: the resolution views, the rejection
+  `SINGLE_KEY_COLUMN` destination above. Most of it has landed: the resolution views, the rejection
   family (`intent_argmapping_projection_defect` plus `ArgmappingProjectionDefects`, six verdicts across
   three `Rejection` channels), the carrier move, and the `@routine` emitter with its execution round
   trip. Outstanding is the `@service` emitter, a named empty slot rather than an open question:
