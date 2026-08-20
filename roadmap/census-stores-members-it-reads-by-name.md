@@ -135,6 +135,13 @@ change, not projected from here.
 Disk is the other surface, and it is the one a consumer notices: the store is **858 MB** for those
 417,225 rows, and the user cache held 6.5 GB across nine DDL-hash segments.
 
+A per-goal timing of the module those five executions live in puts the same cost against a wall
+clock a contributor feels. `graphitron-sakila-example`'s five `graphitron:generate` executions take
+15.4s, 4.8s, 4.3s, 4.4s and 4.2s: the first pays the JVM warm-up and the store's first boot, and each
+of the four warm ones costs about 4.4s. Against 1.6s of `jvm_` deletes and merges per execution, the
+census write is roughly a third of a warm generator execution in a consumer's build. R763 carries the
+per-goal breakdown and the reason those 33.1 seconds sit on the build's critical path.
+
 ## Where this contradicts R685, which matters because R685 is in Spec
 
 R685's "Rejected: extract less per dependency class" section rules out reading less per class. Its

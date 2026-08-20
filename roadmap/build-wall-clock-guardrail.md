@@ -252,19 +252,27 @@ A clean per-module A/B, `mvn test -pl :<module>` with the arms alternated and re
 | Module | With parallelism | Without | Verdict |
 |---|---|---|---|
 | `graphitron-model` | 45.0, 45.3, 45.8s | 66.0, 66.7, 66.7s | **−21s, landed** |
-| `graphitron-lsp` | 30.6s | 30.8s | nothing |
-| `graphitron-mcp` | 24.5s | 24.9s | nothing |
+| `graphitron-lsp` | 30.6s | 30.8s | nothing, and wrong; see below |
+| `graphitron-mcp` | 24.5s | 24.9s | nothing, and wrong; see below |
 
-So `graphitron-model` is worth more alone than the three were credited with together, and the other
-two are worth nothing. That fits what the module is: its test cost is almost entirely per-case store
-boots, 152 of them, each an independent in-memory database, which is the shape concurrency helps.
-`graphitron-lsp`'s summed class time inflating from 36.2s to 259.1s while its wall clock does not move
-is the same fact from the other side, contention rather than parallel work.
+`graphitron-model` is worth more alone than the three were credited with together, and that fits what
+the module is: its test cost is almost entirely per-case store boots, 152 of them, each an independent
+in-memory database, which is the shape concurrency helps. That row stands.
 
-One trap to know before re-running this. Removing a `junit-platform.properties` from
-`src/test/resources` does not remove the copy Maven already put in `target/test-classes`, so the arm
-meant to be sequential runs parallel and the difference vanishes. Delete the target copy explicitly,
-or the measurement will tell you parallelism does nothing.
+**The other two rows are an artifact and the real figures are large.** Once `graphitron-model`'s
+properties file landed it began riding along in that module's test-jar, which `graphitron-lsp` and
+`graphitron-mcp` both consume at test scope, so both arms of their A/B ran parallel and the test
+compared parallel against parallel. Re-measured with the entry stripped from the installed test-jar
+and the arms alternated: `graphitron-lsp` 33.4/33.0s against 50.1/50.8s, **−17.5s**, and
+`graphitron-mcp` 26.9/28.1s against 35.0s, **−7.5s**. So test parallelism is worth about 25 seconds in
+those two modules after all, it is already in effect, and it arrives through a channel neither
+module's pom mentions. R764 carries the mechanism and what to do about it.
+
+Two traps to know before re-running this, both of which produce the same false "nothing".
+Removing a `junit-platform.properties` from `src/test/resources` does not remove the copy Maven
+already put in `target/test-classes`. And for any module that depends on another module's test-jar,
+the file can arrive from that jar instead, in which case a `-pl` A/B varies nothing at all. Check the
+installed test-jars of the upstream modules, not just the module under test.
 
 The remaining caution stands unchanged: green runs are not thread safety. `graphitron`'s own properties
 file documents the process-global hazard and carries `@Isolated` on the two classes that trip it, and
@@ -542,6 +550,14 @@ total, not less.
 
 Whichever shape is chosen, the budget belongs in the repository next to the tests it governs, and
 raising it should be a visible commit rather than a silent drift.
+
+One measured fact sharpens option 2 rather than reviving it. Under the `-T 1C` CI uses, the build's
+wall clock and its critical path are currently the *same number*: mvnd's own scheduler puts the
+critical path at 340s against a 340s wall clock, and forcing the build sequential gives 339s, so
+parallelism is worth one second and the path has no slack anywhere. A total-suite budget on a 4 vCPU
+runner therefore cannot distinguish "the build got slower" from "the build got wider", and a change
+that traded 20s of critical path for 40s of off-path work would read as a regression. R763 carries the
+measurement and the two modules where the idle cores actually are.
 
 ## What the chosen host has to answer
 
