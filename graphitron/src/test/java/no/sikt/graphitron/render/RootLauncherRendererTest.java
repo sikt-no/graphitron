@@ -19,6 +19,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static no.sikt.graphitron.rewrite.TestFixtures.col;
+import static no.sikt.graphitron.rewrite.TestFixtures.discriminatorCol;
 import static no.sikt.graphitron.rewrite.TestFixtures.filmTable;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -173,7 +174,7 @@ class RootLauncherRendererTest {
             FieldCoordinates.coordinates("Query", "allContent"),
             new LaunchSource.DiscriminatedTable(
                 filmTable(List.of(col("film_id", "FILM_ID", "java.lang.Integer"))),
-                "film_type", List.of("FILM", "SHORT"), baseSlice, branches),
+                discriminatorCol("film_type"), List.of("FILM", "SHORT"), baseSlice, branches),
             where, new Invocation.Direct(), new TenantStrategy.Single(), result);
     }
 
@@ -212,8 +213,72 @@ class RootLauncherRendererTest {
                 + ".conditions.QueryConditions.allContentCondition(filmTable, env.getArguments())");
         assertThat(body)
             .as("the source-entailed discriminator restriction ANDs in after the glue, not inside it")
-            .contains("condition = condition.and(")
-            .contains(".in(\"FILM\", \"SHORT\")");
+            .contains("condition = condition.and(");
+        // Each known value is a bind typed off the discriminator column's own getDataType(), the
+        // operand that lets a Postgres-enum discriminator compare against its own type; the values
+        // reach the database through the column's converter rather than as raw varchars.
+        assertThat(body)
+            .as("every @discriminator(value:) in the IN restriction is a column-typed bind")
+            .contains(".in(org.jooq.impl.DSL.val(\"FILM\", filmTable.FILM_TYPE.getDataType()), "
+                + "org.jooq.impl.DSL.val(\"SHORT\", filmTable.FILM_TYPE.getDataType()))");
+        // ...and the routing projection stays on the untyped side of the axis split: it is a token
+        // the generated TypeResolver reads back as String, not a comparison operand.
+        assertThat(body)
+            .as("the __discriminator__ routing projection stays untyped")
+            .contains("org.jooq.impl.DSL.name(\"film_type\")), java.lang.Object.class).as(\"__discriminator__\")");
+    }
+
+    private static LaunchSource.DiscriminatedTable.Branch.JoinedDetail joinedDetailBranch() {
+        var detail = no.sikt.graphitron.rewrite.TestFixtures.tableRef(
+            "party_individual", "PARTY_INDIVIDUAL", "PartyIndividual", List.of());
+        var partyId = col("party_id", "PARTY_ID", "java.lang.Integer");
+        var hop = no.sikt.graphitron.rewrite.TestFixtures.fkJoin(
+            no.sikt.graphitron.rewrite.TestFixtures.foreignKeyRef("party_individual_party_id_fkey"),
+            detail, List.of(partyId), filmTable(List.of(partyId)), List.of(partyId), null, "individual_0");
+        return new LaunchSource.DiscriminatedTable.Branch.JoinedDetail(
+            new no.sikt.graphitron.rewrite.model.ParticipantRef.JoinedTableBound(
+                "Individual", detail, "INDIVIDUAL", hop),
+            List.of(new LaunchSource.DiscriminatedTable.DetailField("birthDate",
+                col("birth_date", "BIRTH_DATE", "java.lang.String"))));
+    }
+
+    @Test
+    void discriminatedSource_joinedDetailOnClause_comparesAgainstAColumnTypedBind() {
+        var body = body(discriminatedRow(null, list(null), List.of(), List.of(joinedDetailBranch())));
+        assertThat(body)
+            .as("the joined-detail LEFT JOIN's ON clause gates on the branch's discriminator value, "
+                + "bound through the column's own data type so an enum-typed discriminator column "
+                + "compares against an operand of its own type")
+            .contains("org.jooq.impl.DSL.name(\"film_type\")), java.lang.Object.class)"
+                + ".eq(org.jooq.impl.DSL.val(\"INDIVIDUAL\", filmTable.FILM_TYPE.getDataType()))");
+        assertThat(body).contains("step = step.leftJoin(Individual_detail_alias).on(");
+    }
+
+    @Test
+    void discriminatedSource_crossTableGate_comparesAgainstAColumnTypedBind() {
+        var filmId = col("film_id", "FILM_ID", "java.lang.Integer");
+        var hop = no.sikt.graphitron.rewrite.TestFixtures.fkJoin(
+            no.sikt.graphitron.rewrite.TestFixtures.foreignKeyRef("content_film_id_fkey"),
+            filmTable(List.of(filmId)), List.of(filmId), filmTable(List.of(filmId)), List.of(filmId),
+            null, "f0");
+        var term = new no.sikt.graphitron.command.SelectTerm.ScalarSubselect(
+            List.of(hop),
+            new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots(hop),
+            col("rating", "RATING", "java.lang.String"),
+            "FilmContent_rating",
+            new no.sikt.graphitron.command.SelectTerm.ScalarSubselect.ParentColumnEquals(
+                discriminatorCol("film_type"), "FILM"));
+        var branch = new LaunchSource.DiscriminatedTable.Branch.SingleTable(
+            new no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound("FilmContent",
+                filmTable(List.of()), "FILM"),
+            UNITS.typeClass("FilmContent"),
+            List.of(new LaunchSource.DiscriminatedTable.Branch.SingleTable.CrossTableTerm("rating", term)));
+        var body = body(discriminatedRow(null, list(null), List.of(), List.of(branch)));
+        assertThat(body)
+            .as("the cross-table participant subselect's parent-row gate binds the same typed way, "
+                + "so the third comparison site cannot drift from the other two")
+            .contains("org.jooq.impl.DSL.name(\"film_type\")), java.lang.Object.class)"
+                + ".eq(org.jooq.impl.DSL.val(\"FILM\", filmTable.FILM_TYPE.getDataType()))");
     }
 
     @Test
@@ -240,7 +305,7 @@ class RootLauncherRendererTest {
                     UNITS.launcherMethod("Query", "allContent"),
                     FieldCoordinates.coordinates("Query", "allContent"),
                     new LaunchSource.DiscriminatedTable(
-                        filmTable(List.of()), "film_type", List.of(), List.of(), List.of()),
+                        filmTable(List.of()), discriminatorCol("film_type"), List.of(), List.of(), List.of()),
                     null, new Invocation.Direct(), new TenantStrategy.Fanned(UNITS.tenantConnections()), list(null)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("runs single-tenant");

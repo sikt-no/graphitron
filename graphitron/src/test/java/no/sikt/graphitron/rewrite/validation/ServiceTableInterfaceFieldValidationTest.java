@@ -42,7 +42,7 @@ class ServiceTableInterfaceFieldValidationTest {
                 new ReturnTypeRef.TableBoundReturnType("Content",
                     TestFixtures.tableRef("content", "CONTENT", "Content", List.of()),
                     new FieldWrapper.Single(true)),
-                "CONTENT_TYPE", List.of("FILM", "SHORT"), List.of(), call(), Optional.empty()),
+                TestFixtures.discriminatorCol("CONTENT_TYPE"), List.of("FILM", "SHORT"), List.of(), call(), Optional.empty()),
             List.of()),
 
         MUTATION_LIST("mutation, list cardinality — accepted, no errors expected",
@@ -50,7 +50,7 @@ class ServiceTableInterfaceFieldValidationTest {
                 new ReturnTypeRef.TableBoundReturnType("Content",
                     TestFixtures.tableRef("content", "CONTENT", "Content", List.of()),
                     new FieldWrapper.List(false, true)),
-                "CONTENT_TYPE", List.of("FILM", "SHORT"), List.of(), call(), Optional.empty()),
+                TestFixtures.discriminatorCol("CONTENT_TYPE"), List.of("FILM", "SHORT"), List.of(), call(), Optional.empty()),
             List.of());
 
         private final String description;

@@ -167,15 +167,21 @@ public final class PathFragments {
 
     /**
      * {@code DSL.field(<parent>.getQualifiedName().append(DSL.name("<col>")), Object.class)
-     * .eq("<value>")}: a {@link SelectTerm.ScalarSubselect.ParentColumnEquals} rendered off the
-     * parent table local's own jOOQ instance, so the qualifier matches the enclosing statement's
-     * FROM clause exactly (see {@link DiscriminatedTableFragments}'s class javadoc for why the
-     * qualified-name idiom, not the {@code @table} directive string, is the reference).
+     * .eq(DSL.val("<value>", <parent>.<COL>.getDataType()))}: a
+     * {@link SelectTerm.ScalarSubselect.ParentColumnEquals} rendered off the parent table local's
+     * own jOOQ instance, so the qualifier matches the enclosing statement's FROM clause exactly.
+     * Both halves are {@link DiscriminatedTableFragments}'s mints
+     * ({@link DiscriminatedTableFragments#discriminatorRef} for the reference,
+     * {@link DiscriminatedTableFragments#discriminatorValue} for the typed operand): this gate is
+     * the cross-table participant subselect's discriminator comparison, so it shares the
+     * qualification argument and the bind typing with the assembly's other two comparison sites
+     * rather than restating either.
      */
     private static CodeBlock parentColumnEquals(SelectTerm.ScalarSubselect.ParentColumnEquals gate,
             String parentLocal) {
-        return CodeBlock.of("$T.field($L.getQualifiedName().append($T.name($S)), $T.class).eq($S)",
-            DSL, parentLocal, DSL, gate.column(), Object.class, gate.value());
+        return CodeBlock.of("$L.eq($L)",
+            DiscriminatedTableFragments.discriminatorRef(parentLocal, gate.column()),
+            DiscriminatedTableFragments.discriminatorValue(parentLocal, gate.column(), gate.value()));
     }
 
     /**

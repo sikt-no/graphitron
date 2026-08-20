@@ -44,7 +44,7 @@ class SchemaReachabilityTest {
         type Film @table(name: "film") { title: String }
         type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
         union FilmOrActor = Film | Actor
-        interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
+        interface MediaItem @table(name: "film") @discriminate(on: "text_rating") { title: String }
         type FilmMedia implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
         type City implements Node @table(name: "city") @node(keyColumns: ["city_id"]) { id: ID! @nodeId }
         type OrphanCat @table(name: "category") { name: String @field(name: "NAME") }

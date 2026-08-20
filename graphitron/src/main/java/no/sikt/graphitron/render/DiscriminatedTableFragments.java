@@ -52,6 +52,21 @@ import java.util.List;
  * filter and JOIN ON-clauses keep referencing the real qualified column (they cannot read a
  * SELECT alias).
  *
+ * <p>The discriminator plays two roles on two axes, and this class types them differently on
+ * purpose. In WHERE and in a JOIN's ON clause it is a SQL comparison operand, so the value it is
+ * compared against binds through the column's own {@code getDataType()}
+ * ({@code DSL.val("<value>", <tableLocal>.<COL>.getDataType())}, the generator's standing typed-bind
+ * idiom): the value reaches the database through the column's registered converter, which is what
+ * lets a Postgres-enum discriminator compare against an operand of its own type instead of against
+ * a {@code character varying} the database has no operator for. jOOQ decides the rendering from the
+ * bind's type, so the enum arm gets {@code cast(? as "<schema>"."<enum_type>")} and a varchar column
+ * keeps a plain {@code ?}. In SELECT the discriminator is instead a routing token whose vocabulary
+ * is the authored {@code @discriminator(value:)} literal set the generated {@code TypeResolver}
+ * switches on as {@code String}, so {@link #fieldsList}'s {@link ReservedAliases#DISCRIMINATOR}
+ * projection stays deliberately untyped ({@code Object.class}, read back as {@code String}). The
+ * asymmetry is the seam, not a half-measure: typing the projection would put the routing token in
+ * the column's namespace for no gain.
+ *
  * <p>A branch whose participant carries no {@code @discriminator} value renders its projection
  * contribution but nothing that would need a type gate: no joined-detail JOIN arm here, and no
  * cross-table term at all (the producer contributes none, an ungated one resolving the reference
@@ -163,19 +178,50 @@ public final class DiscriminatedTableFragments {
     }
 
     /**
+     * The qualified discriminator reference,
+     * {@code DSL.field(<tableLocal>.getQualifiedName().append(DSL.name("<sqlName>")), Object.class)},
+     * minted once for every site that reads the column: the three comparison sites here and in
+     * {@link PathFragments#parentColumnEquals}, which attach a typed operand, and
+     * {@link #fieldsList}'s routing projection, which attaches an alias instead (the axis split in
+     * the class javadoc). Sharing the mint is what keeps the qualification argument one decision
+     * rather than four literals a later edit can split.
+     */
+    static CodeBlock discriminatorRef(String tableLocal, ColumnRef discriminator) {
+        return CodeBlock.of("$T.field($L.getQualifiedName().append($T.name($S)), $T.class)",
+            DSL, tableLocal, DSL, discriminator.sqlName(), Object.class);
+    }
+
+    /**
+     * One {@code @discriminator(value:)} literal as a comparison operand:
+     * {@code DSL.val("<value>", <tableLocal>.<COL>.getDataType())}. Typing the bind off the
+     * column's own data type routes the literal through the column's registered converter, so a
+     * Postgres-enum discriminator binds enum-typed (jOOQ renders the bind as
+     * {@code cast(? as "<schema>"."<enum_type>")}, the operand the database accepts) while a
+     * varchar column's conversion is the identity and its bind is unchanged. The build rejects a
+     * literal outside a closed value domain, so the converter cannot silently yield {@code null}
+     * here (see
+     * {@link no.sikt.graphitron.rewrite.TypeBuilder#discriminatorLiteralRejection}).
+     */
+    static CodeBlock discriminatorValue(String tableLocal, ColumnRef discriminator, String value) {
+        return CodeBlock.of("$T.val($S, $L.$L.getDataType())",
+            DSL, value, tableLocal, discriminator.javaName());
+    }
+
+    /**
      * {@code condition = condition.and(<qualified discriminator>.in(v1, v2, ...))}, restricting
-     * to rows with a known discriminator value; nothing when {@code knownValues} is empty.
+     * to rows with a known discriminator value; nothing when {@code knownValues} is empty. Each
+     * value is a {@link #discriminatorValue} typed bind.
      */
     private static CodeBlock discriminatorFilter(LaunchSource.DiscriminatedTable source, String tableLocal) {
         if (source.knownValues().isEmpty()) {
             return CodeBlock.of("");
         }
         var inArgs = source.knownValues().stream()
-            .map(v -> CodeBlock.of("$S", v))
+            .map(v -> discriminatorValue(tableLocal, source.discriminatorColumn(), v))
             .collect(CodeBlock.joining(", "));
         return CodeBlock.builder()
-            .addStatement("condition = condition.and($T.field($L.getQualifiedName().append($T.name($S)), $T.class).in($L))",
-                DSL, tableLocal, DSL, source.discriminatorColumn(), Object.class, inArgs)
+            .addStatement("condition = condition.and($L.in($L))",
+                discriminatorRef(tableLocal, source.discriminatorColumn()), inArgs)
             .build();
     }
 
@@ -196,8 +242,10 @@ public final class DiscriminatedTableFragments {
         var setType = ParameterizedTypeName.get(
             ClassName.get(LinkedHashSet.class), fieldType);
         b.addStatement("$T $L = new $T<>()", setType, FIELDS_LOCAL, LinkedHashSet.class);
-        b.addStatement("fields.add($T.field($L.getQualifiedName().append($T.name($S)), $T.class).as($S))",
-            DSL, tableLocal, DSL, source.discriminatorColumn(), Object.class, ReservedAliases.DISCRIMINATOR);
+        // The routing projection is the untyped arm of the axis split (class javadoc): the alias
+        // carries a routing token the TypeResolver reads back as String, not a comparison operand.
+        b.addStatement("fields.add($L.as($S))",
+            discriminatorRef(tableLocal, source.discriminatorColumn()), ReservedAliases.DISCRIMINATOR);
         for (var branch : source.branches()) {
             if (branch instanceof LaunchSource.DiscriminatedTable.Branch.SingleTable single) {
                 b.addStatement("fields.addAll($L)",
@@ -332,9 +380,10 @@ public final class DiscriminatedTableFragments {
                 keyOn = keyOn == null ? eq : CodeBlock.of("$L.and($L)", keyOn, eq);
             }
             var onCondition = CodeBlock.builder()
-                .add("$L.and($T.field($L.getQualifiedName().append($T.name($S)), $T.class).eq($S))",
-                    keyOn, DSL, tableLocal, DSL, source.discriminatorColumn(), Object.class,
-                    jtb.discriminatorValue())
+                .add("$L.and($L.eq($L))", keyOn,
+                    discriminatorRef(tableLocal, source.discriminatorColumn()),
+                    discriminatorValue(tableLocal, source.discriminatorColumn(),
+                        jtb.discriminatorValue()))
                 .build();
             b.beginControlFlow("if ($L != null)", aliasVar);
             b.addStatement("step = step.leftJoin($L).on($L)", aliasVar, onCondition);

@@ -43,7 +43,7 @@ class TypeBackingProjectionTest {
         // case pins this: an @table-bearing interface continues to behave
         // exactly like a TableType under the @field(name:) arm.
         var schema = schemaOf("Movie", new GraphitronType.TableInterfaceType("Movie", SourceLocation.EMPTY,
-            "kind",
+            no.sikt.graphitron.rewrite.TestFixtures.discriminatorCol("text_rating"),
             new TableRef("film", "FILM", null, null, null, List.of(), List.of()),
             List.of()));
 

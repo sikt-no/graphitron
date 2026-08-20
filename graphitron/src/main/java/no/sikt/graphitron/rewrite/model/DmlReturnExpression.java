@@ -68,12 +68,12 @@ public sealed interface DmlReturnExpression {
      * {@code reentryCorrelation} as {@link ProjectedSingle}. The DML sibling of the
      * {@code *ServiceTableInterfaceField} service-return variants.
      */
-    record DiscriminatedSingle(String interfaceName, String discriminatorColumn,
+    record DiscriminatedSingle(String interfaceName, ColumnRef discriminatorColumn,
         List<String> knownDiscriminatorValues, List<ParticipantRef> participants,
         ParentCorrelation.OnLiftedSlots reentryCorrelation) implements DmlReturnExpression {}
 
     /** {@code [T]} return where {@code T} is a single-table discriminated interface. List sibling of {@link DiscriminatedSingle}. */
-    record DiscriminatedList(String interfaceName, String discriminatorColumn,
+    record DiscriminatedList(String interfaceName, ColumnRef discriminatorColumn,
         List<String> knownDiscriminatorValues, List<ParticipantRef> participants,
         ParentCorrelation.OnLiftedSlots reentryCorrelation) implements DmlReturnExpression {}
 }

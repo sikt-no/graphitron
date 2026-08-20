@@ -51,6 +51,7 @@ Each implementer also carries `@table(name: "content")` (the same table as the i
 * `@discriminator` is only meaningful on objects that implement an interface decorated with xref:discriminate.adoc[`@discriminate`]. The build rejects it on objects whose implemented interfaces have no discriminator column.
 * The implementer's xref:table.adoc[`@table`] must match the interface's xref:table.adoc[`@table`]. Mixing tables breaks single-table polymorphism.
 * `value` is matched verbatim against the database column; quoting and case must match the stored value exactly.
+* `value` names the database literal. For a PostgreSQL `enum` column that is the enum literal as spelled in the database (`'PG-13'`), never a Java constant name derived from it (`PG_13`). The build checks the value against the enum's literals and fails on one that is not there.
 * Each implementer of a single `@discriminate` interface should declare a distinct `value`. Two implementers sharing the same value collapse to one branch and the second is unreachable.
 * The directive applies only to `OBJECT`; interfaces and unions cannot carry `@discriminator`.
 

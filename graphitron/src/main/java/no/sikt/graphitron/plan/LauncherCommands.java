@@ -13,6 +13,7 @@ import no.sikt.graphitron.command.Ordering;
 import no.sikt.graphitron.command.ResultShape;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DeliveryFact;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -376,7 +377,7 @@ public final class LauncherCommands {
      * the write's correlation.
      */
     private static LaunchSource.DiscriminatedReentry discriminatedReentrySource(
-            GraphitronSchema schema, String interfaceName, String discriminatorColumn,
+            GraphitronSchema schema, String interfaceName, ColumnRef discriminatorColumn,
             List<String> knownDiscriminatorValues,
             List<no.sikt.graphitron.rewrite.model.ParticipantRef> participants,
             no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots correlation,
@@ -616,7 +617,7 @@ public final class LauncherCommands {
      */
     public static List<LaunchSource.DiscriminatedTable.Branch> discriminatedBranches(
             List<no.sikt.graphitron.rewrite.model.ParticipantRef> participants,
-            String discriminatorColumn,
+            ColumnRef discriminatorColumn,
             no.sikt.graphitron.rewrite.JoinedTableReprojection reprojection, GeneratedUnits units) {
         var branches = new ArrayList<LaunchSource.DiscriminatedTable.Branch>(participants.size());
         for (var participant : participants) {
@@ -649,7 +650,7 @@ public final class LauncherCommands {
      */
     private static List<LaunchSource.DiscriminatedTable.Branch.SingleTable.CrossTableTerm>
             crossTableTerms(no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound tb,
-                    String discriminatorColumn) {
+                    ColumnRef discriminatorColumn) {
         if (tb.discriminatorValue() == null) {
             return List.of();
         }

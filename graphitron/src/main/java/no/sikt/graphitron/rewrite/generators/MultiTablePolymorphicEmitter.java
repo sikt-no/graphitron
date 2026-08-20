@@ -360,7 +360,7 @@ public final class MultiTablePolymorphicEmitter {
      */
     public static List<MethodSpec> emitServiceTableInterfaceMethods(
             TypeFetcherEmissionContext ctx, String fieldName, ServiceMethodCall serviceCall,
-            ReturnTypeRef.TableBoundReturnType returnType, String discriminatorColumn,
+            ReturnTypeRef.TableBoundReturnType returnType, ColumnRef discriminatorColumn,
             List<String> knownDiscriminatorValues, List<ParticipantRef> participants,
             boolean isList, String outputPackage) {
         return List.of(buildServiceTableInterfaceFetcher(ctx, fieldName, serviceCall, returnType,
@@ -381,7 +381,7 @@ public final class MultiTablePolymorphicEmitter {
      */
     private static MethodSpec buildServiceTableInterfaceFetcher(
             TypeFetcherEmissionContext ctx, String fieldName, ServiceMethodCall serviceCall,
-            ReturnTypeRef.TableBoundReturnType returnType, String discriminatorColumn,
+            ReturnTypeRef.TableBoundReturnType returnType, ColumnRef discriminatorColumn,
             List<String> knownDiscriminatorValues, List<ParticipantRef> participants,
             boolean isList, String outputPackage) {
 

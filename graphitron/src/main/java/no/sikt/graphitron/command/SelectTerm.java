@@ -80,8 +80,13 @@ public sealed interface SelectTerm {
          * parent table local's own jOOQ instance by SQL name (the qualifier jOOQ renders for the
          * FROM clause), so the reference matches the enclosing statement's FROM by construction
          * and stays unambiguous when a joined table re-declares the column.
+         *
+         * <p>{@code column} is the resolved {@link ColumnRef} rather than a bare SQL name because
+         * the renderer needs both spellings: {@code sqlName} for that qualified reference, and
+         * {@code javaName} for the column's {@code getDataType()}, which types the {@code value}
+         * bind so a Postgres-enum column compares against an operand of its own type.
          */
-        public record ParentColumnEquals(String column, String value) {
+        public record ParentColumnEquals(ColumnRef column, String value) {
             public ParentColumnEquals {
                 Objects.requireNonNull(column, "column");
                 Objects.requireNonNull(value, "value");

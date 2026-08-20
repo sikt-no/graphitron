@@ -59,7 +59,7 @@ class BatchedDiscriminatedInterfaceChildPipelineTest {
         var field = (ChildField.BatchedTableInterfaceField) schema.field("Film", "contents");
 
         // The discriminated payload is the unbatched twin's, carried unchanged.
-        assertThat(field.discriminatorColumn()).isEqualToIgnoringCase("CONTENT_TYPE");
+        assertThat(field.discriminatorColumn().sqlName()).isEqualToIgnoringCase("CONTENT_TYPE");
         assertThat(field.knownDiscriminatorValues()).containsExactlyInAnyOrder("FILM", "SHORT");
         assertThat(field.participants()).hasSize(2);
         assertThat(field.returnType().table().tableName()).isEqualToIgnoringCase("content");

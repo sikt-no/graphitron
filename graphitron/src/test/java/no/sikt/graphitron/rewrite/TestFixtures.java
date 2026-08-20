@@ -402,6 +402,17 @@ public final class TestFixtures {
         return new ColumnRef(sqlName, javaName, javaType);
     }
 
+    /**
+     * A hand-built discriminator column ref over an open (varchar) value domain: {@code sqlName}
+     * plus the uppercase jOOQ field name the default naming strategy derives from it. Both
+     * spellings are load-bearing at the render sites, the SQL name qualifying the reference and the
+     * Java name spelling the {@code getDataType()} that types the comparison bind, so a fixture
+     * that only needs the model slot filled still gets a ref a renderer can consume.
+     */
+    public static ColumnRef discriminatorCol(String sqlName) {
+        return new ColumnRef(sqlName, sqlName.toUpperCase(java.util.Locale.ROOT), "java.lang.String");
+    }
+
     // ===== ReturnTypeRef =====
 
     public static ReturnTypeRef.TableBoundReturnType tableBoundFilm(FieldWrapper wrapper) {

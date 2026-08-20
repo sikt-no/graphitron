@@ -1269,7 +1269,7 @@ public class TypeFetcherGenerator {
      */
     static CodeBlock buildTableInterfaceReprojection(
             TypeFetcherEmissionContext ctx, String interfaceTypeName, TableRef tableRef,
-            List<ParticipantRef> participants, String discriminatorColumn,
+            List<ParticipantRef> participants, ColumnRef discriminatorColumn,
             List<String> knownDiscriminatorValues, List<ColumnRef> alwaysProject,
             String tableLocal, String outputPackage) {
         var schema = ctx.graphitronSchema();

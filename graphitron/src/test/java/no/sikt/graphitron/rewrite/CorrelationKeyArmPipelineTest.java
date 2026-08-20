@@ -64,7 +64,7 @@ class CorrelationKeyArmPipelineTest {
     @Test
     void tableInterfaceField_armProjectsTheHopSourceSideColumn() {
         var inventory = findType("Inventory", """
-            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
+            interface MediaItem @table(name: "film") @discriminate(on: "text_rating") { title: String }
             type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
             type Inventory @table(name: "inventory") { media: MediaItem }
             type Query { inventory: Inventory }
@@ -78,7 +78,7 @@ class CorrelationKeyArmPipelineTest {
     @Test
     void batchedTableInterfaceField_armProjectsTheHopSourceSideColumn() {
         var language = findType("Language", """
-            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
+            interface MediaItem @table(name: "film") @discriminate(on: "text_rating") { title: String }
             type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
             type Language @table(name: "language") {
                 name: String

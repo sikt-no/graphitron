@@ -1027,7 +1027,7 @@ class TypeFetcherGeneratorTest {
         var wrapper = isList ? (FieldWrapper) nonNullList() : single();
         var returnType = tableBoundFilm(wrapper);
         return new QueryField.QueryTableInterfaceField("Query", name, null, returnType,
-            "FILM_TYPE", List.of("FILM", "SHORT"), List.of(),
+            discriminatorCol("FILM_TYPE"), List.of("FILM", "SHORT"), List.of(),
             List.of(), new OrderBySpec.None(), null);
     }
 
@@ -1083,7 +1083,7 @@ class TypeFetcherGeneratorTest {
         // When no discriminator values are known, the filter must not be emitted.
         var returnType = tableBoundFilm(nonNullList());
         var field = new QueryField.QueryTableInterfaceField("Query", "allContent", null, returnType,
-            "FILM_TYPE", List.of(), List.of(), List.of(), new OrderBySpec.None(), null);
+            discriminatorCol("FILM_TYPE"), List.of(), List.of(), List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
         var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code).doesNotContain(".in(");
@@ -1110,7 +1110,7 @@ class TypeFetcherGeneratorTest {
             new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM"),
             new ParticipantRef.TableBound("ShortContent", filmTable(), "SHORT"));
         var field = new QueryField.QueryTableInterfaceField("Query", "allContent", null, returnType,
-            "content_type", List.of("FILM", "SHORT"), participants,
+            discriminatorCol("content_type"), List.of("FILM", "SHORT"), participants,
             List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
             DEFAULT_OUTPUT_PACKAGE);
@@ -1129,7 +1129,7 @@ class TypeFetcherGeneratorTest {
         List<JoinStep> joinPath = List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), LANGUAGE_TABLE,
             List.of(languageIdCol()), FILM_TABLE, List.of(languageIdCol()), null, name + "_0"));
         return new ChildField.TableInterfaceField("Language", name, null, returnType,
-            "FILM_TYPE", List.of("FILM", "SHORT"), List.of(),
+            discriminatorCol("FILM_TYPE"), List.of("FILM", "SHORT"), List.of(),
             joinPath, List.of(), new OrderBySpec.None(), null);
     }
 
@@ -1175,7 +1175,7 @@ class TypeFetcherGeneratorTest {
         List<JoinStep> joinPath = List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), LANGUAGE_TABLE,
             List.of(languageIdCol()), FILM_TABLE, List.of(languageIdCol()), null, "content_0"));
         var field = new ChildField.TableInterfaceField("Language", "content", null, returnType,
-            "FILM_TYPE", List.of(), List.of(), joinPath, List.of(), new OrderBySpec.None(), null);
+            discriminatorCol("FILM_TYPE"), List.of(), List.of(), joinPath, List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, List.of(field));
         var code = method(spec, "content").code().toString();
         assertThat(code).doesNotContain(".in(");
@@ -1204,7 +1204,7 @@ class TypeFetcherGeneratorTest {
             new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM"),
             new ParticipantRef.TableBound("ShortContent", filmTable(), "SHORT"));
         var field = new ChildField.TableInterfaceField("Language", "content", null, returnType,
-            "content_type", List.of("FILM", "SHORT"), participants,
+            discriminatorCol("content_type"), List.of("FILM", "SHORT"), participants,
             joinPath, List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
@@ -1261,7 +1261,7 @@ class TypeFetcherGeneratorTest {
                 List.of(filmContentRatingCrossTable())),
             new ParticipantRef.TableBound("ShortContent", filmTable(), "SHORT"));
         return new QueryField.QueryTableInterfaceField("Query", "allContent", null, returnType,
-            "FILM_TYPE", List.of("FILM", "SHORT"), participants,
+            discriminatorCol("FILM_TYPE"), List.of("FILM", "SHORT"), participants,
             List.of(), new OrderBySpec.None(), null);
     }
 
@@ -1291,8 +1291,11 @@ class TypeFetcherGeneratorTest {
             List.of(discriminatedAllContent()), DEFAULT_OUTPUT_PACKAGE);
         var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code)
-            .as("the cross-table subselect's discriminator gate qualifies off the FROM table instance")
-            .contains("filmTable.getQualifiedName().append(org.jooq.impl.DSL.name(\"FILM_TYPE\")), java.lang.Object.class).eq(\"FILM\")");
+            .as("the cross-table subselect's discriminator gate qualifies off the FROM table instance "
+                + "and compares against a bind typed off that column's own data type")
+            .contains("filmTable.getQualifiedName().append(org.jooq.impl.DSL.name(\"FILM_TYPE\")), "
+                + "java.lang.Object.class).eq(org.jooq.impl.DSL.val(\"FILM\", "
+                + "filmTable.FILM_TYPE.getDataType()))");
     }
 
     @Test

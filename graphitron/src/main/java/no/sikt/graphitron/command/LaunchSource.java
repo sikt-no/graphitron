@@ -315,7 +315,7 @@ public sealed interface LaunchSource {
      * participant in declaration order (non-table members of a discriminated interface are
      * rejected at the parse boundary, so the two arms are total over the population).
      */
-    record DiscriminatedTable(TableRef table, String discriminatorColumn, List<String> knownValues,
+    record DiscriminatedTable(TableRef table, ColumnRef discriminatorColumn, List<String> knownValues,
             List<BaseSliceTerm> baseSlice, List<Branch> branches) implements LaunchSource {
         public DiscriminatedTable {
             Objects.requireNonNull(table, "table");

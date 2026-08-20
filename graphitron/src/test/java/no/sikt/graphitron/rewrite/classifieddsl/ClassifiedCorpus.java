@@ -564,7 +564,7 @@ public final class ClassifiedCorpus {
          * QueryServiceTableInterfaceField leaf.
          */
         new Example("query-service-table-interface", """
-            interface MediaItem @table(name: "film") @discriminate(on: "kind") @classifiedType(as: TableInterfaceType) { title: String }
+            interface MediaItem @table(name: "film") @discriminate(on: "text_rating") @classifiedType(as: TableInterfaceType) { title: String }
             type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
             type Query {
               mediaService: MediaItem
@@ -579,7 +579,7 @@ public final class ClassifiedCorpus {
          * MutationServiceTableInterfaceField leaf.
          */
         new Example("mutation-service-table-interface", """
-            interface MediaItem @table(name: "film") @discriminate(on: "kind") @classifiedType(as: TableInterfaceType) { title: String }
+            interface MediaItem @table(name: "film") @discriminate(on: "text_rating") @classifiedType(as: TableInterfaceType) { title: String }
             type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
             type Query { film: FilmItem @commits(source: AnchorTable, result: SingleRecord) }
             type Mutation {
@@ -600,7 +600,7 @@ public final class ClassifiedCorpus {
          * over the leaf-versus-relation answer at that cardinality.
          */
         new Example("table-interface", """
-            interface MediaItem @table(name: "film") @discriminate(on: "kind") @classifiedType(as: TableInterfaceType) { title: String }
+            interface MediaItem @table(name: "film") @discriminate(on: "text_rating") @classifiedType(as: TableInterfaceType) { title: String }
             type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
             type Inventory @table(name: "inventory") {
               media: MediaItem @classified(source: OnlyChild, operations: [Join, Select], target: Single, targetShape: Table)

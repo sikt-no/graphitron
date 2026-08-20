@@ -1844,7 +1844,7 @@ class GraphitronSchemaBuilderTest {
         // (participant set, discriminator column, known discriminator values). Query arm is single
         // cardinality; Mutation arm is list. Modelled on servicePolymorphicProjectionCarriesParticipantsAndMethod.
         var schema = build("""
-            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
+            interface MediaItem @table(name: "film") @discriminate(on: "text_rating") { title: String }
             type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
             type Query {
               media: MediaItem
@@ -1860,7 +1860,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(q).isInstanceOf(QueryField.QueryServiceTableInterfaceField.class);
         var qf = (QueryField.QueryServiceTableInterfaceField) q;
         assertThat(qf.serviceMethodCall().methodName()).isEqualTo("getFilm");
-        assertThat(qf.discriminatorColumn()).isEqualTo("kind");
+        assertThat(qf.discriminatorColumn().sqlName()).isEqualTo("text_rating");
         assertThat(qf.knownDiscriminatorValues()).containsExactly("film");
         assertThat(qf.participants()).hasSize(1);
         assertThat(qf.returnType().wrapper().isList()).isFalse();
@@ -1869,7 +1869,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(m).isInstanceOf(MutationField.MutationServiceTableInterfaceField.class);
         var mf = (MutationField.MutationServiceTableInterfaceField) m;
         assertThat(mf.serviceMethodCall().methodName()).isEqualTo("getFilms");
-        assertThat(mf.discriminatorColumn()).isEqualTo("kind");
+        assertThat(mf.discriminatorColumn().sqlName()).isEqualTo("text_rating");
         assertThat(mf.knownDiscriminatorValues()).containsExactly("film");
         assertThat(mf.participants()).hasSize(1);
         assertThat(mf.returnType().wrapper().isList()).isTrue();
@@ -2133,13 +2133,18 @@ class GraphitronSchemaBuilderTest {
         TABLE_INTERFACE_TYPE(
             "@table+@discriminate interface → TableInterfaceType with discriminator and participants",
             """
-            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
+            interface MediaItem @table(name: "film") @discriminate(on: "text_rating") { title: String }
             type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
             type Query { film: Film }
             """,
             schema -> {
                 var t = (TableInterfaceType) schema.type("MediaItem");
-                assertThat(t.discriminatorColumn()).isEqualTo("kind");
+                // The resolved column, not the raw directive string: both spellings are read at
+                // emission (sqlName qualifies the reference, javaName spells the getDataType() that
+                // types the comparison bind). Guard and value-domain coverage for the column lives
+                // in DiscriminatorColumnGuardPipelineTest.
+                assertThat(t.discriminatorColumn().sqlName()).isEqualTo("text_rating");
+                assertThat(t.discriminatorColumn().javaName()).isEqualTo("TEXT_RATING");
                 assertThat(t.participants()).isNotEmpty();
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(TableInterfaceType.class); }
@@ -9148,7 +9153,7 @@ class GraphitronSchemaBuilderTest {
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle.class);
                 var ds = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle) f.returnExpression();
                 assertThat(ds.interfaceName()).isEqualTo("Content");
-                assertThat(ds.discriminatorColumn()).isEqualToIgnoringCase("CONTENT_TYPE");
+                assertThat(ds.discriminatorColumn().sqlName()).isEqualToIgnoringCase("CONTENT_TYPE");
                 assertThat(ds.knownDiscriminatorValues()).containsExactlyInAnyOrder("FILM", "SHORT");
                 assertThat(ds.participants()).hasSize(2);
                 // Regression pin: must not silently accept as ProjectedSingle.
@@ -9187,7 +9192,7 @@ class GraphitronSchemaBuilderTest {
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle.class);
                 var ds = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle) f.returnExpression();
                 assertThat(ds.interfaceName()).isEqualTo("Content");
-                assertThat(ds.discriminatorColumn()).isEqualToIgnoringCase("CONTENT_TYPE");
+                assertThat(ds.discriminatorColumn().sqlName()).isEqualToIgnoringCase("CONTENT_TYPE");
                 assertThat(ds.knownDiscriminatorValues()).containsExactlyInAnyOrder("FILM", "SHORT");
                 assertThat(f.returnExpression())
                     .isNotInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle.class);

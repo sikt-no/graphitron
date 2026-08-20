@@ -1632,20 +1632,93 @@ class TypeBuilder {
         if (tableOpt.isEmpty()) {
             return new UnclassifiedType(name, location, ctx.unknownTableRejection(tableName));
         }
-        String discriminatorRaw = argString(iface, DIR_DISCRIMINATE, ARG_ON).orElse(null);
-        // Resolve to the SQL column name so generators can use DSL.name(col) with the correct
-        // casing. findColumn accepts both Java names and SQL names. Falls back to the raw value
-        // when unresolvable (the validator will report the bad column name).
-        JooqCatalog.ColumnEntry discriminatorEntry = discriminatorRaw == null ? null
-            : ctx.catalog.findColumn(tableOpt.get().tableName(), discriminatorRaw).orElse(null);
-        String discriminatorColumn = discriminatorEntry != null ? discriminatorEntry.sqlName() : discriminatorRaw;
+        // @discriminate(on:) is String! in the directive schema, so the argument is present
+        // whenever the directive is; the empty fallback keeps the lookup total either way.
+        String discriminatorRaw = argString(iface, DIR_DISCRIMINATE, ARG_ON).orElse("");
+        // The whole ColumnEntry is kept, not just its SQL name: the reference qualifies off
+        // sqlName and the comparison binds off javaName's getDataType(), which is what types a
+        // Postgres-enum discriminator's operand. findColumn accepts both naming conventions.
+        JooqCatalog.ColumnEntry col =
+            ctx.catalog.findColumn(tableOpt.get().tableName(), discriminatorRaw).orElse(null);
+        if (col == null) {
+            // No raw-string fallback: emitting the comparison needs a generated field to read
+            // getDataType() off, and the fallback only ever produced code that failed at query
+            // time with a column-does-not-exist error. This is the sole enforcer of the invariant
+            // the manual states ("the on column must exist on that table").
+            return new UnclassifiedType(name, location, Rejection.unknownColumn(
+                "interface '" + name + "': @discriminate(on: \"" + discriminatorRaw
+                + "\") does not resolve to a column of table '" + tableOpt.get().tableName() + "'",
+                discriminatorRaw, ctx.catalog.columnJavaNamesOf(tableOpt.get().tableName())));
+        }
+        var discriminatorColumn =
+            new ColumnRef(col.sqlName(), col.javaName(), col.columnClass(), col.columnType());
         // The single-table interface passes its own table so each participant's cross-table
         // fields are detected against it.
         var participants = buildParticipantList(implementorNames(name), false, tableOpt.get());
         if (participants.error() != null) {
             return new UnclassifiedType(name, location, Rejection.structural(participants.error()));
         }
+        var closedDomain = discriminatorLiteralRejection(name, discriminatorColumn, participants.list());
+        if (closedDomain != null) {
+            return new UnclassifiedType(name, location, closedDomain);
+        }
         return new TableInterfaceType(name, location, discriminatorColumn, tableOpt.get(), participants.list());
+    }
+
+    /**
+     * The closed-domain check on {@code @discriminator(value:)}: when the discriminator column's
+     * value domain is closed, every participant's literal must be in it. A jOOQ-generated enum
+     * closes it; a varchar column's domain is open and owes no check.
+     *
+     * <p>This guards the typed bind the renderer emits rather than adding a second feature.
+     * {@code DSL.val(literal, <enum data type>)} converts an unknown literal to {@code null} with
+     * no warning, so the bind would match no row and the query would silently return nothing,
+     * trading the loud failure the typed bind fixes for a silent wrong answer. Rejecting at
+     * classify time keeps the mechanism total.
+     *
+     * <p>The comparison runs against the <em>database literal</em>
+     * ({@link EnumMappingResolver.ConstantSpelling#DATABASE_LITERAL}), not the Java constant name:
+     * {@code @discriminator(value:)} names what the column stores, which is also what the
+     * generated {@code TypeResolver} switches on when it reads the routing alias back, so both
+     * ends of the comparison live in one namespace.
+     *
+     * @return the rejection, or {@code null} when the domain is open or every literal is in it
+     */
+    private Rejection discriminatorLiteralRejection(String interfaceName, ColumnRef discriminator,
+            List<ParticipantRef> participants) {
+        Class<?> columnClass;
+        try {
+            columnClass = Class.forName(discriminator.columnClass(), false, ctx.codegenLoader());
+        } catch (ClassNotFoundException notLoadable) {
+            return null;
+        }
+        if (!columnClass.isEnum()) {
+            return null;
+        }
+        // Every participant of a discriminated interface is table-backed (buildParticipantList's
+        // discriminated arm rejects anything else), and a participant that omits @discriminator
+        // carries a null value; that omission is its own unrejected shape, not this check's.
+        var targets = participants.stream()
+            .filter(p -> p instanceof ParticipantRef.TableBacked)
+            .map(p -> ((ParticipantRef.TableBacked) p).discriminatorValue())
+            .filter(java.util.Objects::nonNull)
+            .map(v -> new EnumMappingResolver.EnumConstantParity.Target(v, v))
+            .toList();
+        var mismatches = EnumMappingResolver.constantMismatches(columnClass,
+            EnumMappingResolver.ConstantSpelling.DATABASE_LITERAL, targets);
+        if (mismatches.isEmpty()) {
+            return null;
+        }
+        var rendered = mismatches.stream()
+            .map(m -> "'" + m.sdlValueName() + "'"
+                + BuildContext.candidateHint(m.runtimeValue(), m.candidates()))
+            .collect(java.util.stream.Collectors.joining("; "));
+        var literals = EnumMappingResolver.constantNames(columnClass,
+            EnumMappingResolver.ConstantSpelling.DATABASE_LITERAL);
+        return Rejection.structural("interface '" + interfaceName + "': discriminator column '"
+            + discriminator.sqlName() + "' is the enum type " + columnClass.getSimpleName()
+            + ", whose literals are " + String.join(", ", literals)
+            + "; these @discriminator(value:) values are not among them: " + rendered);
     }
 
     private GraphitronType buildErrorType(GraphQLObjectType objType) {

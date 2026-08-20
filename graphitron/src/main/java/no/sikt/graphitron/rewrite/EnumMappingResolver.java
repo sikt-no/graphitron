@@ -83,6 +83,94 @@ final class EnumMappingResolver {
         record ValueMismatch(String sdlValueName, String runtimeValue, List<String> candidates) {
             public ValueMismatch { candidates = List.copyOf(candidates); }
         }
+
+        /**
+         * One value an authored SDL construct asks a Java enum to carry: {@code sdlValueName} as
+         * authored, {@code runtimeValue} in the form actually compared against the enum's
+         * constants. The two differ when a mapping intervenes (a GraphQL enum value's
+         * {@code @field(name:)}) and coincide when the authored spelling <em>is</em> the compared
+         * form (a {@code @discriminator(value:)} literal).
+         */
+        record Target(String sdlValueName, String runtimeValue) {}
+    }
+
+    /**
+     * Which spelling of a Java enum's constants a comparison targets, the one axis the two callers
+     * of {@link #constantMismatches} differ on.
+     */
+    enum ConstantSpelling {
+        /**
+         * {@code Enum.name()}, the form {@code EnumClass.valueOf(...)} accepts. What a GraphQL enum
+         * value's runtime form is compared against, because the generated coercion calls
+         * {@code valueOf}.
+         */
+        JAVA_NAME,
+        /**
+         * The database literal, {@code org.jooq.EnumType.getLiteral()} on a jOOQ-generated enum
+         * (read reflectively, so the codegen loader's jOOQ need not be this generator's). The two
+         * spellings diverge whenever the literal is not a Java identifier: {@code mpaa_rating}'s
+         * {@code 'PG-13'} literal is the constant {@code PG_13}. What a value authored as the
+         * database's own content is compared against. Falls back to {@link #JAVA_NAME} for a plain
+         * Java enum, which has no literal to speak of.
+         */
+        DATABASE_LITERAL
+    }
+
+    /**
+     * The constant-comparison core: which of {@code targets} name no constant of
+     * {@code javaEnumClass} under {@code spelling}, each carrying the full constant set as its
+     * candidate space. Single home for the "does this authored value exist on that Java enum"
+     * question, so the GraphQL-enum caller ({@link #checkEnumConstants}) and the
+     * {@code @discriminator(value:)} caller ({@link TypeBuilder#discriminatorLiteralRejection})
+     * walk {@code getEnumConstants()} through one implementation rather than one each.
+     */
+    static List<EnumConstantParity.ValueMismatch> constantMismatches(
+            Class<?> javaEnumClass, ConstantSpelling spelling,
+            List<EnumConstantParity.Target> targets) {
+        var names = constantNames(javaEnumClass, spelling);
+        var candidates = new ArrayList<>(names);
+        var mismatches = new ArrayList<EnumConstantParity.ValueMismatch>();
+        for (var target : targets) {
+            if (!names.contains(target.runtimeValue())) {
+                mismatches.add(new EnumConstantParity.ValueMismatch(
+                    target.sdlValueName(), target.runtimeValue(), candidates));
+            }
+        }
+        return List.copyOf(mismatches);
+    }
+
+    /**
+     * The constant names of a Java enum class in declaration order, under the requested
+     * {@link ConstantSpelling}. The literal read is reflective ({@code getLiteral()} by name)
+     * rather than a cast to {@code org.jooq.EnumType}: the class comes from the codegen loader,
+     * which need not share this generator's jOOQ.
+     */
+    static java.util.LinkedHashSet<String> constantNames(Class<?> javaEnumClass, ConstantSpelling spelling) {
+        var literal = spelling == ConstantSpelling.DATABASE_LITERAL
+            ? literalAccessorOrNull(javaEnumClass) : null;
+        return Arrays.stream(javaEnumClass.getEnumConstants())
+            .map(c -> literal == null ? ((Enum<?>) c).name() : invokeLiteral(literal, c))
+            .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+    }
+
+    /** {@code getLiteral()} when the class has one, {@code null} for a plain Java enum. */
+    private static java.lang.reflect.Method literalAccessorOrNull(Class<?> javaEnumClass) {
+        try {
+            return javaEnumClass.getMethod("getLiteral");
+        } catch (NoSuchMethodException plainJavaEnum) {
+            return null;
+        }
+    }
+
+    private static String invokeLiteral(java.lang.reflect.Method literal, Object constant) {
+        try {
+            return (String) literal.invoke(constant);
+        } catch (ReflectiveOperationException unreachable) {
+            // getLiteral() on a jOOQ-generated enum is a public no-arg accessor returning a
+            // constant; a failure here is a broken generated artifact, not an authoring error.
+            throw new IllegalStateException(
+                "reading the database literal of " + constant + " failed", unreachable);
+        }
     }
 
     /**
@@ -91,24 +179,18 @@ final class EnumMappingResolver {
      * may be a not-yet-visited child of the walk) against the constant names of
      * {@code javaEnumClass}. The comparison is on the pre-resolved
      * {@link no.sikt.graphitron.rewrite.model.EnumValueSpec#runtimeValue},
-     * the same form {@code EnumClass.valueOf(...)} receives at runtime.
+     * the same form {@code EnumClass.valueOf(...)} receives at runtime, so the spelling is
+     * {@link ConstantSpelling#JAVA_NAME}.
      */
     EnumConstantParity checkEnumConstants(String graphqlTypeName, Class<?> javaEnumClass) {
         var modelType = ctx.lookAheadVerdict(graphqlTypeName);
         if (!(modelType instanceof GraphitronType.EnumType enumType)) {
             return new EnumConstantParity.GraphqlNotEnum();
         }
-        var javaConstants = Arrays.stream(javaEnumClass.getEnumConstants())
-            .map(c -> ((Enum<?>) c).name())
-            .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
-        var candidates = new ArrayList<>(javaConstants);
-        var mismatches = new ArrayList<EnumConstantParity.ValueMismatch>();
-        for (var spec : enumType.values()) {
-            String target = spec.runtimeValue();
-            if (!javaConstants.contains(target)) {
-                mismatches.add(new EnumConstantParity.ValueMismatch(spec.sdlName(), target, candidates));
-            }
-        }
+        var mismatches = constantMismatches(javaEnumClass, ConstantSpelling.JAVA_NAME,
+            enumType.values().stream()
+                .map(spec -> new EnumConstantParity.Target(spec.sdlName(), spec.runtimeValue()))
+                .toList());
         return mismatches.isEmpty()
             ? new EnumConstantParity.Valid()
             : new EnumConstantParity.Divergence(mismatches);

@@ -439,7 +439,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        String discriminatorColumn,
+        ColumnRef discriminatorColumn,
         List<String> knownDiscriminatorValues,
         List<ParticipantRef> participants,
         ServiceMethodCall serviceMethodCall,

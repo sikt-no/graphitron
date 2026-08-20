@@ -351,14 +351,18 @@ class GraphitronSchemaClassGeneratorTest {
     void build_typeResolverId_alphabeticalOrder_beforeSchemaBuilder() {
         // TypeResolvers for multiple interfaces are registered in alphabetical order and
         // always before .query/.additionalType so the code registry is fully populated before build.
-        // Uses real fixture tables (content, film) so TableInterfaceType classification succeeds.
+        // Uses real fixture tables and real discriminator columns (content.content_type,
+        // film.text_rating) so both interfaces classify as TableInterfaceType. Both resolvers must
+        // therefore actually be emitted: an unresolvable @discriminate(on:) column would demote the
+        // interface, indexOf would yield -1, and the ordering assertion would pass vacuously, which
+        // is what the non-vacuity assertions below rule out.
         var body = buildBody("""
             type Query { z: ZebraContent  a: AlphaContent }
             interface ZebraContent @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
                 id: ID!
             }
             type ZebraFilm implements ZebraContent @table(name: "content") @discriminator(value: "FILM") { id: ID! }
-            interface AlphaContent @table(name: "film") @discriminate(on: "FILM_TYPE") {
+            interface AlphaContent @table(name: "film") @discriminate(on: "TEXT_RATING") {
                 id: ID!
             }
             type AlphaA implements AlphaContent @table(name: "film") @discriminator(value: "REGULAR") { id: ID! }
@@ -366,6 +370,8 @@ class GraphitronSchemaClassGeneratorTest {
         int zebraIdx = body.indexOf("codeRegistry.typeResolver(\"ZebraContent\"");
         int alphaIdx = body.indexOf("codeRegistry.typeResolver(\"AlphaContent\"");
         int queryIdx = body.indexOf(".query(");
+        assertThat(alphaIdx).as("the AlphaContent resolver is emitted at all").isNotEqualTo(-1);
+        assertThat(zebraIdx).as("the ZebraContent resolver is emitted at all").isNotEqualTo(-1);
         assertThat(alphaIdx).as("AlphaContent resolver before ZebraContent (alphabetical)").isLessThan(zebraIdx);
         assertThat(zebraIdx).as("typeResolvers before .query()").isLessThan(queryIdx);
     }

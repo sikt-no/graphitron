@@ -53,7 +53,9 @@ Subtype-specific fields may pull from another table. `FilmContent.rating` reache
 == Constraints
 
 * The interface (or union) must carry xref:table.adoc[`@table`]; without it there is no shared table to branch on.
-* The `on` column must exist on that table. The build fails if it does not resolve.
+* The `on` column must exist on that table. The build fails if it does not resolve, listing the table's columns as candidates.
+* The column may be of any type the catalog resolves, a PostgreSQL `enum` included. Values are bound through the column's own type, so an enum-typed discriminator compares correctly without any cast of your own.
+* When the column is a PostgreSQL `enum`, each xref:discriminator.adoc[`@discriminator(value:)`] must be one of that enum's literals. The build fails otherwise, naming the enum type and its literal set; a value outside the enum would otherwise bind as `NULL` and silently match no rows. A `varchar` column's values are not checked, because there is nothing to check them against.
 * Every implementing object must declare xref:discriminator.adoc[`@discriminator(value:)`]. Implementers without one are rejected at classify time.
 * All implementers must share the interface's `@table` (single-table polymorphism). Implementers on a different table are rejected; for cross-table polymorphism, omit `@discriminate` and use the multi-table fetcher instead.
 * `@discriminate` cannot be combined with disjoint-table union members. The same single-table requirement applies.

@@ -925,8 +925,9 @@ public class GraphitronSchemaValidator {
         // floor, and single-table is precisely the shape that floor steers authors toward, so
         // applying it here would reject the valid case. The single-table invariants (single-hop
         // FK per cross-table participant field, PK-bearing shared table, resolvable discriminator
-        // column) are enforced upstream in TypeBuilder when the TableInterfaceType and its
-        // participants are built; the variant reuses tit.participants() verbatim, so they are
+        // column, and its literals when the column's value domain is closed) are enforced upstream
+        // in TypeBuilder, which demotes the interface to UnclassifiedType rather than producing a
+        // TableInterfaceType at all; the variant reuses tit.participants() verbatim, so they are
         // inherited rather than re-mirrored here.
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }

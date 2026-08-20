@@ -21,8 +21,16 @@ import java.util.function.Function;
  * ({@link no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter} and
  * {@link no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter}'s batched arms).
  * All routes go through {@link #cellsCode}, so every VALUES cell in the generator binds as
- * {@code DSL.val(value, col.getDataType())} through the column's registered Converter and
- * renders a plain JDBC bind, no SQL {@code CAST}.
+ * {@code DSL.val(value, col.getDataType())} through the column's registered Converter.
+ *
+ * <p>What that renders is the binding's decision, not this builder's. For the key and lookup
+ * columns these routes actually serve it is a plain JDBC bind with no SQL {@code CAST}, which is
+ * the property the emitted VALUES table's readability rests on. It is not a general property of
+ * {@code DSL.val(value, dataType)}: a Postgres-enum column's binding renders
+ * {@code cast(? as "<schema>"."<enum_type>")}, deliberately, because that is the operand the
+ * database accepts (see {@link DiscriminatedTableFragments#discriminatorValue}). Should an enum
+ * column ever become reachable as a VALUES cell, the cast is correct there too; only the "plain
+ * bind" reading of the emitted SQL would need revisiting.
  *
  * <p>Each method takes the caller's slot list as {@code List<S>} plus a
  * {@code Function<S, ColumnRef>} projection, so callers keep their own slot representation

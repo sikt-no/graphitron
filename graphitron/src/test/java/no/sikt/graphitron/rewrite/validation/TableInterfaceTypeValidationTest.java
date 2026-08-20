@@ -22,11 +22,11 @@ class TableInterfaceTypeValidationTest {
     enum Case implements TypeValidatorCase {
 
         RESOLVED("table name resolved — no implementing types",
-            new TableInterfaceType("FilmStatus", null, "status_type", TestFixtures.tableRef("film_status", "FILM_STATUS", "FilmStatus", List.of()), List.of()),
+            new TableInterfaceType("FilmStatus", null, TestFixtures.discriminatorCol("status_type"), TestFixtures.tableRef("film_status", "FILM_STATUS", "FilmStatus", List.of()), List.of()),
             List.of()),
 
         RESOLVED_WITH_BOUND_PARTICIPANTS("resolved table with table-bound implementing types — valid",
-            new TableInterfaceType("FilmStatus", null, "status_type",
+            new TableInterfaceType("FilmStatus", null, TestFixtures.discriminatorCol("status_type"),
                 TestFixtures.tableRef("film_status", "FILM_STATUS", "FilmStatus", List.of()),
                 List.of(
                     new ParticipantRef.TableBound("NewFilm", TestFixtures.tableRef("film", "FILM", "Film", List.of()), null),

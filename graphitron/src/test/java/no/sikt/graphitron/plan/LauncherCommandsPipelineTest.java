@@ -284,7 +284,10 @@ class LauncherCommandsPipelineTest {
 
         var source = (no.sikt.graphitron.command.LaunchSource.DiscriminatedTable) row.source();
         assertThat(source.table().sameTable("content")).isTrue();
-        assertThat(source.discriminatorColumn()).isEqualToIgnoringCase("content_type");
+        assertThat(source.discriminatorColumn().sqlName()).isEqualToIgnoringCase("content_type");
+        // The resolved ref, not a bare name: the renderer needs the Java field name to spell
+        // the column's getDataType(), which types every comparison bind it emits.
+        assertThat(source.discriminatorColumn().javaName()).isEqualTo("CONTENT_TYPE");
         assertThat(source.knownValues()).containsExactlyInAnyOrder("FILM", "SHORT");
         // Single-table participants only: no joined detail, so the whole-query base slice is
         // empty; each branch embeds the borrowed ref and the minted projection unit.
@@ -305,7 +308,8 @@ class LauncherCommandsPipelineTest {
         assertThat(crossTable.term().asName()).isEqualTo("FilmContent_rating");
         assertThat(crossTable.term().path()).hasSize(1);
         assertThat(crossTable.term().terminal().sqlName()).isEqualToIgnoringCase("rating");
-        assertThat(crossTable.term().gate().column()).isEqualToIgnoringCase("content_type");
+        assertThat(crossTable.term().gate().column().sqlName()).isEqualToIgnoringCase("content_type");
+        assertThat(crossTable.term().gate().column().javaName()).isEqualTo("CONTENT_TYPE");
         assertThat(crossTable.term().gate().value()).isEqualTo("FILM");
         // The WHERE handshake and the invocation/result axes work exactly as the plain root's:
         // glue copied off the condition relation, direct invocation, ordered list shape.

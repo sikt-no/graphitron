@@ -203,6 +203,12 @@ public sealed interface GraphitronType
      * <p>{@code table} is the resolved jOOQ table (always present — failure to resolve produces
      * {@link UnclassifiedType}).
      *
+     * <p>{@code discriminatorColumn} is the resolved {@link ColumnRef}, not a bare SQL name: an
+     * unresolvable {@code @discriminate(on:)} produces {@link UnclassifiedType}, so the slot is
+     * total with no placeholder. Consumers need both spellings, {@code sqlName} for the qualified
+     * SQL reference and {@code javaName} for the column's {@code getDataType()}, which is what
+     * types the comparison binds (see {@code DiscriminatedTableFragments}).
+     *
      * <p>{@code participants} holds one {@link ParticipantRef} per implementing type, and every
      * one of them is table-backed: {@code TypeBuilder.buildParticipantList}'s discriminated arm
      * errors on a classified non-table implementor and its fall-through errors on a directiveless
@@ -216,7 +222,7 @@ public sealed interface GraphitronType
     record TableInterfaceType(
         String name,
         SourceLocation location,
-        String discriminatorColumn,
+        ColumnRef discriminatorColumn,
         TableRef table,
         List<ParticipantRef> participants
     ) implements TableBackedType {}

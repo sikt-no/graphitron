@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 
 import static no.sikt.graphitron.rewrite.TestFixtures.col;
+import static no.sikt.graphitron.rewrite.TestFixtures.discriminatorCol;
 import static no.sikt.graphitron.rewrite.TestFixtures.tableRef;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -49,7 +50,7 @@ class JoinedTableReprojectionTest {
 
     private static GraphitronSchema schema(List<GraphitronField> individualFields) {
         var base = tableRef("party", "PARTY", "Party", List.of(PARTY_ID));
-        var iface = new GraphitronType.TableInterfaceType("Party", LOC, "party_kind", base,
+        var iface = new GraphitronType.TableInterfaceType("Party", LOC, discriminatorCol("party_kind"), base,
             List.of(individual()));
         var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
         for (var f : individualFields) {

@@ -146,7 +146,8 @@ Single-table layouts hinge on the literal database value matching xref:../refere
 * *Duplicate values.* Two implementers with the same `value:` collapse to one branch; the second is unreachable. The build does not currently reject this, so audit for it.
 * *Unknown values.* A row whose discriminator column carries a value no implementer claims fails to map and surfaces as a runtime error. Either backfill the column or add an implementer.
 * *Mixing tables.* Every implementer must declare the interface's `@table`. An implementer on a different table is rejected at classify time; for cross-table layouts, omit `@discriminate` and use the multi-table fetcher instead.
-* *Missing column.* `@discriminate(on:)` must name a real column on the shared table. The build fails to resolve if it does not exist.
+* *Missing column.* `@discriminate(on:)` must name a real column on the shared table. The build fails to resolve if it does not exist, listing the table's columns as candidates.
+* *Enum columns.* A PostgreSQL `enum` discriminator works as it stands, with values bound through the column's own type. `value:` names the enum literal as the database spells it (`'PG-13'`), not a Java constant name derived from it (`PG_13`), and the build rejects a value the enum does not carry rather than letting it bind as `NULL` and match nothing.
 
 == Constraints
 
