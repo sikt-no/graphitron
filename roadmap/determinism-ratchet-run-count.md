@@ -193,14 +193,39 @@ rather than a tight one.
 
 ### Two routes, and the trade is not close
 
-**Route A: reduce the high-multiplicity relations.** Rename the view to `<name>_rule`, add a table of
-the same shape under the original name, populate it once per capture with
-`DELETE FROM <name> WHERE graph_name = ?` then
-`INSERT INTO <name> SELECT * FROM <name>_rule WHERE graph_name = ?`. Every existing reader keeps its
-spelling and the rule stays stated exactly once, in the view. `fact-model.adoc` sanctions the
-mechanism and the store already has four written `intent_` tables, with `ReachabilityRows.write` as
-the delete-by-graph-then-insert cadence. It does not sanction the *justification*, which is the
-reviewable part and has its own section below.
+**Route A: a registered materialization mechanism, and two relations registered into it.** The view
+stays exactly as it is, keeping its name and its rule. What is added is a registry of views that
+should be materialized after the crawl, and one mechanism that reads the registry and does it.
+
+* **The registry is authored rows in a `meta_` view**, which is this schema's established way of
+  describing itself: `meta_family`, `meta_prefixless_relation` and `meta_relation_family` are all
+  `VALUES` views, "authored as constant rows stated as views, so the description is versioned with
+  the DDL it describes and can never be refreshed apart from it". A materialization registry is the
+  same kind of statement and belongs beside them, naming for each entry the view, its target table,
+  and the views it must be materialized after.
+* **The dependency edges are registered, not inferred**, so the materializer can topologically sort
+  and populate in an order that is stated rather than derived. This closes the gap
+  `fact-model.adoc` leaves open when it says to "write the population order explicitly rather than
+  deriving it, since H2 offers no dependency catalog to derive it from": H2 has none, so the schema
+  carries its own.
+* **The materializer lives in `graphitron-model`**, the module whose DDL declares the relations, as
+  one method that reads the registry and refreshes every target in order. It is called by the
+  generator's capture pass, the dev loop, the language server, the MCP server, and the seeded test
+  fixture. One entry point, so no caller invents its own ordering and no caller can forget a
+  relation that was registered after it was written.
+* **Two relations are registered by this item**, `intent_argmapping_pair` and
+  `intent_spelled_table`, and the mechanism is what makes the third and fourth cheap.
+
+The readers that want the fast path reference the target; readers that want on-demand evaluation
+reference the view, and get the same rows either way because the target is populated by
+`INSERT INTO <target> SELECT * FROM <view>`. That equality is by construction and a gate should pin
+it rather than leave it as an argument. What keeps the two names from becoming two readings of one
+population is that a reader picking the slow name is a performance bug and nothing else, and the
+multiplicity check below is what finds it.
+
+`fact-model.adoc` sanctions the mechanism and the store already has four written `intent_` tables,
+with `ReachabilityRows.write` as the delete-by-graph-then-insert cadence. It does not sanction the
+*justification*, which is the reviewable part and has its own section below.
 
 Measured, with `intent_argmapping_pair` and `intent_spelled_table` reduced, on top of R733's two
 changes:
@@ -235,7 +260,7 @@ nothing populated returns zero rows: `ArgmappingPairTest`, `ArgmappingProjection
 
 **Those thirteen failures are a defect in the fixture, not a cost of the change, and the item should
 not be specced as though they were the latter.** Nothing observable changed. A reduction is populated
-by `INSERT INTO <name> SELECT * FROM <name>_rule`, so it holds exactly the rows the view computed,
+by `INSERT INTO <target> SELECT * FROM <view>`, so it holds exactly the rows the view computed,
 by construction. Every one of those tests asserts which rows a relation yields given a set of facts,
 and every one of those assertions is still true. They failed anyway, which means they were coupled to
 *when* the derivation runs rather than to what it returns. A change made purely for speed, that
@@ -249,20 +274,21 @@ derivation phase, because under derive-on-read that phase is implicit and free, 
 never cost anything. Materialise one derivation and the missing phase becomes visible at once. So
 this is one missing concept in a fixture, not thirteen broken tests.
 
-**Give the fixture the derivation boundary, once, and the tests never mention reductions.** The seam
-already exists: every one of the thirteen classes reads through a per-class helper (`rows(dsl)`,
-`only(dsl)`, `rowFor(dsl, ...)`), thirty read sites in total. Route those through one shared entry
-point on `SeededStore` that brings the derivation stratum up to date before serving, and the thirteen
-classes change by one line each and by nothing else, ever again. A future reduction, or the reversal
-of one, costs the fixture and no test. Sizing the work as "thirty refresh calls the tests now have to
-remember" is the version of this that keeps the coupling and pays for it repeatedly; it was the
-earlier reading here and it was wrong.
+**Give the fixture the derivation boundary, once, and the tests never mention materialization.** The
+seam already exists: every one of the thirteen classes reads through a per-class helper (`rows(dsl)`,
+`only(dsl)`, `rowFor(dsl, ...)`), thirty read sites in total. Route those through `SeededStore`,
+which calls the same `graphitron-model` materializer every other caller calls, and the thirteen
+classes change by one line each and by nothing else, ever again. Registering a fourth or a fifth
+relation later costs the fixture nothing, because the fixture calls the mechanism rather than naming
+relations. Sizing the work as "thirty refresh calls the tests now have to remember" is the version
+that keeps the coupling and pays for it repeatedly; it was the earlier reading here and it was wrong.
 
 **The refresh belongs on the capture cadence, not the detection cadence.** The prototype populated
 inside `FactCapture`'s detection pass, which is skipped when a run has no walk reach. A capture that
-writes rows and leaves a reduction stale is the failure mode the design has to exclude, so the
-population goes immediately after capture, unconditionally, with the order written down rather than
-inferred. That is the production half of the same boundary the fixture needs.
+writes rows and leaves a materialized target stale is the failure mode the design has to exclude, so
+the call goes immediately after capture, unconditionally. This is the same method the fixture calls,
+which is the point: one entry point means the production boundary and the test boundary cannot drift
+apart, and neither of them holds a list of relations that a later registration could invalidate.
 
 Two ways to avoid touching the tests entirely were considered and both are worse. Base-table triggers
 that recompute a reduction on write are fine on a seeded store of a dozen rows and catastrophic on a
@@ -271,13 +297,14 @@ Refreshing lazily on read, gated by a staleness stamp, puts a write on the read 
 answer for concurrent readers and read-only connections. The fixture boundary costs thirteen lines
 and asks nothing of production.
 
-**Every `_rule` view needs its own comment text.** `SchemaReferencePagesTest` fails the build on any
-relation or column with a blank comment, so renaming a view moves its comments to the reduction and
-leaves the rule undocumented. That is the gate working: the rule and the reduction are two relations
-a reader can land on and they owe different sentences. Budget the prose.
+**Every materialized target needs its own comment text.** `SchemaReferencePagesTest` fails the build
+on any relation or column with a blank comment, and a target is a new relation carrying none. That is
+the gate working: the view and its target are two relations a reader can land on and they owe
+different sentences, the view saying what the rule is and the target saying that it is a
+registered copy and when it is refreshed. Budget the prose, per registration.
 
 **Do not split the readers.** The tempting shortcut is to let the seeded tests keep reading the
-`_rule` view while the runtime reads the reduction. That makes the tests exercise different SQL from
+view while the runtime reads the target. That makes the tests exercise different SQL from
 production, which is the "two readings of one population" drift this schema's own comments warn about
 repeatedly. One new test pinning that a reduction equals its rule after a refresh is the honest
 version of that instinct.
@@ -290,28 +317,35 @@ argument. What needs one is the *justification*, and the existing precedent does
 `intent_type_domain` is the incumbent, and its comment states why it is a table in terms this item
 cannot borrow: "Materialized, not a view: the closure over cyclic type graphs has no safe H2 view
 form (a recursive UNION does not terminate on cycles, and the path-guarded form enumerates simple
-paths)." That is materialisation justified by **impossibility**. Every relation this item proposes to
-reduce has a perfectly good view form that returns the right answer; it is merely expensive. So the
-proposal extends the doctrine from "materialise what a view cannot express" to "materialise what a
-view expresses too slowly", and that extension is the reviewable decision. It belongs in the DDL
-header's cadence paragraph, which today says only that a post-capture family has its own writer on
-its own cadence and says nothing about why a family would be post-capture in the first place.
+paths)." That is materialisation justified by **impossibility**. Every relation this item registers
+has a perfectly good view form that returns the right answer; it is merely expensive. So the proposal
+extends the doctrine from "materialise what a view cannot express" to "materialise what a view
+expresses too slowly", and that extension is the reviewable decision.
 
-The shape is also new rather than copied, which the earlier draft of this item got wrong.
-`intent_type_domain` is computed in Java by `ReachabilityRows` and written; there is no view stating
-its rule and no `INSERT ... SELECT`. The `<name>_rule` view plus `INSERT INTO <name> SELECT * FROM
-<name>_rule` shape proposed here is a second variant, and on one axis a better one, since the rule
-stays declarative and stated exactly once where the incumbent's rule lives in Java. Two variants of
-one pattern want a stated relationship rather than silent coexistence: either the naming convention
-covers both, or the item says why the Java-derived case stays as it is.
+Two places say the narrow version today and both have to move, which is convenient, because it means
+the doctrine is written down rather than assumed.
+
+* The DDL header's cadence paragraph says a post-capture family has its own writer on its own
+  cadence, and says nothing about why a family would be post-capture in the first place. The
+  registry gives that answer a home.
+* The `intent_` family charter in `meta_family` says the residents are "views plus the materialized
+  derivations **whose table comments own why they cannot be views**". Under a registry the reason is
+  no longer per-table prose and no longer "cannot": it is a registration, and the charter should say
+  so.
+
+The incumbent's shape also differs, and the registry is what reconciles them rather than leaving two
+variants side by side. `intent_type_domain` is computed in Java by `ReachabilityRows` and written;
+there is no view stating its rule, so there is nothing for a registry to point at. Whether it stays
+outside the mechanism, keeping its Java derivation and its own comment, or acquires a view and joins
+the registry, is a decision this item should take explicitly rather than leave to whoever notices the
+asymmetry next.
 
 ### Gates the change has to clear, none of them optional
 
 Four beyond the compile, and the item should not discover them one build at a time.
 
 * **`FactSchemaGateTest`, comments.** Every relation and every column in `PUBLIC` must carry a
-  non-null `REMARKS`. A renamed rule view arrives uncommented because its comments moved with its
-  name to the reduction.
+  non-null `REMARKS`. Each materialized target is a new relation and arrives uncommented.
 * **`FactSchemaGateTest`, documentation home.** Every relation must resolve to exactly one family
   page through `meta_relation_family`, or carry an exemption row in `meta_prefixless_relation`, and
   no relation may match two family prefixes. An `intent_`-prefixed rule view should house itself,
@@ -322,37 +356,60 @@ Four beyond the compile, and the item should not discover them one build at a ti
 * **`CommentRenderabilityGateTest` and `SchemaReferencePagesTest`.** The comment text has to render,
   not merely exist.
 
+The registry earns gates of its own, and they are the reason to prefer it over per-relation writers.
+Each is a closure of authored intent against observed schema, the shape `meta_relation_family`
+already uses:
+
+* every registered view exists, and every target table exists with a column list matching its view;
+* every target's rows equal its view's rows on a settled store, which is the equality the whole
+  design rests on and the one thing no amount of prose can substitute for;
+* the registered dependency edges are acyclic, and agree with the edges a parse of the DDL finds, so
+  a registration that forgets an edge fails rather than producing a target populated from stale
+  inputs;
+* nothing outside the registry is a materialized `intent_` relation, which is what stops the next
+  bespoke writer from appearing beside the mechanism instead of inside it.
+
 ### Also unsettled
 
 * **Which relations to reduce.** Two sufficed for the measured case; the multiplicity table names
   five more above eight. Reduce on measured need, and record what was left unreduced as a decision
   rather than an omission.
 * **The gate's ceiling**, and whether the multiplicity check reports or fails on first landing.
-* **Which name is canonical.** This item proposes the reduction keeps the original name so no reader
-  changes, and the rule takes the suffix. That is a decision rather than an obvious default: it means
-  the name every consumer reads is the materialised copy and the rule is the thing you have to know
-  to look for.
+* **How a target is named.** The view keeps its own name, so the target needs one. A stated pair in
+  the registry needs no convention and no parsing; a suffix convention is terser and lets a gate
+  check the pairing without reading the registry. Minor, but pick one and write it down.
+* **Whether a target is graph-partitioned or whole.** Both registered relations lead with
+  `graph_name`, so a per-graph `DELETE`/`INSERT` is the obvious refresh and it keeps a capture from
+  disturbing a sibling graph's rows. A registry entry probably has to say which it is, since a
+  relation with no graph in its key (`intent_class_member_slot` is the existing example of one) can
+  only be refreshed whole.
 * **Readers that arrive without a capture.** The language server and the MCP server open the store
-  directly. Establish that they always follow a capture, or give the reduction a stated behaviour
-  when they do not, per the "absence needs a stated meaning" rule.
+  directly. They are already callers of the materializer in this design, but "call it on open" and
+  "assume a capture ran" are different contracts, and the second one needs the "absence needs a
+  stated meaning" treatment if it is chosen.
 * **Warm and shared stores.** The persisted store is shared across a workspace's modules, which
-  build in parallel under `-T 1C`. Partition-by-graph makes concurrent `DELETE`/`INSERT` safe on the
-  face of it, but a warm start that skips capture because nothing changed must leave the reduction
-  valid rather than empty, and `WarmStartRefreshTest` and `PersistentStoreTest` are where that gets
-  pinned.
+  build in parallel under `-T 1C`. Partition-by-graph makes concurrent refresh safe on the face of
+  it, but a warm start that skips capture because nothing changed must leave targets valid rather
+  than empty, and `WarmStartRefreshTest` and `PersistentStoreTest` are where that gets pinned.
+* **Whether `intent_type_domain` joins the mechanism**, per the doctrinal section above.
 
 ### Deliverables, in the order the numbers argue for
 
-1. The two reductions, their writer on the capture cadence, the fixture's derivation boundary, and
-   the doctrine paragraph. This is the 229.0s to 20.66s.
-2. The multiplicity check, reporting only, so the next reduction is chosen from data rather than from
-   this item's table.
-3. The run-count reduction, four to three. Worth doing because a test should not perform work its
-   contract does not need, and worth doing *after* the above, because by then it saves about five
-   seconds rather than about sixty.
-4. The clean-removal coverage decision, and the javadoc correction it implies either way.
-5. The duplicate-read merge and the `Files.mismatch` cleanup, both re-measured against the shape they
-   would actually ship into rather than against today's.
+1. **The mechanism**: the `meta_` registry with its dependency edges, the `graphitron-model`
+   materializer, its call from the capture pass and from `SeededStore`, the registry's own gates, and
+   the two doctrine paragraphs. Lands with zero relations registered and changes no timing, which is
+   what makes it reviewable on its design rather than on its numbers.
+2. **The two registrations**, `intent_argmapping_pair` and `intent_spelled_table`, plus the LSP and
+   MCP call sites. This is the 229.0s to 20.66s, and by this point it is two rows of authored data
+   rather than a schema change.
+3. **The multiplicity check**, reporting only, so the third and fourth registrations are chosen from
+   data rather than from this item's table.
+4. **The run-count reduction**, four runs to three. Worth doing because a test should not perform
+   work its contract does not need, and worth doing *after* the above, because by then it saves about
+   five seconds rather than about sixty.
+5. **The clean-removal coverage decision**, and the javadoc correction it implies either way.
+6. **The duplicate-read merge and the `Files.mismatch` cleanup**, both re-measured against the shape
+   they would actually ship into rather than against today's.
 
 ### A smaller one on the same path: the same view is read twice per run
 
