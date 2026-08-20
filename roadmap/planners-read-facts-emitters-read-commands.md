@@ -1,7 +1,7 @@
 ---
 id: R682
 title: "Planners read facts, emitters read commands: dissolve the walk and the leaf zoo"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: classification-model
@@ -498,7 +498,13 @@ Four success criteria, and every deliverable is a step toward one of them:
    **One carve-out has to be decided before that dial can be written, because the item pulls both
    ways on it.** Four emitters read `plan.GeneratedUnits` constants at five sites today
    (`ErrorRouterClassGenerator`, `ConnectionFetcherClassGenerator` twice,
-   `ErrorTypeFetcherClassGenerator`, `ChannelCatchArmEmitter`), and those reads are the naming
+   `ErrorTypeFetcherClassGenerator`, `ChannelCatchArmEmitter`), and the class as a whole is read at
+   27 sites across ten files, the rest of them minting a `GeneratedUnits(outputPackage)` and calling
+   it (`TypeFetcherGenerator` and `FetcherRegistrationsEmitter` at six each,
+   `ErrorRouterClassGenerator` three, `ErrorMappingsClassGenerator`, `ConditionGlueCall`,
+   `GraphitronSchemaClassGenerator` and `MultiTablePolymorphicEmitter` the remainder). The dial
+   forbids the package and not the constant, so the wider figure is the one the guard extension
+   meets. Those reads are the naming
    regime this item endorses rather than an inversion: one minting locus, read instead of restated,
    which is exactly why slice one moves the error-channel constant's formula *into* `GeneratedUnits`.
    So a dial that excludes `plan` wholesale forbids the very reads the single-mint rule requires.
@@ -508,8 +514,8 @@ Four success criteria, and every deliverable is a step toward one of them:
    move the minting locus below the plan/emitter boundary so both tiers read it as pure data. The
    first keeps one home for the formula and weakens the criterion's one-line statement; the second
    keeps the criterion clean and relocates a class this item's own retired-vocabulary list does not
-   otherwise touch. Whichever wins, the reads are counted here so the guard extension does not
-   discover them.
+   otherwise touch. Both answers cover the class whole, so the count sizes the edit rather than
+   moving the decision; it is stated here so the guard extension does not discover it.
 3. Validation derives from the store: a view where SQL can state the check, a query-then-insert
    where it cannot, the error surface reading their rows either way, with the minted-name
    collision checks as the one stated exception (settled in the validator half).
@@ -1485,3 +1491,25 @@ that no `MULTISET` store read exists in the tree was false in a way that mis-pri
 dangling after its Done-gate body deletion. Nothing in the architecture, the strategy, the four
 success criteria, or slice one's shape changed. This pass leaves the item in Spec and its author is
 now this reviewer, so the next Spec gate needs a third session.
+
+Spec gate 2026-08-20, signed off by that third session against trunk `3437ef8`. The factual layer was
+re-derived rather than read across again, and it holds: all four ratchet pins at their pinned values,
+both censuses reproduced under `CommandSeamRatchetTest`'s own regex (emitters 83/30/12/5/1 across
+five files summing to 131 = 69 + 62; plan 3/29/17/48/29/1/11 summing to 138), the per-producer line
+counts, the leaf-import census reconciling package for package (six in `generators.schema`, four in
+`generators.util`, `EntityResolutionBuilder`, `CatalogBuilder`, `PlanCompileGraph`, `DemandResidue`,
+with `diagnostics`, `command`, `render` and the three external modules clear), the thirteen `produce*`
+inversion sites across six files plus `discriminatedBranches` as the fourteenth, `plan/` importing
+nothing from `org.jooq` and using no `StoreHandle`, `intent_name_matched_key_pair` carrying no
+`graph_name`, `intent_argmapping_projection_defect` absent from the `diagnostic` union, the eight
+`MULTISET` store readers, the three homes of the `mappingsConstantName` mint, the two `CodeBlock`
+parameters and three `JoinStep.Hop` casts slice one retires, and every quoted DDL comment verbatim.
+`KeyProjectionCommands.produce` really takes no schema while `EmitPlan.produce` still does, so the
+worked example is what the item says it is. Both gate questions pass: the consumer-facing outcome is
+stated plainly as no change at all, with the payoff priced as the cost of the next change, and every
+mechanism the plan reaches for already exists in the tree, with three parallel mechanisms refused by
+name (a shared reader layer, oracle-diff scaffolding, a deny-list guard). One correction was folded
+into criterion 2 rather than left as a note: the carve-out counted `GeneratedUnits` constant reads
+where the dial forbids the package, so the inventory the paragraph promises is 27 sites across ten
+files rather than five across four. Neither answer to the fork changes, which is why it did not hold
+the gate.
