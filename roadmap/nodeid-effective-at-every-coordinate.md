@@ -438,7 +438,7 @@ arity when no segment names it. Both put one key column's value in one slot, so 
 Whether a segment named it is provenance rather than shape, and it is already answerable by joining
 `intent_argmapping_pair`, so this relation does not restate it.
 
-That has a consequence for a verdict that shipped a week ago, and stage 2 owes the edit.
+That has a consequence for a verdict already in the tree, and stage 2 owes the edit.
 `ArgmappingProjectionDefects`' `BARE_NODE_ID` currently rejects an `argMapping` pair that binds a
 `@nodeId` leaf and names no key column, saying the encoded id "would reach the database verbatim".
 Under the arity rule that is no longer true for a single-key node type, where the inferred projection
@@ -600,14 +600,16 @@ code-string matching on generated bodies is banned at every tier.
   loud, and its rule does not reach here and does not need to; see "Relationship to other items".
 * **The write-side diagnostic gets worse before the audit fixes it.** Handled by making the per-rail
   message an exit condition of stage 3 rather than a follow-up.
-* **Editing a verdict that shipped a week ago.** The arity rule makes `BARE_NODE_ID` wrong for
-  single-key node types, so stage 2 edits its text down to the arity fact rather than leaving two
-  answers to one question standing. The risk is the ordinary one of changing shipped prose while its
-  own item is still In Review, and the mitigation is that the two items are the only producers on
-  either side of the partition: R668's remaining population is composite keys at authored
-  `argMapping` sites, this item's is composite keys and type disagreements everywhere, and the
-  boundary has a test in the Tests section rather than only an argument here. The wording itself
-  needs no negotiation, `ArgmappingProjectionDefects.rejectionOf` being shipped text to read.
+* **Editing a verdict while its own item is still open.** The arity rule makes `BARE_NODE_ID` wrong
+  for single-key node types, so stage 2 edits its text down to the arity fact rather than leaving two
+  answers to one question standing. R668 is back in Ready over a test finding with no production
+  change requested, so the text is stable to edit but the item is not closed, and whoever does the
+  rework should hear that its verdict population is shrinking. The mitigation on the substance is that
+  the two items are the only producers on either side of the partition: R668's remaining population is
+  composite keys at authored `argMapping` sites, this item's is composite keys and type disagreements
+  everywhere, and the boundary has a test in the Tests section rather than only an argument here. The
+  wording itself needs no negotiation, `ArgmappingProjectionDefects.rejectionOf` being text already in
+  the tree.
 * **A carrier named for the reporter's subject would inherit the question's shape.** The hazard of an
   item scoped by subject is producing a model type to match: a `NodeIdBinding` or `NodeIdEffective`
   spanning coordinates would take its grain from "whatever the sites needed". The check is the one the
@@ -706,9 +708,14 @@ stage 3 expresses it there.
   reachability facts in stage 5, and it drains `walk_claim_domain_type` /
   `walk_claim_domain_field`. This item reads neither, so nothing here blocks or waits on it; recorded
   because the earlier draft's reachability argument leaned on relations R743 is retiring.
-* **R668** (`nodeid-key-projection-on-routine-params`, In Review) is the nearest neighbour. It makes a
+* **R668** (`nodeid-key-projection-on-routine-params`, Ready) is the nearest neighbour. It makes a
   node type's key columns nameable as a trailing `argMapping` path segment, which is the
-  `SINGLE_KEY_COLUMN` destination above. Most of it has landed: the resolution views, the rejection
+  `SINGLE_KEY_COLUMN` destination above. Its production surfaces are in the tree and this item reads
+  them; its status went back to Ready at its Done gate over a test, not a design. The finding was that
+  `ArgmappingKeyProjectionEmissionPipelineTest` asserts raw generated-method-body strings, the pattern
+  `development-principles.adoc` bans at every tier and `TypeSpecAssertions` exists to replace, with no
+  production change requested. So the surfaces below are stable to converge on, and the reopen is a
+  live worked example of the rule this item's own Tests section states. What has landed: the resolution views, the rejection
   family (`intent_argmapping_projection_defect` plus `ArgmappingProjectionDefects`, six verdicts across
   three `Rejection` channels), the carrier move, and the `@routine` emitter with its execution round
   trip. Outstanding is the `@service` emitter, a named empty slot rather than an open question:
