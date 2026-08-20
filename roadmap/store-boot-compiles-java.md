@@ -1,7 +1,7 @@
 ---
 id: R759
 title: "No stored column spells a file as a URI, so no store boot compiles Java"
-status: In Review
+status: Ready
 bucket: dx
 priority: 2
 theme: tooling
@@ -212,6 +212,37 @@ below, recorded in the In Review commit message.
   columns and the view.
 * `McpWire.uri` as a private restatement, and its comment's appeal to "what the store's own
   `canonical_uri` does for the same reason".
+
+## Done-gate finding, 2026-08-20: the retirement is three prose sites short
+
+The implementation landed at `452c497` and is the change this spec approved. `mvn install -Plocal-db`
+is green on all 14 modules and 6059 tests on the rebased head, every piece of named completeness
+evidence is present and ran, and the load-bearing invariant is falsifiable: reverting `RejectionFacts`
+to convert makes `DiagnosticFactsTest.noFileColumnSpellsAUri` fail on three of its three fixtures. The
+store side, the writers, the two boundaries, `SourceUri`'s two directions and the `ValidationReport`
+retirement all match this body. Nothing about the design or the tests needs another pass.
+
+What is not discharged is the `Retired vocabulary` section above, which is contract like the rest of
+the body. Three prose sites still describe the retired mechanism as live, all of them inside surfaces
+the Done gate's retirement sweep names (javadoc, roadmap bodies):
+
+* `SchemaSource`'s type javadoc lists "`ValidationReport`'s canonical URI" as one of four consumers
+  whose byte-for-byte agreement `sourceName()` underwrites. That mechanism no longer exists. It is
+  `{@code ValidationReport}` rather than a `{@link}` to the member, so the javadoc reference gate
+  cannot catch it, and `sourceName()` is the very string the writers now store raw, which makes this
+  the one site a reader of the new code is most likely to arrive at.
+* R733's "Every store boot compiles Java" section still quotes `CREATE ALIAS canonical_uri` as a live
+  64.5ms cost and closes with "See the store-boot item for the design half", a pointer to this file,
+  which Done deletes. Its next picker is sent after a statement that is gone.
+* R631's body describes `RejectionFacts` and `BuildWarningFacts` as each carrying a
+  "location-normalisation block (canonical URI when the source name is non-empty, line and column when
+  the line is positive)". Those are two of the three files this item changed; the block no longer
+  canonicalises anything, so the one-site refactor R631 proposes is now smaller than it reads.
+
+To satisfy the gate: repoint or drop the `SchemaSource` clause, mark R733's section as shipped here
+(with the landing SHA and the re-measured figures, so the wall-clock item keeps the datum without
+keeping the task), and correct R631's description of the block to what the two writers now do. Prose
+only; no code, test or measurement change is being asked for.
 
 ## What this does not do
 
