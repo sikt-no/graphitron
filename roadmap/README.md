@@ -28,8 +28,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
 | `R742` | The determinism ratchet costs 229 seconds: too many generator runs, and each run too expensive | Spec | 2026-08-20 | [plan](determinism-ratchet-run-count.md) |
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
+| `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | Ready | 2026-08-20 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | In Review | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
@@ -371,7 +371,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R627` [**@routine binds a list-shaped argument leaf to a scalar IN parameter without rejection**](routine-arg-leaf-cardinality-gate.md) — Backlog, bug
 - `R719` [**A mutation @routine carrier is decided by the payload shape, not by whether @reference was written**](routine-carrier-discriminator-from-payload-shape.md) — Backlog, architecture
-- `R668` [**Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection**](nodeid-key-projection-on-routine-params.md) — In Review, feature
+- `R668` [**Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection**](nodeid-key-projection-on-routine-params.md) — Ready, feature
 - `R454` [**Routine write result shapes: procedures, scalar/void routines, single-node Mutation @routine**](routine-write-result-shapes.md) — Backlog, feature
 - `R717` [**The routine carrier's explicit data-field path needs a correlation arm that anchors on the captured record**](routine-carrier-residual-path-correlation.md) — Backlog, architecture
 - `R718` [**Three reads a chain field or a routine-bound type falls through**](column-scope-admits-the-chain-terminus.md) — Backlog, architecture

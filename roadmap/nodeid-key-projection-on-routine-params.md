@@ -1,16 +1,54 @@
 ---
 id: R668
 title: "Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection"
-status: In Review
+status: Ready
 bucket: feature
 priority: 3
 theme: routine
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-19
+last-updated: 2026-08-20
 ---
 
 # Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection
+
+## Done-gate review, 2026-08-20: rework requested, one finding
+
+The delivery is one finding away from approval, and the finding is confined to a single test file.
+No production change is requested.
+
+**The finding.** `ArgmappingKeyProjectionEmissionPipelineTest` asserts raw generated-method-body
+strings in six of its seven cases: `fetcherBody()` returns `m.code().toString()` and the cases run
+`contains("InventoryRecord keyInputInventoryId = decodeInventoryRecord(...")`,
+`containsPattern("Routines\\.rentFilm\\(...")`, `body.indexOf(...)` ordering comparisons against
+`"try {"`, regex occurrence counts over the body, and the same `contains`/`containsPattern` shape
+over the condition glue's body string. That is the pattern
+`docs/architecture/explanation/development-principles.adoc` bans at every tier ("Code-string
+assertions on generated method bodies are banned at every tier... the compile and execution tiers
+replace them"), and the ban is review-enforced at test-review time, which makes this gate the
+enforcement point. `TypeSpecAssertions` is the codebase's own named remedy: its javadoc cites the
+ban and confines body-scan fragility to typed helpers so one file changes when the emitter's output
+shape changes. The rework is to re-express those assertions through typed structural helpers there
+(or siblings beside it), and where the claim is behavioral, to pin it at the tier that owns
+behavior: "the decode precedes the write transaction" is observable at the execution tier as a
+malformed node id surfacing as a client error instead of routing through the write's error channel.
+The two cases already structural (`theDescentToAProjectedLeafIsUntyped` over
+`MethodSpec.returnType()`/`parameters()`, and `aProjectionNoEmitterOwnsStopsThePlan` over the thrown
+message) are fine as they stand.
+
+**Verified clean, so the next pass need not redo it.** `mvn install -Plocal-db` passes on the
+delivery rebased onto trunk at 57f0683. The reviewer rule holds (implementer session
+`01CpytxdXY3ZXMmjms8ke8VZ`, this reviewer distinct). The user-facing-doc check passes: the
+`nodeId.adoc` and `routine.adoc` additions read as reference prose with no roadmap-internal
+markers. The retirement sweep is skipped (no retired vocabulary declared, none found undeclared).
+The claims table below spot-verified accurately: the ratchet pin at 139 with its narrative, the
+24-case defect test and 15-case projection test, the defect view's six arms disjoint by
+construction over `node_id_declared`/`trailing_segments`/one existence test, the type gate standing
+aside on either unknown operand (including the `candidates > 1` edge, which stays an unchecked
+projection rather than a silent gap), `tables_class_fqn` resolved off the codegen classpath with
+the two-schema agreement case that would catch a concatenating capture, the array-safe
+`ColumnRef.decodeBindingType`, and the PostgreSQL execution test asserting the decoded integer key
+in the committed row. All of that stands; only the emission test's assertion idiom needs the pass.
 
 A `@nodeId` field carries a base64-encoded node identity on the wire, not the primary key it
 encodes. Graphitron already knows how to turn that wire form back into typed key values: the
