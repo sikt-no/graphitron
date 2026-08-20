@@ -1,7 +1,7 @@
 ---
 id: R748
 title: "Decouple the roadmap tool from the generator reactor"
-status: Backlog
+status: Spec
 bucket: dx
 priority: 5
 theme: tooling
@@ -12,20 +12,149 @@ last-updated: 2026-08-20
 
 # Decouple the roadmap tool from the generator reactor
 
-The roadmap tool is the lowest-cadence module in the reactor, yet using it cold requires building `graphitron-model` first, which drags in the jOOQ codegen toolchain and effectively a full reactor build. It also ships DuckDB, a JNI-bundled artifact with a three-platform binary matrix, as its only other heavyweight dependency. Both entanglements are accidental homing, not real needs, and three moves remove them. The end state: roadmap-tool's sole main-scope dependency is snakeyaml, every input arrives as a file path, and a cold `mvn -pl roadmap-tool exec:java` compiles one small pure-Java module in seconds. Nothing about the CLI, the skills, the verify gates' coverage, or the docs site changes for users of any of them.
+> Remove the two dependency edges that tie `roadmap-tool` to the generator build:
+> the `graphitron-model` dependency (which exists only because two schema-docs
+> subcommands are homed in the tool) and the DuckDB JNI artifact (which exists
+> only to parse two input file formats). Three moves, no new modules, no new
+> mechanisms: the schema-drift gate becomes a meta-test in `graphitron-model`,
+> the schema-reference renderer becomes a class in `graphitron-model` invoked
+> from the existing docs execution slot, and the two coverage reports parse
+> their inputs in Java. End state: `roadmap-tool`'s only main-scope dependency
+> is snakeyaml, and a cold `mvn -pl roadmap-tool exec:java` compiles one small
+> pure-Java module in seconds instead of requiring a reactor build.
 
-## The three moves
+## Motivation
 
-1. **`check-schema-identifiers` becomes a meta-test in `graphitron-model`.** The gate is a pure guard: boot the fact store, read `StoreCatalog`, scan the authored pages under `docs/architecture/`, fail on an identifier the schema no longer declares. The repo's idiom for exactly this shape is the meta-test (`RoadmapReferenceGuardTest`), and the store classes are already on `graphitron-model`'s own test classpath, so the exec execution in roadmap-tool's pom, its `Main` dispatch arm, and the exit-code-versus-exception dance all get deleted rather than moved. Accepted behavior change: as a test it is skipped under `-Pquick`, which is already true of the repo's other guard tests; CI's full build still gates trunk.
+The roadmap tool is the lowest-cadence module in the reactor and the one every
+session touches first (item creation, status flips, README regeneration), yet
+it is the most expensive module to use cold: its pom declares `graphitron-model`
+at `${project.version}`, so `mvn -pl roadmap-tool exec:java` on a fresh checkout
+first builds the fact-store module and, through it, the jOOQ codegen toolchain.
+The tool also carries `duckdb_jdbc`, a JNI-bundled artifact whose bundled
+binaries cover three platforms, as the query engine for two audit reports whose
+data volumes are thousands of rows.
 
-2. **`render-schema-reference` becomes a class in `graphitron-model`, consumed honestly by docs.** The renderer cannot be a test (it produces site pages into the Asciidoctor staging tree and must run when tests are skipped), so it keeps its exec slot in the docs pom at the same phase with the same arguments; only the `mainClass` and the classpath dependency change. The docs pom's dependency block then states a real consumption relationship (`graphitron-model` supplies the schema renderer) instead of the current ordering trick (a `provided` dependency on roadmap-tool whose half-job is forcing build order). The renderer's non-vacuity floors (empty catalog, relation on no page, blank comment text) move unchanged and keep gating `-P!docs` builds, since `process-resources` is base-build. The two module-local helpers the renderer shares with roadmap-tool's other renderers (`InertSpans`, `BuildFailure`) need homes on both sides; copies are acceptable at their size.
+Neither dependency reflects a real need of the tool:
 
-3. **`leaf-coverage` and `source-coverage` drop DuckDB for plain Java.** The only DuckDB-specific surface is ingestion: `read_json_auto` over the per-module classifier-trace JSONL files and `read_csv_auto` over the JaCoCo CSVs. Everything else is already staged through plain JDBC INSERTs and aggregated with dialect-neutral SQL. Parse the JSONL with snakeyaml (already on the classpath; YAML 1.2 is a JSON superset), parse the JaCoCo CSV with a trivial header-plus-values reader, and do the group-bys in Java streams; `TierVocabulary`'s tier ordering already exists as a comparator. The JNI artifact and its platform matrix leave the tool.
+- The `graphitron-model` edge serves exactly two subcommands,
+  `render-schema-reference` and `check-schema-identifiers`, which call
+  `GraphitronModelStore.open()` and `StoreCatalog.read(...)`. No generated
+  model classes, no capture logic; the census they read is derived by H2 from
+  the fact schema DDL. Their change cadence tracks the DDL and the store, not
+  the roadmap tool: they are `graphitron-model` tooling that happened to be
+  homed here. Moving them to the module whose cadence they share is not a
+  workaround; it is the correct homing, and it keeps the shared-reader
+  invariant (every census consumer reads through `StoreCatalog`, never a
+  second derivation) in one module instead of across a dependency edge.
+- The DuckDB edge serves exactly one feature: `read_json_auto` over the
+  per-module classifier-trace JSONL files and `read_csv_auto` over the JaCoCo
+  CSVs. Every other table in those reports is already staged through plain
+  JDBC inserts, and the aggregation SQL is dialect-neutral. An analytical
+  engine ingesting kilobytes is machinery without a matching cost.
 
-After the moves, removing the `graphitron-model` and `duckdb_jdbc` declarations from roadmap-tool's pom removes exactly the dependency edges whose consumers left; no remaining line of the tool touches H2, jOOQ, or DuckDB (verified: zero such imports in the module's sources; DuckDB is reached only via JDBC driver loading in the two coverage reports).
+The payoff is proportionate on both sides of the cut. For the tool: cold use in
+seconds, pure-Java everywhere a JVM runs, and a dependency list (snakeyaml)
+that makes the module's actual shape visible. For the reactor: the docs module
+stops declaring a `provided` dependency on `roadmap-tool` whose half-job is
+forcing build order, and instead declares the true relationship, that it
+consumes `graphitron-model`'s schema renderer. Nothing user-visible changes:
+same CLI commands, same skills, same gate coverage at the same build phases,
+same docs site.
 
-## Considered and set aside
+## Design
 
-- **Publish the tool at its own version and pin it in the reactor** (this item's original framing). Once the decoupling lands, pinning saves only the per-build compile of one small pure-Java module, and costs a release workflow, a version scheme, a pin property, rehosted verify gates, a reshaped CLI, and lockstep gate-plus-docs changes splitting into release-then-bump-then-land. `graphitron-tree-sitter-natives` earns that machinery through its C toolchain and four-platform binary matrix; a decoupled roadmap-tool needs `javac`. Revisit only if the module's build cost ever becomes real; the decoupled tool is trivially publishable then.
-- **maven-site-plugin for the schema reference.** It renders and assembles; it does not generate domain content, so the generator survives unchanged and the site forks into a second (Doxia) pipeline outside the AsciiDoc xref graph.
-- **AsciidoctorJ extensions (include processor or block macro) for the schema reference.** Extensions synthesize content inside documents but cannot add documents, and the reference's page set is data (one page per relation family), so authored stubs would reappear and drift. Generation would also move behind the profile-gated HTML render, un-gating `-P!docs` builds that the floors and `check-adoc-xrefs` currently cover from the staged sources.
+### 1. `check-schema-identifiers` becomes a meta-test in `graphitron-model`
+
+The gate is a pure guard: boot the fact store, read `StoreCatalog`, scan the
+authored pages under `docs/architecture/` for backtick-quoted identifiers, fail
+on one the schema no longer declares. The repo's idiom for exactly this shape
+is the meta-test; `RoadmapReferenceGuardTest` is the precedent. Rewrite
+`SchemaIdentifierDriftCheck` (and its test) as a `graphitron-model` test-tier
+class. The store classes are already on that module's test classpath, so the
+exec execution in `roadmap-tool/pom.xml`, the `Main` dispatch arm, and the
+exit-code-versus-exception dance are deleted rather than moved.
+
+Accepted behavior change: as a test the gate is skipped under `-Pquick` and
+`-DskipTests`, where the exec execution ran unconditionally. This matches how
+the repo already treats its other guards (`RoadmapReferenceGuardTest` has the
+same property), and CI's full build still gates trunk. The failure message must
+keep naming the offending pages and identifiers verbatim.
+
+### 2. `render-schema-reference` becomes a `graphitron-model` class
+
+The renderer cannot be a test: it produces site pages into the Asciidoctor
+staging tree and must run when tests are skipped. Move `SchemaReferencePages`
+(and `SchemaReferencePagesTest`) into `graphitron-model` with a small `main`
+entry point. The docs pom keeps the same execution slot, phase
+(`process-resources`, base build), arguments, and staging output; the diff is
+one `mainClass` line and swapping the `provided` dependency from
+`graphitron-roadmap-tool` to `graphitron-model`. The renderer's non-vacuity
+floors (empty catalog, relation on no page, blank comment text) move unchanged
+and keep gating `-P!docs` builds. `check-adoc-xrefs` continues to verify
+authored links into the generated pages against the staged tree, unaffected.
+
+### 3. The coverage reports drop DuckDB
+
+`LeafCoverageReport` and `SourceCoverageReport` replace engine-side ingestion
+with Java-side parsing: each JSONL trace line parses with snakeyaml (already a
+dependency; YAML 1.2 is a JSON superset), the JaCoCo CSV parses with a
+header-plus-values reader (its values contain no quoted separators), and the
+group-bys move to Java streams over records. `TierVocabulary` already carries
+the tier ordering as a comparator; its SQL-generating half retires. Rendered
+output must be byte-identical for identical inputs, which the existing
+verify-mode drift check (`leaf-coverage --verify`) pins for the committed
+report.
+
+### Seam details
+
+- `BuildFailure` (26 lines) stays in `roadmap-tool` for its many remaining
+  consumers; the moved renderer throws `graphitron-model`'s own equivalent (or
+  `IllegalStateException` with the same messages), and the meta-test asserts
+  instead of throwing.
+- `InertSpans` splits along its two halves. The renderer uses only the
+  monospace-emit cluster (`monospace` and what it calls); the drift check uses
+  only the scanning cluster (`BlockContext`, `maskInert`). Each move takes its
+  cluster with its tests; the full class stays in `roadmap-tool` for the other
+  renderers and checks. The halves do not share state, so this is extraction,
+  not duplication of one mechanism.
+- `roadmap-tool/pom.xml` drops the `graphitron-model` and `duckdb_jdbc`
+  declarations once their consumers are gone. No remaining source line in the
+  module touches H2, jOOQ, or DuckDB (verified: zero such imports; DuckDB was
+  reached only through JDBC driver loading in the two reports).
+
+## Verification
+
+- Full reactor build green, including the docs module: the generated schema
+  reference in staging is identical before and after the move (diff the staged
+  `schema/` directory across the two builds).
+- The moved gate still bites: introduce a dead identifier into an authored
+  architecture page locally and observe the `graphitron-model` test fail with
+  the page and identifier named.
+- The coverage reports still round-trip: regenerate
+  `roadmap/inference-axis-coverage.adoc` and the migration fragment from an
+  instrumented build and confirm the verify mode passes, then confirm the
+  DuckDB-era committed output needed no content change (formatting-neutral
+  rewrite).
+- Cold-use check: from a clean clone with an empty local repository,
+  `mvn -pl roadmap-tool exec:java -Dexec.args='next-id roadmap'` succeeds
+  without building any other module.
+
+## Rejected designs
+
+- **Publish the tool at its own version and pin it** (this item's original
+  framing): after the decoupling, pinning saves one small pure-Java compile
+  per build but costs a release workflow, a pin property, rehosted gates, and
+  two-step lockstep changes; machinery without a matching cost.
+- **Pin or shade `graphitron-model` inside the tool**: the gate must check
+  docs against the checkout's current DDL, and a second boot implementation
+  invites H2-version and statement-splitter drift.
+- **maven-site-plugin for the schema reference**: it renders, it does not
+  generate; the generator survives unchanged and the site forks into a second
+  Doxia pipeline outside the AsciiDoc xref graph.
+- **AsciidoctorJ extensions for the schema reference**: extensions cannot add
+  documents and the page set is data, so authored stubs would reappear;
+  generation would also move behind the profile-gated HTML render, un-gating
+  `-P!docs` builds.
+- **Replace DuckDB with H2 in the coverage reports**: works, but keeps an SQL
+  engine for group-bys over thousands of rows and adds H2 as a new direct
+  dependency of the tool.
