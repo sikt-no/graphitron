@@ -463,6 +463,10 @@ class FactSchemaGateTest {
      * than per prefix: {@code store_graph} is keyed on {@code graph_name} and its two recipe
      * children lead with it, while {@code store_source} and {@code store_stamp} carry neither
      * dimension, being store-global by design.
+     * {@code meta_} answers per relation for the same reason: its rows describe the schema itself
+     * and no run's partition, so a keyed one leads with its own subject. The family had no keyed
+     * relation at all until the materialization registry, so this arm is a hole the first one
+     * opened rather than a rule it breaks.
      */
     @Test
     @DisplayName("every base relation leads its key with its partition dimension")
@@ -484,6 +488,11 @@ class FactSchemaGateTest {
                             -> "graph_name";
                         case "store_source" -> "source_name";
                         case "store_stamp" -> "singleton";
+                        default -> "graph_name";
+                    };
+                } else if (table.startsWith("meta_")) {
+                    expected = switch (table) {
+                        case "meta_materialize" -> "source_view_name";
                         default -> "graph_name";
                     };
                 } else {
@@ -591,6 +600,79 @@ class FactSchemaGateTest {
                     .isSubsetOf("sibling", "own");
             }
         }
+    }
+
+    /**
+     * The equality the materialization registry rests on: on a settled store a registered target
+     * holds exactly the rows its source view computes, for the graph that captured it and no other.
+     *
+     * <p>Every other claim a registration makes is an argument that no answer changes anywhere, and
+     * that argument is only as good as this one. It holds by construction, the target being filled
+     * by {@code INSERT INTO target SELECT * FROM source} and nothing else writing it, but a
+     * construction argument is exactly the kind that outlives the edit which breaks it: a refresh
+     * scoped to the wrong partition, a delete clearing more or less than the insert refills, a
+     * target whose column list drifted from its view's. So it is checked against a real capture.
+     *
+     * <p>Two graphs, borrowing the fusion fixture above for the same reason it has two: the refresh
+     * is scoped per graph, and one graph cannot tell "refilled this graph" from "refilled
+     * everything". The structural half of the registry's gates needs no capture at all and lives in
+     * the store's own module, beside the DDL it closes over.
+     */
+    @Test
+    @DisplayName("a registered target holds its rule's rows, under its own graph only")
+    void everyMaterializedTargetEqualsItsRule(@TempDir Path tmp) throws java.io.IOException {
+        Path siblingDir = java.nio.file.Files.createDirectories(tmp.resolve("sibling"));
+        Path ownDir = java.nio.file.Files.createDirectories(tmp.resolve("own"));
+        try (var store = GraphitronModelStore.open()) {
+            var dsl = store.dsl();
+            FactCapture.capture(dsl, new FactCapture.GraphIdentity("sibling", siblingDir),
+                FactCapture.SubjectConfig.none(),
+                CapturedStore.registryOf(siblingDir, "type Query { actors: [String!]! }"),
+                CapturedStore.attributionOf(siblingDir));
+
+            var registrations = no.sikt.graphitron.model.derive.Materializations.registrations(dsl);
+            var siblingBefore = registrations.stream()
+                .map(r -> materializedRows(dsl, r.targetTableName(), "sibling"))
+                .toList();
+
+            FactCapture.capture(dsl, new FactCapture.GraphIdentity("own", ownDir),
+                FactCapture.SubjectConfig.none(), CapturedStore.registryOf(ownDir, FIXTURE),
+                CapturedStore.attributionOf(ownDir));
+
+            for (int i = 0; i < registrations.size(); i++) {
+                var registration = registrations.get(i);
+                assertThat(materializedRows(dsl, registration.targetTableName(), "own"))
+                    .as("%s should hold exactly what %s computes for the capturing graph",
+                        registration.targetTableName(), registration.sourceViewName())
+                    .isEqualTo(materializedRows(dsl, registration.sourceViewName(), "own"));
+                assertThat(materializedRows(dsl, registration.targetTableName(), "sibling"))
+                    .as("capturing 'own' must leave the sibling's partition of %s alone",
+                        registration.targetTableName())
+                    .isEqualTo(siblingBefore.get(i));
+            }
+        }
+    }
+
+    /**
+     * A relation's rows for one graph, sorted, as strings. Content rather than order: a target is a
+     * bag its view fills, and neither side promises an order.
+     */
+    private static java.util.List<String> materializedRows(org.jooq.DSLContext dsl,
+                                                           String relationName, String graphName) {
+        var relation = org.jooq.impl.DSL.table(
+            name(relationName.toUpperCase(java.util.Locale.ROOT)));
+        var graph = field(name("GRAPH_NAME"), String.class);
+        boolean partitioned = dsl.fetchExists(dsl.selectOne()
+            .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
+            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+            .and(field(name("TABLE_NAME"), String.class)
+                .eq(relationName.toUpperCase(java.util.Locale.ROOT)))
+            .and(field(name("COLUMN_NAME"), String.class).eq("GRAPH_NAME")));
+        var query = dsl.select(org.jooq.impl.DSL.asterisk()).from(relation);
+        var rows = partitioned
+            ? query.where(graph.eq(graphName)).fetch(org.jooq.Record::toString)
+            : query.fetch(org.jooq.Record::toString);
+        return rows.stream().sorted().toList();
     }
 
     /**

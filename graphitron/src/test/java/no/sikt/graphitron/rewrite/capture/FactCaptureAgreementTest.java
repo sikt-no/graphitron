@@ -118,11 +118,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code JavaSourceFactsTest}: it is written by neither capture nor a graph, so its
  *       lifecycle anchor is partitioned by source file where the oracle families' are partitioned
  *       by graph, and there is no fixture here that would fill it.</li>
- *   <li>{@link Arm#DERIVED} for shipped derivations: views, and the materialized capture-cadence
- *       derivation {@code intent_type_domain}, which a writer re-derives inside every capture
- *       (materialized only because H2 has no safe recursive view form for a cyclic type graph;
- *       its cadence and clearing follow the derivation, not an oracle, and the warm/cold census
- *       anchors its lifecycle like any capture-written rows). A pure re-projection
+ *   <li>{@link Arm#DERIVED} for shipped derivations: views, the materialized capture-cadence
+ *       derivations, and the authored rows describing the schema itself. A hand-written
+ *       materialized derivation ({@code intent_type_domain}) has a writer that re-derives it
+ *       inside every capture, materialized only because H2 has no safe recursive view form for a
+ *       cyclic type graph; its cadence and clearing follow the derivation, not an oracle, and the
+ *       warm/cold census anchors its lifecycle like any capture-written rows. A registered
+ *       materialization is two relations under one rule and both are derived: the {@code _live}
+ *       view stating it, and the canonically named target the materializer refills from that view
+ *       on the same cadence. The {@code meta_} rows are derived in the widest sense of the arm,
+ *       being authored constants the DDL supplies rather than anything a run reads, which is why
+ *       {@code meta_materialize} sits here beside the three rosters. A pure re-projection
  *       ({@code graphql_directive_site}) registers the base relations it projects and its
  *       agreement is vacuous by construction; a semantic derivation (the {@code intent_} claim
  *       views and the demand stratum) registers with its own anchor instead, which lives with
@@ -431,6 +437,7 @@ class FactCaptureAgreementTest {
         registrations.put("meta_family", Arm.DERIVED);
         registrations.put("meta_prefixless_relation", Arm.DERIVED);
         registrations.put("meta_relation_family", Arm.DERIVED);
+        registrations.put("meta_materialize", Arm.DERIVED);
         registrations.put("javac_diagnostic", Arm.ORACLE);
         registrations.put("walk_type_backing_class", Arm.ORACLE);
         registrations.put("rejection_validation_error", Arm.ORACLE);

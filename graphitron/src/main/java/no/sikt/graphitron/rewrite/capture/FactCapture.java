@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.capture;
 
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects;
@@ -421,6 +422,7 @@ public final class FactCapture {
                 expansions.synthesizedEdges());
             InputOccurrencePaths.derive(txDsl, graph.name());
             TypeBackingRows.derive(txDsl, graph.name());
+            Materializations.refresh(txDsl, graph.name());
             sources.commitStamps(txDsl);
         });
     }

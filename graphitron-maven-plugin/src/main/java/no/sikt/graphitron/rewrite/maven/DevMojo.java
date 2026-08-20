@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.SchemaParseException;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
@@ -239,6 +240,12 @@ public class DevMojo extends AbstractRewriteMojo {
         this.sessionStore = initialCtx.storeDirectory() != null
             ? GraphitronModelStore.openAt(initialCtx.storeDirectory())
             : GraphitronModelStore.open();
+        // The session reads this store without capturing into it, and the editor-facing readers
+        // below are read-only, so the materialized targets are refreshed here rather than assumed
+        // current: a warm store whose capture was skipped because nothing changed would otherwise
+        // serve the language server and MCP stale rows. Idempotent, and a no-op with no
+        // registrations.
+        Materializations.refreshAll(sessionStore.dsl());
         this.compileFacts = new CompileFacts(sessionStore.dsl(),
             new FactCapture.GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
         this.rejectionFacts = new RejectionFacts(sessionStore.dsl(),

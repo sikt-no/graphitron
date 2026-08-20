@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.test;
 
+import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import org.jooq.DSLContext;
 
@@ -146,6 +147,27 @@ public final class SeededStore {
             seedGraph(dsl, graphName);
             body.accept(dsl);
         });
+    }
+
+    // ===== The derivation boundary =====
+
+    /**
+     * Runs the capture-cadence derivations over {@code graphName}, which a case calls once its
+     * rows are seeded and before it reads a derived relation.
+     *
+     * <p>The store's architecture has three strata: capture transcribes facts, derivation computes
+     * further facts from them, and queries read. This class models the first and the third, and
+     * under derive-on-read the middle one is implicit and free, so its absence never cost anything.
+     * A materialized derivation makes it visible: a target holds rows only once something fills it.
+     * This is that stratum, and it is deliberately the same entry point production calls, so the
+     * two boundaries cannot drift apart and neither holds a list of relations a later registration
+     * could invalidate.
+     *
+     * <p>Idempotent and cheap on a seeded store, so a read helper may call it unconditionally
+     * rather than reasoning about whether an earlier one in the same case already did.
+     */
+    public static void derive(DSLContext dsl, String graphName) {
+        Materializations.refresh(dsl, graphName);
     }
 
     // ===== Anchors =====
