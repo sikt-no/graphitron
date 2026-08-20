@@ -1,32 +1,50 @@
 ---
 id: R682
-title: "Planners read facts, emitters read commands: close the seam on both tiers"
+title: "Planners read facts, emitters read commands: dissolve the walk and the leaf zoo"
 status: Spec
 bucket: architecture
 priority: 3
 theme: classification-model
-depends-on: [delivery-verdict-derives-from-the-store]
+depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-19
+last-updated: 2026-08-20
 ---
 
-# Planners read facts, emitters read commands: close the seam on both tiers
+# Planners read facts, emitters read commands: dissolve the walk and the leaf zoo
 
-The intended architecture is one sentence. Capture writes facts; the classification walk's sealed
-leaves dissolve into those facts rather than growing; planners read facts and produce commands; and
-emitters render commands. Each tier reads only the tier below it, so a planner never reaches past
-the facts into the walk that produced them, and an emitter never reaches past its command into the
-thing that produced it.
+The intended architecture is one sentence. Capture writes facts; planners read facts and produce
+commands; emitters render commands; validation is questions asked of the facts. Each tier reads
+only the tier below it, so a planner never reaches past the facts into anything that produced
+them, and an emitter never reaches past its command into the thing that produced it.
 
 That sentence is the functional-core / imperative-shell topology the development principles fix
 (`docs/architecture/explanation/development-principles.adoc`), applied to the emit path: the
 planners are the core, pure derivation from typed facts to command rows, and `render` is the shell
 that encodes those rows outward. `roadmap/audits/2026-07-26-fcis-command-layer-distance.md`
-measured the tree's distance from that ideal; the emit-path share of closing it is this item, and
-closing it is what dissolves the leaf zoo for the generator, because with the language server and
-the MCP re-sourced the plan and the emitters are the zoo's last remaining consumers of size.
+measured the tree's distance from that ideal; this item owns closing it, and closing it is what
+dissolves the leaf zoo, because the generator is the zoo's final consumer.
 
-This item owns getting there, on both tiers.
+## Goal and strategy
+
+The migration is systematic and component-at-a-time, not a strangler: the language server came off
+the leaf model, then the MCP, and the generator is what remains. When it is done, the
+classification walk and the sealed leaf hierarchies it mints are deleted. Four points fix the
+strategy, and every section below serves one of them:
+
+1. **The leaf zoo dissolves.** Not "stops growing", not "loses its largest consumer": the walk and
+   the sealed hierarchies leave the tree, because after this item nothing reads them.
+2. **Every fact the generator or the validator reads off a leaf lands as a normalized fact in the
+   store first**, at its own grain, per the fact model's own law. Where a leaf carries a verdict no
+   relation states yet, the relation is the deliverable; the leaf is never wrapped, adapted, or
+   kept as a side channel.
+3. **The generator is plan → command → emit, FCIS.** A planner reads the store, ideally as a single
+   query on the relation's own grain, and derives a list of command rows; the render shell folds
+   over the rows and emits. No planner reads a leaf, no emitter reads anything but its command row.
+4. **Validation becomes views in the fact model** wherever a check is expressible as a relation
+   over captured facts, which is most of them. A check that genuinely cannot be a view (it needs
+   computation SQL cannot state) runs as a query over the store whose findings are inserted back
+   into the fact model as rows, and the error surface reads those rows. Either way the walk stops
+   being what validation reads.
 
 ## Problem
 
@@ -47,10 +65,23 @@ dispatch on leaves directly rather than folding over command rows. So the store 
 source of a single generated file, and the claim that it is the destination is, on the evidence of
 the emitted output, unproven.
 
-Those are one problem at two tiers, which is why one item owns them. Converting the plan without the
-emitters leaves a store-derived command relation that a leaf-reading emitter can still bypass;
-converting the emitters without the plan leaves commands that are complete rows derived from the
-walk. Neither half alone makes the sentence at the top true.
+The validator is the same story one stage earlier. `GraphitronSchemaValidator` is 2,023 lines and
+73 `validate*` methods reading nothing but the leaf model: it re-wraps the `Rejection` each
+`Unclassified*` leaf carries, runs fourteen structural checks over the classified types and fields,
+and drains `schema.diagnostics()`. It even reads *upward*: it calls
+`ProjectionCommands.addressCollisions` and imports two emitters, a validator depending on a planner
+and the shell. The successor channel already ships beside it: `StoreDetections.violations()` folds
+store-derived detections (`AuthoredClaimConflicts`, `ArgmappingProjectionDefects`) into the same
+`ValidationReport`, minting user-facing errors with no leaf anywhere in the derivation. And
+validation runs after `captureFactsAndDetect` in the pipeline, so the store is available to every
+check today; what is missing is the migration, not the plumbing.
+
+Those are one problem at three surfaces, which is why one item owns them. Converting the plan
+without the emitters leaves a store-derived command relation that a leaf-reading emitter can still
+bypass; converting the emitters without the plan leaves commands that are complete rows derived from
+the walk; and converting both without the validator keeps the whole walk alive for its smallest
+consumer. None alone makes the sentence at the top true, and only all of them together let the walk
+be deleted.
 
 ## Where the line actually falls today
 
@@ -70,7 +101,16 @@ reachable and only one is right.
 
 `no.sikt.graphitron.plan` reads leaves, not facts. `EmitPlan.produce` takes a `GraphitronSchema` and
 dispatches on sealed variants to build the six command relations, so no generated file has ever been
-produced from the store. That is the planner half, and it is the larger of the two.
+produced from the store. That is the planner half, and it is the largest single surface.
+
+A census of leaf imports across main sources (2026-08-20) puts the rest of the blast radius in a
+short list the terminal deletion has to see emptied: the validator (above), six files in
+`generators.schema` (`GraphitronSchemaClassGenerator` the largest), four class generators in
+`generators.util`, `schema.federation`'s `EntityResolutionBuilder`, `catalog`'s `CatalogBuilder`,
+`compile`'s `PlanCompileGraph`, and the transitional walk-transcription writers in `diagnostics`
+and `derive` (`RejectionFacts`, the `walk_` family's projections), whose own DDL comments already
+say they retire with the walk. `command` and `render` (67 files) sit below the boundary, importing
+post-classification value records only, and the MCP, the LSP and the maven plugin are clean.
 
 ## The instrument already exists and already declares the target
 
@@ -78,7 +118,7 @@ produced from the store. That is the planner half, and it is the larger of the t
 on both tiers. Its own javadoc states the terminal condition in as many words: the generators-side
 counts "ratchet down to zero", and the plan-side count is "expected to rise while producers are fed
 by leaf dispatch and to ratchet back to zero when the fact-visitor engine re-sources them". Live
-pins, re-measured 2026-08-19:
+pins, re-measured 2026-08-20:
 
 [cols="3,1,4"]
 |===
@@ -89,7 +129,7 @@ pins, re-measured 2026-08-19:
 | emitters: entry points in `generators/` still taking the whole schema
 
 | `GENERATOR_LEAF_INSTANCEOF_SITES`
-| 72
+| 69
 | emitters: `instanceof` sites in `generators/` naming a leaf of the seven hierarchies
 
 | `GENERATOR_LEAF_CASE_PATTERNS`
@@ -97,19 +137,20 @@ pins, re-measured 2026-08-19:
 | emitters: the same for `case` patterns
 
 | `PLAN_LEAF_REFERENCES`
-| 128
+| 139
 | planners: leaf references in `plan/`, the pin that legitimately rose before it falls
 |===
 
-Since filing (2026-08-16, at 18/69/60/125) every leaf-counting pin has *risen*: the routine carrier
-and the discriminated interface child's batched half each landed as a new leaf with its own dispatch
-sites, which the never-raise rule reads as new coverage rather than a boundary move. That is the
-flat-line argument in live data, one notch worse: while nobody owns the drain, feature work grows
-the zoo faster than incidental migration shrinks it.
+Since filing (2026-08-16, at 18/69/60/125) the leaf-counting pins have risen on net: the routine
+carrier and the discriminated interface child's batched half each landed as a new leaf with its own
+dispatch sites, which the never-raise rule reads as new coverage rather than a boundary move. That
+is the flat-line argument in live data, one notch worse: while nobody owns the drain, feature work
+grows the zoo faster than incidental migration shrinks it.
 
-All four go to zero. That is most of the item stated numerically; the residue the pins cannot see
+All four go to zero. That is much of the item stated numerically; the residue the pins cannot see
 (a leaf taken as a parameter and never dispatched on) is what the guard extension in "The closer"
-exists to catch, and the census in the emitter half names those files.
+exists to catch, and the census in the emitter half names those files. What the pins do not measure
+at all is the validator half and the terminal deletion, which have their own sections below.
 
 So it proposes no new architecture. The architecture is decided, the triangle is built, the guard
 exists for one package and the counters exist for the rest. What is missing is an owner for driving
@@ -185,7 +226,7 @@ enumerable set of accessors. Thirteen, in full:
 
 | `deliveryOf()`
 | 2
-| `DeliveryFactRelation`, the declared dependency
+| `DeliveryFactRelation`, whose store derivation this item absorbed (see below)
 
 | `tenantScopes()` / `tenantBindingOf()`
 | 2
@@ -307,22 +348,34 @@ largely cleared, and the distinction matters because it decides what remains:
   reason it wanted a worked example first. The example shipped.
 * **What remains is plumbing, not modelling.** Four relation-shaped folds have no home in the store
   yet: operation members, connection synthesis, tenant bindings, and delivery. None needs a new
-  rule. Each was already built as a relation in the model and needs a capture-cadence writer and a
-  view, which is the cheapest kind of work in this programme.
-* **One live dependency remains** on the delivery verdict's own item, which derives that fold and
-  stops deliberately short of flipping consumers.
+  rule. Each was already built as a relation in the model and needs a view over captured facts (or,
+  where a view cannot state it, a capture-cadence writer), which is the cheapest kind of work in
+  this programme.
+* **All four folds are on the same footing, delivery included.** Delivery briefly had its own item
+  (R666, discarded 2026-08-20, see `roadmap/changelog.md`), which specified the view plus a shadow
+  test and a residue record while flipping no production read. That shape made the walk the oracle
+  and put six Spec reviews' worth of corrections into a description of the walk's holes, which is
+  the strangler pattern this item's strategy replaces. The fold is built here instead, inside the
+  slice that consumes it, with the slice's own test as the specification; no `DeliveryShadowTest`,
+  no `DeliveryResidue`. The discarded item's design analysis (the seven-arm table, the four
+  predicate warnings about which relation each arm joins) survives in git history and is the
+  starting point for whoever writes the delivery view, read as analysis rather than as contract.
 
-The practical consequence: the two halves are no longer blocked on different things, which is what
-justified keeping them apart. Both are now sequencing problems rather than modelling problems, which
-is why one item owns them.
+The practical consequence: nothing blocks. Every half of this item is a sequencing problem rather
+than a modelling problem, which is why one item owns them.
 
 ## Scope
 
-Two success criteria, one per tier, and every deliverable is a step toward one of them:
+Four success criteria, and every deliverable is a step toward one of them:
 
 1. `EmitPlan.produce` takes a `StoreHandle` and no `GraphitronSchema`.
 2. No emitter reads a classification leaf, and `PackageImportDirectionTest` covers the emitters'
-   package the way it already covers `render`.
+   packages the way it already covers `render`.
+3. Every validation check derives from the store: a view where SQL can state the check, a
+   query-then-insert where it cannot, the error surface reading their rows either way.
+   `GraphitronSchemaValidator` stops taking a `GraphitronSchema`.
+4. The classification walk and the sealed leaf hierarchies are deleted, along with every resolver
+   and transcription writer that existed only to feed or shadow them.
 
 ### Planner half: the six relations, in dependency order
 
@@ -339,8 +392,9 @@ Later relations reference the earlier ones' rows, so the order is forced:
 6. **Globals and the schema-level facts** (`EmitPlan` itself). `federationLink` and `usesOneOf`
    arrive today as `Bundle` components landed by the builder; they become store reads like the rest.
 
-Each step is a complete unit: the relation's rows must be identical before and after, and the row
-identity is directly assertable.
+Each step is a complete unit: the relation's rows are identical before and after, which the
+pipeline-tier output expectations assert transitively. A direct row comparison against the
+leaf-derived rows is a local aid while converting, never a shipped test (see Coverage).
 
 **Why per-relation increments are legitimate here.** An earlier plan for this work argued against a
 half-converted resting state, and that argument was right for the classifier: `BuildContext.schema`
@@ -395,8 +449,68 @@ Two instrument corrections the census surfaced, each owed to the first increment
 * The pins count dispatch, not reads. A file that takes a leaf as a parameter and folds over it
   without one `instanceof` scores zero on every pin yet still reads the hierarchy;
   `MultiTablePolymorphicEmitter` (2327 lines, 24 leaf references, zero dispatch sites) is the
-  large case. The guard extension in "The closer" is what covers these files, because it forbids
-  the import; the pins alone never would.
+  large case, and the leaf-importing files in `generators.schema` and `generators.util`, plus
+  `EntityResolutionBuilder`, `CatalogBuilder` and `PlanCompileGraph` outside the generators tree,
+  are the same class. The guard extension in "The closer" and the terminal deletion are what cover
+  these files, because they forbid the import; the pins alone never would.
+
+### Validator half: views first, queries-then-inserts for the rest
+
+The validator's three input channels map onto two migration moves, and the pattern for both already
+ships in `rewrite/derive`.
+
+* **A check expressible as a relation becomes a view.** Most of the fourteen structural checks and
+  most of the per-leaf arms are joins and anti-joins over facts capture already holds, which is a
+  detection view in the `intent_authored_claim_conflict` mould: the check lands at its own grain,
+  its literals form a closed vocabulary declared where it is read, and every other consumer (the
+  LSP squiggle, the MCP diagnostics tool) inherits it through the `diagnostic` surface for free.
+* **A check that genuinely cannot be a view runs as a query whose findings are inserted back into
+  the fact model as rows.** That is the `StoreDetections` shape `AuthoredClaimConflicts` and
+  `ArgmappingProjectionDefects` already have: derivation in SQL plus Java where SQL cannot state
+  it, findings landing as rows, `ValidationReport` assembled from rows. "Cannot be a view" is a
+  claim to justify per check (a recursion H2 views cannot carry, a reflection probe), not a
+  default to reach for.
+
+The classify-time rejections are the same two moves seen from the other end. Today a rule the
+schema breaks demotes the coordinate to `Unclassified*` inside the walk, and the validator re-wraps
+the carried `Rejection`; store-side, the rule that demoted it becomes a detection over the captured
+facts that reports the same error at the same location. The `Rejection` hierarchy's vocabulary (16
+leaves plus 9 error sub-seals) is re-expressed as those detections' closed literal vocabularies, the
+way `rejection_validation_error.kind` already transcribes it for the editor.
+
+Three properties keep this half honest. Each check migrates one at a time, behaviour held: message,
+location and severity survive on the fixture that trips the check, and a check with no fixture gains
+one in the migrating commit. The validator's upward reads dissolve rather than move
+(`addressCollisions` becomes a detection at its own grain, not a plan import wearing a view's name).
+And the ordering is already paid for: validation runs downstream of capture today, so no pipeline
+change is needed for any of it.
+
+### The terminal deliverable: delete the walk
+
+When the plan, the emitters and the validator read the store, the walk's remaining readers are the
+tail census above, and each either migrates inside the family that owns it (`EntityResolutionBuilder`
+with federation's slice, `CatalogBuilder` and `PlanCompileGraph` with the planner half's last steps)
+or retires with the walk outright (`RejectionFacts` and the `rejection_` relations, the `walk_`
+family and its `derive/` projections; their DDL comments state that lifetime already). Then the
+deletion lands: the sealed classification taxonomy in `rewrite.model`, `GraphitronSchemaBuilder`,
+`TypeBuilder`, `FieldBuilder`, `BuildContext` and the walk-only resolvers around them, on the order
+of tens of thousands of lines. Deletion is not a big bang; it falls out family by family as each
+last reader moves, and the final commits remove what nothing references.
+
+Two audits are owed before the last cut, both cheap and both named now so nobody discovers them at
+the end:
+
+* **Capture must be walk-free.** The per-concern fact visitors under `no.sikt.graphitron.facts`
+  project leaves into `sql_` / `graphitron_` rows, so parts of capture read the walk's output
+  today. Each such visitor re-sources from the registry, the catalog, or an earlier fact before
+  the walk goes; audit the package at pickup and carry the re-sourcing inside the families whose
+  facts it writes.
+* **The classification test estate recasts or retires.** Verdict-anchored tests
+  (`GraphitronSchemaBuilderTest`'s enum rows, `VariantCoverageTest`, the classification traces)
+  exist to pin the walk; as consumers move, each either recasts onto store relations and emitted
+  output or retires with the walk. The classified-corpus programme already moves verdict rows into
+  spec-by-example documentation, and this item follows its lead rather than inventing a second
+  mechanism.
 
 ### The closer
 
@@ -406,7 +520,9 @@ refs, while `plan` gets store reads (`StoreHandle` and the generated store table
 vocabulary it produces, with the seven leaf hierarchies forbidden by name. The ratchet pins retire
 in the same commit that extends the guard over the package each pin measures: a zeroed pin the
 guard makes unraisable is a second mechanism for one invariant, and two mechanisms for one
-invariant drift apart.
+invariant drift apart. The leaf-forbidding dials are themselves transitional: the terminal
+deletion removes the hierarchies they name, at which point each dial reduces to the permanent tier
+rule (`render` reads commands, `plan` reads the store and the command vocabulary it produces).
 
 Prove each extended dial non-vacuous at the gate, the way the MCP's boundary guard was proven at
 its Done review: plant a forbidden leaf reference, watch the build fail, remove it. A guard that
@@ -426,19 +542,31 @@ comment anticipates), but the re-sourcing follows within the same family's arc r
 deferred to a global second pass; a minted-from-leaves relation is transitional state, not a
 resting place.
 
+The validator half is independent of the emit tiers and advances beside them, check by check; no
+emit-family increment waits on it and it waits on none of them. The terminal deletion comes last by
+construction, since it is defined as what happens when nothing reads the walk.
+
 ## What the store must provide
 
 Do not model a relation at the plan's convenience; that is how a store accretes consumer-shaped
 columns. Each fact lands at its own grain and every other consumer inherits it, which is the loop
-`roadmap/lsp-reads-the-fact-store.md` ran four times and wrote down as doctrine. The three
-populations are enumerated under "The facts to plan against are available" above.
+`roadmap/lsp-reads-the-fact-store.md` ran four times and wrote down as doctrine. The missing folds
+are enumerated under "The facts to plan against are available" above, and the validator half's
+detections land under the same rule: a check's relation states the defect at the defect's grain,
+never a validator-shaped payload.
 
 ## Risks
 
 * **This is the largest item on the roadmap by surface.** The planner half alone is 5314 lines of
   plan and command code, 100 dispatch sites, 53 variants; the emitter half adds the generators'
-  package on top. It is scoped as one item because it has one architecture and one end state, not
+  package on top; the validator half is another 2,000 lines of checks plus the `Rejection`
+  hierarchy's vocabulary; and the terminal deletion removes a walk whose footprint is on the order
+  of 50,000 lines. It is scoped as one item because it has one architecture and one end state, not
   because it is small. Expect it to run as long as the LSP migration has, or longer.
+* **Classify-time rejections are user-facing contract.** A schema author's error text, location and
+  severity must survive each check's migration; the rejection fixtures pin them, and a check whose
+  detection fires on a different population than its walk arm did is a behaviour change to decide
+  deliberately (the requirement is the specification), never to ship unnoticed.
 * **The per-coordinate verdict population is the schedule.** Everything else is plumbing. If the
   classification views turn out to need residues the way the demand stratum did, the honest response
   is to carry them as named residues and convert the relations whose verdicts are clean, not to widen
@@ -452,10 +580,10 @@ populations are enumerated under "The facts to plan against are available" above
   commits a row no renderer emits, or drops one a renderer needs, fails the fold. Keep that gate loud
   during the migration rather than relaxing it per increment.
 * **The mechanical conversion is the N+1.** Each producer is today a per-coordinate dispatch loop,
-  so transcribing it read by read yields a store query per coordinate that passes every row-identity
-  and output-identity gate while multiplying round trips by the corpus. "One statement per grain"
+  so transcribing it read by read yields a store query per coordinate that passes every
+  output-identity gate while multiplying round trips by the corpus. "One statement per grain"
   above is the rule and the statement-count pin is the only instrument that sees the defect; the
-  reviewer of each planner-half increment checks the count the way they check row identity.
+  reviewer of each planner-half increment checks the count the way they check output identity.
 * **The accessor census reads as an implementation plan.** The path of least resistance for whoever
   converts producer number two is to extract producer number one's store reads into a shared
   helper, and each extraction after that looks more natural than the last. "Planners share
@@ -469,15 +597,14 @@ populations are enumerated under "The facts to plan against are available" above
 
 ## Out of scope
 
-* **The classification walk itself.** It keeps producing the leaf model for its remaining consumers.
-  This item removes the plan and the emitters from that list; the validator is other items' work,
-  and the LSP projection read is already gone (the classifier still derives the projection for its
-  own tests, but no language-server read of it remains).
-* **Reordering capture ahead of the walk.** The plan runs after capture already. An earlier plan for
-  the planner half proposed the reorder plus a store-reading classifier; that was scaffolding for a
-  walk being drained from the consumer end instead, and it is dropped rather than deferred. It becomes
-  relevant again only if some axis has to migrate its walk-side mint rather than its consumers, which
-  no axis has needed yet.
+* **New validation rules, severities, or message improvements.** The validator half moves each
+  existing check's source of truth and holds its behaviour; feature-level validator and diagnostics
+  items stay their own work, landing against the store once their check has moved.
+* **Reordering the pipeline.** The plan and the validator both run after capture already, so every
+  migrated read is order-eligible today. An earlier plan proposed reordering capture ahead of the
+  walk plus a store-reading classifier; that was scaffolding for a strangler-style drain of the
+  walk's *mint*, and it stays dropped: the walk keeps its stage until nothing reads its output, and
+  then the stage disappears with it.
 * **Recording committed rows into the store.** A run-record stratum (the plan's committed command
   rows, the render's emitted-unit census) written *downward* at post-plan cadence on the `javac_`
   model is adjacent work, filed as `roadmap/run-record-families-for-commands-and-emitted-units.md`.
@@ -489,22 +616,18 @@ populations are enumerated under "The facts to plan against are available" above
 
 ## Relationship to other items
 
-* `roadmap/delivery-verdict-derives-from-the-store.md` is the declared dependency. It derives one
-  verdict and deliberately stops short of flipping consumers, naming the planning-stage consumers as
-  the eligible ones. Those consumers are this item. It is also the worked example the per-coordinate
-  verdicts follow, so it lands first for the pattern as much as for the view.
-
-  **Whether that edge should exist is an open question, recorded in that item's scope section and
-  owed to one of the two Spec reviews.** Delivery is one of four folds this item needs with no home
-  in the store, beside operation members, connection synthesis and tenant bindings. The other three
-  are built inside the slice that consumes them; delivery is the only one extracted, and the only
-  one whose item plans a shadow test and a residue record naming the walk's holes. Extraction is the
-  likely cause: a fold built by an item that changes no production read has no consumer to validate
-  against, leaving the walk as the only oracle. The alternative is that this item absorbs the
-  delivery fold as a slice on the same footing as the other three, building the relation and flipping
-  the planner onto it together, so the slice's own test is the specification and nothing is owed to
-  the walk. `roadmap/retire-oracle-diff-shadow-tests.md` argues the general case and retires the
-  shadow tests the delivery item cites as precedent.
+* R666 (`delivery-verdict-derives-from-the-store`, discarded 2026-08-20, see
+  `roadmap/changelog.md`) was the declared dependency: it derived the delivery verdict as three
+  views plus a shadow test and a residue record while flipping no production read. It was discarded
+  in this item's favour, resolving the open question its own scope section recorded: the delivery
+  fold is built here, inside the slice that consumes it, on the same footing as operation members,
+  connection synthesis and tenant bindings, with the consuming slice's own test as the
+  specification. Its design analysis, in particular which relation each delivery arm joins,
+  survives in git history as the starting point for whoever writes that view.
+* `roadmap/retire-oracle-diff-shadow-tests.md` (R740) is the doctrine this item's verification
+  stance applies: no oracle-diff scaffolding is built here, and the transcription families whose
+  DDL comments tie their lifetime to the walk (`walk_`, `rejection_`) come out with the terminal
+  deletion or with that item's own drain, whichever reaches them first.
 * `roadmap/lsp-reads-the-fact-store.md` is the shape to copy: one item, many increments, each arm
   landing on its own commit with what it settled written down. It also owns `StoreHandle`, which the
   planner half's producers take. Not a declared dependency: the earlier edge existed because both
@@ -521,12 +644,13 @@ populations are enumerated under "The facts to plan against are available" above
   which "The closer" copies; and its needle still covered one generator package of five, filed as
   `roadmap/mcp-boundary-guard-generator-package-coverage.md`, which is why the extended dials name
   the hierarchies and packages explicitly.
-* `roadmap/coordinate-lowers-to-datafetcher-queryparts.md` owns the drain: the facts that replace
-  the leaves, and the method graph the emit lowers onto. This item is a slice of it, the slice whose
-  consumers emit code, and it is independently schedulable while carrying its own `depends-on` edge.
-  It is the **consumption** side and must not redesign facts. The two meet at the plan tier: that
-  item decides what a planner reads, this one decides that a planner is the only thing that reads
-  it.
+* `roadmap/coordinate-lowers-to-datafetcher-queryparts.md` (R333) is the data-model design this
+  item executes against: the front-half fact vocabulary and the back-half method graph. This item
+  now carries the dissolution itself, walk deletion included, so it is the consumption side grown
+  to the whole job; it still must not redesign facts, and where a leaf carries a verdict no
+  relation states yet, R333's fact vocabulary is the reference for what the normalized relation
+  should say. Re-scope R333 at its pickup against what this item has landed; the method-graph half
+  of its charter is untouched here.
 * The `facts-and-commands` programme (Done, see `roadmap/changelog.md`) built the
   `command` / `plan` / `render` triangle, `EmitPlan`, the command relations and these ratchets. This
   item is that programme's completion condition, not a re-run of it. Its slice logs are the
@@ -549,7 +673,7 @@ populations are enumerated under "The facts to plan against are available" above
 * `roadmap/list-ordering-invariant-enforcement.md` (R677) plans to enforce the never-unsorted-list
   invariant off the launcher relation's ordering slot, and lands after this item. Two constraints
   travel to the launcher step: the `ResultShape` ordering slot is load-bearing for that enforcement,
-  so the row-identity gate covers exactly the column a later rule keys on, and the re-sourced
+  so the launcher increment holds exactly the column a later rule keys on, and the re-sourced
   producer must not quietly change which coordinates take a launcher row at all, because that
   population *is* that item's blind spot (the multitable polymorphic root takes no launcher row,
   which slot-keyed enforcement cannot see; the cross-tier absence question belongs to the
@@ -573,23 +697,40 @@ Provisional; the Done-gate sweep greps for these, and the list grows as incremen
   membership is a command relation's rows rather than a set of leaf classes.
 * The `CommandSeamRatchetTest` pins, each retired in the same commit that extends the structural
   guard over the package it measures (settled in "The closer" above).
+* `GraphitronSchemaValidator`'s `GraphitronSchema` parameter and its per-leaf arms, as the checks
+  move; `DeliveryFactPinTest`, when the delivery fold's consumer flips.
+* At the terminal step, the walk and its taxonomy wholesale: `GraphitronSchemaBuilder`,
+  `TypeBuilder`, `FieldBuilder`, `BuildContext`, the sealed classification hierarchies
+  (`GraphitronType`, `GraphitronField` and everything under them), `Rejection` and its error
+  sub-seals, and the walk-transcription writers (`RejectionFacts` with the `rejection_` relations,
+  the `walk_` family and its `derive/` projections). Enumerate the survivors, not the deletions,
+  when the sweep runs: anything in `rewrite.model` still referenced is a value record that moved
+  below the boundary, not a leaf that escaped.
 
 ## Coverage
 
-* **Row identity, per increment.** Each converted relation's rows must equal the leaf-derived rows on
-  the whole classified corpus. Assert it directly rather than inferring it from a green build; this is
-  the shadow-agreement discipline the demand and column-match sweeps set, applied per relation.
+* **Output identity, per planner increment.** A converted producer leaves the run's emitted output
+  byte-identical over the whole classified corpus, which the pipeline-tier expectations assert
+  directly. Comparing the converted relation's rows against the leaf-derived rows is a debugging
+  aid while both derivations exist, never a shipped test: per
+  `roadmap/retire-oracle-diff-shadow-tests.md`, a difference from the walk is either a walk bug
+  the conversion fixes (then the expectation changes deliberately, with the requirement as its
+  specification) or a conversion mistake, and neither earns a residue record or a standing shadow
+  test.
 * **Output identity, per emitter family.** The emitter half changes no generated source, so the
   assertion is that it changes none: the family's existing pipeline-tier expectations hold verbatim
   across the cutover.
+* **Error parity, per validator check.** Each migrated check keeps its message, location and
+  severity on the fixture that trips it, and a check with no fixture gains one in the migrating
+  commit.
 * **The compile and execution tiers are the real gate.** `graphitron-sakila-example` compiles the
   emitted sources and runs them against PostgreSQL, so a command row that changed shows up as
   behaviour, not just as a diff. `GeneratorDeterminismTest` and `IdempotentWriterTest` cover ordering.
 * **The fold's closure invariant** stays as-is and is the per-increment backstop.
 * **A statement-count pin per converted producer**, on the `DeclarationHoverStatementCountTest`
   model: an execute-listener count at producer grain, asserting the read count is a function of the
-  producer's arms rather than of the corpus, landing in the same commit as the conversion. Row
-  identity and output identity cannot see an N+1; this is the gate that can.
+  producer's arms rather than of the corpus, landing in the same commit as the conversion. Output
+  identity cannot see an N+1; this is the gate that can.
 * **The registered agreement anchor** for every new relation, through `FactCaptureAgreementTest`'s
   mechanical driver, which has no skip list, so a relation added for this item cannot arrive
   unchecked.
@@ -620,3 +761,14 @@ consumer of size. The same pass re-measured the ratchet pins (all four had risen
 finished migrations' read-shape lessons into the one-statement-per-grain section and its
 statement-count pin, adopted the guard non-vacuity check from R642's Done gate, and repointed the
 relations-not-queries rule at the doctrine item that has since been filed for it.
+
+Updated 2026-08-20, at the owner's direction, restating the goal and the strategy after the
+delivery item's discard. The migration is systematic and component-at-a-time (the LSP, then the
+MCP, now the generator), not a strangler, so R666 was discarded and its fold absorbed on the same
+footing as the other three; the validator half entered scope, since dissolving the zoo means its
+last reader moves too, with most checks becoming views in the fact model and the rest
+queries-then-inserts in the `StoreDetections` shape; and the walk's deletion became this item's
+terminal deliverable rather than a state some other item inherits. The same pass re-measured the
+ratchet pins, censused the leaf model's full blast radius (nine consuming packages outside the
+walk; `command` and `render` already below the boundary), and replaced the row-identity coverage
+obligation with output identity per R740's doctrine.
