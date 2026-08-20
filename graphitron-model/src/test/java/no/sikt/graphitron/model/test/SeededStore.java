@@ -1161,6 +1161,26 @@ public final class SeededStore {
             .execute();
     }
 
+    /**
+     * The same with {@code table:} as the author spelled it, which is the write target's second
+     * rung: a relation resolving one reads this only where the return type answers nothing.
+     */
+    public static void seedMutation(DSLContext dsl, String graphName, String typeName,
+                                    String fieldName, String operation, String tableRef) {
+        dsl.insertInto(GRAPHITRON_MUTATION)
+            .set(GRAPHITRON_MUTATION.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_MUTATION.TYPE_NAME, typeName)
+            .set(GRAPHITRON_MUTATION.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_MUTATION.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_MUTATION.SOURCE_LINE, 2)
+            .set(GRAPHITRON_MUTATION.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_MUTATION.OPERATION, operation)
+            .set(GRAPHITRON_MUTATION.TABLE_REF, tableRef)
+            .set(GRAPHITRON_MUTATION.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
+            .set(GRAPHITRON_MUTATION.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
+            .execute();
+    }
+
     /** The first {@code @routine} application on a field, at the position the other helpers use. */
     public static void seedRoutine(DSLContext dsl, String graphName, String typeName,
                                    String fieldName, String routineRef) {

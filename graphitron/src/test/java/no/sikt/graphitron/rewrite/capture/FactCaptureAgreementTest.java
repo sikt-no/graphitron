@@ -173,6 +173,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       the arms are textually parallel, so one case seeds one path shape at both sites and asserts
  *       the shared columns come back equal, which is what keeps a change to one from silently
  *       leaving the other behind;
+ *       {@code no.sikt.graphitron.model.intent.NodeIdInstructionTest} binds
+ *       {@code intent_node_id_instruction}, which slots carry the {@code @nodeId} instruction and
+ *       which node type each names, with one case per basis because the basis is the claim: a
+ *       coordinate answered by the wrong rule resolves the wrong node type wherever several rules
+ *       could answer, so the assertion is which rule answered and not merely that something did;
  *       {@code no.sikt.graphitron.rewrite.derive.ChainTerminusTest} binds
  *       {@code intent_field_chain_terminus}, where a {@code @routine} chain lands and what kind of
  *       table that is, and with it the hop view's name-matched arm, which only a chain departing a
@@ -407,6 +412,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_resolved_type_binding", Arm.DERIVED);
         registrations.put("intent_resolved_node_key_column", Arm.DERIVED);
         registrations.put("intent_resolved_node_type_id", Arm.DERIVED);
+        registrations.put("intent_node_id_instruction", Arm.DERIVED);
         registrations.put("intent_argmapping_pair", Arm.DERIVED);
         registrations.put("intent_argmapping_pair_live", Arm.DERIVED);
         registrations.put("intent_spelled_table_live", Arm.DERIVED);

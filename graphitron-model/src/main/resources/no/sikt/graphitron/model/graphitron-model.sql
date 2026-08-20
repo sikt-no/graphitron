@@ -5270,6 +5270,221 @@ COMMENT ON COLUMN intent_input_occurrence_override.override_type_name IS 'witnes
 COMMENT ON COLUMN intent_input_occurrence_override.override_field_name IS 'witness: the overriding site''s field name';
 COMMENT ON COLUMN intent_input_occurrence_override.override_argument_name IS 'witness: the overriding site''s argument name; NULL when the witness is a field-site condition (graphitron_field_condition''s key shape), non-NULL when it is the argument-site relation''s row';
 
+CREATE VIEW intent_node_id_instruction
+  (graph_name, site, type_name, field_name, argument_name, path, use_site,
+   basis, node_type_name, source_name, source_line, source_column) AS
+WITH instructed (graph_name, site, type_name, field_name, argument_name, path, use_site,
+                 node_type_ref, has_reference, source_name, source_line, source_column) AS (
+  SELECT n.graph_name, 'OUTPUT_FIELD', n.type_name, n.field_name, CAST(NULL AS VARCHAR),
+         CAST(NULL AS VARCHAR), n.type_name || '.' || n.field_name, n.node_type_ref,
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step s
+                            WHERE s.graph_name = n.graph_name AND s.type_name = n.type_name
+                              AND s.field_name = n.field_name)
+              THEN TRUE ELSE FALSE END,
+         n.source_name, n.source_line, n.source_column
+    FROM graphitron_field_node_id n
+    JOIN graphql_type t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
+     AND t.kind = 'OBJECT'
+   UNION ALL
+  SELECT n.graph_name, 'INPUT_FIELD', n.type_name, n.field_name, NULL,
+         p.path, p.path, n.node_type_ref,
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step s
+                            WHERE s.graph_name = n.graph_name AND s.type_name = n.type_name
+                              AND s.field_name = n.field_name)
+              THEN TRUE ELSE FALSE END,
+         n.source_name, n.source_line, n.source_column
+    FROM graphitron_field_node_id n
+    JOIN graphql_type t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
+     AND t.kind = 'INPUT_OBJECT'
+    JOIN intent_input_occurrence_path_step st
+      ON st.graph_name = n.graph_name AND st.container_type_name = n.type_name
+     AND st.field_name = n.field_name
+    JOIN intent_input_occurrence_path p
+      ON p.graph_name = st.graph_name AND p.path = st.path AND p.depth = st.ordinal
+   UNION ALL
+  SELECT n.graph_name, 'ARGUMENT', n.type_name, n.field_name, n.argument_name,
+         NULL, n.type_name || '.' || n.field_name || '(' || n.argument_name || ')',
+         n.node_type_ref,
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument_reference_step s
+                            WHERE s.graph_name = n.graph_name AND s.type_name = n.type_name
+                              AND s.field_name = n.field_name
+                              AND s.argument_name = n.argument_name)
+              THEN TRUE ELSE FALSE END,
+         n.source_name, n.source_line, n.source_column
+    FROM graphitron_argument_node_id n
+),
+named_type_binding (graph_name, type_name, field_name,
+                    table_source_name, table_schema, table_name) AS (
+  SELECT f.graph_name, f.type_name, f.field_name,
+         bt.table_source_name, bt.table_schema, bt.table_name
+    FROM graphql_field f
+    LEFT JOIN graphitron_field_synthesis fs
+      ON fs.graph_name = f.graph_name AND fs.type_name = f.type_name
+     AND fs.field_name = f.field_name
+    JOIN intent_resolved_type_binding bt
+      ON bt.graph_name = f.graph_name
+     AND bt.type_name = COALESCE(
+           REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''), '!', ''),
+           f.named_type)
+),
+use_site_table (graph_name, type_name, field_name, argument_name,
+                table_source_name, table_schema, table_name) AS (
+  SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
+         b.table_source_name, b.table_schema, b.table_name
+    FROM graphql_argument a
+    JOIN named_type_binding b
+      ON b.graph_name = a.graph_name AND b.type_name = a.type_name
+     AND b.field_name = a.field_name
+   UNION
+  SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
+         sp.table_source_name, sp.table_schema, sp.table_name
+    FROM graphql_argument a
+    JOIN graphitron_mutation m
+      ON m.graph_name = a.graph_name AND m.type_name = a.type_name
+     AND m.field_name = a.field_name
+    JOIN intent_spelled_table sp
+      ON sp.graph_name = m.graph_name AND sp.spelling = m.table_ref
+   WHERE NOT EXISTS (SELECT 1 FROM named_type_binding b
+                      WHERE b.graph_name = a.graph_name AND b.type_name = a.type_name
+                        AND b.field_name = a.field_name)
+),
+slot_table (graph_name, site, type_name, field_name, argument_name, path,
+            table_source_name, table_schema, table_name) AS (
+  SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
+         tg.to_source_name, tg.to_schema, tg.to_table
+    FROM instructed i
+    JOIN intent_field_reference_step_target tg
+      ON tg.graph_name = i.graph_name AND tg.type_name = i.type_name
+     AND tg.field_name = i.field_name
+     AND tg.position = (SELECT MAX(s.position) FROM graphitron_field_reference_step s
+                         WHERE s.graph_name = tg.graph_name AND s.type_name = tg.type_name
+                           AND s.field_name = tg.field_name AND s.ordinal = tg.ordinal)
+   WHERE i.site = 'OUTPUT_FIELD' AND i.has_reference
+   UNION
+  SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
+         tg.to_source_name, tg.to_schema, tg.to_table
+    FROM instructed i
+    JOIN intent_argument_reference_step_target tg
+      ON tg.graph_name = i.graph_name AND tg.type_name = i.type_name
+     AND tg.field_name = i.field_name AND tg.argument_name = i.argument_name
+     AND tg.position = (SELECT MAX(s.position) FROM graphitron_argument_reference_step s
+                         WHERE s.graph_name = tg.graph_name AND s.type_name = tg.type_name
+                           AND s.field_name = tg.field_name
+                           AND s.argument_name = tg.argument_name AND s.ordinal = tg.ordinal)
+   WHERE i.site = 'ARGUMENT' AND i.has_reference
+   UNION
+  SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
+         b.table_source_name, b.table_schema, b.table_name
+    FROM instructed i
+    JOIN named_type_binding b
+      ON b.graph_name = i.graph_name AND b.type_name = i.type_name
+     AND b.field_name = i.field_name
+   WHERE i.site = 'ARGUMENT' AND NOT i.has_reference
+   UNION
+  SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
+         u.table_source_name, u.table_schema, u.table_name
+    FROM instructed i
+    JOIN intent_input_occurrence_path p
+      ON p.graph_name = i.graph_name AND p.path = i.path
+    JOIN use_site_table u
+      ON u.graph_name = p.graph_name AND u.type_name = p.root_type_name
+     AND u.field_name = p.root_field_name AND u.argument_name = p.root_argument_name
+   WHERE i.site = 'INPUT_FIELD'
+),
+table_node (graph_name, table_source_name, table_schema, table_name, type_name, candidates) AS (
+  SELECT bt.graph_name, bt.table_source_name, bt.table_schema, bt.table_name, bt.type_name,
+         CAST(COUNT(*) OVER (PARTITION BY bt.graph_name, bt.table_source_name,
+                                          bt.table_schema, bt.table_name) AS INT)
+    FROM intent_resolved_type_binding bt
+    JOIN intent_node_type nt
+      ON nt.graph_name = bt.graph_name AND nt.type_name = bt.type_name
+)
+SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
+       'EXPLICIT_TYPE_NAME', nt.type_name, i.source_name, i.source_line, i.source_column
+  FROM instructed i
+  JOIN intent_node_type nt
+    ON nt.graph_name = i.graph_name AND nt.type_name = i.node_type_ref
+ UNION ALL
+SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
+       'CONTAINING_NODE_TYPE', nt.type_name, i.source_name, i.source_line, i.source_column
+  FROM instructed i
+  JOIN intent_node_type nt
+    ON nt.graph_name = i.graph_name AND nt.type_name = i.type_name
+ WHERE i.node_type_ref IS NULL AND i.site = 'OUTPUT_FIELD' AND NOT i.has_reference
+ UNION ALL
+SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
+       'TARGET_TABLE_NODE_TYPE', tn.type_name, i.source_name, i.source_line, i.source_column
+  FROM instructed i
+  JOIN slot_table s
+    ON s.graph_name = i.graph_name AND s.site = i.site AND s.type_name = i.type_name
+   AND s.field_name = i.field_name
+   AND (s.argument_name = i.argument_name OR (s.argument_name IS NULL AND i.argument_name IS NULL))
+   AND (s.path = i.path OR (s.path IS NULL AND i.path IS NULL))
+  JOIN table_node tn
+    ON tn.graph_name = s.graph_name AND tn.table_source_name = s.table_source_name
+   AND tn.table_schema = s.table_schema AND tn.table_name = s.table_name
+ WHERE i.node_type_ref IS NULL AND tn.candidates = 1
+   AND NOT (i.site = 'OUTPUT_FIELD' AND NOT i.has_reference)
+ UNION ALL
+SELECT f.graph_name, 'OUTPUT_FIELD', f.type_name, f.field_name, NULL, NULL,
+       f.type_name || '.' || f.field_name,
+       'OWN_ID_FIELD', nt.type_name, f.source_name, f.source_line, f.source_column
+  FROM graphql_field f
+  JOIN intent_node_type nt
+    ON nt.graph_name = f.graph_name AND nt.type_name = f.type_name
+ WHERE f.field_name = 'id' AND f.named_type = 'ID'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_node_id n
+                    WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name
+                      AND n.field_name = f.field_name)
+ UNION ALL
+SELECT a.graph_name, 'ARGUMENT', a.type_name, a.field_name, a.argument_name, NULL,
+       a.type_name || '.' || a.field_name || '(' || a.argument_name || ')',
+       'TARGET_ID_NAME', nt.type_name, a.source_name, a.source_line, a.source_column
+  FROM graphql_argument a
+  JOIN graphql_field f
+    ON f.graph_name = a.graph_name AND f.type_name = a.type_name
+   AND f.field_name = a.field_name
+  JOIN intent_node_type nt
+    ON nt.graph_name = a.graph_name AND nt.type_name = f.named_type
+ WHERE a.argument_name = 'id' AND a.named_type = 'ID'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argument_node_id n
+                    WHERE n.graph_name = a.graph_name AND n.type_name = a.type_name
+                      AND n.field_name = a.field_name AND n.argument_name = a.argument_name)
+ UNION ALL
+SELECT f.graph_name, 'INPUT_FIELD', f.type_name, f.field_name, NULL, p.path, p.path,
+       'TARGET_ID_NAME', tn.type_name, f.source_name, f.source_line, f.source_column
+  FROM graphql_field f
+  JOIN graphql_type t ON t.graph_name = f.graph_name AND t.type_name = f.type_name
+   AND t.kind = 'INPUT_OBJECT'
+  JOIN intent_input_occurrence_path_step st
+    ON st.graph_name = f.graph_name AND st.container_type_name = f.type_name
+   AND st.field_name = f.field_name
+  JOIN intent_input_occurrence_path p
+    ON p.graph_name = st.graph_name AND p.path = st.path AND p.depth = st.ordinal
+  JOIN use_site_table u
+    ON u.graph_name = p.graph_name AND u.type_name = p.root_type_name
+   AND u.field_name = p.root_field_name AND u.argument_name = p.root_argument_name
+  JOIN table_node tn
+    ON tn.graph_name = u.graph_name AND tn.table_source_name = u.table_source_name
+   AND tn.table_schema = u.table_schema AND tn.table_name = u.table_name
+ WHERE f.field_name = 'id' AND f.named_type = 'ID' AND tn.candidates = 1
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_node_id n
+                    WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name
+                      AND n.field_name = f.field_name);
+COMMENT ON VIEW intent_node_id_instruction IS 'Every slot carrying the @nodeId instruction, and which node type it names. The population the resolution relations and the defect view both partition, and the reason this exists as a relation rather than as each of their own WHERE clauses: the detection is "instructed and not carried out", so an instruction the population misses is a coordinate that stays silent, and a population two readers spell separately is two populations. Three sites, and site is the discriminator every other column''s nullness is determined by, on intent_argmapping_pair''s terms: an argument name where the site is an argument, an occurrence path where it is an input field, and the stated absent bucket elsewhere. Direction is deliberately not a column: an OUTPUT_FIELD encodes and the other two decode, which follows from the site and from which resolution relation answered, so a column would be a third spelling of a fact two relations already carry. The instruction has three authored forms and this relation states five bases over them, because the two inference rules and the two name-carried cases are different rules rather than one rule with cases. They are disjoint rather than ranked, which is what lets this be a plain union with no windowed collapse over it, and the disjointness is by construction: the three directive bases require a captured row and the two name-carried bases require the absence of one, EXPLICIT_TYPE_NAME requires a written typeName: and the two inference bases its absence, and the two inference bases split on the site-and-@reference predicate the manual states them with. Grain is the instruction and its use site. An argument and an output field are their own use site; an input field''s use sites come from intent_input_occurrence_path, so one input field carrying one directive is as many rows as there are coordinates consuming it. That is load-bearing rather than tidy: one input type may be consumed where the target resolves and where it cannot, so a row keyed on the instruction alone would have to pick one answer for two consumers, which is the argument ArgmappingProjectionDefects already makes for its own messages. An input field on an input type nothing reaches produces no occurrence path, so no use site, so no row; that is not a reachability gate but the observation that a decode is "these values go here" and with no consuming coordinate there is no here. Population boundary, stated because a hole here reads as a fact everywhere downstream: an instruction whose named or inferred type resolves to no node type is not a row. Those coordinates already meet a shipped rejection naming the type, so admitting them would put an instruction in the population that neither resolves nor draws either of the defect view''s verdicts, breaking the partition to restate a message. The one shape this relation cannot yet enumerate is an input field carrying its own @reference path: the target views resolve a path from a type''s table binding, an input type has none, and no relation resolves an input-field path''s terminal. Such a slot with an explicit typeName: is a row here like any other; only its bare form is missing, and closing it wants an input-site target view rather than a wider rule here.';
+COMMENT ON COLUMN intent_node_id_instruction.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row';
+COMMENT ON COLUMN intent_node_id_instruction.site IS 'which SDL site carries the instruction, in a closed vocabulary of three: OUTPUT_FIELD, INPUT_FIELD, ARGUMENT. The column a consumer switches on, the one that decides the direction, and the one every other column''s nullness is determined by. The two field sites share one captured relation and are told apart by the owning type''s kind, which is how the capture side already tells them apart';
+COMMENT ON COLUMN intent_node_id_instruction.type_name IS 'the type owning the slot: an object type on OUTPUT_FIELD, an input object type on INPUT_FIELD, the argument''s owning type on ARGUMENT';
+COMMENT ON COLUMN intent_node_id_instruction.field_name IS 'the slot''s field name, or on ARGUMENT the field the argument sits on';
+COMMENT ON COLUMN intent_node_id_instruction.argument_name IS 'the argument carrying the instruction on the ARGUMENT site; NULL on the two field sites, determined by site rather than independent of it, which is what makes the nullness a stated rule instead of a missing value';
+COMMENT ON COLUMN intent_node_id_instruction.path IS 'the occurrence path this row''s use site is, on the INPUT_FIELD site; NULL on the other two, whose slot is its own use site. The serialized key of intent_input_occurrence_path, so the use site''s own coordinate and every step of the descent are one join away and nothing here is parsed';
+COMMENT ON COLUMN intent_node_id_instruction.use_site IS 'the consuming coordinate serialized, in intent_argmapping_pair''s vocabulary: Type.field for an output field, Type.field(argument) for an argument, and the occurrence path itself for an input field, that path already being this serialization. Carried because a message needs one string and the components differ by site; those components are columns beside it, so nothing parses this';
+COMMENT ON COLUMN intent_node_id_instruction.basis IS 'which rule stated the instruction and resolved its target, in a closed vocabulary of five disjoint rules. EXPLICIT_TYPE_NAME: @nodeId(typeName: T). CONTAINING_NODE_TYPE: bare @nodeId on a non-@reference object field whose containing type is itself a node, the manual''s inference rule (a). TARGET_TABLE_NODE_TYPE: bare @nodeId whose target comes from a table, the manual''s inference rule (b), demanding exactly one node type over that table. OWN_ID_FIELD: a node type''s own id field with no directive, which is a node ID by construction. TARGET_ID_NAME: a slot named for the target''s own id with no directive, an argument of a node-returning field or an input field consumed against a node-backed table. Provenance and shape at once, which is why it is one column and not two: typeName: is rejected outright on a node type''s own id field, so the forms are not interchangeable and a rejection has to be able to say which one the author wrote';
+COMMENT ON COLUMN intent_node_id_instruction.node_type_name IS 'the node type the instruction names, written or inferred; never NULL, the population being instructions whose target resolved. What the opaque format''s other end is: intent_resolved_node_key_column on this name and the graph gives the key columns in order, and intent_resolved_node_type_id gives the typeId';
+COMMENT ON COLUMN intent_node_id_instruction.source_name IS 'the SDL file the instruction was captured from; the directive application''s own position on the three directive bases, and the slot declaration''s on the two name-carried ones, there being no application to locate';
+COMMENT ON COLUMN intent_node_id_instruction.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN intent_node_id_instruction.source_column IS 'source column, 1-based per the graphql-java convention';
+
 CREATE VIEW intent_argmapping_pair_live
   (graph_name, site, use_site, type_name, field_name, argument_name, ordinal, step_position,
    position, param_name, argument_path, source_name, source_line, source_column) AS
