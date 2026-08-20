@@ -17,6 +17,45 @@ and a `graphitron-model` method that iterates it, refreshing each target from it
 capture transaction and scoped to the graph being captured. The registry records no ordering, which
 is correct for what R742 registers and is not correct in general.
 
+**This item is no longer speculative, and the relation waiting on it is now named.** R733's third
+measurement pass extended R742's multiplicity report from "which read is expensive" to "what does one
+more registration remove from the reads a run actually performs", and the answer it selects is
+`intent_resolved_type_binding`. That relation reads `intent_bound_table`, which reads
+`intent_spelled_table`, a registered target: the exact case this item exists for, met on the first
+attempt at a third registration. Three things follow, and the first two are corrections to sections
+below rather than additions to the plan.
+
+*The failure is not quiet.* The section below expects "a populated target holding rows derived from an
+empty one" and a gate failing on the first run. What R733 actually observed, registering that relation
+against `graphitron-sakila-example`, is a hard build failure carrying an author error:
+
+```
+Field 'Mutation.rentFilmPayloadProjected': @routine argMapping entry
+'pCustomerId: input.customerId.customer_id' names 'customer_id', which is not a key column of
+'Customer'; 'Customer' resolves no key columns on any tier, so pin them with @node(keyColumns:)
+on that type
+```
+
+Nothing is wrong with that schema. An ordering bug in the materializer reaches the schema author as an
+instruction to change their own SDL, which is worse than a wrong answer nobody sees: it is a confident
+wrong answer aimed at somebody who cannot act on it. That is the strongest argument this item has and
+it is worth stating before the mechanics.
+
+*Time is waiting on it, even though it buys none itself.* With the ordering forced by hand (renaming
+the source view so it sorts last), that one registration takes `GeneratorDeterminismTest` from 18.99s
+to 11.61s and the store's read time per generator run from 2.55s to 0.40s, both green. Those are the
+generator's own reads, so every consumer's build pays them, and nothing else measured in the store is
+close. Read the closing section's "not a performance item at all" as "this item changes no timing
+itself", which is true, rather than as "no timing depends on it", which is not. The Spec pass may want
+to revisit `priority: 4` on that basis.
+
+*One case for the test section below.* R742's rework gave
+`FactSchemaGateTest.everyMaterializedTargetEqualsItsRule` real rows, so it would now catch a target
+populated from an empty predecessor. What it cannot exercise is the ordering itself, its fixture
+carrying two registrations that do not depend on each other. A fixture registration whose view reads
+another registration's target is what closes that, and the failure above is the concrete case it has
+to fail on before this item's sort is in place.
+
 This item adds the order. It is strictly additive: no relation R742 registers changes, no reader
 changes, and with no dependency between registered relations the materializer keeps behaving exactly
 as it does today, byte for byte.
@@ -204,6 +243,10 @@ It is not the question of which relations to materialize; that is R742's, inform
 multiplicity check. It is not a performance item at all: on the registry R742 lands, adding ordering
 changes no timing whatsoever. It buys the ability to register a relation whose view reads another
 target, which is the first thing a third or fourth registration is likely to want.
+
+*It was the first thing, on the first attempt, and it is worth 7.4 seconds on one test class and 84%
+of the store's per-run read cost. The section at the top of this item carries the measurement; read
+the second sentence here as "changes no timing itself" rather than as "no timing depends on it".*
 
 ## Retired vocabulary
 

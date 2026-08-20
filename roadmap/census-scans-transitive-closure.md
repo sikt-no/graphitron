@@ -65,6 +65,27 @@ Nothing names most of it. The transitive tail is 42 quarkus jars (1,288 classes)
 `@service`, `@condition`, `@record` and `@scalarType` against its own code and against the
 libraries it chose; it does not name a netty buffer allocator in a GraphQL schema.
 
+### The write cost, added by R733's third measurement pass
+
+The figures above are the read: the scan, at 648 ms per pass. They stop at the store's door. Writing
+those rows costs more than reading them, and this item's case is stronger for saying so.
+
+Measured with an `ExecuteListener` on the store's own `DSLContext`, over `graphitron-sakila-example`'s
+five `graphitron:generate` executions in one build: **1346 statements and 13.3 seconds inside them, of
+which the `jvm_` family's deletes and merges are about 8.1 seconds, 62%.** On a second run under
+heavier machine load the same set was 12.6 of 15.5 seconds, 81%. The `jvm_` writes are the top nine
+statements by total time in both runs, ahead of every derivation and every SDL family. Nothing else on
+the write side is within a factor of five, the nearest single item being one derivation insert into
+`intent_type_backing_class` at 1.87 seconds across six executions.
+
+One consequence for the numbers above rather than for the plan: the persisted store the plugin leaves
+behind is **845 MB on disk**. That is a shared per-workspace cache, rewritten partition by partition on
+every capture, and about 400,000 of its rows are census.
+
+The write cost scales with rows kept, so this item's split predicts it directly: dropping 197,127 of
+409,175 rows should take roughly half of the 8.1 seconds with it. That is a prediction and not a
+measurement, and the re-measurement section below is where it should be checked.
+
 ## What the tail must not take with it
 
 The census was widened from compile-output directories to the whole classpath to fix a real bug:
@@ -277,6 +298,13 @@ from the store as it stands: 169 entries to 27, 11,537 classes to 4,355, 409,175
 648 ms toward 200 ms (jOOQ and graphql-java survive the cut and are 2,051 classes between them, so the
 parse does not fall as far as the entry count suggests). If the measured numbers differ materially,
 record them rather than the predictions.
+
+Add the write side, which the cost section above now carries a baseline for: the `jvm_` statements'
+total time across a module's `graphitron:generate` executions, 8.1 seconds of 13.3 on trunk, predicted
+to roughly halve. Take it with an `ExecuteListener` on the store's `DSLContext`, dumping per-statement
+totals to a file named by PID at JVM exit; the PID matters because a Maven build has at least two JVMs
+executing store statements and only the build's own one performs captures. And record the persisted
+store's size on disk before and after, which is the number a consumer notices.
 
 ## User documentation (first-client check)
 

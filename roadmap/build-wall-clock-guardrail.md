@@ -21,11 +21,279 @@ choice and the remaining slices need numbers before they can be ordered against 
 Everything below restates the facts it needs rather than pointing into R732's body, because that
 body is deleted when R732 reaches Done.
 
-## A second measurement pass has run, and it reorders this item
+## A third measurement pass has run, and it is the current word
+
+Two passes are recorded below this section. Read this one first: it was taken after R742 landed,
+which moved the cost again, and it settles two of the slices below with numbers rather than
+reordering them. Where this section and a later one disagree, this one is later.
+
+All figures were taken on one 4 vCPU, 15 GB sandbox against a warm local repository, with
+sequential `mvn install -Plocal-db`. Ratios transfer between machines and absolute seconds do not.
+
+### The build is 6m51s and no module dominates it any more
+
+Baseline on trunk: **410.1 seconds**, 610 test classes reporting. Where it goes:
+
+| Module | Wall clock | Share | Second pass |
+|---|---|---|---|
+| `graphitron-sakila-example` | 93.6s | 23% | 410.6s |
+| `graphitron` | 85.0s | 21% | 79.4s |
+| `graphitron-model` | 68.3s | 17% | 63.9s |
+| `graphitron-lsp` | 50.6s | 12% | 50.3s |
+| `graphitron-maven-plugin` | 39.6s | 10% | 37.6s |
+| `graphitron-mcp` | 37.2s | 9% | 32.7s |
+| everything else | 31.5s | 8% | 31.8s |
+
+The second-pass column is the point. Every module except `graphitron-sakila-example` is within a few
+seconds of where it was when the build took 706 seconds; that module alone fell from 410.6s to 93.6s,
+and it is what R742 bought. So the build is now flat, and an item that wants to take a big slice out
+of it has to find something every module pays rather than one class that is slow.
+
+`GeneratorDeterminismTest` is 18.99s (R742's landed 18.13s, remeasured here) and
+`FixtureWarningsGateTest`, which is one full-fixture generator run and nothing else, is 2.862s.
+
+### A per-statement instrument, which is what this pass added
+
+JFR attributes a sample to a call site; it cannot say which statement ran, how many times, or
+whether one read cost 900ms or twelve reads cost 35ms each. This pass wired an env-guarded
+`ExecuteListener` onto the store's own `DSLContext`, fingerprinting each statement (bind values
+collapsed) and dumping count, total and max at JVM exit. The recipe is at the end of this section
+and it is the durable part of this pass: every number below came from it, and none of them was
+visible in a profile.
+
+**One full-fixture generator run executes 185 statements and spends 2.55 seconds inside them.** Five
+reads are 84% of that:
+
+| Read | Time | Times executed |
+|---|---|---|
+| `intent_argmapping_projection_defect` | 912.3 ms | 1 |
+| `intent_resolved_node_key_column` | 415.6 ms | **12** |
+| `intent_resolved_node_key_projection`, two column sets | 601.0 ms | 2 |
+| `intent_resolved_node_type_id` joined to `intent_resolved_type_binding` | 213.6 ms | 1 |
+| the other 180 statements together | about 410 ms | 180 |
+
+The JFR profile agrees and adds the non-store residue: over `GeneratorDeterminismTest` (20.80s, 1443
+samples, `stackdepth=1024`) the store reads are 55.3% of samples, the store's own DDL boot 7.7%,
+`ConnectionPromoter.rebuildAssembledForConnections` 4.2%, `FactSink.flush` 2.5%, and nothing else
+reaches two percent. Garbage collection is 49 pauses and about 0.3 seconds of 21, so it is not a
+lever and should not be looked at again.
+
+### The third registration is worth more than everything else in this item combined
+
+R742 lands the multiplicity report so that the third registration is chosen from data. It ranks views
+by their own subtree size, which answers *which read is expensive*. The question a chooser actually
+has is a different one: **if this relation were materialized, how many instantiations disappear from
+the reads a run performs?** That is computable from the same parse, weighting each read by the
+milliseconds the instrument measured for it.
+
+The answer is `intent_resolved_type_binding`, and it is not close. It is named in all four hot reads
+and removes 684 of the 1321 instantiations across them, halving every one:
+
+| Read | Instantiations now | With it registered |
+|---|---|---|
+| `intent_argmapping_projection_defect` | 765 | 423 |
+| `intent_resolved_node_key_projection` | 284 | 113 |
+| `intent_resolved_node_key_column` | 156 | 42 |
+| `intent_resolved_node_type_id` | 116 | 59 |
+
+Registered as a throwaway instrument, with both target classes green:
+
+| | `GeneratorDeterminismTest` | `FixtureWarningsGateTest` | Store time per run |
+|---|---|---|---|
+| trunk | 18.99s | 2.862s | 2.55s |
+| plus this one registration | **11.61s** | **2.205s** | **0.40s** |
+
+Per read, and this is the part that reorders the slices below: the defect read goes 912.3ms to
+72.4ms, the two projection reads 601.0ms to 36.2ms, the key-column loop 415.6ms to **1.3ms**, and the
+type-id read 213.6ms to 1.7ms. The registration's own refresh costs 59ms per run, which is the whole
+of the new cost.
+
+**The metric under-predicts a registration's value, badly, and the report should say so.** Linear in
+instantiations removed, the projection was 1.18 seconds per run; the measurement was 2.15. Removing a
+windowed view from the middle of a tree removes its subtree's re-evaluation *per instantiation*, which
+a linear model cannot see. R742 argues for a generous ceiling on the grounds that the metric
+over-approximates a relation's *cost*; as a predictor of a registration's *saving* it under-approximates,
+and a chooser who trusts the linear reading will decline registrations worth taking.
+
+### That registration is blocked, and R746 is the block
+
+`intent_resolved_type_binding_live` reads `intent_bound_table`, which reads `intent_spelled_table`,
+which is a registered target. `Materializations.refresh` iterates the registry in
+`source_view_name` order, and `intent_resolved_type_binding_live` sorts before
+`intent_spelled_table_live`, so the binding target is refilled from a spelling target that is still
+empty. R746 predicted exactly this and called it the first thing a third registration would want.
+
+What R746 did not predict is the symptom, and it is worse than the quiet wrong answer that item
+expects. The build fails, confidently, blaming the schema author:
+
+```
+Field 'Mutation.rentFilmPayloadProjected': @routine argMapping entry
+'pCustomerId: input.customerId.customer_id' names 'customer_id', which is not a key column of
+'Customer'; 'Customer' resolves no key columns on any tier, so pin them with @node(keyColumns:)
+on that type
+```
+
+Nothing is wrong with that schema. A materializer ordering bug arrives at the author as an
+instruction to change their own SDL, which is the worst available failure mode for a performance
+mechanism. The 11.61s above was measured by renaming the source view so it sorts last, which is a
+measurement trick and not a fix.
+
+Two consequences for R746, and both are edits to that item rather than work for this one. Its
+priority of 4 is wrong: it is now the gate on the largest measured saving left in the store. And its
+closing claim that it "is not a performance item at all" is true of the registry as it stands and
+false of the registry anyone will want next.
+
+**The gate that should catch it cannot yet exercise it, and that is a third consequence.**
+`FactSchemaGateTest.everyMaterializedTargetEqualsItsRule` is the case that holds a target against its
+rule. R742's Done gate found it vacuous, both registered relations yielding zero rows in its fixture,
+and R742's rework has since given it real rows, so it would now report a target populated from an
+empty predecessor. What it still cannot reach is the ordering itself: its fixture carries two
+registrations that do not depend on each other, which is the very property that makes ordering
+unnecessary today. Closing that wants a fixture registration whose view reads another registration's
+target, and this pass's failure text is the concrete case such a fixture has to fail on before R746's
+sort is in place.
+
+### The index slice is refuted, and the premise it rested on was wrong too
+
+Slice 3 below was promoted to first by the second pass. This pass measured it and it is worth nothing.
+
+Start with the premise. The slice says the DDL declares "zero `CREATE INDEX`", which is true and
+reads as a store with no indexes. The store has **260**: H2 creates a primary-key index for each of
+the 143 keys and a constraint index for each of the 117 foreign keys that needed one. What the store
+lacks is an index on a column that leads no key, which is a much smaller claim.
+
+Then the measurement. The join predicates on the two materialized targets are uniform enough to index
+exactly: `intent_spelled_table` is joined on `(graph_name, spelling)` at all six of its sites, and
+`intent_argmapping_pair` on `(graph_name, type_name, field_name)` at ten and
+`(graph_name, site, use_site, position)` at six. Three indexes cover every one of them. With all three
+in place, `GeneratorDeterminismTest` measured 18.42s and 19.98s against a baseline of 18.99s and
+20.80s, and `FixtureWarningsGateTest` 2.973s and 2.628s against 2.862s. There is no effect to find.
+
+The reading, offered as the best available rather than as proven: after R742 the remaining cost is
+per-instantiation plan overhead, not per-row comparison. The relations these joins reach are small
+(`sql_table` 71 rows, `sql_column` 251 in the plugin's own store), and an index on a 71-row table
+saves nothing against a plan instantiated 765 times. `Value.compareToNotNullable` staying the top JFR
+leaf frame at 11.3% is consistent with this and is not evidence against it: comparisons are what a
+plan does, and there are a great many cheap plans rather than a few expensive scans. The write-side
+worry the second pass raised about indexes is moot, the slice having no read-side win to trade against
+it.
+
+Keep the negative result. It is the second time this item has aimed at indexes on a reading of a
+profile leaf frame, and the finding is that this store's cost has not been row volume since R742.
+
+### The batched key-column read keeps its enforcer case and loses its performance case
+
+The violation is real and it is worse than this item describes. `StoreNodeTables.read` loops
+`bindings(...)` and calls `keyColumns(...)` inside the loop, 12 times per run on this fixture, and it
+is the second-largest call site in the JFR profile at 11.4%. It also calls `tableRef(...)` in the same
+loop, which issues **three more reads per node type** (`sql_table` joined to `sql_schema`, then
+`sql_column`, then `sql_primary_key` joined through `sql_constraint_column` to `sql_column`). Four
+reads per node type, not the one this item names.
+
+And after the registration above, the whole `intent_resolved_node_key_column` loop costs **1.3
+milliseconds per run**: 60 reads across five runs, 6.7ms total, 0.2ms at the worst. The 380ms this
+slice would have recovered is recovered by the registration instead, and taking both does not take it
+twice.
+
+So this stops being a performance slice and becomes purely what this item wanted it for: the worked
+violation behind the "batch by key set, never loop by key" enforcer, with a method whose own javadoc
+asserts what its body contradicts. Spec it on those grounds and quote 1.3ms, not 380ms.
+
+### Every store boot compiles Java, and this is the one thing every module pays
+
+This is the finding the flat module table above asks for, and it has been split out as its own item
+because it is one line of DDL and touches nothing else here.
+
+The fact schema is 1894 statements and boots in about 0.21 to 0.38 seconds. One statement is 64.5ms
+of a 212ms boot, seven times the next most expensive: `CREATE ALIAS canonical_uri AS '<inline Java
+source>'`, which H2 compiles with javac on every boot and never amortises (five consecutive
+alias-only boots in one JVM: 85.9, 65.9, 62.9, 51.1ms). The same alias bound to a compiled static
+method costs 1.7 to 8.4ms.
+
+Measured end to end, green on a full `mvn install -Plocal-db`: **410.1s to 367.4s**, 42.7 seconds and
+10% of the build, landing exactly where the theory says it should (`graphitron` −14.3s,
+`graphitron-model` −12.7s, `graphitron-mcp` −8.2s, `graphitron-lsp` −7.9s, `docs` −5.7s,
+`roadmap-tool` −1.8s; `WarmStartRefreshTest` −6.6s, `PersistentStoreTest` −5.0s,
+`FactCaptureAgreementTest` −4.4s). It is also consumer-facing, every `graphitron:generate` and every
+editor session paying it once. See the store-boot item for the design half, which is better than the
+speed half.
+
+### Extending test parallelism is now a slice rather than a footnote
+
+This item carries the extension as "smaller than a slice" at the end of the unmeasured list. Measured:
+`graphitron-model`, `graphitron-lsp` and `graphitron-mcp` given the same `junit-platform.properties`
+`graphitron` already has took the build from **367.4s to 310.8s and 317.7s** on two runs, both green
+with zero failures.
+
+Attribute it to the three modules and to nothing else. They account for **−34.6s** and they agree
+across both runs: `graphitron-model` 55.7s to 37.8s, `graphitron-lsp` 42.7s to 31.2s, `graphitron-mcp`
+29.0s to 23.8s. The remaining delta sits in `graphitron-maven-plugin`, which was not edited and whose
+wall clock reads 39.6s, 46.1s, 30.8s and 32.0s across four runs of identical work; a module that
+swings 15 seconds on its own is not evidence of anything and none of it is claimed here.
+
+Two cautions a Spec pass owes. Two green runs are not thread safety: `graphitron`'s own properties
+file documents the process-global hazard and carries `@Isolated` on the two classes that trip it, and
+nothing here establishes that these three modules have no such state. And `graphitron-lsp`'s summed
+class time inflates from 36.2s to 259.1s while its wall clock falls, which is severe contention rather
+than parallel work; the wall clock is still better, but a module whose classes spend seven times
+longer waiting is one to look at before trusting.
+
+### How to re-measure, per statement
+
+The recipes at the end of this item still apply. This one is new and is what produced every number
+above.
+
+Add an env-guarded `ExecuteListener` where the store builds its `DSLContext`
+(`GraphitronModelStore`'s constructor), recording each statement's wall clock against a fingerprint
+of its SQL with string literals collapsed, and dump the ranking from a shutdown hook. Two details are
+load-bearing. Dump to a file named by PID rather than to stderr: a Maven build has at least two JVMs
+executing store statements, the build's own and each surefire fork, and a fork's stderr after the test
+run is lost. And read the two dumps as different subjects, because they are: the Maven JVM's covers
+the module's `graphitron:generate` executions, which is the **write** side, and the fork's covers the
+tests, which is the **read** side. Conflating them is how the census below looks like a read cost.
+
+### The write side is the classpath census, and R685 owns it
+
+Same instrument on the Maven JVM, over `graphitron-sakila-example`'s five `graphitron:generate`
+executions: 1346 statements and 13.3 seconds inside them, of which the `jvm_` family's deletes and
+merges are about 8.1 seconds, **62%**. On a second run under heavier load the same set was 12.6 of
+15.5 seconds, 81%. The single most expensive statement outside the census is one derivation insert
+into `intent_type_backing_class`, at 1.87 seconds across six executions.
+
+R685 already owns this and should not be re-specced. What it does not carry is this half of the
+number: R685 measures the *scan* (516ms of the 648ms each classpath scan costs) and the row count (87%
+of everything the store holds), and the store-*write* cost of those same rows is the 62% above. Worth
+adding there as evidence. One more figure for the same item: the persisted store the plugin leaves
+behind is **845 MB** for 418,192 rows, of which about 400,000 are the census.
+
+### What this pass leaves for whoever specs the item
+
+The first two together were measured on the same build: **410.1s to a mean of 314.3s**, 96 seconds and
+23% of the build, from one line of DDL and three configuration files, green on every run. Neither
+needs the third, and neither needs this item's guardrail; they are the cheapest things on this list by
+a wide margin and they are what a Spec pass should take first.
+
+In the order the numbers argue for, and every one of them is now measured rather than bounded.
+
+1. **The store-boot alias.** 42.7s, one line, green, its own item, and a design improvement
+   independently of speed.
+2. **Test parallelism in the three modules.** 34.6s attributable, green twice, with the two cautions
+   above. One module at a time, as this item already says.
+3. **The third registration, `intent_resolved_type_binding`.** 7.4s off one class and 84% off the
+   store's per-run read cost, gated on R746.
+4. **R746 itself**, whose priority and self-description both need correcting.
+5. Slices 1, 2 and 4 below, unchanged and each about 2% of a build that is now 40% smaller than when
+   they were bounded, so re-bound them before spending a Spec cycle on them.
+6. **Slice 3 is refuted**, and slice 5's successor work is done in R742. The batched key-column read
+   is an enforcer question and not a performance one.
+
+## A second measurement pass has run, and it reordered this item once before
 
 Everything in the slice table further down was written before R732 landed. A fresh pass over the
-post-R732 reactor moved the cost somewhere else entirely, so read this section first and the slice
-table as the record of what the first pass expected.
+post-R732 reactor moved the cost somewhere else entirely, so read the slice table as the record of
+what the first pass expected and this section as the second. **The third pass above supersedes both
+wherever they disagree**, and in particular this section's promotion of the index slice to first
+place, which the third pass measured and refuted.
 
 All figures below were taken on one 4 vCPU, 15 GB sandbox against a warm local repository, with
 sequential `mvn install -Plocal-db` unless stated otherwise. R732's numbers came from a machine
@@ -223,7 +491,7 @@ lands.
 |---|---|---|---|---|
 | 1 | Memoise `ClassifiedHarness.classify` | bounded by ~17s | high | unchanged, now ~2% of the build |
 | 2 | Share one captured-corpus store | bounded by ~9s after R732 | medium | unchanged, now ~1% of the build |
-| 3 | Index the hot non-key join columns | unmeasured | measure first | **measured, promoted to first** |
+| 3 | Index the hot non-key join columns | unmeasured | measure first | promoted to first, then **refuted by the third pass** |
 | 4 | Share the Jetty server in `graphitron-mcp` | up to 15.5s | high | bound confirmed at 15.85s, ~2% of the build |
 | 5 | Reduce a derived relation at write time | unmeasured, reader-facing | architectural | **subject named, and it is build time after all** |
 | 6 | Decide whether PR builds need `-Pcoverage` | unmeasured | measure first | still unmeasured |
@@ -272,6 +540,14 @@ side: capture inserts the whole catalog, so the same index costs about 24 second
 separate two-sided measurement, and `Value.compareToNotNullable` remaining the top JFR leaf frame is
 a symptom shared by every unindexed comparison rather than a pointer to one.
 
+*Refuted on the third pass, and the premise with it.* R742 materialized `intent_spelled_table`, so
+the 469-node expansion this paragraph priced no longer happens and the index that fixed it has
+nothing left to fix. Three indexes covering every join predicate on both materialized targets
+changed no measurable time. The premise that the store declares "zero `CREATE INDEX`" is also
+misleading as stated: H2 auto-creates 143 primary-key indexes and 117 foreign-key constraint
+indexes, so the store has 260 and what it lacks is an index on a column leading no key. The third
+pass section at the top of this item carries the numbers.
+
 **4. Share the Jetty server in `graphitron-mcp`.** `GraphitronMcpServerTest` costs 15.5s across 60
 test methods, 0.26s per test, the highest per-test cost in the reactor. Read that as a class average
 rather than as 60 boots: the class constructs `new GraphitronMcpServer(...)` at 19 sites, while the
@@ -309,6 +585,11 @@ same `junit-platform.properties` settings to `graphitron-lsp`, `graphitron-mcp` 
 is unmeasured, and each module has its own shared-state question to answer first, so take them one at
 a time and only after R732's parallelism model has settled in the module it was measured in.
 
+*No longer unmeasured, and no longer smaller than a slice: the third pass puts it at 35.1 seconds
+attributable, second only to the store-boot alias. The one-module-at-a-time instruction and the
+shared-state question both stand, and the third pass adds a contention warning about
+`graphitron-lsp`.*
+
 **6. Decide whether PR builds need `-Pcoverage`.** CI attaches the JaCoCo agent to every run
 including PRs (`mvn install -Plocal-db -Pcoverage --batch-mode -T 1C`). The stated reason, keeping the
 wiring continuously exercised so an `argLine` regression fails on the PR that introduced it, is sound
@@ -334,7 +615,9 @@ behind them, and turning them into enforcers is the most principled work in this
   `StoreNodeTables.read` loops a window view once per node type, its own javadoc says it does not,
   and correcting it took 13.6 seconds off every full-fixture generator run. A rule that a method's
   own documentation asserts and its body contradicts is not a rule anyone is going to catch by
-  reading.
+  reading. *Third pass: the violation is four reads per node type rather than one, and after R742
+  plus the third registration it is worth 1.3 milliseconds per run rather than 13.6 seconds. The
+  enforcer argument is unaffected and is now the whole of the argument.*
 * Put the derivation first in the FROM clause. `intent_column_match_claim`'s DDL comment already
   states this, and `intent_field_column_scope`'s comment restates it, and nothing checks either.
 * A derived relation that will be read per partition is a candidate for reduction, not a candidate for
