@@ -366,7 +366,11 @@ about that coordinate.
 This is the same rule as sites 1 and 2 read in the other direction, and stating it once in both
 places is deliberate: a consumer neither receives nor supplies the wire format. A read yielding a
 `String` where the key column binds as `Long` is refused rather than encoded off a coerced value,
-because the value the consumer supplied is then not the key.
+because the value the consumer supplied is then not the key. The unreadable-operand behaviour is the
+same too, and for the same reason: a `ValueLocator.DefaultRead` locates nothing and so types nothing,
+and that draws no refusal. The encode is emitted on arity alone and javac objects if the read cannot
+feed it. Falling back to the unencoded read would put the raw key on the wire where the author asked
+for an id, which is this direction's spelling of the bug.
 
 The reporter's own case (`opptaksrundeId`) is single-key, so this refuses only what it can name.
 Widening to composite wants a spelling that does not exist yet, either a read yielding a jOOQ
@@ -442,15 +446,26 @@ and this item reads them rather than restating them:
   `@service` parameter's and the bean member's, and the existing predicate decides.
 
 **One property of that gate is easy to lose in the reuse, and it is load-bearing: it fires only where
-both operands are known.** Where the catalog cannot type the key column (a pinned key column on an
+both operands are known.** The catalog cannot always type the key column (a pinned key column on an
 unbound or ambiguously-bound node type, which `intent_resolved_node_key_column` deliberately admits as
-a row) or the classpath census cannot type the slot (a consumer compiled without `-parameters`, a
-reference resolving no method), the pair resolves exactly as it did before the predicate existed, with
-javac's own error as the backstop it always was. Both relations reach the type by outer join for
-precisely this reason, so an untypeable operand is a NULL and never a missing row. The gate therefore
-strictly adds refusals and removes no emission, which is what makes it landable as a join rather than
-as a staged flip, and stage 5 states it as an exit condition rather than discovering it when a fixture
-built without `-parameters` starts failing.
+a row) and the classpath census cannot always type the slot (a consumer compiled without
+`-parameters`, a reference resolving no method). Both relations reach the type by outer join for
+precisely this reason, so an untypeable operand is a NULL and never a missing row, and R668's rule is
+that the gate then stands aside rather than refusing: "requiring the match in either case would have
+turned such a pair into one that is neither a projection nor a defect", with "the compiler's own error
+as the backstop it always was".
+
+**Standing aside means something different here than it does there, and inheriting the words rather
+than the principle would reintroduce the bug.** At R668's coordinate the behaviour a stood-aside gate
+falls back to is an existing projection whose types nothing checked, so leaving the pair where it was
+is harmless. At these two coordinates the fallback is the base64 pass-through, because the arm is new.
+"Resolve as it did before the predicate existed" would therefore hand the consumer the wire format,
+which is the one outcome this item exists to eliminate. So the principle transfers and the emission
+does not: with the slot's type unreadable the decode is emitted anyway, on arity alone, and javac
+objects if the slot cannot take the decoded value. Nothing fabricates a verdict from an absent operand,
+the consumer still never sees base64, and the compiler is the backstop exactly as R668 left it. Only
+the *refusal* requires two known types; the resolution requires arity. Stage 5 states this as an exit
+condition rather than leaving an implementer to read the neighbouring comment and copy the wrong half.
 
 The arity half is what makes the reporter's own code fail rather than quietly keep working, and that is
 the intended outcome. Their method takes `String plasstildelingId` and today receives base64;
@@ -523,8 +538,10 @@ the detection reads the population rather than the captured `@nodeId` rows.
 
 The type gate's stand-aside is not a third arm of that partition, and it reads like one, so the
 relation's own comment should say it is not. An instruction whose type gate stood aside for want of an
-operand *resolves*: it emits exactly as it does today and lands in its direction's relation, with javac
-as the backstop. Only the refusal needs two known types; the resolution never did.
+operand *resolves*: it lands in its direction's relation and its decode or encode is emitted on arity
+alone, with javac as the backstop if the slot cannot take the value. Only the refusal needs two known
+types; the resolution needs arity. What a stand-aside never does is fall back to the pass-through,
+which is the misreading the section above heads off.
 
 The projector is small and its home exists: a further component on `StoreDetections` beside the two
 detection families already there, `AuthoredClaimConflicts` and `ArgmappingProjectionDefects`, decoded
@@ -575,9 +592,10 @@ replacement.
    detection families already there (`AuthoredClaimConflicts` and `ArgmappingProjectionDefects`;
    `ResolvedKeyProjections` is the record's third component and not a detection family). Both arms are
    `Rejection.structural`. Exit: a composite key at a single-valued slot and a type disagreement each
-   fail the build naming their own operands; a pair whose key column or whose slot the census cannot
-   type still emits exactly as it did before this stage, so the view strictly adds refusals and removes
-   no emission, which is R668's stand-aside rule and is checked here rather than assumed; the view
+   fail the build naming their own operands; a slot or key column no census can type draws no refusal
+   and still gets its decode or encode emitted on arity alone, never the pass-through, so this view
+   strictly adds refusals and removes no emission and never reinstates the bug at the coordinate whose
+   type nobody could read; the view
    carries no population filter of its own, the build-error surface applying one and the editor's arm
    reading it ungated; the resolution relations and this view partition the
    instruction population, so no instruction falls in neither; and the same fact is available to the
@@ -791,8 +809,12 @@ stage 3 expresses it there.
   names the helper the rework grew rather than re-deciding the question. Two of R668's relations do more
   than neighbour this item: it reads
   `intent_argmapping_key_column_candidate` for a key column's Java type and
-  `intent_resolved_node_key_projection` for the erased-type-equality rule and its stand-aside
-  behaviour, which are the two preconditions' operands and not a parallel invention. What has landed:
+  `intent_resolved_node_key_projection` for the erased-type-equality rule, which are the two
+  preconditions' operands and not a parallel invention. That relation's stand-aside rule is inherited
+  in principle and deliberately *not* in wording, for the reason "Sites 1 and 2" gives: R668 falls back
+  to an unchecked projection and this item would be falling back to the pass-through. Worth telling that
+  item's author, since the divergence is easy to read as a disagreement about the rule when it is an
+  agreement about it. What has landed:
   the resolution views, the rejection
   family (`intent_argmapping_projection_defect` plus `ArgmappingProjectionDefects`, six verdicts across
   three `Rejection` channels), the carrier move, and the `@routine` emitter with its execution round
