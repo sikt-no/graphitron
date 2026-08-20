@@ -29,7 +29,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R744` | TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion | In Progress | 2026-08-20 | [plan](scatter-test-syncs-on-mid-pin-connect-event.md) |
 | `R743` | The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves | In Progress | 2026-08-20 | [plan](sdl-fact-gatherer-staged-pipeline.md) |
-| `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | In Review | 2026-08-20 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R753` | Accept @deprecated alias fields sharing a write column on jOOQ-record inputs | Spec | 2026-08-20 | [plan](write-input-deprecated-column-alias.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -380,7 +379,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R627` [**@routine binds a list-shaped argument leaf to a scalar IN parameter without rejection**](routine-arg-leaf-cardinality-gate.md) — Backlog, bug
 - `R719` [**A mutation @routine carrier is decided by the payload shape, not by whether @reference was written**](routine-carrier-discriminator-from-payload-shape.md) — Backlog, architecture
-- `R668` [**Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection**](nodeid-key-projection-on-routine-params.md) — In Review, feature
 - `R454` [**Routine write result shapes: procedures, scalar/void routines, single-node Mutation @routine**](routine-write-result-shapes.md) — Backlog, feature
 - `R717` [**The routine carrier's explicit data-field path needs a correlation arm that anchors on the captured record**](routine-carrier-residual-path-correlation.md) — Backlog, architecture
 - `R718` [**Three reads a chain field or a routine-bound type falls through**](column-scope-admits-the-chain-terminus.md) — Backlog, architecture

@@ -789,15 +789,15 @@ stage 3 expresses it there.
   to the same subject: the node seed is the *declaration* and not the inference, seeding being monotone,
   so "what each member's nodehood amounts to is a question for the readers of the captured node facts,
   one join away". This item is one of those readers.
-* **R668** (`nodeid-key-projection-on-routine-params`, In Review) is the nearest neighbour. It makes a
+* **R668** (`nodeid-key-projection-on-routine-params`, Done, see `roadmap/changelog.md`) is the nearest neighbour. It makes a
   node type's key columns nameable as a trailing `argMapping` path segment, which is the
   `SINGLE_KEY_COLUMN` destination above. Its production surfaces are in the tree and this item reads
-  them; its Done gate sent it back over a test rather than a design, and that rework has since landed,
-  so it is In Review again awaiting a third session. The finding was that
+  them; its Done gate sent it back once over a test rather than a design, and that rework landed
+  and was approved by a third session. The finding was that
   `ArgmappingKeyProjectionEmissionPipelineTest` asserted raw generated-method-body strings, the pattern
   `development-principles.adoc` bans at every tier and `TypeSpecAssertions` exists to replace, with no
   production change requested. So the surfaces below are stable to converge on, and the round trip is a
-  live worked example of the rule this item's own Tests section states, which is why that section now
+  worked example of the rule this item's own Tests section states, which is why that section now
   names the helper the rework grew rather than re-deciding the question. Two of R668's relations do more
   than neighbour this item: it reads
   `intent_argmapping_key_column_candidate` for a key column's Java type and

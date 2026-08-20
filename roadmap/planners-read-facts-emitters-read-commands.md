@@ -825,11 +825,11 @@ derivation lives.
   `command` / `plan` / `render` triangle, `EmitPlan`, the command relations and these ratchets. This
   item is that programme's completion condition, not a re-run of it. Its slice logs are the
   reference for how a family migrates and what holding output identical costs.
-* `roadmap/nodeid-key-projection-on-routine-params.md` carries the routine-write family's migration
-  as a stage, because a feature there needed a carrier and the leaf was the wrong one. That stage is
-  the worked example the emitter half generalises from. If it lands first, this item inherits a
-  proven recipe and one fewer family; if this item is picked up first, that stage should be lifted
-  onto it.
+* R668 (`nodeid-key-projection-on-routine-params`, Done, see `roadmap/changelog.md`) carried the
+  routine-write family's migration as a stage, because a feature there needed a carrier and the leaf
+  was the wrong one. That stage is the worked example the emitter half generalises from, and it
+  landed first, so this item inherits a proven recipe and one fewer family rather than having to
+  lift the stage onto itself.
 * **The read-side twin of that stage is this item's, handed over at its author's request.** R704
   (`routine-composition-surface-from-facts`, Done, see `roadmap/changelog.md`) planned re-sourcing
   `LauncherCommands.routineRow` off facts as its own plan-tier pilot and then declined to keep it,
@@ -838,8 +838,8 @@ derivation lives.
   about fifteen lines, and `LauncherRelationClosureTest` plus `CommandSeamRatchetTest`'s
   `PLAN_LEAF_REFERENCES` counter are a live oracle for it. R704 left the facts it would join
   already captured and derived (the routine catalog facts, the chain terminus, the routine return
-  binding, and the two name-match keying relations). R668's stage 5 asks to land after this step
-  rather than beside it, and that constraint travels with it.
+  binding, and the two name-match keying relations). R668's stage 5 asked to land after this step
+  rather than beside it, and now that R668 has shipped the constraint is this item's alone.
 * `roadmap/list-ordering-invariant-enforcement.md` (R677) plans to enforce the never-unsorted-list
   invariant off the launcher relation's ordering slot, and lands after this item. Two constraints
   travel to the launcher step: the `ResultShape` ordering slot is load-bearing for that enforcement,
