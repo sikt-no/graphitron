@@ -224,9 +224,13 @@ class CommandSeamRatchetTest {
      * moved to the reader that assembles them out of the catalog and intent relations. The producer
      * is a shape transform now, with no leaf to name and no second resolution to disagree with.
      * This is the direction the tertiary pin exists to record: a relocation that reached the store
-     * rather than one still fed by leaf dispatch.
+     * rather than one still fed by leaf dispatch. Lowered 139 to 138 when the {@code @error}
+     * fetchers membership stopped filtering {@code schema.types()} on the {@code ErrorType} leaf:
+     * "which types are {@code @error} types" is a model question with two askers (this producer
+     * and the {@code ErrorMappings} emitter's per-type dispatch-table mint), so it became one fold
+     * on {@code GraphitronSchema} and neither asker names the leaf any more.
      */
-    private static final int PLAN_LEAF_REFERENCES = 139;
+    private static final int PLAN_LEAF_REFERENCES = 138;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

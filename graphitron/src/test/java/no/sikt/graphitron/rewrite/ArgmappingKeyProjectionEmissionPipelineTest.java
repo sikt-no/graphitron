@@ -268,8 +268,8 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
                 + " because nothing was carried")
             .hasSize(1);
         return TypeFetcherGenerator.generate(schema, bundle.assembled(), DEFAULT_OUTPUT_PACKAGE,
-                plan.launchers(), plan.typeUnits().fetchers(), plan.routineWrites(),
-                plan.keyProjections()).stream()
+                plan.launchers(), plan.typeUnits().fetchers(), plan.typeUnits().errorFetchers(),
+                plan.routineWrites(), plan.keyProjections()).stream()
             .filter(t -> t.name().equals("MutationFetchers"))
             .findFirst().orElseThrow();
     }

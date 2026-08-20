@@ -121,10 +121,12 @@ public class TypeFetcherGenerator {
      * throwaway), so test callers exercise the real row-presence routing.
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, graphql.schema.GraphQLSchema assembled, String outputPackage) {
+        var typeUnits = no.sikt.graphitron.plan.TypeUnitCommands.produce(schema, outputPackage);
         return generate(schema, assembled, outputPackage,
             no.sikt.graphitron.plan.LauncherCommands.produce(schema,
                 no.sikt.graphitron.plan.ConditionCommands.produce(schema, outputPackage), outputPackage),
-            no.sikt.graphitron.plan.TypeUnitCommands.produce(schema, outputPackage).fetchers(),
+            typeUnits.fetchers(),
+            typeUnits.errorFetchers(),
             no.sikt.graphitron.plan.RoutineWriteCommands.produce(schema, outputPackage),
             no.sikt.graphitron.command.KeyProjectionRelation.empty());
     }
@@ -147,6 +149,7 @@ public class TypeFetcherGenerator {
             String outputPackage,
             no.sikt.graphitron.plan.LauncherRelation launchers,
             List<no.sikt.graphitron.command.TypeUnitCommand.FetchersUnit> rows,
+            List<no.sikt.graphitron.command.TypeUnitCommand.ErrorFetchersUnit> errorRows,
             no.sikt.graphitron.plan.RoutineWriteRelation routineWrites,
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections) {
         // First-occurrence-wins index of the NestingField embedding each nesting-reached type, so a
@@ -158,21 +161,19 @@ public class TypeFetcherGenerator {
         var nestingByType = new LinkedHashMap<String, ChildField.NestingField>();
         schema.fields().values().forEach(f -> indexNestingByType(f, nestingByType));
 
-        // Membership is the row set (the type-unit relation's fetchers kind); this method
-        // renders one class per row, forking on the row's type classification: the
-        // fetcher-hosting variants keep the full dispatch build, @error types the fixed method
-        // pair, and an unclassified name is a nesting/pivot-reached type whose content comes
-        // from the reach fold's one representative wiring.
+        // Membership is the row set (the type-unit relation's two fetchers kinds); this method
+        // renders one class per row. The plain rows fork on the row's type classification: the
+        // fetcher-hosting variants keep the full dispatch build, and an unclassified name is a
+        // nesting/pivot-reached type whose content comes from the reach fold's one representative
+        // wiring. The @error rows are their own arm, rendered from the row's own refs below.
         var reach = schema.nestingReach();
-        var result = new ArrayList<TypeSpec>(rows.size());
+        var result = new ArrayList<TypeSpec>(rows.size() + errorRows.size());
         for (var row : rows) {
             var type = schema.type(row.typeName());
             if (type instanceof GraphitronType.TableType || type instanceof GraphitronType.NodeType
                     || type instanceof GraphitronType.RootType || type instanceof GraphitronType.ResultType) {
                 result.add(generateForType(schema, row.typeName(), assembled, outputPackage,
                     nestingByType.get(row.typeName()), launchers, routineWrites, keyProjections));
-            } else if (type instanceof GraphitronType.ErrorType et) {
-                result.add(no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator.generateFor(et));
             } else {
                 var wiring = reach.wiringFor(row.typeName());
                 if (wiring == null) {
@@ -191,6 +192,17 @@ public class TypeFetcherGenerator {
                     no.sikt.graphitron.plan.RoutineWriteCommands.produceWithoutSchema(nestedFields, outputPackage),
                     keyProjections));
             }
+        }
+        for (var row : errorRows) {
+            if (!(schema.type(row.typeName()) instanceof GraphitronType.ErrorType et)) {
+                throw new IllegalStateException(
+                    "Graphitron generator bug (fetchers fold): @error row for type '" + row.typeName()
+                    + "' does not name an @error classification; the producer's membership and this"
+                    + " renderer have drifted");
+            }
+            result.add(no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator
+                .generateFor(et, no.sikt.graphitron.javapoet.ClassName.get(
+                    row.errorMappings().packageName(), row.errorMappings().simpleName())));
         }
         return result;
     }

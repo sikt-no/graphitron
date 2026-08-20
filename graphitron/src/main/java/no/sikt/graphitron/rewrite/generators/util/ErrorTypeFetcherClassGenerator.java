@@ -3,13 +3,17 @@ package no.sikt.graphitron.rewrite.generators.util;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.plan.GeneratedUnits;
+import no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.Handler;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.VendorCodeHandler;
 
 import javax.lang.model.element.Modifier;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
 
 /**
  * Generates the per-{@code @error}-type {@code <ErrorType>Fetchers} class, carrying the
@@ -23,10 +27,44 @@ import java.util.List;
  * object can be a {@code Throwable} (no {@code getPath()}) or a {@code GraphQLError}
  * (has {@code getPath()} / {@code getMessage()}). {@code path} synthesises from the GraphQL
  * execution context for non-{@code GraphQLError} sources so the non-null contract holds regardless
- * of handler kind; {@code message} routes universally through {@code getMessage()}. Extra fields
- * are read at runtime by graphql-java's {@code PropertyDataFetcher} (registered by
- * {@code GraphitronSchemaClassGenerator}, remapped when the field carries {@code @field(name:)}),
- * not through this class.
+ * of handler kind. Extra fields are read at runtime by graphql-java's {@code PropertyDataFetcher}
+ * (registered by {@code GraphitronSchemaClassGenerator}, remapped when the field carries
+ * {@code @field(name:)}), not through this class.
+ *
+ * <p>{@code message} resolves in up to three steps, in this order:
+ *
+ * <ol>
+ *   <li>A dispatch-table walk, guarded by {@code src instanceof Throwable}. Emitted only when
+ *       some handler on this type declares a {@code description:}, since a type with no authored
+ *       override has nothing to resolve. Each contributing handler emits its own
+ *       {@code if (ByType.<TYPE>[i].match(thr)) return "...";} against the type's own
+ *       {@code Mapping[]} constant on {@code ErrorMappings}, so the returned statement is chosen
+ *       at build time from that handler's {@link ClientMessage} arm rather than by a runtime test
+ *       on the mapping. The guard is load-bearing: {@code Mapping.match} takes a
+ *       {@code Throwable}, and a {@code ConstraintViolations}-produced {@code GraphQLError} need
+ *       not be one.</li>
+ *   <li>The {@code GraphQLError} arm, {@code ge.getMessage()}. This is the validation path:
+ *       {@code ConstraintViolations.toGraphQLError} puts {@code GraphQLError} instances in the
+ *       errors slot, and graphql-java's {@code GraphQLError} is an interface its implementations
+ *       need not implement on a {@code Throwable}.</li>
+ *   <li>{@code thr.getMessage()} for a {@code Throwable} that matched no override, and
+ *       {@code null} for a source that is neither shape.</li>
+ * </ol>
+ *
+ * <p>The walk goes ahead of the {@code GraphQLError} arm on purpose. A source can be both shapes
+ * at once ({@code graphql.GraphQLError} is a plain interface, and the generated
+ * {@code GraphitronClientException} extends {@code GraphqlErrorException}), so a
+ * {@code {handler: GENERIC, className: ...}} entry carrying {@code description:} can name a class
+ * that is also a {@code GraphQLError}. Resolving the {@code GraphQLError} arm first would drop the
+ * authored override for exactly those classes. A validator-produced {@code GraphQLError} that is
+ * not a {@code Throwable} skips the guarded block and reaches its own arm unchanged.
+ *
+ * <p>The walk is per-{@code @error}-type rather than channel-wide, and the difference is
+ * observable: two {@code @error} types on one channel can both match one throwable through
+ * different variants, and where dispatch takes the channel's first match, the union
+ * {@code TypeResolver} picks the type by source class. Resolving the message against the type the
+ * resolver already selected keeps {@code message} consistent with the {@code __typename} the
+ * client sees in the same selection set.
  */
 public final class ErrorTypeFetcherClassGenerator {
 
@@ -39,14 +77,15 @@ public final class ErrorTypeFetcherClassGenerator {
 
     /**
      * Renders one {@code @error} type's fetchers class; membership is the type-unit relation's
-     * fetchers row (the producer's {@code ErrorType} arm), this method builds the fixed method
+     * {@code @error} fetchers row, and {@code errorMappings} is the ref that row carries, the one
+     * address the {@code message} body names besides its own. This method builds the fixed method
      * pair for the type the row names.
      */
-    public static TypeSpec generateFor(GraphitronType.ErrorType et) {
-        return TypeSpec.classBuilder(et.name() + no.sikt.graphitron.plan.GeneratedUnits.FETCHERS_SUFFIX)
+    public static TypeSpec generateFor(GraphitronType.ErrorType et, ClassName errorMappings) {
+        return TypeSpec.classBuilder(et.name() + GeneratedUnits.FETCHERS_SUFFIX)
             .addModifiers(Modifier.PUBLIC)
             .addMethod(pathMethod())
-            .addMethod(messageMethod())
+            .addMethod(messageMethod(et, errorMappings))
             .build();
     }
 
@@ -65,19 +104,84 @@ public final class ErrorTypeFetcherClassGenerator {
             .build();
     }
 
-    private static MethodSpec messageMethod() {
-        return MethodSpec.methodBuilder("message")
+    private static MethodSpec messageMethod(GraphitronType.ErrorType et, ClassName errorMappings) {
+        var method = MethodSpec.methodBuilder("message")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object.class)
             .addParameter(ENV, "env")
-            .addStatement("Object src = env.getSource()")
-            .beginControlFlow("if (src instanceof $T ge)", GRAPHQL_ERROR)
+            .addStatement("Object src = env.getSource()");
+
+        int lastOverride = lastOverrideIndex(et);
+        if (lastOverride >= 0) {
+            var byType = errorMappings.nestedClass(ErrorMappingsClassGenerator.BY_TYPE_HOLDER);
+            String constant = ErrorMappingsClassGenerator.byTypeConstantName(et.name());
+            method.beginControlFlow("if (src instanceof $T thr)", THROWABLE);
+            int index = 0;
+            for (var handler : et.handlers()) {
+                if (handler instanceof ValidationHandler) continue;
+                if (index > lastOverride) break;
+                // Every index up to the last override needs its own branch, including the
+                // source-message ones: dispatch is first-match-wins, so skipping an earlier
+                // source-message handler would let a later override fire in its place.
+                switch (clientMessageOf(handler)) {
+                    case ClientMessage.Static s -> method.addStatement(
+                        "if ($T.$L[$L].match(thr)) return $S", byType, constant, index, s.message());
+                    case ClientMessage.FromSource ignored -> method.addStatement(
+                        "if ($T.$L[$L].match(thr)) return thr.getMessage()", byType, constant, index);
+                }
+                index++;
+            }
+            method.addStatement("return thr.getMessage()");
+            method.endControlFlow();
+        }
+
+        method.beginControlFlow("if (src instanceof $T ge)", GRAPHQL_ERROR)
             .addStatement("return ge.getMessage()")
-            .endControlFlow()
-            .beginControlFlow("if (src instanceof $T thr)", THROWABLE)
-            .addStatement("return thr.getMessage()")
-            .endControlFlow()
-            .addStatement("return null")
-            .build();
+            .endControlFlow();
+
+        if (lastOverride < 0) {
+            method.beginControlFlow("if (src instanceof $T thr)", THROWABLE)
+                .addStatement("return thr.getMessage()")
+                .endControlFlow();
+        }
+
+        return method.addStatement("return null").build();
+    }
+
+    /**
+     * The dispatch-table index of the last handler on this type declaring a
+     * {@link ClientMessage.Static}, or {@code -1} when none does. Indices are the emitted
+     * {@code Mapping[]}'s, not {@code handlers()}': the array mint skips
+     * {@link ValidationHandler}, so a type mixing validation with a dispatch handler shifts them.
+     * Handlers after the last override need no branch of their own, since first-match-wins makes
+     * their resolution identical to the block's {@code thr.getMessage()} tail.
+     */
+    private static int lastOverrideIndex(GraphitronType.ErrorType et) {
+        int index = 0;
+        int last = -1;
+        for (var handler : et.handlers()) {
+            if (handler instanceof ValidationHandler) continue;
+            if (clientMessageOf(handler) instanceof ClientMessage.Static) {
+                last = index;
+            }
+            index++;
+        }
+        return last;
+    }
+
+    /**
+     * The {@link ClientMessage} of a dispatch-capable handler. {@link ValidationHandler} carries
+     * none (a {@code description:} alongside {@code handler: VALIDATION} is rejected at lift
+     * time) and is skipped by every caller before this is reached.
+     */
+    private static ClientMessage clientMessageOf(Handler handler) {
+        return switch (handler) {
+            case ExceptionHandler eh -> eh.clientMessage();
+            case SqlStateHandler sh -> sh.clientMessage();
+            case VendorCodeHandler vh -> vh.clientMessage();
+            case ValidationHandler vh -> throw new IllegalStateException(
+                "ValidationHandler carries no ClientMessage and must be skipped before this call;"
+                    + " reached clientMessageOf with " + vh);
+        };
     }
 }

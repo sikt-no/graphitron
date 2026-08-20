@@ -221,8 +221,14 @@ public final class MappingsConstantNameDedup {
      * Canonicalises a channel's flattened handler list and returns the SHA-256 hex digest. The
      * canonical form walks {@code mappedErrorTypes} in source order; for each {@link ErrorType}
      * walks {@code handlers} in source order, writing one fingerprint line per handler with the
-     * variant tag, criteria, optional matches, and optional description. Identical handler lists
-     * across different channels for the same payload class produce the same hash.
+     * variant tag, the {@code @error} type name, the criteria and the optional matches. Identical
+     * handler lists across different channels for the same payload class produce the same hash.
+     *
+     * <p>An authored {@code description:} is deliberately not part of the fingerprint. Every line
+     * already carries the {@code @error} type name, and an {@code @error} type name determines its
+     * whole handler list (the {@code ErrorIndex} fixed point resolves every union member through a
+     * name-keyed map), so two channels whose lines differ only in a description are not
+     * constructible and including it could never change a digest, a suffix, or an emitted name.
      */
     private static String canonicalHash(ErrorChannel channel) {
         var sb = new StringBuilder();
@@ -245,13 +251,12 @@ public final class MappingsConstantNameDedup {
     private static String handlerLine(String errorTypeName, Handler h) {
         return switch (h) {
             case ExceptionHandler eh -> "E|" + errorTypeName + "|" + eh.exceptionClassName()
-                + "|" + eh.matches().orElse("") + "|" + eh.description().orElse("");
+                + "|" + eh.matches().orElse("");
             case SqlStateHandler sh -> "S|" + errorTypeName + "|" + sh.sqlState()
-                + "|" + sh.matches().orElse("") + "|" + sh.description().orElse("");
+                + "|" + sh.matches().orElse("");
             case VendorCodeHandler vh -> "V|" + errorTypeName + "|" + vh.vendorCode()
-                + "|" + vh.matches().orElse("") + "|" + vh.description().orElse("");
-            case ValidationHandler vh -> "L|" + errorTypeName + "||"
-                + "|" + vh.description().orElse("");
+                + "|" + vh.matches().orElse("");
+            case ValidationHandler ignored -> "L|" + errorTypeName + "||";
         };
     }
 }

@@ -149,11 +149,11 @@ class ErrorChannelWalkerTest {
     }
 
     private static ErrorType.ExceptionHandler exception(String className) {
-        return new ErrorType.ExceptionHandler(className, Optional.empty(), Optional.empty());
+        return new ErrorType.ExceptionHandler(className, Optional.empty(), new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage.FromSource());
     }
 
     private static ErrorType.ValidationHandler validation() {
-        return new ErrorType.ValidationHandler(Optional.empty());
+        return new ErrorType.ValidationHandler();
     }
 
     private static ClassLoader loader() {

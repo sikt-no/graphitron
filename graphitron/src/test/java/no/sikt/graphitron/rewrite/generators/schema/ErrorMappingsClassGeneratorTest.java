@@ -4,12 +4,14 @@ import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.DefaultedSlot;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
@@ -58,7 +60,7 @@ class ErrorMappingsClassGeneratorTest {
         var filmChannel = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
                 List.of(new ExceptionHandler("java.lang.RuntimeException",
-                    Optional.empty(), Optional.empty())))));
+                    Optional.empty(), new ClientMessage.FromSource())))));
         var schema = synthesizeSchema(List.of(filmChannel));
 
         var spec = ErrorMappingsClassGenerator.generate(schema, OUTPUT_PACKAGE).get(0);
@@ -68,7 +70,7 @@ class ErrorMappingsClassGeneratorTest {
 
     @Test
     void dedups_twoIdenticalChannelsIntoOneConstant() {
-        var handler = new SqlStateHandler("23503", Optional.empty(), Optional.empty());
+        var handler = new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource());
         var errorTypes = List.of(errorType("FilmFkViolation", FILM_FK_FQN, List.of(handler)));
         var ch1 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD", errorTypes);
         var ch2 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD", errorTypes);
@@ -88,10 +90,10 @@ class ErrorMappingsClassGeneratorTest {
         var ch1 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
                 List.of(new ExceptionHandler("java.lang.RuntimeException",
-                    Optional.empty(), Optional.empty())))));
+                    Optional.empty(), new ClientMessage.FromSource())))));
         var ch2 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmFkViolation", FILM_FK_FQN,
-                List.of(new SqlStateHandler("23503", Optional.empty(), Optional.empty())))));
+                List.of(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource())))));
 
         var schema = synthesizeSchemaWithDedup(List.of(ch1, ch2));
         var spec = ErrorMappingsClassGenerator.generate(schema, OUTPUT_PACKAGE).get(0);
@@ -109,10 +111,10 @@ class ErrorMappingsClassGeneratorTest {
         var ch1 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
                 List.of(new ExceptionHandler("java.lang.RuntimeException",
-                    Optional.empty(), Optional.empty())))));
+                    Optional.empty(), new ClientMessage.FromSource())))));
         var ch2 = channel("CreateFilmPayload", CREATE_FILM_PAYLOAD_FQN, "CREATE_FILM_PAYLOAD",
             List.of(errorType("FilmFkViolation", FILM_FK_FQN,
-                List.of(new SqlStateHandler("23503", Optional.empty(), Optional.empty())))));
+                List.of(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource())))));
 
         var schema = synthesizeSchema(List.of(ch1, ch2));
         var spec = ErrorMappingsClassGenerator.generate(schema, OUTPUT_PACKAGE).get(0);
@@ -126,11 +128,11 @@ class ErrorMappingsClassGeneratorTest {
         var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
                 List.of(new ExceptionHandler("java.lang.IllegalArgumentException",
-                    Optional.of("not found"), Optional.of("Film not found"))))));
+                    Optional.of("not found"), new ClientMessage.Static("Film not found"))))));
         var spec = ErrorMappingsClassGenerator
             .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
 
-        var init = spec.fieldSpecs().get(0).initializer().toString();
+        var init = byTypeEntries(spec, "FILM_NOT_FOUND_EXCEPTION");
         // Source-direct emission: ExceptionMapping(IllegalArgumentException.class, matches, description).
         // No per-mapping factory: the matched throwable goes into the errors list directly.
         assertThat(init).contains("ExceptionMapping");
@@ -145,15 +147,15 @@ class ErrorMappingsClassGeneratorTest {
     void initializer_emitsSqlStateMappingForSqlStateHandler() {
         var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmFkViolation", FILM_FK_FQN,
-                List.of(new SqlStateHandler("23503", Optional.empty(), Optional.empty())))));
+                List.of(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource())))));
         var spec = ErrorMappingsClassGenerator
             .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
 
-        var init = spec.fieldSpecs().get(0).initializer().toString();
+        var init = byTypeEntries(spec, "FILM_FK_VIOLATION");
         assertThat(init).contains("SqlStateMapping");
         assertThat(init).contains("\"23503\"");
         assertThat(init).doesNotContain("::new");
-        // Optional matches/description that are absent render as bare null.
+        // An absent matches and a FromSource client message both render as bare null.
         assertThat(init).contains("null");
     }
 
@@ -161,11 +163,11 @@ class ErrorMappingsClassGeneratorTest {
     void initializer_emitsVendorCodeMappingForVendorCodeHandler() {
         var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmFkViolation", FILM_FK_FQN,
-                List.of(new VendorCodeHandler("1452", Optional.empty(), Optional.empty())))));
+                List.of(new VendorCodeHandler("1452", Optional.empty(), new ClientMessage.FromSource())))));
         var spec = ErrorMappingsClassGenerator
             .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
 
-        var init = spec.fieldSpecs().get(0).initializer().toString();
+        var init = byTypeEntries(spec, "FILM_FK_VIOLATION");
         assertThat(init).contains("VendorCodeMapping");
         assertThat(init).contains("\"1452\"");
         assertThat(init).doesNotContain("::new");
@@ -178,11 +180,11 @@ class ErrorMappingsClassGeneratorTest {
         // GraphQLErrors directly into the errors slot, bypassing the dispatcher entirely.
         var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmValidation", FILM_VALIDATION_FQN,
-                List.of(new ValidationHandler(Optional.empty())))));
+                List.of(new ValidationHandler()))));
         var spec = ErrorMappingsClassGenerator
             .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
 
-        var init = spec.fieldSpecs().get(0).initializer().toString();
+        var init = byTypeEntries(spec, "FILM_VALIDATION");
         assertThat(init).doesNotContain("ValidationMapping");
         assertThat(init).doesNotContain("ExceptionMapping");
         assertThat(init).doesNotContain("SqlStateMapping");
@@ -192,45 +194,91 @@ class ErrorMappingsClassGeneratorTest {
     @Test
     void initializer_skipsValidationHandler_keepingDispatchHandlers() {
         // ValidationHandler interleaved with dispatch handlers: the dispatch handlers still
-        // emit Mappings; the ValidationHandler is silently dropped from the array.
+        // emit Mappings; the ValidationHandler is silently dropped from its type's array, which
+        // leaves that type's ByType constant empty rather than absent.
         var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(
                 errorType("FilmValidation", FILM_VALIDATION_FQN,
-                    List.of(new ValidationHandler(Optional.empty()))),
+                    List.of(new ValidationHandler())),
                 errorType("FilmFkViolation", FILM_FK_FQN,
-                    List.of(new SqlStateHandler("23503", Optional.empty(), Optional.empty())))));
+                    List.of(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource())))));
         var spec = ErrorMappingsClassGenerator
             .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
 
-        var init = spec.fieldSpecs().get(0).initializer().toString();
-        assertThat(init).doesNotContain("ValidationMapping");
-        assertThat(init).contains("SqlStateMapping");
-        assertThat(init).contains("\"23503\"");
+        assertThat(byTypeEntries(spec, "FILM_VALIDATION")).doesNotContain("Mapping(");
+        var fk = byTypeEntries(spec, "FILM_FK_VIOLATION");
+        assertThat(fk).doesNotContain("ValidationMapping");
+        assertThat(fk).contains("SqlStateMapping");
+        assertThat(fk).contains("\"23503\"");
     }
 
     @Test
     void preservesSourceOrder_fromMappedErrorTypesAndHandlers() {
-        // Two @error types, each with two handlers. The flattened mapping list must preserve the
-        // declaration order (type-then-handler) per the §3 source-order rule.
+        // Two @error types, each with its own handlers. Handler order within a type is the
+        // declaration order of its own ByType array; type order is the channel constant's
+        // concatenation order. Both matter: dispatch is source-order-first-match.
         var et1 = errorType("FilmFkViolation", FILM_FK_FQN, List.of(
-            new SqlStateHandler("23503", Optional.empty(), Optional.empty()),
-            new SqlStateHandler("23505", Optional.empty(), Optional.empty())));
+            new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource()),
+            new SqlStateHandler("23505", Optional.empty(), new ClientMessage.FromSource())));
         var et2 = errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN, List.of(
             new ExceptionHandler("java.lang.RuntimeException",
-                Optional.empty(), Optional.empty())));
+                Optional.empty(), new ClientMessage.FromSource())));
         var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD", List.of(et1, et2));
         var spec = ErrorMappingsClassGenerator
             .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
 
-        var init = spec.fieldSpecs().get(0).initializer().toString();
-        int fk23503 = init.indexOf("\"23503\"");
-        int fk23505 = init.indexOf("\"23505\"");
-        int rt = init.indexOf("RuntimeException");
-        assertThat(fk23503).isPositive();
-        assertThat(fk23505).isPositive();
-        assertThat(rt).isPositive();
-        assertThat(fk23503).isLessThan(fk23505);
-        assertThat(fk23505).isLessThan(rt);
+        var fk = byTypeEntries(spec, "FILM_FK_VIOLATION");
+        assertThat(fk.indexOf("\"23503\"")).isNotNegative().isLessThan(fk.indexOf("\"23505\""));
+        assertThat(byTypeEntries(spec, "FILM_NOT_FOUND_EXCEPTION")).contains("RuntimeException");
+        assertThat(channelInitializer(spec, "FILM_PAYLOAD"))
+            .isEqualTo("concat(ByType.FILM_FK_VIOLATION, ByType.FILM_NOT_FOUND_EXCEPTION)");
+    }
+
+    @Test
+    void channelConstant_concatenatesItsMappedTypesInDeclarationOrder() {
+        // The use-keyed grain derives wholly from the definition-keyed one: a channel constant
+        // is the ordered concatenation of the ByType arrays of the types it maps, nothing else.
+        var et1 = errorType("FilmFkViolation", FILM_FK_FQN,
+            List.of(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource())));
+        var et2 = errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
+            List.of(new ExceptionHandler("java.lang.RuntimeException",
+                Optional.empty(), new ClientMessage.FromSource())));
+        var spec = ErrorMappingsClassGenerator.generate(synthesizeSchema(List.of(
+            channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD", List.of(et2, et1)))),
+            OUTPUT_PACKAGE).get(0);
+
+        // Reversed relative to the test above: the concatenation follows mappedErrorTypes order,
+        // not the (name-sorted) order the ByType constants are declared in.
+        assertThat(channelInitializer(spec, "FILM_PAYLOAD"))
+            .isEqualTo("concat(ByType.FILM_NOT_FOUND_EXCEPTION, ByType.FILM_FK_VIOLATION)");
+        assertThat(byTypeHolder(spec).fieldSpecs()).extracting(FieldSpec::name)
+            .containsExactly("FILM_FK_VIOLATION", "FILM_NOT_FOUND_EXCEPTION");
+    }
+
+    @Test
+    void byTypeConstant_isMintedForAnErrorTypeNoChannelMaps() {
+        // The per-type grain is keyed on the schema's @error registry, not on channel reach. An
+        // @error type no channel maps still gets a fetchers class (TypeUnitCommands mints one per
+        // registered @error type), and that class's message body names this constant, so a
+        // channel-keyed mint would leave it naming something that does not exist.
+        var mapped = errorType("FilmFkViolation", FILM_FK_FQN,
+            List.of(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource())));
+        var unmapped = errorType("FilmValidation", FILM_VALIDATION_FQN,
+            List.of(new ExceptionHandler("java.lang.IllegalStateException",
+                Optional.empty(), new ClientMessage.Static("nope"))));
+        var raw = synthesizeSchema(List.of(
+            channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD", List.of(mapped))));
+        var types = new LinkedHashMap<>(raw.types());
+        types.put("FilmValidation", unmapped);
+        var spec = ErrorMappingsClassGenerator
+            .generate(new GraphitronSchema(types, raw.fields()), OUTPUT_PACKAGE).get(0);
+
+        assertThat(byTypeHolder(spec).fieldSpecs()).extracting(FieldSpec::name)
+            .containsExactly("FILM_FK_VIOLATION", "FILM_VALIDATION");
+        assertThat(byTypeEntries(spec, "FILM_VALIDATION")).contains("\"nope\"");
+        // No channel maps it, so no channel constant names it.
+        assertThat(channelInitializer(spec, "FILM_PAYLOAD"))
+            .isEqualTo("concat(ByType.FILM_FK_VIOLATION)");
     }
 
     @Test
@@ -241,18 +289,43 @@ class ErrorMappingsClassGeneratorTest {
         // SDL @error side is no longer a reason to drop a Mapping.
         var withClass = errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
             List.of(new ExceptionHandler("java.lang.RuntimeException",
-                Optional.empty(), Optional.empty())));
+                Optional.empty(), new ClientMessage.FromSource())));
         var withoutClass = new ErrorType("Untyped", null,
             List.of(new ExceptionHandler("java.lang.IllegalStateException",
-                Optional.empty(), Optional.empty())), List.of());
+                Optional.empty(), new ClientMessage.FromSource())), List.of());
         var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(withClass, withoutClass));
         var spec = ErrorMappingsClassGenerator
             .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
 
-        var init = spec.fieldSpecs().get(0).initializer().toString();
-        assertThat(init).contains("RuntimeException");
-        assertThat(init).contains("IllegalStateException");
+        assertThat(byTypeEntries(spec, "FILM_NOT_FOUND_EXCEPTION")).contains("RuntimeException");
+        assertThat(byTypeEntries(spec, "UNTYPED")).contains("IllegalStateException");
+    }
+
+    /** The nested {@code ByType} holder, where the definition-keyed constants live. */
+    private static TypeSpec byTypeHolder(TypeSpec spec) {
+        return spec.typeSpecs().stream()
+            .filter(t -> t.name().equals(ErrorMappingsClassGenerator.BY_TYPE_HOLDER))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no ByType holder emitted on " + spec.name()));
+    }
+
+    /** One {@code @error} type's dispatch-table initializer, rendered. */
+    private static String byTypeEntries(TypeSpec spec, String constantName) {
+        return byTypeHolder(spec).fieldSpecs().stream()
+            .filter(f -> f.name().equals(constantName))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no ByType." + constantName + " constant emitted"))
+            .initializer().toString();
+    }
+
+    /** One channel constant's initializer, rendered. */
+    private static String channelInitializer(TypeSpec spec, String constantName) {
+        return spec.fieldSpecs().stream()
+            .filter(f -> f.name().equals(constantName))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no channel constant " + constantName + " emitted"))
+            .initializer().toString();
     }
 
     private static ErrorType errorType(String name, String classFqn, List<ErrorType.Handler> handlers) {

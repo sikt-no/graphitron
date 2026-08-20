@@ -1966,7 +1966,12 @@ class TypeBuilder {
         String matches = strip(item.get(ARG_MATCHES));
         String description = strip(item.get(ARG_DESCRIPTION));
         Optional<String> matchesOpt = Optional.ofNullable(matches);
-        Optional<String> descriptionOpt = Optional.ofNullable(description);
+        // The description fork is resolved here, once: every downstream consumer switches on the
+        // arm instead of re-branching an Optional, and the emitted message() body picks its
+        // statement per arm rather than testing a decided value at runtime.
+        ErrorType.ClientMessage clientMessage = description == null
+            ? new ErrorType.ClientMessage.FromSource()
+            : new ErrorType.ClientMessage.Static(description);
 
         switch (handlerType) {
             case GENERIC -> {
@@ -1986,7 +1991,7 @@ class TypeBuilder {
                     rejectReasons.add(resolveError);
                     return null;
                 }
-                return new ErrorType.ExceptionHandler(className, matchesOpt, descriptionOpt);
+                return new ErrorType.ExceptionHandler(className, matchesOpt, clientMessage);
             }
             case DATABASE -> {
                 // Rule 3: DATABASE cannot AND both vendor discriminators.
@@ -2002,30 +2007,41 @@ class TypeBuilder {
                     return null;
                 }
                 if (sqlState != null) {
-                    return new ErrorType.SqlStateHandler(sqlState, matchesOpt, descriptionOpt);
+                    return new ErrorType.SqlStateHandler(sqlState, matchesOpt, clientMessage);
                 }
                 if (code != null) {
-                    return new ErrorType.VendorCodeHandler(code, matchesOpt, descriptionOpt);
+                    return new ErrorType.VendorCodeHandler(code, matchesOpt, clientMessage);
                 }
                 // No-discriminator DATABASE lifts to ExceptionHandler(SQLException). SQLException
                 // always resolves on the classifier classpath, so no Class.forName check is
                 // needed here.
-                return new ErrorType.ExceptionHandler("java.sql.SQLException", matchesOpt, descriptionOpt);
+                return new ErrorType.ExceptionHandler("java.sql.SQLException", matchesOpt, clientMessage);
             }
             case VALIDATION -> {
-                // Rule 5: VALIDATION takes neither discriminators nor matches.
+                // Rule 5: VALIDATION takes neither discriminators, nor matches, nor a client
+                // message. The tail has to be true of whichever subset fired, so it states both
+                // reasons: the pre-execution step never runs a match (which is what rules out the
+                // discriminators), and it produces one GraphQLError per ConstraintViolation, each
+                // already carrying its own interpolated message (which is what rules out
+                // 'description', and names where that authoring surface does live).
                 List<String> disallowed = new ArrayList<>();
                 if (className != null) disallowed.add("className");
                 if (sqlState != null) disallowed.add("sqlState");
                 if (code != null) disallowed.add("code");
                 if (matches != null) disallowed.add("matches");
+                if (description != null) disallowed.add("description");
                 if (!disallowed.isEmpty()) {
                     rejectReasons.add("@error handler {handler: VALIDATION} cannot carry "
                         + String.join(", ", disallowed)
-                        + " (validation runs as a wrapper pre-execution step against jakarta.validation.Validator; SQL discriminators do not apply)");
+                        + " (validation runs as a wrapper pre-execution step against"
+                        + " jakarta.validation.Validator, matching nothing, so class identity and"
+                        + " SQL discriminators do not apply; and it emits one error per"
+                        + " constraint violation carrying that violation's own interpolated"
+                        + " message, so a single client-facing string belongs on the constraint"
+                        + " annotation's 'message' attribute, not here)");
                     return null;
                 }
-                return new ErrorType.ValidationHandler(descriptionOpt);
+                return new ErrorType.ValidationHandler();
             }
         }
         throw new IllegalStateException("unreachable: " + handlerType);

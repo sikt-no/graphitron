@@ -459,7 +459,8 @@ public class GraphQLRewriteGenerator {
             storeFacts.keyProjections());
 
         var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage,
-            plan.launchers(), plan.typeUnits().fetchers(), plan.routineWrites(),
+            plan.launchers(), plan.typeUnits().fetchers(), plan.typeUnits().errorFetchers(),
+            plan.routineWrites(),
             plan.keyProjections());
         // registerFetchers bodies render from the schema-shape rows' registersFetchers flag,
         // the same fact the per-type emitter and the schema-class assembler read.

@@ -37,17 +37,35 @@ public sealed interface TypeUnitCommand {
     /**
      * A {@code <Type>Fetchers} class: emitted for the fetcher-hosting classifications (table,
      * node, root and producer-result types, unconditionally, including the coordinate-less
-     * empty class the retired loop emitted; {@code @error} types with their fixed method pair)
-     * and for every nesting/pivot-reached type that owns at least one classified coordinate
-     * (the schema's nesting-reach fold, whose one representative wiring also decides the
-     * emitted content). The key is the bare type name; the coarse grain for shared nested
-     * types is made safe by the nesting-parent compatibility validation, and its widening is
-     * recorded on the roadmap.
+     * empty class the retired loop emitted) and for every nesting/pivot-reached type that owns
+     * at least one classified coordinate (the schema's nesting-reach fold, whose one
+     * representative wiring also decides the emitted content). {@code @error} types have their
+     * own arm ({@link ErrorFetchersUnit}), which carries the extra ref their bodies name. The
+     * key is the bare type name; the coarse grain for shared nested types is made safe by the
+     * nesting-parent compatibility validation, and its widening is recorded on the roadmap.
      */
     record FetchersUnit(String typeName, UnitRef unit) implements TypeUnitCommand {
         public FetchersUnit {
             Objects.requireNonNull(typeName, "typeName");
             Objects.requireNonNull(unit, "unit");
+        }
+    }
+
+    /**
+     * An {@code @error} type's {@code <Type>Fetchers} class: the fixed {@code path} / {@code
+     * message} method pair, emitted for every {@code ErrorType} the schema registers. Its own arm
+     * rather than a {@link FetchersUnit} because its body names a second unit: {@code message}
+     * resolves an authored {@code description:} by walking the type's own {@code Mapping[]}
+     * constant on {@code errorMappings}, so the join between the two addresses is the producer's
+     * to make. Membership and naming only, as every row: which handler contributes an override is
+     * read from the model by the renderer.
+     */
+    record ErrorFetchersUnit(String typeName, UnitRef unit, UnitRef errorMappings)
+            implements TypeUnitCommand {
+        public ErrorFetchersUnit {
+            Objects.requireNonNull(typeName, "typeName");
+            Objects.requireNonNull(unit, "unit");
+            Objects.requireNonNull(errorMappings, "errorMappings");
         }
     }
 

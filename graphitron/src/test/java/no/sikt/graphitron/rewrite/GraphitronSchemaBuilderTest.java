@@ -5631,7 +5631,9 @@ class GraphitronSchemaBuilderTest {
                 var eh = (ErrorType.ExceptionHandler) h;
                 assertThat(eh.exceptionClassName()).isEqualTo("java.lang.IllegalArgumentException");
                 assertThat(eh.matches()).isEmpty();
-                assertThat(eh.description()).isEmpty();
+                // No description: on the entry, so message reads the source's own message.
+                assertThat(eh.clientMessage())
+                    .isInstanceOf(ErrorType.ClientMessage.FromSource.class);
             }),
 
         DATABASE_SQL_STATE_LIFTS_TO_SQL_STATE_HANDLER(
@@ -5648,7 +5650,9 @@ class GraphitronSchemaBuilderTest {
                 assertThat(h).isInstanceOf(ErrorType.SqlStateHandler.class);
                 var sh = (ErrorType.SqlStateHandler) h;
                 assertThat(sh.sqlState()).isEqualTo("23503");
-                assertThat(sh.description()).contains("FK violation");
+                // description: lifts to the resolved Static arm carrying the authored string.
+                assertThat(sh.clientMessage())
+                    .isEqualTo(new ErrorType.ClientMessage.Static("FK violation"));
             }),
 
         DATABASE_CODE_LIFTS_TO_VENDOR_CODE_HANDLER(
@@ -5685,7 +5689,7 @@ class GraphitronSchemaBuilderTest {
         VALIDATION_LIFTS_TO_VALIDATION_HANDLER(
             "{handler: VALIDATION} lifts to ValidationHandler",
             """
-            type ValidationError @error(handlers: [{handler: VALIDATION, description: "input invalid"}]) {
+            type ValidationError @error(handlers: [{handler: VALIDATION}]) {
                 path: [String!]!
                 message: String!
             }
@@ -5695,7 +5699,6 @@ class GraphitronSchemaBuilderTest {
                 var h = ((ErrorType) schema.type("ValidationError")).handlers().get(0);
                 assertThat(h).isInstanceOf(ErrorType.ValidationHandler.class);
                 assertThat(h.matches()).isEmpty();
-                assertThat(h.description()).contains("input invalid");
             }),
 
         CAPTURES_MATCHES_FIELD(
@@ -5839,6 +5842,24 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var t = (UnclassifiedType) schema.type("BadError");
                 assertThat(t.reason()).contains("VALIDATION").contains("code");
+            }),
+
+        REJECT_VALIDATION_WITH_DESCRIPTION(
+            "VALIDATION with description → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: VALIDATION, description: "input invalid"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { err: BadError }
+            """,
+            schema -> {
+                // The validator emits one error per violation, each carrying that violation's
+                // own interpolated message, so a single authored string has no grain to land at.
+                // The rejection points the author at the constraint annotation's own attribute.
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason()).contains("VALIDATION").contains("description")
+                    .contains("constraint annotation's 'message' attribute");
             }),
 
         REJECT_VALIDATION_WITH_MATCHES(

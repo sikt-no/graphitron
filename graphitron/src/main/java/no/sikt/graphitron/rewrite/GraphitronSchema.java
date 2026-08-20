@@ -464,6 +464,24 @@ public record GraphitronSchema(
     }
 
     /**
+     * Every {@code @error} type this schema registers, keyed and ordered by SDL type name. A pure
+     * fold over {@link #types()} with no stored index (the {@link #nestingReach} precedent), so
+     * "which types are {@code @error} types" is answered once in the model rather than
+     * re-derived at each consumer: the type-unit producer's {@code @error} fetchers membership
+     * and the {@code ErrorMappings} emitter's per-type dispatch-table mint read the same fold, in
+     * the same order.
+     */
+    public java.util.SortedMap<String, GraphitronType.ErrorType> errorTypes() {
+        var byName = new java.util.TreeMap<String, GraphitronType.ErrorType>();
+        types.forEach((name, type) -> {
+            if (type instanceof GraphitronType.ErrorType et) {
+                byName.put(name, et);
+            }
+        });
+        return java.util.Collections.unmodifiableSortedMap(byName);
+    }
+
+    /**
      * The joined-table participants' field-residence split for a single-table discriminated
      * interface: the read surface of the {@link JoinedTableReprojection} fold, one formula for
      * the launcher producer and the legacy interface-reprojection call sites alike.

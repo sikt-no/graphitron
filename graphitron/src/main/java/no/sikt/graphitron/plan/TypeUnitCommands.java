@@ -142,9 +142,9 @@ public final class TypeUnitCommands {
     }
 
     /**
-     * The fetchers kind's rows: the variant-classified hosts sorted by name, then the reach
-     * fold's nested population in walk order, then the {@code @error} hosts, then the
-     * connection pairs. A nested-reached name that also classifies as a fetcher-hosting
+     * The fetchers kinds' rows: the variant-classified hosts sorted by name, then the reach
+     * fold's nested population in walk order, then the {@code @error} hosts on their own arm,
+     * then the connection pairs. A nested-reached name that also classifies as a fetcher-hosting
      * variant gets exactly the variant row (the merged view); one that classifies as any OTHER
      * variant would key-collide in the relation and fail loudly, where the retired loop
      * silently emitted a same-named second class.
@@ -172,11 +172,13 @@ public final class TypeUnitCommands {
                 rows.add(new TypeUnitCommand.FetchersUnit(name, units.fetchers(name)));
             }
         }
-        schema.types().entrySet().stream()
-            .filter(e -> e.getValue() instanceof GraphitronType.ErrorType)
-            .map(java.util.Map.Entry::getKey)
-            .sorted()
-            .forEach(name -> rows.add(new TypeUnitCommand.FetchersUnit(name, units.fetchers(name))));
+        // The @error population gets its own arm: its rows carry the ErrorMappings ref the
+        // emitted message() body names when the type declares a client-message override. The
+        // population comes from the model's own name-ordered fold, the same one the mappings
+        // emitter mints its per-type dispatch tables over, so the two cannot disagree about which
+        // names exist.
+        schema.errorTypes().keySet().forEach(name -> rows.add(new TypeUnitCommand.ErrorFetchersUnit(
+            name, units.fetchers(name), units.errorMappings())));
         schema.types().values().stream()
             .filter(t -> t instanceof GraphitronType.ConnectionType)
             .map(t -> (GraphitronType.ConnectionType) t)

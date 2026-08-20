@@ -705,7 +705,11 @@ class GraphitronSchemaClassGeneratorTest {
         return generate(sdl).toString();
     }
 
-    /** Renders the reified {@code <typeName>Fetchers} class for an @error type.*/
+    /**
+     * Renders the reified {@code <typeName>Fetchers} class for an @error type. The mappings ref
+     * comes from the plan's naming vocabulary, the same address the {@code @error} fetchers row
+     * carries in production.
+     */
     private static String errorFetcherSource(String sdl, String typeName) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
         var errorType = bundle.model().types().values().stream()
@@ -714,8 +718,11 @@ class GraphitronSchemaClassGeneratorTest {
             .filter(et -> et.name().equals(typeName))
             .findFirst()
             .orElseThrow(() -> new AssertionError("no @error type '" + typeName + "' classified"));
+        var mappings = new no.sikt.graphitron.plan.GeneratedUnits(OUTPUT_PKG)
+            .errorMappings();
         return no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator
-            .generateFor(errorType)
+            .generateFor(errorType, no.sikt.graphitron.javapoet.ClassName.get(
+                mappings.packageName(), mappings.simpleName()))
             .toString();
     }
 

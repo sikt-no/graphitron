@@ -27,6 +27,16 @@
             <groupId>org.jooq</groupId>
             <artifactId>jooq</artifactId>
         </dependency>
+        <!--
+            Compile scope for one fixture: FilmLookupClientFacingException implements
+            graphql.GraphQLError alongside Throwable, which is the both-shapes source an
+            @error handler carrying description: can name. Nothing else in this module
+            touches graphql-java.
+        -->
+        <dependency>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

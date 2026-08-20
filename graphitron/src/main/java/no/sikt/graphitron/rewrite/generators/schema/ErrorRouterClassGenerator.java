@@ -52,6 +52,22 @@ public final class ErrorRouterClassGenerator {
 
     private ErrorRouterClassGenerator() {}
 
+    /**
+     * The emitted {@code ErrorRouter} class, resolved through the plan's naming vocabulary. The
+     * error family reads its generated class names from here and from
+     * {@link ErrorMappingsClassGenerator#mappingsClass} rather than re-deriving
+     * {@code outputPackage + ".schema"} at each site.
+     */
+    public static ClassName routerClass(String outputPackage) {
+        var unit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).errorRouter();
+        return ClassName.get(unit.packageName(), unit.simpleName());
+    }
+
+    /** The nested {@code ErrorRouter.Mapping} interface every dispatch table is typed over. */
+    public static ClassName mappingInterface(String outputPackage) {
+        return routerClass(outputPackage).nestedClass(MAPPING_INTERFACE);
+    }
+
     public static List<TypeSpec> generate(String outputPackage) {
         var typeP = TypeVariableName.get("P");
         var resultOfP = ParameterizedTypeName.get(DATA_FETCHER_RESULT, typeP);
@@ -138,7 +154,7 @@ public final class ErrorRouterClassGenerator {
      */
     public static CodeBlock noChannelRouterCall(String outputPackage, String throwableVar) {
         return no.sikt.graphitron.render.ErrorDispatchFragments.redact(
-            ClassName.get(outputPackage + ".schema", CLASS_NAME), throwableVar);
+            routerClass(outputPackage), throwableVar);
     }
 
     private static TypeSpec buildMappingInterface() {
@@ -154,9 +170,12 @@ public final class ErrorRouterClassGenerator {
             .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
             .returns(STRING_CN)
             .addJavadoc("The {@code description} from the {@code @error} declaration, or {@code null}\n"
-                + "when none was set. A future emitter pass will wrap the matched source in a\n"
-                + "description-overriding facade so graphql-java's {@code PropertyDataFetcher}\n"
-                + "reads the override at the SDL {@code message} field.\n")
+                + "when none was set. Read by the {@code message} method on the matching\n"
+                + "{@code <ErrorType>Fetchers} class, which walks its own type's dispatch table and\n"
+                + "returns this string in place of the source's own message on a match. The matched\n"
+                + "source object is never wrapped or substituted: the source-direct contract is what\n"
+                + "keeps the union {@code TypeResolver} and the extra fields'\n"
+                + "{@code PropertyDataFetcher} reads pointed at the author's own exception.\n")
             .build();
 
         return TypeSpec.interfaceBuilder(MAPPING_INTERFACE)
@@ -305,8 +324,11 @@ public final class ErrorRouterClassGenerator {
             TypeVariableName typeP,
             ParameterizedTypeName resultOfP,
             String outputPackage) {
-        var clientException = ClassName.get(outputPackage + ".schema",
-            GraphitronClientExceptionClassGenerator.CLASS_NAME);
+        var clientExceptionUnit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage)
+            .singleton(no.sikt.graphitron.plan.GeneratedUnits.SUB_SCHEMA,
+                GraphitronClientExceptionClassGenerator.CLASS_NAME);
+        var clientException = ClassName.get(
+            clientExceptionUnit.packageName(), clientExceptionUnit.simpleName());
 
         return MethodSpec.methodBuilder("surfaceClientErrorOrRedact")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -368,9 +390,11 @@ public final class ErrorRouterClassGenerator {
                 + "as a pre-execution step and routes the resulting\n"
                 + "{@code GraphQLError}s directly into the errors slot.\n"
                 + "\n"
-                + "<p>The {@code description} field on each {@link Mapping} is currently unused at\n"
-                + "the dispatch site; the description-overriding facade is a follow-on emitter\n"
-                + "concern.\n")
+                + "<p>The {@code description} field on each {@link Mapping} is not consulted here.\n"
+                + "It is read on the fetch side, by the {@code message} method of the\n"
+                + "{@code <ErrorType>Fetchers} class for the type the {@code TypeResolver} selected,\n"
+                + "so an authored override cannot disagree with the {@code __typename} the client\n"
+                + "sees in the same selection set.\n")
             // ----- Source-order match -----
             .addCode("// Source-order match: first (mapping, cause) pair that satisfies the predicate.\n")
             .beginControlFlow("for ($T mapping : mappings)", mapping)

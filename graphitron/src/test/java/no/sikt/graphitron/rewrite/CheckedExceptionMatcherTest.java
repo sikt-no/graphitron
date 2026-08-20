@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.DefaultedSlot;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
@@ -46,13 +47,13 @@ class CheckedExceptionMatcherTest {
 
     @Test
     void emptyDeclaredList_returnsEmpty() {
-        var channel = channelWith(new ExceptionHandler("java.lang.RuntimeException", Optional.empty(), Optional.empty()));
+        var channel = channelWith(new ExceptionHandler("java.lang.RuntimeException", Optional.empty(), new ClientMessage.FromSource()));
         assertThat(CheckedExceptionMatcher.unmatched(List.of(), Optional.of(channel), LOADER)).isEmpty();
     }
 
     @Test
     void exceptionHandler_exactClass_matches() {
-        var channel = channelWith(new ExceptionHandler("java.sql.SQLException", Optional.empty(), Optional.empty()));
+        var channel = channelWith(new ExceptionHandler("java.sql.SQLException", Optional.empty(), new ClientMessage.FromSource()));
         assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLException"), Optional.of(channel), LOADER))
             .isEmpty();
     }
@@ -61,7 +62,7 @@ class CheckedExceptionMatcherTest {
     void exceptionHandler_subclassOfHandlerClass_matches() {
         // ExceptionHandler(SQLException) covers a method declaring throws SQLDataException
         // because the handler's class is a supertype of the declared class.
-        var channel = channelWith(new ExceptionHandler("java.sql.SQLException", Optional.empty(), Optional.empty()));
+        var channel = channelWith(new ExceptionHandler("java.sql.SQLException", Optional.empty(), new ClientMessage.FromSource()));
         assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLDataException"), Optional.of(channel), LOADER))
             .isEmpty();
     }
@@ -70,7 +71,7 @@ class CheckedExceptionMatcherTest {
     void exceptionHandler_supertypeNotCoveredBySubtypeHandler() {
         // A method throws Throwable is NOT covered by ExceptionHandler(SQLException) — the
         // handler's class is more specific than the declared class.
-        var channel = channelWith(new ExceptionHandler("java.sql.SQLException", Optional.empty(), Optional.empty()));
+        var channel = channelWith(new ExceptionHandler("java.sql.SQLException", Optional.empty(), new ClientMessage.FromSource()));
         assertThat(CheckedExceptionMatcher.unmatched(List.of("java.lang.Throwable"), Optional.of(channel), LOADER))
             .containsExactly("java.lang.Throwable");
     }
@@ -79,7 +80,7 @@ class CheckedExceptionMatcherTest {
     void sqlStateHandler_coversAnySqlException() {
         // SqlStateHandler matches any SQLException at runtime (the state predicate runs
         // inside the cause-chain walk). Same applies to VendorCodeHandler.
-        var channel = channelWith(new SqlStateHandler("23503", Optional.empty(), Optional.empty()));
+        var channel = channelWith(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource()));
         assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLException"), Optional.of(channel), LOADER))
             .isEmpty();
         assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLDataException"), Optional.of(channel), LOADER))
@@ -88,7 +89,7 @@ class CheckedExceptionMatcherTest {
 
     @Test
     void vendorCodeHandler_coversAnySqlException() {
-        var channel = channelWith(new VendorCodeHandler("12345", Optional.empty(), Optional.empty()));
+        var channel = channelWith(new VendorCodeHandler("12345", Optional.empty(), new ClientMessage.FromSource()));
         assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLException"), Optional.of(channel), LOADER))
             .isEmpty();
     }
@@ -97,7 +98,7 @@ class CheckedExceptionMatcherTest {
     void sqlStateHandlerAlone_doesNotCoverNonSqlException() {
         // SqlStateHandler / VendorCodeHandler only cover SQLException subclasses — a method
         // throws java.lang.Exception needs a corresponding ExceptionHandler.
-        var channel = channelWith(new SqlStateHandler("23503", Optional.empty(), Optional.empty()));
+        var channel = channelWith(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource()));
         assertThat(CheckedExceptionMatcher.unmatched(List.of("java.lang.Exception"), Optional.of(channel), LOADER))
             .containsExactly("java.lang.Exception");
     }
@@ -106,7 +107,7 @@ class CheckedExceptionMatcherTest {
     void validationHandler_coversNothingInMatcher() {
         // ValidationHandler is a wrapper-side flag; it never participates in the dispatch arm
         // and so never covers a declared exception in this matcher.
-        var channel = channelWith(new ValidationHandler(Optional.empty()));
+        var channel = channelWith(new ValidationHandler());
         assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLException"), Optional.of(channel), LOADER))
             .containsExactly("java.sql.SQLException");
     }
@@ -167,7 +168,7 @@ class CheckedExceptionMatcherTest {
     @Test
     void multipleDeclaredExceptions_partialMatch_returnsOnlyUnmatched() {
         // A method may declare multiple checked exceptions; only the unmatched ones surface.
-        var channel = channelWith(new ExceptionHandler("java.sql.SQLException", Optional.empty(), Optional.empty()));
+        var channel = channelWith(new ExceptionHandler("java.sql.SQLException", Optional.empty(), new ClientMessage.FromSource()));
         assertThat(CheckedExceptionMatcher.unmatched(
                 List.of("java.sql.SQLException", "java.lang.Exception"), Optional.of(channel), LOADER))
             .containsExactly("java.lang.Exception");

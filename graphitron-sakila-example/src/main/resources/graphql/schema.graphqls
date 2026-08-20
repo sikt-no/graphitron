@@ -869,6 +869,16 @@ type Query {
             method: "lookup"
         })
 
+    # The VALIDATION-channel entry point. Its channel mixes a {handler: VALIDATION} entry with a
+    # dispatch handler, so the wrapper emits the Jakarta validation pre-step ahead of the try block
+    # and the per-@error message() bodies carry the GraphQLError arm the validation path lands on.
+    # See FilmValidatedLookupService for what the fixture does and does not pin.
+    filmLookupValidated(id: Int!): FilmValidatedLookupPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmValidatedLookupService",
+            method: "lookup"
+        })
+
     # R110 Story 1 fixture entry point. The service hand-rolls a CustomerAddressSummary row;
     # the @sourceRow on `address` lets the rewrite generator emit a path-keyed DataLoader fetch
     # via customer_address_id_fkey without requiring the DTO to carry jOOQ metadata.
@@ -1021,9 +1031,15 @@ type FilmLookupNotFound @error(handlers: [{
     message: String!
 }
 
+# The description: half of the pair. Only this handler carries one, so the execute-tier driver
+# sees the authored string here and getMessage() on its FilmLookupNotFound sibling, which is what
+# makes the override observably per-handler rather than per-channel. The `attempted` field below
+# is the regression guard that the extra-field read still goes to the live exception: the source
+# object is never wrapped or substituted to deliver the message override.
 type FilmLookupInvalid @error(handlers: [{
         handler: GENERIC,
-        className: "no.sikt.graphitron.rewrite.test.services.FilmLookupInvalidIdException"
+        className: "no.sikt.graphitron.rewrite.test.services.FilmLookupInvalidIdException",
+        description: "The film id could not be used for a lookup."
     }]) {
     path: [String!]!
     message: String!
@@ -1032,11 +1048,53 @@ type FilmLookupInvalid @error(handlers: [{
     attempted: Int @field(name: "attemptedId")
 }
 
-union FilmLookupError = FilmLookupNotFound | FilmLookupInvalid
+# The both-shapes source: FilmLookupClientFacingException is a Throwable and a graphql.GraphQLError
+# at once, so the emitted message() body can reach it through either its dispatch-table walk or its
+# GraphQLError arm. The walk runs first, so this description: is what reaches the client; the
+# exception's own getMessage() says something else, so a regression that reorders the two arms is an
+# assertion failure rather than an invisible behaviour change.
+type FilmLookupClientFacing @error(handlers: [{
+        handler: GENERIC,
+        className: "no.sikt.graphitron.rewrite.test.services.FilmLookupClientFacingException",
+        description: "The film lookup was refused."
+    }]) {
+    path: [String!]!
+    message: String!
+}
+
+union FilmLookupError = FilmLookupNotFound | FilmLookupInvalid | FilmLookupClientFacing
 
 type FilmLookupPayload {
     title: String
     errors: [FilmLookupError]
+}
+
+# The suite's one {handler: VALIDATION} channel, on its own payload so the wrapper's Jakarta
+# validation pre-step stays off the dispatch fixtures above. Its point is the emitted message()
+# body's GraphQLError arm: the validation path puts GraphQLError instances in the errors slot which
+# need not be Throwables, so that arm is the one resolution step no dispatch fixture reaches.
+# A VALIDATION handler carries no description: (the SDL-to-model lift rejects one, since the
+# validator emits one error per violation each carrying its own interpolated message), which is
+# also why the dispatch sibling below is what supplies this channel's error routing.
+# See Query.filmLookupValidated and FilmValidatedLookupService.
+type FilmLookupValidationFailed @error(handlers: [{handler: VALIDATION}]) {
+    path: [String!]!
+    message: String!
+}
+
+type FilmValidatedLookupMissing @error(handlers: [{
+        handler: GENERIC,
+        className: "no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException"
+    }]) {
+    path: [String!]!
+    message: String!
+}
+
+union FilmValidatedLookupError = FilmLookupValidationFailed | FilmValidatedLookupMissing
+
+type FilmValidatedLookupPayload {
+    title: String
+    errors: [FilmValidatedLookupError]
 }
 
 # R12 fixture (error-handling-parity.md): mutation-side counterpart to FilmLookupError. Drives

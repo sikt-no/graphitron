@@ -303,9 +303,34 @@ public sealed interface GraphitronType
 
             /** Optional substring filter on the matched exception's {@code getMessage()}. */
             Optional<String> matches();
+        }
 
-            /** Optional user-facing description. Falls back to the exception's message at runtime. */
-            Optional<String> description();
+        /**
+         * Where the SDL {@code message} field of an {@code @error} type reads its value from,
+         * resolved once at lift time from the handler entry's {@code description:}. The fork is
+         * a build-time fact, so the emitted {@code <ErrorType>Fetchers.message} body picks its
+         * statement per arm instead of carrying a runtime null test over a decided value.
+         *
+         * <p>Declared on the three dispatch variants rather than on {@link Handler}:
+         * {@code description:} alongside {@code handler: VALIDATION} is rejected at lift time,
+         * so {@link ValidationHandler} has no client message to carry and would have to fake
+         * one. This is deliberately the opposite choice from {@link Handler#matches()}, which
+         * stays on the interface.
+         */
+        public sealed interface ClientMessage permits ClientMessage.Static, ClientMessage.FromSource {
+
+            /** The author wrote {@code description:}; {@code message} resolves to this string. */
+            record Static(String message) implements ClientMessage {
+                public Static {
+                    if (message == null) {
+                        throw new IllegalArgumentException(
+                            "ClientMessage.Static: message must be non-null; absence is FromSource");
+                    }
+                }
+            }
+
+            /** No {@code description:}; {@code message} resolves to the source's own message. */
+            record FromSource() implements ClientMessage {}
         }
 
         /**
@@ -316,7 +341,7 @@ public sealed interface GraphitronType
         public record ExceptionHandler(
             String exceptionClassName,
             Optional<String> matches,
-            Optional<String> description
+            ClientMessage clientMessage
         ) implements Handler {}
 
         /**
@@ -327,7 +352,7 @@ public sealed interface GraphitronType
         public record SqlStateHandler(
             String sqlState,
             Optional<String> matches,
-            Optional<String> description
+            ClientMessage clientMessage
         ) implements Handler {}
 
         /**
@@ -338,7 +363,7 @@ public sealed interface GraphitronType
         public record VendorCodeHandler(
             String vendorCode,
             Optional<String> matches,
-            Optional<String> description
+            ClientMessage clientMessage
         ) implements Handler {}
 
         /**
@@ -346,11 +371,10 @@ public sealed interface GraphitronType
          * {@code jakarta.validation.Validator.validate(input)} before the body runs and
          * routes each {@code ConstraintViolation} into the payload's errors slot as a
          * {@code GraphQLError}. Lift target for {@code {handler: VALIDATION}}. Carries no
-         * dispatch criteria; it is a wrapper-side flag, never reached by the dispatcher.
+         * dispatch criteria and no {@link ClientMessage}; it is a wrapper-side flag, never
+         * reached by the dispatcher.
          */
-        public record ValidationHandler(
-            Optional<String> description
-        ) implements Handler {
+        public record ValidationHandler() implements Handler {
             @Override public Optional<String> matches() { return Optional.empty(); }
         }
     }

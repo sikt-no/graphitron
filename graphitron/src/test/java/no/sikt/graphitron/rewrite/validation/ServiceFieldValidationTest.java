@@ -230,7 +230,7 @@ class ServiceFieldValidationTest {
         var wrap = new SourceKey.Wrap.Row();
         var errorType = new GraphitronType.ErrorType("Err", null,
             List.of(new GraphitronType.ErrorType.ExceptionHandler(
-                "java.sql.SQLException", Optional.empty(), Optional.empty())),
+                "java.sql.SQLException", Optional.empty(), new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage.FromSource())),
             List.of());
         var channel = new no.sikt.graphitron.rewrite.model.ErrorChannel.PayloadClass(
             List.of(errorType),

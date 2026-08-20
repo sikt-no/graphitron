@@ -56,19 +56,21 @@ public final class ChannelCatchArmEmitter {
     }
 
     private static ClassName errorRouterClass(String outputPackage) {
-        return ClassName.get(outputPackage + ".schema", ErrorRouterClassGenerator.CLASS_NAME);
+        return ErrorRouterClassGenerator.routerClass(outputPackage);
     }
 
     private static ClassName mappingInterface(String outputPackage) {
-        return errorRouterClass(outputPackage).nestedClass(ErrorRouterClassGenerator.MAPPING_INTERFACE);
+        return ErrorRouterClassGenerator.mappingInterface(outputPackage);
     }
 
     private static ClassName errorMappingsClass(String outputPackage) {
-        return ClassName.get(outputPackage + ".schema", ErrorMappingsClassGenerator.CLASS_NAME);
+        return ErrorMappingsClassGenerator.mappingsClass(outputPackage);
     }
 
     private static ClassName errorListClass(String outputPackage) {
-        return ClassName.get(outputPackage + ".schema", OutcomeClassGenerator.CLASS_NAME)
+        var outcome = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).singleton(
+            no.sikt.graphitron.plan.GeneratedUnits.SUB_SCHEMA, OutcomeClassGenerator.CLASS_NAME);
+        return ClassName.get(outcome.packageName(), outcome.simpleName())
             .nestedClass(OutcomeClassGenerator.ERROR_LIST_CLASS);
     }
 }

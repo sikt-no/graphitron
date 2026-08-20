@@ -6698,8 +6698,80 @@ class GraphQLQueryTest {
         // String/Integer path elements.
         only.extractingByKey("path", as(LIST))
             .containsExactly("filmLookup", "errors", "0", "path");
-        // message DataFetcher routes through Throwable.getMessage().
-        only.containsEntry("message", "invalid id: -7");
+        // FilmLookupInvalid's handler is the one in this union carrying description:, so the
+        // message DataFetcher's dispatch-table walk matches the source and returns the authored
+        // string instead of the exception's own "invalid id: -7". The `attempted` assertion above
+        // is what makes this a message-only override: the extra field still reads the live
+        // exception, so nothing wrapped or substituted the source object to deliver the message.
+        only.containsEntry("message", "The film id could not be used for a lookup.");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void filmLookup_bothShapesSource_prefersAuthoredDescriptionOverGraphQLErrorMessage() {
+        // FilmLookupClientFacingException is a Throwable and a graphql.GraphQLError at once, so
+        // the emitted message() body can reach it through either its dispatch-table walk or its
+        // GraphQLError arm, and the two return different strings. The walk runs first, so the
+        // authored description: wins. This is the precedence decision the arm order encodes; with
+        // the GraphQLError arm first the assertion below reads back the raw getMessage() instead.
+        Map<String, Object> data = execute("""
+            {
+                filmLookup(id: 777) {
+                    title
+                    errors {
+                        __typename
+                        ... on FilmLookupClientFacing { path message }
+                    }
+                }
+            }
+            """);
+        var only = assertThat(data).extractingByKey("filmLookup", as(MAP))
+            .extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmLookupClientFacing");
+        only.containsEntry("message", "The film lookup was refused.");
+        // The source implements GraphQLError, so `path` resolves through that arm rather than the
+        // synthesised execution path; getPath() is null on this fixture, which renders as [].
+        only.extractingByKey("path", as(LIST)).isEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void filmLookupValidated_validationChannel_dispatchesAndResolvesMessages() {
+        // The one channel in the suite carrying {handler: VALIDATION}: the wrapper runs the
+        // Jakarta validation pre-step before the body, and every @error type on the channel gets a
+        // message() body carrying the GraphQLError arm that path lands on. The pre-step's target
+        // declares no constraints, so it yields nothing and the dispatch sibling routes the throw.
+        Map<String, Object> data = execute("""
+            {
+                filmLookupValidated(id: -3) {
+                    title
+                    errors {
+                        __typename
+                        ... on FilmValidatedLookupMissing { path message }
+                        ... on FilmLookupValidationFailed { path message }
+                    }
+                }
+            }
+            """);
+        var only = assertThat(data).extractingByKey("filmLookupValidated", as(MAP))
+            .extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmValidatedLookupMissing");
+        // No description: on this handler, so message keeps reading the source's own message.
+        only.containsEntry("message", "validated lookup found no film -3");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void filmLookupValidated_validationPreStepLetsTheHappyPathThrough() {
+        // The pre-step short-circuits only on a non-empty violation list. Nothing attaches
+        // constraints to what it validates, so it must not perturb the success return.
+        Map<String, Object> data = execute("{ filmLookupValidated(id: 5) { title errors { __typename } } }");
+        assertThat(data).extractingByKey("filmLookupValidated", as(MAP))
+            .containsEntry("title", "THE VALIDATED FILM");
     }
 
     @Test
@@ -6727,6 +6799,9 @@ class GraphQLQueryTest {
             .hasSize(1)
             .element(0, as(MAP));
         only.containsEntry("__typename", "FilmLookupNotFound");
+        // This handler carries no description:, so message keeps reading the source's own message
+        // while its FilmLookupInvalid sibling on the same channel returns an authored string. The
+        // pair is what proves the override is per-handler rather than per-channel.
         only.containsEntry("message", "film 0 not found");
         only.extractingByKey("path", as(LIST))
             .containsExactly("filmLookup", "errors", "0", "path");

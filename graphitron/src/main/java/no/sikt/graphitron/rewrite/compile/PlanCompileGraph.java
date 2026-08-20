@@ -148,6 +148,9 @@ public final class PlanCompileGraph {
             for (var row : plan.typeUnits().fetchers()) {
                 fetchersByTypeName.put(row.typeName(), row.unit());
             }
+            for (var row : plan.typeUnits().errorFetchers()) {
+                fetchersByTypeName.put(row.typeName(), row.unit());
+            }
             for (var row : plan.typeUnits().connectionFetchers()) {
                 fetchersByTypeName.put(row.typeName(), row.connection());
             }
