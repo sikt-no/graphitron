@@ -223,30 +223,52 @@ Worth doing as a simplification on its own merits; not an alternative to Route A
 
 Take Route A. Route B is a follow-on.
 
-### What Route A costs, which is the part to design rather than discover
+### What Route A costs, which is less than the prototype made it look
 
-The prototype broke **thirteen `graphitron-model` test classes**, and the reason is structural rather
-than a prototype defect. Those classes seed rows into base tables and read a derived relation
-directly, with no capture pass anywhere in the fixture, so a reduction nothing populated returns zero
-rows: `ArgmappingPairTest`, `ArgmappingProjectionDefectTest`, `ArgmappingBindingLeafTest`,
+The prototype broke **thirteen `graphitron-model` test classes**. They seed rows into base tables and
+read a derived relation directly, with no capture pass anywhere in the fixture, so a reduction
+nothing populated returns zero rows: `ArgmappingPairTest`, `ArgmappingProjectionDefectTest`, `ArgmappingBindingLeafTest`,
 `ArgmappingSegmentBindingTest`, `ColumnMatchClaimTest`, `FieldColumnTableTest`,
 `FieldRoutineMethodTest`, `NodeTypeTest`, `ReferenceStepTargetTest`, `ResolvedNodeKeyColumnTest`,
 `ResolvedNodeKeyProjectionTest`, `SeparateFetchRuleTest`, `TypeBackingTest`.
 
-That is the freshness invariant made visible, and it is a feature of the finding rather than an
-obstacle to it. Four things follow.
+**Those thirteen failures are a defect in the fixture, not a cost of the change, and the item should
+not be specced as though they were the latter.** Nothing observable changed. A reduction is populated
+by `INSERT INTO <name> SELECT * FROM <name>_rule`, so it holds exactly the rows the view computed,
+by construction. Every one of those tests asserts which rows a relation yields given a set of facts,
+and every one of those assertions is still true. They failed anyway, which means they were coupled to
+*when* the derivation runs rather than to what it returns. A change made purely for speed, that
+alters no answer, should be able to reach into the implementation without a single one of them
+noticing.
+
+The reason they can notice has a name, and the store's own architecture already supplies it.
+`fact-model.adoc` describes three strata: capture transcribes facts, derivation computes further
+facts from them, and queries read. `SeededStore` models the first and the third. It has no
+derivation phase, because under derive-on-read that phase is implicit and free, so its absence has
+never cost anything. Materialise one derivation and the missing phase becomes visible at once. So
+this is one missing concept in a fixture, not thirteen broken tests.
+
+**Give the fixture the derivation boundary, once, and the tests never mention reductions.** The seam
+already exists: every one of the thirteen classes reads through a per-class helper (`rows(dsl)`,
+`only(dsl)`, `rowFor(dsl, ...)`), thirty read sites in total. Route those through one shared entry
+point on `SeededStore` that brings the derivation stratum up to date before serving, and the thirteen
+classes change by one line each and by nothing else, ever again. A future reduction, or the reversal
+of one, costs the fixture and no test. Sizing the work as "thirty refresh calls the tests now have to
+remember" is the version of this that keeps the coupling and pays for it repeatedly; it was the
+earlier reading here and it was wrong.
 
 **The refresh belongs on the capture cadence, not the detection cadence.** The prototype populated
 inside `FactCapture`'s detection pass, which is skipped when a run has no walk reach. A capture that
 writes rows and leaves a reduction stale is the failure mode the design has to exclude, so the
 population goes immediately after capture, unconditionally, with the order written down rather than
-inferred.
+inferred. That is the production half of the same boundary the fixture needs.
 
-**The seeded tests have to call the refresh, and they should.** Each of the thirteen classes reads
-through a small per-class helper (`rows(dsl)`, `only(dsl)`, `rowFor(dsl, ...)`), so the edit is on the
-order of thirty insertions rather than the ninety-six `withSeededStore` call sites. Making it
-explicit is the right outcome: these tests pin what a rule returns given rows, and under a reduction
-"given rows" acquires a second half, which is "and after the reduction was refreshed".
+Two ways to avoid touching the tests entirely were considered and both are worse. Base-table triggers
+that recompute a reduction on write are fine on a seeded store of a dozen rows and catastrophic on a
+capture writing tens of thousands, across the sixty-odd base tables these two reductions read.
+Refreshing lazily on read, gated by a staleness stamp, puts a write on the read path and has to
+answer for concurrent readers and read-only connections. The fixture boundary costs thirteen lines
+and asks nothing of production.
 
 **Every `_rule` view needs its own comment text.** `SchemaReferencePagesTest` fails the build on any
 relation or column with a blank comment, so renaming a view moves its comments to the reduction and
