@@ -197,11 +197,37 @@ code with a scheduled end. Three reasons that is the right thing to write anyway
   R333 describes. What moves there is the split leaf's welded-on parent-key projection, which
   depends on the parent's query; the sort does not.
 
-**Sequencing: this lands before R682, not after.** A faithful re-sourcing of the planner reproduces
-current behaviour, and current behaviour here is a hardcoded `null` sitting under a javadoc calling
-it "a pinned current behaviour". A conversion that preserved it would be doing its job. Fixing the
-drop first means the pivot inherits four arms that agree, with one less special case to carry
-across the seam, and no behaviour delta at this coordinate to argue about mid-conversion.
+**Sequencing: R682 goes first, and that is the better order.** An earlier draft of this section
+argued the opposite, that fixing the drop first would hand the pivot four arms that agree. That
+argument ignored what R682's gate is. R682 holds generated output *byte-identical* across every
+increment, asserted against checked-in pipeline-tier expectations, and that invariant is the whole
+reason a five-thousand-line conversion is reviewable. This item deliberately changes generated
+output, and `BatchedChildSqlBaselineTest` freezes whole rendered statements for precisely the
+family R682 converts. Landing a deliberate SQL change into that window would move the one
+instrument the conversion is measured with, leaving its reviewer unable to tell "the SQL moved
+because the conversion broke something" from "the SQL moved because another item intended it to".
+Waiting keeps that instrument clean, and buys this item a base where the fix is written once in the
+final vocabulary instead of as leaf-reading code the pivot then converts.
+
+Two consequences follow, and neither is a problem.
+
+R682 cannot absorb or obscure this bug. Byte-identical output is forbidden from fixing it, so the
+drop survives the conversion by construction, and the diagnosis above stays true whatever the plan
+tier ends up reading. Nothing needs re-checking for correctness.
+
+The plan-half anchors will move, and the implementer re-derives them at pickup. The three bullets
+above describe the tree before the batched-child family converts:
+`batchedResultOf` / `batchedLookupRow` reading `btf.orderBy()` through `orderingOf` is
+pre-conversion vocabulary. What the fix *is* does not move with them, and that is what the Ready
+sign-off covers: the two batched arms project the coordinate's ordering rather than passing `null`,
+and the renderer renders it off the command row. The render half needs no re-derivation at all,
+since R682's recipe moves emitters toward the shape that fragment already has.
+
+One reopen trigger, stated so the judgment is not left implicit. If R682's conversion of this
+family lands the ordering as a join over the command relation rather than as a per-arm projection,
+the "two arms, two edits" framing dissolves and the shape of the work changes rather than its
+anchors. That is a Ready to Spec reopen at pickup, not a plan edit. If the arms survive as arms,
+re-anchoring is a plan edit and the sign-off stands.
 
 ## Tests
 
