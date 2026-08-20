@@ -28,7 +28,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R743` | The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves | Ready | 2026-08-20 | [plan](sdl-fact-gatherer-staged-pipeline.md) |
+| `R743` | The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves | In Progress | 2026-08-20 | [plan](sdl-fact-gatherer-staged-pipeline.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | In Review | 2026-08-20 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -308,7 +308,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R682` [**Planners read facts, emitters read commands: dissolve the walk and the leaf zoo**](planners-read-facts-emitters-read-commands.md) — Spec, architecture
 - `R628` [**Producer-binding probe grounds a dot-path leaf parameter against the outer input type**](producer-probe-dotpath-misgrounding.md) — Backlog, bug
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
-- `R743` [**The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves**](sdl-fact-gatherer-staged-pipeline.md) — Ready, architecture
+- `R743` [**The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves**](sdl-fact-gatherer-staged-pipeline.md) — In Progress, architecture
 - `R609` [**Capture-load residuals from the fact-store delivery**](capture-load-residuals.md) — Backlog, architecture
 - `R574` [**Clear the residual inaccuracies the @table-on-input deprecation reopen left behind**](table-on-input-deprecation-sweep-residuals.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
