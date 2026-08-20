@@ -29,9 +29,11 @@ Both halves of that sentence are wrong and this item fixes both.
 They are independent and they compound. **Measured together: 229.0s to 20.66s**, on this class's own
 two tests. Read the per-row reactor state in the table below before quoting that figure: the run that
 produced it left thirteen `graphitron-model` classes failing, because the fixture work this item
-specs was not part of the prototype that measured it. The generator's cost is not this test's problem alone, which is why lever one matters more
-than the arithmetic here suggests: the same reads run in every consumer's build, six times per
-reactor build, and once per `graphitron:generate` a consumer performs.
+specs was not part of the prototype that measured it.
+
+The generator's cost is not this test's problem alone, which is why lever one matters more than the
+arithmetic here suggests: the same reads run in every consumer's build, six times per reactor build,
+and once per `graphitron:generate` a consumer performs.
 
 R733 carries the store's other read work and the two changes that are the baseline for every figure
 below (a batched key-column read and one index). This item is the remaining derived-read cost and
@@ -40,6 +42,49 @@ here are not independent of R733: every measurement below was taken with R733's 
 and **the reductions' standalone effect on a trunk without them was never measured.** `depends-on` is
 empty deliberately, since nothing here requires R733 to land first; a reviewer wanting the standalone
 figure should ask for it rather than infer it.
+
+## How to read this item: a paving step, deliberately scoped
+
+The obvious objection is that this is several items wearing one hat. A registry in the store's DDL, a
+doctrine change, a build gate, a fixture refactor and a test's run count do not obviously belong to
+one review. That breadth is a decision rather than an accretion, and the reasoning is worth having in
+front of you before the evidence, because it changes what you are being asked to approve.
+
+**We know the direction and not the road.** What the measurements settle is that the fact store's
+derive-on-read, right as a default, is wrong for a relation that a deep derivation names dozens of
+times, and that materialising on the capture cadence is the mechanism that fixes it. What they do not
+settle is how far that goes: how many relations end up registered, whether ordering becomes load
+bearing soon or never, whether any refresh ever wants to be incremental or partitioned, or whether the
+doctrine eventually swallows `intent_type_domain`'s hand-written Java derivation too. Waiting until
+those are known means either shipping nothing or shipping two bespoke reductions and discovering the
+mechanism later, from a worse position.
+
+**So the item builds the smallest thing that is correct for what it registers, and makes every
+simplification visible.** The table below is the contract: each row is a place where this item
+deliberately does less than the eventual design, with what makes the lesser version correct today and
+where the successor lives. A reviewer's question is not "is this the final shape" but "is each row
+safe now, and cheap to revisit".
+
+| Simplified here | Correct today because | Revisited by |
+|---|---|---|
+| `meta_materialize` has two columns and no order | neither registered view is in the other's dependency closure; both closures are base tables only | R746, strictly additive |
+| Refresh empties and refills the whole relation | the view spans every graph, so no `WHERE` is needed and no sibling graph is disturbed | nothing yet; trigger is a store holding enough graphs for the re-derivation to show |
+| Two relations registered | they are the two the profile named; the rest is guesswork until measured | deliverable 3, the multiplicity check |
+| The multiplicity check reports, does not gate | the ceiling is unknown and a wrong one is worse than none | itself, once a few registrations give the ceiling a basis |
+| `intent_type_domain` stays outside the mechanism | it has no view for a registry to point at, so including it is a rewrite rather than a registration | open question below |
+| The defect view's six-arm union is left alone | worth 28% and independent of everything else | deliverable 6 |
+| Four generator runs become three, not two | two needs a production seam whose value drops once a run is cheap | the fork section below |
+
+**What makes it a safe step rather than a bet.** The mechanism lands with zero rows registered, so
+step one changes no behaviour and can be reviewed on its design alone. Views keep their names, so no
+reader is touched. A target's rows equal its view's rows by construction and a gate pins it, so no
+answer changes anywhere. And every simplification in the table is additive to undo: ordering adds a
+relation, a partitioned refresh is a per-registration property, more relations are more rows.
+
+**Two things are not cheap to reverse, and they are the parts to review hardest.** The fixture's
+derivation boundary changes the shape of thirteen test classes, and the doctrine paragraphs change
+what the schema says about itself in two places. Neither is large, but neither is a row of data, and
+if either is wrong it is wrong for everything that follows rather than for this item.
 
 ## What the test is actually for
 
@@ -414,6 +459,10 @@ already uses:
 * **Whether `intent_type_domain` joins the mechanism**, per the doctrinal section above.
 
 ### Deliverables, in the order the numbers argue for
+
+Steps 1 and 2 are the paving; 3 onward are what the paving makes cheap. The simplification table near
+the top of this item says which of these are the lesser version of something and where the fuller
+version lives.
 
 1. **The mechanism**: `meta_materialize`, the `graphitron-model` materializer, its call from the
    capture pass and from `SeededStore`, the registry's own gates, and the two doctrine paragraphs.

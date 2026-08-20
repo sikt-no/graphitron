@@ -20,6 +20,11 @@ general.
 This item adds the order. It is strictly additive: no relation R742 registers changes, no reader
 changes, and a registry with no ordering information keeps behaving exactly as it does today.
 
+It is a planned successor rather than a defect report. R742 scopes itself deliberately to the
+smallest mechanism that is correct for what it registers, and lists its simplifications in a table
+naming this item as the one that lifts the first of them. Read that table for the shape of the
+sequence; what follows here is only this step.
+
 ## Why R742 could leave it out, stated so this item knows what it is fixing
 
 A materialized target is refilled by `INSERT INTO <table_name> SELECT * FROM <view_name>`. If that
