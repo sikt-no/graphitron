@@ -3,7 +3,7 @@ id: R742
 title: "The determinism ratchet costs 229 seconds: too many generator runs, and each run too expensive"
 status: Spec
 bucket: dx
-priority: 3
+priority: 2
 theme: tooling
 depends-on: []
 created: 2026-08-20
@@ -26,14 +26,20 @@ Both halves of that sentence are wrong and this item fixes both.
 * **Lever two, how many runs there are.** The contract the class guards needs two runs at most, and
   the class performs four. The fourth buys a populated directory the first method already produced.
 
-They are independent and they compound. **Measured together, with both tests green: 229.0s to
-20.66s.** The generator's cost is not this test's problem alone, which is why lever one matters more
+They are independent and they compound. **Measured together: 229.0s to 20.66s**, on this class's own
+two tests. Read the per-row reactor state in the table below before quoting that figure: the run that
+produced it left thirteen `graphitron-model` classes failing, because the fixture work this item
+specs was not part of the prototype that measured it. The generator's cost is not this test's problem alone, which is why lever one matters more
 than the arithmetic here suggests: the same reads run in every consumer's build, six times per
 reactor build, and once per `graphitron:generate` a consumer performs.
 
 R733 carries the store's other read work and the two changes that are the baseline for every figure
 below (a batched key-column read and one index). This item is the remaining derived-read cost and
-the run count. Neither waits on the other.
+the run count. Neither waits on the other in the sense that either can land first, but the numbers
+here are not independent of R733: every measurement below was taken with R733's two changes applied,
+and **the reductions' standalone effect on a trunk without them was never measured.** `depends-on` is
+empty deliberately, since nothing here requires R733 to land first; a reviewer wanting the standalone
+figure should ask for it rather than infer it.
 
 ## What the test is actually for
 
@@ -243,13 +249,18 @@ with `ReachabilityRows.write` as the delete-by-graph-then-insert cadence. It doe
 *justification*, which is the reviewable part and has its own section below.
 
 Measured, with `intent_argmapping_pair` and `intent_spelled_table` reduced, on top of R733's two
-changes:
+changes. The reactor column is the part to read first, and it is why the deliverables below put the
+fixture work in the same step as the registrations:
 
-| | Defect-view query | `FixtureWarningsGateTest` | `GeneratorDeterminismTest` |
-|---|---|---|---|
-| trunk | | 56.8s | 229.0s |
-| R733's two changes | 24.5s | 23.5s | about 93s |
-| plus these two reductions | **0.72s** | **6.85s** | **20.66s** |
+| | Defect-view query | `FixtureWarningsGateTest` | `GeneratorDeterminismTest` | Full reactor |
+|---|---|---|---|---|
+| trunk | | 56.8s | 229.0s | green |
+| R733's two changes | 24.5s | 23.5s | about 93s | green, twice |
+| plus these two reductions | **0.72s** | **6.85s** | **20.66s** | **red: 13 classes** |
+
+The last row's timings are real and the classes that produced them passed. The reactor was not green,
+because the prototype registered two relations and did nothing about the fixture, which is the whole
+subject of the next section. Nobody should quote 20.66s as a landed number until that is done.
 
 The profile afterwards is healthy rather than merely smaller: H2 falls from 97% of a run to 67%, the
 four store reads from 88% to about 48%, and the largest single remaining item is the store's own DDL
@@ -289,7 +300,10 @@ derivation phase, because under derive-on-read that phase is implicit and free, 
 never cost anything. Materialise one derivation and the missing phase becomes visible at once. So
 this is one missing concept in a fixture, not thirteen broken tests.
 
-**Give the fixture the derivation boundary, once, and the tests never mention materialization.** The
+**Give the fixture the derivation boundary, once, and the tests never mention materialization.**
+This is the one part of the design with no evidence behind it, and a reviewer should treat it as the
+item's main risk: the prototype demonstrated the breakage and did not fix it, so "one line per class"
+is a reading of the code rather than a thing anyone has done. The
 seam already exists: every one of the thirteen classes reads through a per-class helper (`rows(dsl)`,
 `only(dsl)`, `rowFor(dsl, ...)`), thirty read sites in total. Route those through `SeededStore`,
 which calls the same `graphitron-model` materializer every other caller calls, and the thirteen
@@ -414,7 +428,11 @@ already uses:
    work its contract does not need, and worth doing *after* the above, because by then it saves about
    five seconds rather than about sixty.
 5. **The clean-removal coverage decision**, and the javadoc correction it implies either way.
-6. **The duplicate-read merge and the `Files.mismatch` cleanup**, both re-measured against the shape
+6. **Route B**, flattening the defect view's five `binding_leaf` arms into one `CASE` pass. Priced at
+   28% of the instantiations above and independent of everything else here, so it can land whenever;
+   listed because an item that calls it worthwhile and then never schedules it is how a good idea
+   goes missing.
+7. **The duplicate-read merge and the `Files.mismatch` cleanup**, both re-measured against the shape
    they would actually ship into rather than against today's.
 
 ### A smaller one on the same path: the same view is read twice per run
@@ -447,16 +465,18 @@ the shape it will actually ship into.
 
 ### What the changes come to together
 
-Every row measured on one 4 vCPU sandbox with both tests green, except where marked.
+Every row measured on one 4 vCPU sandbox. "Class green" means this class's own two tests passed;
+"reactor" is the state of a full `mvn install -Plocal-db`, which is the column that decides whether a
+number is quotable as landed.
 
-| Configuration | Runs | Class total | Per run |
-|---|---|---|---|
-| trunk | 4 | 229.0s | 57.3s |
-| run reduction alone | 3 | 167.3s | 55.8s |
-| R733's two changes alone | 4 | about 93s, derived | 23.3s |
-| R733 + run reduction | 3 | 62.91s | 21.0s |
-| R733 + the two reductions | 4 | **20.66s** | 5.2s |
-| all three | 3 | about 16s, projected | 5.2s |
+| Configuration | Runs | Class total | Per run | Reactor |
+|---|---|---|---|---|
+| trunk | 4 | 229.0s | 57.3s | green |
+| run reduction alone | 3 | 167.3s | 55.8s | not run; the change is test-local |
+| R733's two changes alone | 4 | about 93s, derived | 23.3s | green, twice |
+| R733 + run reduction | 3 | 62.91s | 21.0s | green |
+| R733 + the two reductions | 4 | **20.66s** | 5.2s | **red: 13 classes** |
+| all three | 3 | about 16s, projected | 5.2s | not run |
 
 The last row is arithmetic rather than a measurement, and worth stating plainly: once a run costs
 5.2 seconds instead of 57, removing the fourth run saves about five seconds rather than about sixty.
