@@ -58,12 +58,25 @@ goto-definition, inlay hints and diagnostics arm by arm, retired its last genera
 the routine call surface became a relation and `Workspace` stopped holding a build snapshot at all.
 All of them answer questions. None of them emit code.
 
-The emit half is still made entirely from the leaf model, at both of its tiers. `EmitPlan.produce`
-takes a `GraphitronSchema` and joins its facts into the six command relations the run will render,
-every one of those joins dispatching on sealed leaf variants. Below it, the un-migrated emitters
-dispatch on leaves directly rather than folding over command rows. So the store has never been the
-source of a single generated file, and the claim that it is the destination is, on the evidence of
-the emitted output, unproven.
+The emit half is still made almost entirely from the leaf model, at both of its tiers.
+`EmitPlan.produce` takes a `GraphitronSchema` and joins its facts into most of the command relations
+the run will render, those joins dispatching on sealed leaf variants. Below it, the un-migrated
+emitters dispatch on leaves directly rather than folding over command rows.
+
+"Almost" is load-bearing, and it is the item's best evidence rather than a caveat. One producer has
+already converted: `KeyProjectionCommands.produce` takes `ResolvedKeyProjections.Projections` and no
+`GraphitronSchema`, `EmitPlan` hands it store rows, and `ProjectedKeyReads`, `ProjectedKeyHost` and
+`ConditionGlueRenderer` emit from the relation, so part of the generated output is store-derived
+today. It landed 2026-08-19 (`2ef0b57`) with a commit message that states this item's thesis
+directly: a producer reads facts, the walked model is not a fact source, and a plan-tier join
+against it leaves the walk alive one tier past where it was supposed to end. Three relations had to
+land first for it (`sql_schema.tables_class_fqn`, the new `intent_resolved_node_type_id`, and
+`StoreNodeTables` as the first store-sourced producer of a `TableRef`), which is exactly the
+per-producer shape the rest of this half repeats.
+
+So the recipe is proven and the remaining question is coverage, not feasibility. What the emitted
+output does not yet demonstrate is a *whole* family produced from the store, which is what the
+per-relation increments below deliver.
 
 The validator is the same story one stage earlier. `GraphitronSchemaValidator` is 2,023 lines and
 73 `validate*` methods reading nothing but the leaf model: it re-wraps the `Rejection` each
@@ -99,9 +112,10 @@ leaf, which is not a hypothetical: it is how a recent design landed on the wrong
 "join the fact onto the command row" and "read it off the leaf the emitter already holds" are both
 reachable and only one is right.
 
-`no.sikt.graphitron.plan` reads leaves, not facts. `EmitPlan.produce` takes a `GraphitronSchema` and
-dispatches on sealed variants to build the six command relations, so no generated file has ever been
-produced from the store. That is the planner half, and it is the largest single surface.
+`no.sikt.graphitron.plan` reads leaves where it has not been converted yet. `EmitPlan.produce` still
+takes a `GraphitronSchema` and dispatches on sealed variants to build most of the command relations,
+with the key-projection producer above as the one converted exception. That is the planner half, and
+it is the largest single surface.
 
 A census of leaf imports across main sources (2026-08-20) puts the rest of the blast radius in a
 short list the terminal deletion has to see emptied: the validator (above), six files in
@@ -189,9 +203,10 @@ is not the whole job.
 
 ## The read surface, measured
 
-The plan package is 3175 lines across six relations, and the command vocabulary it produces is a
-further 2139 lines across 31 types. Inside it there are 100 leaf dispatch sites over 53 distinct
-sealed variants, which is most of the zoo.
+The plan package is 3578 lines across eight producers (seven command relations plus `EmitPlan`'s own
+globals), and the command vocabulary it produces is a further 2139 lines across 31 types. The leaf
+dispatch inside it is most of the zoo; `PLAN_LEAF_REFERENCES` is the live count and the census below
+names the producers.
 
 The line counts overstate the problem, though, because the plan reaches the model through a short and
 enumerable set of accessors. Thirteen, in full:
@@ -267,7 +282,7 @@ projection question of the claim views, the launcher producer asks the launcher 
 neither goes through a shared shape even where the SQL comes out similar. What producers share is
 the store's relations and derived views, never the query. The LSP migration stated this rule at the
 grain it applies and it transfers verbatim: "What they share is the relations, not the query"
-(`roadmap/lsp-reads-the-fact-store.md`, the catalog-shaped completion arms). The rule has since been
+(R638, Done, see `roadmap/changelog.md`, the catalog-shaped completion arms). The rule has since been
 filed as store-wide doctrine on its own item (`roadmap/consumers-share-relations-not-queries.md`),
 so this section is an application, not this item's invention; if the two ever read differently, the
 doctrine item wins.
@@ -386,9 +401,46 @@ Four success criteria, and every deliverable is a step toward one of them:
 4. The classification walk and the sealed leaf hierarchies are deleted, along with every resolver
    and transcription writer that existed only to feed or shadow them.
 
-### Planner half: the six relations, in dependency order
+### What output identity is, and what it is not
 
-Later relations reference the earlier ones' rows, so the order is forced:
+Every half below holds behaviour across its increments: output byte-identical for the emit tiers,
+message and location and severity for the validator. State once what that does and does not commit
+to, because the two readings differ and only one is this item's.
+
+Output identity is a **refactoring invariant**. It is asserted against checked-in pipeline-tier
+expectations, not against a second live derivation, so nothing has to be kept alive to compare
+against, no residue list accumulates, and it costs one thing for a reviewer of a 5,000-line
+conversion to check: the derivation moved, the behaviour did not. That is why it is the gate.
+
+It is **not** fidelity to the walk, and the difference decides what happens when a conversion turns
+up a disagreement. Fidelity is not a goal here (`roadmap/retire-oracle-diff-shadow-tests.md` carries
+the argument): a coordinate where the store-derived answer differs from the leaf-derived one is
+either a walk bug the conversion fixes, in which case the expectation changes deliberately in the
+converting commit with the requirement as its specification and the changed output named in the
+commit message, or a conversion mistake, in which case it gets fixed. Reproducing a walk bug to keep
+an expectation green is the one outcome this item refuses, at all three halves. Where the store
+cannot yet state a verdict the consumer needs, the deliverable is the missing relation (strategy
+point 2: the leaf is never wrapped, adapted, or kept as a side channel), never a record of where the
+two derivations disagree.
+
+### Planner half: the eight producers, in dependency order
+
+`plan/` holds eight producers, not the six an earlier draft of this section listed. Two were missing
+and they sit at opposite ends of the work:
+
+* **Already done, and the example to copy: key projections** (`KeyProjectionCommands`, 2026-08-19).
+  Takes no `GraphitronSchema`, reads store-derived `ResolvedKeyProjections`, emits through
+  `ProjectedKeyReads` / `ProjectedKeyHost`. Its shape is what every step below repeats: read the
+  relation, transform the shape, no lookup and no throw. Read its commit before starting the next
+  producer.
+* **Sequenced outside the order: routine writes** (`RoutineWriteCommands`). Not converted:
+  `produce(GraphitronSchema, String)` still takes the schema, with a `produceWithoutSchema` overload
+  beside it, the same transitional pair `LauncherCommands` carries. It moves with the routine-write
+  family's emitter stage rather than by relation size, that family's migration being already scoped
+  as a worked example on another item (see "Relationship to other items"); whichever lands first,
+  the producer and its emitter move together.
+
+The six in between, in dependency order, because later relations reference the earlier ones' rows:
 
 1. **Conditions** (`ConditionCommands`, 403 lines, 3 dispatch sites). The smallest surface and the
    one every other relation references by glue row, so it goes first and establishes the shape.
@@ -420,8 +472,16 @@ emitters to `render` reading only that row, extend the borrow dial by the refs t
 delete the leaf-reading bodies. Output is held byte-identical throughout, which is what makes each
 family a verifiable unit with nothing to argue about.
 
-The census is done (2026-08-16) and the order falls out of it. Six files carry all 129 dispatch
-sites, 120 of them in the fetcher family: `TypeFetcherGenerator` 78, `FetcherEmitter` 30,
+The census below was taken 2026-08-16 and totals 129; the pins re-measured 2026-08-20 total 131
+(69 `instanceof` plus 62 `case`). The two extra sites are the discriminated interface child's
+batched half, which `GENERATOR_LEAF_CASE_PATTERNS`'s javadoc attributes to the fetcher dispatch arm
+plus the parent-input key-wrap probe, so both land in the family the census already ranks heaviest
+and the order does not move. Re-take the census in the first emitter increment rather than carrying
+two totals for one quantity; a completeness claim that is two short is the same species of blind
+spot as the pin corrections below.
+
+Six files carry the 129 the census found, 120 of them in the fetcher family:
+`TypeFetcherGenerator` 78, `FetcherEmitter` 30,
 `FetcherRegistrationsEmitter` 12. The tail is `GeneratorUtils` 5 (all on `GraphitronType`'s
 result-type arms; one result-Java-type fact on a command row retires them together),
 `ObjectTypeGenerator` 3 (a `schemaType()` accessor fold on rows `SchemaShapeUnit` already
@@ -514,6 +574,16 @@ location and severity survive on the fixture that trips the check, and a check w
 one in the migrating commit. And the ordering is already paid for: validation runs downstream of
 capture today, so no pipeline change is needed for any of it.
 
+**This half needs a counter of its own, on the item's own argument.** The four ratchet pins measure
+`plan/` and `generators/` and, as stated above, do not see the validator at all, which leaves the
+half with the least mechanical protection running on 2,023 lines and its `validate*` methods with
+nothing to make a stall visible. "A ratchet with no owner is a flat line" applies here more than
+anywhere: a validator check is easy to leave for later precisely because no count moves when it is.
+Add a validator-side pin in the same `CommandSeamRatchetTest` mould with the first migrated check
+(leaf references in `GraphitronSchemaValidator`, or its methods taking a leaf, whichever the scan can
+state without ambiguity), never-raise on the same terms, retired when the terminal deletion makes it
+unraisable.
+
 ### The terminal deliverable: delete the walk
 
 When the plan, the emitters and the validator read the store, the walk's remaining readers are the
@@ -526,7 +596,29 @@ deletion lands: the sealed classification taxonomy in `rewrite.model`, `Graphitr
 of tens of thousands of lines. Deletion is not a big bang; it falls out family by family as each
 last reader moves, and the final commits remove what nothing references.
 
-Three obligations are owed before the last cut, named now so nobody discovers them at the end:
+Five obligations are owed before the last cut, named now so nobody discovers them at the end:
+
+* **The already-migrated detection's domain gate is repointed first.**
+  `intent_authored_claim_conflict` is the one detection that has already moved, and its accept line
+  is still walk-derived: the view inner-joins `walk_claim_domain_type` / `walk_claim_domain_field`,
+  whose rows `FactCapture` writes from `WalkReach.of(schema)` off the walked model. Deleting the walk
+  makes those rows unwritable, so the gate either disappears, which widens which coordinates mint a
+  conflict and is a change a schema author sees, or it is repointed at the demand relations
+  (`intent_type_domain`, the demand rule views and their resolved reductions) beforehand. Repoint it,
+  as its own increment with the widened population decided deliberately and its diagnostics diffed
+  over the corpus, before the deletion forces the question. This is the only walk reader whose
+  removal changes a user-facing surface that has already been migrated, which is why it is first.
+* **The per-relation anchor gate needs a successor before it dissolves.** Coverage below leans on
+  `FactCaptureAgreementTest`'s mechanical driver to anchor every new relation, and that class is
+  premised on the walk: its arms compare captured rows against the walked model, and its own closing
+  javadoc says the tests "retire as consumers migrate off `GraphitronSchema` piece by piece; they pin
+  a shadow copy, and a shadow with a reader does not need one". So the gate this item relies on for
+  dozens of new relations is dissolved by this item's own terminal deliverable, and its `ORACLE` arm
+  loses its subjects with the `walk_` and `rejection_` families. Decide the successor while the
+  relations are landing, not at the cut: a registration that says how each relation is pinned when
+  there is no model to compare against (its own given-rows test in `graphitron-model`, its
+  consumer's behaviour, or the emitted output), on the same no-skip-list terms. This is the same
+  re-keying problem as the completeness gates below, one stratum up.
 
 * **Confirm capture is walk-free, which it already essentially is.** The per-concern visitors
   under `no.sikt.graphitron.facts` import nothing of the tree and feed `BuildContext` *upstream*
@@ -598,8 +690,9 @@ construction, since it is defined as what happens when nothing reads the walk.
 ## What the store must provide
 
 Do not model a relation at the plan's convenience; that is how a store accretes consumer-shaped
-columns. Each fact lands at its own grain and every other consumer inherits it, which is the loop
-`roadmap/lsp-reads-the-fact-store.md` ran four times and wrote down as doctrine. The missing folds
+columns. Each fact lands at its own grain and every other consumer inherits it, which is the loop the
+language server's migration (R638, Done, see `roadmap/changelog.md`) ran four times and wrote down as
+doctrine. The missing folds
 are enumerated under "The facts to plan against are available" above, and the validator half's
 detections land under the same rule: a check's relation states the defect at the defect's grain,
 never a validator-shaped payload.
@@ -624,10 +717,13 @@ derivation lives.
   severity must survive each check's migration; the rejection fixtures pin them, and a check whose
   detection fires on a different population than its walk arm did is a behaviour change to decide
   deliberately (the requirement is the specification), never to ship unnoticed.
-* **The per-coordinate verdict population is the schedule.** Everything else is plumbing. If the
-  classification views turn out to need residues the way the demand stratum did, the honest response
-  is to carry them as named residues and convert the relations whose verdicts are clean, not to widen
-  the item.
+* **The per-coordinate verdict population is the schedule.** Everything else is plumbing. Where a
+  classification view turns out not to state what a producer needs, convert the producers whose
+  verdicts are clean and file the missing relation as its own deliverable; do not widen the item,
+  and do not carry the gap as a named residue. An earlier draft of this bullet prescribed exactly
+  that residue, copying the demand stratum, which is the pattern the delivery item was discarded
+  over and which "What output identity is" above rules out. A gap between what the store states and
+  what a consumer needs is a missing fact, and the fact is the deliverable.
 * **Command rows are structured, not flat.** `LauncherCommand` carries nested sealed payloads
   (`LaunchSource`, `GlueCall`, `Invocation`, `TenantStrategy`, `ResultShape`). Relationally that is a
   row plus child relations, and choosing those grains badly is how the command vocabulary ends up
@@ -646,7 +742,7 @@ derivation lives.
   helper, and each extraction after that looks more natural than the last. "Planners share
   relations, not queries" above is the rule; the reviewer of every planner-half increment should
   check for it, because no ratchet counts this.
-* **The two halves can deadlock on each other if sequenced globally.** Converting all six relations
+* **The two halves can deadlock on each other if sequenced globally.** Converting every producer
   before any emitter moves leaves the emitters reading leaves for the whole programme; converting all
   emitters first means minting command relations from leaves that the planner half will then re-source.
   Per-family sequencing (settled above) is the way out; each increment's reviewer should hold the
@@ -685,14 +781,22 @@ derivation lives.
   stance applies: no oracle-diff scaffolding is built here, and the transcription families whose
   DDL comments tie their lifetime to the walk (`walk_`, `rejection_`) come out with the terminal
   deletion or with that item's own drain, whichever reaches them first.
-* `roadmap/lsp-reads-the-fact-store.md` is the shape to copy: one item, many increments, each arm
-  landing on its own commit with what it settled written down. It also owns `StoreHandle`, which the
+* R638 (`lsp-reads-the-fact-store`, Done, see `roadmap/changelog.md`; its 4,795-line body was
+  deleted at the Done transition in `a5b667b` and is readable there) is the shape to copy: one item,
+  many increments, each arm landing on its own commit with what it settled written down. It also
+  owns `StoreHandle`, which the
   planner half's producers take. Not a declared dependency: the earlier edge existed because both
   restructured `buildOutput`, and this item no longer touches the pipeline order. Since this item
   was filed the LSP retired its last generator-side read: the routine call surface became
   `intent_field_routine_method`, and `Workspace` stopped holding a build snapshot at all. Its two
   read-shape corrections (one statement per capability; a projection composes with `MULTISET`, a
   view never embeds payloads) are the direct inputs to the one-statement-per-grain section above.
+  One more of its gate lessons travels, to both re-keying obligations above: it *declined* a
+  shadow-parity gate and built `graphitron-lsp`'s `TriggerDispatchMatrixTest` instead, a declared
+  partition of sealed leaves against surfaces into answered / declared-no-answer / unimplemented,
+  drawing its universe from `getPermittedSubclasses()` so a new arm fails the build until every
+  surface says what it does with it. That is the shape a completeness gate takes when the answer is
+  a declaration rather than a comparison, which is what both re-keyings need.
 * R642 (`catalog-facts-readers-move-to-the-store`, Done, see `roadmap/changelog.md`) is the
   finished store-client precedent on the other flank: `graphitron-mcp` answers every tool from the
   store, and `StoreClientBoundaryTest` forbids the classification taxonomies by name. Beyond the
@@ -756,6 +860,12 @@ Provisional; the Done-gate sweep greps for these, and the list grows as incremen
   guard over the package it measures (settled in "The closer" above).
 * `GraphitronSchemaValidator`'s `GraphitronSchema` parameter and its per-leaf arms, as the checks
   move; `DeliveryFactPinTest`, when the delivery fold's consumer flips.
+* `NodeTypeShadowTest` and `TypeBackingShadowTest`, at the terminal step. Both bind a Java spelling
+  against a store relation (`NodeDeclaration#isNodeType` against `intent_node_type`;
+  `RecordBindingResolver` against the backing derivation), so the deletion removes one side and
+  leaves nothing to bind; `NodeTypeShadowTest`'s javadoc already states that as its own removal
+  condition. `roadmap/retire-oracle-diff-shadow-tests.md` renames them meanwhile, which changes
+  nothing here: whichever reaches them first, they end at the deletion.
 * At the terminal step, the walk and its taxonomy wholesale: `GraphitronSchemaBuilder`,
   `TypeBuilder`, `FieldBuilder`, `BuildContext`, the sealed classification hierarchies
   (`GraphitronType`, `GraphitronField` and everything under them), and the walk-transcription
@@ -795,7 +905,12 @@ Provisional; the Done-gate sweep greps for these, and the list grows as incremen
   identity cannot see an N+1; this is the gate that can.
 * **The registered agreement anchor** for every new relation, through `FactCaptureAgreementTest`'s
   mechanical driver, which has no skip list, so a relation added for this item cannot arrive
-  unchecked.
+  unchecked. Two constraints on how a relation registers, both from the terminal deletion: an
+  `ORACLE` registration is unavailable to anything landing here, that arm being for relations an
+  oracle writer owns and this item deleting the oracle; and a `DERIVED` registration must name an
+  anchor that survives the walk, which in practice is the relation's own given-rows test in
+  `graphitron-model` beside its DDL. The registry's own successor is the pre-deletion obligation
+  above.
 * **The naming check, per new relation.** Each new fact or detection relation's commit states in
   one sentence what a single row asserts, without naming a consumer, a generator pass, or an
   existing class (`docs/architecture/explanation/fact-model.adoc`'s check). All four absorbed
@@ -842,7 +957,33 @@ ratchet pins, censused the leaf model's full blast radius (nine consuming packag
 walk; `command` and `render` already below the boundary), and replaced the row-identity coverage
 obligation with output identity per R740's doctrine.
 
-A principles pass the same day sharpened the rewrite in seven places: the minted-name collision
+Reviewed and revised 2026-08-20 by a different session at the owner's direction, which then took
+authorship, so the Spec review still owes this body an independent reader. Three corrections were
+factual. The problem statement claimed in three places that the store had never produced a generated
+file, which the tree contradicts: `KeyProjectionCommands` converted on 2026-08-19 (`2ef0b57`) and
+its rows are emitted, so the claim became the item's worked example instead of its premise. The
+planner half enumerated six producers where `plan/` holds eight, missing that converted one and
+`RoutineWriteCommands`, which still takes a schema; both now appear in the dependency order as step
+zero and step nine. And the emitter census's total (129) had fallen two behind the re-measured pins
+(131), so the section says which sites moved and owes a re-take.
+
+Three more came from the shadow-test doctrine the delivery item's discard settled. "What output
+identity is, and what it is not" states once, for all three halves, that behaviour is held as a
+refactoring invariant against checked-in expectations and never as fidelity to the walk, because two
+of the three halves previously stated behaviour parity with no provision for a walk bug the
+conversion fixes while the planner half had one. A Risks bullet that prescribed carrying named
+residues, copying the demand stratum, is replaced: a gap between what the store states and what a
+consumer needs is a missing fact, and the fact is the deliverable. And two pre-deletion obligations
+were added, taking the list from three to five: `intent_authored_claim_conflict`'s domain gate is
+still walk-derived, making it the one already-migrated user-facing surface the deletion would move,
+so it is repointed first; and `FactCaptureAgreementTest`, which Coverage leans on to anchor every
+new relation, is itself premised on the walk by its own closing javadoc, so its successor is decided
+while the relations land rather than at the cut. The validator half gained the ratchet the item's own
+"a ratchet with no owner is a flat line" argument implies it needs, and three citations to the
+language server's item were repointed at R638 in the changelog, its body having been deleted at its
+Done transition.
+
+A principles pass the previous day sharpened the rewrite in seven places: the minted-name collision
 checks became the stated exception to success criterion 3 (a store detection there would give one
 invariant two mints); the `diagnostic` union's growth story was made explicit, since joining it is
 a per-check DDL edit rather than free and the item retires the arm the editor rides today; the
