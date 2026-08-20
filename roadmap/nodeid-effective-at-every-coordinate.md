@@ -201,24 +201,30 @@ says so if it arrives.
 ### The derivation depth is a design constraint, not an afterthought
 
 R742 measured the precedent this item follows and the number is the reason to read it first. One read
-of `intent_argmapping_projection_defect` expands to **2149 relation instantiations** and 24.5 seconds,
+of `intent_argmapping_projection_defect` expands to **2066 relation instantiations** and 24.5 seconds,
 because H2 inlines a view wherever it is named and does no common-subexpression elimination, so
-multiplicities compound down a stratum twenty-two views deep. Two of its costs are directly
-instructive here.
+multiplicities compound down a tree eight levels deep over seventeen distinct views. Two of its
+findings are instructive here, and R742's own decomposition says which of the two binds harder.
 
-**The six `UNION ALL` arms are most of the bill.** Each arm re-joins the same driving relations with a
-different `WHERE` and a different verdict literal, which is where the 1036 and 745 contributions come
-from. The defect view below has two verdicts and must not be written that way: it computes both
-preconditions in one pass over the population and picks the verdict with a `CASE`, so the driving
-relations are named once. Same for the two resolution relations, whose destination and source
-vocabularies are tempting to write as one arm per value.
+**A deep relation named more than once dominates, and this item names one twice by nature.** R742
+prices each direct child of the defect view as `times named x (subtree + 1)`, and the largest single
+contribution is **1038** from just two references to `intent_argmapping_key_column_candidate`, whose
+subtree is 518. Two namings, half the read. This item joins `intent_resolved_node_key_column` twice by
+nature, once for the key columns and once for the arity count, which is exactly that shape. It is also
+windowed, carrying a `DENSE_RANK() OVER` for its tier precedence, so a window sees its whole partition
+whatever predicate a reader applies outside and no rewrite restores pushdown. The remedy the fact
+model already prescribes is to take the relation once and pair it on its key; the arity is then a
+count over the rows already taken, not a second read.
 
-**`intent_resolved_node_key_column` is windowed, so predicates do not push into it.** It carries a
-`DENSE_RANK() OVER` for its tier precedence, and a window sees its whole partition whatever predicate
-a reader applies outside. This item joins it twice by nature, once for the key columns and once for
-the arity count, which is exactly the shape the fact model already prescribes a remedy for: take the
-relation once and pair it on its key. The arity is then a count over the rows already taken, not a
-second read.
+**Per-verdict `UNION ALL` arms are the smaller cost, and the rule here is not to mint any.** The
+defect view's six arms each re-join the same driving relations with a different `WHERE` and a
+different verdict literal, contributing 750 through five references to
+`intent_argmapping_binding_leaf`. R742 prices collapsing them at about 600 instantiations, some 29% of
+the read, and files it as a follow-on worth doing on its own merits rather than as the remedy for the
+24.5 seconds. So the framing is "do not create the cost" rather than "this is where the time goes".
+The defect view below has two verdicts and is written in one pass over the population with the verdict
+picked by a `CASE`, so the driving relations are named once. Same for the two resolution relations,
+whose destination and source vocabularies are tempting to write as one arm per value.
 
 Both points are exit conditions rather than advice, because the metric is checkable without a
 database: inline multiplicity is computable statically from `graphitron-model.sql` by parsing the
@@ -776,18 +782,19 @@ stage 3 expresses it there.
   directive, ahead of R682 rather than against it. Worth telling that item's author, because the
   `@nodeId` decode and encode facts are one fewer thing its planner rewrite has to source.
 * **R742** (`determinism-ratchet-run-count`, In Progress) is why this item states its own derivation depth.
-  It measured the precedent this plan follows, `intent_argmapping_projection_defect`, at 2149 relation
+  It measured the precedent this plan follows, `intent_argmapping_projection_defect`, at 2066 relation
   instantiations and 24.5 seconds for one read, and diagnosed the cause as H2 inlining views with no
-  common-subexpression elimination over a stratum twenty-two views deep. Two of its findings are
-  design constraints here rather than context, both stated under "The derivation depth is a design
-  constraint": the per-verdict `UNION ALL` arms that carry most of that bill, which this item's defect
-  view must not reproduce, and the non-pushdown behaviour of the windowed
-  `intent_resolved_node_key_column` this item joins by nature. R742 also mints the materialization
+  common-subexpression elimination over a tree eight levels deep across seventeen views. Two of its
+  findings are design constraints here rather than context, both stated under "The derivation depth is
+  a design constraint": the deep-relation-named-twice shape that carries half that bill, which is
+  exactly how this item joins the windowed `intent_resolved_node_key_column`, and the per-verdict
+  `UNION ALL` arms this item's defect view must not reproduce even though R742 prices them as the
+  smaller half. R742 also mints the materialization
   registry anything here materializes should register into, and proposes the static multiplicity
   metric as a build gate, which this item's new relations are computable under whether or not that
   gate has landed. A notification in both directions: R742 gains relations to price, and this item
   gains its ceiling.
-* **R743** (`sdl-fact-gatherer-staged-pipeline`, In Progress) settled the question the previous draft
+* **R743** (`sdl-fact-gatherer-staged-pipeline`, In Review) settled the question the previous draft
   of this item argued at length, and has already landed the part that mattered here. Its gatherer now
   owns its assembly stage and closes with a rooted traversal that writes `intent_type_domain`
   (`ClassificationDomainCapture`), and the walk's two membership grains are deleted rather than
