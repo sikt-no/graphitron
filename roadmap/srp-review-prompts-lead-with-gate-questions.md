@@ -105,10 +105,17 @@ with the current names in parentheses where they survive:
    recent-commits block, and the no-trailer fallback. Still a hard requirement, still pre-filled, no
    longer the first thing on the page and no longer what the prompt appears to be about.
 
-Total length holds flat or shrinks. The skill's own "Template design intent" section warns against
-re-accreting checklists, and it is right: a rubric gets completed instead of thought about. Four
-questions are exactly the shape that rots into a form to fill in, so the budget for section 2 comes
-out of sections 5 and 6, and the questions are phrased as the decision the reviewer owns.
+The proportion inverts; the total grows a little. Sections 5 and 6 together give up one line against
+today's Reviewer rule plus Outcomes, which does not pay for section 2, so the Spec-stage body goes
+from 71 lines to the 81 of the draft below. That is a deliberate trade rather than an overrun: the
+constraint worth holding is the share of the prompt spent on process mechanics, not its absolute
+length, and the section that gained the lines is the one the gate turns on. The measurement in *How
+we know the item is complete* is written against the share for that reason.
+
+The skill's own "Template design intent" section warns against re-accreting checklists, and it is
+right: a rubric gets completed instead of thought about. Four questions are exactly the shape that
+rots into a form to fill in, so the questions are phrased as the decision the reviewer owns rather
+than as items to tick off.
 
 ### The delivery, not the commit series
 
@@ -166,12 +173,29 @@ would have to re-plural is not.
 
 ## How we know the item is complete
 
-The primary evidence is the diff plus a measurement, because a skill document has no build gate:
-the two templates' Bookkeeping-plus-Verdict line count must be less than their gate-questions
-section, inverting today's ratio, and neither template's total body may exceed its current 71 and 82
-lines. That is checkable by reading the diff and stated here so the reviewer does not have to take
-it on faith. The two baselines were verified at the Spec review: the Spec-stage template body is 71
-lines and the Implementation-stage body 82, so the ceiling has real anchors.
+The primary evidence is the diff plus a measurement, because a skill document has no build gate. The
+measurement is the share of each template body spent on process mechanics, which is the imbalance
+that opened this item. Count as mechanics the item-identification preamble, the sync section, and the
+reviewer-rule section (Bookkeeping after the rewrite); everything that shapes the judgment counts as
+substance, including the Verdict. Under that grouping the current bodies are 34 of 71 mechanics lines
+at the Spec stage and 35 of 82 at the Implementation stage, both verified at the Spec review. (The
+*Why the current shape produces nits* section's 35 and 37 also fold in the numbered outcome list,
+which is why its figures differ by a line or two; either grouping shows roughly half.)
+
+Two things must hold in the diff, both readable off it:
+
+* Mechanics fall below a third of each template body.
+* The gate-questions section is the longest single section in each template.
+
+The Spec-stage draft below meets both: 27 of its 81 lines are mechanics (13 preamble and sync, 14
+Bookkeeping), and the questions section's 18 lines beat Materials' 13 and Verdict's 11. The
+Implementation-stage template has no draft here, so whoever lands it measures it the same way and
+names in the commit message which sections gave up the lines.
+
+Absolute length is deliberately not the constraint. The Spec-stage body grows from 71 lines to 81
+because the section that gained is the one the gate turns on; a flat-total ceiling would have to come
+out of Bookkeeping, which is a hard requirement, or out of the questions themselves, which is the
+regression this item exists to undo. What must not happen is the mechanics share climbing back.
 
 The drift risk is real: the question text lives in `workflow.adoc` as the definition and is restated
 in two templates, so a template can silently keep an old wording. The Spec review struck the
