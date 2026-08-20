@@ -22,7 +22,7 @@ Five tests in `graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/` are 
 
 `InputOccurrenceShadowTest` (367 lines) is weaker still: its javadoc names the drift it structurally cannot catch, because a store predicate that is too narrow suppresses no walk verdict while the walk still evaluates its own threaded `enclosingOverride` boolean.
 
-For all three, the migration instrument is worth running once and is not worth keeping in CI. Run the diff, convert each surviving difference into either a behaviour fixture or a recorded intentional change, then delete the test and let the spec-side anchor stand alone.
+All three should be deleted outright, with no accounting of what they were asserting. Converting their residues into fixtures first would keep the assumption that produced them: that the project owes the walk an explanation for every difference. It does not. Consumers come off the walk when a bug report or a feature request gives a reason to move one, and the requirement that motivated the move is the specification for the test written then. A difference between the walk and a derivation is therefore never a debt to record; it is either a walk bug the derivation already fixes, in which case reproducing it would be the defect, or an unmigrated consumer waiting for its own reason to move, in which case nothing is owed yet. The spec-side anchors already say what the relations should answer, and they keep saying it after the diffs are gone.
 
 ## The two that stay, renamed
 
@@ -42,8 +42,8 @@ The fix is a registration that distinguishes the two, so choosing an oracle diff
 
 ## Out of scope
 
-`walk_claim_domain_type` and `walk_claim_domain_field` are not shadow scaffolding despite the shared prefix. They are a live gate: `intent_authored_claim_conflict` joins them to keep conflict minting on the population the legacy detection reached. Removing them changes user-visible diagnostics and belongs to the demand gate-flip, which is its own item. The `rejection_` family's charter ties its lifetime to the walk's clock and is likewise separate.
+`walk_claim_domain_type` and `walk_claim_domain_field` are not shadow scaffolding despite the shared prefix. They are a live gate: `intent_authored_claim_conflict` joins them to keep conflict minting on the population the legacy detection reached. Removing them widens which coordinates get conflict-checked, which is a change an author sees, so it moves when a diagnostics bug report or feature request gives a reason to move it and carries that reason as its specification. It is not a scheduled prerequisite of this cleanup, and this cleanup does not leave it anything to inherit. The `rejection_` family's charter ties its lifetime to the walk's clock and is likewise separate.
 
 ## Exit criteria
 
-The three oracle diffs and `DemandResidue` are gone, with every difference they documented now living in a behaviour fixture or a written record. The two consistency tests are renamed and their assertions symmetric. The anchor registration tells an oracle-anchored derivation apart from a specification-anchored one, and nothing in the tree is registered the first way without a stated expiry.
+The three oracle diffs and `DemandResidue` are gone, and no replacement record of what they compared exists. The two consistency tests are renamed and their assertions symmetric. The anchor registration tells an oracle-anchored derivation apart from a specification-anchored one, and nothing in the tree is registered the first way without a stated expiry.
