@@ -25,7 +25,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R728` | @nodeId encode and decode become store relations, and an instruction the generator drops fails the build | In Progress | 2026-08-20 <sub>created 2026-08-19</sub> | [plan](nodeid-effective-at-every-coordinate.md) |
-| `R746` | Order the materialization registry, so a target may be derived from another target | In Progress | 2026-08-20 | [plan](materialization-dependency-order.md) |
+| `R746` | Order the materialization registry, so a target may be derived from another target | In Review | 2026-08-20 | [plan](materialization-dependency-order.md) |
 | `R744` | TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion | In Review | 2026-08-20 | [plan](scatter-test-syncs-on-mid-pin-connect-event.md) |
 | `R753` | Accept @deprecated alias fields sharing a write column on jOOQ-record inputs | Spec | 2026-08-20 | [plan](write-input-deprecated-column-alias.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -575,7 +575,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R759` [**Every fact-store boot compiles Java source, because one CREATE ALIAS carries its body inline**](store-boot-compiles-java.md) — Backlog, dx
 - `R733` [**Hold the build wall clock with a budget, and take the derived-read slices R732 left unmeasured**](build-wall-clock-guardrail.md) — Backlog, dx
 - `R298` [**Leverage Rover and GraphOS: composition checks in CI, contract verification, rover lsp in the dev loop**](rover-graphos-integration.md) — Backlog, feature, blocked by [oneof-augment-defeated-by-descriptions](oneof-augment-defeated-by-descriptions.md)
-- `R746` [**Order the materialization registry, so a target may be derived from another target**](materialization-dependency-order.md) — In Progress, dx
+- `R746` [**Order the materialization registry, so a target may be derived from another target**](materialization-dependency-order.md) — In Review, dx
 - `R594` [**Snapshot axis keys are consistent across the snapshot-reporting MCP tools**](mcp-snapshot-axis-key-naming.md) — Backlog, cleanup
 - `R643` [**Supergraph peer surface for the dev loop**](supergraph-peer-surface.md) — Backlog, feature
 - `R716` [**The MCP boundary guard names one generator package of five**](mcp-boundary-guard-generator-package-coverage.md) — Backlog, architecture
