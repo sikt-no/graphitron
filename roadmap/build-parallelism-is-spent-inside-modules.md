@@ -191,20 +191,72 @@ Dropping the four-thread `junit-platform.properties` into `graphitron-sakila-exa
 from 92.5 s to 69.2 s, and **fails 36 of 805 tests**. The failures are specific and they name the
 work:
 
-* Four of the five `@QuarkusTest` classes fail, with `IllegalArgumentException: object of type
-  GraphQLOverHttpConformanceTest is not an instance of TutorialSmokeTest` and `Could not find method
-  ... on test class`. The Quarkus JUnit extension keeps one test instance for the running application
-  and swaps it per class, so two classes in flight at once corrupt each other. This is a property of
-  the extension, not of these tests.
-* `GraphQLQueryTest`, a `querydb` execution-tier class, fails 7 cases on its own, which points at
-  shared database state rather than at Quarkus.
+### `@QuarkusTest`: the extension keeps per-test bookkeeping in static single slots
 
-So the 23 s is available but not for free, and the honest form of the claim is that it needs the
-`@QuarkusTest` classes held to one thread and the execution-tier sharing understood first. Note the
-constraint the CI comment on `-T 1C` sets on how that is done: "The fix for such a failure is the
-test, never serializing this build." Pinning a class that a third-party extension makes
-thread-hostile is a different act from serializing a suite to hide a race, and a Spec pass should say
-which it is doing and why.
+Four of the five `@QuarkusTest` classes fail, and the mechanism is visible in
+`io.quarkus.test.junit.QuarkusTestExtension`'s own field list:
+
+```
+private static java.lang.Class<?> actualTestClass;
+private static java.lang.Object actualTestInstance;
+private static final java.util.Deque<java.lang.Object> outerInstances;
+private static java.lang.Class<?> quarkusTestMethodContextClass;
+```
+
+Not a map keyed by class. One slot each, per JVM, non-volatile and unguarded.
+`interceptTestClassConstructor` writes them through `initTestState` when a class starts, and every
+later callback (`beforeEach`, `afterEach`, the method interceptors) reflects the *currently running
+JUnit method* onto whatever `actualTestInstance` holds. With two classes in flight the second
+construction overwrites the first, and the first class's callbacks then look up their own method name
+on the wrong class and invoke it against the wrong receiver. Both halves of that show in one stack:
+
+```
+RuntimeException: Could not find method void TutorialSmokeTest.page3_activeFilter() on test class
+  at QuarkusTestExtension.createQuarkusTestMethodContextTuple(QuarkusTestExtension.java:564)
+IllegalArgumentException: object of type GraphQLOverHttpConformanceTest
+                          is not an instance of TutorialSmokeTest
+  at QuarkusTestExtension.interceptAfterEachMethod(QuarkusTestExtension.java:913)
+```
+
+Worth being precise about what is *not* broken. Sharing the running Quarkus application across test
+classes is deliberate and works; the augmentation cost is why it exists. What is not thread-safe is
+the per-test bookkeeping beside it. That is a property of the extension, not of these five tests and
+not of anything this repository can fix, so the only lever here is scheduling: exclude the
+`@QuarkusTest` classes from each other while leaving them free to overlap everything else.
+
+### `GraphQLQueryTest`: seven cases assert a property of the whole database
+
+This one is ours, and all seven failures are one defect rather than seven. Each is an unfiltered
+`films` query asserting an absolute count against the five rows `init.sql` seeds:
+
+```
+[omitting the nullable filter must return the unfiltered baseline of 5 films, ...]
+Expected size: 5 but was: 7
+```
+
+and the extra rows name their author:
+
+```
+{"isEnglish"=true, "title"="ACADEMY DINOSAUR"},
+...
+{"isEnglish"=true, "title"="R144-MULTIROW-A-8a56b78d-94d2-44a0-99b1-529c218d2b2d"}
+```
+
+`DmlBulkMutationsExecutionTest` inserts that row. That class is *well* disciplined about isolation:
+every marker is UUID-suffixed, every case cleans up in a `finally`, and there is an `@AfterAll` sweep.
+It is isolation-safe for its own assertions. The defect is on the reading side: "the query returned
+five films" and "the film table holds only the seed" are different claims, and these seven cases make
+the second while meaning the first. Sequentially that is true because writers tidy up before the
+reader runs. Concurrently the writer's window is visible, and 11 of the 47 `querydb` classes write to
+`film`.
+
+So the 23 s is available but not for free. Note the constraint the CI comment on `-T 1C` sets on how
+it is taken: "The fix for such a failure is the test, never serializing this build." That reads
+differently for the two cases above, which is exactly why they should not be handled with one
+mechanism. Excluding classes that a third-party extension makes thread-hostile is scheduling around a
+dependency's limitation. Narrowing an over-broad assertion is fixing the test. Reaching for a lock on
+the `film` table instead would be the thing the comment forbids: it would hide the over-broad
+assertion rather than correct it.
 
 ## What a Spec pass has to settle
 
@@ -212,13 +264,20 @@ which it is doing and why.
   number today, which is exactly why the distinction is invisible and worth fixing now: a wall-clock
   budget on a 4 vCPU runner silently conflates "the build got slower" with "the build got wider", and
   a change that trades 20 s of critical path for 40 s of off-path work would read as a regression.
-* **How the `@QuarkusTest` classes are held to one thread**, and whether that is a per-class
-  annotation, a resource lock, or a second surefire execution. The choice decides whether the rest of
-  `graphitron-sakila-example` can go concurrent, and it has to be reconciled with the CI comment
-  quoted above rather than around it.
-* **Why `GraphQLQueryTest` fails concurrently when its `querydb` siblings do not.** That is a test
-  defect that exists today and is merely unobserved, since nothing runs the module concurrently. It
-  should be understood before, not after, the parallelism is enabled.
+* **How the `@QuarkusTest` classes are excluded from each other.** `@Execution(SAME_THREAD)` is the
+  wrong tool and worth naming so nobody reaches for it: it pins a class to its parent's thread and
+  says nothing about which *other* classes run beside it. A shared `@ResourceLock` in `READ_WRITE`
+  mode is the built-in that expresses "these five are mutually exclusive, and free to overlap the
+  other 67". The alternative is a second surefire execution holding just those five, which is heavier
+  but keeps the reason in the pom where a reader looks. Either way the same-key discipline has to
+  survive the sixth `@QuarkusTest` class somebody adds later, and this repository's habit for that is
+  a meta-test that fails the build when a class carries the annotation without the lock.
+* **How the seven `GraphQLQueryTest` cases stop asserting a global row count.** The seed is five films
+  at ids 1 through 5, so scoping the assertion is available; whether it is a filter in the GraphQL
+  document, a narrowed assertion, or a distinct set of fixture rows those cases own is the design
+  choice. Note that this defect exists today and is merely unobserved, because nothing runs the module
+  concurrently: the assertions are already wrong about what they claim, and enabling parallelism only
+  makes them say so.
 * **Whether the five `generate` executions become one invocation over several units.** The saving is
   16.7 s, not 33.1 s, because the store boot and census are already shared inside the module's JVM.
   Weigh that against what five separate executions currently document in the pom: each carries a long
