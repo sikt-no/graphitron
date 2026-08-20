@@ -78,8 +78,8 @@ So the recipe is proven and the remaining question is coverage, not feasibility.
 output does not yet demonstrate is a *whole* family produced from the store, which is what the
 per-relation increments below deliver.
 
-The validator is the same story one stage earlier. `GraphitronSchemaValidator` is 2,023 lines and
-73 `validate*` methods reading nothing but the leaf model: it re-wraps the `Rejection` each
+The validator is the same story one stage earlier. `GraphitronSchemaValidator` is 2,024 lines and
+74 `validate*` methods reading nothing but the leaf model: it re-wraps the `Rejection` each
 `Unclassified*` leaf carries, runs fourteen structural checks over the classified types and fields,
 and drains `schema.diagnostics()`. It even reads *upward*: it calls two planners' collision checks
 (`ProjectionCommands.addressCollisions`, `LauncherCommands.methodCollisions`) and imports two
@@ -104,9 +104,9 @@ structurally, restricting the package to commands plus a named dial of pure-data
 renderer there cannot reach a leaf even by accident.
 
 `no.sikt.graphitron.rewrite.generators` is the same job under none of the rules. It is outside that
-guard, and it is where the un-migrated emitters live: `TypeFetcherGenerator` (around 6,000 lines)
+guard, and it is where the un-migrated emitters live: `TypeFetcherGenerator` (5,806 lines)
 and `FetcherEmitter` between them carry nearly all of the leaf dispatch, and `TypeFetcherGenerator`
-still enumerates its coverage as a set of leaf classes (`IMPLEMENTED_LEAVES`, 36 entries) rather than as
+still enumerates its coverage as a set of leaf classes (`IMPLEMENTED_LEAVES`, 37 entries) rather than as
 rows of a command relation. Nothing prevents an emitter there from reading whatever it likes off a
 leaf, which is not a hypothetical: it is how a recent design landed on the wrong carrier, because
 "join the fact onto the command row" and "read it off the leaf the emitter already holds" are both
@@ -117,14 +117,18 @@ takes a `GraphitronSchema` and dispatches on sealed variants to build most of th
 with the key-projection producer above as the one converted exception. That is the planner half, and
 it is the largest single surface.
 
-A census of leaf imports across main sources (2026-08-20) puts the rest of the blast radius in a
-short list the terminal deletion has to see emptied: the validator (above), six files in
-`generators.schema` (`GraphitronSchemaClassGenerator` the largest), four class generators in
-`generators.util`, `schema.federation`'s `EntityResolutionBuilder`, `catalog`'s `CatalogBuilder`,
-`compile`'s `PlanCompileGraph`, and the transitional walk-transcription writers in `diagnostics`
-and `derive` (`RejectionFacts`, the `walk_` family's projections), whose own DDL comments already
-say they retire with the walk. `command` and `render` (67 files) sit below the boundary, importing
-post-classification value records only, and the MCP, the LSP and the maven plugin are clean.
+A census of leaf imports across main sources (re-taken against trunk `7f2ff35`) puts the rest of the
+blast radius in a short list the terminal deletion has to see emptied: the validator (above), six
+files in `generators.schema` (`GraphitronSchemaClassGenerator` the largest), four class generators
+in `generators.util`, `schema.federation`'s `EntityResolutionBuilder`, `catalog`'s `CatalogBuilder`,
+`compile`'s `PlanCompileGraph`, and one transitional writer in `derive`, `DemandResidue`. The
+`diagnostics` package is already clear of the hierarchies: `RejectionFacts` still retires with the
+walk, but it transcribes the `Rejection` axis rather than importing a leaf, so the terminal
+deletion reaches it through its writer's input and not through this census. No `walk_`-shaped
+projection appears here at all, R743 and R740 having drained that family between them, which is the
+same boundary the "Relationship to other items" section states from the other end. `command` and
+`render` (67 files) sit below the boundary, importing post-classification value records only, and
+the MCP, the LSP and the maven plugin are clean.
 
 ## The instrument already exists and already declares the target
 
@@ -132,7 +136,7 @@ post-classification value records only, and the MCP, the LSP and the maven plugi
 on both tiers. Its own javadoc states the terminal condition in as many words: the generators-side
 counts "ratchet down to zero", and the plan-side count is "expected to rise while producers are fed
 by leaf dispatch and to ratchet back to zero when the fact-visitor engine re-sources them". Live
-pins, re-measured 2026-08-20:
+pins, read off the test on trunk `7f2ff35`:
 
 [cols="3,1,4"]
 |===
@@ -151,7 +155,7 @@ pins, re-measured 2026-08-20:
 | emitters: the same for `case` patterns
 
 | `PLAN_LEAF_REFERENCES`
-| 139
+| 138
 | planners: leaf references in `plan/`, the pin that legitimately rose before it falls
 |===
 
@@ -203,8 +207,8 @@ is not the whole job.
 
 ## The read surface, measured
 
-The plan package is 3578 lines across eight producers (seven command relations plus `EmitPlan`'s own
-globals), and the command vocabulary it produces is a further 2139 lines across 31 types. The leaf
+The plan package is 3,592 lines across eight producers (seven command relations plus `EmitPlan`'s own
+globals), and the command vocabulary it produces is a further 2,543 lines across 34 types. The leaf
 dispatch inside it is most of the zoo; `PLAN_LEAF_REFERENCES` is the live count and the census below
 names the producers.
 
@@ -220,7 +224,7 @@ enumerable set of accessors. Thirteen, in full:
 | the type-grain classification verdicts
 
 | `fieldsOf()`
-| 7
+| 8
 | the field-grain verdicts, per type
 
 | `operationMembersOf()`
@@ -232,7 +236,7 @@ enumerable set of accessors. Thirteen, in full:
 | `NestingReach`
 
 | `joinedTableReprojectionOf()`
-| 2
+| 3
 | `JoinedTableReprojection`
 
 | `entitiesByType()`
@@ -263,8 +267,12 @@ enumerable set of accessors. Thirteen, in full:
 Four of those are already relations in all but storage (`operationMembers`, `delivery`,
 `connectionSynthesis`, `tenantBindings`); they were built as post-walk folds precisely because a
 relation was the right shape, and moving them is transcription plus a view rather than new derivation.
-Three producers additionally reach the jOOQ catalog directly (`ConditionCommands`,
-`FetcherEdgeCommands`, `ProjectionCommands`), which the `sql_` family already covers.
+No producer reaches jOOQ directly: `plan/` imports nothing from `org.jooq`, and the three producers
+that need catalog facts (`ConditionCommands`, `FetcherEdgeCommands`, `ProjectionCommands`) take them
+as `TableRef` and `TableExpr` value records, whose contents the `sql_` family already covers. That
+is why `KeyProjectionCommands` needed `StoreNodeTables` as the first store-sourced producer of a
+`TableRef`: the shape a converted producer wants is already the shape the plan holds, and only the
+source moves.
 
 The hard core is the first two rows: the per-coordinate classification verdicts.
 
@@ -433,25 +441,32 @@ and they sit at opposite ends of the work:
   `ProjectedKeyReads` / `ProjectedKeyHost`. Its shape is what every step below repeats: read the
   relation, transform the shape, no lookup and no throw. Read its commit before starting the next
   producer.
-* **Sequenced outside the order: routine writes** (`RoutineWriteCommands`). Not converted:
-  `produce(GraphitronSchema, String)` still takes the schema, with a `produceWithoutSchema` overload
-  beside it, the same transitional pair `LauncherCommands` carries. It moves with the routine-write
-  family's emitter stage rather than by relation size, that family's migration being already scoped
-  as a worked example on another item (see "Relationship to other items"); whichever lands first,
-  the producer and its emitter move together.
+* **Sequenced outside the order: routine writes** (`RoutineWriteCommands`, 134 lines, 11 sites). Not
+  converted: `produce(GraphitronSchema, String)` still takes the schema, with a `produceWithoutSchema`
+  overload beside it, the same transitional pair `LauncherCommands` carries. It moves with the
+  routine-write family's emitter stage rather than by relation size, that family's migration being
+  already scoped as a worked example on another item (see "Relationship to other items"); whichever
+  lands first, the producer and its emitter move together.
 
-The six in between, in dependency order, because later relations reference the earlier ones' rows:
+The six in between, in dependency order, because later relations reference the earlier ones' rows.
+Line and site counts read off trunk `7f2ff35`, the sites counted under `CommandSeamRatchetTest`'s own
+rule so they sum to `PLAN_LEAF_REFERENCES` (3 + 29 + 17 + 48 + 29 + 1, plus routine writes' 11, is
+138):
 
 1. **Conditions** (`ConditionCommands`, 403 lines, 3 dispatch sites). The smallest surface and the
    one every other relation references by glue row, so it goes first and establishes the shape.
-2. **Projections** (`ProjectionCommands`, 557 lines, 25 sites).
-3. **Launchers** (`LauncherCommands`, 1047 lines, 10 sites). The largest producer, and the one whose
+2. **Projections** (`ProjectionCommands`, 558 lines, 29 sites).
+3. **Launchers** (`LauncherCommands`, 1,114 lines, 17 sites). The largest producer, and the one whose
    rows the fetcher generator reads to decide between the launcher emission and the legacy builder.
-4. **Fetcher edges** (`FetcherEdgeCommands`, 277 lines, 23 sites).
-5. **Type units** (`TypeUnitCommands`, 188 lines, 29 sites). The highest dispatch density in the
-   package, because it is the generator families' membership loops.
-6. **Globals and the schema-level facts** (`EmitPlan` itself). `federationLink` and `usesOneOf`
-   arrive today as `Bundle` components landed by the builder; they become store reads like the rest.
+4. **Fetcher edges** (`FetcherEdgeCommands`, 280 lines, 48 sites). The densest dispatch in the
+   package by a wide margin: 280 lines carrying just over a third of the plan-side pin, which makes
+   it the step where the one-statement-per-grain rule below is most likely to be violated by a
+   mechanical read-by-read transcription.
+5. **Type units** (`TypeUnitCommands`, 190 lines, 29 sites), the generator families' membership
+   loops.
+6. **Globals and the schema-level facts** (`EmitPlan` itself, 1 site). `federationLink` and
+   `usesOneOf` arrive today as `Bundle` components landed by the builder; they become store reads
+   like the rest.
 
 Each step is a complete unit: the relation's rows are identical before and after, which the
 pipeline-tier output expectations assert transitively. A direct row comparison against the
@@ -472,28 +487,34 @@ emitters to `render` reading only that row, extend the borrow dial by the refs t
 delete the leaf-reading bodies. Output is held byte-identical throughout, which is what makes each
 family a verifiable unit with nothing to argue about.
 
-The census below was taken 2026-08-16 and totals 129; the pins re-measured 2026-08-20 total 131
-(69 `instanceof` plus 62 `case`). The two extra sites are the discriminated interface child's
-batched half, which `GENERATOR_LEAF_CASE_PATTERNS`'s javadoc attributes to the fetcher dispatch arm
-plus the parent-input key-wrap probe, so both land in the family the census already ranks heaviest
-and the order does not move. Re-take the census in the first emitter increment rather than carrying
-two totals for one quantity; a completeness claim that is two short is the same species of blind
-spot as the pin corrections below.
+The census owed a re-take (an earlier one totalled 129 against pins of 131, and carrying two totals
+for one quantity is the same species of blind spot as the pin corrections below). Re-taken against
+trunk `7f2ff35` under the pins' own rule, it totals 131 and reconciles exactly: 69 `instanceof` plus
+62 `case`, no residual.
 
-Six files carry the 129 the census found, 120 of them in the fetcher family:
-`TypeFetcherGenerator` 78, `FetcherEmitter` 30,
-`FetcherRegistrationsEmitter` 12. The tail is `GeneratorUtils` 5 (all on `GraphitronType`'s
-result-type arms; one result-Java-type fact on a command row retires them together),
-`ObjectTypeGenerator` 3 (a `schemaType()` accessor fold on rows `SchemaShapeUnit` already
-carries), and `TenantDslEmitter` 1 (the tenancy dial is already command-shaped as
-`TenantStrategy`/`CarrierDsl` for migrated hosts). The other 51 files in the package have no leaf
-dispatch; most of them are membership already decided by `TypeUnitCommand` and `GlobalCommand`
-rows over fixed-text or carrier-driven bodies, and they are the guard extension's concern rather
-than a migration's.
+**Five** files carry all 131, 125 of them in the fetcher family: `TypeFetcherGenerator` 83,
+`FetcherEmitter` 30, `FetcherRegistrationsEmitter` 12. The tail is `GeneratorUtils` 5 (all on
+`GraphitronType`'s result-type arms; one result-Java-type fact on a command row retires them
+together) and `TenantDslEmitter` 1 (the tenancy dial is already command-shaped as
+`TenantStrategy`/`CarrierDsl` for migrated hosts).
 
-So the order: the three tail families first, because each is an afternoon and retires its sites
-whole; then the fetcher family, which is the item's real weight and subsumes what remains of the
-launchers. "The launcher family is done" was true at the body tier only: the rows methods render
+The re-take moved two things, and neither moves the order. `ObjectTypeGenerator` is off the list
+entirely: its three sites were a six-leaf `instanceof` chain over the form-carrying arms, and the
+render-side form resolution folded them into one read of `CarriesObjectForm`, which the arms opt
+into. That is the shape this item wants generalised, a declared capability read instead of a
+restated arm list at each consumer, and it landed without this item owning it. The 129-to-131 gap is
+therefore not the discriminated interface child's batched half, as the earlier text guessed;
+`TypeFetcherGenerator` grew from 78 to 83 while `ObjectTypeGenerator` went to 0. The fetcher family
+is heavier than the earlier census said and the tail is one file shorter, which sharpens rather than
+changes the ordering argument below.
+
+The other 52 files in the package have no leaf dispatch; most of them are membership already decided
+by `TypeUnitCommand` and `GlobalCommand` rows over fixed-text or carrier-driven bodies, and they are
+the guard extension's concern rather than a migration's.
+
+So the order: the two tail families first (the object generator having been the third until its
+form-carrying arms folded), because each is an afternoon and retires its sites whole; then the
+fetcher family, which is the item's real weight and subsumes what remains of the launchers. "The launcher family is done" was true at the body tier only: the rows methods render
 through `RootLauncherRenderer` and its fragments, but `TypeFetcherGenerator` still emits the
 `DataFetcher` entry points that wrap them, drains the per-class scatter helpers
 (`SplitRowsMethodEmitter`) and the DataLoader registration wrappers (`RowsMethodCall`,
@@ -576,7 +597,7 @@ capture today, so no pipeline change is needed for any of it.
 
 **This half needs a counter of its own, on the item's own argument.** The four ratchet pins measure
 `plan/` and `generators/` and, as stated above, do not see the validator at all, which leaves the
-half with the least mechanical protection running on 2,023 lines and its `validate*` methods with
+half with the least mechanical protection running on 2,024 lines and its `validate*` methods with
 nothing to make a stall visible. "A ratchet with no owner is a flat line" applies here more than
 anywhere: a validator check is easy to leave for later precisely because no count moves when it is.
 Add a validator-side pin in the same `CommandSeamRatchetTest` mould with the first migrated check
@@ -708,11 +729,12 @@ derivation lives.
 
 ## Risks
 
-* **This is the largest item on the roadmap by surface.** The planner half alone is 5314 lines of
-  plan and command code, 100 dispatch sites, 53 variants; the emitter half adds the generators'
-  package on top; the validator half is another 2,000 lines of checks plus the `Rejection`
-  hierarchy's vocabulary; and the terminal deletion removes a walk whose footprint is on the order
-  of 50,000 lines. It is scoped as one item because it has one architecture and one end state, not
+* **This is the largest item on the roadmap by surface.** The planner half alone is 6,135 lines of
+  plan and command code and 138 dispatch sites, over a taxonomy of 72 leaves across the seven
+  hierarchies (`getPermittedSubclasses()` closure, trunk `7f2ff35`); the emitter half adds the
+  generators' package on top; the validator half is another 2,000 lines of checks plus the
+  `Rejection` hierarchy's vocabulary; and the terminal deletion removes a walk whose footprint is on
+  the order of 50,000 lines. It is scoped as one item because it has one architecture and one end state, not
   because it is small. Expect it to run as long as the LSP migration has, or longer.
 * **Classify-time rejections are user-facing contract.** A schema author's error text, location and
   severity must survive each check's migration; the rejection fixtures pin them, and a check whose
@@ -977,7 +999,7 @@ its rows are emitted, so the claim became the item's worked example instead of i
 planner half enumerated six producers where `plan/` holds eight, missing that converted one and
 `RoutineWriteCommands`, which still takes a schema; both now appear in the dependency order as step
 zero and step nine. And the emitter census's total (129) had fallen two behind the re-measured pins
-(131), so the section says which sites moved and owes a re-take.
+(131), so the section said which sites moved and owed a re-take; the pass below discharged it.
 
 Three more came from the shadow-test doctrine the delivery item's discard settled. "What output
 identity is, and what it is not" states once, for all three halves, that behaviour is held as a
@@ -1006,3 +1028,31 @@ migration deliverable, because output identity is only as strong as the corpus a
 close the corpus are keyed on vocabularies this item deletes; the fact-model naming check became a
 per-relation coverage obligation, replacing the external design pass the discard removed; and the
 capture audit was corrected to a confirmation pass, capture being already essentially walk-free.
+
+Re-measured against trunk `7f2ff35` before pickup, by a session that had not previously touched this
+body. Every figure in the item is now read off that commit, and the pass is worth recording because
+the drift arrived in a single day: R743's landing (`7c6d938`) and the commits around it moved most of
+these numbers after the 2026-08-20 rewrite measured them, which is the item's own "a ratchet with no
+owner is a flat line" argument showing up as measurement rot rather than as a stalled count.
+
+Two corrections were substantive rather than arithmetic. The **emitter census's owed re-take is
+discharged**: it reconciles exactly against the pins at 131 across *five* files, not six, because
+`ObjectTypeGenerator`'s three sites folded into one `CarriesObjectForm` read while
+`TypeFetcherGenerator` grew from 78 to 83. The earlier text guessed the 129-to-131 gap was the
+discriminated interface child's batched half; it was not, and the tail-family ordering shortened from
+three files to two. And the **leaf-import census no longer names a `walk_`-shaped projection**, which
+had it contradicting this item's own "Relationship to other items" boundary: `derive` holds one
+leaf-importing writer (`DemandResidue`) and `diagnostics` holds none, `RejectionFacts` transcribing
+the `Rejection` axis rather than importing a leaf.
+
+Three claims were corrected as false rather than stale. No plan producer reaches jOOQ directly (the
+package imports nothing from `org.jooq`; catalog facts arrive as `TableRef` / `TableExpr` value
+records, which is why `StoreNodeTables` was the enabling relation for the converted producer). The
+per-producer dispatch counts in the dependency order did not sum to the plan-side pin under any
+rule; they are re-counted under `CommandSeamRatchetTest`'s own regex so they now sum to 138, which
+moved `FetcherEdgeCommands` from 23 sites to 48 and made it, not `TypeUnitCommands`, the package's
+densest dispatch. And the taxonomy is 72 leaves across the seven hierarchies by
+`getPermittedSubclasses()` closure, where the Risks bullet said 53.
+
+Nothing in the architecture, the strategy, the four success criteria, or the sequencing changed. The
+Spec review this body owes an independent reader is still owed, and this pass does not discharge it.
