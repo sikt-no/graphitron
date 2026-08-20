@@ -1,6 +1,6 @@
 ---
 id: R765
-title: "One relation for a field's authored named type, so a wrapper-stripping expression stops being a join key"
+title: "Capture a field's authored named type as a fact, so a wrapper-stripping expression stops being a join key"
 status: Backlog
 bucket: cleanup
 priority: 3
@@ -10,7 +10,7 @@ created: 2026-08-20
 last-updated: 2026-08-20
 ---
 
-# One relation for a field's authored named type, so a wrapper-stripping expression stops being a join key
+# Capture a field's authored named type as a fact, so a wrapper-stripping expression stops being a join key
 
 Three places in the fact model ask the same question about a field: what type does it name, once list and non-null wrappers are stripped and once a macro's rewrite of the type expression is accounted for. All three spell it inline, identically, as
 
@@ -30,9 +30,37 @@ So both existing sites carry the hazard. They are fast today only because of wha
 
 ## What the increment is
 
-State a field's authored named type as a relation with a plain `named_type` column, keyed on the field coordinate, so the expression is written once. Then repoint the two sites at it, joining on the column. The kind filters both sites apply stay theirs, the new relation answering the name and not what the name is declared as.
+**Capture the fact rather than deriving it.** graphql-java hands capture the named type an
+expression bottoms out in directly, and `graphql_field.named_type` is already exactly that fact for
+the expanded expression, documented as author-spelled with integrity left to a detection. The
+authored spelling's bottomed-out name has the same standing and belongs beside it, written once at
+capture, so no view computes it and every reader joins a column.
 
-The reduction is only real if the readers join a column. A view is inlined, so the relation has to *project* the expression rather than name it in a predicate, and each reader has to take the column from it rather than re-derive the expression. A test that pins the shape is worth more than one that pins a duration.
+That is a better lever than lifting the expression into a derived relation, and the difference is
+measured rather than aesthetic. A materialization trades a refresh for avoided re-evaluations and has
+to win that trade; on the reactor, one such registration was worth 1:23 and another cost 2:33, same
+mechanism, opposite signs. A captured fact has no refresh to pay for at all. A derived relation would
+also not have helped on its own: H2 inlines a view wherever it is named, so the expression would
+reappear in the join key of whatever named it, which is exactly what the `WITH`-clause control above
+measured at 19.6 s.
+
+Where the fact lands is the fork, and it decides whether the increment works.
+
+* On `graphitron_field_synthesis`, beside the expression it comes from. But that relation only holds
+  rows for macro-rewritten fields, so readers need `COALESCE(fs.authored_named_type, f.named_type)`,
+  which is an expression again and buys none of the plannability.
+* On `graphql_field`, non-null, equal to `named_type` wherever no macro rewrote it. Readers join a
+  bare column. The cost is a column on a core captured relation whose value duplicates its
+  neighbour's on almost every row.
+
+**The second is the recommendation.** A field genuinely has two named types, which is why the
+synthesis relation exists at all, and only a fact that is total removes the expression from a join
+key instead of relocating it. Then repoint the three sites at it. The kind filters two of them apply
+stay theirs, the fact answering the name and not what the name is declared as.
+
+Worth checking once it lands: whether `intent_argument_scope_table` still needs its materialization.
+It earns its place today, but it earns it by absorbing this expression's cost, and a registration
+that is no longer needed is a better outcome than one that pays for itself.
 
 ## Whether a gate can hold this
 

@@ -412,6 +412,54 @@ does not enter into it. Two of the three transforms tried in this item were rewr
 and both bought exactly nothing; the one that worked in the scope table's case worked because it
 changed which relation was re-evaluated, not because it changed a join key's shape.
 
+**Which registration to make was then decided by three reactor builds on one base, and that base
+mattered more than anything the registrations did.** Every reactor figure quoted above this line was
+taken while trunk changed underneath: store boot stopped compiling Java partway through this work,
+which took `graphitron-model` from about two and three quarter minutes to about one, so the
+minute-scale differences this item was reasoning about sat inside a two-minute shift in the ground.
+The three builds that decide it were taken after that landed, on one base, one variable apart:
+
+[cols="2,1,1",options="header"]
+|===
+| configuration | reactor | graphitron-model
+
+| trunk, neither registration | 9:00 | 2:43
+| `intent_argument_scope_table` registered | 7:37 | 1:10
+| that plus `intent_node_id_decode_hop_column` | 10:10 | 2:48
+|===
+
+The scope table's registration is worth **1:23 against trunk**, and the hop column's **costs 2:33**.
+Same mechanism, opposite signs, which rules out both of the single-factor explanations this item
+reached for. It is not that a registration's refresh is free, and it is not that a refresh costs a
+view evaluation per store open and therefore never pays: it is refresh cost against reads avoided.
+The scope table refreshes in seventy milliseconds and four view bodies name it, so materialising it
+removes far more re-evaluation than the refresh adds. The hop column relation refreshes through the
+whole hop chain and has exactly one reader, the lift, which no build-time consumer exercises yet, so
+every refresh today buys nothing. That is why its registration moves to the stage that adds the
+consumer rather than shipping dormant.
+
+**A captured fact is the lever neither of those is, and it is the one this family should have reached
+for first.** A registration trades a refresh for avoided re-evaluations and has to win that trade; a
+fact written at capture time has no refresh to pay for and leaves every reader joining a column.
+Capture is already most of the way to the one this family wants:
+`graphitron_field_synthesis.authored_type_sdl` holds the type expression as the author wrote it, and
+three view bodies then strip its wrappers per row with a `COALESCE` over three nested `REPLACE`
+calls. That expression is what made the scope table 19.9 s, and through the endpoint it is what makes
+the hop relations cost what they cost. graphql-java hands capture the bottomed-out name directly, and
+`graphql_field.named_type` is already exactly that fact for the expanded expression, documented as
+author-spelled with integrity left to a detection. Its authored sibling has the same standing.
+
+Where that fact lands is a real fork. On `graphitron_field_synthesis` it sits beside the expression
+it comes from, but that relation only has rows for macro-rewritten fields, so readers still need
+`COALESCE(fs.authored_named_type, f.named_type)`, which is an expression again and buys none of the
+plannability. On `graphql_field`, non-null and equal to `named_type` wherever no macro rewrote it,
+readers join a bare column; the cost is a column on a core captured relation that duplicates its
+neighbour on almost every row. The second is the recommendation: a field genuinely has two named
+types, which is why the synthesis relation exists at all, and only a total fact removes the
+expression from a join key instead of relocating it. Filed on the Backlog item rather than taken
+here, and it may make the scope table's registration unnecessary, which would be the better outcome
+than a registration that currently earns its place.
+
 **One piece of navigation has to be authored first.** `intent_field_reference_step_hop` and
 `intent_field_reference_step_target` resolve reference-path hops, and they are field-site only. An
 argument-site `@reference` path has no equivalent, over
