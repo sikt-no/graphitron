@@ -1,13 +1,13 @@
 ---
 id: R663
 title: "@defaultOrder on a @splitQuery child list is dropped at emit"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: codegen-correctness
 depends-on: []
 created: 2026-08-13
-last-updated: 2026-08-19
+last-updated: 2026-08-20
 ---
 
 # @defaultOrder on a @splitQuery child list is dropped at emit
@@ -16,9 +16,9 @@ A child list field carrying `@splitQuery` and `@defaultOrder` resolves the direc
 `OrderBySpec.Fixed` on the leaf and then emits a batch query with no `ORDER BY`. The declared
 sorting contract is discarded between the model and the generated SQL, and nothing warns.
 
-Found while reviewing the root-routine ordering drop, now owned by
-`roadmap/routine-composition-surface-from-facts.md` (R704), which fixes
-the same symptom at the root `@routine` chain. This is the sibling instance at the batched child
+Found while reviewing the root-routine ordering drop, fixed at the root `@routine` chain by R704
+(`routine-composition-surface-from-facts`, shipped; see `roadmap/changelog.md`). This is the
+sibling instance at the batched child
 coordinate, and it is the harder one: the leaf carries a populated ordering slot, so every
 build-time check sees an ordered field.
 
@@ -224,6 +224,10 @@ One trap. **The execution assertion must be able to fail.** `split_parent_tag` a
 fetch returns them already sorted and the assertion passes against the unfixed generator. Either
 seed a row whose insertion order contradicts the sort order, or pick a fixture where the two
 already disagree, and confirm the new test fails against the current emit before the fix lands.
+The same requirement covers the other two assertions: `film_actor` seeds with ascending actor ids
+per film, so the lookup-arm assertion over `Film.actorsBySplitLookup` passes vacuously the same
+way, and the fanned assertion over `Language.films` needs the within-tenant check to bite against
+a tenant database whose row order disagrees with the sort.
 
 **`BatchedChildSqlBaselineTest` will fail, and that is correct.** It freezes whole rendered
 statements for this family, `SplitParent.tags` among them, and its javadoc says editing an expected
@@ -271,9 +275,9 @@ edits no user-facing prose except to widen one directive name.
 
 ## Related
 
-* `roadmap/routine-composition-surface-from-facts.md` (R704): the same symptom at the root
-  `@routine` chain, where the model lands `None` and the fix is enforcement plus a classifier
-  call. That item's enforcement does not reach this population.
+* R704 (`routine-composition-surface-from-facts`, shipped; entry in `roadmap/changelog.md`): the
+  same symptom at the root `@routine` chain, where the model lands `None` and the fix was
+  enforcement plus a classifier call. That item's enforcement does not reach this population.
 * `roadmap/lookup-unrealized-co-members.md` (R567): filed the `@lookupKey` grain of this drop
   first. The split agreed here: this item takes `batchedLookupRow`'s ordering slot, because it is
   one call site into the renderer this item is already fixing and splitting it would ship the
