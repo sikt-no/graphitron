@@ -267,8 +267,15 @@ CREATE VIEW intent_argmapping_pair (graph_name, site, ...) AS SELECT ... ;
 
 -- After: the rule keeps its text verbatim and gives up the canonical name.
 CREATE VIEW intent_argmapping_pair_live (graph_name, site, ...) AS SELECT ... ;
+COMMENT ON VIEW intent_argmapping_pair_live IS '<the original comment, plus: this states the rule and
+  is evaluated on demand; intent_argmapping_pair beside it is the materialized copy readers use>';
+
 -- The canonical name becomes a table of the same shape. Every existing reader now hits this.
 CREATE TABLE intent_argmapping_pair (graph_name VARCHAR NOT NULL, site VARCHAR NOT NULL, ...);
+COMMENT ON TABLE intent_argmapping_pair IS '<what the relation means, plus: materialized from
+  intent_argmapping_pair_live on the capture cadence, per graph; registered in meta_materialize,
+  which carries why>';
+
 -- And one authored row wires them together.
 --   meta_materialize: ('intent_argmapping_pair_live', 'intent_argmapping_pair', '<reason>')
 ```
@@ -290,15 +297,40 @@ and could not fail. The observed failure is the evidence for this shape.
 
   ```sql
   CREATE TABLE meta_materialize (
-    view_name  VARCHAR NOT NULL,
-    table_name VARCHAR NOT NULL,
-    reason     VARCHAR NOT NULL,
-    PRIMARY KEY (view_name)
+    source_view_name  VARCHAR NOT NULL,
+    target_table_name VARCHAR NOT NULL,
+    reason            VARCHAR NOT NULL,
+    PRIMARY KEY (source_view_name)
   );
+  COMMENT ON TABLE meta_materialize IS 'Which derived views are materialized after the crawl, and
+    into which table. One row is one registration, read by the materializer in graphitron-model on
+    the capture cadence: it empties the target and refills it from the source view, per graph where
+    the relation is graph-keyed. The pair is directional and the direction is the whole point, which
+    is why both columns say which end they are.';
+  COMMENT ON COLUMN meta_materialize.source_view_name IS 'The view stating the rule, which is the
+    relation the target''s rows are computed from. It carries the original view text unchanged and a
+    name it did not previously have, the canonical name having moved to the target; no consumer names
+    this relation, and one that does is asking for on-demand evaluation and will get it.';
+  COMMENT ON COLUMN meta_materialize.target_table_name IS 'The table the rows are materialized into,
+    under the name every existing reader already uses. That is what makes a registration invisible to
+    consumers: the eleven other view bodies naming this relation are not edited, they simply stop
+    hitting a view and start hitting a table. A registration that gave the target a new name would
+    change no reader''s cost and would be pointless.';
+  COMMENT ON COLUMN meta_materialize.reason IS 'Why this relation is materialized rather than left to
+    derive on read. Required, because this column is where the materialization doctrine lives: the
+    incumbent hand-written derivations each argue in their own table comment that they cannot be
+    views, and a registration argues instead that a view would be too expensive, so a row that cannot
+    say which is not a registration.';
+
   INSERT INTO meta_materialize VALUES
     ('intent_argmapping_pair_live', 'intent_argmapping_pair', '...'),
     ('intent_spelled_table_live',   'intent_spelled_table',   '...');
   ```
+
+  The comments are not decoration. `FactSchemaGateTest` fails the build on any relation or column in
+  `PUBLIC` carrying a null `REMARKS`, so every one of them is required, as is a comment on each
+  target table and on each renamed source view. Since the direction of the pair is what a first
+  reader gets wrong, the column comments are where that is worth spending words.
 
   It inherits the `meta_` family's *purpose*, which is the schema describing itself in rows authored
   beside the DDL they describe, and departs from the family's current *form*. The three existing
@@ -344,8 +376,9 @@ TypeBackingRows.derive(txDsl, graph.name());
 The materializer is a fourth line there, on the same `txDsl` and the same `graph.name()`. Three
 consequences follow and none of them is optional. The refresh runs **inside the capture transaction**,
 so no reader ever observes an emptied target. It is scoped **per graph**,
-`DELETE FROM <table_name> WHERE graph_name = ?` then
-`INSERT INTO <table_name> SELECT * FROM <view_name> WHERE graph_name = ?`, because a capture of one
+`DELETE FROM <target_table_name> WHERE graph_name = ?` then
+`INSERT INTO <target_table_name> SELECT * FROM <source_view_name> WHERE graph_name = ?`, because a
+capture of one
 graph has no business rewriting a sibling's rows and the comment above states that as the stratum's
 invariant. And the materializer decides which of those two forms to use by whether the target carries
 a `graph_name` column, which a graph-keyed relation must anyway to satisfy the anchor gate below; a

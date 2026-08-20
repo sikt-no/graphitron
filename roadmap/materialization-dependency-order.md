@@ -12,8 +12,8 @@ last-updated: 2026-08-20
 
 # Order the materialization registry, so a target may be derived from another target
 
-R742 lands `meta_materialize (view_name, table_name, reason)`, a constrained table, and a
-`graphitron-model` method that
+R742 lands `meta_materialize (source_view_name, target_table_name, reason)`, a constrained table,
+and a `graphitron-model` method that
 iterates it, refreshing each target from its view inside the capture transaction and scoped to the
 graph being captured. The registry records no ordering, which is correct for what R742 registers and
 is not correct in general.
@@ -29,7 +29,8 @@ sequence; what follows here is only this step.
 ## Why R742 could leave it out, stated so this item knows what it is fixing
 
 A materialized target is refilled by
-`INSERT INTO <table_name> SELECT * FROM <view_name> WHERE graph_name = ?`. If that view reads
+`INSERT INTO <target_table_name> SELECT * FROM <source_view_name> WHERE graph_name = ?`. If that
+source view reads
 *another* target, then the answer depends on whether the other target was refreshed first,
 and an unordered materializer will populate one of them from stale or empty rows. Nothing about the
 mechanism prevents this; R742 is safe because of a property of the two rows it registers, not because
