@@ -156,6 +156,133 @@ public final class TypeSpecAssertions {
         return guarded && !bareRead;
     }
 
+    // ------------------------------------------------------------------------------------------
+    // Projected-key emission
+    //
+    // The shapes these scan are ProjectedKeyReads' two emissions (the hoisted materialisation
+    // `<Record> <local> = <decodeHelper>(<wire read>);` and the column read
+    // `<local>.get(<Tables>.<TABLE>.<COLUMN>)`) plus where the hosts place them. Callers ask the
+    // typed question ("does this method materialise the decoded record once?", "is the column
+    // named rather than indexed?"); the rendered spelling lives only here.
+    // ------------------------------------------------------------------------------------------
+
+    /**
+     * The number of materialisations of {@code keyLocal} in {@code methodName}'s body: declarations
+     * of the form {@code <Record> keyLocal = …}. One however many parameters read columns off the
+     * decoded record is the sink's dedupe contract; two would give one bad id two identical failure
+     * points.
+     */
+    public static long decodedKeyMaterialisations(TypeSpec type, String methodName, String keyLocal) {
+        return countIn(type, methodName, declarationOf(keyLocal));
+    }
+
+    /**
+     * True when {@code keyLocal}'s materialisation decodes the raw wire value descended from
+     * {@code argumentName} through {@code descentHelper}:
+     * {@code keyLocal = decodeHelper(descentHelper(env.getArgument("argumentName")))}. The descent
+     * hands the value on untyped; the decode helper's own wire-shape guard owns the non-string case.
+     */
+    public static boolean materialisationDecodesWireDescent(TypeSpec type, String methodName,
+            String keyLocal, String decodeHelper, String descentHelper, String argumentName) {
+        return countIn(type, methodName, Pattern.compile(
+            Pattern.quote(keyLocal) + "\\s*=\\s*" + Pattern.quote(decodeHelper)
+            + "\\(" + Pattern.quote(descentHelper)
+            + "\\(env\\.getArgument\\(\"" + Pattern.quote(argumentName) + "\"\\)\\)\\)")) > 0;
+    }
+
+    /** The number of column reads off {@code keyLocal} ({@code keyLocal.get(…)}) in the body. */
+    public static long projectedColumnReads(TypeSpec type, String methodName, String keyLocal) {
+        return countIn(type, methodName,
+            Pattern.compile(Pattern.quote(keyLocal) + "\\.get\\("));
+    }
+
+    /**
+     * True when a read off {@code keyLocal} names the projected column by its constant
+     * ({@code keyLocal.get(…Tables.TABLE.COLUMN)}). Named rather than indexed is what makes a
+     * transposed composite-key projection unconstructable.
+     */
+    public static boolean readsColumnByName(TypeSpec type, String methodName, String keyLocal,
+            String tableConstant, String columnConstant) {
+        return countIn(type, methodName,
+            namedColumnRead(keyLocal, tableConstant, columnConstant)) > 0;
+    }
+
+    /**
+     * True when a named-column read off {@code keyLocal} appears inside {@code invoked}'s own
+     * argument list (within the same statement), i.e. the projected value is what the invocation is
+     * handed rather than merely computed somewhere in the body.
+     */
+    public static boolean invocationTakesProjectedRead(TypeSpec type, String methodName,
+            String invoked, String keyLocal, String tableConstant, String columnConstant) {
+        return countIn(type, methodName, Pattern.compile(
+            "[\\w.$]*" + Pattern.quote(invoked) + "\\([^;]*?"
+            + namedColumnRead(keyLocal, tableConstant, columnConstant).pattern())) > 0;
+    }
+
+    /**
+     * True when {@code keyLocal}'s materialisation precedes the method's write transaction (its
+     * first {@code try} block). Inside it, the entry point's {@code catch (Exception e)} would
+     * route a malformed node id through the field's error channel; the behavioral half of this
+     * claim is the execution tier's (a bad id surfaces as a request error and commits nothing).
+     */
+    public static boolean materialisationPrecedesWriteTransaction(TypeSpec type, String methodName,
+            String keyLocal) {
+        String body = methodBody(type, methodName).orElse("");
+        var declaration = declarationOf(keyLocal).matcher(body);
+        var transaction = Pattern.compile("\\btry\\s*[({]").matcher(body);
+        return declaration.find() && transaction.find()
+            && declaration.start() < transaction.start();
+    }
+
+    /** True when {@code keyLocal}'s materialisation precedes the first read off it. */
+    public static boolean materialisationPrecedesFirstRead(TypeSpec type, String methodName,
+            String keyLocal) {
+        String body = methodBody(type, methodName).orElse("");
+        var declaration = declarationOf(keyLocal).matcher(body);
+        int firstRead = body.indexOf(keyLocal + ".get(");
+        return declaration.find() && firstRead >= 0 && declaration.start() < firstRead;
+    }
+
+    /**
+     * True when the method reads {@code slotName} through the typed env accessor
+     * ({@code env.<fqJavaType>getArgument("slotName")}), the ordinary bare-slot binding untouched
+     * by any projection sink.
+     */
+    public static boolean readsSlotThroughTypedAccessor(TypeSpec type, String methodName,
+            String slotName, String fqJavaType) {
+        return methodBody(type, methodName).orElse("")
+            .contains("env.<" + fqJavaType + ">getArgument(\"" + slotName + "\")");
+    }
+
+    /**
+     * True when the method reads {@code argumentName}'s raw wire value through
+     * {@code descentHelper} ({@code descentHelper(env.getArgument("argumentName"))}), the
+     * unprojected dotted binding's ordinary read.
+     */
+    public static boolean descendsWireValue(TypeSpec type, String methodName, String descentHelper,
+            String argumentName) {
+        return methodBody(type, methodName).orElse("")
+            .contains(descentHelper + "(env.getArgument(\"" + argumentName + "\"))");
+    }
+
+    /** {@code <Record> keyLocal =}, the materialisation's declaration and never a read of it. */
+    private static Pattern declarationOf(String keyLocal) {
+        return Pattern.compile("[\\w.$]+\\s+" + Pattern.quote(keyLocal) + "\\s*=");
+    }
+
+    /** {@code keyLocal.get(…Tables.TABLE.COLUMN)}, the named-column read. */
+    private static Pattern namedColumnRead(String keyLocal, String tableConstant,
+            String columnConstant) {
+        return Pattern.compile(Pattern.quote(keyLocal) + "\\.get\\([\\w.$]*Tables\\."
+            + Pattern.quote(tableConstant) + "\\." + Pattern.quote(columnConstant) + "\\)");
+    }
+
+    private static long countIn(TypeSpec type, String methodName, Pattern pattern) {
+        return methodBody(type, methodName)
+            .map(body -> pattern.matcher(body).results().count())
+            .orElse(0L);
+    }
+
     private static Optional<String> methodBody(TypeSpec type, String methodName) {
         return type.methodSpecs().stream()
             .filter(m -> m.name().equals(methodName))

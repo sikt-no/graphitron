@@ -14,9 +14,17 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.regex.Pattern;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
+import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.decodedKeyMaterialisations;
+import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.descendsWireValue;
+import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.invocationTakesProjectedRead;
+import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.materialisationDecodesWireDescent;
+import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.materialisationPrecedesFirstRead;
+import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.materialisationPrecedesWriteTransaction;
+import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.projectedColumnReads;
+import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.readsColumnByName;
+import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.readsSlotThroughTypedAccessor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -35,7 +43,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>The store side is handed in, as in {@code KeyProjectionRelationTest}: what the view resolves is
  * the model module's to pin, and the end-to-end path from an authored {@code argMapping} through
- * capture to a running query is the execution tier's. Here the subject is the emission.
+ * capture to a running query is the execution tier's. Here the subject is the emission, asked as
+ * typed questions through
+ * {@link no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions} so the rendered spelling
+ * lives in one place rather than being pinned as code strings here.
  */
 @PipelineTier
 class ArgmappingKeyProjectionEmissionPipelineTest {
@@ -64,18 +75,19 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
 
     @Test
     void aProjectedParameterReadsTheNamedColumnOffADecodedRecord() {
-        String body = fetcherBody(SDL);
+        var fetchers = mutationFetchers(SDL);
 
-        assertThat(body)
+        assertThat(materialisationDecodesWireDescent(fetchers, "rentFilm", "keyInputInventoryId",
+                "decodeInventoryRecord", "argInputInventoryId", "input"))
             .as("the wire value descends to the @nodeId leaf and the decode materialises the record")
-            .contains("InventoryRecord keyInputInventoryId = "
-                + "decodeInventoryRecord(argInputInventoryId(env.getArgument(\"input\")))")
+            .isTrue();
+        assertThat(invocationTakesProjectedRead(fetchers, "rentFilm", "Routines.rentFilm",
+                "keyInputInventoryId", "INVENTORY", "INVENTORY_ID"))
             .as("the column is named, not indexed: a transposed composite projection cannot be built")
-            .containsPattern("Routines\\.rentFilm\\(keyInputInventoryId\\.get\\("
-                + "[\\w.]*Tables\\.INVENTORY\\.INVENTORY_ID\\)");
-        assertThat(body)
+            .isTrue();
+        assertThat(descendsWireValue(fetchers, "rentFilm", "argInputCustomerId", "input"))
             .as("the unprojected sibling parameter still reads its value straight off the wire map")
-            .contains("argInputCustomerId(env.getArgument(\"input\"))");
+            .isTrue();
     }
 
     /** A fixture whose unprojected sibling binds a bare slot rather than a dotted path. */
@@ -92,12 +104,15 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
      */
     @Test
     void aBareSlotBindingBesideAProjectedOneStillReadsItsSlot() {
-        String body = fetcherBody(BARE_SIBLING_SDL);
+        var fetchers = mutationFetchers(BARE_SIBLING_SDL);
 
-        assertThat(body)
-            .contains("keyInputInventoryId.get(")
+        assertThat(projectedColumnReads(fetchers, "rentFilm", "keyInputInventoryId"))
+            .as("the projected sibling still reads its column off the decoded record")
+            .isPositive();
+        assertThat(readsSlotThroughTypedAccessor(fetchers, "rentFilm", "customerId",
+                "java.lang.Integer"))
             .as("the bare slot reads through the typed env accessor, untouched by the sink")
-            .contains("env.<java.lang.Integer>getArgument(\"customerId\")");
+            .isTrue();
     }
 
     /**
@@ -124,12 +139,12 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
      */
     @Test
     void twoParametersOffOneNodeIdShareOneMaterialisation() {
-        String body = fetcherBody(SHARED_ID_SDL);
+        var fetchers = mutationFetchers(SHARED_ID_SDL);
 
-        assertThat(count(body, "InventoryRecord keyInputInventoryId ="))
+        assertThat(decodedKeyMaterialisations(fetchers, "rentFilm", "keyInputInventoryId"))
             .as("one declaration")
             .isEqualTo(1);
-        assertThat(count(body, "keyInputInventoryId\\.get\\("))
+        assertThat(projectedColumnReads(fetchers, "rentFilm", "keyInputInventoryId"))
             .as("both parameters read off it")
             .isEqualTo(2);
     }
@@ -137,15 +152,15 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
     /**
      * The declaration precedes the {@code try} the write opens. Inside it, the entry point's
      * {@code catch (Exception e)} would route a malformed node id through the field's error channel,
-     * redacting or re-reporting a client error about an argument as a failure of the write.
+     * redacting or re-reporting a client error about an argument as a failure of the write. The
+     * behavioral half lives at the execution tier: {@code GraphQLQueryTest} pins that a bad id
+     * surfaces as a request error and commits nothing.
      */
     @Test
     void theDecodeHappensBeforeTheWriteTransactionIsEntered() {
-        String body = fetcherBody(SDL);
-
-        assertThat(body.indexOf("InventoryRecord keyInputInventoryId ="))
-            .isGreaterThanOrEqualTo(0)
-            .isLessThan(body.indexOf("try {"));
+        assertThat(materialisationPrecedesWriteTransaction(mutationFetchers(SDL), "rentFilm",
+                "keyInputInventoryId"))
+            .isTrue();
     }
 
     /**
@@ -200,18 +215,20 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
             .extracting(MethodSpec::name)
             .contains("decodeFilmRecord");
 
+        // The glue is the one method returning a jOOQ Condition; its name is the row's to mint.
         String glue = conditions.methodSpecs().stream()
-            .filter(m -> m.name().startsWith("filmsCondition") || m.name().contains("films"))
-            .map(m -> m.code().toString())
+            .filter(m -> m.returnType().toString().equals("org.jooq.Condition"))
+            .map(MethodSpec::name)
             .findFirst().orElseThrow();
-        assertThat(glue)
+        assertThat(decodedKeyMaterialisations(conditions, glue, "keyInFilmId"))
             .as("the wire value descends to the @nodeId leaf and the decode materialises the record")
-            .contains("keyInFilmId = decodeFilmRecord(")
+            .isEqualTo(1);
+        assertThat(readsColumnByName(conditions, glue, "keyInFilmId", "FILM", "FILM_ID"))
             .as("the column is named, not indexed")
-            .containsPattern("keyInFilmId\\.get\\([\\w.]*Tables\\.FILM\\.FILM_ID\\)");
-        assertThat(glue.indexOf("keyInFilmId = decodeFilmRecord("))
+            .isTrue();
+        assertThat(materialisationPrecedesFirstRead(conditions, glue, "keyInFilmId"))
             .as("the materialisation precedes the binding local that reads it")
-            .isLessThan(glue.indexOf("keyInFilmId.get("));
+            .isTrue();
     }
 
     /** The one conditions class the fixture's single glue owner produces, rendered through the plan. */
@@ -228,13 +245,6 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
             plan.keyProjections());
         assertThat(classes).hasSize(1);
         return classes.getFirst();
-    }
-
-    private static String fetcherBody(String sdl) {
-        return mutationFetchers(sdl).methodSpecs().stream()
-            .filter(m -> m.name().equals("rentFilm"))
-            .findFirst().orElseThrow()
-            .code().toString();
     }
 
     private static List<MethodSpec> helpers(String sdl) {
@@ -262,10 +272,6 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
                 plan.keyProjections()).stream()
             .filter(t -> t.name().equals("MutationFetchers"))
             .findFirst().orElseThrow();
-    }
-
-    private static long count(String body, String regex) {
-        return Pattern.compile(regex).matcher(body).results().count();
     }
 
     // ===== The store rows these fixtures stand in for =====

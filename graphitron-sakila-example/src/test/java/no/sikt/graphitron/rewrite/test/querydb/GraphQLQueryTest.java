@@ -5877,6 +5877,40 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void rentFilmPayloadProjected_badNodeIdIsARequestErrorAndCommitsNothing() {
+        // The behavioral half of "the decode precedes the write transaction". The routine-write
+        // entry point catches everything inside its transaction and routes it through the payload's
+        // errors field (rentFilmPayload_failingRoutine below); a bad node id must not arrive there,
+        // because it is a client error about an argument rather than a failure of the write. Decoded
+        // before that try opens, it surfaces as a request-level error, the data field renders null,
+        // and nothing is committed. Both bad shapes take that path: a string that is not a node id
+        // at all, and a well-formed id encoding another type.
+        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        for (String customerId : new String[] {
+                "not-a-node-id",
+                no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3)}) {
+            graphql.ExecutionResult result = executeRaw("""
+                mutation {
+                    rentFilmPayloadProjected(input: { inventoryId: 2, customerId: "%s" }) {
+                        rental { rentalId }
+                        errors { __typename }
+                    }
+                }
+                """.formatted(customerId));
+            assertThat(result.getErrors())
+                .as("a bad node id is a request error, not a write routed through the error channel")
+                .isNotEmpty();
+            Map<String, Object> data = result.getData();
+            assertThat(data == null ? null : data.get("rentFilmPayloadProjected"))
+                .as("the payload renders null; its errors field never sees the decode")
+                .isNull();
+        }
+        assertThat(dsl.fetchCount(org.jooq.impl.DSL.table("rental")))
+            .as("nothing was committed")
+            .isEqualTo(countBefore);
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void rentFilmPayload_failingRoutine_routesThroughLocalContextErrorChannel() {
         // Outcome (a): the routine raised (FK violation: inventory 999999 does not exist). The

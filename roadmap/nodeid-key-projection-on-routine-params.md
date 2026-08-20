@@ -50,6 +50,16 @@ the two-schema agreement case that would catch a concatenating capture, the arra
 `ColumnRef.decodeBindingType`, and the PostgreSQL execution test asserting the decoded integer key
 in the committed row. All of that stands; only the emission test's assertion idiom needs the pass.
 
+**Rework landed, 2026-08-20.** The emission test's six body-string cases now ask typed questions
+through `TypeSpecAssertions`, which grew a projected-key section (materialisation count, wire
+descent, named-column read, read-inside-invocation, ordering against the write transaction's `try`,
+typed slot accessor) so the rendered spellings live in that one file; the glue method is resolved
+structurally by its `org.jooq.Condition` return type rather than by a name scan. The behavioral
+half of "the decode precedes the write transaction" is now also pinned at the execution tier:
+`GraphQLQueryTest.rentFilmPayloadProjected_badNodeIdIsARequestErrorAndCommitsNothing` sends a
+malformed string and a wrong-type id, and asserts a request-level error, a null payload (the
+error channel never sees the decode), and no committed row. No production change.
+
 A `@nodeId` field carries a base64-encoded node identity on the wire, not the primary key it
 encodes. Graphitron already knows how to turn that wire form back into typed key values: the
 decode side ships for lookups and filters, where an argument or input field annotated
@@ -213,7 +223,7 @@ the store dumped or the generator run by hand.
 | The projection resolves, with its tiers | `intent_resolved_node_key_projection` | `ResolvedNodeKeyProjectionTest` (15 cases, including both stand-aside cases of the type gate) |
 | A store-sourced `TableRef` is assemblable at all | `rewrite/derive/StoreNodeTables` | `StoreNodeTablesTest` builds one from a real captured store: record class, constants class, field name, pinned key order, type id per tier |
 | The command row carries facts and nothing else | `command/KeyProjection` | `KeyProjectionRelationTest` (unit tier; the row's own invariant plus the relation's key) |
-| The emitted read is what we think it is | `render/ProjectedKeyReads`, `render/RecordDecodeFragments` | `ArgmappingKeyProjectionEmissionPipelineTest` (7 cases over the emitted source) |
+| The emitted read is what we think it is | `render/ProjectedKeyReads`, `render/RecordDecodeFragments` | `ArgmappingKeyProjectionEmissionPipelineTest` (7 cases, asked as typed questions through `TypeSpecAssertions` so no case pins a rendered body string); the decode-precedes-transaction claim's behavioral half is `GraphQLQueryTest.rentFilmPayloadProjected_badNodeIdIsARequestErrorAndCommitsNothing` |
 | The plan tier no longer reads the walk | `plan/KeyProjectionCommands` | `CommandSeamRatchetTest` plan-side pin, lowered 140 to 139; the producer takes no `GraphitronSchema` |
 | Output did not change while being re-sourced | whole generator | the example regenerates and compiles under `-Werror`; `GeneratorDeterminismTest` |
 | Every new relation is registered and commented | `graphitron-model.sql` | `FactCaptureAgreementTest.everyRelationIsRegistered`, `FactSchemaGateTest.commentCoverageIsTotal` |
