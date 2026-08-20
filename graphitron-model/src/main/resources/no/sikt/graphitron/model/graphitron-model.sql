@@ -3811,6 +3811,56 @@ COMMENT ON COLUMN intent_resolved_type_binding.table_schema IS 'the resolved tab
 COMMENT ON COLUMN intent_resolved_type_binding.table_name IS 'the resolved table''s SQL name. With the two columns above this is sql_table''s full key; the table''s other facts are one join away, per the referenced-side discipline sql_referential_constraint states';
 COMMENT ON COLUMN intent_resolved_type_binding.candidates IS 'how many distinct tables stand for this type across both arms, this row''s table being one of them; 1 on an unambiguous binding, which is the guard a reader that must pick one applies. Recounted here rather than carried from an arm, for the reason the view comment gives';
 
+CREATE VIEW intent_argument_scope_table
+  (graph_name, type_name, field_name, argument_name, basis,
+   table_source_name, table_schema, table_name) AS
+SELECT graph_name, type_name, field_name, argument_name, basis,
+       table_source_name, table_schema, table_name
+  FROM (SELECT arms.graph_name, arms.type_name, arms.field_name, arms.argument_name,
+               arms.basis, arms.table_source_name, arms.table_schema, arms.table_name,
+               DENSE_RANK() OVER (
+                 PARTITION BY arms.graph_name, arms.type_name, arms.field_name,
+                              arms.argument_name
+                 ORDER BY arms.precedence) AS rung
+          FROM (SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
+                       'NAMED_TYPE_TABLE' AS basis, bt.table_source_name, bt.table_schema,
+                       bt.table_name, 0 AS precedence
+                  FROM graphql_argument a
+                  JOIN graphql_field f
+                    ON f.graph_name = a.graph_name AND f.type_name = a.type_name
+                   AND f.field_name = a.field_name
+                  LEFT JOIN graphitron_field_synthesis fs
+                    ON fs.graph_name = f.graph_name AND fs.type_name = f.type_name
+                   AND fs.field_name = f.field_name
+                  JOIN intent_resolved_type_binding bt
+                    ON bt.graph_name = f.graph_name
+                   AND bt.type_name = COALESCE(
+                         REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''),
+                                 '!', ''),
+                         f.named_type)
+                   AND bt.candidates = 1
+                UNION ALL
+                SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
+                       'MUTATION_TABLE', sp.table_source_name, sp.table_schema,
+                       sp.table_name, 1
+                  FROM graphql_argument a
+                  JOIN graphitron_mutation m
+                    ON m.graph_name = a.graph_name AND m.type_name = a.type_name
+                   AND m.field_name = a.field_name
+                  JOIN intent_spelled_table sp
+                    ON sp.graph_name = m.graph_name AND sp.spelling = m.table_ref
+                   AND sp.candidates = 1) arms) picked
+ WHERE rung = 1;
+COMMENT ON VIEW intent_argument_scope_table IS 'Which table an argument''s column-shaped content binds against: the table a predicate built from this argument correlates on, and the table a @nodeId or @reference path departs from. The argument-site counterpart of the reading intent_field_column_scope makes at a field site, and a separate relation for the same reason that pair is separate from the captured directives, the resolution being a precedence over two populations rather than a fact either one states. Two rungs, in the order the classifier applies them, first answer wins. The field''s named type''s own binding is the ordinary case, read through graphitron_field_synthesis so a connection field navigates as its element type rather than as its edge wrapper, which is intent_field_column_scope''s own named-type rule and is spelled the same way here on purpose. Below it a @mutation(table:) spelling, which is what answers where the field returns a payload type nothing binds: a delete surface returns a scalar or a status type and its arguments still bind against the table the mutation names. The rungs are a precedence and not a union, because a mutation whose payload type is itself bound has both and the named type is the one the classifier reads; DENSE_RANK over the rungs rather than ROW_NUMBER, so a winning rung keeps every row it answered with and an ambiguity stays visible as rows instead of being resolved by window order. Both rungs demand an unambiguous binding, on intent_field_reference_discovery''s terms: a table this argument''s content binds against is a table a predicate is emitted on, and two candidate tables are two different predicates, so a pair that is not certain is not the pair the classifier would have had in hand. A field whose named type binds nothing and which carries no @mutation therefore has no row here, and that absence is the ordinary case for every argument that is not column-shaped at all. Nothing here says the argument''s content is column-shaped: this relation answers where it would bind if it is, and which arguments carry such content is each consumer''s own question.';
+COMMENT ON COLUMN intent_argument_scope_table.graph_name IS 'the owning graph''s partition, carried from graphql_argument on both rungs';
+COMMENT ON COLUMN intent_argument_scope_table.type_name IS 'the type owning the field the argument sits on';
+COMMENT ON COLUMN intent_argument_scope_table.field_name IS 'the field the argument sits on';
+COMMENT ON COLUMN intent_argument_scope_table.argument_name IS 'the argument whose scope this row states; the grain, so two arguments of one field each get their own row and neither reader has to know they agree';
+COMMENT ON COLUMN intent_argument_scope_table.basis IS 'which rung answered, in a closed vocabulary of two: NAMED_TYPE_TABLE from the field''s named type''s own binding, MUTATION_TABLE from the @mutation(table:) spelling where no named type binds. Provenance, and what lets a test pin which rung fired rather than only that a table came out; a reader wanting one rung filters on it and owns having chosen';
+COMMENT ON COLUMN intent_argument_scope_table.table_source_name IS 'the scope table''s catalog partition, the first column of the sql_table key this row names';
+COMMENT ON COLUMN intent_argument_scope_table.table_schema IS 'the scope table''s SQL schema';
+COMMENT ON COLUMN intent_argument_scope_table.table_name IS 'the scope table''s SQL name; with the two columns above this is sql_table''s full key, so the table''s own columns and constraints are one join away';
+
 CREATE VIEW intent_resolved_node_key_column
   (graph_name, type_name, position, column_name, tier) AS
 SELECT graph_name, type_name, position, column_name, tier
@@ -3963,19 +4013,11 @@ WITH RECURSIVE chain (graph_name, type_name, field_name, argument_name, ordinal,
          h.via, h.key_matched_by, h.from_source_name, h.from_schema, h.from_table,
          h.to_source_name, h.to_schema, h.to_table, h.constraint_name, h.fk_on_from
     FROM intent_argument_reference_step_hop h
-    JOIN graphql_field f
-      ON f.graph_name = h.graph_name AND f.type_name = h.type_name
-     AND f.field_name = h.field_name
-    LEFT JOIN graphitron_field_synthesis fs
-      ON fs.graph_name = f.graph_name AND fs.type_name = f.type_name
-     AND fs.field_name = f.field_name
-    JOIN intent_resolved_type_binding bt
-      ON bt.graph_name = h.graph_name
-     AND bt.type_name = COALESCE(
-           REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''), '!', ''),
-           f.named_type)
-     AND bt.table_source_name = h.from_source_name AND bt.table_schema = h.from_schema
-     AND bt.table_name = h.from_table
+    JOIN intent_argument_scope_table sc
+      ON sc.graph_name = h.graph_name AND sc.type_name = h.type_name
+     AND sc.field_name = h.field_name AND sc.argument_name = h.argument_name
+     AND sc.table_source_name = h.from_source_name AND sc.table_schema = h.from_schema
+     AND sc.table_name = h.from_table
    WHERE h.position = 0
   UNION
   SELECT h.graph_name, h.type_name, h.field_name, h.argument_name, h.ordinal, h.position,
@@ -4003,7 +4045,7 @@ SELECT graph_name, type_name, field_name, argument_name, ordinal, position, via,
                               c.ordinal, c.position
                  ORDER BY c.to_source_name, c.to_schema, c.to_table) AS target_rank
           FROM chain c) ranked;
-COMMENT ON VIEW intent_argument_reference_step_target IS 'Where each element of an argument-site @reference path actually lands: intent_argument_reference_step_hop walked one element at a time, so a row exists only for an element the chain can be shown to reach. The field-site sibling''s comment argues the walk, and everything it says about recursion, about absence meaning "not reached" rather than "resolves to nothing in particular", and about an element naming neither key nor table not being a hop this view knows, holds here unchanged. One thing does not, and it is the whole reason this view is not that one with a column added: the departure. A field-site path departs from the enclosing type''s own binding, because the field is a projection off that type''s row. An argument-site path departs from the table the field''s named type is bound to, because an argument filters what the field returns rather than what its parent is; the resolver states the same thing by passing the field''s target table as the path''s source. So a filter argument on a root field, whose parent type is bound to nothing at all, has a departure here where the field-site rule would give it none, and reading one view for both sites would have made that departure a case rather than the rule. The named type is read the way the two other views that navigate to one read it, with its list and non-null wrappers stripped and taken off graphitron_field_synthesis where a macro rewrote the field''s type expression, so a connection-returning field departs its element type''s table and not the wrapper''s. The binding is intent_resolved_type_binding and not the @table population, for that relation''s own stated reason: what the walk needs is a table for the type, and a type standing for a @routine chain''s result has one whether or not the author also wrote the directive. No arity is demanded of it, ambiguity being rows here as everywhere: a named type two tables stand for departs from each, and the arities below count what that reached.';
+COMMENT ON VIEW intent_argument_reference_step_target IS 'Where each element of an argument-site @reference path actually lands: intent_argument_reference_step_hop walked one element at a time, so a row exists only for an element the chain can be shown to reach. The field-site sibling''s comment argues the walk, and everything it says about recursion, about absence meaning "not reached" rather than "resolves to nothing in particular", and about an element naming neither key nor table not being a hop this view knows, holds here unchanged. One thing does not, and it is the whole reason this view is not that one with a column added: the departure. A field-site path departs from the enclosing type''s own binding, because the field is a projection off that type''s row. An argument-site path departs from the table the argument''s own content binds against, because an argument filters what the field returns rather than what its parent is; the resolver states the same thing by passing the field''s target table as the path''s source. So a filter argument on a root field, whose parent type is bound to nothing at all, has a departure here where the field-site rule would give it none, and reading one view for both sites would have made that departure a case rather than the rule. That departure is intent_argument_scope_table''s whole subject and is read from it rather than restated: the field''s named type''s binding read through graphitron_field_synthesis so a connection-returning field departs its element type''s table and not the wrapper''s, and below it the @mutation(table:) spelling, which is what gives a delete surface''s argument a departure at all where its return type binds nothing. Reading the relation rather than spelling the upper rung inline is also what stops the two spellings of one rule from drifting, the rule having a second reader now. It costs one demand the earlier spelling did not make, and the demand is the scope relation''s and correct: a departure is a table a predicate is emitted on, so an ambiguously bound named type is no departure rather than two, which is intent_field_reference_discovery''s stance on the same question. The field-site sibling still admits the ambiguity, its departure being the enclosing type''s binding read directly and its arities counting what that reached.';
 COMMENT ON COLUMN intent_argument_reference_step_target.graph_name IS 'the owning graph''s partition, carried from the hop view';
 COMMENT ON COLUMN intent_argument_reference_step_target.type_name IS 'the type owning the field the argument sits on. Not the type whose binding started the chain, which is the field''s named type: the difference from the field-site sibling, where the two are one';
 COMMENT ON COLUMN intent_argument_reference_step_target.field_name IS 'the field owning the argument the @reference is applied to; also the field whose named type''s binding started the chain';
@@ -4012,7 +4054,7 @@ COMMENT ON COLUMN intent_argument_reference_step_target.ordinal IS 'the owning @
 COMMENT ON COLUMN intent_argument_reference_step_target.position IS 'the element''s 0-based position within its application''s path; positions are contiguous from 0 up to wherever the chain stopped';
 COMMENT ON COLUMN intent_argument_reference_step_target.via IS 'which arm resolved the element, as on the hop view: KEY, TABLE or NAME_MATCH';
 COMMENT ON COLUMN intent_argument_reference_step_target.key_matched_by IS 'for a KEY element, the namespace that answered; NULL on a TABLE or NAME_MATCH element. As on the hop view';
-COMMENT ON COLUMN intent_argument_reference_step_target.from_source_name IS 'the departing table''s catalog partition; the field''s named type''s bound table at position 0, the previous element''s arrival after that';
+COMMENT ON COLUMN intent_argument_reference_step_target.from_source_name IS 'the departing table''s catalog partition; the argument''s own scope table at position 0, the previous element''s arrival after that';
 COMMENT ON COLUMN intent_argument_reference_step_target.from_schema IS 'the departing table''s SQL schema';
 COMMENT ON COLUMN intent_argument_reference_step_target.from_table IS 'the departing table''s SQL name';
 COMMENT ON COLUMN intent_argument_reference_step_target.to_source_name IS 'the arriving table''s catalog partition, first column of its sql_table key';
@@ -5313,41 +5355,6 @@ WITH instructed (graph_name, site, type_name, field_name, argument_name, path, u
          n.source_name, n.source_line, n.source_column
     FROM graphitron_argument_node_id n
 ),
-named_type_binding (graph_name, type_name, field_name,
-                    table_source_name, table_schema, table_name) AS (
-  SELECT f.graph_name, f.type_name, f.field_name,
-         bt.table_source_name, bt.table_schema, bt.table_name
-    FROM graphql_field f
-    LEFT JOIN graphitron_field_synthesis fs
-      ON fs.graph_name = f.graph_name AND fs.type_name = f.type_name
-     AND fs.field_name = f.field_name
-    JOIN intent_resolved_type_binding bt
-      ON bt.graph_name = f.graph_name
-     AND bt.type_name = COALESCE(
-           REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''), '!', ''),
-           f.named_type)
-),
-use_site_table (graph_name, type_name, field_name, argument_name,
-                table_source_name, table_schema, table_name) AS (
-  SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
-         b.table_source_name, b.table_schema, b.table_name
-    FROM graphql_argument a
-    JOIN named_type_binding b
-      ON b.graph_name = a.graph_name AND b.type_name = a.type_name
-     AND b.field_name = a.field_name
-   UNION
-  SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
-         sp.table_source_name, sp.table_schema, sp.table_name
-    FROM graphql_argument a
-    JOIN graphitron_mutation m
-      ON m.graph_name = a.graph_name AND m.type_name = a.type_name
-     AND m.field_name = a.field_name
-    JOIN intent_spelled_table sp
-      ON sp.graph_name = m.graph_name AND sp.spelling = m.table_ref
-   WHERE NOT EXISTS (SELECT 1 FROM named_type_binding b
-                      WHERE b.graph_name = a.graph_name AND b.type_name = a.type_name
-                        AND b.field_name = a.field_name)
-),
 slot_table (graph_name, site, type_name, field_name, argument_name, path,
             table_source_name, table_schema, table_name) AS (
   SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
@@ -5374,11 +5381,11 @@ slot_table (graph_name, site, type_name, field_name, argument_name, path,
    WHERE i.site = 'ARGUMENT' AND i.has_reference
    UNION
   SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
-         b.table_source_name, b.table_schema, b.table_name
+         u.table_source_name, u.table_schema, u.table_name
     FROM instructed i
-    JOIN named_type_binding b
-      ON b.graph_name = i.graph_name AND b.type_name = i.type_name
-     AND b.field_name = i.field_name
+    JOIN intent_argument_scope_table u
+      ON u.graph_name = i.graph_name AND u.type_name = i.type_name
+     AND u.field_name = i.field_name AND u.argument_name = i.argument_name
    WHERE i.site = 'ARGUMENT' AND NOT i.has_reference
    UNION
   SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
@@ -5386,7 +5393,7 @@ slot_table (graph_name, site, type_name, field_name, argument_name, path,
     FROM instructed i
     JOIN intent_input_occurrence_path p
       ON p.graph_name = i.graph_name AND p.path = i.path
-    JOIN use_site_table u
+    JOIN intent_argument_scope_table u
       ON u.graph_name = p.graph_name AND u.type_name = p.root_type_name
      AND u.field_name = p.root_field_name AND u.argument_name = p.root_argument_name
    WHERE i.site = 'INPUT_FIELD'
@@ -5461,7 +5468,7 @@ SELECT f.graph_name, 'INPUT_FIELD', f.type_name, f.field_name, NULL, p.path, p.p
    AND st.field_name = f.field_name
   JOIN intent_input_occurrence_path p
     ON p.graph_name = st.graph_name AND p.path = st.path AND p.depth = st.ordinal
-  JOIN use_site_table u
+  JOIN intent_argument_scope_table u
     ON u.graph_name = p.graph_name AND u.type_name = p.root_type_name
    AND u.field_name = p.root_field_name AND u.argument_name = p.root_argument_name
   JOIN table_node tn

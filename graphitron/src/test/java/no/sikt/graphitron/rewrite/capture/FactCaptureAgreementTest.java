@@ -173,6 +173,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       the arms are textually parallel, so one case seeds one path shape at both sites and asserts
  *       the shared columns come back equal, which is what keeps a change to one from silently
  *       leaving the other behind;
+ *       {@code no.sikt.graphitron.model.intent.ArgumentScopeTableTest} binds
+ *       {@code intent_argument_scope_table}, which table an argument's column-shaped content binds
+ *       against, one case per rung plus the cases where the rungs compete, the precedence being the
+ *       claim rather than the table that came out;
  *       {@code no.sikt.graphitron.model.intent.NodeIdInstructionTest} binds
  *       {@code intent_node_id_instruction}, which slots carry the {@code @nodeId} instruction and
  *       which node type each names, with one case per basis because the basis is the claim: a
@@ -412,6 +416,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_resolved_type_binding", Arm.DERIVED);
         registrations.put("intent_resolved_node_key_column", Arm.DERIVED);
         registrations.put("intent_resolved_node_type_id", Arm.DERIVED);
+        registrations.put("intent_argument_scope_table", Arm.DERIVED);
         registrations.put("intent_node_id_instruction", Arm.DERIVED);
         registrations.put("intent_argmapping_pair", Arm.DERIVED);
         registrations.put("intent_argmapping_pair_live", Arm.DERIVED);
