@@ -1,13 +1,13 @@
 ---
 id: R686
 title: "Surface the @error handler description: as the client-facing message instead of the raw exception message"
-status: Ready
+status: In Review
 bucket: bug
 priority: 4
 theme: error-channel
 depends-on: []
 created: 2026-08-17
-last-updated: 2026-08-19
+last-updated: 2026-08-20
 ---
 
 # Surface the @error handler description: as the client-facing message instead of the raw exception message
