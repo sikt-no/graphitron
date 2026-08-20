@@ -26,8 +26,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R728` | @nodeId encode and decode become store relations, and an instruction the generator drops fails the build | In Progress | 2026-08-20 <sub>created 2026-08-19</sub> | [plan](nodeid-effective-at-every-coordinate.md) |
-| `R760` | The assignability closure does not terminate on a real census | In Progress | 2026-08-20 | [plan](class-assignable-closure-nonterminating.md) |
 | `R744` | TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion | In Review | 2026-08-20 | [plan](scatter-test-syncs-on-mid-pin-connect-event.md) |
+| `R760` | The assignability closure does not terminate on a real census | In Review | 2026-08-20 | [plan](class-assignable-closure-nonterminating.md) |
 | `R753` | Accept @deprecated alias fields sharing a write column on jOOQ-record inputs | Spec | 2026-08-20 | [plan](write-input-deprecated-column-alias.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -503,7 +503,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R522` [**Reconcile the emitted-code seam-pin assertion convention with the testing doc**](emitted-seam-pin-assertion-convention.md) — Backlog, tech-debt
 - `R762` [**The census stores every class member to answer questions only ever asked by name**](census-stores-members-it-reads-by-name.md) — Backlog, architecture
 - `R462` [**Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder**](nested-fetcher-outgoing-field-edges.md) — Spec, bug
-- `R760` [**The assignability closure does not terminate on a real census**](class-assignable-closure-nonterminating.md) — In Progress, architecture
+- `R760` [**The assignability closure does not terminate on a real census**](class-assignable-closure-nonterminating.md) — In Review, architecture
 - `R685` [**The class census scans the transitive dependency closure**](census-scans-transitive-closure.md) — Spec, architecture
 - `R620` [**The dev loop reads the whole classpath twice per pass**](dev-loop-duplicate-classpath-scan.md) — Backlog, architecture
 - `R637` [**graphitron:dev reports schema-load failures as infrastructure**](dev-schema-load-failure-classification.md) — Backlog, bug

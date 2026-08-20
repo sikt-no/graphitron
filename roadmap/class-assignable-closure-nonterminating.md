@@ -1,7 +1,7 @@
 ---
 id: R760
 title: "The assignability closure does not terminate on a real census"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 3
 theme: dev-loop
