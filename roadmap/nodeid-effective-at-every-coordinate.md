@@ -842,7 +842,8 @@ stage 3 expresses it there.
   metric as a build gate, which this item's new relations are computable under whether or not that
   gate has landed. A notification in both directions: R742 gains relations to price, and this item
   gains its ceiling.
-* **R743** (`sdl-fact-gatherer-staged-pipeline`, In Review) settled the question the previous draft
+* **R743** (`sdl-fact-gatherer-staged-pipeline`, Ready, its Done gate having sent it back over a
+  failing retirement sweep and a partial census pin rather than over anything it decided) settled the question the previous draft
   of this item argued at length, and has already landed the part that mattered here. Its gatherer now
   owns its assembly stage and closes with a rooted traversal that writes `intent_type_domain`
   (`ClassificationDomainCapture`), and the walk's two membership grains are deleted rather than
