@@ -197,24 +197,39 @@ rather than a tight one.
 stays exactly as it is, keeping its name and its rule. What is added is a registry of views that
 should be materialized after the crawl, and one mechanism that reads the registry and does it.
 
-* **The registry is authored rows in a `meta_` view**, which is this schema's established way of
-  describing itself: `meta_family`, `meta_prefixless_relation` and `meta_relation_family` are all
-  `VALUES` views, "authored as constant rows stated as views, so the description is versioned with
-  the DDL it describes and can never be refreshed apart from it". A materialization registry is the
-  same kind of statement and belongs beside them, naming for each entry the view, its target table,
-  and the views it must be materialized after.
-* **The dependency edges are registered, not inferred**, so the materializer can topologically sort
-  and populate in an order that is stated rather than derived. This closes the gap
-  `fact-model.adoc` leaves open when it says to "write the population order explicitly rather than
-  deriving it, since H2 offers no dependency catalog to derive it from": H2 has none, so the schema
-  carries its own.
-* **The materializer lives in `graphitron-model`**, the module whose DDL declares the relations, as
-  one method that reads the registry and refreshes every target in order. It is called by the
-  generator's capture pass, the dev loop, the language server, the MCP server, and the seeded test
-  fixture. One entry point, so no caller invents its own ordering and no caller can forget a
-  relation that was registered after it was written.
-* **Two relations are registered by this item**, `intent_argmapping_pair` and
-  `intent_spelled_table`, and the mechanism is what makes the third and fourth cheap.
+* **The registry is `meta_materialize (view_name, table_name)`**, authored rows in a `meta_` view,
+  which is how this schema already describes itself: `meta_family`, `meta_prefixless_relation` and
+  `meta_relation_family` are all `VALUES` views, "authored as constant rows stated as views, so the
+  description is versioned with the DDL it describes and can never be refreshed apart from it". Two
+  columns and nothing else.
+* **The materializer lives in `graphitron-model`**, the module whose DDL declares the relations. It
+  iterates `meta_materialize` and, per row, empties the target and refills it from the view:
+  `DELETE FROM <table_name>` then `INSERT INTO <table_name> SELECT * FROM <view_name>`. It is called
+  by the generator's capture pass, the dev loop, the language server, the MCP server, and the seeded
+  test fixture. One entry point, so no caller invents its own behaviour and none holds a relation
+  list a later registration could invalidate.
+* **Two relations are registered by this item**, `intent_argmapping_pair` and `intent_spelled_table`,
+  and the mechanism is what makes the third and fourth cheap.
+
+**Do not write `CASCADE` on that delete.** H2 accepts a bare identifier as a table alias in
+`DELETE FROM t <alias>`, so `DELETE FROM target CASCADE` parses, silently aliases the table to
+`CASCADE`, and cascades nothing. On H2 2.4.240 `TRUNCATE TABLE t CASCADE` is a syntax error, and
+plain `TRUNCATE TABLE t` is refused outright for a table any foreign key references. A plain
+`DELETE FROM <table_name>` is correct and sufficient here, nothing holding a foreign key onto a
+materialized target. Worth recording rather than rediscovering: the keyword reads as protection and
+supplies none.
+
+**The refresh is whole-relation, not graph-partitioned.** The view covers every graph the store
+holds, so emptying and refilling re-derives all of them and needs no `WHERE`. Simpler than a
+partitioned refresh and the right default; the cost is that capturing one graph re-derives every
+graph's rows, which is a trade to revisit only if a workspace's store holds enough graphs for it to
+show.
+
+**Ordering is deliberately out of scope, and safe to leave out for these two.** A target populated
+from a view that reads *another* target must be refreshed after it, and `meta_materialize` as
+specified records no such edge. It does not bite here: neither registered view appears in the other's
+dependency closure, and both closures contain base tables only, zero views, so the two rows can be
+materialized in any order. The general case is R746, strictly additive to this mechanism.
 
 The readers that want the fast path reference the target; readers that want on-demand evaluation
 reference the view, and get the same rows either way because the target is populated by
@@ -363,9 +378,6 @@ already uses:
 * every registered view exists, and every target table exists with a column list matching its view;
 * every target's rows equal its view's rows on a settled store, which is the equality the whole
   design rests on and the one thing no amount of prose can substitute for;
-* the registered dependency edges are acyclic, and agree with the edges a parse of the DDL finds, so
-  a registration that forgets an edge fails rather than producing a target populated from stale
-  inputs;
 * nothing outside the registry is a materialized `intent_` relation, which is what stops the next
   bespoke writer from appearing beside the mechanism instead of inside it.
 
@@ -375,14 +387,8 @@ already uses:
   five more above eight. Reduce on measured need, and record what was left unreduced as a decision
   rather than an omission.
 * **The gate's ceiling**, and whether the multiplicity check reports or fails on first landing.
-* **How a target is named.** The view keeps its own name, so the target needs one. A stated pair in
-  the registry needs no convention and no parsing; a suffix convention is terser and lets a gate
-  check the pairing without reading the registry. Minor, but pick one and write it down.
-* **Whether a target is graph-partitioned or whole.** Both registered relations lead with
-  `graph_name`, so a per-graph `DELETE`/`INSERT` is the obvious refresh and it keeps a capture from
-  disturbing a sibling graph's rows. A registry entry probably has to say which it is, since a
-  relation with no graph in its key (`intent_class_member_slot` is the existing example of one) can
-  only be refreshed whole.
+* **How a target is named.** `meta_materialize` states the pair, so no convention is forced. A
+  convention would still help a reader recognise a target on sight; decide whether to have one.
 * **Readers that arrive without a capture.** The language server and the MCP server open the store
   directly. They are already callers of the materializer in this design, but "call it on open" and
   "assume a capture ran" are different contracts, and the second one needs the "absence needs a
@@ -395,10 +401,10 @@ already uses:
 
 ### Deliverables, in the order the numbers argue for
 
-1. **The mechanism**: the `meta_` registry with its dependency edges, the `graphitron-model`
-   materializer, its call from the capture pass and from `SeededStore`, the registry's own gates, and
-   the two doctrine paragraphs. Lands with zero relations registered and changes no timing, which is
-   what makes it reviewable on its design rather than on its numbers.
+1. **The mechanism**: `meta_materialize`, the `graphitron-model` materializer, its call from the
+   capture pass and from `SeededStore`, the registry's own gates, and the two doctrine paragraphs.
+   Lands with zero rows registered and changes no timing, which is what makes it reviewable on its
+   design rather than on its numbers.
 2. **The two registrations**, `intent_argmapping_pair` and `intent_spelled_table`, plus the LSP and
    MCP call sites. This is the 229.0s to 20.66s, and by this point it is two rows of authored data
    rather than a schema change.
