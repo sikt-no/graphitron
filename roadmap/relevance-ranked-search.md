@@ -287,9 +287,10 @@ is a parse-boundary input exactly as the catalog itself is.
   schema and not only discoverable by tripping the runtime error.
 - A new `GraphitronType.TypeaheadHitType` model record (beside
   `ConnectionType` / `FacetsType` / `FacetValueType`,
-  `GraphitronType.java:552-630`) carries the schema form;
-  `ObjectTypeGenerator.graphqlTypeFor` (`ObjectTypeGenerator.java:120`) and
-  the SDL emitter gain the corresponding arm.
+  `GraphitronType.java:552-630`) carries the schema form, which it declares by
+  implementing `CarriesObjectForm` (the render-side form resolution reads that
+  marker, so no per-arm edit is needed there); the SDL emitter gains the
+  corresponding arm.
 
 The hit wrapper exists for forward evolution (hit-level metadata such as an
 opt-in score or highlight can land as new fields without a breaking change,
@@ -570,8 +571,8 @@ its own documentation against its own contract.
 - `directives.graphqls`: `@typeahead` (definition above; no enum, the
   mechanism is dialect-derived).
 - New `model/TypeaheadSpec.java`, `model/TypeaheadBacking.java`; a 0..1 slot on
-  `QueryTableField`; `GraphitronType.TypeaheadHitType` + arms in
-  `ObjectTypeGenerator.graphqlTypeFor` and the SDL emitter.
+  `QueryTableField`; `GraphitronType.TypeaheadHitType` implementing
+  `CarriesObjectForm` + an arm in the SDL emitter.
 - `ArgumentRef.java`: new `TypeaheadArgRef` arm; `FieldBuilder.classifyArguments`
   recognizes the synthesized names on `@typeahead` carriers.
 - `ConnectionPromoter.java`: `@typeahead` arm in `synthesiseForField` (hit-type
