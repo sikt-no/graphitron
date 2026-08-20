@@ -15,7 +15,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R763` | Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path | Spec | 2026-08-20 | [plan](sakila-example-tests-run-one-at-a-time.md) |
-| `R759` | No stored column spells a file as a URI, so no store boot compiles Java | Ready | 2026-08-20 | [plan](store-boot-compiles-java.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
@@ -580,7 +579,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### tooling
 
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
-- `R759` [**No stored column spells a file as a URI, so no store boot compiles Java**](store-boot-compiles-java.md) — Ready, dx
 - `R763` [**Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path**](sakila-example-tests-run-one-at-a-time.md) — Spec, dx
 - `R764` [**graphitron-model ships its junit-platform.properties to three consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
 - `R766` [**Five generate executions run one after another on the last node of the critical path**](sakila-example-generate-executions-serialize.md) — Backlog, dx

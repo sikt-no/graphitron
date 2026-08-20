@@ -215,24 +215,21 @@ So this stops being a performance slice and becomes purely what this item wanted
 violation behind the "batch by key set, never loop by key" enforcer, with a method whose own javadoc
 asserts what its body contradicts. Spec it on those grounds and quote 1.3ms, not 380ms.
 
-### Every store boot compiles Java, and this is the one thing every module pays
+### Every store boot compiled Java, and that one is shipped
 
-This is the finding the flat module table above asks for, and it has been split out as its own item
-because it is one line of DDL and touches nothing else here.
+Shipped at `452c497`, re-measured at `821890c`, split out as its own item because it was one line of
+DDL and touched nothing else here. The wire spelling left storage: every `file` column and the
+`diagnostic` view hold paths, the two boundaries whose protocol names a document by URI render one at
+their own edge, and the `CREATE ALIAS` carrying inline Java source went with them, so no store boot
+runs javac any more.
 
-The fact schema is 1894 statements and boots in about 0.21 to 0.38 seconds. One statement is 64.5ms
-of a 212ms boot, seven times the next most expensive: `CREATE ALIAS canonical_uri AS '<inline Java
-source>'`, which H2 compiles with javac on every boot and never amortises (four warm alias-only boots
-in one JVM: 85.9, 65.9, 62.9, 51.1ms). The same alias bound to a compiled static method costs 1.7 to
-8.4ms.
-
-Measured end to end, green on a full `mvn install -Plocal-db`, 5970 tests: **410.1s to 367.4s**, 42.7 seconds and
-10% of the build, landing exactly where the theory says it should (`graphitron` −14.3s,
-`graphitron-model` −12.7s, `graphitron-mcp` −8.2s, `graphitron-lsp` −7.9s, `docs` −5.7s,
-`roadmap-tool` −1.8s; `WarmStartRefreshTest` −6.6s, `PersistentStoreTest` −5.0s,
-`FactCaptureAgreementTest` −4.4s). It is also consumer-facing, every `graphitron:generate` and every
-editor session paying it once. See the store-boot item for the design half, which is better than the
-speed half.
+Kept here as the datum this item's flat module table asks for, not as remaining work. The statement
+was 64.5ms of a 212ms boot on the sandbox that found it, seven times the next most expensive, and it
+never amortised, each store paying its own compilation (four warm alias-only boots in one JVM: 85.9,
+65.9, 62.9, 51.1ms). Re-measured on a faster sandbox at landing: 28.8ms of a 159.5ms boot, so 18.6ms
+and 11.7% off every boot, and 387s to 349s end to end on a full green `mvn install -Plocal-db`. It
+was consumer-facing as well, every `graphitron:generate`, language-server session and MCP server
+start paying it once.
 
 ### Extending test parallelism is now a slice rather than a footnote
 

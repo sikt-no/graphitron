@@ -36,6 +36,8 @@ name rather than the whole message. Second, whether the warn-once cell belongs i
 signature at all: `CompileFacts` uses a plain field, the new loaders a one-element array purely
 because the helper is static, and one shared instance-per-writer holder would read better than
 either. Adjacent: `RejectionFacts` and `BuildWarningFacts` each carry their own copy of the
-location-normalisation block (canonical URI when the source name is non-empty, line and column
-when the line is positive), which is the same three lines and belongs at the same one site.
+location-transcription block (the source name as read when it is non-empty, line and column when
+the line is positive), which is the same three lines and belongs at the same one site. It used to
+convert the source name to a URI on the way in and no longer does, so the block is smaller than it
+was when this item was filed, and the one site is a plainer transcription.
 

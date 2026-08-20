@@ -1374,7 +1374,8 @@ class GraphitronMcpServerTest {
                 .containsEntry("rejectionKind", "author-error");
             assertThat((String) error.get("message")).contains("badColumn");
             var location = (Map<String, Object>) error.get("location");
-            // The canonical file URI, and the 1-based stored position on the 0-based wire. The
+            // The stored path rendered as a file URI, and the 1-based stored position on the
+            // 0-based wire. The
             // build fixture writes its schema under the graph name, so that is what the URI ends on.
             assertThat((String) location.get("uri"))
                 .startsWith("file:").endsWith("mcp-diagnostics.graphqls");

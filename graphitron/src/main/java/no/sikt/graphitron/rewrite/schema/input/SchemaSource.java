@@ -15,8 +15,11 @@ import java.util.Objects;
  * <p>Exactly one canonical rendering, {@link #sourceName()}, and it is load-bearing well past this
  * type. It is the string {@link no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader#load} hands
  * the parser and the string graphql-java returns as {@code SourceLocation.getSourceName()}, so
- * {@link SchemaInputAttribution}'s map, capture's stamp lookup, {@code ValidationReport}'s
- * canonical URI and the LSP's URI equality all match byte-for-byte with no renormalisation. A
+ * {@link SchemaInputAttribution}'s map, capture's stamp lookup, the diagnostics stratum's
+ * {@code file} columns and the LSP's URI equality all match byte-for-byte with no renormalisation.
+ * The diagnostics columns store this string as read; a wire whose protocol names a document by URI
+ * renders one from it at its own boundary, through
+ * {@link no.sikt.graphitron.model.read.SourceUri}. A
  * divergence of one character costs no compile error and no parse failure; it silently stops tags
  * and description notes from being applied and silently unmatches capture's stamp lookup, which is
  * why the invariant is held by an end-to-end attribution case rather than by an equality on this
