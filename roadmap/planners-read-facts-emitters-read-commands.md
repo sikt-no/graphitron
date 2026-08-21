@@ -786,7 +786,7 @@ deliverable) applies three times over. In order:
   the agreement anchor and the naming check. The emitters' positive dial still gets its dry run on
   one file before it is asked to cover a package.
 
-**Three things pickup settled that the inventory above states too lightly.** Recorded here rather
+**Four things pickup settled that the inventory above states too lightly.** Recorded here rather
 than left to the implementer's session, because each one shapes work the rest of the programme
 inherits.
 
@@ -819,16 +819,47 @@ inherits.
   save, since the terminus would then name the hop relation anyway. So the start lands as its own
   small relation, the hop relation walks from it, and the terminus becomes a two-armed union of
   selections carrying no recursion at all.
-* **Each relation states its inline multiplicity when it lands.** The static metric has a reporting
-  gate in the roadmap tool, and the precedent that a stage states the number for the relations it
-  adds rather than discovering it in a profile is already set. Two readings from that precedent bind
-  here. The metric ranks breadth and never cost, so it is stated and not optimised against. And the
-  one shape it cannot see is the one this slice mints: a recursive walk names its input in both seed
-  and step, so a view input is evaluated once per accumulated row, which cost the decode family 146
-  seconds for 20 rows and was fixed only by making that input a table. The chain walk shares its
-  step input with the shipped field-site reference walk, measured at 0.07 s for 62 rows over a
-  larger population than fields carrying `@routine`, so the risk is low and the number is still
-  measured rather than assumed.
+* **Each relation states its inline multiplicity when it lands, and the walk's input is registered
+  in this slice rather than left a view.** The static metric has a reporting gate in the roadmap
+  tool, and the precedent that a stage states the number for the relations it adds rather than
+  discovering it in a profile is already set. Two readings from that precedent bind here. The metric
+  ranks breadth and never cost, so it is stated and not optimised against; the schema already
+  carries a case where it ranked a relation first and the cost did not follow. And the one shape it
+  cannot see is the one this slice mints: a recursive walk names its input in both seed and step, so
+  a view input is evaluated once per accumulated row, which cost the decode family its whole reader
+  and was fixed only by moving that input into the materialization register.
+
+  The chain walk's input is `intent_field_reference_step_hop`, and the measured picture says to
+  register it here rather than wait for a later stage to discover it. That relation expands to 20
+  instantiations per read, and the two namings the chain terminus already makes of it are 40 of the
+  terminus's own 48. Through the terminus and its siblings it is instantiated 48 times in one read
+  of `intent_argmapping_projection_defect`, the schema's heaviest relation at 2267, and 30 times in
+  `intent_node_id_decode` at 1597. Simulating the registration against the current DDL: the heaviest
+  relation falls to 1355, the decode reduction to 1027, and this slice's own terminus from 48 to 10,
+  with every other relation in the top eight falling too. That is the single highest-leverage
+  registration the schema currently offers, and it is the input this slice's walk needs anyway. It
+  is also the same trade the decode family's hop-column registration already made on the same
+  recursive shape, under the rule that registration is a claim something reads the relation often,
+  made in the increment that adds the reader. This slice adds that reader. Breadth is still not
+  cost, so the registration's `reason` states a measured number and not a multiplicity, per the
+  register's own doctrine that a row which cannot say why it is stored is not a registration.
+* **The neighbourhood this lands in is a cleanup site, not a model to copy.** The materialization
+  register, its derived refresh edges, the two structural gates over them and the argument-site
+  siblings of the reference-hop pair all reached trunk while this item was in Spec, so the machinery
+  slice one uses is now shipped rather than proposed. What arrived with it is a schema left heavier
+  in one family than it was found: the argmapping projection defect went from 765 instantiations to
+  2267 and its key-column candidate from 259 to 674, both from one new read added underneath them,
+  which is how the defect view became the heaviest relation in the schema. None of that is this
+  item's to fix, and the registration above happens to take 40 per cent off it as a side effect of
+  work slice one wanted regardless. Two things in the neighbourhood are this item's to not make
+  worse. The chain terminus is one of two places still joining a type binding on a stripped type
+  expression instead of on a column, named in a sibling relation's comment as a hazard that is
+  survivable only because the terminus drives orders of magnitude fewer rows than the argument
+  population does; the rewrite keeps the terminus at its current grain, so that stays true, and the
+  expression itself is filed elsewhere. And the reduction the seat verdict copies its shape from
+  sits upstream of that same heaviest relation at a leverage of 24, so a seat verdict that widened
+  it would pay 24 times over. Neither is a reason to change the plan. Both are reasons to state the
+  number when each relation lands, which the bullet above already requires.
 
 **Then stop.** Slice one ends at a written reflection, not at the next producer, and the reflection
 is a deliverable with the same weight as the code. It answers, with numbers from the slice rather
