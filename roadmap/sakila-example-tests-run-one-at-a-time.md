@@ -1,7 +1,7 @@
 ---
 id: R763
 title: "Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 2
 theme: tooling

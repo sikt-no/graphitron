@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R769` | withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms | Ready | 2026-08-21 <sub>created 2026-08-20</sub> | [plan](seeded-store-boots-per-thread.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
-| `R763` | Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path | Ready | 2026-08-21 <sub>created 2026-08-20</sub> | [plan](sakila-example-tests-run-one-at-a-time.md) |
+| `R763` | Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path | In Progress | 2026-08-21 <sub>created 2026-08-20</sub> | [plan](sakila-example-tests-run-one-at-a-time.md) |
 | `R772` | The dev loop holds a live fact store no developer can query | In Review | 2026-08-21 | [plan](dev-loop-store-sql-console.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
@@ -593,7 +593,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R769` [**withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms**](seeded-store-boots-per-thread.md) — Ready, dx
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
 - `R772` [**The dev loop holds a live fact store no developer can query**](dev-loop-store-sql-console.md) — In Review, dx
-- `R763` [**Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path**](sakila-example-tests-run-one-at-a-time.md) — Ready, dx
+- `R763` [**Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path**](sakila-example-tests-run-one-at-a-time.md) — In Progress, dx
 - `R764` [**graphitron-model ships its junit-platform.properties to three consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
 - `R780` [**srp names the reviewer as the disqualified party: the session grep takes the first ID in the body, not the trailer**](srp-disqualified-session-read-from-trailer.md) — Backlog, dx
 - `R779` [**Did findings-not-fixes cut the bounce loop? Measure the plan-body blame fraction over three bounced items**](findings-convention-round-count-measurement.md) — Backlog, dx
