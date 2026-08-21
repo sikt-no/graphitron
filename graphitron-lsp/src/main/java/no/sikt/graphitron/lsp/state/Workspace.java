@@ -107,7 +107,7 @@ public final class Workspace {
         FileSnapshot view;
         // Scoped to the lock-held region only, not to `present`: this span's duration is
         // how long a read request waited on the mutator lock, which is the contention a
-        // slow inline recalculation inflicts on concurrent requests. The feature
+        // concurrent mutator or a drain's per-file walk inflicts on requests. The feature
         // computation that follows is timed by the calling handler's own span.
         try (var _ = LspTrace.span("workspace.snapshot")) {
             synchronized (lock) {
@@ -152,6 +152,18 @@ public final class Workspace {
             for (var view : views.values()) {
                 view.close();
             }
+        }
+    }
+
+    /**
+     * Whether a buffer is open at {@code uri} right now. The diagnostics publish loop asks this per
+     * file because the drain runs off the mutating thread: a {@code didClose} can land between the
+     * drain's walk (which proved the file open) and its publish, and the close's own empty-list
+     * publication must be the last word the client hears for that buffer.
+     */
+    public boolean holdsViewFor(String uri) {
+        synchronized (lock) {
+            return files.containsKey(uri);
         }
     }
 
@@ -345,9 +357,9 @@ public final class Workspace {
         // Two spans, because the split is the whole question when the server stops
         // responding: `mutate` covers lock acquisition plus the mutation (so its duration
         // includes any wait behind a concurrent mutator), while `notify` covers the
-        // listener, which drains the queue and computes diagnostics inline on this thread.
-        // A `notify` far larger than its `mutate` sibling is the signal that a mutation's
-        // real cost is the recalculation it triggers, not the edit itself.
+        // listener, which hands the drain to the document service's executor and returns.
+        // The drain itself is timed by its own span on the drain thread; a `notify` that
+        // is not trivially small here means the listener has stopped being a submit.
         mutate(mutation);
         try (var _ = LspTrace.span("workspace.notify")) {
             recalculateListener.run();

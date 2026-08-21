@@ -70,7 +70,9 @@ class StoreOutOfBudgetTest {
             String uri = Path.of(fixture.sourceName()).toUri().toString();
             var workspace = new Workspace();
             workspace.setStore(access);
-            var service = new GraphitronTextDocumentService(workspace);
+            // Same-thread drain executor: the publish completes before the mutator returns, which
+            // is the happens-before every assertion below leans on.
+            var service = new GraphitronTextDocumentService(workspace, ignored -> {}, Runnable::run);
             var client = new RecordingClient();
             service.setClient(client);
 

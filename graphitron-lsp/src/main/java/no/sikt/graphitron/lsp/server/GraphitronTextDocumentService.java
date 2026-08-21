@@ -41,21 +41,43 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
  * Text-document handlers backed by a {@link Workspace}.
  *
- * <p>Lifecycle notifications populate / mutate the workspace and then
- * publish diagnostics for any files the workspace flagged for
- * recalculation; the completion request resolves the directive at the
- * cursor and dispatches to the matching per-directive completion
+ * <p>Lifecycle notifications populate / mutate the workspace and hand the
+ * diagnostics drain for any files the workspace flagged for recalculation
+ * to {@code drainExecutor}; the completion request resolves the directive
+ * at the cursor and dispatches to the matching per-directive completion
  * provider.
+ *
+ * <p>The drain leaves the triggering thread because both threads that
+ * trigger it are load-bearing: {@code didOpen} arrives on lsp4j's single
+ * message-reader thread, so a drain there stops the server reading its own
+ * input (every queued message waits, {@code $/cancelRequest} included),
+ * and {@code markAllForRecalculation} arrives on the dev goal's watcher
+ * thread, which the next build swap needs. The executor is single-threaded
+ * by contract, not merely by frugality: two drains in flight would each
+ * hold a read transaction on the one session-wide reader, so the second
+ * serialises inside it anyway while holding a walk's worth of snapshots,
+ * and their per-file publications could interleave so the client ends on
+ * the older of two answers. One thread keeps the drain sequential, which
+ * is what it was when it ran inline.
  */
 public class GraphitronTextDocumentService implements TextDocumentService {
 
     private final Workspace workspace;
     private final Consumer<String> onSchemaSaved;
+    private final Executor drainExecutor;
+    // One pending drain, not a queue of them: every build calls markAllForRecalculation, so
+    // submits arrive faster than drains complete under exactly the conditions that make a drain
+    // slow. Set on submit, cleared when a drain starts, so N submits during one drain collapse
+    // into one follow-up. Safe because the recalculation queue is the state: a drain takes
+    // whatever drainRecalculate hands it, and a drain that finds nothing queued is a no-op.
+    private final AtomicBoolean drainWanted = new AtomicBoolean();
     private LanguageClient client;
 
     public GraphitronTextDocumentService(Workspace workspace) {
@@ -63,8 +85,20 @@ public class GraphitronTextDocumentService implements TextDocumentService {
     }
 
     public GraphitronTextDocumentService(Workspace workspace, Consumer<String> onSchemaSaved) {
+        this(workspace, onSchemaSaved, Runnable::run);
+    }
+
+    /**
+     * @param drainExecutor where the diagnostics drain runs. Production connections pass a
+     *     single-thread daemon executor whose thread is named for the drain, so a stack dump of a
+     *     stuck session says which thread it is on; the two-argument forms default to a same-thread
+     *     executor, under which the drain completes before the triggering mutator returns, which is
+     *     the happens-before the synchronous test harnesses assert against.
+     */
+    public GraphitronTextDocumentService(Workspace workspace, Consumer<String> onSchemaSaved, Executor drainExecutor) {
         this.workspace = workspace;
         this.onSchemaSaved = onSchemaSaved;
+        this.drainExecutor = drainExecutor;
     }
 
     /**
@@ -126,15 +160,33 @@ public class GraphitronTextDocumentService implements TextDocumentService {
     }
 
     /**
-     * Drains the workspace's recalculation queue and publishes a fresh
-     * diagnostic list for each touched file. No-op when the client has
-     * not connected yet (test harnesses).
+     * Hands the drain of the workspace's recalculation queue to the drain
+     * executor. No-op when the client has not connected yet (test
+     * harnesses), and a submit that lands while a drain is pending or
+     * running collapses into the one already wanted; the caller pays a
+     * flag-and-submit, never the drain.
      */
     private void publishDiagnosticsForRecalculate() {
         if (client == null) return;
+        if (drainWanted.compareAndSet(false, true)) {
+            drainExecutor.execute(this::drainAndPublish);
+        }
+    }
+
+    /**
+     * The drain itself: walk every queued file, resolve the batch's
+     * questions in one read transaction on the session-wide reader, publish
+     * per file. Runs on the drain executor, so a drain bounded only by the
+     * session read budget delays diagnostics rather than the connection's
+     * message reader.
+     */
+    private void drainAndPublish() {
+        // Cleared before the queue is read, so a mutation that lands after this point wants (and
+        // gets) a fresh drain; one that landed before is already in the queue this drain takes.
+        drainWanted.set(false);
         var queued = workspace.drainRecalculate();
-        // Traced as one span around the whole drain: it runs inline on the caller's thread, so the
-        // outer duration is what a caller pays for its mutation. The breakdown inside it follows the
+        // Traced as one span around the whole drain: the outer duration is what the drain thread
+        // spends per batch, no longer what a mutator pays. The breakdown inside it follows the
         // stages rather than the files, which is what separates "many files" from "one slow file"
         // now that the read is not per file: one walk span per file, all of them CPU over a tree, and
         // the store's single answer inside the one transaction below.
@@ -173,11 +225,18 @@ public class GraphitronTextDocumentService implements TextDocumentService {
         }
     }
 
-    /** Ships one diagnostic list per walked file, skipping any the drain had no answer for. */
+    /**
+     * Ships one diagnostic list per walked file, skipping any the drain had no answer for, and any
+     * closed since the walk. The close check is the one hazard the executor introduces: inline, the
+     * walk was proof the file was open when the publish went out; asynchronously, {@code didClose}
+     * can land between them, and it publishes an empty list to clear the client's squiggles, so a
+     * stale list sent after that clear would restore diagnostics for a buffer the developer closed.
+     */
     private void publish(List<String> walked, Map<String, List<Diagnostic>> byUri) {
         for (String uri : walked) {
             var diagnostics = byUri.get(uri);
             if (diagnostics == null) continue;
+            if (!workspace.holdsViewFor(uri)) continue;
             try (var fileSpan = LspTrace.span("publishDiagnostics.file")) {
                 fileSpan.detail("uri", uri).detail("diagnostics", diagnostics.size());
                 client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));

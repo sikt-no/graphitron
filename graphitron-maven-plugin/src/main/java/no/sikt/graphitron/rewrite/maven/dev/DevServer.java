@@ -102,8 +102,14 @@ public final class DevServer implements AutoCloseable {
     }
 
     private void serve(Socket client) {
+        // Per connection, like the GraphitronLanguageServer it feeds: the diagnostics drain must
+        // leave lsp4j's message-reader thread (a drain there stops the server reading its own
+        // input, $/cancelRequest included), and it gets a named thread so a stack dump of a stuck
+        // session says which thread the drain is on.
+        var drainExecutor = Executors.newSingleThreadExecutor(
+            r -> daemon(r, "graphitron-lsp-diagnostics-drain"));
         try {
-            var server = new GraphitronLanguageServer(workspace, onSchemaSaved);
+            var server = new GraphitronLanguageServer(workspace, onSchemaSaved, drainExecutor);
             var launcher = new Launcher.Builder<LanguageClient>()
                 .setLocalService(server)
                 .setRemoteInterface(LanguageClient.class)
@@ -115,6 +121,11 @@ public final class DevServer implements AutoCloseable {
         } catch (Exception e) {
             LOGGER.warn("graphitron:dev: client session ended with error: {}", e.getMessage());
         } finally {
+            // This finally is the per-connection teardown seam: exit() is a client-driven
+            // notification a disconnecting editor may never send, so this is the only place
+            // guaranteed to run. The interrupting shutdown is what stops a drain in flight from
+            // publishing into the closing client; the daemon flag already keeps JVM exit correct.
+            drainExecutor.shutdownNow();
             try {
                 client.close();
             } catch (IOException ignored) {

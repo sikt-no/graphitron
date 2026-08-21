@@ -20,6 +20,7 @@ import org.eclipse.lsp4j.services.WorkspaceService;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
 /**
@@ -49,9 +50,25 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
         this(workspace, uri -> {});
     }
 
+    /**
+     * Same-thread drain form: the diagnostics drain runs inline on whichever thread mutated the
+     * workspace, so a publish is observable the moment the mutator returns. That happens-before is
+     * what the synchronous test harnesses assert against; production connections use the executor
+     * form below so the drain leaves the connection's message-reader thread.
+     */
     public GraphitronLanguageServer(Workspace workspace, Consumer<String> onSchemaSaved) {
+        this(workspace, onSchemaSaved, Runnable::run);
+    }
+
+    /**
+     * @param drainExecutor where the diagnostics drain runs; see
+     *     {@link GraphitronTextDocumentService#GraphitronTextDocumentService(Workspace, Consumer, Executor)}.
+     *     The caller owns its lifetime: this server never shuts it down, so whoever minted it for a
+     *     connection shuts it down when that connection ends.
+     */
+    public GraphitronLanguageServer(Workspace workspace, Consumer<String> onSchemaSaved, Executor drainExecutor) {
         this.workspace = workspace;
-        this.textService = new GraphitronTextDocumentService(workspace, onSchemaSaved);
+        this.textService = new GraphitronTextDocumentService(workspace, onSchemaSaved, drainExecutor);
         this.workspaceService = new GraphitronWorkspaceService(workspace);
     }
 
