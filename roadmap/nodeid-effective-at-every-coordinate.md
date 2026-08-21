@@ -1,7 +1,7 @@
 ---
 id: R728
 title: "@nodeId encode and decode become store relations, and an instruction the generator drops fails the build"
-status: In Review
+status: Ready
 bucket: feature
 priority: 3
 theme: nodeid
@@ -2177,3 +2177,57 @@ correction.
 without naming the retired step. Every stage carries a one-line shipped-at note with its SHAs, and
 stage 2's sub-increment paragraph now points at that list rather than re-narrating the order; the
 bolded paragraphs below the list stay, being findings rather than stage narration.
+
+## Reviewer findings, round two
+
+Re-reviewed at `6737ae4` rebased onto trunk. `mvn install -Plocal-db` is green, zero test failures.
+All three findings above are fixed, and verified independently rather than read off the responses:
+at the named-parameter carrier `Integer key` now yields `ThrowOnMismatch`, `InventoryRecord key` at
+the composite type yields `NodeIdDecodeRecord`, `String key` yields the decode rather than
+`Direct`, and the untypeable primitive yields the decode on arity alone; the bean member is
+`kind=DEFERRED` with both remedies in the message; `nodeId.adoc` carries the invariant, both
+coordinate tables and the producer-parameter section. The stale comment is gone and every stage
+carries its shipped-at SHAs. `NodeIdProducerSlotDecodePipelineTest`'s non-regression case, that an
+argument without the directive keeps its wire-coercion-checked `Direct`, is the case that keeps the
+stand-aside honest and was not asked for.
+
+One finding, and it is the round-one defect surviving in a second spelling of the same directive at
+the same carrier.
+
+### 4. The bare `@nodeId` spelling still has the two-sided refusal, and the walk and the store disagree
+
+`nodeIdSlotExtraction` returns `null` when the directive names no `typeName:`, so a bare `@nodeId`
+never reaches the new arm and falls back to the type gate. Measured on
+`films(key: ID! @nodeId): [Film!]!` over `PublicNodeIdServiceStub`, `Film` being the only node type
+the field returns:
+
+* `getFilmsByStringKey(String key)` classifies to `CallSiteExtraction.Direct`.
+* `getFilmsByIntegerKey(Integer key)` draws `WireCoercionError.Assignability` as an `AUTHOR_ERROR`,
+  the same message asking the author to route the value "through a converting scalar / `@nodeId`
+  decode" on a schema that wrote it.
+
+The store, meanwhile, treats the bare form exactly like the explicit one. Captured against the jOOQ
+catalog and a census, the bare schema yields an `intent_node_id_instruction` row at
+`Query.films.key` with `node_type_name = Film`, an `intent_node_id_decode_slot` row with
+`carrier = NAMED_PARAMETER` and `java_type = java.lang.String`, and one
+`intent_node_id_decode_defect` row, `KEY_COLUMN_TYPE_DISAGREEMENT` naming `film_id`,
+`java.lang.Integer` and `java.lang.String`, which `NodeIdDecodeDefects` projects as one violation.
+Both spellings produce identical store rows.
+
+So the author is between two refusals again: the store's verdict says declare `Integer`, and the
+walk then refuses `Integer`. No schema at this coordinate builds, which is the state finding 1
+named. The population section makes this the item's own business rather than a neighbour's, the
+instruction having three forms and the bare one being the second, and "an instruction the population
+misses is a coordinate that stays silent" being why it says so.
+
+The comment covering the fall-through is the thing to correct either way:
+`// a bare @nodeId names no target here; the argMapping family judges it`. At this carrier no
+`argMapping` pair exists, which is the carrier's definition and what the increment's own
+`authoredTargets` guard enforces, so that family cannot judge it. `intent_node_id_decode_defect`
+does, as above.
+
+What would satisfy it: the walk resolving the bare form's node type at this carrier as the store
+already does, so the two spell one rule; or, if bare at this carrier is meant to be unsupported, a
+refusal that says so, in place of a message prescribing the decode the schema already wrote. Either
+way one case in `NodeIdProducerSlotDecodePipelineTest`, whose six cases all name `typeName:`
+explicitly, which is why nothing there could have caught this.
