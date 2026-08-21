@@ -242,6 +242,22 @@ public final class Workspace {
     }
 
     /**
+     * The same, for a read annotating a region of one document rather than answering about a
+     * coordinate in it. {@link StoreAccess#annotating} carries why the two are different doors: this
+     * grain's cost follows the region an editor is showing, so a cursor must not queue behind it.
+     */
+    public <R> StoreAnswer<R> annotating(
+        StoreRead read, String uri, Function<Optional<StoreHandle>, R> answer
+    ) {
+        StoreAccess access = store;
+        Optional<String> sourceName = StoreAccess.sourceNameOf(uri);
+        if (access == null || sourceName.isEmpty()) {
+            return new StoreAnswer.Answered<>(answer.apply(Optional.empty()));
+        }
+        return access.annotating(read, sourceName.get(), answer);
+    }
+
+    /**
      * Answers a request about several documents at once, inside one read transaction, each scoped to the
      * graph its own document belongs to. The lookup is keyed on URI as {@link #answering} is, and a URI
      * this session's graphs have nothing to say about resolves to an empty handle rather than being

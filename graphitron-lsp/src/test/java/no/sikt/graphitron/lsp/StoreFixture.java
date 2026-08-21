@@ -353,7 +353,7 @@ final class StoreFixture implements AutoCloseable {
     }
 
     /**
-     * This store's read access as a session holds it: two unbounded readers behind one
+     * This store's read access as a session holds it: three unbounded readers behind one
      * {@link StoreAccess}, which is the production shape with the budgets taken out. A case whose
      * subject <em>is</em> the budgets uses {@link #access(ReadBudget, ReadBudget)} and states them.
      */
@@ -363,15 +363,17 @@ final class StoreFixture implements AutoCloseable {
 
     /** The same, seen as another graph, for the cases about one graph reading another's rows. */
     StoreAccess access(String otherGraph) {
-        return new StoreAccess(reader(), reader(), otherGraph);
+        return new StoreAccess(reader(), reader(), reader(), otherGraph);
     }
 
     /**
-     * The production shape with the budgets in: an interactive reader and a session-wide one, each
-     * under the budget it is handed, so a case can tell which door reached which reader.
+     * The production shape with the budgets in, which the annotation reader shares with the cursor's
+     * as the dev goal has it: a case can still tell which door reached which reader, since each door
+     * holds a connection of its own.
      */
     StoreAccess access(ReadBudget interactive, ReadBudget sessionWide) {
-        return new StoreAccess(reader(interactive), reader(sessionWide), graphName);
+        return new StoreAccess(reader(interactive), reader(interactive), reader(sessionWide),
+            graphName);
     }
 
     /**

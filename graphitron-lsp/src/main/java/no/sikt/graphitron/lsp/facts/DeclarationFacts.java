@@ -11,6 +11,7 @@ import org.jooq.Select;
 import org.jooq.TableField;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
@@ -431,26 +432,63 @@ public final class DeclarationFacts {
     }
 
     /**
-     * A candidate backing class read back as the table whose rows jOOQ binds to it, which is the join
-     * {@code CatalogTables.ofRecordClass} performs. The census's no-record-class sentinel is excluded
-     * here rather than filtered afterwards: every table jOOQ generated no record for reports it, so
-     * reading it as a class name would match all of them at once.
+     * A candidate backing class read back as the table whose rows jOOQ binds to it, which is
+     * {@link CatalogTables#ofRecordClass} composed per candidate rather than run per candidate. The
+     * census's no-record-class sentinel is excluded here rather than filtered afterwards: every table
+     * jOOQ generated no record for reports it, so reading it as a class name would match all of them
+     * at once.
+     *
+     * <h2>The census is a lookup, not a join partner</h2>
+     *
+     * <p>Written as one join of the two relations, this arm cost about a second where every other arm
+     * in the same statement answered in tens of milliseconds, and it cost it while returning nothing:
+     * the second went on establishing that there was nothing to say. The reason is the join's driving
+     * side. H2 is free to drive from either relation, it chose the census, and the derived relation
+     * was therefore evaluated once per catalog table with the two predicates that make it cheap
+     * applied after that expansion rather than before it.
+     *
+     * <p>Which predicates the query states and where it states them cannot fix that, and both ways of
+     * asking were measured: a derived table around the filtered relation is inlined, and an
+     * {@code IN} subquery is evaluated per driving row just the same. What settles it is a shape with
+     * no driving side for the planner to choose, so the census is reached here as a correlated lookup
+     * evaluated per surviving backing row. In the census's own arithmetic, the difference is scanning
+     * its rows about once against scanning them once per row of a relation that grows with the
+     * schema, which is what {@code SurfaceScanCountTest} pins.
+     *
+     * <p>One row of the answer is one (backing class, bound table) pair, so the nesting is flattened
+     * back to that grain here. The sort restores the census order the flat join stated, which nesting
+     * turns into class-major order: it is a handful of rows, and a member scope reading these
+     * candidates should not have its order depend on which shape the arm is written in.
      */
     private static Field<List<RedirectRow>> redirectArm(StoreHandle store, Coord coord) {
-        return multiset(select(INTENT_TYPE_BACKING.CLASS_NAME, SQL_TABLE.SOURCE_NAME,
-                SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME, SQL_TABLE.CLASS_FQN,
-                SQL_TABLE.DESCRIPTION)
-            .from(INTENT_TYPE_BACKING)
-            .join(SQL_TABLE).on(SQL_TABLE.RECORD_CLASS_FQN.eq(INTENT_TYPE_BACKING.CLASS_NAME))
-            .where(INTENT_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_TYPE_BACKING.TYPE_NAME.eq(coord.typeName()))
+        var boundTable = multiset(select(SQL_TABLE.SOURCE_NAME, SQL_TABLE.TABLE_SCHEMA,
+                SQL_TABLE.TABLE_NAME, SQL_TABLE.CLASS_FQN, SQL_TABLE.DESCRIPTION)
+            .from(SQL_TABLE)
+            .where(SQL_TABLE.RECORD_CLASS_FQN.eq(INTENT_TYPE_BACKING.CLASS_NAME))
             .and(SQL_TABLE.RECORD_CLASS_FQN.ne(NO_RECORD_CLASS))
             .and(store.reads(SQL_TABLE.SOURCE_NAME))
             .orderBy(SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME))
-            .convertFrom(rows -> rows.map(row -> new RedirectRow(row.value1(),
-                new TableRow(new CatalogTable(row.value2(), row.value3(), row.value4()),
-                    row.value5(), row.value6()))));
+            // The description is passed through unnormalised, as the flat form passed it: what this
+            // arm answers is not this item's to change.
+            .convertFrom(rows -> rows.map(row -> new TableRow(
+                new CatalogTable(row.value1(), row.value2(), row.value3()),
+                row.value4(), row.value5())));
+        return multiset(select(INTENT_TYPE_BACKING.CLASS_NAME, boundTable)
+            .from(INTENT_TYPE_BACKING)
+            .where(INTENT_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
+            .and(INTENT_TYPE_BACKING.TYPE_NAME.eq(coord.typeName()))
+            .orderBy(INTENT_TYPE_BACKING.CLASS_NAME))
+            .convertFrom(rows -> rows.stream()
+                .flatMap(row -> row.value2().stream()
+                    .map(table -> new RedirectRow(row.value1(), table)))
+                .sorted(CENSUS_ORDER)
+                .toList());
     }
+
+    /** The order the redirect arm's flat form stated in SQL: the census's, by schema then table. */
+    private static final Comparator<RedirectRow> CENSUS_ORDER =
+        Comparator.comparing((RedirectRow row) -> row.table().key().schema())
+            .thenComparing(row -> row.table().key().tableName());
 
     /**
      * The columns of the tables in scope that the member name reaches, under either of the two names

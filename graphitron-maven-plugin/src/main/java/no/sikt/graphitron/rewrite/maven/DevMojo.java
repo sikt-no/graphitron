@@ -107,7 +107,8 @@ public class DevMojo extends AbstractRewriteMojo {
     /**
      * The budget every keystroke-grain store read runs under: hovers, completions,
      * goto-definition, inlay hints, lint quick-fixes. Named rather than spelled at the mint so the
-     * three budgets below cannot drift apart unnoticed.
+     * budgets below cannot drift apart unnoticed. Two readers run under it, the cursor's and the
+     * annotation door's, which is a split of the queue and not of the guard.
      *
      * <p>Low seconds, which is far above anything a healthy read costs and deliberately not a
      * latency policy. The target is a query that would otherwise never return: a threshold tight
@@ -318,11 +319,16 @@ public class DevMojo extends AbstractRewriteMojo {
         // read out of the session's graph now, so there is nothing to hand the constructor.
         var workspace = new Workspace();
         // The editor's read access to the store, connections of its own rather than a share of the
-        // writer's: LSP requests arrive concurrently while a capture round holds this handle. Two
-        // readers rather than one because the session has two latency contracts, and one reader
-        // would make a keystroke queue behind a whole-workspace drain for no better reason than
-        // sharing a connection. Both live with the workspace and are closed with it in cleanup().
+        // writer's: LSP requests arrive concurrently while a capture round holds this handle. Three
+        // readers rather than one because reads on one reader serialize and the session has three
+        // things waiting on them, so one reader would make a keystroke queue behind a whole-workspace
+        // drain, or behind a whole-file inlay request, for no better reason than sharing a
+        // connection. The annotation reader takes the interactive budget rather than one of its own:
+        // what the split changes is which queue an inlay request waits in, and a second constant
+        // holding the same number would invite tuning it into the latency policy the budgets are
+        // deliberately not. All three live with the workspace and are closed with it in cleanup().
         this.lspStore = new StoreAccess(
+            sessionStore.reader(INTERACTIVE_READ_BUDGET),
             sessionStore.reader(INTERACTIVE_READ_BUDGET),
             sessionStore.reader(SESSION_READ_BUDGET),
             initialCtx.graphName());

@@ -324,9 +324,11 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 span.detail("uri", params.getTextDocument().getUri());
                 String uri = params.getTextDocument().getUri();
                 // One read transaction around the whole region, as hover takes: two declarations
-                // annotated from either side of a capture would disagree about the same schema.
+                // annotated from either side of a capture would disagree about the same schema. On
+                // the annotation door rather than the cursor one, since this request's cost follows
+                // the region and a hover must not queue behind it; StoreAccess carries the reasoning.
                 var hints = workspace.withView(uri, List.<InlayHint>of(), file ->
-                    switch (workspace.answering(StoreRead.INLAY_HINTS, uri, store ->
+                    switch (workspace.annotating(StoreRead.INLAY_HINTS, uri, store ->
                         InlayHints.compute(
                             workspace.inlayHintConfig(), file, store, params.getRange()))) {
                         case StoreAnswer.Answered<List<InlayHint>> answered -> answered.value();

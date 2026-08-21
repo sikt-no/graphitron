@@ -60,7 +60,7 @@ spread down the file, under the production budgets (`INTERACTIVE_READ_BUDGET`
 | `inlayHint`, whole file
 | 10 ms
 | 10 ms
-| Suspiciously cheap; see the caveat below.
+| Not a measurement. Re-measured below at 11918 ms.
 
 | the diagnostics drain, via `didOpen`
 | 31310 ms
@@ -68,11 +68,21 @@ spread down the file, under the production budgets (`INTERACTIVE_READ_BUDGET`
 | Overran its 30 s budget and published nothing.
 |===
 
-One caveat stands on those figures. The inlay figure is too cheap to trust:
-inlay hints are configuration-gated through `applyPulledInlayHintConfig`, the
-probe pulled no configuration, and a surface that returned nothing is not a
-surface that was measured. Confirming that number against an enabled
-configuration is the first task below.
+One caveat stood on those figures, and confirming it inverted the item's picture
+of which surface is worst. The inlay figure was too cheap to trust: inlay hints
+are configuration-gated through `applyPulledInlayHintConfig`, the probe pulled no
+configuration, and a surface that returned nothing is not a surface that was
+measured. `InlayHintConfig.defaults()` has every axis off, so 10 ms was the cost
+of an early return.
+
+Measured again with every axis enabled, over the same schema: **11918 ms** for a
+fifty-line window producing ten hints, and 2013 ms for a different fifty-line
+window of the same file. So inlay is not the cheapest request surface but by far
+the most expensive, and at four times the interactive budget it does not return
+hints in a real session at all. What that changed in this item is step 3, which
+that number decided; the read's own cost belongs to
+`roadmap/inlay-read-overruns-the-interactive-budget.md`, filed from this
+measurement, and step 3's note says why the two are different fixes.
 
 A second caveat was checked and withdrawn, and what it turned into matters more
 than the caveat did. The figures above came off a fixture with an empty class
@@ -188,17 +198,34 @@ hover with it. That is also why hover's 96 ms maximum should not be read as
 hover being safe: the probe's positions happened to miss the coordinates that
 reach this arm.
 
-## What changes
+## What changed
 
-### 1. Confirm the inlay figure
+All four steps have landed. Each section below states what was built and what
+measuring it said, since three of the four found something the plan did not know.
 
-Pull an enabled inlay configuration in the harness and re-measure the whole-file
-request. Until that number exists, the surface is unmeasured rather than fast.
-This is first because step 3 turns on it: whether inlay is expensive enough to
-block a cursor queued behind it is the question that decides whether the door
-split there is worth a third connection.
+### 1. Confirm the inlay figure: done, and it inverted the picture
 
-### 2. The redirect arm reaches the census through a correlated lookup
+Measured with every axis enabled, above. Inlay is the most expensive request
+surface rather than the cheapest, and it overruns the interactive budget by four
+times on a fifty-line window. That settled step 3 in favour of the split and
+raised a defect this item does not fix, filed as
+`roadmap/inlay-read-overruns-the-interactive-budget.md`.
+
+Nothing in the tree changed for this step: it was a measurement, and what it
+produced is the two numbers above and the item beside it.
+
+### 2. The redirect arm reaches the census through a correlated lookup: done
+
+`DeclarationFacts.redirectArm` now selects from the filtered backing relation and
+carries the census as a nested multiset correlated on the class name, flattened
+back to one (backing class, bound table) row per pair. Measured on the sakila
+schema: the arm **1098 ms to 21 ms**, and the goto-definition it is the expensive
+part of **about 1300 ms to 45 ms**, returning the same row. The rows and their order are
+unchanged, the sort restoring in Java the census order the flat join stated in
+SQL, and the description is passed through unnormalised exactly as before.
+
+What follows is the reasoning the change was made from, kept because it is what
+stops the next person reinstating the join.
 
 Not a driving-side rewrite. The arm already reads
 `.from(INTENT_TYPE_BACKING).join(SQL_TABLE).on(...)` with both cheap predicates
@@ -224,7 +251,29 @@ statement by design, and both readers of these arms
 (`DeclarationDefinitions` and `DeclarationHovers`) must keep the rows they have
 today, including the ordering the arm states.
 
-### 3. The budget stays a runaway guard; the door is what splits
+### 3. The budget stays a runaway guard; the door is what splits: done
+
+`StoreAccess` grew a third reader and a fourth door, `annotating`, which
+`GraphitronTextDocumentService.inlayHint` now goes through; `Workspace` delegates
+to it as it does to `answering`, and `DevMojo` mints the third reader. Hover,
+definition, completion and code action stay on `answering`. No budget changed.
+
+The third reader takes `INTERACTIVE_READ_BUDGET` rather than a constant of its
+own. Step 3's whole finding is that the budget is not the lever, and a second
+constant holding the same number would invite somebody to tune it into the
+latency policy the budgets are deliberately not. What the split changes is which
+queue an inlay request waits in.
+
+Step 1's measurement made this step's case stronger than the draft's. A single
+fifty-line inlay request does not finish inside the interactive budget, so before
+the split it held the interactive reader for the full three seconds and was then
+aborted: every hover and jump queued behind it waited three seconds for a request
+that produced nothing. That is the mechanism behind trying the feature in a few
+places and getting a lot of hangs, and no single surface's own cost explains it.
+The split does not make that request answer, which is the other item's; it makes
+it somebody else's queue.
+
+The reasoning the step was decided on follows.
 
 The budget is not the lever, and the earlier draft of this step was wrong about
 it. `INTERACTIVE_READ_BUDGET`'s own javadoc records the decision: the low-seconds
@@ -272,11 +321,42 @@ Two honest qualifications. `StoreAccess`'s javadoc closes by inviting a split
 when "a second interactive caller of `answeringAll`" appears, which is not this
 trigger, so this extends that javadoc's reasoning about head-of-line blocking
 rather than cashing the invitation it actually wrote. And the split is worth a
-third connection only if the contention is real; step 1 is what says whether
-inlay is expensive enough to block anything, which is why it is first and why
-this step's shape depends on its answer.
+third connection only if the contention is real; step 1 was ordered first to
+settle that, and it did, at four times the budget.
 
-### 4. Every surface is enforced, not spot-checked
+### 4. Every surface is enforced, not spot-checked: done, with the metric refined
+
+`SurfaceScanCountTest` covers all six surfaces, driving each through the same
+provider seams the statement-count enforcers drive, over a handle that records
+what it executes, and reading the `scanCount` H2 reports under `EXPLAIN ANALYZE`.
+The scan-count currency is R793's, as this item said it would be.
+
+One thing had to change, and it is the reason this section is longer than the
+others. **A per-surface ceiling on its own would not have caught the defect this
+item was filed for.** Measured at the enforcer's fixture, the join shape cost a
+declaration read 121 extra scans, which against a definition read's 808 is 15%:
+no ceiling anybody would defend catches that. Against the same fixture at sakila's
+scale the excess is 3721 out of 28453, still 13%, and most of the number belongs
+to a view this item does not own, so the ceiling would also move whenever R793
+touches it.
+
+So the enforcer states the property two ways. The ceilings are the broad net the
+plan asked for, one per surface, each meant to fail on an order-of-magnitude
+regression. The sharp assertion is `theCensusLookupDoesNotTrackTheSchemasSize`,
+which takes the arm by the name it carries in the statement and measures what
+reaching the census costs *over reading its driving relation alone*, at two
+schema sizes. That difference is the lookup and nothing else: it excludes the
+driving view's own cost, which is what swamped the totals and what this item does
+not own. Written as a join the excess was 184 scans over a one-type schema and
+3724 over a sixty-type one; as a correlated lookup it is 63 at both, which is the
+census's own row count once. A per-row expansion cannot hide in that number at
+any fixture size, which is also what lets the fixture stay small enough that the
+tier's refusal of fixture scale still holds.
+
+Both tests were confirmed to fail with the arm reverted and pass with it in
+place.
+
+The reasoning the currency was chosen on follows.
 
 This is the part that makes the item hold. Four surfaces have statement-count
 enforcers (`InlayHintStatementCountTest`, `DeclarationHoverStatementCountTest`,
@@ -349,8 +429,10 @@ knowing why the statement costs what it does.
 
 ## Retired vocabulary
 
-None. Nothing here retires a symbol; the budget constants keep their names and
-gain a sibling.
+None. Nothing here retires a symbol, and the budget constants keep both their
+names and their number: step 3 gained a reader and a door, not a fourth budget.
+`StoreAccess`'s constructor took a third reader, which is a signature change
+rather than a retirement; its three call sites moved with it.
 
 ## Reviewer findings
 

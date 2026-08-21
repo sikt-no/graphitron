@@ -19,21 +19,39 @@ import java.util.function.Function;
  * The language server's read access to the fact store: readers of its own, plus the graph the
  * session was started for. One instance per session, held by {@link Workspace} and closed with it.
  *
- * <p>Two readers, not one, because the session has two latency contracts and one connection
- * serializes. A keystroke and a whole-workspace recalculation queued behind each other on one reader
- * is head-of-line blocking with nothing to show for it, and the two want different budgets besides:
- * the drain is the read that most wants headroom and least wants to fail, a hover the opposite. The
- * three doors below partition the grains exactly as they stand, which is what makes routing by door
- * a delegation split rather than a restructure: {@link #answering} is every interactive surface,
+ * <p>Three readers, not one, because reads on one reader serialize and the session has three things
+ * waiting on them. A keystroke and a whole-workspace recalculation queued behind each other on one
+ * reader is head-of-line blocking with nothing to show for it, and the two want different budgets
+ * besides: the drain is the read that most wants headroom and least wants to fail, a hover the
+ * opposite. The four doors below partition the grains exactly as they stand, which is what makes
+ * routing by door a delegation split rather than a restructure: {@link #answering} is every surface
+ * an editor blocks a cursor on, {@link #annotating} is the document-scoped annotation surfaces,
  * {@link #answeringAll} is the diagnostics drain alone, and {@link #readingSessionGraph} is session
- * state read once per triggering event. So the interactive reader serves the first and the
- * session-wide reader serves the other two, which never contend: both hang off the same enqueue,
- * so they run in sequence on one trigger.
+ * state read once per triggering event. So the interactive reader serves the first, a reader of its
+ * own serves the second, and the session-wide reader serves the other two, which never contend:
+ * both hang off the same enqueue, so they run in sequence on one trigger.
  *
- * <p>A caller that picks the wrong door therefore gets the wrong budget. Each door says which grain
- * it is for, so the choice is visible where it is made, and the consequence is a mis-sized budget
- * rather than a wrong answer. If a second interactive caller of {@link #answeringAll} ever appears,
- * the door is the thing to split.
+ * <h2>Why annotation is its own reader</h2>
+ *
+ * <p>An inlay-hint request is the one request surface whose cost scales with the document rather
+ * than with the cursor: it arrives per visible region, an editor reissues it on every scroll, and
+ * the work is one statement over every annotatable site in that region. Sharing the interactive
+ * reader therefore put a cursor behind a request nobody is looking at, and how far behind is a
+ * function of how much schema the region covers. Over a four-thousand-line schema with every hint
+ * axis enabled, a whole-file request does not finish inside the interactive budget at all: it spends
+ * the budget and is aborted, and every hover and jump queued behind it waited for that. Which is
+ * what a developer reports as the feature hanging in a few places in a row, and no single surface's
+ * own cost explains it.
+ *
+ * <p>So the split is by who is waiting, not by a number. A hint arriving late is invisible where a
+ * cursor arriving late is not, and the two therefore do not belong in one queue. Both readers keep
+ * the same runaway guard: this is a connection split and not a latency policy, {@code ReadBudget}
+ * being a guard against a query that would never return rather than a threshold on how long an
+ * answer may take.
+ *
+ * <p>A caller that picks the wrong door therefore gets the wrong queue, and possibly the wrong
+ * budget. Each door says which grain it is for, so the choice is visible where it is made, and the
+ * consequence is a mis-sized budget or a needless wait rather than a wrong answer.
  *
  * <p>Every answer goes through {@link #answering}, which does two things a handler must not do for
  * itself. It opens the one read transaction the answer assembles inside, so a handler running
@@ -59,19 +77,24 @@ public final class StoreAccess implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(StoreAccess.class);
 
     private final StoreReader interactive;
+    private final StoreReader annotation;
     private final StoreReader sessionWide;
     private final String graphName;
 
     /**
-     * @param interactive the reader every keystroke-grain read goes through, whose lifetime this
+     * @param interactive the reader every cursor-blocking read goes through, whose lifetime this
      *                    object takes over
+     * @param annotation the reader the document-scoped annotation reads go through, whose lifetime
+     *                   this object takes over
      * @param sessionWide the reader the diagnostics drain and the session-state reads go through,
      *                    whose lifetime this object takes over
      * @param graphName the graph this session was started for, which is the tiebreak when a
      *                  document belongs to more than one
      */
-    public StoreAccess(StoreReader interactive, StoreReader sessionWide, String graphName) {
+    public StoreAccess(StoreReader interactive, StoreReader annotation, StoreReader sessionWide,
+                       String graphName) {
         this.interactive = Objects.requireNonNull(interactive, "interactive");
+        this.annotation = Objects.requireNonNull(annotation, "annotation");
         this.sessionWide = Objects.requireNonNull(sessionWide, "sessionWide");
         this.graphName = Objects.requireNonNull(graphName, "graphName");
     }
@@ -94,6 +117,23 @@ public final class StoreAccess implements AutoCloseable {
         StoreRead read, String sourceName, Function<Optional<StoreHandle>, R> answer
     ) {
         return resolving(read, interactive, List.of(sourceName),
+            handles -> answer.apply(handles.of(sourceName)));
+    }
+
+    /**
+     * The same, for a read that annotates a region of one document rather than answering about one
+     * coordinate in it, on a reader of its own. The class javadoc above carries why: this grain's
+     * cost scales with the region an editor happens to be showing, and a cursor must not queue
+     * behind it.
+     *
+     * <p>Same shape and same guard as {@link #answering}, and deliberately so. What differs is the
+     * connection, which is the whole point: nothing here is a claim that an annotation read may take
+     * longer, only that whoever is waiting for one is not holding a cursor.
+     */
+    public <R> StoreAnswer<R> annotating(
+        StoreRead read, String sourceName, Function<Optional<StoreHandle>, R> answer
+    ) {
+        return resolving(read, annotation, List.of(sourceName),
             handles -> answer.apply(handles.of(sourceName)));
     }
 
@@ -210,10 +250,11 @@ public final class StoreAccess implements AutoCloseable {
         return SourceUri.sourceNameOf(uri);
     }
 
-    /** Releases both readers. The store itself belongs to the session's writer, never to this. */
+    /** Releases every reader. The store itself belongs to the session's writer, never to this. */
     @Override
     public void close() {
         interactive.close();
+        annotation.close();
         sessionWide.close();
     }
 }
