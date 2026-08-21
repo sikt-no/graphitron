@@ -47,7 +47,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
-| `R633` | The aggregate rejects unknown argument values instead of defaulting | In Review | 2026-08-20 <sub>created 2026-08-11</sub> | [plan](diagnostics-aggregate-argument-validation.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-08-06 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R749` | Same-named fields on two participants of one discriminated interface collide on the __rk_ alias, and one join path is silently dropped | In Progress | 2026-08-21 <sub>created 2026-08-20</sub> | [plan](participant-projection-alias-collision.md) |
@@ -382,7 +381,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R631` [**One site for the loaders graph-ownership preamble**](graph-ownership-preamble-one-site.md) — Backlog, refactor
 - `R66` [**Widen string-carrier intermediates onto Rejection (R58 follow-up)**](rejection-string-carrier-widening.md) — Backlog, architecture
 - `R692` [**Decide whether an element-less @reference on an argument or input field is an author error**](inert-element-less-reference-rejection.md) — Backlog, architecture
-- `R633` [**The aggregate rejects unknown argument values instead of defaulting**](diagnostics-aggregate-argument-validation.md) — In Review, feature
 - `R209` [**FieldRegistry classify-input trace loses typed Rejection payload**](field-registry-typed-rejection-trace.md) — Backlog, Typed rejection chain
 - `R213` [**Plain-input field rejections attributed to consumer field, losing input-field source location**](input-field-rejection-attribution.md) — Backlog, bugs
 - `R696` [**The authored-claim conflict view carries semantics, not a rendered message**](conflict-message-leaves-the-intent-view.md) — Backlog, architecture
