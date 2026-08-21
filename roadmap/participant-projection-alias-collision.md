@@ -1,7 +1,7 @@
 ---
 id: R749
 title: "Same-named fields on two participants of one discriminated interface collide on the __rk_ alias, and one join path is silently dropped"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 8
 theme: codegen-correctness
