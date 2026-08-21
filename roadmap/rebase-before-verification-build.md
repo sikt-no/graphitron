@@ -1,7 +1,7 @@
 ---
 id: R787
 title: "Rebase on trunk before the verification build, not at publish time"
-status: In Progress
+status: In Review
 bucket: workflow
 depends-on: []
 created: 2026-08-21
@@ -20,21 +20,17 @@ The fix is an ordering change, not a new mechanism: pick up upstream changes *be
 
 ## Plan
 
-Documentation and skill edits only; no code changes.
+Documentation and skill edits only; no code changes. All four steps shipped in one commit; per-step notes below.
 
-1. **CLAUDE.md, "Git Workflow" section.** Reword the session flow to `sync → work + commit → rebase on trunk → verification build → push own branch → fast-forward trunk`, and state the rule positively: rebase onto trunk before the verification build so the build verifies the exact tree that gets pushed. Keep the existing escape hatch, restated as the exception: if trunk moves after the rebase (i.e. during the build), rebase again and re-verify before pushing. A rebase after the verification build always invalidates it; never push a tree the build did not cover. Four consult findings sharpen this step:
-   - This *introduces* a build step into the canonical flow rather than reordering an existing one; today's flow names no build at all. Say so in the rewording.
-   - Define "verification build" exactly once, in the "Building and testing" section where the existing "prefer it over targeted `-pl` builds for anything you intend to trust as verification" sentence already lives, and have the session flow (and the publish skill, step 2 below) reference that definition rather than paraphrase it. Three hand-maintained restatements of one obligation is the drift shape the development principles warn about; the `srp` skill's "`mvn install -Plocal-db` passes" precondition is already a second spelling.
-   - Update the fallback command block under the flow (the literal sequence agents copy when the publish skill is unavailable) to the same order: fetch + rebase, then build, then the two pushes. Also reword the sentence advertising the publish skill's "trunk-divergence pre-check", which currently frames publish as where the rebase normally happens; under the new ordering it is the backstop for the rare mid-build race.
-   - Put a `see .claude/web-environment.md` pointer next to the rebase step. The mandatory rebase makes the documented web-sandbox cascade (a sync that moves `init.sql` while the session database keeps its seed schema) a routine encounter inside the canonical flow, and the flow should point at the recovery instead of leaving the agent to diagnose a build failure that looks like its own diff.
+One deviation from the plan text, flagged at the Ready sign-off: the "prefer it over targeted `-pl` builds" sentence lived at the end of "Common commands", not in "Building and testing". The definition landed at the top of "Building and testing" as planned (folded into the existing full-pipeline sentence, absorbing the `-pl` preference and the never-push-uncovered rule), and the "Common commands" sentence now points at that definition instead of restating it.
 
-2. **`.claude/skills/publish/SKILL.md`.** Two edits:
-   - Add a caller expectation near the top of the procedure: the caller is expected to have rebased onto trunk before running its verification build, so arriving at publish diverged should be rare.
-   - Reword step 2 (the divergence stop) to frame the situation and the recovery: trunk moved after your rebase, so your verification build no longer covers what you would push; rebase, re-run the verification build, then re-invoke the skill. The stop itself, and all hard rules (fast-forward-only trunk, no force-push), stay as they are.
+1. **CLAUDE.md, "Git Workflow" section.** Shipped, with all four consult findings honored: the flow reads `sync → work + commit → rebase on trunk → verification build → push own branch → fast-forward trunk` and says it names a build step the old flow left implicit; the rule is stated positively and references the definition instead of restating it; the exception path (trunk moves during the build: rebase again, re-verify, never push a tree the build did not cover) replaces the old escape hatch; the fallback command block encodes fetch + rebase, then the build, then the two pushes; the publish-skill sentence frames the divergence pre-check as the mid-build-race backstop; the `.claude/web-environment.md` pointer sits beside the rebase step.
 
-3. **`roadmap/workflow.adoc`, "Publishing" section.** No change, but for a more careful reason than "metadata-only": not every bracketed transition is metadata-only (`In Progress → In Review` is made by a code-bearing session, and `In Review → Done` carries the build-passes precondition). The file is consistent because its before-transition sync already sits upstream of any build the session runs; `In Progress → In Review` is the one transition where the two orderings meet, and there the pre-flip rebase precedes the verification build exactly as the new rule requires.
+2. **`.claude/skills/publish/SKILL.md`.** Shipped: caller expectation added above step 1 of the procedure; step 2 reworded to name the situation (trunk moved after your rebase, the build no longer covers what you would push) and the recovery (rebase, re-run the verification build, re-invoke the skill). The stop and all hard rules unchanged.
 
-4. **Other skills.** No change. The `roadmap` and `srp` skills already sync-first (fetch + rebase before acting), matching the new ordering. The `classified-corpus` skill is the one whose documented sequence is verify-then-publish with no rebase in between; it stays unchanged because its verify step is scoped tests rather than the full install (so a publish-time rebase costs a cheap re-run, not a full rebuild) and because the reworded CLAUDE.md rule governs its sessions anyway. Named here so the sweep is a completed audit rather than a blanket claim.
+3. **`roadmap/workflow.adoc`, "Publishing" section.** Confirmed, no change, but for a more careful reason than "metadata-only": not every bracketed transition is metadata-only (`In Progress → In Review` is made by a code-bearing session, and `In Review → Done` carries the build-passes precondition). The file is consistent because its before-transition sync already sits upstream of any build the session runs; `In Progress → In Review` is the one transition where the two orderings meet, and there the pre-flip rebase precedes the verification build exactly as the new rule requires.
+
+4. **Other skills.** Confirmed, no change. The `roadmap` and `srp` skills already sync-first (fetch + rebase before acting), matching the new ordering. The `classified-corpus` skill is the one whose documented sequence is verify-then-publish with no rebase in between; it stays unchanged because its verify step is scoped tests rather than the full install (so a publish-time rebase costs a cheap re-run, not a full rebuild) and because the reworded CLAUDE.md rule governs its sessions anyway. Named here so the sweep is a completed audit rather than a blanket claim.
 
 ## Notes and non-goals
 

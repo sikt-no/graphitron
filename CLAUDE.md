@@ -46,11 +46,13 @@ mvn test -pl :graphitron -Plocal-db -DexcludedGroups=execution
 mvn install -Plocal-db -Pquick
 ```
 
-The full install is fast; prefer it over targeted `-pl` builds for anything you intend to trust as verification. The scoped command above is for the inner loop only: it reads the *installed* artifacts of every upstream module, so add `-am` (also-make) whenever an upstream module changed in this session, and `-amd` (also-make-dependents) when you need the modules downstream of your edit rebuilt. A bare `-pl` on a dirty upstream produces stale results silently. `docs/architecture/how-to/testing.adoc` is the full command reference.
+The full install is fast; it is the *verification build* defined under "Building and testing" below. The scoped command above is for the inner loop only: it reads the *installed* artifacts of every upstream module, so add `-am` (also-make) whenever an upstream module changed in this session, and `-amd` (also-make-dependents) when you need the modules downstream of your edit rebuilt. A bare `-pl` on a dirty upstream produces stale results silently. `docs/architecture/how-to/testing.adoc` is the full command reference.
 
 ## Building and testing
 
-The `mvn install -Plocal-db` command above runs the full pipeline (build-fixtures → test → compile-spec → execute-spec). Reach for the deeper docs only when the task requires it:
+The `mvn install -Plocal-db` command above runs the full pipeline (build-fixtures → test → compile-spec → execute-spec). That full install is the **verification build**: the check a tree passes before it is pushed. Prefer it over targeted `-pl` builds for anything you intend to trust as verification, and never push a tree it did not cover; a rebase or any new commit after the build invalidates it, so rebuild before pushing. The session flow in "Git Workflow" below and the `publish` skill both lean on this definition rather than restating it.
+
+Reach for the deeper docs only when the task requires it:
 
 - Adding/structuring tests, or unsure which tier (unit vs pipeline vs compilation vs execution) to put a test in: `docs/architecture/how-to/testing.adoc`, which carries the tier names, locations, decision rubric, and per-tier commands. For *why* the tiers are shaped that way: `docs/architecture/explanation/development-principles.adoc`.
 - Navigating the sealed variant hierarchy, classification taxonomy, or runtime extension points: `docs/architecture/index.adoc`.
@@ -124,14 +126,17 @@ Trunk-based development against `claude/graphitron-rewrite`.
 - a branch named `wip/...`, `draft/...`, or `spike/...`, or
 - the user saying "don't ship this to trunk yet".
 
-**Session flow:** sync → work + commit → push own branch → fast-forward trunk. Trunk is fast-forward only; never force-push it. Force-push-with-lease on your own branch is fine. If trunk moved during work, rebase and repeat.
+**Session flow:** sync → work + commit → rebase on trunk → verification build → push own branch → fast-forward trunk. This names a build step the old flow left implicit: rebase onto trunk *before* the verification build (defined in "Building and testing" above), so the build verifies the exact tree that gets pushed. In the web sandbox a mid-session rebase that moves `init.sql` re-triggers the jOOQ-catalog cascade; see `.claude/web-environment.md` for the recovery. Trunk is fast-forward only; never force-push it. Force-push-with-lease on your own branch is fine. The exception path: if trunk moves again after your rebase (that is, during the build), rebase again and re-verify before pushing. A rebase after the verification build always invalidates it; never push a tree the build did not cover.
 
-**Use the `publish` skill for the push half.** It does the branch push and the trunk fast-forward in one step, and adds what the raw commands cannot: a dirty-tree stop, the wip/draft/spike check against the rules above, a trunk-divergence pre-check that tells you to rebase *before* the push instead of after a rejection, and network retry. The commands below are the fallback for when the skill is unavailable or the flow has to deviate.
+**Use the `publish` skill for the push half.** It does the branch push and the trunk fast-forward in one step, and adds what the raw commands cannot: a dirty-tree stop, the wip/draft/spike check against the rules above, a trunk-divergence pre-check that backstops the rare race where trunk moved during your verification build, and network retry. The commands below are the fallback for when the skill is unavailable or the flow has to deviate.
 
 ```bash
 git fetch origin claude/graphitron-rewrite
 git rebase origin/claude/graphitron-rewrite
 # ... work, commit ...
+git fetch origin claude/graphitron-rewrite
+git rebase origin/claude/graphitron-rewrite
+mvn install -Plocal-db  # verification build, on the exact tree the pushes ship
 git push -u origin <your-branch>
 git push origin <your-branch>:claude/graphitron-rewrite
 ```
