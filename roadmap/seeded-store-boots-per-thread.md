@@ -107,6 +107,19 @@ from `INFORMATION_SCHEMA` (base tables in `PUBLIC`, excluding `META\_%` and `STO
 REFERENTIAL_INTEGRITY FALSE` around the truncates, and the list computed once per store rather than
 per reset.
 
+`SET REFERENTIAL_INTEGRITY FALSE` is doing more here than waving off constraint checks, and an
+implementer will meet a comment that reads as though this plan cannot work. `Materializations`'
+javadoc says refreshes are `DELETE` rather than `TRUNCATE` because "H2 refuses to truncate a table
+any foreign key references", which is true of every one of these 144 tables. The refusal is
+conditional on the flag: H2 asks whether referential integrity is on before it declines, so
+turning it off is what makes the truncate legal rather than merely unchecked. That is why the
+measured 0.85 ms is a real number and not a projection. Restore the flag afterwards. Leaving it
+off would not corrupt anything, the flag being database-wide and each thread's store being its own
+database, but it would break every case that asserts a foreign key rejecting a row, and it should
+break at the reset rather than there. The nearest existing use of the same idiom is
+`WrittenStatementCoverageTest.relax` in `graphitron`, which relaxes a store the same way for an
+unrelated reason and is not reachable from here either.
+
 `StoreRefresh` is the class that looks like the shape to extend and is not reachable. It is
 `no.sikt.graphitron.rewrite.capture.StoreRefresh`, package-private in **`graphitron`**, which
 depends on `graphitron-model` and on its test-jar; a call from this module's fixture would invert
@@ -122,10 +135,13 @@ package-private helper next to `withSeededStore` in `no.sikt.graphitron.model.te
 a method on `GraphitronModelStore`. `GraphitronModelStore` is the store's production bootstrap and a
 `reset()` on it would be a production surface with no production caller, which is the drift smell
 the principles name. `FactStores` is the wrong home for the other reason its own javadoc gives: it
-owns no lifetime and puts no rows in the store, and 45 call sites in three downstream modules reach
-`FactStores.inMemory()` directly. Whatever this change touches, `FactStores.inMemory()` keeps
-opening and closing a fresh store, because those 45 sites depend on it doing exactly that. No
-downstream module calls `withSeededStore`, which is what confines this change to one module.
+owns no lifetime and puts no rows in the store, and it is reached directly from four modules
+downstream of this one (40 sites on 2026-08-21: `graphitron` 30, `graphitron-mcp` 6,
+`graphitron-lsp` 2, `graphitron-maven-plugin` 2, the last of which is not one of the three this
+item defers). Another sighting rather than a value, but the direction of it is the point: whatever
+this change touches, `FactStores.inMemory()` keeps opening and closing a fresh store, because
+every one of those sites depends on it doing exactly that. No downstream module calls
+`withSeededStore`, which is what confines this change to one module.
 
 **A re-entrant call has to fail loudly.** Today a nested `withSeededStore` would open a second
 store; after this change it would reset the outer body's rows out from under it and hand back the
@@ -143,9 +159,12 @@ that makes this slice worth doing first: every call site and every class adopts 
 
 **A leak guard, and it is the only part of this that can fail silently.** A case passing because a
 previous case's row survived the reset is worse than a slow suite, and it would not announce itself.
-The guard has to be positive: after each reset, assert every clearable table is empty.
+The guard has to be positive: after each reset, assert that every base table holds what a freshly
+booted store holds, which is nothing for the ones the clear reaches and the boot's own rows for the
+three it does not.
 
-Both decisions this section left to the reviewer are settled, and both the cheap way.
+Both decisions this section left to the reviewer are settled. Both stay cheap, and the second is
+settled against the cheaper of the two readings for a reason the section gives.
 
 *Always on, not property-gated.* The arithmetic answers the cost worry the draft raised: the whole
 144-statement truncate is 0.85 ms, about 6 µs a statement, so a same-shape existence probe per table
@@ -156,17 +175,48 @@ anything notices has already let the bad case land. If the measured always-on pr
 exceed a few seconds, narrow the probe (`SELECT 1 ... LIMIT 1` per table, or one `UNION ALL` round
 trip) before reaching for the property.
 
-*One list per store, shared by the clear and the guard.* Derive it once when the thread boots its
-store and hand the same list to both. Then a table added to the schema cannot start being checked
-without being cleared, or the reverse, which is the divergence the draft worried about; it is not
-two lists that must agree but one. Safe here because no test in the funnel executes DDL: the only
-classes that create or drop relations are the four that boot their own stores.
+*One derivation per store, and the guard covers every base table rather than only the cleared
+ones.* Derive the whole base-table set once when the thread boots its store, and with it the
+partition the clear turns on: the 144 it truncates, and the three the boot fills and it leaves
+alone. The clear takes its half of the partition; the guard takes the whole set. For a cleared
+table the guard asserts empty, and for one of the three it asserts the row count that table held
+at boot.
+
+Handing the guard the clear's own list instead, which the draft reached for as the fix for two
+lists disagreeing, makes it assert a tautology. After a `TRUNCATE` over exactly those tables,
+"those tables are empty" is entailed; the only thing left that could fail it is `TRUNCATE` not
+emptying a table. But the leak the guard exists to catch is a row surviving in a table the clear
+does not reach, and the clear's exclusion pattern is exactly what decides which tables those are,
+so a guard whose scope is that pattern's output cannot see the pattern being wrong. Nothing in the
+funnel writes to an excluded table today, which is what makes this about the guard that stays
+behind rather than a leak now: a `meta_` table added later that a seeded case writes rows into
+passes a shared-list guard silently and fails a whole-set one. Covering the whole set is also the
+honest answer to the two-lists worry rather than a narrowing of it. One derivation, one partition,
+and the partition itself is what the guard asserts against, so there is no second list to keep in
+agreement with the first.
+
+Safe here because no test in the funnel executes DDL, so the set derived at boot stays the set:
+the only class in the module that creates or drops relations is `MaterializationOrderTest`, which
+boots its own stores. The price over the shared-list version is three row counts a reset on top of
+the 144 existence probes.
 
 **A boot-count pin.** The mechanism's whole claim is a number, so a test should assert it: after the
 suite, boots per JVM are bounded by the thread count plus the four direct-boot classes' own opens. That
 turns the counter from a throwaway instrument into a standing invariant, and it is what catches a
 future helper that opens a store per case again. It needs the counter to become a real, if internal,
 observable rather than the env-guarded patch the reactor-wide measurement used.
+
+The counter belongs in test sources for the same reason the truncate does, and specifically on
+`FactStores`: a count only a test reads is as much a production surface with no production caller
+as a `reset()` on `GraphitronModelStore` would be. `FactStores` being the wrong home for the
+truncate does not make it the wrong home for this. The objection there was that it owns no
+lifetime and puts no rows in a store, and a counter does neither of those things; what it needs is
+to sit where every boot passes, which is what `FactStores` is. Every boot in the module does pass
+there: the funnel through `inMemory()`, and all seven direct-boot sites in the four out-of-scope
+classes through `inMemory()` or `fileBacked`.
+
+The pin is per surefire JVM and per module, which is also what lets the other three modules read
+their own count off the same instrument when they adopt this.
 
 Pin the invariant, not the literal four. `fixed.parallelism=4` sizes a `ForkJoinPool`, and that pool
 is allowed to add compensation threads when a task blocks, so the count of threads that ever run a
