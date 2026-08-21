@@ -31,7 +31,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
-| `R753` | Accept @deprecated alias fields sharing a write column on jOOQ-record inputs | Ready | 2026-08-21 <sub>created 2026-08-20</sub> | [plan](write-input-deprecated-column-alias.md) |
+| `R753` | Accept @deprecated alias fields sharing a write column on jOOQ-record inputs | In Progress | 2026-08-21 <sub>created 2026-08-20</sub> | [plan](write-input-deprecated-column-alias.md) |
 | `R686` | Surface the @error handler description: as the client-facing message instead of the raw exception message | In Review | 2026-08-20 <sub>created 2026-08-17</sub> | [plan](error-handler-description-overrides-message.md) |
 | `R687` | A DML carrier payload with an errors field loses its return-derived write target | Spec | 2026-08-20 <sub>created 2026-08-17</sub> | [plan](dml-carrier-errors-field-blocks-return-derived-table.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
@@ -321,7 +321,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R682` [**Planners read facts, emitters read commands: dissolve the walk and the leaf zoo**](planners-read-facts-emitters-read-commands.md) — In Progress, architecture
 - `R628` [**Producer-binding probe grounds a dot-path leaf parameter against the outer input type**](producer-probe-dotpath-misgrounding.md) — Backlog, bug
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
-- `R753` [**Accept @deprecated alias fields sharing a write column on jOOQ-record inputs**](write-input-deprecated-column-alias.md) — Ready, bug
+- `R753` [**Accept @deprecated alias fields sharing a write column on jOOQ-record inputs**](write-input-deprecated-column-alias.md) — In Progress, bug
 - `R609` [**Capture-load residuals from the fact-store delivery**](capture-load-residuals.md) — Backlog, architecture
 - `R574` [**Clear the residual inaccuracies the @table-on-input deprecation reopen left behind**](table-on-input-deprecation-sweep-residuals.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
