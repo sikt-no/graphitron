@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInputType;
 import graphql.schema.GraphQLList;
@@ -1122,18 +1123,62 @@ class ServiceCatalog {
         GraphQLInputType current = slotTypes.get(path.headName());
         var segments = path.segments();
         for (int i = 1; i < segments.size() && current != null; i++) {
-            GraphQLType t = current;
-            while (t instanceof GraphQLNonNull nn) t = nn.getWrappedType();
-            if (t instanceof GraphQLList lst) {
-                t = lst.getWrappedType();
-                while (t instanceof GraphQLNonNull nn2) t = nn2.getWrappedType();
-            }
-            if (!(t instanceof GraphQLInputObjectType iot)) return null;
+            var iot = asInputObject(current);
+            if (iot == null) return null;
             var field = iot.getField(segments.get(i).name());
             if (field == null) return null;
             current = field.getType();
         }
         return current;
+    }
+
+    /**
+     * Whether the SDL declaration a {@link PathExpr} binds to carries {@code @nodeId}: the argument
+     * itself on a single-segment path, otherwise the input-object field the last segment names. The
+     * same walk as {@link #resolvePathLeafType}, asking after the declaration rather than its type,
+     * which is why the single-segment case needs {@code fieldDef}: a head slot's type is in
+     * {@code slotTypes} but its directives are only on the argument.
+     *
+     * <p>A type gate reads this and stands aside on {@code true}. Not a laxity: a {@code @nodeId}
+     * leaf is a wire value that is decoded before anything consumes it, so the parameter receives a
+     * key column's own value and never the {@code ID}'s coercion output. A gate comparing the SDL
+     * leaf's coercion output against the declared Java type is therefore comparing two things that
+     * never meet, and it rejects exactly the binding the decode exists to make work. Whether the
+     * decode then resolves, and whether the key column's type is one the parameter can take, are
+     * both the store's to answer, with an arm for each: the walk runs before capture and has neither
+     * the key list nor the catalog to answer them with.
+     */
+    static boolean pathLeafDeclaresNodeId(PathExpr path, GraphQLFieldDefinition fieldDef,
+                                          Map<String, GraphQLInputType> slotTypes) {
+        if (path == null || slotTypes == null) return false;
+        var segments = path.segments();
+        if (segments.size() == 1) {
+            var argument = fieldDef == null ? null : fieldDef.getArgument(path.headName());
+            return argument != null && argument.hasAppliedDirective(BuildContext.DIR_NODE_ID);
+        }
+        GraphQLInputType current = slotTypes.get(path.headName());
+        for (int i = 1; i < segments.size() && current != null; i++) {
+            var iot = asInputObject(current);
+            if (iot == null) return false;
+            var field = iot.getField(segments.get(i).name());
+            if (field == null) return false;
+            if (i == segments.size() - 1) {
+                return field.hasAppliedDirective(BuildContext.DIR_NODE_ID);
+            }
+            current = field.getType();
+        }
+        return false;
+    }
+
+    /** One path step's input object, past a non-null and one list wrapper, or {@code null}. */
+    private static GraphQLInputObjectType asInputObject(GraphQLInputType type) {
+        GraphQLType t = type;
+        while (t instanceof GraphQLNonNull nn) t = nn.getWrappedType();
+        if (t instanceof GraphQLList lst) {
+            t = lst.getWrappedType();
+            while (t instanceof GraphQLNonNull nn2) t = nn2.getWrappedType();
+        }
+        return t instanceof GraphQLInputObjectType iot ? iot : null;
     }
 
     /**

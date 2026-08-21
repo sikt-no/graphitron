@@ -340,7 +340,7 @@ final class RoutineDirectiveResolver {
                     + ArgBindingMap.formatNameSet(slotTypes.keySet())
                     + BuildContext.candidateHint(param.name(), List.copyOf(slotTypes.keySet()))));
             }
-            var leafGate = leafTypeGate(param, path, slotTypes);
+            var leafGate = leafTypeGate(param, path, fieldDef, slotTypes);
             if (leafGate != null) {
                 return new NodeResolved.Rejected(leafGate);
             }
@@ -368,8 +368,20 @@ final class RoutineDirectiveResolver {
      *       emitter renders a direct read only, so an enum or converted leaf would need the
      *       coercing arms that do not emit yet.</li>
      * </ol>
+     *
+     * <p>Both checks stand aside on a leaf carrying {@code @nodeId}, because neither is about the
+     * value the parameter receives. Such a leaf is decoded first, so what arrives is a key column's
+     * own value rather than the {@code ID}'s coercion output, and a gate comparing the coercion
+     * output against the declared type rejects the binding the decode exists to make work. The
+     * checks below are also structurally unable to judge it: the key list and the column's binding
+     * type are captured facts, and this runs before capture. So the whole judgment is the store's,
+     * which has an arm for each way it fails,
+     * {@link no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects} decoding them.
+     * Standing aside here rather than there is not a second copy of that rule: it is this gate
+     * declining to answer a question about a value it is not looking at.
      */
     private Rejection leafTypeGate(JooqCatalog.RoutineParam param, PathExpr path,
+            GraphQLFieldDefinition fieldDef,
             Map<String, graphql.schema.GraphQLInputType> slotTypes) {
         var segments = path.segments();
         for (int i = 0; i < segments.size() - 1; i++) {
@@ -379,6 +391,9 @@ final class RoutineDirectiveResolver {
                     + "', which walks through the list-shaped field '" + segments.get(i).name()
                     + "'; element-wise traversal does not emit for routine bindings yet");
             }
+        }
+        if (ServiceCatalog.pathLeafDeclaresNodeId(path, fieldDef, slotTypes)) {
+            return null; // a decoded value, not this leaf's own: the store judges it
         }
         var leafType = ServiceCatalog.resolvePathLeafType(path, slotTypes);
         if (leafType == null) {

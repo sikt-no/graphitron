@@ -272,14 +272,46 @@ class ResolvedNodeKeyProjectionTest {
     }
 
     /**
-     * A binding with nothing unconsumed is the bare form, not a projection: the author named no key
-     * column, which is the state whose rejection closes the silently-wrong hole.
+     * A binding with nothing unconsumed against a one-column key is a projection, and it is the same
+     * row an authored segment produces: the same column at the same key position off the same tier.
+     * The author did not spell the column because there was nothing else it could have been, and
+     * that spelling difference is provenance the candidate relation carries, not a second shape here.
      */
     @Test
-    void aBindingWithNoTrailingSegmentHasNoRow() {
+    void aBindingWithNoTrailingSegmentResolvesTheSoleKeyColumn() {
         withInventoryNode(dsl -> {
             seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
             pair(dsl, "pInventoryId", "input.inventoryId");
+
+            var row = only(dsl);
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_NAME))
+                .isEqualTo("inventory_id");
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.KEY_POSITION)).isEqualTo(0);
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.ARGUMENT_PATH))
+                .as("the path is the author's own, which is the only spelling there is")
+                .isEqualTo("input.inventoryId");
+        });
+    }
+
+    /**
+     * The same binding against a composite key has no row, which is where the inference stops. Two
+     * columns and one bound parameter leave nothing to pick, so this stays the bare form the defect
+     * relation reports; admitting it would have to choose a key position out of nothing.
+     */
+    @Test
+    void aBindingWithNoTrailingSegmentHasNoRowAgainstACompositeKey() {
+        withSeededStore(GRAPH, dsl -> {
+            catalog(dsl);
+            seedTable(dsl, PKG, PUBLIC, "bar");
+            seedColumn(dsl, PKG, PUBLIC, "bar", "bar_id", 0, "barId");
+            seedColumn(dsl, PKG, PUBLIC, "bar", "foo_id", 1, "fooId");
+            seedNode(dsl, GRAPH, "Bar");
+            seedTableBinding(dsl, GRAPH, "Bar", "bar");
+            seedNodeKeyColumnRef(dsl, GRAPH, "Bar", 0, "bar_id");
+            seedNodeKeyColumnRef(dsl, GRAPH, "Bar", 1, "foo_id");
+            inputSurface(dsl);
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Bar");
+            pair(dsl, "pBarId", "input.inventoryId");
 
             assertThat(rows(dsl)).isEmpty();
         });

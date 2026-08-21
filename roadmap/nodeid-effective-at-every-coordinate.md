@@ -1010,13 +1010,58 @@ them.
 **Stage 2 is being taken in sub-increments, and one of its exits has moved.** The population and the
 two children shipped first, then the measurement work the section above records, then the destination
 relation with its two table destinations, then the two slot destinations with the key-shape relation
-that decides both. All four are now stated. What still travels separately is the `BARE_NODE_ID` edit
-and the inferred arm's consumer-side half, which belong with the verdict text rather than with the
-relation. Nothing generates from any of these rows until `NodeIdLeafResolver` becomes a reader, so
-the ordering inside stage 2 changes what is checkable per commit and not what stage 2 exits on: every
-`@nodeId` shape that generates today still has to have a row naming what it uses before stage 3 starts.
-The Java-slot fork itself ships with the table destinations rather than after them, because the two
-table destinations are only total once the coordinates that reach Java are out of their population.
+that decides both. All four are now stated. Then the `BARE_NODE_ID` edit with the inferred arm's
+consumer-side half, which is the increment recorded below. What still travels separately is
+`NodeIdLeafResolver` becoming a reader of these rows, which is the last of stage 2. Nothing generates
+from `intent_node_id_decode` until it does, so the ordering inside stage 2 changes what is checkable
+per commit and not what stage 2 exits on: every `@nodeId` shape that generates today still has to have
+a row naming what it uses before stage 3 starts. The Java-slot fork itself ships with the table
+destinations rather than after them, because the two table destinations are only total once the
+coordinates that reach Java are out of their population.
+
+**The arity rule landed at the `argMapping` site, and it landed by adding a population rather than by
+removing a rejection.** The plan above says stage 2 edits `BARE_NODE_ID`'s text down to the arity
+fact, and reading that as a text edit is what would have shipped a hole: lifting the rejection at
+arity 1 with nothing resolving in its place puts the base64 back on the wire, which is the one
+outcome this item exists to prevent, and no test in the tree would have caught it because the tests
+assert the rejection rather than the emission. What makes the lift safe is the item's own claim that
+the authored and inferred forms are one destination. So the inferred arm went into
+`intent_argmapping_key_column_candidate` as a second arm over the zero-trailing-segment population,
+and every consumer of the relations beside it picked it up unchanged: the projection relation resolves
+the sole column, R668's emitter reads the same row shape it already read, the type gate compares the
+same two operands, and `intent_argmapping_projection_defect`'s bare arm shrank to an anti-join against
+that candidate rather than to an arity test of its own. `BARE_NODE_ID`'s remaining population is three
+ways to have nothing to infer, none of which is "the author named no column": no node type named, no
+key columns resolved for the one that is, and a key of two or more. Its text is those three facts, and
+the claim that the encoded id would reach the database is gone from all of them, being true only
+because the build stops.
+
+**The rejection this increment had to remove was not the one the plan named.** Lifting the bare arm
+left an arity-1 binding still failing the build, and the second refusal came from the schema walk:
+`RoutineDirectiveResolver`'s leaf-type gate compares graphql-java's coercion output for the SDL leaf
+against the routine parameter's declared Java type, so an `ID!` bound to an `Integer` parameter is
+rejected before capture, by a message that offers "route the value through a converting scalar /
+`@nodeId` decode" as the remedy for a schema that had already written the decode. The authored form
+escapes that gate for a reason that is not a rule: a path descending past a scalar resolves no leaf
+type, so the gate declines to judge it. The bare form resolves its leaf and gets judged.
+
+That gate now stands aside on a leaf carrying `@nodeId`, and the reason is worth keeping because it is
+not leniency. A `@nodeId` leaf's value is decoded before anything consumes it, so the parameter
+receives a key column's own value and the coercion output the gate compares against never reaches it:
+the comparison was between two things that never meet. The gate is also structurally unable to make
+the comparison that does matter, the key column's binding type against the parameter's, both being
+captured facts it runs before. So the whole judgment is the store's, which has an arm for each way it
+fails. This is the same division `intent_argmapping_projection_defect`'s comment argues for the walk's
+other segment rules, applied to a gate that predates them.
+
+Two consequences to carry forward. The same stand-aside is owed at every other site whose walk gates a
+leaf type against a declared Java type, `@service` through `ServiceCatalog.argExtraction` being the
+next one; it is not owed yet, because a resolved projection at an unwired site draws the deferral
+`ArgmappingProjectionDefects` mints from `EMITTING_SITES`, so those sites fail the build either way
+and the gate's extra error changes no verdict. And the stand-aside is what makes arity 1 emittable at
+`@routine` today, which is why this increment carries a pipeline case asserting the build *completes*
+rather than only that the detection is silent: silence at the detection and a red build are
+indistinguishable at every tier below that one.
 
 ## Tests
 
@@ -1032,19 +1077,40 @@ That is what makes a total census safe to attempt.
 **The guard runs in one direction, and stage 2 deliberately moves the other, so the expected reds are
 named here rather than discovered.** The accept set catches a resolution the relations miss. The arity
 rule runs the opposite way at `argMapping` sites: a single-key node type bound without a key column
-stops being a defect and starts resolving, so four shipped cases standing on that fixture change with
-the rule rather than around it. Three assert the rejection at arity 1 and move to a composite-key node
-type along with `BARE_NODE_ID`'s own population:
-`ArgmappingProjectionDefectsTest.aNodeIdBoundWithNoKeyColumnIsRejectedNamingTheKeyColumns` and
-`aServiceArgMappingReportsUnderItsOwnDirective`, and
-`ArgmappingProjectionRejectionPipelineTest.aBareNodeIdBindingFailsTheBuild`. The fourth needs more than
-a fixture swap and is worth reading before touching:
-`ArgmappingProjectionDefectsTest.theUseSiteClauseAppearsOnlyWhereItSaysMoreThanTheCoordinate` reads the
-*first* violation to test use-site clause suppression, which is orthogonal to this item, so it needs a
-node type that still mints a violation rather than a rewritten assertion. The two bare cases with no
-`typeName:` to resolve are untouched, no node type meaning no arity. Those four are the whole of the
-expected churn, which is what lets a red anywhere else in stage 2 read as a missed resolution instead
-of as more of the same.
+stops being a defect and starts resolving, so the cases standing on that fixture change with the rule
+rather than around it. This paragraph named four and predicted the wrong four, which is worth keeping
+as written rather than quietly corrected, because the way it was wrong is the same in both directions.
+
+What it named: `ArgmappingProjectionDefectsTest.aNodeIdBoundWithNoKeyColumnIsRejectedNamingTheKeyColumns`
+and `aServiceArgMappingReportsUnderItsOwnDirective`, and
+`ArgmappingProjectionRejectionPipelineTest.aBareNodeIdBindingFailsTheBuild`, all three moving to a
+composite-key node type along with `BARE_NODE_ID`'s own population, which is what they did. Plus
+`theUseSiteClauseAppearsOnlyWhereItSaysMoreThanTheCoordinate` as the one needing more than a fixture
+swap, on the reading that it tests use-site clause suppression off the *first* violation and so needs a
+node type that still mints a violation. That case stayed green, and its staying green was the problem:
+it asserts the message does *not* contain a use-site clause, which a deferral also does not, so it had
+silently stopped reading the arm it is about. It moved to the composite type anyway and gained an
+assertion that the rejection is the author arm, which is what a case about a clause of that arm's
+prose needs in order to fail when the arm changes underneath it.
+
+What it missed, in two families. Nine store-tier cases in
+`no.sikt.graphitron.model.intent.ArgmappingProjectionDefectTest` and
+`ResolvedNodeKeyProjectionTest` went red, because eight of them departed from one shared single-key
+fixture and used the bare form as a vehicle for a subject that is not the bare form at all: which
+sites report, where the location points, that a sibling graph's rows stay in their partition. The
+prediction was written by reading the behaviour tiers and never looked at the class whose whole
+content is this relation's algebra. And two graphitron-tier cases went red on message text rather than
+on arity, `aBareNodeIdWithNoTypeNameIsRejectedNamingBothOmissions` and
+`aKeyColumnTheParameterCannotTakeFailsTheBuild`, both asserting prose the item itself mandated
+rewriting: the paragraph predicted the arity churn and not the churn from the edit it was pairing that
+prediction with.
+
+So the rule the "fifth red is a finding" heuristic actually needs is narrower than a count of named
+cases. What a red means is: a case whose *subject* is the bare arm and which now resolves is expected;
+a case that merely stood on a single-key fixture is expected and says the fixture was doing work the
+case never declared; a red in a message assertion is expected wherever this item edits that message.
+A red anywhere else is a missed resolution. The fixtures now carry both arities and every case names
+which it binds, so the next increment's reds are readable without a list.
 
 * **Pipeline tier**, carrying the primary behavioural weight. The junction chain lowering to a remote
   binding with a two-hop path, on both the argument and the input-field surfaces. Each of the four
@@ -1111,9 +1177,12 @@ a null payload and no committed row.
   behaviour suite is the accept set, so a missed resolution is a red test during stage 2 and not a
   shipped false rejection. What the guard cannot cover is a shape no fixture exercises, which
   is why stage 2's exit condition is stated over the suite rather than over a count. The guard also
-  runs in one direction only: the four shipped `BARE_NODE_ID` cases the arity rule turns from
-  rejections into resolutions go red on purpose, and the Tests section enumerates them so that
-  signal stays readable.
+  runs in one direction only: the shipped `BARE_NODE_ID` cases the arity rule turns from rejections
+  into resolutions go red on purpose. The Tests section enumerated them ahead of time and got the set
+  wrong in both directions, so what keeps the signal readable is the rule stated there rather than the
+  list: a red is expected where the case's subject is the bare arm, where a shared single-key fixture
+  was doing undeclared work, or where this item edits the asserted message, and is a missed resolution
+  anywhere else.
 * **A consumer that decodes by hand today stops compiling, and that is the point.** The invariant is
   that the consumer never sees the wire format, so a `@service` method or an exception constructor
   typed `String` against a `Long` key column no longer receives base64: it draws a type-disagreement
@@ -1152,7 +1221,12 @@ a null payload and no committed row.
   composite keys at authored `argMapping` sites, this item's is composite keys and type disagreements
   everywhere, and the boundary has a test in the Tests section rather than only an argument here. The
   wording itself needs no negotiation, `ArgmappingProjectionDefects.rejectionOf` being text already in
-  the tree.
+  the tree. As shipped, the wording did need negotiation, and for a reason this entry did not see: the
+  old text was one prefix plus three remedies, and the prefix was the claim the arity rule falsifies.
+  Three clauses replaced it, one per way of having nothing to infer, because the fact and the remedy
+  move together on each. The entry was also right about the substance and wrong about the hazard: the
+  boundary that needed a test was not R668's population against this item's but the *walk's* type gate
+  against the store's, which is what the shipped increment found.
 * **A carrier named for the reporter's subject would inherit the question's shape.** The hazard of an
   item scoped by subject is producing a model type to match: a `NodeIdBinding` or `NodeIdEffective`
   spanning coordinates would take its grain from "whatever the sites needed". The check is the one the

@@ -32,6 +32,14 @@ import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTIO
  * decision, taken on whether the leaf declares a decode, then on the trailing-segment count, then on
  * whether a candidate column exists, so nothing here re-tests a predicate the query already settled.
  *
+ * <p>Not naming a key column is only a defect where there is nothing to infer. A node type keyed on
+ * one column has exactly one thing such a binding could project, so the store resolves it as a
+ * projection and the emitter decodes it, which is why {@code BARE_NODE_ID}'s three clauses are the
+ * three ways an inference has no answer rather than a single statement that the wire value escapes.
+ * The safety that lifting the rejection rests on is not this class's leniency but the two arms that
+ * still fire: a type disagreement at the inferred column refuses, and a resolved projection at a
+ * site no emitter reads defers. Neither lets base64 through.
+ *
  * <p>That includes the two arms a reader might expect the schema walk to own. An {@code ID} carrying
  * no {@code @nodeId} has nothing to open, and more than one segment past a node id resolves nothing,
  * but both are questions about captured directive facts and the walk runs before capture. So the walk
@@ -133,7 +141,12 @@ public final class ArgmappingProjectionDefects {
          * whole rule lives.
          */
         UNDECLARED_NODE_ID,
-        /** A declared decode with no key column named after it: the silently-wrong binding. */
+        /**
+         * A declared decode with no key column named after it and none to infer: no node type
+         * named, no key resolved for the one that is, or a key of more than one column, where one
+         * binding carries one value. A one-column key is not here, the sole column being the only
+         * projection such a binding could mean, and it resolves instead.
+         */
         BARE_NODE_ID,
         /**
          * More names following the single key column a node id opens into: a typo, or a nested form
@@ -145,9 +158,12 @@ public final class ArgmappingProjectionDefects {
         /** A trailing segment naming no key column the node type resolved. */
         UNKNOWN_KEY_COLUMN,
         /**
-         * A trailing segment naming a key column whose Java type the consuming parameter cannot
-         * take. The one verdict whose two operands are both types rather than names, which is why
-         * it carries them: without both, the message would say a correct column name is wrong.
+         * A key column whose Java type the consuming parameter cannot take, whether a trailing
+         * segment named that column or a one-column key inferred it. The one verdict whose two
+         * operands are both types rather than names, which is why it carries them: without both,
+         * the message would say a correct column name is wrong. The inferred half is why lifting
+         * the bare rejection at arity 1 adds no silence: what stops being a defect for having named
+         * no column is still a defect for handing a parameter a value it cannot take.
          */
         KEY_COLUMN_TYPE_MISMATCH;
 
@@ -336,10 +352,7 @@ public final class ArgmappingProjectionDefects {
                 + (trailingSegments - 1) + " more segment"
                 + (trailingSegments - 1 == 1 ? "" : "s")
                 + ", but a node id opens into exactly one key column, so nothing may follow it");
-            case BARE_NODE_ID -> Rejection.structural(entry + " binds a "
-                + nodeIdSpelling(nodeTypeRef)
-                + " and names no key column, so the encoded node id would reach the database"
-                + " verbatim; " + bareRemedy(nodeTypeRef, keyColumns));
+            case BARE_NODE_ID -> Rejection.structural(bareMessage(entry, nodeTypeRef, keyColumns));
             case MISSING_TYPE_NAME -> Rejection.structural(entry + " opens a @nodeId with '"
                 + trailingSegment + "', but @nodeId must specify typeName: explicitly at an"
                 + " argMapping position, there being no containing table here to name the NodeType"
@@ -352,11 +365,15 @@ public final class ArgmappingProjectionDefects {
                       + " with @node(keyColumns:) on that type"
                     : ""),
                 trailingSegment, keyColumns);
-            case KEY_COLUMN_TYPE_MISMATCH -> Rejection.structural(entry + " projects '"
-                + trailingSegment + "' of '" + nodeTypeRef + "', which jOOQ binds as "
-                + simpleName(columnJavaType) + ", but the parameter it binds to takes "
-                + simpleName(paramJavaType) + "; bind a parameter of the column's own type, or"
-                + " project a key column the parameter can take");
+            case KEY_COLUMN_TYPE_MISMATCH -> Rejection.structural(entry
+                + (trailingSegment == null
+                    ? " binds the " + nodeIdSpelling(nodeTypeRef) + ", whose key column '"
+                      + soleColumn(keyColumns) + "'"
+                    : " projects '" + trailingSegment + "' of '" + nodeTypeRef + "', which")
+                + " jOOQ binds as " + simpleName(columnJavaType)
+                + ", but the parameter it binds to takes " + simpleName(paramJavaType)
+                + "; bind a parameter of the column's own type"
+                + (keyColumns.size() > 1 ? ", or project a key column the parameter can take" : ""));
         };
     }
 
@@ -395,21 +412,51 @@ public final class ArgmappingProjectionDefects {
     }
 
     /**
-     * What to write instead, which differs by how far the author got: naming no type leaves two
-     * things to add, naming a type with a resolved key leaves the column, and naming one with no
-     * resolved key puts the remedy on the node type rather than on this entry.
+     * The whole bare-binding message, composed per way of having nothing to infer. Naming no key
+     * column is not itself the defect: a node type keyed on one column has exactly one thing such a
+     * binding could project, and that inference is a resolution the store states rather than a
+     * defect this arm reports. So each clause here states the fact that leaves the inference with no
+     * answer, and none of them claims the wire value would reach the database, which is true of all
+     * three only because the build stops here.
+     *
+     * <p>Three clauses and not one prefix plus three remedies, because the fact and the remedy move
+     * together: an unnamed type has no key list to count, a named type with no resolved key has a
+     * remedy on the node type rather than on this entry, and a composite key is the only one of the
+     * three where the author has columns in front of them to choose from. A one-column key never
+     * arrives here, so no clause is written for it.
      */
-    private static String bareRemedy(String nodeTypeRef, List<String> keyColumns) {
+    private static String bareMessage(String entry, String nodeTypeRef, List<String> keyColumns) {
         if (nodeTypeRef == null) {
-            return "specify typeName: on the @nodeId and open it with one of that type's key"
-                + " columns";
+            return entry + " binds a @nodeId that names no node type, so there is no key to decode"
+                + " it against and nothing to infer a column from; specify typeName: on the @nodeId,"
+                + " and open it with a key column if that type's key is more than one";
         }
         if (keyColumns.isEmpty()) {
-            return "'" + nodeTypeRef + "' resolves no key columns on any tier, so pin them with"
+            return entry + " binds the " + nodeIdSpelling(nodeTypeRef) + ", which resolves no key"
+                + " columns on any tier, so nothing can be decoded out of it; pin them with"
                 + " @node(keyColumns:) on that type";
         }
-        return "open it with one of the key columns of '" + nodeTypeRef + "': "
-            + String.join(", ", keyColumns);
+        return entry + " binds the " + nodeIdSpelling(nodeTypeRef) + ", whose key is "
+            + keyColumns.size() + " columns, and one binding carries one value; open it with one of"
+            + " them: " + String.join(", ", keyColumns);
+    }
+
+    /**
+     * The one key column a node type of arity 1 has, which an inferred projection names because the
+     * author named nothing. Fetched as the key list rather than as a distinct fact, this being the
+     * same list the composite message enumerates; a caller reaching here with any other size is
+     * reading a row the inference should have claimed, so the shape is asserted rather than
+     * defended.
+     */
+    private static String soleColumn(List<String> keyColumns) {
+        if (keyColumns.size() != 1) {
+            throw new IllegalStateException(
+                "Graphitron generator bug (key projection): a type mismatch names no trailing"
+                + " segment, so the column was inferred from a one-column key, but the node type"
+                + " resolves " + keyColumns.size() + " key columns " + keyColumns
+                + "; the inferring arm and the key-column relation have drifted");
+        }
+        return keyColumns.get(0);
     }
 
     /** The store's position columns as a graphql-java location; {@code null} when unpositioned. */

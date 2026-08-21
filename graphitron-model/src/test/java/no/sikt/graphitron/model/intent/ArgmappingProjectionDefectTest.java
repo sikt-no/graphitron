@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_PROJECTION_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTION;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentCondition;
@@ -45,13 +46,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  * verdict vocabulary of four. The rejections that close the hole where a path bound a node id and
  * the base64 wire id reached the database with nothing in the build saying a word.
  *
- * <p>The first three arms are decided by the trailing-segment count and nothing else, and the fourth
- * splits the third's bucket by whether a candidate column exists at all, so the arms are disjoint by
- * construction; the cases below pin that as a property rather than trusting it. Beside
- * the four arms, the boundary matters as much as the arms do: an ordinary binding, a resolving
+ * <p>The arms are bucketed by the trailing-segment count, and within a bucket an existence test
+ * against the candidate relation splits what resolves from what is refused, so the arms are disjoint
+ * by construction; the cases below pin that as a property rather than trusting it. Beside
+ * the arms, the boundary matters as much as the arms do: an ordinary binding, a resolving
  * projection, a two-segment tail, a leaf the grammar refuses to open and a path that bound nothing
  * must each leave the relation empty, and each of those absences is a rejection some other surface
  * owns or a population no rule judges.
+ *
+ * <p>The key's arity is load-bearing throughout, which is why the fixture carries both a one-column
+ * node type and a two-column one and every case names which it binds. A bare binding against a
+ * one-column key is not a defect at all: the sole column is the only projection it could mean, so it
+ * resolves, and what still refuses such a binding is the type gate on the column the inference
+ * chose. Cases about the bare arm therefore name the two-column type, and reading one that names the
+ * one-column type is reading a case about the inference instead.
  */
 class ArgmappingProjectionDefectTest {
 
@@ -62,21 +70,27 @@ class ArgmappingProjectionDefectTest {
     // ===== The bare form: a decode nobody opened =====
 
     /**
-     * The motivating silence, now a row. A {@code @nodeId(typeName:)} input field bound with no
-     * further segment is the spelling that ships base64 to a database column today, and the node
-     * type it names is what a message needs in order to say what to write instead.
+     * The motivating silence, now a row, and the arity that keeps it one. A
+     * {@code @nodeId(typeName:)} input field bound with no further segment against a node type whose
+     * key is two columns has nothing to infer: one binding carries one value, and nothing in the
+     * spelling says which of the two it is. The node type it names is what a message needs in order
+     * to say what to write instead.
+     *
+     * <p>A one-column key is deliberately not this case's fixture. There the sole column is the only
+     * projection such a binding could mean, so it resolves rather than being reported here, which is
+     * the case two sections down.
      */
     @Test
     void aNodeIdBoundWithNoKeyColumnIsTheBareForm() {
         withInventoryNode(dsl -> {
-            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "FilmActor");
             routinePair(dsl, "pInventoryId", "input.inventoryId");
 
             var row = only(dsl);
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
                 .isEqualTo("BARE_NODE_ID");
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.NODE_TYPE_REF))
-                .isEqualTo("Inventory");
+                .isEqualTo("FilmActor");
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENT_NAME))
                 .as("there is no trailing segment on this arm")
                 .isNull();
@@ -95,9 +109,9 @@ class ArgmappingProjectionDefectTest {
     void aNodeIdArgumentBoundDirectlyIsTheBareFormToo() {
         withSeededStore(GRAPH, dsl -> {
             catalog(dsl);
-            inventoryNodeType(dsl, "inventory_id");
+            filmActorNodeType(dsl);
             seedField(dsl, GRAPH, "Mutation", "rentFilm");
-            seedArgumentNodeId(dsl, GRAPH, "Mutation", "rentFilm", "inventoryId", "Inventory");
+            seedArgumentNodeId(dsl, GRAPH, "Mutation", "rentFilm", "inventoryId", "FilmActor");
             routinePair(dsl, "pInventoryId", "inventoryId");
 
             var row = only(dsl);
@@ -111,10 +125,11 @@ class ArgmappingProjectionDefectTest {
     }
 
     /**
-     * The bare form fires whether or not the directive names a type. Zero trailing segments is the
-     * whole condition, and a missing {@code typeName:} there is a second clause of the same remedy
-     * rather than a second verdict: the author has to name the type and open it, and reporting two
-     * defects for one entry would be two errors on one line.
+     * The bare form fires whether or not the directive names a type, and naming none is the way to
+     * have nothing to infer that no arity can rescue: with no node type there is no key list to
+     * count, so the inference has nothing to reach for. A missing {@code typeName:} is a clause of
+     * the same remedy rather than a second verdict: the author has to name the type, and reporting
+     * two defects for one entry would be two errors on one line.
      */
     @Test
     void theBareFormFiresWithNoTypeNameToo() {
@@ -182,6 +197,60 @@ class ArgmappingProjectionDefectTest {
             assertThat(only(dsl).get(INTENT_ARGMAPPING_PROJECTION_DEFECT.NODE_TYPE_REF))
                 .isEqualTo("Bar");
             assertThat(keyColumnsOf(dsl, "Bar")).containsExactly("bar_id", "foo_id");
+        });
+    }
+
+    // ===== A one-column key needs no segment, so the bare spelling resolves =====
+
+    /**
+     * The arity rule, stated where it takes a rejection away. A node type keyed on one column has
+     * exactly one thing a bare binding could project, so the binding is a projection and not a
+     * defect. Asserted as both halves at once, because a rule that only removed the row would be
+     * indistinguishable from a rule that lost it: the defect relation is empty and the projection
+     * relation names the column the author did not have to write.
+     */
+    @Test
+    void aOneColumnKeyIsInferredRatherThanReported() {
+        withInventoryNode(dsl -> {
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            routinePair(dsl, "pInventoryId", "input.inventoryId");
+
+            assertThat(rows(dsl))
+                .as("one key column is not an ambiguity, so there is nothing to report")
+                .isEmpty();
+            assertThat(dsl.select(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_NAME,
+                    INTENT_RESOLVED_NODE_KEY_PROJECTION.KEY_POSITION)
+                .from(INTENT_RESOLVED_NODE_KEY_PROJECTION)
+                .where(INTENT_RESOLVED_NODE_KEY_PROJECTION.GRAPH_NAME.eq(GRAPH))
+                .fetch(r -> List.of(r.value1(), r.value2())))
+                .as("and the projection resolves the sole column, position included")
+                .containsExactly(List.of("inventory_id", 0));
+        });
+    }
+
+    /**
+     * The inferred column is still subject to the type gate, which is what makes lifting the bare
+     * rejection safe rather than lenient. The author named no column, so nothing they wrote is wrong;
+     * the parameter still cannot take the value, and the refusal names the column the inference
+     * chose. {@code trailing_segment_name} is NULL here on the mismatch arm, which is how a consumer
+     * knows to name the key column rather than quote a segment nobody spelled.
+     */
+    @Test
+    void anInferredColumnTheParameterCannotTakeIsStillTheTypeMismatch() {
+        withTypedRoutine("input.inventoryId", dsl -> {
+            var row = only(dsl);
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
+                .isEqualTo("KEY_COLUMN_TYPE_MISMATCH");
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENT_NAME))
+                .as("the author spelled no segment, so there is none to quote")
+                .isNull();
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENTS))
+                .as("and the count agrees with that absence rather than being a second fact")
+                .isEqualTo(0);
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.COLUMN_JAVA_TYPE))
+                .isEqualTo("java.lang.Integer");
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.PARAM_JAVA_TYPE))
+                .isEqualTo("java.lang.String");
         });
     }
 
@@ -301,7 +370,7 @@ class ArgmappingProjectionDefectTest {
     @Test
     void theOtherArmsCarryNoTypes() {
         withInventoryNode(dsl -> {
-            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "FilmActor");
             routinePair(dsl, "pInventoryId", "input.inventoryId");
 
             var row = only(dsl);
@@ -381,14 +450,19 @@ class ArgmappingProjectionDefectTest {
     // ===== The arms are disjoint, and the boundary is where they stop =====
 
     /**
-     * The trailing count alone decides the arm, so one node id spelled three ways at three positions
-     * of one application yields exactly one row per position with three different verdicts. Pinning
-     * it here is what makes the disjointness a property rather than a reading of the SQL.
+     * The trailing count decides which arm reports, so one node id spelled three ways at three
+     * positions of one application yields exactly one row per position with three different verdicts.
+     * Pinning it here is what makes the disjointness a property rather than a reading of the SQL.
+     *
+     * <p>The count decides the bucket and not, on its own, whether there is a row: the zero bucket
+     * additionally asks whether a column could be inferred, which is why this fixture's bare
+     * position binds the two-column node type. Within a bucket that reports, the count is the whole
+     * of what picks the arm.
      */
     @Test
-    void theTrailingCountAloneDecidesTheArm() {
+    void theTrailingCountDecidesWhichArmReports() {
         withInventoryNode(dsl -> {
-            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "FilmActor");
             seedField(dsl, GRAPH, "RentFilmInput", "bareId");
             seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "bareId", null);
             seedOccurrencePath(dsl, GRAPH, "Mutation", "rentFilm", "input", "RentFilmInput",
@@ -507,7 +581,7 @@ class ArgmappingProjectionDefectTest {
     @Test
     void routineServiceAndConditionAllReport() {
         withInventoryNode(dsl -> {
-            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "FilmActor");
             routinePair(dsl, "pInventoryId", "input.inventoryId");
 
             seedField(dsl, GRAPH, "Query", "films");
@@ -519,7 +593,7 @@ class ArgmappingProjectionDefectTest {
             seedArgumentPathSegments(dsl, GRAPH, "Query", "films", "input.inventoryId");
 
             seedField(dsl, GRAPH, "Film", "rentals");
-            seedArgumentNodeId(dsl, GRAPH, "Film", "rentals", "byInventory", "Inventory");
+            seedArgumentNodeId(dsl, GRAPH, "Film", "rentals", "byInventory", "FilmActor");
             seedArgumentConditionArgMappingPair(dsl, GRAPH, "Film", "rentals", "byInventory", 0,
                 "p", "byInventory");
             seedArgumentPathSegments(dsl, GRAPH, "Film", "rentals", "byInventory");
@@ -537,7 +611,7 @@ class ArgmappingProjectionDefectTest {
     @Test
     void theLocationIsTheOwningApplicationsOwn() {
         withInventoryNode(dsl -> {
-            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "FilmActor");
             seedRoutine(dsl, GRAPH, "Mutation", "rentFilm", 0, "Routines.first", 11);
             seedRoutine(dsl, GRAPH, "Mutation", "rentFilm", 1, "Routines.second", 12);
             routineApplicationPair(dsl, 0, "pFirst", "input.inventoryId");
@@ -561,11 +635,11 @@ class ArgmappingProjectionDefectTest {
     void anArgumentSiteConditionReportsOnlyItsOwnArgument() {
         withSeededStore(GRAPH, dsl -> {
             catalog(dsl);
-            inventoryNodeType(dsl, "inventory_id");
+            filmActorNodeType(dsl);
             seedField(dsl, GRAPH, "Film", "rentals");
             seedArgument(dsl, GRAPH, "Film", "rentals", "other", "ID");
-            seedArgumentNodeId(dsl, GRAPH, "Film", "rentals", "byInventory", "Inventory");
-            seedArgumentNodeId(dsl, GRAPH, "Film", "rentals", "other", "Inventory");
+            seedArgumentNodeId(dsl, GRAPH, "Film", "rentals", "byInventory", "FilmActor");
+            seedArgumentNodeId(dsl, GRAPH, "Film", "rentals", "other", "FilmActor");
             seedArgumentCondition(dsl, GRAPH, "Film", "rentals", "other",
                 "no.example.Cond", "apply", false);
             seedArgumentConditionArgMappingPair(dsl, GRAPH, "Film", "rentals", "byInventory", 0,
@@ -588,18 +662,20 @@ class ArgmappingProjectionDefectTest {
             seedGraph(dsl, "other");
             seedSource(dsl, PKG + ".other", "JOOQ_SCHEMA");
             seedGraphSource(dsl, "other", PKG + ".other");
-            seedTable(dsl, PKG + ".other", PUBLIC, "inventory");
-            seedColumn(dsl, PKG + ".other", PUBLIC, "inventory", "inventory_id", 0, "inventoryId");
-            seedNode(dsl, "other", "Inventory");
-            seedTableBinding(dsl, "other", "Inventory", "inventory");
-            seedNodeKeyColumnRef(dsl, "other", "Inventory", 0, "inventory_id");
+            seedTable(dsl, PKG + ".other", PUBLIC, "film_actor");
+            seedColumn(dsl, PKG + ".other", PUBLIC, "film_actor", "film_id", 0, "filmId");
+            seedColumn(dsl, PKG + ".other", PUBLIC, "film_actor", "actor_id", 1, "actorId");
+            seedNode(dsl, "other", "FilmActor");
+            seedTableBinding(dsl, "other", "FilmActor", "film_actor");
+            seedNodeKeyColumnRef(dsl, "other", "FilmActor", 0, "film_id");
+            seedNodeKeyColumnRef(dsl, "other", "FilmActor", 1, "actor_id");
             seedDeclaredType(dsl, "other", "RentFilmInput", "INPUT_OBJECT");
             seedField(dsl, "other", "RentFilmInput", "inventoryId");
             seedField(dsl, "other", "Mutation", "rentFilm");
             seedArgument(dsl, "other", "Mutation", "rentFilm", "input", "RentFilmInput");
             seedOccurrencePath(dsl, "other", "Mutation", "rentFilm", "input", "RentFilmInput",
                 new OccurrenceStep("RentFilmInput", "inventoryId", "ID"));
-            seedFieldNodeId(dsl, "other", "RentFilmInput", "inventoryId", "Inventory");
+            seedFieldNodeId(dsl, "other", "RentFilmInput", "inventoryId", "FilmActor");
             seedRoutineArgMappingPair(dsl, "other", "Mutation", "rentFilm", 0, 0, "pOther",
                 "input.inventoryId");
             seedArgumentPathSegments(dsl, "other", "Mutation", "rentFilm", "input.inventoryId");
@@ -625,8 +701,18 @@ class ArgmappingProjectionDefectTest {
      * The whole fixture plus a captured routine call surface whose parameter takes a {@code String}
      * while the projected key column binds as {@code Integer}: the mismatch arm's two operands, both
      * stated, since a case about a comparison must not rely on two seed defaults happening to differ.
+     * The path names the column the author wrote.
      */
     private static void withTypedRoutine(Consumer<DSLContext> body) {
+        withTypedRoutine("input.inventoryId.inventory_id", body);
+    }
+
+    /**
+     * The same fixture at a path the case chooses, which is what lets one comparison be reached two
+     * ways: a trailing segment naming the column, and a bare binding whose one-column key infers it.
+     * The two must draw the same verdict off the same operands, the column being the same column.
+     */
+    private static void withTypedRoutine(String argumentPath, Consumer<DSLContext> body) {
         withSeededStore(GRAPH, dsl -> {
             catalog(dsl);
             seedTable(dsl, PKG, PUBLIC, "inventory");
@@ -642,7 +728,7 @@ class ArgmappingProjectionDefectTest {
             seedCatalogRoutine(dsl, PKG, PUBLIC, "rent_film", PKG + ".Routines", "rentFilm");
             seedRoutineParameter(dsl, PKG, PUBLIC, "rent_film", 0, "pInventoryId",
                 "java.lang.String");
-            routinePair(dsl, "pInventoryId", "input.inventoryId.inventory_id");
+            routinePair(dsl, "pInventoryId", argumentPath);
             body.accept(dsl);
         });
     }
@@ -654,6 +740,23 @@ class ArgmappingProjectionDefectTest {
         seedNode(dsl, GRAPH, "Inventory");
         seedTableBinding(dsl, GRAPH, "Inventory", "inventory");
         seedNodeKeyColumnRef(dsl, GRAPH, "Inventory", 0, pinnedColumn);
+    }
+
+    /**
+     * A {@code FilmActor} node over the {@code film_actor} junction with both key columns pinned:
+     * the node type the bare form needs, since a one-column key infers its own column and resolves.
+     * Every case whose subject is the bare arm names this type, and the cases about the other arms
+     * keep {@code Inventory} beside it, so the two arities sit in one fixture and a case says which
+     * it is by which type it binds.
+     */
+    private static void filmActorNodeType(DSLContext dsl) {
+        seedTable(dsl, PKG, PUBLIC, "film_actor");
+        seedColumn(dsl, PKG, PUBLIC, "film_actor", "film_id", 0, "filmId");
+        seedColumn(dsl, PKG, PUBLIC, "film_actor", "actor_id", 1, "actorId");
+        seedNode(dsl, GRAPH, "FilmActor");
+        seedTableBinding(dsl, GRAPH, "FilmActor", "film_actor");
+        seedNodeKeyColumnRef(dsl, GRAPH, "FilmActor", 0, "film_id");
+        seedNodeKeyColumnRef(dsl, GRAPH, "FilmActor", 1, "actor_id");
     }
 
     /** {@code Mutation.rentFilm(input: RentFilmInput)} and the occurrence rows under it. */
@@ -669,11 +772,17 @@ class ArgmappingProjectionDefectTest {
             new OccurrenceStep("RentFilmInput", "inventoryId", "ID"));
     }
 
-    /** The whole fixture most cases depart from: the node, its key, and the input surface above it. */
+    /**
+     * The whole fixture most cases depart from: a one-column node, a two-column one, and the input
+     * surface above them. Both arities are always present because the arity is what several arms now
+     * turn on, and a case that had to seed its own would be a case where the reader cannot see which
+     * arity it is testing without reading the fixture.
+     */
     private static void withInventoryNode(Consumer<DSLContext> body) {
         withSeededStore(GRAPH, dsl -> {
             catalog(dsl);
             inventoryNodeType(dsl, "inventory_id");
+            filmActorNodeType(dsl);
             inputSurface(dsl);
             body.accept(dsl);
         });

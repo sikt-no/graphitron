@@ -41,10 +41,17 @@ class ArgmappingProjectionDefectsTest {
 
     // ===== The bare form, which is what used to ship base64 =====
 
+    /**
+     * The bare binding an author has to fix, which is the one against a key of more than one column.
+     * Two columns and one bound parameter leave nothing to infer, so the message states the count
+     * and offers the columns. A one-column key is a different outcome and is asserted below: there
+     * the sole column is the only projection the binding could mean, so it resolves.
+     */
     @Test
     void aNodeIdBoundWithNoKeyColumnIsRejectedNamingTheKeyColumns() {
         var violations = detect("""
-            type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
+            type Inventory implements Node @table(name: "inventory")
+                    @node(keyColumns: ["inventory_id", "store_id"]) {
                 id: ID! @nodeId
             }
             type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
@@ -60,10 +67,9 @@ class ArgmappingProjectionDefectsTest {
 
         assertThat(messages(violations)).containsExactly(
             "Field 'Mutation.rentFilm': @routine argMapping entry"
-            + " 'pInventoryId: input.inventoryId' at Mutation.rentFilm#0 binds a"
-            + " @nodeId(typeName: \"Inventory\") and names no key column, so the encoded node id"
-            + " would reach the database verbatim; open it with one of the key columns of"
-            + " 'Inventory': inventory_id");
+            + " 'pInventoryId: input.inventoryId' at Mutation.rentFilm#0 binds the"
+            + " @nodeId(typeName: \"Inventory\"), whose key is 2 columns, and one binding carries one"
+            + " value; open it with one of them: inventory_id, store_id");
         assertThat(violations.getFirst().rejection())
             .isInstanceOf(Rejection.AuthorError.Structural.class);
         assertThat(violations.getFirst().location()).isNotNull();
@@ -71,9 +77,39 @@ class ArgmappingProjectionDefectsTest {
     }
 
     /**
-     * The same defect with no {@code typeName:} to name. Zero trailing segments is the whole
-     * condition, so the arm fires either way and the remedy grows a clause rather than the family
-     * growing a verdict; two errors for one entry is what a second verdict would have cost.
+     * A one-column key is not a bare binding to fix. The sole column is the only thing such an entry
+     * could project, so it resolves and the author writes nothing: the same schema that draws the
+     * rejection above, with one key column instead of two, mints no author error at all.
+     *
+     * <p>Asserted as the absence of an author error rather than as an empty report, because the site
+     * here is {@code @routine}, which is wired, so a resolved projection is emission. The deferral
+     * that would appear at an unwired site is a different claim and has its own case below.
+     */
+    @Test
+    void aOneColumnKeyResolvesRatherThanBeingBare() {
+        assertThat(detect("""
+            type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
+                id: ID! @nodeId
+            }
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type Query { rental: Rental, inventory: Inventory }
+            input RentFilmInput { inventoryId: ID! @nodeId(typeName: "Inventory"), customerId: Int! }
+            type Mutation {
+                rentFilm(input: RentFilmInput!): [Rental!]!
+                    @routine(name: "rent_film",
+                             argMapping: "pInventoryId: input.inventoryId, pCustomerId: input.customerId")
+                    @reference(path: [{table: "rental"}])
+            }
+            """))
+            .as("the author named no column because there was only one it could be")
+            .isEmpty();
+    }
+
+    /**
+     * The same defect with no {@code typeName:} to name, which is the way to have nothing to infer
+     * that no arity rescues: with no node type there is no key list to count. The arm fires either
+     * way and the remedy differs in a clause rather than the family growing a verdict; two errors
+     * for one entry is what a second verdict would have cost.
      */
     @Test
     void aBareNodeIdWithNoTypeNameIsRejectedNamingBothOmissions() {
@@ -91,9 +127,10 @@ class ArgmappingProjectionDefectsTest {
 
         assertThat(messages(violations)).containsExactly(
             "Field 'Mutation.rentFilm': @routine argMapping entry"
-            + " 'pInventoryId: input.inventoryId' at Mutation.rentFilm#0 binds a @nodeId and names"
-            + " no key column, so the encoded node id would reach the database verbatim; specify"
-            + " typeName: on the @nodeId and open it with one of that type's key columns");
+            + " 'pInventoryId: input.inventoryId' at Mutation.rentFilm#0 binds a @nodeId that names"
+            + " no node type, so there is no key to decode it against and nothing to infer a column"
+            + " from; specify typeName: on the @nodeId, and open it with a key column if that type's"
+            + " key is more than one");
     }
 
     // ===== The projection was asked for and could not resolve =====
@@ -287,25 +324,12 @@ class ArgmappingProjectionDefectsTest {
      */
     @Test
     void aServiceArgMappingReportsUnderItsOwnDirective() {
-        var violations = detect("""
-            type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
-                id: ID! @nodeId
-            }
-            type Film @table(name: "film") { title: String }
-            input FilmFilter { inventoryId: ID! @nodeId(typeName: "Inventory") }
-            type Query {
-                inventory: Inventory
-                films(filter: FilmFilter!): [Film!]!
-                    @service(service: {className: "%s", method: "get",
-                                       argMapping: "id: filter.inventoryId"})
-            }
-            """.formatted(SERVICE_STUB));
+        var violations = detect(BARE_SERVICE_SDL);
 
         assertThat(messages(violations)).containsExactly(
-            "Field 'Query.films': @service argMapping entry 'id: filter.inventoryId' binds a"
-            + " @nodeId(typeName: \"Inventory\") and names no key column, so the encoded node id"
-            + " would reach the database verbatim; open it with one of the key columns of"
-            + " 'Inventory': inventory_id");
+            "Field 'Query.films': @service argMapping entry 'id: filter.inventoryId' binds the"
+            + " @nodeId(typeName: \"Inventory\"), whose key is 2 columns, and one binding carries one"
+            + " value; open it with one of them: inventory_id, store_id");
     }
 
     /**
@@ -315,24 +339,36 @@ class ArgmappingProjectionDefectsTest {
      */
     @Test
     void theUseSiteClauseAppearsOnlyWhereItSaysMoreThanTheCoordinate() {
-        var service = detect("""
-            type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
-                id: ID! @nodeId
-            }
-            type Film @table(name: "film") { title: String }
-            input FilmFilter { inventoryId: ID! @nodeId(typeName: "Inventory") }
-            type Query {
-                inventory: Inventory
-                films(filter: FilmFilter!): [Film!]!
-                    @service(service: {className: "%s", method: "get",
-                                       argMapping: "id: filter.inventoryId"})
-            }
-            """.formatted(SERVICE_STUB));
+        var service = detect(BARE_SERVICE_SDL);
 
+        assertThat(service.getFirst().rejection())
+            .as("the subject is the clause, so this has to be the author arm and not a deferral")
+            .isInstanceOf(Rejection.AuthorError.Structural.class);
         assertThat(messages(service).getFirst())
             .as("the @service site is not repeatable, so the coordinate is the whole answer")
             .doesNotContain(" at Query.films");
     }
+
+    /**
+     * A {@code @service} entry binding a two-column node id bare: the shape two cases above need,
+     * one for the message and one for the use-site clause. Shared because they must be reading the
+     * same violation, and a key of two columns is what keeps it an author error rather than the
+     * resolution a one-column key would produce.
+     */
+    private static final String BARE_SERVICE_SDL = """
+        type Inventory implements Node @table(name: "inventory")
+                @node(keyColumns: ["inventory_id", "store_id"]) {
+            id: ID! @nodeId
+        }
+        type Film @table(name: "film") { title: String }
+        input FilmFilter { inventoryId: ID! @nodeId(typeName: "Inventory") }
+        type Query {
+            inventory: Inventory
+            films(filter: FilmFilter!): [Film!]!
+                @service(service: {className: "%s", method: "get",
+                                   argMapping: "id: filter.inventoryId"})
+        }
+        """.formatted(SERVICE_STUB);
 
     // ===== Helpers =====
 
