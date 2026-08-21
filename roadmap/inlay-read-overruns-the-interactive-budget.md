@@ -1,5 +1,5 @@
 ---
-id: R798
+id: R799
 title: "Inlay hints do not finish inside the interactive budget on a real schema"
 status: Backlog
 bucket: bug
