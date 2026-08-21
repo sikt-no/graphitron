@@ -5,6 +5,8 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.GeneratedUnits;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator;
+import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
+import no.sikt.graphitron.rewrite.model.ErrorFieldRead;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
@@ -14,6 +16,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandl
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.VendorCodeHandler;
 
 import javax.lang.model.element.Modifier;
+import java.util.List;
 
 /**
  * Generates the per-{@code @error}-type {@code <ErrorType>Fetchers} class, carrying the
@@ -23,13 +26,14 @@ import javax.lang.model.element.Modifier;
  * {@code GraphitronSchemaClassGenerator}.
  *
  * <p>An {@code @error} type declares the required {@code path: [String!]!} / {@code message: String!}
- * and may declare extra fields; only {@code path} and {@code message} are reified here. The source
- * object can be a {@code Throwable} (no {@code getPath()}) or a {@code GraphQLError}
- * (has {@code getPath()} / {@code getMessage()}). {@code path} synthesises from the GraphQL
- * execution context for non-{@code GraphQLError} sources so the non-null contract holds regardless
- * of handler kind. Extra fields are read at runtime by graphql-java's {@code PropertyDataFetcher}
- * (registered by {@code GraphitronSchemaClassGenerator}, remapped when the field carries
- * {@code @field(name:)}), not through this class.
+ * and may declare extra fields. The source object can be a {@code Throwable} (no
+ * {@code getPath()}) or a {@code GraphQLError} (has {@code getPath()} / {@code getMessage()}).
+ * {@code path} synthesises from the GraphQL execution context for non-{@code GraphQLError} sources
+ * so the non-null contract holds regardless of handler kind. An extra field is read at runtime by
+ * graphql-java's {@code PropertyDataFetcher} on its accessor base, registered by
+ * {@code GraphitronSchemaClassGenerator} and not through this class, with one exception: a field
+ * carrying {@code @nodeId} has to encode what that read yielded, and a bare
+ * {@code PropertyDataFetcher} has nowhere to put the encode, so its read is reified here too.
  *
  * <p>{@code message} resolves in up to three steps, in this order:
  *
@@ -75,6 +79,7 @@ public final class ErrorTypeFetcherClassGenerator {
     private static final ClassName GRAPHQL_ERROR = ClassName.get("graphql", "GraphQLError");
     private static final ClassName THROWABLE     = ClassName.get(Throwable.class);
     private static final ClassName STRING_CN     = ClassName.get(String.class);
+    private static final ClassName PROPERTY_FETCHER = ClassName.get("graphql.schema", "PropertyDataFetcher");
 
     private ErrorTypeFetcherClassGenerator() {}
 
@@ -84,11 +89,44 @@ public final class ErrorTypeFetcherClassGenerator {
      * address the {@code message} body names besides its own. This method builds the fixed method
      * pair for the type the row names.
      */
-    public static TypeSpec generateFor(GraphitronType.ErrorType et, ClassName errorMappings) {
-        return TypeSpec.classBuilder(et.name() + GeneratedUnits.FETCHERS_SUFFIX)
+    public static TypeSpec generateFor(GraphitronType.ErrorType et, ClassName errorMappings,
+            List<ErrorFieldRead> fieldReads) {
+        var cls = TypeSpec.classBuilder(et.name() + GeneratedUnits.FETCHERS_SUFFIX)
             .addModifiers(Modifier.PUBLIC)
             .addMethod(pathMethod())
-            .addMethod(messageMethod(et, errorMappings))
+            .addMethod(messageMethod(et, errorMappings));
+        for (var read : fieldReads) {
+            if (read instanceof ErrorFieldRead.SourceAccessor accessor
+                    && accessor.wire() instanceof CallSiteCompaction.NodeIdEncodeKeys encode) {
+                cls.addMethod(encodedFieldMethod(accessor, encode));
+            }
+        }
+        return cls.build();
+    }
+
+    /**
+     * An extra field carrying {@code @nodeId}: read the accessor through graphql-java's own
+     * property machinery, then encode. Reified here rather than registered as a bare
+     * {@code PropertyDataFetcher} because there is no seam on that fetcher to apply the encode to,
+     * and the read itself is graphql-java's either way.
+     *
+     * <p>{@code throws Exception} because {@code PropertyDataFetcher.get} declares it;
+     * {@code DataFetcher.get} declares it too, so the method reference the registration emits is
+     * still a {@code DataFetcher}. The null test is on the value rather than on the id: a source
+     * that carries no key has an absent field, never an id encoding the absence.
+     */
+    private static MethodSpec encodedFieldMethod(ErrorFieldRead.SourceAccessor accessor,
+            CallSiteCompaction.NodeIdEncodeKeys encode) {
+        var keyType = encode.encodeMethod().paramSignature().get(0).columnType();
+        return MethodSpec.methodBuilder(accessor.sdlFieldName())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(ENV, "env")
+            .addException(Exception.class)
+            .addStatement("$T key = ($T) $T.fetching($S).get(env)",
+                keyType, keyType, PROPERTY_FETCHER, accessor.accessorBase())
+            .addStatement("return key == null ? null : $T.$L(key)",
+                encode.encodeMethod().encoderClass(), encode.encodeMethod().methodName())
             .build();
     }
 

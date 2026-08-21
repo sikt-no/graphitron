@@ -126,6 +126,13 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
      * accessor the resolver looked for: equal to {@code missingFieldName} when no
      * {@code @field(name:)} override applies, otherwise the directive value (the {@code message()}
      * then flags the remap).
+     *
+     * <p>{@code expectedReturnType} is the type that accessor had to return, and the message names
+     * it because it is no longer derivable from the SDL field the author is looking at: a field
+     * carrying {@code @nodeId} is read as the node type's key column and encoded afterwards, so a
+     * same-named accessor returning the encoded form is a miss. Without the type, such a message
+     * would list an accessor of exactly the looked-for name among the available ones and still say
+     * none was found.
      */
     record HandlerSourceAccessorMissing(
         String payloadTypeName,
@@ -133,6 +140,7 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
         String handlerClassName,
         String missingFieldName,
         String accessorBaseName,
+        String expectedReturnType,
         List<String> available
     ) implements ErrorChannelWalkerError {
         public HandlerSourceAccessorMissing { available = List.copyOf(available); }
@@ -140,7 +148,8 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
             var sb = new StringBuilder("outcome type '").append(payloadTypeName)
                 .append("' @error type '").append(errorTypeName)
                 .append("': handler source class '").append(handlerClassName)
-                .append("' exposes no accessor for SDL field '").append(missingFieldName).append('\'');
+                .append("' exposes no accessor returning ").append(expectedReturnType)
+                .append(" for SDL field '").append(missingFieldName).append('\'');
             if (!accessorBaseName.equals(missingFieldName)) {
                 sb.append(" (remapped to '").append(accessorBaseName).append("' by @field)");
             }

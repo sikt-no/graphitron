@@ -3434,19 +3434,41 @@ class FieldBuilder {
         return null;
     }
 
+    /**
+     * Classifies one field of an {@code @error} type. The parent is not a {@link ResultType}, so
+     * graphitron locates nothing itself and the read is mediated by graphql-java's property
+     * machinery against the developer's exception class; the located name is therefore the
+     * <em>accessor base</em>, the type's {@code @field(name:)} override when the field carries one.
+     * Carrying that here rather than the SDL name is what lets the runtime registration fold over
+     * these leaves instead of over the type-level override list, which is the only way a wire
+     * direction on the leaf can reach the wire.
+     *
+     * <p>{@code path} and {@code message} are graphitron's own synthesised reads and take no
+     * direction: their values are a GraphQL path and a message string, neither of which is a node
+     * key.
+     */
     private GraphitronField classifyChildFieldOnErrorType(GraphQLFieldDefinition fieldDef, String parentTypeName) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
-        if (isScalarOrEnum(fieldDef)) {
-            // The parent is not a ResultType; the read is mediated by the @error type's
-            // accessor-base mapping against the developer's exception class, so graphitron
-            // locates nothing here (ValueLocator.DefaultRead).
-            return new RecordReadField(parentTypeName, name, location,
-                ctx.resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)),
-                new ValueLocator.DefaultRead(name),
-                new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
+        if (!isScalarOrEnum(fieldDef)) {
+            return new UnclassifiedField(parentTypeName, name, location, Rejection.invalidSchema("fields on @error types must be scalar or enum"));
         }
-        return new UnclassifiedField(parentTypeName, name, location, Rejection.invalidSchema("fields on @error types must be scalar or enum"));
+        boolean builtIn = ErrorType.BUILT_IN_FIELD_NAMES.contains(name);
+        var wire = builtIn
+            ? new ReadWireDirection.AsRead()
+            : resolveReadWireDirection(fieldDef, parentTypeName, name);
+        if (wire instanceof ReadWireDirection.Refused refused) {
+            return new UnclassifiedField(parentTypeName, name, location, refused.rejection());
+        }
+        String accessorBase = builtIn
+            ? name
+            : ctx.errors.forName(parentTypeName).map(et -> et.accessorBaseFor(name)).orElse(name);
+        return new RecordReadField(parentTypeName, name, location,
+            ctx.resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)),
+            new ValueLocator.DefaultRead(accessorBase),
+            wire instanceof ReadWireDirection.Encode encode
+                ? encode.compaction()
+                : new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
     }
 
     /**
@@ -3771,7 +3793,7 @@ class FieldBuilder {
         // already enforced inline above where SDL nullability is visible.
         var outcomeType = new OutcomeType(backing, errorsField, List.of());
         var walkerResult = new no.sikt.graphitron.rewrite.walker.ErrorChannelWalker()
-            .walk(outcomeType, ctx.schema, ctx.codegenLoader(), this::mapGraphQLTypeToReflectType);
+            .walk(outcomeType, ctx.schema, ctx.codegenLoader(), this::errorFieldAccessorReturn);
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<ErrorChannel.Mapped> ok ->
                 new ServiceOutcomeResult.Channel(ok.carrier());
@@ -4165,7 +4187,7 @@ class FieldBuilder {
                 continue;
             }
             var extraFields = errorObj.getFieldDefinitions().stream()
-                .filter(f -> !"path".equals(f.getName()) && !"message".equals(f.getName()))
+                .filter(f -> !ErrorType.BUILT_IN_FIELD_NAMES.contains(f.getName()))
                 .toList();
             if (extraFields.isEmpty()) {
                 continue;
@@ -4176,7 +4198,7 @@ class FieldBuilder {
                     continue;
                 }
                 for (var sdlField : extraFields) {
-                    var expectedReturn = mapGraphQLTypeToReflectType(sdlField.getType());
+                    var expectedReturn = errorFieldAccessorReturn(sdlField);
                     String accessorBase = errorType.accessorBaseFor(sdlField.getName());
                     var resolution = ClassAccessorResolver.resolve(
                         sourceClass,
@@ -6907,6 +6929,41 @@ class FieldBuilder {
         } catch (ClassNotFoundException | LinkageError unreadable) {
             return Object.class;
         }
+    }
+
+    /**
+     * The sole key column a {@code @nodeId(typeName:)} read would encode from, or {@code null}
+     * where no encode applies: no directive, no written target, a target that resolves to no node
+     * type, or a key of more than one column.
+     *
+     * <p>The refusal-free form of {@link #resolveReadWireDirection}, for the two accessor-coverage
+     * checks. They ask only what type the read has to yield, and a coordinate whose target or arity
+     * is wrong is refused by its own classification, so restating that refusal as a missing
+     * accessor would report the same fault in the wrong vocabulary.
+     */
+    private ColumnRef readEncodeKeyColumn(GraphQLFieldDefinition fieldDef) {
+        if (!fieldDef.hasAppliedDirective(DIR_NODE_ID)) return null;
+        var typeName = argString(fieldDef, DIR_NODE_ID, ARG_TYPE_NAME);
+        if (typeName.isEmpty()) return null;
+        if (!(resolveNodeIdTarget(typeName.get()) instanceof NodeIdTarget.Resolved resolved)) return null;
+        var keyColumns = resolved.nodeType().nodeKeyColumns();
+        return keyColumns.size() == 1 ? keyColumns.get(0) : null;
+    }
+
+    /**
+     * The Java type an {@code @error} type's declared field has to be readable as on a handler's
+     * source class. The field's own SDL type, except where an encode stands between the read and
+     * the wire: there the accessor yields the node key column and the {@code ID} the SDL declares
+     * is what graphitron produces from it. Supplied to {@code ErrorChannelWalker} as its
+     * {@link no.sikt.graphitron.rewrite.walker.ReflectTypeResolver} seam and read directly by
+     * {@link #checkErrorTypeSourceAccessors}, so the two accessor-coverage sites cannot disagree
+     * about what a {@code @nodeId} field's accessor must return.
+     */
+    private java.lang.reflect.Type errorFieldAccessorReturn(GraphQLFieldDefinition sdlField) {
+        var keyColumn = readEncodeKeyColumn(sdlField);
+        return keyColumn != null
+            ? keyColumnJavaType(keyColumn)
+            : mapGraphQLTypeToReflectType(sdlField.getType());
     }
 
     /**

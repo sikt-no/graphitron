@@ -440,7 +440,8 @@ class RejectionSeverityCoverageTest {
         }
         if (permit == no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.HandlerSourceAccessorMissing.class) {
             return new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.HandlerSourceAccessorMissing(
-                "FilmPayload", "FilmError", "com.example.FilmErrorHandler", "code", "code", List.of("message", "path"));
+                "FilmPayload", "FilmError", "com.example.FilmErrorHandler", "code", "code",
+                "java.lang.String", List.of("message", "path"));
         }
         // WireCoercionError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches them uniformly (Error severity), and lspCodeOf

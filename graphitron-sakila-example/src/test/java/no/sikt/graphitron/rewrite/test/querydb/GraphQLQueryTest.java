@@ -7165,7 +7165,7 @@ class GraphQLQueryTest {
                     title
                     errors {
                         __typename
-                        ... on FilmLookupInvalid { path message attempted }
+                        ... on FilmLookupInvalid { path message attempted attemptedFilm }
                         ... on FilmLookupNotFound { path message }
                     }
                 }
@@ -7183,6 +7183,12 @@ class GraphQLQueryTest {
         // named getAttemptedId() accessor off the matched throwable through a remapped
         // PropertyDataFetcher, round-tripping the attempted id (-7) end-to-end.
         only.containsEntry("attempted", -7);
+        // The @nodeId sibling reads the same accessor and publishes Film's node id instead of the
+        // raw key. Only the runtime can say which reached the client: the classified leaf carries
+        // an encode either way, and -7 would have been a legal ID on the wire. The pair also fixes
+        // what the encode is of, the two fields being one value in two forms.
+        only.containsEntry("attemptedFilm",
+            no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", -7));
         // Synthesized path DataFetcher routes Throwable sources through
         // env.getExecutionStepInfo().getPath().toList() so the [String!]! contract holds even
         // though Throwable has no getPath() accessor. The path is the SDL field path of the

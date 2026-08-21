@@ -1089,6 +1089,12 @@ type FilmLookupInvalid @error(handlers: [{
     # R202: extra field whose source-class accessor (getAttemptedId()) diverges from the field
     # name; @field(name:) remaps both the classify-time accessor check and the runtime read.
     attempted: Int @field(name: "attemptedId")
+    # The read-family @nodeId encode at the coordinate it was reported from. Same accessor as
+    # `attempted` above, published as Film's node id instead of as the raw key, so one query sees
+    # both forms of one value and the encode is observable against its own operand. An @error type
+    # stands for no table, so nothing here is projected: the encode applies to what the read of the
+    # matched exception yielded.
+    attemptedFilm: ID @nodeId(typeName: "Film") @field(name: "attemptedId")
 }
 
 # The both-shapes source: FilmLookupClientFacingException is a Throwable and a graphql.GraphQLError

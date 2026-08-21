@@ -728,7 +728,8 @@ class GraphitronSchemaClassGeneratorTest {
             .errorMappings();
         return no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator
             .generateFor(errorType, no.sikt.graphitron.javapoet.ClassName.get(
-                mappings.packageName(), mappings.simpleName()))
+                mappings.packageName(), mappings.simpleName()),
+                bundle.model().errorFieldReads(typeName))
             .toString();
     }
 

@@ -1088,7 +1088,9 @@ replacement.
    `@nodeId(typeName:)` returns an encoded node id and the reporter's hand-written encoder call sites
    can go; the same holds at the accessor, by-name and typed-column read arms; a composite-key node
    type at a read coordinate is refused with a message naming the count, and a read whose type
-   disagrees with the key column's is refused naming both.
+   disagrees with the key column's is refused naming both. Shipped; the type precondition is stated
+   per locator arm rather than in the relation, for the reason the design section gives, and the
+   relation's own type precondition is what stage 4 leaves owing.
 5. **The defect view and its projector.** The two verdicts over the instruction population, read by a
    projector into located `ValidationError`s as a further component on `StoreDetections` beside the two
    detection families already there (`AuthoredClaimConflicts` and `ArgmappingProjectionDefects`;
@@ -1158,6 +1160,18 @@ with the node index in hand, and `GraphitronSchema` exposes it as the one per-fi
 registration folds over. That satisfies what the plan was after, the classified leaf and the
 type-level override list stopping being two spellings of one read, and puts the list where the
 resolution is possible.
+
+**The `@error` increment's real finding is that one of its two check sites had a message the change
+made false.** Two sites run the accessor-coverage check, `FieldBuilder`'s for a class-backed payload
+and `HandlerAccessorCheck`'s for the `@service` channel, and both compare an accessor's declared
+return against the SDL field's reflected form. Repointing that expectation at the key column is what
+makes a `@nodeId` extra field authorable at all; what it also does is make the walker's message a
+lie. That message says the source class "exposes no accessor for SDL field 'filmRef'" and then lists
+the available accessors, which now includes an accessor of exactly the looked-for name, differing only
+in return type. So the typed arm gained the expected type and states it, and both sites reach the
+expectation through one method rather than each deriving it. A message that lists the thing it says is
+missing is worse than a missing message, and only the fixture that reads a `String` where the key
+column is an `Integer` shows it.
 
 **The arity rule landed at the `argMapping` site, and it landed by adding a population rather than by
 removing a rejection.** The plan above says stage 2 edits `BARE_NODE_ID`'s text down to the arity
@@ -1282,12 +1296,27 @@ prohibition, so raising it was available; not raising it was better. `inlineSucc
 one narrowing that method already made now also decides how the value reaches the wire. A pin doing
 what a pin is for.
 
+The `@error` increment drew no reds either, and the two it drew were both a new hierarchy meeting a
+gate that exists to catch exactly that: `ErrorFieldRead` needed a kind label in the hierarchy-kind
+registry (a resolved view, being a projection over the type's own classified leaves), and the typed
+error arm's extra component needed its construction site in the LSP's severity-coverage test updated.
+Neither is a behaviour change and both are the guards working.
+
 One test fixture is worth naming because finding it is what proved the arm. The typed-column read at
 an `ID` coordinate is unreachable through a `@service` returning a table record, that binding making
 the SDL type a producer carrier and the carrier leaf claiming the coordinate. The shape where the read
 arm owns it is a record reached through a *parent accessor*, which the tree already had in
 `FilmKeySummary`, a Java record holding a fully populated `FilmRecord`. So the compilation and
 execution tiers cost SDL only, on the same fixture whose batch-key contract they already pin.
+
+The `@error` coordinate's fixture is better still, and it was already in the tree.
+`FilmLookupInvalidIdException.getAttemptedId()` returns `film_id`'s own type, so the same accessor is
+published twice on one `@error` type, once raw as `attempted: Int` and once as
+`attemptedFilm: ID @nodeId(typeName: "Film")`. One query then sees both forms of one value, which
+fixes what the encode is *of* rather than only that an encode happened, and the existing execution
+case grew one assertion instead of a new test. That the tier is needed at all is the same argument as
+above: the classified leaf carries an encode either way, and the raw key would have been a legal `ID`
+on the wire.
 
 * **Pipeline tier**, carrying the primary behavioural weight. The junction chain lowering to a remote
   binding with a two-hop path, on both the argument and the input-field surfaces. Each of the four
@@ -1458,7 +1487,13 @@ a null payload and no committed row.
   the parent's own row?") and the two worked examples are peers. It also gained the write and
   `@lookupKey` refusals, which an author reaching the remote binding for the first time meets and the
   page had no reason to mention while the gate stood in front of them.
-* `docs/manual/reference/directives/error.adoc` gains the `@nodeId` extra-field case.
+* `docs/manual/reference/directives/error.adoc` gains the `@nodeId` extra-field case. Done in
+  stage 4, and the worked example is the fixture: one accessor published twice, raw and encoded, which
+  is what makes "the encode happens on the way out" a thing the reader can see rather than a claim.
+  The page also states the consequence an author most needs, that an accessor already returning an
+  encoded id is now a build error, so a hand-written encoder call site goes rather than disagreeing
+  silently with the generated one. Its extra-fields section gained the expected type in the
+  build-failure sentence for the same reason the message did.
 
 ## Retired vocabulary
 
@@ -1506,6 +1541,13 @@ rejection that enforced it, not the word for the shape that still has that prope
 sweep found beyond the enumerated entries: the fixture generator's own comment on `lift_fail_a`
 described the fixture by the rejection it drew, and the page's "the runtime touches one table" was
 stated of multi-hop chains generally rather than of the identity-carrying ones.
+
+Stage 4's second increment retires one thing the list did not name, and it is a reading rather than a
+symbol. `GraphitronType.ErrorType.accessorOverrides` survives as the *authored* fact, which is what
+its javadoc now says; what retires is its standing as the per-field read the runtime registration folds
+over. That reading is what made an extra field without `@field(name:)` invisible to the fold, and it is
+the reason the type could carry no wire direction at all. The Done-gate sweep should read a surviving
+`accessorOverrides` as intact, on the same terms as `CONDITION_STEP_MARKER` below.
 
 Stage 4's first increment discharged the `CallSiteCompaction` entry, and the replacement text says
 more than the entry asked for. The retired sentence named two carriers as the population; naming the

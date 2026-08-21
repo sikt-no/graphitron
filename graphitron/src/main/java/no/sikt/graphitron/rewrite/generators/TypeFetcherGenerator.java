@@ -202,7 +202,8 @@ public class TypeFetcherGenerator {
             }
             result.add(no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator
                 .generateFor(et, no.sikt.graphitron.javapoet.ClassName.get(
-                    row.errorMappings().packageName(), row.errorMappings().simpleName())));
+                    row.errorMappings().packageName(), row.errorMappings().simpleName()),
+                    schema.errorFieldReads(row.typeName())));
         }
         return result;
     }

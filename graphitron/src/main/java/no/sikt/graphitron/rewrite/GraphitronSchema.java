@@ -482,6 +482,37 @@ public record GraphitronSchema(
     }
 
     /**
+     * One {@link no.sikt.graphitron.rewrite.model.ErrorFieldRead} per declared field of an
+     * {@code @error} type, in declaration order: the read and its wire direction, which is what the
+     * runtime fetcher registration folds over.
+     *
+     * <p>Derived from the type's own classified fields rather than from
+     * {@link GraphitronType.ErrorType}'s authored override list, so the read the registration makes
+     * and the read the classifier resolved are one fact. Every field on such a type classifies to a
+     * record read (the type's contract admits scalars and enums only), so a coordinate missing here
+     * is a rejected field and not a shape this fold declines to answer for.
+     */
+    public List<no.sikt.graphitron.rewrite.model.ErrorFieldRead> errorFieldReads(String typeName) {
+        var out = new java.util.ArrayList<no.sikt.graphitron.rewrite.model.ErrorFieldRead>();
+        for (var field : fieldsOf(typeName)) {
+            if (!(field instanceof no.sikt.graphitron.rewrite.model.ChildField.RecordReadField read)) {
+                continue;
+            }
+            if (GraphitronType.ErrorType.BUILT_IN_FIELD_NAMES.contains(read.name())) {
+                out.add(new no.sikt.graphitron.rewrite.model.ErrorFieldRead.Builtin(read.name()));
+                continue;
+            }
+            // The located name is the accessor base: field classification resolved it off the
+            // type's authored override list, so this fold reads it back rather than re-deriving it.
+            String accessorBase = read.locator() instanceof
+                no.sikt.graphitron.rewrite.model.ValueLocator.DefaultRead dr ? dr.name() : read.name();
+            out.add(new no.sikt.graphitron.rewrite.model.ErrorFieldRead.SourceAccessor(
+                read.name(), accessorBase, read.compaction()));
+        }
+        return List.copyOf(out);
+    }
+
+    /**
      * The joined-table participants' field-residence split for a single-table discriminated
      * interface: the read surface of the {@link JoinedTableReprojection} fold, one formula for
      * the launcher producer and the legacy interface-reprojection call sites alike.

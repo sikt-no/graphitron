@@ -44,7 +44,7 @@ public final class HandlerAccessorCheck {
                 continue;
             }
             var extraFields = errorObj.getFieldDefinitions().stream()
-                .filter(f -> !"path".equals(f.getName()) && !"message".equals(f.getName()))
+                .filter(f -> !ErrorType.BUILT_IN_FIELD_NAMES.contains(f.getName()))
                 .toList();
             if (extraFields.isEmpty()) {
                 continue;
@@ -55,7 +55,7 @@ public final class HandlerAccessorCheck {
                     continue;
                 }
                 for (var sdlField : extraFields) {
-                    var expectedReturn = reflectTypeResolver.resolve(sdlField.getType());
+                    var expectedReturn = reflectTypeResolver.resolve(sdlField);
                     String accessorBase = errorType.accessorBaseFor(sdlField.getName());
                     var resolution = ClassAccessorResolver.resolve(
                         sourceClass,
@@ -70,6 +70,7 @@ public final class HandlerAccessorCheck {
                             sourceClass.getName(),
                             sdlField.getName(),
                             accessorBase,
+                            expectedReturn.getTypeName(),
                             availableAccessors(sourceClass)));
                     }
                 }

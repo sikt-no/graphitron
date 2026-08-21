@@ -119,7 +119,29 @@ type FilmLookupInvalid @error(handlers: [{
 }
 ----
 
-The build fails when a declared extra field cannot be populated from every handler's source class, listing the accessors the class does expose. `@field` on `path` or `message` is rejected: those two fields are populated by Graphitron itself.
+The build fails when a declared extra field cannot be populated from every handler's source class, listing the accessors the class does expose and naming the type the accessor had to return. `@field` on `path` or `message` is rejected: those two fields are populated by Graphitron itself.
+
+[#nodeid-extra-field]
+=== Publishing a node id from an extra field
+
+An extra field carrying xref:nodeId.adoc[`@nodeId`]`(typeName:)` publishes a global object ID built from what the read yielded, so the exception carries the key and the client sees the ID:
+
+[source,graphql]
+----
+type FilmLookupInvalid @error(handlers: [{
+        handler: GENERIC,
+        className: "no.sikt.graphitron.rewrite.test.services.FilmLookupInvalidIdException"
+    }]) {
+    path: [String!]!
+    message: String!
+    attempted: Int @field(name: "attemptedId")                          # the raw key
+    attemptedFilm: ID @nodeId(typeName: "Film") @field(name: "attemptedId")  # the same value as a node id
+}
+----
+
+Both fields read `getAttemptedId()`. The accessor therefore has to return `film_id`'s own Java type, not a `String`: the encode happens on the way out, so an accessor that already returns an encoded ID is a build error naming the type it should have returned. If you were encoding by hand to publish an ID here, that call site goes away and the accessor exposes the key.
+
+`typeName:` is required, and the node type's key must be one column. An `@error` type stands for no table, so there is nothing for a bare `@nodeId` to inherit its node from; and the field is one value, so a node type keyed on several columns has nothing to be encoded from and the build says so, naming the count.
 
 == Constraints
 
@@ -130,6 +152,7 @@ The build fails when a declared extra field cannot be populated from every handl
 * For `GENERIC`, `className:` is required. The build rejects a `GENERIC` handler without it.
 * For `DATABASE`, supply at least one of `code:`, `sqlState:`, or `matches:` (otherwise every `SQLException` on the channel routes to this type, which is rarely the intent).
 * `code:` and `sqlState:` cannot be combined: the build rejects a `DATABASE` entry carrying both, since the two discriminators are vendor-conflicting. Split into two entries, one per discriminator. Vendor portability: prefer `sqlState` (PostgreSQL is specific, Oracle is generic), narrowed with a `matches:` substring where needed.
+* An extra field carrying xref:nodeId.adoc[`@nodeId`] needs `typeName:` and a node type keyed on a single column; see xref:#nodeid-extra-field[Publishing a node id from an extra field].
 * Applies only to `OBJECT`. Interfaces and unions cannot carry `@error` directly — the union-of-error-types pattern works because the union *members* are individually `@error`-decorated.
 
 == See also

@@ -265,8 +265,11 @@ public sealed interface GraphitronType
      * <p>{@code accessorOverrides} holds one {@link FieldAccessorOverride} per extra field
      * (everything except {@code path} / {@code message}) that carries {@code @field(name:)}, in SDL
      * declaration order. The override names the accessor to read from each handler's source class
-     * when it diverges from the GraphQL field name; both the classify-time accessor-coverage check
-     * and the runtime property-fetcher registration consult it through {@link #accessorBaseFor}.
+     * when it diverges from the GraphQL field name; the classify-time accessor-coverage check and
+     * field classification consult it through {@link #accessorBaseFor}. It is the <em>authored</em>
+     * fact and not the per-field read: what the runtime registration folds over is
+     * {@link ErrorFieldRead}, one row per declared field, derived from the classified leaves (see
+     * that type for why the derivation cannot happen here).
      */
     record ErrorType(
         String name,
@@ -274,6 +277,13 @@ public sealed interface GraphitronType
         List<Handler> handlers,
         List<FieldAccessorOverride> accessorOverrides
     ) implements GraphitronType, EmitsPerTypeFile {
+
+        /**
+         * The two fields an {@code @error} type must declare and whose values graphitron
+         * synthesises itself. Named here rather than spelled at each site that has to exclude
+         * them, there being four such sites and one contract.
+         */
+        public static final java.util.Set<String> BUILT_IN_FIELD_NAMES = java.util.Set.of("path", "message");
 
         /**
          * A per-extra-field {@code @field(name:)} remap on an {@code @error} type: the GraphQL

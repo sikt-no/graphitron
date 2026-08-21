@@ -10,6 +10,7 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.schema.OneOfDirectiveSdl;
 import no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter;
 import no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator;
+import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
@@ -234,7 +235,8 @@ public final class GraphitronSchemaClassGenerator {
         schema.types().entrySet().stream()
             .filter(e -> e.getValue() instanceof ErrorType)
             .sorted(Map.Entry.comparingByKey())
-            .forEach(e -> body.add(buildErrorTypeFieldFetchers((ErrorType) e.getValue(), outputPackage)));
+            .forEach(e -> body.add(buildErrorTypeFieldFetchers(
+                (ErrorType) e.getValue(), schema.errorFieldReads(e.getKey()), outputPackage)));
 
         body.addStatement("$T schemaBuilder = $T.newSchema()", SCHEMA_BUILDER, GRAPHQL_SCHEMA);
 
@@ -512,13 +514,20 @@ public final class GraphitronSchemaClassGenerator {
     }
 
     /**
-     * Emits {@code codeRegistry.dataFetcher(...)} calls for one @error type. The required
-     * {@code path} and {@code message} fields (both {@code [String!]!} / {@code String!}, so a
-     * missing or null value would violate the schema's non-null contract) get registered fetchers;
-     * any extra field carrying {@code @field(name:)} gets a {@code PropertyDataFetcher} keyed on the
-     * override's accessor base so the runtime read matches the classify-time accessor check.
-     * Extra fields without the directive keep resolving through graphql-java's default
-     * {@code PropertyDataFetcher} (by SDL field name), so they need no registration here.
+     * Emits {@code codeRegistry.dataFetcher(...)} calls for one @error type, one per declared
+     * field, folding over the type's per-field reads
+     * ({@link no.sikt.graphitron.rewrite.model.ErrorFieldRead}). The required {@code path} and
+     * {@code message} fields (both {@code [String!]!} / {@code String!}, so a missing or null value
+     * would violate the schema's non-null contract) wire the reified {@code <ErrorType>Fetchers}
+     * methods; an extra field registers a {@code PropertyDataFetcher} on its accessor base, so the
+     * runtime read matches the classify-time accessor check, or the reified encoding method where
+     * the field carries {@code @nodeId}.
+     *
+     * <p>The fold used to run over the type's {@code @field(name:)} overrides alone, which left an
+     * extra field without one unregistered and resolving through graphql-java's default
+     * {@code PropertyDataFetcher} on its SDL name. That is the same read this now emits explicitly,
+     * so the registration is unchanged for those fields and the type gains the one thing the
+     * override subset could not carry: a per-field wire direction.
      *
      * <ul>
      *   <li>{@code message} routes through {@code getMessage()} on the source: defined on
@@ -534,21 +543,36 @@ public final class GraphitronSchemaClassGenerator {
      * {@link no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator}; this site
      * only wires the {@code <ErrorType>Fetchers::path} / {@code ::message} references.
      */
-    private static CodeBlock buildErrorTypeFieldFetchers(ErrorType errorType, String outputPackage) {
+    private static CodeBlock buildErrorTypeFieldFetchers(ErrorType errorType,
+            List<no.sikt.graphitron.rewrite.model.ErrorFieldRead> reads, String outputPackage) {
         String typeName       = errorType.name();
         var FIELD_COORDINATES = ClassName.get("graphql.schema", "FieldCoordinates");
         var PROPERTY_FETCHER  = ClassName.get("graphql.schema", "PropertyDataFetcher");
         var fetchersRef       = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).fetchers(typeName);
         var fetchers          = ClassName.get(fetchersRef.packageName(), fetchersRef.simpleName());
-        var cb = CodeBlock.builder()
-            .addStatement("codeRegistry.dataFetcher($T.coordinates($S, $S), $T::path)",
-                FIELD_COORDINATES, typeName, "path", fetchers)
-            .addStatement("codeRegistry.dataFetcher($T.coordinates($S, $S), $T::message)",
-                FIELD_COORDINATES, typeName, "message", fetchers);
-        for (var override : errorType.accessorOverrides()) {
-            cb.addStatement("codeRegistry.dataFetcher($T.coordinates($S, $S), $T.fetching($S))",
-                FIELD_COORDINATES, typeName, override.sdlFieldName(),
-                PROPERTY_FETCHER, override.accessorBase());
+        var cb = CodeBlock.builder();
+        for (var read : reads) {
+            switch (read) {
+                // path / message: graphitron synthesises the value, so the read is a reified
+                // method on the type's own fetchers class.
+                case no.sikt.graphitron.rewrite.model.ErrorFieldRead.Builtin builtin ->
+                    cb.addStatement("codeRegistry.dataFetcher($T.coordinates($S, $S), $T::$L)",
+                        FIELD_COORDINATES, typeName, builtin.sdlFieldName(), fetchers,
+                        builtin.sdlFieldName());
+                case no.sikt.graphitron.rewrite.model.ErrorFieldRead.SourceAccessor accessor -> {
+                    // An encode has nowhere to go on a bare PropertyDataFetcher, so the encoding
+                    // read is reified alongside path / message and wired the same way.
+                    if (accessor.wire() instanceof CallSiteCompaction.NodeIdEncodeKeys) {
+                        cb.addStatement("codeRegistry.dataFetcher($T.coordinates($S, $S), $T::$L)",
+                            FIELD_COORDINATES, typeName, accessor.sdlFieldName(), fetchers,
+                            accessor.sdlFieldName());
+                    } else {
+                        cb.addStatement("codeRegistry.dataFetcher($T.coordinates($S, $S), $T.fetching($S))",
+                            FIELD_COORDINATES, typeName, accessor.sdlFieldName(),
+                            PROPERTY_FETCHER, accessor.accessorBase());
+                    }
+                }
+            }
         }
         return cb.build();
     }

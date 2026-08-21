@@ -209,6 +209,10 @@ class HierarchyKindRegistryTest {
         Map.entry(KeyAlternative.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(ReturnTypeRef.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(ValueLocator.class, HierarchyKind.RESOLVED_VIEW),
+        // One @error type's per-field read and wire direction: a projection over that type's own
+        // classified leaves, with no walk of its own. Labelled by its provenance rather than by
+        // the runtime registration that folds over it.
+        Map.entry(no.sikt.graphitron.rewrite.model.ErrorFieldRead.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(ErrorsSlot.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(DialectRequirement.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(InputColumnBinding.class, HierarchyKind.RESOLVED_VIEW),
