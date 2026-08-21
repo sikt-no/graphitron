@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R769` | withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms | Ready | 2026-08-21 <sub>created 2026-08-20</sub> | [plan](seeded-store-boots-per-thread.md) |
+| `R769` | withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms | In Progress | 2026-08-21 <sub>created 2026-08-20</sub> | [plan](seeded-store-boots-per-thread.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R784` | Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it | Spec | 2026-08-21 | [plan](straddling-reference-update-partition.md) |
 | `R763` | Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path | In Progress | 2026-08-21 <sub>created 2026-08-20</sub> | [plan](sakila-example-tests-run-one-at-a-time.md) |
@@ -590,7 +590,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
 - `R768` [**The build boots the fact schema 1051 times, and a reset costs a fraction of a boot**](store-boots-once-per-test-not-once-per-build.md) — Backlog, dx
-- `R769` [**withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms**](seeded-store-boots-per-thread.md) — Ready, dx
+- `R769` [**withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms**](seeded-store-boots-per-thread.md) — In Progress, dx
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
 - `R772` [**The dev loop holds a live fact store no developer can query**](dev-loop-store-sql-console.md) — In Review, dx
 - `R763` [**Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path**](sakila-example-tests-run-one-at-a-time.md) — In Progress, dx

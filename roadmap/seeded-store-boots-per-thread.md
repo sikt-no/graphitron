@@ -1,7 +1,7 @@
 ---
 id: R769
 title: "withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 1
 theme: tooling
