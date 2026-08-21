@@ -1,7 +1,7 @@
 ---
 id: R796
 title: "The diagnostics drain never runs on the thread that triggered it"
-status: In Review
+status: Ready
 bucket: bug
 priority: 2
 theme: lsp
@@ -134,3 +134,78 @@ Three new cases carry the async claim itself, none of them asserting a duration:
   flag rather than a queue depth.
 * A file closed while a drain is in flight receives the `didClose` clear and no later publication.
 
+
+## Reviewer findings
+
+### Round 1: In Review -> Ready, rework requested (2026-08-21, session_01ArRUrte6WnVy19HnpRyvLM)
+
+The drain does leave both triggering threads, the collapse flag is correct under the interleavings I
+worked through, and the three new cases in `DiagnosticsDrainThreadingTest` are the ordering-not-duration
+shape the plan asked for. Both production entry points pass a real executor, so no production path is
+left on the same-thread default, and the existing synchronous harnesses keep their assertions verbatim.
+Two findings stand against question 1, "is it the change the spec approved", and the first is why this
+goes back.
+
+**1. The per-connection shutdown turns a stale listener from silent into throwing, on the dev goal's
+own threads.** `DevServer.serve`'s `finally` calls `drainExecutor.shutdownNow()`, and nothing clears
+`Workspace`'s recalculate-listener slot, so between an editor detaching and the next connection's
+`setClient` the slot still holds the dead connection's service with its non-null client. A submit in
+that window is rejected.
+
+Reproduced, not reasoned: a probe that mints a service on a single-thread executor, opens a file,
+shuts the executor down, then calls `markAllForRecalculation` gets
+`RejectedExecutionException: Task ... rejected from ThreadPoolExecutor[Shutting down, ...]`. That
+exception leaves `Workspace.enqueueAndNotify` and lands on the caller's thread, which is a Maven
+thread.
+
+`DevMojo` makes it worse rather than absorbing it, on both paths that call the mutator inside a
+`catch (RuntimeException)` that then calls it again:
+
+* `regenerate` logs `catalog refresh after save failed; keeping previous: Task ... rejected` for a
+  refresh that in fact succeeded, then throws a second time out of the inner catch, past an outer
+  catch that only handles `MojoExecutionException`, into a `DebounceExecutor` task whose
+  `ScheduledFuture` nobody inspects. Silently swallowed, with a misleading warning as the only trace.
+* `rebuildCatalog` calls the mutator *before* its catalog-refreshed log line and its recompile, so a
+  classpath change while no editor is attached loses the recompile and reports a rebuild failure that
+  did not happen.
+
+This is a new failure mode, and the comparison is the point: inline, this window was quiet.
+`RemoteEndpoint.notify` catches its own write failure and logs at INFO, which the teardown item's
+round 1 review established and this plan quotes. The plan's coordination paragraph concluded "neither
+blocks the other"; that is the half this review retracts. Shutting the executor down is safe only once
+the listener slot cannot still reach it, or once the submit tolerates rejection. Either satisfies the
+finding: make `publishDiagnosticsForRecalculate` treat a rejected submit the way the inline path
+treated a dead client (reset `drainWanted`, say nothing louder than debug), or sequence the shutdown
+behind the compare-and-clear the teardown item owns and say so in the plan. A mutator must not be able
+to throw into the dev goal, because before this change it could not.
+
+Second-order, and fixed by the same change: `drainWanted` stays `true` after a rejected submit, so a
+service that survives one rejection never submits again.
+
+**2. A contributor-facing doc now teaches the opposite of what the code does.**
+`docs/architecture/how-to/dev-loop-internals.adoc`, "Three things to read off a trace", still says a
+`workspace.notify` much larger than its `workspace.mutate` means "the mutation's real cost is the
+diagnostic recalculation it triggers", and sends the reader to `files=` on `publishDiagnostics.drain`
+under the same thread. After this change `notify` is a flag-and-submit and the drain span is on
+`graphitron-lsp-diagnostics-drain`, so a large `notify` means the listener has stopped being a submit,
+which is the inverse reading. The delivery updated exactly that sentence in
+`Workspace.enqueueAndNotify`'s javadoc and left the page that documents the same span alone. The
+first row of that table ("while a notification's phases run, the server is not reading the
+connection") also now overstates the case for the drain specifically, which was its motivating
+example. Neither mechanical gate catches this: the item declares no retired vocabulary and touches no
+`docs/`, which is what makes it worth naming here rather than trusting a check.
+
+**Non-blocking, no action required for this gate.**
+
+* `markAllForRecalculation` still calls `loadVocabulary` inline, which is a session-budget read on the
+  watcher thread, so that thread can still spend 30 s per build even with the drain moved off. The
+  plan's problem statement named that thread while its "What changes" named only the drain, so whether
+  this belongs in the rework or in a fresh item is the author's call.
+* `shutdownNow()` interrupts the drain thread, but a drain inside a JDBC read will not notice
+  promptly, so "stops a drain in flight from publishing into a closing client" is approximate: the
+  drain can still reach its publish and hit a closed socket, which lsp4j logs at INFO. Worth a word in
+  the plan rather than a code change.
+
+Verified along the way: `mvn install -Plocal-db` on the delivered tree, the collapse flag against the
+enqueue-versus-drain interleavings, `holdsViewFor` against the close-mid-drain window the third test
+pins, and every symbol the plan names.
