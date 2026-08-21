@@ -98,9 +98,16 @@ public final class FactStores {
      * }
      * }</pre>
      *
+     * <p>Not the per-thread funnel, and the reason is the surface rather than the lifetime:
+     * {@link SeededStore#withSeededStore(java.util.function.Consumer)} hands a body a
+     * {@link org.jooq.DSLContext}, deliberately, and a case that needs the store <em>handle</em>
+     * (the connection, or something the handle mints) has nothing to ask it for. Widening the funnel
+     * to hand out the handle would give every case on it the ability to close the thread's store.
+     * These boots are counted in {@link #boots()} like any other and land under the funnel's budget.
+     *
      * <p>Only for a class whose cases do not interfere. The store arrives empty and stays whatever
      * the cases leave it, so a class that seeds rows and counts them wants a store per case, from
-     * {@link #inMemory()}.
+     * {@link #inMemory()}, or the funnel, which clears between bodies.
      */
     public static ClassStore perClass() {
         return new ClassStore();
