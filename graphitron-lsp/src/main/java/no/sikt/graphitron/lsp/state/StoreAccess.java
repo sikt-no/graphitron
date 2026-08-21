@@ -90,8 +90,10 @@ public final class StoreAccess implements AutoCloseable {
      * every keystroke on the reader the drain owns, which is both the wrong budget and the
      * head-of-line blocking two readers exist to remove. They share the private form below instead.
      */
-    public <R> StoreAnswer<R> answering(String sourceName, Function<Optional<StoreHandle>, R> answer) {
-        return resolving(interactive, List.of(sourceName),
+    public <R> StoreAnswer<R> answering(
+        StoreRead read, String sourceName, Function<Optional<StoreHandle>, R> answer
+    ) {
+        return resolving(read, interactive, List.of(sourceName),
             handles -> answer.apply(handles.of(sourceName)));
     }
 
@@ -110,13 +112,13 @@ public final class StoreAccess implements AutoCloseable {
      * a map a caller may keep.
      */
     public <R> StoreAnswer<R> answeringAll(
-        Collection<String> sourceNames, Function<DocumentHandles, R> answer
+        StoreRead read, Collection<String> sourceNames, Function<DocumentHandles, R> answer
     ) {
-        return resolving(sessionWide, sourceNames, answer);
+        return resolving(read, sessionWide, sourceNames, answer);
     }
 
     /**
-     * Runs {@code read} against this session's own graph on the <em>session-wide</em> reader, inside
+     * Runs {@code reading} against this session's own graph on the <em>session-wide</em> reader, inside
      * one read transaction and without resolving any document first. The door for the questions that
      * are about the session rather than about a file an editor has open: the directive vocabulary is
      * the shipped case, being one capture's answer that every document in the session is then judged
@@ -125,8 +127,8 @@ public final class StoreAccess implements AutoCloseable {
      * <p>The session-state grain rather than the keystroke one, which is why it shares the drain's
      * reader: it is read once per triggering event, not once per answer.
      */
-    public <R> StoreAnswer<R> readingSessionGraph(Function<StoreHandle, R> read) {
-        return warned(sessionWide.read(dsl -> read.apply(new StoreHandle(dsl, graphName))));
+    public <R> StoreAnswer<R> readingSessionGraph(StoreRead read, Function<StoreHandle, R> reading) {
+        return warned(read, sessionWide.read(dsl -> reading.apply(new StoreHandle(dsl, graphName))));
     }
 
     /**
@@ -135,9 +137,10 @@ public final class StoreAccess implements AutoCloseable {
      * either way.
      */
     private <R> StoreAnswer<R> resolving(
-        StoreReader reader, Collection<String> sourceNames, Function<DocumentHandles, R> answer
+        StoreRead read, StoreReader reader, Collection<String> sourceNames,
+        Function<DocumentHandles, R> answer
     ) {
-        return warned(reader.read(dsl -> {
+        return warned(read, reader.read(dsl -> {
             var resolved = SourceGraph.ofAll(dsl, sourceNames);
             return answer.apply(sourceName -> Optional.ofNullable(resolved.get(sourceName))
                 .flatMap(graph -> handleFor(dsl, graph)));
@@ -148,8 +151,15 @@ public final class StoreAccess implements AutoCloseable {
      * One warning per expired budget, here rather than at each surface. The surfaces decide what to
      * show, which is a different decision and genuinely theirs; whether the developer hears about it
      * at all is the store boundary's, and stating it once means a new surface cannot forget to and
-     * five surfaces cannot each say it. The statement is what makes the line worth reading: it is
-     * the one thing a bug report needs and the one thing nobody can reconstruct afterwards.
+     * five surfaces cannot each say it.
+     *
+     * <p>The WARN names the read and nothing else, because what a developer scanning a console can
+     * act on is <em>which question</em> the server gave up on: that is the thing to say in a bug
+     * report and to grep for when the same surface goes quiet again. The statement is still the one
+     * thing a fix needs and the one thing nobody can reconstruct afterwards, so it is not thrown
+     * away: it drops to DEBUG on this same logger, where somebody debugging asks for it and nobody
+     * else pays a thousand-character line for it. The WARN carries the pointer, spelling the logger
+     * name out because that is what a developer types into a logback config.
      *
      * <p>Through slf4j rather than {@link no.sikt.graphitron.lsp.trace.LspTrace}, whose javadoc warns
      * that the LSP's stdio deployment often carries {@code slf4j-api} with no backend bound and would
@@ -158,12 +168,13 @@ public final class StoreAccess implements AutoCloseable {
      * bound backend, and the build log is where the draft in the user manual says to look. A bare
      * {@code Launcher} started outside a build has no store to read at all.
      */
-    private static <R> StoreAnswer<R> warned(StoreAnswer<R> answer) {
+    private static <R> StoreAnswer<R> warned(StoreRead read, StoreAnswer<R> answer) {
         if (answer instanceof StoreAnswer.OutOfBudget<R> expired) {
-            LOGGER.warn("a fact store read ran out of its {} budget and was aborted, so this surface "
-                    + "keeps what it was already showing rather than answering from a partial read. "
-                    + "The statement: {}",
-                expired.budget().describe(), expired.sql());
+            LOGGER.warn("{} ran out of its {} budget and was aborted, so this surface keeps what it "
+                    + "was already showing rather than answering from a partial read. The statement "
+                    + "that overran is logged at DEBUG on {}.",
+                read.phrase(), expired.budget().describe(), LOGGER.getName());
+            LOGGER.debug("the statement {} overran: {}", read.phrase(), expired.sql());
         }
         return answer;
     }

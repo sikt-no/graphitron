@@ -1,10 +1,16 @@
 package no.sikt.graphitron.lsp;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.server.GraphitronTextDocumentService;
 import no.sikt.graphitron.lsp.state.StoreAccess;
+import no.sikt.graphitron.lsp.state.StoreRead;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.model.boot.ReadBudget;
+import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.Rejection;
@@ -17,6 +23,7 @@ import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -127,6 +134,61 @@ class StoreOutOfBudgetTest {
     }
 
     /**
+     * What a developer sees on the console when a read overruns, captured at the boundary's own
+     * logger. The WARN names the read and carries no statement: which question the server gave up on
+     * is the one fact a scanning developer can act on, say in a bug report, and grep for, while the
+     * statement a drain issues runs to thousands of characters and pushes everything else out of
+     * view. The statement is still what a fix needs, so it appears once at DEBUG on the same logger,
+     * and the WARN points there. Asserted against the enum constant rather than a sentence, so
+     * rewording the phrase does not break this while dropping the name does.
+     */
+    @Test
+    @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void theWarningNamesTheReadAndTheStatementDropsToDebug() {
+        try (var fixture = StoreFixture.of(tmp, SDL);
+             var access = fixture.access(INTERACTIVE, SESSION_WIDE)) {
+            fixture.makeRunaway("store_graph_source");
+
+            var boundary = (Logger) LoggerFactory.getLogger(StoreAccess.class);
+            var recorded = new ListAppender<ILoggingEvent>();
+            recorded.start();
+            Level inherited = boundary.getLevel();
+            boundary.setLevel(Level.DEBUG);
+            boundary.addAppender(recorded);
+            try {
+                var answer = access.answeringAll(StoreRead.DIAGNOSTICS,
+                    List.of(fixture.sourceName()), handles -> "unreached");
+                String sql = switch (answer) {
+                    case StoreAnswer.OutOfBudget<String> expired -> expired.sql();
+                    case StoreAnswer.Answered<String> unexpected -> throw new AssertionError(
+                        "the runaway relation was read to completion: " + unexpected.value());
+                };
+
+                var warns = recorded.list.stream()
+                    .filter(event -> event.getLevel() == Level.WARN).toList();
+                assertThat(warns).hasSize(1);
+                assertThat(warns.getFirst().getFormattedMessage())
+                    .as("the WARN names the read, points at the DEBUG logger, and carries no "
+                        + "statement")
+                    .contains(StoreRead.DIAGNOSTICS.phrase())
+                    .contains(StoreAccess.class.getName())
+                    .doesNotContain(sql);
+
+                var debugs = recorded.list.stream()
+                    .filter(event -> event.getLevel() == Level.DEBUG).toList();
+                assertThat(debugs).hasSize(1);
+                assertThat(debugs.getFirst().getFormattedMessage())
+                    .as("the statement appears once, at DEBUG, under the same read's name")
+                    .contains(StoreRead.DIAGNOSTICS.phrase())
+                    .contains(sql);
+            } finally {
+                boundary.detachAppender(recorded);
+                boundary.setLevel(inherited);
+            }
+        }
+    }
+
+    /**
      * The delegation split, asserted where it can be re-collapsed. {@code answering} used to be
      * implemented as {@code answeringAll(List.of(one), ...)}, and a later reader seeing two methods
      * doing the same thing would fold them back together; that would answer every keystroke on the
@@ -140,12 +202,12 @@ class StoreOutOfBudgetTest {
              var access = fixture.access(INTERACTIVE, SESSION_WIDE)) {
             String sourceName = fixture.sourceName();
 
-            String onAnswering = answered(
-                access.answering(sourceName, handle -> budgetOf(handle.orElseThrow())));
-            String onAnsweringAll = answered(access.answeringAll(List.of(sourceName),
-                handles -> budgetOf(handles.of(sourceName).orElseThrow())));
-            String onSessionGraph = answered(
-                access.readingSessionGraph(StoreOutOfBudgetTest::budgetOf));
+            String onAnswering = answered(access.answering(StoreRead.HOVER, sourceName,
+                handle -> budgetOf(handle.orElseThrow())));
+            String onAnsweringAll = answered(access.answeringAll(StoreRead.DIAGNOSTICS,
+                List.of(sourceName), handles -> budgetOf(handles.of(sourceName).orElseThrow())));
+            String onSessionGraph = answered(access.readingSessionGraph(
+                StoreRead.DIRECTIVE_VOCABULARY, StoreOutOfBudgetTest::budgetOf));
 
             assertThat(onAnswering)
                 .as("a keystroke answers on the interactive reader")
@@ -164,9 +226,10 @@ class StoreOutOfBudgetTest {
     void aSessionWithNoStoreAnswersAbsentRatherThanOutOfBudget() {
         var workspace = new Workspace();
 
-        boolean singleAbsent = answered(
-            workspace.answering("file:///nothing.graphqls", handle -> handle.isEmpty()));
-        boolean bulkAbsent = answered(workspace.answeringAll(List.of("file:///nothing.graphqls"),
+        boolean singleAbsent = answered(workspace.answering(StoreRead.HOVER,
+            "file:///nothing.graphqls", handle -> handle.isEmpty()));
+        boolean bulkAbsent = answered(workspace.answeringAll(StoreRead.DIAGNOSTICS,
+            List.of("file:///nothing.graphqls"),
             handles -> handles.apply("file:///nothing.graphqls").isEmpty()));
 
         assertThat(singleAbsent).isTrue();

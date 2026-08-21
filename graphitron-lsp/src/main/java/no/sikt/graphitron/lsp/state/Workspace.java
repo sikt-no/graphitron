@@ -206,7 +206,7 @@ public final class Workspace {
      * any case.
      */
     private void loadVocabulary(StoreAccess access) {
-        switch (access.readingSessionGraph(LspVocabulary::load)) {
+        switch (access.readingSessionGraph(StoreRead.DIRECTIVE_VOCABULARY, LspVocabulary::load)) {
             case StoreAnswer.Answered<LspVocabulary> answered -> vocabulary = answered.value();
             case StoreAnswer.OutOfBudget<LspVocabulary> ignored -> { }
         }
@@ -230,13 +230,15 @@ public final class Workspace {
      * distinction absence cannot carry is that somebody should hear about this one, so the caller
      * states its posture instead of inheriting silence.
      */
-    public <R> StoreAnswer<R> answering(String uri, Function<Optional<StoreHandle>, R> answer) {
+    public <R> StoreAnswer<R> answering(
+        StoreRead read, String uri, Function<Optional<StoreHandle>, R> answer
+    ) {
         StoreAccess access = store;
         Optional<String> sourceName = StoreAccess.sourceNameOf(uri);
         if (access == null || sourceName.isEmpty()) {
             return new StoreAnswer.Answered<>(answer.apply(Optional.empty()));
         }
-        return access.answering(sourceName.get(), answer);
+        return access.answering(read, sourceName.get(), answer);
     }
 
     /**
@@ -250,7 +252,8 @@ public final class Workspace {
      * pays one membership resolution for the set and lets the caller read the facts in one go.
      */
     public <R> StoreAnswer<R> answeringAll(
-        Collection<String> uris, Function<Function<String, Optional<StoreHandle>>, R> answer
+        StoreRead read, Collection<String> uris,
+        Function<Function<String, Optional<StoreHandle>>, R> answer
     ) {
         StoreAccess access = store;
         if (access == null) {
@@ -260,7 +263,7 @@ public final class Workspace {
         for (String uri : uris) {
             StoreAccess.sourceNameOf(uri).ifPresent(sourceName -> sourceNames.put(uri, sourceName));
         }
-        return access.answeringAll(sourceNames.values(), handles -> answer.apply(uri -> {
+        return access.answeringAll(read, sourceNames.values(), handles -> answer.apply(uri -> {
             String sourceName = sourceNames.get(uri);
             return sourceName == null ? Optional.empty() : handles.of(sourceName);
         }));

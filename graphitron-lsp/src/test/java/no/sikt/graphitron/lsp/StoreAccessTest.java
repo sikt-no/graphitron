@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.state.StoreAccess;
+import no.sikt.graphitron.lsp.state.StoreRead;
 import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.junit.jupiter.api.Test;
@@ -86,6 +87,7 @@ class StoreAccessTest {
 
     /** The graph whose handle {@code access} hands an answer, or empty when it hands none. */
     private static Optional<String> graphAnswering(StoreAccess access, String sourceName) {
-        return answered(access.answering(sourceName, handle -> handle.map(StoreHandle::graphName)));
+        return answered(access.answering(StoreRead.HOVER, sourceName,
+            handle -> handle.map(StoreHandle::graphName)));
     }
 }

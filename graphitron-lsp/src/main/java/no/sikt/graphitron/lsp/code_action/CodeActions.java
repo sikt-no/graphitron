@@ -4,6 +4,7 @@ import io.github.treesitter.jtreesitter.Node;
 import no.sikt.graphitron.lsp.code_action.SdlAction.RewriteResult;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
+import no.sikt.graphitron.lsp.state.StoreRead;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.model.boot.StoreAnswer;
 import org.eclipse.lsp4j.CodeAction;
@@ -154,13 +155,13 @@ public final class CodeActions {
         // two branches read disjoint material, the detectors nothing but buffers and this nothing but
         // rows, so there is no pair of reads a shared transaction would keep consistent.
         out.addAll(workspace.withView(fileUri, List.<Either<Command, CodeAction>>of(), file ->
-            switch (workspace.answering(fileUri, store ->
+            switch (workspace.answering(StoreRead.CODE_ACTIONS, fileUri, store ->
                 LintQuickFixes.compute(params, store, file.source()))) {
                 case StoreAnswer.Answered<List<Either<Command, CodeAction>>> answered ->
                     answered.value();
                 // The SDL actions computed above still ship; only the row-backed quick-fixes are
                 // missing, which is what a file the store holds no findings for already offers. The
-                // store boundary has already warned, naming the statement.
+                // store boundary has already warned, naming the read.
                 case StoreAnswer.OutOfBudget<List<Either<Command, CodeAction>>> ignored ->
                     List.<Either<Command, CodeAction>>of();
             }));

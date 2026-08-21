@@ -10,6 +10,7 @@ import no.sikt.graphitron.lsp.hover.Hovers;
 import no.sikt.graphitron.lsp.inlay.InlayHints;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.Positions;
+import no.sikt.graphitron.lsp.state.StoreRead;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.lsp.trace.LspTrace;
 import no.sikt.graphitron.model.boot.StoreAnswer;
@@ -211,14 +212,14 @@ public class GraphitronTextDocumentService implements TextDocumentService {
             }
             // One read transaction around the whole drain, so no two files are diagnosed from two
             // sides of a capture, and one statement per graph inside it rather than one per file.
-            switch (workspace.answeringAll(walked, batch::judgeAll)) {
+            switch (workspace.answeringAll(StoreRead.DIAGNOSTICS, walked, batch::judgeAll)) {
                 case StoreAnswer.Answered<Map<String, List<Diagnostic>>> answered ->
                     publish(walked, answered.value());
                 // Nothing is published at all, which is not the same as publishing an empty list.
                 // An empty list would erase the squiggles the last drain put on screen, so a read
                 // that ran out of budget would clear the developer's warnings rather than leave
                 // them standing; there is nothing here to replace them with, so nothing is sent.
-                // The store boundary has already warned, naming the statement.
+                // The store boundary has already warned, naming the read.
                 case StoreAnswer.OutOfBudget<Map<String, List<Diagnostic>>> ignored ->
                     drainSpan.detail("outOfBudget", true);
             }
@@ -274,7 +275,8 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                         // providers share one read transaction for the same reason hover takes
                         // one: a chain that fell through to a second read could decline on a
                         // declaration the first read positioned.
-                        StoreAnswer<Optional<Location>> found = workspace.answering(uri, store ->
+                        StoreAnswer<Optional<Location>> found = workspace.answering(
+                            StoreRead.DEFINITION, uri, store ->
                             Definitions.compute(workspace.vocabulary(), file, store, pos)
                                 .or(() -> IntraSchemaDefinitions.compute(workspace, store, uri, pos))
                                 .or(() -> DeclarationDefinitions.compute(file, store, pos)));
@@ -284,7 +286,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                                 .orElseGet(() -> Either.forLeft(List.of()));
                             // No jump, which is what a cursor on nothing resolvable already gets.
                             // The developer keeps the buffer they are looking at; the store boundary
-                            // has already warned, naming the statement that overran.
+                            // has already warned, naming the read that overran.
                             case StoreAnswer.OutOfBudget<Optional<Location>> ignored ->
                                 Either.forLeft(List.of());
                         };
@@ -303,13 +305,13 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 // One read transaction around the whole region, as hover takes: two declarations
                 // annotated from either side of a capture would disagree about the same schema.
                 var hints = workspace.withView(uri, List.<InlayHint>of(), file ->
-                    switch (workspace.answering(uri, store ->
+                    switch (workspace.answering(StoreRead.INLAY_HINTS, uri, store ->
                         InlayHints.compute(
                             workspace.inlayHintConfig(), file, store, params.getRange()))) {
                         case StoreAnswer.Answered<List<InlayHint>> answered -> answered.value();
                         // No hints for this region, which is what a region the store has nothing to
                         // annotate already gets. The next request over the same range is served
-                        // normally; the store boundary has already warned, naming the statement.
+                        // normally; the store boundary has already warned, naming the read.
                         case StoreAnswer.OutOfBudget<List<InlayHint>> ignored -> List.<InlayHint>of();
                     });
                 span.detail("hints", hints.size());
@@ -331,7 +333,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                     // One read transaction around the whole popup, as completion takes: a hover
                     // assembled from two snapshots could name a class from before a capture and
                     // describe it from after.
-                    return switch (workspace.answering(uri, store ->
+                    return switch (workspace.answering(StoreRead.HOVER, uri, store ->
                         Hovers.compute(workspace.vocabulary(), file, store, pos,
                             workspace.inlayHintConfig().hoverClassification()))) {
                         case StoreAnswer.Answered<Optional<Hover>> answered ->
