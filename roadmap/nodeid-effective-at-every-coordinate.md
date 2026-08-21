@@ -557,7 +557,11 @@ states is that every instruction either resolves or is refused, and this one doe
 in the census rather than an author error the two verdicts cover, which is precisely what the
 invariant was stated to surface. Stage 5 owes it either a third verdict naming the ambiguous
 reference or a reading that the ambiguity is already refused upstream; what it must not do is let the
-arm pick.
+arm pick. **Discharged in stage 5, and it was the second reading.** `ServiceCatalog.pickMethod`
+rejects with `ReflectionError.AmbiguousMethod` as soon as more than one declaration shares the name,
+so such a coordinate never reaches emission and the candidate rows are a shape no consumer is asked
+about. A verdict here would have been a second answer to a question the reference resolution settled
+two phases earlier.
 
 **A second gap in the partition, found by stage 4 and named on the same terms.** The encode relation
 routes a field whose value a named producer returns to `READ_VALUE`, deliberately and for a stated
@@ -609,6 +613,15 @@ telling the truth about what it measures.** With both arms in place `intent_node
 here it is not: the relation costs what its expensive operand costs. Deduplicating the slot naming, by
 registering that relation or by restructuring the exclusion, would move the 1597 and would be a
 registration with no reader to justify it, so it waits for the stage that adds one.
+
+**The defect view's own figure, and the relation it is modelled on is now the schema's heaviest read
+for exactly the reason this section warned about.** `intent_node_id_decode_defect` expands to 630
+instantiations, its slot child at 412 named once plus the key shape beside it, which is what a
+single-pass `CASE` over two driving relations looks like. In the same report
+`intent_argmapping_projection_defect` is now the heaviest relation in the schema at 2267, and 2022 of
+that is three namings of `intent_argmapping_key_column_candidate`. That is R742's per-verdict-arm
+prediction landing on the very relation this view was told to follow the shape of, so what this view
+took from it was the fact base and not the six arms.
 
 **The zero in that table is a fixture artefact, and finding out why is what verified the fork.** The
 probe captures the sakila schema against its jOOQ catalog and passes no classpath census, so the
@@ -1076,6 +1089,72 @@ Both verdicts are `Rejection.structural`. Neither is a deferral: a composite key
 slot wants a spelling nobody has minted, and a type disagreement is the author's to fix in one line.
 There is no arm in this item that fails while promising an emitter later.
 
+**Written, and the population is narrower than "the instructions with no resolution" by three
+exclusions, each of which turned out to be a different kind of fact.** The relation is
+`intent_node_id_decode_defect`, the two verdicts are the two the census yielded, and one `CASE` on the
+arity picks between them over one pass, so the driving relations are named once. What writing it found
+is that the hard part is not the verdicts but which slot rows the relation may judge at all.
+
+* **The mapped carrier is R668's population, and `carrier` already names the boundary.** A
+  `MAPPED_PARAMETER` slot at an argument site is an `argMapping` pair whose bound leaf is that
+  `@nodeId` argument itself, so `intent_argmapping_projection_defect` judges both of these facts
+  there already: `BARE_NODE_ID` for the arity and `KEY_COLUMN_TYPE_MISMATCH` for the type
+  disagreement, each keyed on the entry the author wrote. Restating them would be a second copy with
+  a precedence between the two, which is the failure mode that family's own comment warns about. So
+  this view's population is `NAMED_PARAMETER`, the carrier no pair exists for, which the slot
+  relation calls "the coordinate at which the wire format reached consumer code unread". The
+  discriminator was already in the schema: `carrier` was added for provenance in a message, and it
+  turns out to be exactly the line between the two families' populations. The two families key their
+  use sites differently, the pair's being the directive application's coordinate and the
+  instruction's being the argument, which is why the boundary is drawn on the carrier rather than by
+  joining one use site to the other.
+* **The input-field site draws no row, and comparing types there would be wrong advice rather than
+  merely out of scope.** The parameter receives the whole input object and the decoded value goes to
+  a member of it, so the only destination that resolves is the node type's own record and everything
+  else wants the walk into the class the slot relation deliberately does not perform. The parameter's
+  type is not the value's type, so a refusal naming both would ask an author to change a declaration
+  they were right to write. That shape is owed an emitter, and a verdict there would have quietly
+  turned an owed capability into an author error.
+* **The encode side is the walk's and stays there, which is also what settles what stage 4 left
+  owing.** Stage 4 ships both encode refusals at classify time, and the walk holds both operands: it
+  loads the backing class through the codegen classloader and reads the catalog for the column. A
+  view arm restating them would lose the race and never mint an error. The relation's own type
+  precondition, named as owed, turns out not to be statable at all: what type a read yields is
+  decided by which of four locator arms the classification chose, two of the four type nothing, and
+  one of the two that do resolves an accessor by a candidate order and a naming rule, which is an
+  algorithm rather than a fact this schema holds. So `intent_node_id_encode` states arity, its
+  `READ_VALUE` rows over-claim by exactly the coordinates the walk refuses on type, and its comment
+  now says so. A partial precondition would be worse than the stated absence, resolving or refusing
+  by which arm answered without being able to say which arm that was.
+
+**The arity verdict reads the slot's type as an absence, and that is the one place the stand-aside
+rule needed reading rather than copying.** A refusal needs the operands it names, so the type verdict
+fires only where the catalog typed the column and the census typed the parameter. The arity verdict
+names no type at all: what it needs is whether the slot is the tuple's own row type, and at this
+carrier a parameter position naming no class is a primitive or a type variable, neither of which is a
+generated record. So a composite key still refuses at a parameter the census could not type. That is
+not a verdict fabricated from a missing operand; the operand is the row type's identity and the
+absence answers it.
+
+**So the invariant is a stratification rather than a partition, and the residue splits in two once
+each shape is chased down.** Every instruction resolves, draws a verdict here, or is refused by a
+family that owns it. Two shapes are owed an emitter: every input-field slot above, and a slot the
+value lands inside. Two are refused elsewhere, and finding that out is what discharges the first of
+the two gaps this item named rather than absorbed. **The overloaded `@service` is already refused
+upstream, by name, and the answer was in `ServiceCatalog` all along.** `pickMethod` rejects with
+`ReflectionError.AmbiguousMethod` the moment more than one declaration shares the name, so a
+coordinate whose slot relation resolves several candidates never reaches emission and declining to
+pick here leaves no silence behind. The gap was stated as "either a third verdict or a reading that
+the ambiguity is already refused upstream", and it is the second: the ambiguity is a fact about the
+reference, refused where the reference is resolved, and a verdict here would have been a second
+answer to a question already settled two phases earlier. The other refused shape is a departing or
+arriving table that did not resolve, which the walk likewise refuses on its own.
+
+Writing the invariant as an absolute partition would have forced one of those four to be either
+absorbed into a verdict it does not fit or judged by a relation that cannot see the operand. The
+value of stating it was never the claim itself but that each gap has to be named to be excluded, and
+naming this one is what found the rejection that had been covering it.
+
 ## Stages
 
 Ordered so each stage is separately verifiable, and so nothing ships a rejection ahead of its
@@ -1115,7 +1194,13 @@ replacement.
    type at a read coordinate is refused with a message naming the count, and a read whose type
    disagrees with the key column's is refused naming both. Shipped; the type precondition is stated
    per locator arm rather than in the relation, for the reason the design section gives, and the
-   relation's own type precondition is what stage 4 leaves owing.
+   relation's own type precondition is what stage 4 leaves owing. Answered in stage 5, and the answer
+   is that it is not owed: what type a read yields follows from which locator arm the classification
+   chose, and one of the two arms that type anything resolves an accessor by a candidate order, which
+   is an algorithm rather than a fact the store holds. The relation states arity, its `READ_VALUE`
+   rows over-claim by exactly the coordinates the walk refuses on type, and its comment now says so.
+   A stated absence beats a precondition that resolves or refuses by which arm answered without being
+   able to name the arm.
 5. **The defect view and its projector.** The two verdicts over the instruction population, read by a
    projector into located `ValidationError`s as a further component on `StoreDetections` beside the two
    detection families already there (`AuthoredClaimConflicts` and `ArgmappingProjectionDefects`;
@@ -1131,6 +1216,12 @@ replacement.
    LSP and the MCP context rather than living inside two walk classes. The message vocabulary
    converges with `ArgmappingProjectionDefects.rejectionOf`, which is shipped text to read rather than
    a wording to negotiate.
+   The relation shipped first, as `intent_node_id_decode_defect`, and writing it moved three of those
+   clauses: the population is the carrier the pair-grain family cannot see rather than every
+   unresolved instruction, the partition is a stratification with four named gaps rather than an
+   absolute one, and the encode half stays in the walk that already holds both its operands, which is
+   also what settles the type precondition stage 4 left owing. The design section above states each.
+   What remains of the stage is the projector and the pipeline tier that reads it.
 6. **Site 4a, the message and the page.** The auto-discovery rejection separates its two causes; the
    manual page's single-hop claim is corrected; the reverse filter gets the execution-tier row-count
    pin it has never had. Independent of every other stage and the smallest thing in the item.
@@ -1332,6 +1423,11 @@ registry (a resolved view, being a projection over the type's own classified lea
 error arm's extra component needed its construction site in the LSP's severity-coverage test updated.
 Neither is a behaviour change and both are the guards working.
 
+The defect view's own increment drew one red on the same terms and it is worth naming because it is
+the cheapest guard in the tree: `FactCaptureAgreementTest.everyRelationIsRegistered` fails on a
+relation with no registered agreement source, so a new view cannot land without a line saying which
+arm answers for it. One line, and the point is that nobody has to remember.
+
 One test fixture is worth naming because finding it is what proved the arm. The typed-column read at
 an `ID` coordinate is unreachable through a `@service` returning a table record, that binding making
 the SDL type a producer carrier and the carrier leaf claiming the coordinate. The shape where the read
@@ -1362,7 +1458,11 @@ on the wire.
   the type refusal naming both types. The authored-`argMapping` and inferred spellings of the
   matching case draw the *same* resolution rather than different ones, which is the claim that the
   two forms are one destination. The partition against R668 is then over arity rather than over
-  spelling, and is pinned as such.
+  spelling, and is pinned as such. The bean-member half of that matrix is unreachable and the
+  sentence is left as written because the way it is wrong is worth keeping: it was drafted before
+  stage 2c found that a slot the value lands *inside* wants a walk into the class, and a bean member
+  therefore neither resolves nor refuses. So the matrix is the `@service` parameter's, and the bean
+  member's row is a stated gap rather than an assertion waiting to be written.
 * **Store tier**, for the two relations whose whole content is a fork. The destination and the
   Java-slot fork are pinned together in one class over the seeded store, because each is defined as
   the population the other does not claim: a case asserting only the destination would pass equally
@@ -1371,7 +1471,16 @@ on the wire.
   the root coordinate they were answered at, that being the whole of what makes an input-field row
   correct. This is where the algebra is stated finely: each destination, each precondition, and each
   way of arriving at no destination, including the type disagreement and the composite key that the
-  defect view will later name.
+  defect view will later name. The defect view then gets its own class beside them,
+  `NodeIdDecodeDefectTest`, weighted the way the relation is: two verdicts and seven edges. Every case
+  states the destination beside the verdict, because a case asserting a verdict alone would pass
+  equally well if the same coordinate had also resolved, which is the one outcome that must not
+  happen. The case worth reading is the boundary against R668: it seeds the same type disagreement
+  through an `argMapping` entry and asserts no row here *and* the row there, so the exclusion is
+  pinned from both sides rather than as an absence on one. Two more carry the reasoning the relation
+  needed, the arity verdict at a parameter the census could not type, where the stand-aside rule had
+  to be read rather than copied, and the input-field slot, whose absence is the claim that an owed
+  capability is not an author error.
 * **Capture tier**, one coarse case, for the thing the store tier structurally cannot say. The fork
   spans three families that only a capture fills together, the directive applications, the
   input-occurrence paths and the classpath census, so a fork correct over seeded rows and finding
