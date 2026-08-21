@@ -26,7 +26,7 @@ a|
 * xref:map-types-to-tables.adoc[Map types to tables]: bind types and fields with `@table` + `@field` across the four directive sites.
 * xref:mcp-agent-context.adoc[Agent context over MCP]: connect an MCP-aware agent (Claude Code, Cursor) to `graphitron:dev` so it can answer questions about your schema, catalog, and directives.
 * xref:migrating-from-legacy.adoc[Migrating from the legacy generator]: walk a schema authored against `graphitron-codegen-parent` to the rewrite.
-* xref:multi-hop-nodeid-filter.adoc[Multi-hop `@nodeId` filters]: reach a related node type through one or more intermediate tables when the FKs carry the target's keys positionally by SQL name.
+* xref:multi-hop-nodeid-filter.adoc[Multi-hop `@nodeId` filters]: reach a related node type through one or more intermediate tables, and read off whether the chain compiles to a single-table predicate or a correlated `EXISTS`.
 * xref:polymorphic-types.adoc[Polymorphic types]: choose between single-table and multi-table layouts for GraphQL interfaces and unions.
 * xref:result-types.adoc[Result-type variants]: understand the backing class reflected from a class-backed parent's producer (jOOQ `TableRecord`, jOOQ `Record`, Java record, plain POJO).
 * xref:sort-results.adoc[Sort results]: pick a column source, build stable keyset cursors with explicit tie-breakers, and avoid the collation pitfalls.

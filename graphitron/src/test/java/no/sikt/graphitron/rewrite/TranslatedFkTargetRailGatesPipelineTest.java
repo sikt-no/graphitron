@@ -33,6 +33,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code parent_node(alt_key)}, a non-PK unique column, while {@code ParentNode}'s node key is
  * {@code pk_id}. A decoded {@code ParentNode} id therefore yields a {@code pk_id} value that no
  * {@code child_ref} column holds.
+ *
+ * <p>Each rail is pinned twice, once on that single-hop carrier and once on a junction chain
+ * through sakila's {@code film_category}. The two arrive at the remote binding for different
+ * reasons, an FK pointing at the wrong unique key versus a pairing that exists only in a junction
+ * row, and a rail that reported the shared cause for one shape but not the other would be a rail
+ * gating on the path rather than on the binding.
  */
 @PipelineTier
 class TranslatedFkTargetRailGatesPipelineTest {
@@ -124,6 +130,99 @@ class TranslatedFkTargetRailGatesPipelineTest {
 
         var f = (UnclassifiedField) schema.field("Query", "childRefsByParentKey");
         assertThat(f.reason()).contains("parentRef").contains(SHARED_CAUSE);
+    }
+
+    // ===== The junction chain on the same four rails =====
+    //
+    // A junction chain reaches the write rails now that an unlanded key position binds remotely
+    // instead of being refused earlier. What the author sees at each rail is the rail's own
+    // remote-binding message, which speaks about the binding and not about their chain, so each
+    // rail states it here rather than leaving the diagnostic to be discovered.
+    //
+    // Sakila rather than nodeidfixture, because film_category is the junction: reaching category
+    // from film traverses one FK against its direction and the next along it, so no film column
+    // holds a category_id and the carrier binds Remote with a two-hop reach.
+
+    private static final String FILM_AND_CATEGORY = """
+        type Category implements Node @table(name: "category") @node { id: ID! }
+        type Film implements Node @table(name: "film") @node {
+            id: ID! @nodeId
+            title: String!
+        }
+        """;
+
+    /** The junction carrier, spelled once: the same leaf on every rail below. */
+    private static final String JUNCTION_LEAF = """
+                categoryRef: ID! @nodeId(typeName: "Category") @reference(path: [
+                    {key: "film_category_film_id_fkey"},
+                    {key: "film_category_category_id_fkey"}
+                ])
+        """;
+
+    @Test
+    void insertRail_rejectsAJunctionCarrierWithTheSharedCause() {
+        var schema = TestSchemaHelper.buildSchema(FILM_AND_CATEGORY + """
+            input CreateFilmInput {
+                title: String!
+            """ + JUNCTION_LEAF + """
+            }
+            type Query { x: String }
+            type Mutation {
+                createFilm(in: CreateFilmInput!): ID @mutation(typeName: INSERT, table: "film")
+            }
+            """);
+
+        var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
+        assertThat(f.reason()).contains("categoryRef").contains(SHARED_CAUSE);
+    }
+
+    @Test
+    void updateRail_rejectsAJunctionCarrierWithTheSharedCause() {
+        var schema = TestSchemaHelper.buildSchema(FILM_AND_CATEGORY + """
+            input UpdateFilmInput {
+                title: String!
+            """ + JUNCTION_LEAF + """
+            }
+            type Query { x: String }
+            type Mutation {
+                updateFilm(in: UpdateFilmInput!): ID @mutation(typeName: UPDATE, table: "film")
+            }
+            """);
+
+        var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
+        assertThat(f.reason()).contains("categoryRef").contains(SHARED_CAUSE);
+    }
+
+    @Test
+    void deleteRail_rejectsAJunctionCarrierWithTheSharedCause() {
+        var schema = TestSchemaHelper.buildSchema(FILM_AND_CATEGORY + """
+            input DeleteFilmInput {
+                title: String!
+            """ + JUNCTION_LEAF + """
+            }
+            type Query { x: String }
+            type Mutation {
+                deleteFilm(in: DeleteFilmInput!): ID @mutation(typeName: DELETE, table: "film")
+            }
+            """);
+
+        var f = (UnclassifiedField) schema.field("Mutation", "deleteFilm");
+        assertThat(f.reason()).contains("categoryRef").contains(SHARED_CAUSE);
+    }
+
+    @Test
+    void lookupKeyRail_rejectsAJunctionCarrierWithTheSharedCause() {
+        var schema = TestSchemaHelper.buildSchema(FILM_AND_CATEGORY + """
+            input FilmLookupInput {
+            """ + JUNCTION_LEAF + """
+            }
+            type Query {
+                filmsByCategoryKey(key: [FilmLookupInput!]! @lookupKey): [Film!]!
+            }
+            """);
+
+        var f = (UnclassifiedField) schema.field("Query", "filmsByCategoryKey");
+        assertThat(f.reason()).contains("categoryRef").contains(SHARED_CAUSE);
     }
 
     @Test

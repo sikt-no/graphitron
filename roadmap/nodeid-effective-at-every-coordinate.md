@@ -659,9 +659,10 @@ exists. `TranslatedFk`, whose whole premise is "no own-table tuple, bind on the 
 The conjunct is split as of stage 2, and only the gate is left. The resolver now lands each key
 position on a column of the row's own table or on nothing, and picks the arm on whether every position
 landed, which is the reduction the relation performs; `permutationToKeyColumns` went with it, an
-arrival matched against a key column needing no realignment. So what stage 3 removes is `validateLift`
-and nothing else: the landing it would consult is already computed beside it, and an unlanded position
-already routes to the remote arm wherever the gate is not standing in front of it.
+arrival matched against a key column needing no realignment. So what stage 3 removed is `validateLift`
+and nothing else: the landing it would have consulted was already computed beside it, and an unlanded
+position already routed to the remote arm wherever the gate was not standing in front of it. The
+deletion is nine lines of call site and message, and what it buys is the whole junction case.
 
 In the relation those are two columns. A decode whose `intent_node_id_decode_column` rows all
 carry a local column is `OWN_TABLE_COLUMNS`; one whose rows carry none is `TARGET_TABLE_COLUMNS`; and
@@ -769,9 +770,9 @@ strictly inside a foreign key's referenced columns, which needs two nested uniqu
 table; the new answer there is the relation's and is the better predicate, and no fixture was added to
 reach it.
 
-What this leaves for stage 3 is the deletion the plan promised. `validateLift` is now the only thing
-turning an unlanded position into a rejection, and the landing it would have to consult is already
-computed beside it.
+What this left for stage 3 was the deletion the plan promised, and stage 3 took it: `validateLift` was
+the only thing left turning an unlanded position into a rejection, and the landing it would have had
+to consult was already computed beside it.
 
 ### The dropped encode is the whole read family, not the `@error` type
 
@@ -1089,6 +1090,13 @@ their rule rather than a second one, and R682 owns the read. The Java-slot fork 
 table destinations rather than after them, because the two table destinations are only total once the
 coordinates that reach Java are out of their population.
 
+**Stage 3 splits at the database.** The gate's removal, the classifier's answer and every diagnostic
+an author can now meet are one increment, verifiable without PostgreSQL and shipped first. The row
+semantics are the second: a junction is where "the `EXISTS` multiplies nothing" stops being an
+argument and becomes a count, and only an execution against a real database settles it. Splitting
+there rather than by tier keeps the first increment's exit honest, since a stated message is
+falsifiable at the pipeline tier and a row count is not.
+
 **The arity rule landed at the `argMapping` site, and it landed by adding a population rather than by
 removing a rejection.** The plan above says stage 2 edits `BARE_NODE_ID`'s text down to the arity
 fact, and reading that as a text edit is what would have shipped a hole: lifting the rejection at
@@ -1193,6 +1201,15 @@ attempt to reach it is worth recording: pinning a node key strictly inside a for
 columns fails at the `@node` gate, which demands a real unique key, so producing that shape means
 declaring two nested unique constraints on one table and no fixture does. A test asserting it would
 have had to ship the fixture, and the shape is not what this item is about.
+
+The gate's removal then drew no reds either, over 3762 cases, and that is a finding about the gate
+rather than a quiet result. Nothing in the tree pinned `validateLift` except the one unit case written
+to pin it, so the rejection had exactly one consumer and it was its own test. The rewrite of that case
+is where the value sits: the same fixture that proved the gate now proves the routing, and it is the
+fixture worth keeping because its terminal hop arrives on the node key itself, so a reduction reading
+the terminal hop instead of the landing would bind it locally against a tuple the row does not have.
+The junction case is the second half of that pair and says the same thing from the other side, a chain
+that renames nothing and still binds remotely.
 
 * **Pipeline tier**, carrying the primary behavioural weight. The junction chain lowering to a remote
   binding with a two-hop path, on both the argument and the input-field surfaces. Each of the four
@@ -1339,7 +1356,12 @@ a null payload and no committed row.
   mechanism's canonical page asserting a rejection the build no longer makes, with `nodeId.adoc`
   pointing the reader at it.
 * `docs/manual/how-to/multi-hop-nodeid-filter.adoc` gains the junction shape as a worked example,
-  loses its `=== identity-carrying FKs` rejection section, and loses the false single-hop claim.
+  loses its `=== identity-carrying FKs` rejection section, and loses the false single-hop claim. Done
+  in stage 3, and it needed one thing the list did not ask for: the page led with the identity-carrying
+  property as its subject, so both shapes now hang off one question ("is this key column observable on
+  the parent's own row?") and the two worked examples are peers. It also gained the write and
+  `@lookupKey` refusals, which an author reaching the remote binding for the first time meets and the
+  page had no reason to mention while the gate stood in front of them.
 * `docs/manual/reference/directives/error.adoc` gains the `@nodeId` extra-field case.
 
 ## Retired vocabulary
@@ -1375,12 +1397,19 @@ a null payload and no committed row.
   from that draft, so the sweep has nothing to find here; the entry stands so a reader of the earlier
   draft knows the argument was withdrawn and not merely reworded.
 
-Four of those entries are already discharged, in the stage-2 increment that converged the resolver on
-the decode relation's reduction: `JoinPathResult`, and the three statements of the one-conjunct
-discriminator. The `resolveFkJoinPath` javadoc entry is half discharged, the shape no longer being
-named for the property; the sentence describing the gate itself stays while the gate does, which is
-stage 3. Two test names carried the same one-conjunct reading and went with the javadoc, the sweep
-being about the vocabulary and not about the file it sits in.
+Four of those entries were discharged in the stage-2 increment that converged the resolver on the
+decode relation's reduction: `JoinPathResult`, and the three statements of the one-conjunct
+discriminator. Two test names carried the same one-conjunct reading and went with the javadoc, the
+sweep being about the vocabulary and not about the file it sits in.
+
+Stage 3's first increment discharged the rest of the gate's vocabulary: `LIFT_FAILURE_MARKER` and its
+rejection text, the `resolveFkJoinPath` javadoc entry's remaining half, and the how-to page's three
+statements of the gate. The page keeps *identity-carrying* as the name of the local-binding shape,
+which is what the entry above scoped: what retired is the property stated as a requirement and the
+rejection that enforced it, not the word for the shape that still has that property. Two things the
+sweep found beyond the enumerated entries: the fixture generator's own comment on `lift_fail_a`
+described the fixture by the rejection it drew, and the page's "the runtime touches one table" was
+stated of multi-hop chains generally rather than of the identity-carrying ones.
 
 `CONDITION_STEP_MARKER` is deliberately *not* retired here, and neither is the rejection it anchors;
 see the emitter argument under Design. The Done-gate sweep should read a surviving

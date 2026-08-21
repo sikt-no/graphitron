@@ -1454,6 +1454,78 @@ class NodeIdPipelineTest {
         tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
     }
 
+    // ===== The junction chain, on both leaf surfaces =====
+    //
+    // These two run against the sakila catalog rather than the nodeidfixture one, because that is
+    // where a junction table lives: film_category is the child of both film and category, so
+    // reaching category from film traverses one FK against its direction and the next along it.
+    // The chain lands no key position on film (no film column holds a category_id; only a
+    // junction row holds the pairing), which is the remote binding, and the predicate is the
+    // hop-general correlated EXISTS the emitter already walks.
+    //
+    // Nothing in the chain translates a column: every hop carries a column of its own name, and
+    // the terminal hop arrives on category_id, the node key itself. That is the shape the arm
+    // choice has to get right from the landing rather than from the terminal hop's column names.
+
+    @Test
+    void junctionChain_argument_bindsRemotelyOverTwoHops() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Category implements Node @table(name: "category") @node { id: ID! }
+            type Film @table(name: "film") { title: String! }
+            type Query {
+                filmsByCategory(
+                    categoryIds: [ID!]! @nodeId(typeName: "Category") @reference(path: [
+                        {key: "film_category_film_id_fkey"},
+                        {key: "film_category_category_id_fkey"}
+                    ])
+                ): [Film!]!
+            }
+            """);
+
+        var f = (QueryField.QueryTableField) schema.field("Query", "filmsByCategory");
+        var gcf = (GeneratedConditionFilter) f.filters().stream()
+            .filter(GeneratedConditionFilter.class::isInstance)
+            .findFirst().orElseThrow();
+        var remote = (BodyParam.RemoteColumnPredicate) gcf.bodyParams().stream()
+            .filter(BodyParam.RemoteColumnPredicate.class::isInstance)
+            .findFirst().orElseThrow();
+        assertThat(remote.joinPath())
+            .as("both hops are carried into the EXISTS; the reach is walked, not collapsed")
+            .hasSize(2);
+        var inner = (BodyParam.In) remote.inner();
+        assertThat(inner.column().sqlName()).isEqualTo("category_id");
+        assertThat(((CallSiteExtraction.ThrowOnMismatch) inner.extraction())
+            .decodeMethod().methodName()).isEqualTo("decodeCategory");
+        assertThat(schema.diagnostics())
+            .as("the junction chain is a supported read shape, so nothing is reported")
+            .noneMatch(d -> d.coordinate() != null && d.coordinate().contains("filmsByCategory"));
+    }
+
+    @Test
+    void junctionChain_inputField_bindsRemotelyOverTwoHops() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Category implements Node @table(name: "category") @node { id: ID! }
+            type Film @table(name: "film") { title: String! }
+            input FilmFilterInput {
+                categoryIds: [ID!] @nodeId(typeName: "Category") @reference(path: [
+                    {key: "film_category_film_id_fkey"},
+                    {key: "film_category_category_id_fkey"}
+                ])
+            }
+            type Query { films(in: FilmFilterInput): [Film!] }
+            """);
+
+        var remote = inputBodyParam(schema, "films", BodyParam.RemoteColumnPredicate.class);
+        assertThat(remote.joinPath()).hasSize(2);
+        var inner = (BodyParam.In) remote.inner();
+        assertThat(inner.name()).isEqualTo("categoryIds");
+        assertThat(inner.column().sqlName()).isEqualTo("category_id");
+        assertThat(leafDecodeMethodName(remote)).isEqualTo("decodeCategory");
+        assertThat(schema.diagnostics())
+            .as("the input-field surface lowers the junction chain the same way the argument does")
+            .noneMatch(d -> "FilmFilterInput.categoryIds".equals(d.coordinate()));
+    }
+
     /**
      * Input-field-side FK-target {@code @nodeId} cases. The positional-correspondence predicate
      * (FK target columns vs NodeType key columns) lives in

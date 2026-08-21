@@ -85,11 +85,11 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         // both adjacent pairs satisfying the lift predicate so the terminal hop's
         // source-side tuple lifts back to level_c.(k1, k2) on the parent table.
         Map.entry("level_a", new Metadata("LevelA", List.of("K1", "K2"))),
-        // Lift-failure fixture: lift_fail_a has the same arity-2 NodeType key
+        // Translating-chain fixture: lift_fail_a has the same arity-2 NodeType key
         // shape, but the lift_fail_b -> lift_fail_a FK uses (a_k1, a_k2) which do not
         // appear in lift_fail_b's column list when traversed from lift_fail_c (which
-        // only carries fk_b). The lift predicate fails at hop[1] and the resolver
-        // rejects via LIFT_FAILURE_MARKER.
+        // only carries fk_b). Nothing carries forward past hop[0], so the node key lands
+        // on no lift_fail_c column and the predicate binds remotely inside an EXISTS.
         Map.entry("lift_fail_a", new Metadata("LiftFailA", List.of("K1", "K2"))),
         // Permutation fixture: reordered_pk_parent declares its PK as
         // (pk_a, pk_b, pk_c) — the order we publish as __NODE_KEY_COLUMNS. The

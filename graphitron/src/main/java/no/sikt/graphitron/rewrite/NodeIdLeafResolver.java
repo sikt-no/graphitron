@@ -83,13 +83,6 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
 final class NodeIdLeafResolver {
 
     /**
-     * Load-bearing token in the lift-failure rejection text. Tests assert against this constant
-     * by name rather than copying the prose: copyediting the user-facing message text leaves
-     * the marker (and therefore the test) intact.
-     */
-    static final String LIFT_FAILURE_MARKER = "identity-carrying FKs";
-
-    /**
      * Load-bearing token in the non-FK-step rejection text. Tests anchor on this constant.
      */
     static final String CONDITION_STEP_MARKER = "must be a foreign key";
@@ -419,10 +412,12 @@ final class NodeIdLeafResolver {
      * <p>Two intake shapes:
      * <ul>
      *   <li>Explicit {@code @reference(path: [{key: ...}, ...])}: parsed elements are taken as-is.
-     *       Length 1 is the single-hop shape; length &ge; 2 is a chain, and a chain currently only
-     *       succeeds when every adjacent pair carries the departing columns forward, that gate being
-     *       {@link #validateLift}. Every step must join on {@link On.ColumnPairs}; condition-only
-     *       steps are rejected with the {@link #CONDITION_STEP_MARKER} text.</li>
+     *       Length 1 is the single-hop shape; length &ge; 2 is a chain, and a chain whose adjacent
+     *       pairs stop carrying the departing columns forward lands no key position, which is a
+     *       remote binding rather than a refusal. Every step must join on {@link On.ColumnPairs};
+     *       condition-only steps are rejected with the {@link #CONDITION_STEP_MARKER} text, that
+     *       one gate surviving because the {@code EXISTS} emitter is hop-general over foreign-key
+     *       hops and over nothing else.</li>
      *   <li>No {@code @reference}: single-hop FK auto-discovery via
      *       {@link JooqCatalog#findUniqueFkToTable}. Multi-hop is always explicit; auto-discovery
      *       does not search past one hop.</li>
@@ -450,10 +445,6 @@ final class NodeIdLeafResolver {
                         + " is a condition step; every step in a multi-hop @nodeId path "
                         + CONDITION_STEP_MARKER + " (use { key: ... } at every position).");
                 }
-            }
-            String liftError = validateLift(path.elements(), leafName);
-            if (liftError != null) {
-                return refuse(liftError);
             }
             return new PathResolution.Walked(path.elements(),
                 landKeyColumns(path.elements(), keyColumns));
@@ -501,43 +492,6 @@ final class NodeIdLeafResolver {
      */
     private static On.ColumnPairs pairs(JoinStep step) {
         return (On.ColumnPairs) ((JoinStep.Hop) step).on();
-    }
-
-    /**
-     * Lift predicate. For each {@code i ≥ 1}, every column in {@code hop[i].sourceSideColumns}
-     * must match a column in {@code hop[i-1].targetSideColumns} by SQL name (case-insensitive).
-     * Returns {@code null} on success; otherwise a fully formatted rejection message anchored on
-     * {@link #LIFT_FAILURE_MARKER}.
-     */
-    private static String validateLift(List<JoinStep> path, String leafName) {
-        for (int i = 1; i < path.size(); i++) {
-            var current = pairs(path.get(i));
-            var previous = pairs(path.get(i - 1));
-            var currentSources = current.sourceSideColumns();
-            var previousTargets = previous.targetSideColumns();
-            for (ColumnRef col : currentSources) {
-                boolean found = false;
-                for (ColumnRef t : previousTargets) {
-                    if (t.sqlName().equalsIgnoreCase(col.sqlName())) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    return "@reference path on @nodeId leaf '" + leafName + "': hop " + (i + 1)
-                        + " (" + current.keying().describe() + ") introduces a column translation —"
-                        + " its source-side columns " + sqlNames(currentSources)
-                        + " are not a positional subset of the previous hop's target-side"
-                        + " columns " + sqlNames(previousTargets) + " by SQL name."
-                        + " Multi-hop @reference on @nodeId currently requires "
-                        + LIFT_FAILURE_MARKER + " at every step (the predicate compiles to"
-                        + " a single-table SELECT). See"
-                        + " docs/manual/how-to/multi-hop-nodeid-filter.adoc for the mental"
-                        + " model and rejection-messages section.";
-                }
-            }
-        }
-        return null;
     }
 
     /**
@@ -600,11 +554,5 @@ final class NodeIdLeafResolver {
             }
         }
         return -1;
-    }
-
-    private static String sqlNames(List<ColumnRef> cols) {
-        var names = new ArrayList<String>(cols.size());
-        for (ColumnRef c : cols) names.add(c.sqlName());
-        return names.toString();
     }
 }

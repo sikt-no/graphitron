@@ -1,20 +1,22 @@
 = How-to: Multi-hop `@nodeId` filters
-:description: Reach a related node type through one or more intermediate tables when the foreign keys carry the target node's keys positionally by SQL name.
+:description: Reach a related node type through one or more intermediate tables, and read off which of the two predicates your chain compiles to.
 :!toc:
 
-A filter input that decodes an opaque `@nodeId` of one type and applies it as a predicate against rows of a different type is the bread-and-butter shape for cross-table filtering. xref:join-with-references.adoc[`@reference`] declares the FK path; the rewrite emits a single-table predicate over the parent table's own columns whenever each FK in the chain preserves the next FK's source-side columns positionally by SQL name. This is the *identity-carrying lift* shape, and it is what this recipe covers. Multi-hop chains where some intermediate FK *translates* (drops or renames a key column the next hop needs) are deferred to a sibling Backlog item; the diagnostic at the bottom of this page tells you which case you hit.
+A filter input that decodes an opaque `@nodeId` of one type and applies it as a predicate against rows of a different type is the bread-and-butter shape for cross-table filtering. xref:join-with-references.adoc[`@reference`] declares the FK path, and every foreign-key chain the path grammar can state is emittable on the read side. What the chain decides is *which* predicate you get: a single-table predicate over the parent's own columns, or a correlated `EXISTS` that walks the chain.
 
-== Why identity-carrying
+== One question decides the predicate
 
-A filter that decodes a `@nodeId(typeName: T)` and asks "which parent rows match this T?" has a natural single-table shape when the parent's own columns already carry T's identity. With a single direct FK, that property is automatic: the FK source columns are on the parent's row, so the predicate is `WHERE parent.fk_columns IN (decoded_keys)`. No JOIN, no subquery; one column tuple, one IN clause.
+Ask it per key column: after walking the chain, is that column of `T`'s key observable on the parent's own row?
 
-The same property generalises across multiple hops, but only when each hop preserves the next hop's source-side columns by name. Concretely: walk the chain from the second hop forward; at each step, every column in `hop[i].sourceSideColumns` must appear in `hop[i-1].targetSideColumns` (case-insensitive SQL name). When that holds at every step, the terminal hop's source-side tuple lifts back through the chain, position by position, to a sub-tuple of the first hop's source-side columns: a tuple on the parent's own row, positionally aligned with T's NodeType keys.
+With a single direct FK the answer is always yes: the FK source columns sit on the parent's row, so the predicate is `WHERE parent.fk_columns IN (decoded_keys)`. No JOIN, no subquery; one column tuple, one `IN` clause.
 
-The emitted SQL is the same direct row predicate the single-hop case emits. Chain length is purely a classifier-time concept; the runtime touches one table.
+Across multiple hops the answer depends on whether each hop carries the previous hop's arrival forward. Walk the chain from the first hop: each hop keeps the column it departed the parent from and replaces the column it arrived at, so a hop that departs from a column the previous hop did not arrive at carries nothing further. When every key column is still being carried at the end, the chain has the same single-table shape a direct FK has, and this is the *identity-carrying lift*: the terminal tuple lifts back to a tuple on the parent's own row, positionally aligned with `T`'s NodeType keys. Chain length is then purely a classifier-time concept and the runtime touches one table.
 
-When the lift fails at some step, the schema is asking the runtime to walk a JOIN with translation. That shape is real but is not what the multi-hop `@nodeId` lift covers; the diagnostic names the failing step and points back to this article.
+When a key column is carried nowhere, no parent column holds the decoded value, so the predicate binds `T`'s key on `T`'s own table inside a correlated `EXISTS` that joins the chain back to the parent row. Both worked examples below are real, and neither is a fallback for the other.
 
-== Worked example: a 2-hop chain
+Two chains reach the `EXISTS`, and it is worth seeing that they are one case. The first *translates*: some hop departs from a renamed or alternate-key column the previous hop never arrived at. The second is a *junction*: the parent reaches an intermediate table against a foreign key's direction, so the pairing lives in the junction row and not in either endpoint's columns. Nothing is renamed in a junction chain, which is why the question is about the landing and not about column names.
+
+== Worked example: an identity-carrying 2-hop chain
 
 Three tables on a `(k1, k2)` identity-carrying chain. `level_a` is the NodeType target; `level_c` is the parent shape we filter:
 
@@ -69,7 +71,44 @@ extend type Query {
 }
 ----
 
-The classifier walks the chain, verifies the lift predicate at each adjacent pair, computes the lifted tuple, and stores it on the carrier. The emitter reads the lifted tuple directly. The generated SQL is `... WHERE row(level_c.k1, level_c.k2) IN ((decoded_k1, decoded_k2), ...)` over a single-table FROM clause.
+The classifier walks the chain, lands each key column, and stores the resulting tuple on the carrier. The emitter reads that tuple directly. The generated SQL is `... WHERE row(level_c.k1, level_c.k2) IN ((decoded_k1, decoded_k2), ...)` over a single-table FROM clause.
+
+== Worked example: a junction chain
+
+A junction table pairs two tables and holds no identity of its own. Sakila's `film_category` is the shape:
+
+[source,sql]
+----
+CREATE TABLE film_category (
+    film_id      int NOT NULL REFERENCES film (film_id),
+    category_id  int NOT NULL REFERENCES category (category_id),
+    PRIMARY KEY (film_id, category_id)
+);
+----
+
+Filtering films by a `Category` node id names both foreign keys, in the order the chain walks them. The first is traversed against its direction, from `film` to the junction:
+
+[source,graphql]
+----
+type Category implements Node @table(name: "category") @node {
+    id: ID!
+}
+
+input FilmFilterInput {
+    categoryIds: [ID!] @nodeId(typeName: "Category") @reference(path: [
+        {key: "film_category_film_id_fkey"},
+        {key: "film_category_category_id_fkey"}
+    ])
+}
+
+extend type Query {
+    films(filter: FilmFilterInput): [Film!]!
+}
+----
+
+The first hop departs `film.film_id` and arrives on `film_category.film_id`; the second departs `film_category.category_id`, which is not where the first arrived, so nothing carries forward. `Category`'s key column lands on no `film` column, which is correct: a film row holds no category, only the junction row holds the pairing. The predicate binds `category.category_id` inside a correlated `EXISTS` that joins `film_category` back to the film row.
+
+A junction is many-to-many, so a film in two of the requested categories matches through two junction rows. `EXISTS` is what keeps that from multiplying the film: it asks whether at least one row exists, so each matching parent comes back exactly once, and a null foreign-key column fails the correlation rather than duplicating or dropping a row.
 
 == Multi-hop is always explicit
 
@@ -77,26 +116,13 @@ The auto-discovery fallback that lets you omit `@reference` when there is exactl
 
 This keeps the auto-discovery path the same shape as today and pins the multi-hop opt-in to the SDL surface where the chain is visible at review time.
 
-== Rejection messages
+== Where the chain is refused
 
-[#lift-failure]
-=== `identity-carrying FKs`
+A chain that binds remotely still reads and filters. Two things refuse it.
 
-The lift predicate failed at some step of the chain. The message names the failing hop, the FK constraint, the source-side columns that were not carried, and the previous hop's target-side columns for comparison:
+*A write, or a `@lookupKey`.* An INSERT, an UPDATE, a DELETE key or a `@lookupKey` join needs the value on the row it is writing, and a remotely-bound `@nodeId` supplies a key of the target row instead. All four say so with the same sentence, that the shape "needs a key-to-FK-column subquery, which is not implemented". Expose the decoded key columns explicitly with `@field` on those coordinates, or keep the chain on the read side where the `EXISTS` serves it.
 
-[source]
-----
-@reference path on @nodeId leaf '<leafName>': hop <i> ('<fkName>') introduces a column translation
-— its source-side columns [<sql-names>] are not a positional subset of the previous hop's
-target-side columns [<sql-names>] by SQL name. Multi-hop @reference on @nodeId currently requires
-identity-carrying FKs at every step (the predicate compiles to a single-table SELECT). See
-docs/manual/how-to/multi-hop-nodeid-filter.adoc for the mental model and rejection-messages section.
-----
-
-What to change:
-
-* Confirm that each step's source-side columns appear by name in the previous hop's target-side columns. The "Worked example" section walks an identity-carrying chain you can compare against.
-* If the schema genuinely needs translation in the middle of the chain (a renamed FK column, or an alternate-key target), the multi-hop EXISTS-subquery emission is the right fit, but it is not yet shipping. Keep the directive in the form you want and watch for the sibling Backlog item that adds the deferred path.
+*A `{ condition: ... }` step*, at any coordinate:
 
 [#condition-step]
 === `must be a foreign key`
@@ -115,4 +141,4 @@ What to change: replace the `{ condition: ... }` with a `{ key: <fk-name> }` ste
 
 * xref:join-with-references.adoc[How-to: Join with references] covers the directive surface for non-`@nodeId` `@reference` paths.
 * xref:global-id.adoc[How-to: Global object IDs] covers the wire format for `@nodeId` end-to-end.
-* xref:add-custom-conditions.adoc[How-to: Add custom conditions] is the right home for predicates that translate or join with non-FK semantics.
+* xref:add-custom-conditions.adoc[How-to: Add custom conditions] is the right home for predicates that join with non-FK semantics.

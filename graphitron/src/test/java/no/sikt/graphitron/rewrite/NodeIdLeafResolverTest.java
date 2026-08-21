@@ -198,12 +198,17 @@ class NodeIdLeafResolverTest {
     }
 
     @Test
-    void multiHopLiftTranslationRejected() {
-        // Lift_fail_c -> lift_fail_b -> lift_fail_a chain. hop[0] uses fk_b -> b_id (so
-        // lift_fail_b's source-side columns from c are (b_id) only); hop[1] uses (a_k1, a_k2)
-        // -> (k1, k2). Lift predicate at i=1 requires hop[1].sourceSide ⊂ hop[0].targetSide
-        // by SQL name; (a_k1, a_k2) is NOT a subset of (b_id), so the lift fails. The resolver
-        // rejects with the LIFT_FAILURE_MARKER text.
+    void multiHopTranslatingChain_bindsRemotely() {
+        // Lift_fail_c -> lift_fail_b -> lift_fail_a chain, the fixture that used to prove the
+        // lift gate. hop[0] departs lift_fail_c.fk_b and arrives on lift_fail_b.b_id; hop[1]
+        // departs (a_k1, a_k2), which is not where hop[0] arrived, so nothing carries forward and
+        // LiftFailA's key positions (k1, k2) land on no column of lift_fail_c. That absence is the
+        // remote binding: the predicate binds the key on lift_fail_a inside an EXISTS.
+        //
+        // This fixture is why the arm choice is the landing and not the terminal hop's column
+        // names: hop[1]'s target-side columns ARE (k1, k2), the node key itself, so a reduction
+        // reading only the terminal hop would bind locally against a tuple lift_fail_c does not
+        // have.
         String sdl = """
             type LiftFailA implements Node @table(name: "lift_fail_a") @node { id: ID! }
             type LiftFailC @table(name: "lift_fail_c") {
@@ -228,14 +233,60 @@ class NodeIdLeafResolverTest {
 
         var resolved = resolver.resolve(arg, "aId", liftFailCTable);
 
-        assertThat(resolved).isInstanceOf(NodeIdLeafResolver.Resolved.Rejected.class);
-        var rejected = (NodeIdLeafResolver.Resolved.Rejected) resolved;
-        // Anchor on the constant-named marker rather than copying prose verbatim, per the
-        // diagnostic-anchoring policy.
-        assertThat(rejected.rejection().message())
-            .contains(NodeIdLeafResolver.LIFT_FAILURE_MARKER)
-            .contains("aId")
-            .contains("hop 2");
+        assertThat(resolved).isInstanceOf(NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk.class);
+        var translated = (NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk) resolved;
+        assertThat(translated.refTypeName()).isEqualTo("LiftFailA");
+        assertThat(translated.targetTable().tableName()).isEqualToIgnoringCase("lift_fail_a");
+        assertThat(translated.keyColumns()).extracting(c -> c.sqlName())
+            .containsExactly("k1", "k2");
+        assertThat(translated.joinPath()).hasSize(2);
+        assertThat(translated.decodeMethod().methodName()).isEqualTo("decodeLiftFailA");
+    }
+
+    @Test
+    void junctionChain_bindsRemotely() {
+        // A junction chain: film -> film_category -> category, where the first hop is traversed
+        // against its FK's direction (film_category is the child of both endpoints). hop[0]
+        // departs film.film_id and arrives on film_category.film_id; hop[1] departs
+        // film_category.category_id, which is not where hop[0] arrived, so Category's key column
+        // lands nowhere on film and the predicate binds remotely.
+        //
+        // The junction is the shape the arm choice is about. Nothing here translates a column:
+        // every hop carries a column of the same name, and the terminal hop's target-side column
+        // IS category_id, the node key. What makes it remote is that no single film column holds a
+        // category_id, a junction row being the only place the pairing exists.
+        String sdl = """
+            type Category implements Node @table(name: "category") @node { id: ID! }
+            type Film @table(name: "film") {
+                title: String!
+            }
+            type Query {
+                filmsByCategory(
+                    categoryIds: [ID!]! @nodeId(typeName: "Category") @reference(path: [
+                        {key: "film_category_film_id_fkey"},
+                        {key: "film_category_category_id_fkey"}
+                    ])
+                ): [Film!]!
+            }
+            """;
+        var bctx = buildBuildContext(sdl, PUBLIC_CTX);
+        var resolver = bctx.nodeIdLeafResolver();
+
+        var queryField = ((GraphQLObjectType) bctx.schema.getType("Query"))
+            .getFieldDefinition("filmsByCategory");
+        GraphQLArgument arg = queryField.getArgument("categoryIds");
+        var filmTable = bctx.resolveTable("film").orElseThrow();
+
+        var resolved = resolver.resolve(arg, "categoryIds", filmTable);
+
+        assertThat(resolved).isInstanceOf(NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk.class);
+        var translated = (NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk) resolved;
+        assertThat(translated.refTypeName()).isEqualTo("Category");
+        assertThat(translated.targetTable().tableName()).isEqualToIgnoringCase("category");
+        assertThat(translated.keyColumns()).extracting(c -> c.sqlName())
+            .containsExactly("category_id");
+        assertThat(translated.joinPath()).hasSize(2);
+        assertThat(translated.decodeMethod().methodName()).isEqualTo("decodeCategory");
     }
 
     @Test
@@ -423,8 +474,8 @@ class NodeIdLeafResolverTest {
         // child columns in node-key order, so the email anti-drift test above exercises both paths
         // only on the identity permutation. Orientation is shared via resolveFkSlots, but
         // reconciliation (aligning FK child columns to node-key decode order) is genuinely
-        // duplicated: the classifier path permutes via permutationToKeyColumns, the record path
-        // matches via a targetSide-name loop. The reordered_fk_child -> reordered_pk_parent FK
+        // duplicated: the classifier path lands each key column by name, the record path matches
+        // via a targetSide-name loop. The reordered_fk_child -> reordered_pk_parent FK
         // references the parent PK in (pk_b, pk_c, pk_a) order while the node keys are
         // (pk_a, pk_b, pk_c), forcing a NON-identity permutation through both implementations;
         // they must still land identical child columns (fk_a, fk_b, fk_c).
