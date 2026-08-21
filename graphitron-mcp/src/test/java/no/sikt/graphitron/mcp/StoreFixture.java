@@ -1,7 +1,9 @@
 package no.sikt.graphitron.mcp;
 
+import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.test.RunawayRelation;
 import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.FactWriters;
 import no.sikt.graphitron.rewrite.JooqCatalog;
@@ -254,6 +256,23 @@ public final class StoreFixture implements AutoCloseable {
             reader = captured.reader();
         }
         return reader;
+    }
+
+    /**
+     * A reader under a stated budget, minted fresh rather than memoized: a case whose subject is the
+     * budget wants the reader it named, not whichever one an earlier call cached. The caller closes it.
+     */
+    public StoreReader reader(ReadBudget budget) {
+        return captured.reader(budget);
+    }
+
+    /**
+     * Makes every read of {@code relation} non-terminating, so a bounded reader touching it runs out
+     * of budget through the real query rather than through a threshold a case picked.
+     * {@link RunawayRelation} carries the reasoning.
+     */
+    public void makeRunaway(String relation) {
+        RunawayRelation.install(captured.dsl(), relation);
     }
 
     @Override

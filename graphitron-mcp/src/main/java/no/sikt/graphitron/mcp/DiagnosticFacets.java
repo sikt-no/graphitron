@@ -1,6 +1,7 @@
 package no.sikt.graphitron.mcp;
 
 import io.modelcontextprotocol.spec.McpSchema;
+import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Condition;
@@ -375,6 +376,26 @@ final class DiagnosticFacets {
         return error(tool + ": this server holds no fact store handle, so the store cannot be "
             + "read and an answer will not be fabricated. A dev session "
             + "(mvn graphitron:dev) always wires its session store handle in.");
+    }
+
+    /**
+     * The out-of-budget answer: an error naming the budget and the statement, never an empty result.
+     *
+     * <p>The posture is this server's own rather than the language server's, and it does not follow
+     * from it. An editor has prior state to keep and a screen to leave standing, so degrading to
+     * "nothing new" there costs the developer nothing they were not already looking at. A turn-based
+     * server has neither. What it has instead is a caller that reasons about the result, and an
+     * agent handed an empty result set concludes the fact does not exist and moves on with that
+     * belief. So the read failing has to arrive as a failure, for the same reason
+     * {@link #refusal} exists: silence reads as absence.
+     *
+     * <p>Shared by every tool that reads through a {@link no.sikt.graphitron.model.boot.StoreReader},
+     * one boundary overrun being one error wherever it surfaces.
+     */
+    static McpSchema.CallToolResult outOfBudget(String tool, StoreAnswer.OutOfBudget<?> expired) {
+        return error(tool + ": a fact store read ran past its " + expired.budget().describe()
+            + " budget and was aborted, so there is no answer to give and an empty one will not be "
+            + "fabricated. The statement that overran: " + expired.sql());
     }
 
     /** The shared tool-error shape ({@code isError} plus a structured status), as the execute tool spells it. */

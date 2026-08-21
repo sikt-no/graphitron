@@ -62,7 +62,7 @@ import java.util.UUID;
  *
  * <p>A consumer that reads while somebody else writes asks this store for a {@link StoreReader}
  * rather than sharing {@link #dsl()}. That the URL stays private is the reason the mint exists here:
- * see {@link #reader()}.
+ * see {@link #reader(ReadBudget)}.
  */
 public final class GraphitronModelStore implements AutoCloseable {
 
@@ -193,7 +193,7 @@ public final class GraphitronModelStore implements AutoCloseable {
     /**
      * The typed query surface over this store's own connection: what capture writes through, and
      * what a caller reads through when it is the same turn-based party that writes. A consumer
-     * answering requests while another party writes wants {@link #reader()} instead, which is a
+     * answering requests while another party writes wants {@link #reader(ReadBudget)} instead, which is a
      * connection of its own rather than a share of this one.
      */
     public DSLContext dsl() {
@@ -223,11 +223,20 @@ public final class GraphitronModelStore implements AutoCloseable {
      * reader is open is the one ordering that matters, since an in-memory database goes with its
      * owner.
      *
+     * <p>Every reader states a {@link ReadBudget}, and there is deliberately no overload that
+     * defaults one. A caller minting a reader knows what its reads answer for (a keystroke, a
+     * whole-workspace recalculation, one turn of a tool call, a fixture), and that is precisely the
+     * knowledge a default would discard; the compiler asking is cheaper than discovering later that
+     * an interactive surface inherited a fixture's budget. A caller that means no limit at all says
+     * {@link ReadBudget.Unbounded} and says it structurally.
+     *
+     * @param budget how long any one statement this reader issues may spend before the database
+     *        aborts it, which is a property of the session and is installed here once
      * @throws IllegalStateException if the second connection cannot be opened, which means this
      *         store's own database is gone rather than that the caller asked for the wrong thing
      */
-    public StoreReader reader() {
-        return new StoreReader(connect(url));
+    public StoreReader reader(ReadBudget budget) {
+        return new StoreReader(connect(url), budget);
     }
 
     /**

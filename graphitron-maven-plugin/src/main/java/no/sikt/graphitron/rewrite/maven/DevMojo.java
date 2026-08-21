@@ -9,6 +9,7 @@ import no.sikt.graphitron.rewrite.SchemaParseException;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.derive.Materializations;
+import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
@@ -101,6 +102,34 @@ public class DevMojo extends AbstractRewriteMojo {
     static final int DEFAULT_PORT = 8487;
     static final int DEFAULT_MCP_PORT = 8488;
     static final String LOOPBACK_HOST = "127.0.0.1";
+
+    /**
+     * The budget every keystroke-grain store read runs under: hovers, completions,
+     * goto-definition, inlay hints, lint quick-fixes. Named rather than spelled at the mint so the
+     * three budgets below cannot drift apart unnoticed.
+     *
+     * <p>Low seconds, which is far above anything a healthy read costs and deliberately not a
+     * latency policy. The target is a query that would otherwise never return: a threshold tight
+     * enough to police slowness would start refusing correct answers on a loaded machine, and
+     * {@code LspTrace}'s own slow-span threshold is where latency gets reported.
+     */
+    static final ReadBudget INTERACTIVE_READ_BUDGET = new ReadBudget.Bounded(3_000);
+
+    /**
+     * The budget for the reads that are the session's rather than one cursor's: the whole-workspace
+     * diagnostics drain and the directive-vocabulary load. Larger than the interactive one because a
+     * drain legitimately costs more (it answers for every open file at once) and because it is the
+     * read that least wants to fail: losing it costs the developer every squiggle in the workspace,
+     * where losing a hover costs one popup.
+     */
+    static final ReadBudget SESSION_READ_BUDGET = new ReadBudget.Bounded(30_000);
+
+    /**
+     * The budget the MCP server's reader runs under. Turn-scale rather than keystroke-scale: an
+     * agent asked one question and is waiting for the answer to it, so there is no queue of pending
+     * requests behind this one and no screen going stale while it runs.
+     */
+    static final ReadBudget MCP_READ_BUDGET = new ReadBudget.Bounded(60_000);
 
     @Parameter(property = "graphitron.dev.port", defaultValue = "8487")
     int port;
@@ -259,15 +288,20 @@ public class DevMojo extends AbstractRewriteMojo {
         // Vocabulary-less until the store arrives on the next line: the directive vocabulary is
         // read out of the session's graph now, so there is nothing to hand the constructor.
         var workspace = new Workspace();
-        // The editor's read access to the store, a connection of its own rather than a share of the
-        // writer's: LSP requests arrive concurrently while a capture round holds this handle. The
-        // reader lives with the workspace and is closed with it in cleanup().
-        this.lspStore = new StoreAccess(sessionStore.reader(), initialCtx.graphName());
+        // The editor's read access to the store, connections of its own rather than a share of the
+        // writer's: LSP requests arrive concurrently while a capture round holds this handle. Two
+        // readers rather than one because the session has two latency contracts, and one reader
+        // would make a keystroke queue behind a whole-workspace drain for no better reason than
+        // sharing a connection. Both live with the workspace and are closed with it in cleanup().
+        this.lspStore = new StoreAccess(
+            sessionStore.reader(INTERACTIVE_READ_BUDGET),
+            sessionStore.reader(SESSION_READ_BUDGET),
+            initialCtx.graphName());
         workspace.setStore(lspStore);
         // The MCP server's reader, minted from the same call for the same reason one connection cannot
         // carry two transactions: the language server's reads and an MCP tool's would otherwise
         // serialize behind each other for no better cause than sharing a socket.
-        this.mcpStore = sessionStore.reader();
+        this.mcpStore = sessionStore.reader(MCP_READ_BUDGET);
         if (initial.classified()) {
             // The round classified, so it has findings worth replaying. The facts go in before the
             // enqueue: a recalculation replays what this round wrote about each open file.

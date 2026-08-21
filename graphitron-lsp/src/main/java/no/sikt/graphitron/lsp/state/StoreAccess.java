@@ -1,10 +1,13 @@
 package no.sikt.graphitron.lsp.state;
 
+import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.SourceGraph;
 import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.DSLContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 import java.util.List;
@@ -13,8 +16,24 @@ import java.util.Optional;
 import java.util.function.Function;
 
 /**
- * The language server's read access to the fact store: a reader of its own, plus the graph the
+ * The language server's read access to the fact store: readers of its own, plus the graph the
  * session was started for. One instance per session, held by {@link Workspace} and closed with it.
+ *
+ * <p>Two readers, not one, because the session has two latency contracts and one connection
+ * serializes. A keystroke and a whole-workspace recalculation queued behind each other on one reader
+ * is head-of-line blocking with nothing to show for it, and the two want different budgets besides:
+ * the drain is the read that most wants headroom and least wants to fail, a hover the opposite. The
+ * three doors below partition the grains exactly as they stand, which is what makes routing by door
+ * a delegation split rather than a restructure: {@link #answering} is every interactive surface,
+ * {@link #answeringAll} is the diagnostics drain alone, and {@link #readingSessionGraph} is session
+ * state read once per triggering event. So the interactive reader serves the first and the
+ * session-wide reader serves the other two, which never contend: both hang off the same enqueue,
+ * so they run in sequence on one trigger.
+ *
+ * <p>A caller that picks the wrong door therefore gets the wrong budget. Each door says which grain
+ * it is for, so the choice is visible where it is made, and the consequence is a mis-sized budget
+ * rather than a wrong answer. If a second interactive caller of {@link #answeringAll} ever appears,
+ * the door is the thing to split.
  *
  * <p>Every answer goes through {@link #answering}, which does two things a handler must not do for
  * itself. It opens the one read transaction the answer assembles inside, so a handler running
@@ -37,34 +56,49 @@ import java.util.function.Function;
  */
 public final class StoreAccess implements AutoCloseable {
 
-    private final StoreReader reader;
+    private static final Logger LOGGER = LoggerFactory.getLogger(StoreAccess.class);
+
+    private final StoreReader interactive;
+    private final StoreReader sessionWide;
     private final String graphName;
 
     /**
-     * @param reader the session's own reader, minted by the store the session writes through, whose
-     *               lifetime this object takes over
+     * @param interactive the reader every keystroke-grain read goes through, whose lifetime this
+     *                    object takes over
+     * @param sessionWide the reader the diagnostics drain and the session-state reads go through,
+     *                    whose lifetime this object takes over
      * @param graphName the graph this session was started for, which is the tiebreak when a
      *                  document belongs to more than one
      */
-    public StoreAccess(StoreReader reader, String graphName) {
-        this.reader = Objects.requireNonNull(reader, "reader");
+    public StoreAccess(StoreReader interactive, StoreReader sessionWide, String graphName) {
+        this.interactive = Objects.requireNonNull(interactive, "interactive");
+        this.sessionWide = Objects.requireNonNull(sessionWide, "sessionWide");
         this.graphName = Objects.requireNonNull(graphName, "graphName");
     }
 
     /**
-     * Runs {@code answer} inside one read transaction, handing it the handle for {@code sourceName}'s
-     * graph or {@link Optional#empty()} when no graph of this session's answers for that document.
+     * Runs {@code answer} inside one read transaction on the <em>interactive</em> reader, handing it
+     * the handle for {@code sourceName}'s graph or {@link Optional#empty()} when no graph of this
+     * session's answers for that document. The keystroke grain: every surface an editor blocks a
+     * cursor on comes through here.
      *
      * <p>The handle is valid for the call only. A handler that stores it answers its next request
      * from a transaction that has already ended, which is the tear this method exists to prevent.
+     *
+     * <p>Not delegated to {@link #answeringAll}, which is what it used to be. The two doors carry
+     * different budgets now, so a single-document read routed through the bulk one would answer
+     * every keystroke on the reader the drain owns, which is both the wrong budget and the
+     * head-of-line blocking two readers exist to remove. They share the private form below instead.
      */
-    public <R> R answering(String sourceName, Function<Optional<StoreHandle>, R> answer) {
-        return answeringAll(List.of(sourceName), handles -> answer.apply(handles.of(sourceName)));
+    public <R> StoreAnswer<R> answering(String sourceName, Function<Optional<StoreHandle>, R> answer) {
+        return resolving(interactive, List.of(sourceName),
+            handles -> answer.apply(handles.of(sourceName)));
     }
 
     /**
-     * The same, for several documents answered together: one read transaction over all of them, and one
-     * membership resolution for the whole set rather than one per document.
+     * The same, for several documents answered together, on the <em>session-wide</em> reader: one read
+     * transaction over all of them, and one membership resolution for the whole set rather than one per
+     * document. The drain grain, and its only caller is the diagnostics recalculation.
      *
      * <p>Bulk because a request about many documents is one request. Resolving each separately cost a
      * query per document before a single fact had been read, which for a whole-workspace recalculation
@@ -75,24 +109,63 @@ public final class StoreAccess implements AutoCloseable {
      * {@link DocumentHandles} exists to say so in a signature: it is a lookup into one transaction, not
      * a map a caller may keep.
      */
-    public <R> R answeringAll(
+    public <R> StoreAnswer<R> answeringAll(
         Collection<String> sourceNames, Function<DocumentHandles, R> answer
     ) {
-        return reader.read(dsl -> {
-            var resolved = SourceGraph.ofAll(dsl, sourceNames);
-            return answer.apply(sourceName -> Optional.ofNullable(resolved.get(sourceName))
-                .flatMap(graph -> handleFor(dsl, graph)));
-        });
+        return resolving(sessionWide, sourceNames, answer);
     }
 
     /**
-     * Runs {@code read} against this session's own graph, inside one read transaction and without
-     * resolving any document first. The door for the questions that are about the session rather than
-     * about a file an editor has open: the directive vocabulary is the shipped case, being one
-     * capture's answer that every document in the session is then judged against.
+     * Runs {@code read} against this session's own graph on the <em>session-wide</em> reader, inside
+     * one read transaction and without resolving any document first. The door for the questions that
+     * are about the session rather than about a file an editor has open: the directive vocabulary is
+     * the shipped case, being one capture's answer that every document in the session is then judged
+     * against.
+     *
+     * <p>The session-state grain rather than the keystroke one, which is why it shares the drain's
+     * reader: it is read once per triggering event, not once per answer.
      */
-    public <R> R readingSessionGraph(Function<StoreHandle, R> read) {
-        return reader.read(dsl -> read.apply(new StoreHandle(dsl, graphName)));
+    public <R> StoreAnswer<R> readingSessionGraph(Function<StoreHandle, R> read) {
+        return warned(sessionWide.read(dsl -> read.apply(new StoreHandle(dsl, graphName))));
+    }
+
+    /**
+     * The membership resolution both document-keyed doors share, with the reader passed in rather
+     * than picked here: which reader answers is the door's decision, and the resolution is the same
+     * either way.
+     */
+    private <R> StoreAnswer<R> resolving(
+        StoreReader reader, Collection<String> sourceNames, Function<DocumentHandles, R> answer
+    ) {
+        return warned(reader.read(dsl -> {
+            var resolved = SourceGraph.ofAll(dsl, sourceNames);
+            return answer.apply(sourceName -> Optional.ofNullable(resolved.get(sourceName))
+                .flatMap(graph -> handleFor(dsl, graph)));
+        }));
+    }
+
+    /**
+     * One warning per expired budget, here rather than at each surface. The surfaces decide what to
+     * show, which is a different decision and genuinely theirs; whether the developer hears about it
+     * at all is the store boundary's, and stating it once means a new surface cannot forget to and
+     * five surfaces cannot each say it. The statement is what makes the line worth reading: it is
+     * the one thing a bug report needs and the one thing nobody can reconstruct afterwards.
+     *
+     * <p>Through slf4j rather than {@link no.sikt.graphitron.lsp.trace.LspTrace}, whose javadoc warns
+     * that the LSP's stdio deployment often carries {@code slf4j-api} with no backend bound and would
+     * discard this. That caveat does not reach here: a session that can overrun a budget is a session
+     * with a store, which is a {@code graphitron:dev} session running inside the Maven JVM and its
+     * bound backend, and the build log is where the draft in the user manual says to look. A bare
+     * {@code Launcher} started outside a build has no store to read at all.
+     */
+    private static <R> StoreAnswer<R> warned(StoreAnswer<R> answer) {
+        if (answer instanceof StoreAnswer.OutOfBudget<R> expired) {
+            LOGGER.warn("a fact store read ran out of its {} budget and was aborted, so this surface "
+                    + "keeps what it was already showing rather than answering from a partial read. "
+                    + "The statement: {}",
+                expired.budget().describe(), expired.sql());
+        }
+        return answer;
     }
 
     /**
@@ -126,9 +199,10 @@ public final class StoreAccess implements AutoCloseable {
         return SourceUri.sourceNameOf(uri);
     }
 
-    /** Releases the reader. The store itself belongs to the session's writer, never to this. */
+    /** Releases both readers. The store itself belongs to the session's writer, never to this. */
     @Override
     public void close() {
-        reader.close();
+        interactive.close();
+        sessionWide.close();
     }
 }

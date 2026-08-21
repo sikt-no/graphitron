@@ -9,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.Optional;
 
+import static no.sikt.graphitron.model.test.StoreAnswers.answered;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -26,7 +27,7 @@ class StoreAccessTest {
     @Test
     void aDocumentOneGraphReadResolvesToThatGraph(@TempDir Path tmp) {
         try (var fixture = StoreFixture.of(tmp, SDL);
-             var access = new StoreAccess(fixture.reader(), StoreFixture.GRAPH)) {
+             var access = fixture.access()) {
 
             assertThat(graphAnswering(access, fixture.sourceName())).contains(StoreFixture.GRAPH);
         }
@@ -35,7 +36,7 @@ class StoreAccessTest {
     @Test
     void aDocumentTwoGraphsReadResolvesToTheSessionsOwn(@TempDir Path tmp) {
         try (var fixture = StoreFixture.of(tmp, SDL).andGraphSharingTheFile(tmp, "sibling");
-             var access = new StoreAccess(fixture.reader(), "sibling")) {
+             var access = fixture.access("sibling")) {
 
             // Both graphs read this file, so both rows are true and neither is the answer on its own.
             // The session was started for "sibling", which is what settles it.
@@ -46,7 +47,7 @@ class StoreAccessTest {
     @Test
     void aDocumentOnlyOtherGraphsReadAnswersAbsent(@TempDir Path tmp) {
         try (var fixture = StoreFixture.of(tmp, SDL).andGraphSharingTheFile(tmp, "sibling");
-             var access = new StoreAccess(fixture.reader(), "a-third-module")) {
+             var access = fixture.access("a-third-module")) {
 
             // The file belongs to two modules, neither of them this session's. Reporting either one's
             // classification would be answering a question nobody asked.
@@ -57,7 +58,7 @@ class StoreAccessTest {
     @Test
     void aDocumentNoGraphHasReadAnswersAbsent(@TempDir Path tmp) {
         try (var fixture = StoreFixture.of(tmp, SDL);
-             var access = new StoreAccess(fixture.reader(), StoreFixture.GRAPH)) {
+             var access = fixture.access()) {
 
             String unread = tmp.resolve("written-since-the-last-capture.graphqls").toString();
 
@@ -85,6 +86,6 @@ class StoreAccessTest {
 
     /** The graph whose handle {@code access} hands an answer, or empty when it hands none. */
     private static Optional<String> graphAnswering(StoreAccess access, String sourceName) {
-        return access.answering(sourceName, handle -> handle.map(StoreHandle::graphName));
+        return answered(access.answering(sourceName, handle -> handle.map(StoreHandle::graphName)));
     }
 }

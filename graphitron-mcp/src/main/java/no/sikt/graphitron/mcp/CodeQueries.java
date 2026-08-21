@@ -1,5 +1,6 @@
 package no.sikt.graphitron.mcp;
 
+import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Condition;
@@ -157,7 +158,7 @@ final class CodeQueries {
      *     the host gave this module alongside the reader. Passed rather than held because the scope is
      *     rebuilt per transaction: the {@code DSLContext} a read is handed is valid for that call only
      */
-    static CodeAnswer read(
+    static StoreAnswer<CodeAnswer> read(
         StoreReader reader, String graphName, Kind kind, Optional<String> nameSubstring,
         Optional<String> cursor, int limit
     ) {

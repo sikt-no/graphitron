@@ -12,6 +12,7 @@ import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.lsp.trace.LspTrace;
+import no.sikt.graphitron.model.boot.StoreAnswer;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionParams;
 import org.eclipse.lsp4j.Command;
@@ -19,6 +20,7 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionList;
 import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DefinitionParams;
+import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
@@ -36,6 +38,8 @@ import org.eclipse.lsp4j.services.TextDocumentService;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
@@ -155,14 +159,28 @@ public class GraphitronTextDocumentService implements TextDocumentService {
             }
             // One read transaction around the whole drain, so no two files are diagnosed from two
             // sides of a capture, and one statement per graph inside it rather than one per file.
-            var byUri = workspace.answeringAll(walked, batch::judgeAll);
-            for (String uri : walked) {
-                var diagnostics = byUri.get(uri);
-                if (diagnostics == null) continue;
-                try (var fileSpan = LspTrace.span("publishDiagnostics.file")) {
-                    fileSpan.detail("uri", uri).detail("diagnostics", diagnostics.size());
-                    client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
-                }
+            switch (workspace.answeringAll(walked, batch::judgeAll)) {
+                case StoreAnswer.Answered<Map<String, List<Diagnostic>>> answered ->
+                    publish(walked, answered.value());
+                // Nothing is published at all, which is not the same as publishing an empty list.
+                // An empty list would erase the squiggles the last drain put on screen, so a read
+                // that ran out of budget would clear the developer's warnings rather than leave
+                // them standing; there is nothing here to replace them with, so nothing is sent.
+                // The store boundary has already warned, naming the statement.
+                case StoreAnswer.OutOfBudget<Map<String, List<Diagnostic>>> ignored ->
+                    drainSpan.detail("outOfBudget", true);
+            }
+        }
+    }
+
+    /** Ships one diagnostic list per walked file, skipping any the drain had no answer for. */
+    private void publish(List<String> walked, Map<String, List<Diagnostic>> byUri) {
+        for (String uri : walked) {
+            var diagnostics = byUri.get(uri);
+            if (diagnostics == null) continue;
+            try (var fileSpan = LspTrace.span("publishDiagnostics.file")) {
+                fileSpan.detail("uri", uri).detail("diagnostics", diagnostics.size());
+                client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
             }
         }
     }
@@ -197,12 +215,20 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                         // providers share one read transaction for the same reason hover takes
                         // one: a chain that fell through to a second read could decline on a
                         // declaration the first read positioned.
-                        return workspace.answering(uri, store ->
+                        StoreAnswer<Optional<Location>> found = workspace.answering(uri, store ->
                             Definitions.compute(workspace.vocabulary(), file, store, pos)
                                 .or(() -> IntraSchemaDefinitions.compute(workspace, store, uri, pos))
-                                .or(() -> DeclarationDefinitions.compute(file, store, pos)))
-                            .map(loc -> Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(List.of(loc)))
-                            .orElseGet(() -> Either.forLeft(List.of()));
+                                .or(() -> DeclarationDefinitions.compute(file, store, pos)));
+                        return switch (found) {
+                            case StoreAnswer.Answered<Optional<Location>> answered -> answered.value()
+                                .map(loc -> Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(List.of(loc)))
+                                .orElseGet(() -> Either.forLeft(List.of()));
+                            // No jump, which is what a cursor on nothing resolvable already gets.
+                            // The developer keeps the buffer they are looking at; the store boundary
+                            // has already warned, naming the statement that overran.
+                            case StoreAnswer.OutOfBudget<Optional<Location>> ignored ->
+                                Either.forLeft(List.of());
+                        };
                     });
                 return result != null ? result : Either.forLeft(List.of());
             }
@@ -218,9 +244,15 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 // One read transaction around the whole region, as hover takes: two declarations
                 // annotated from either side of a capture would disagree about the same schema.
                 var hints = workspace.withView(uri, List.<InlayHint>of(), file ->
-                    workspace.answering(uri, store ->
+                    switch (workspace.answering(uri, store ->
                         InlayHints.compute(
-                            workspace.inlayHintConfig(), file, store, params.getRange())));
+                            workspace.inlayHintConfig(), file, store, params.getRange()))) {
+                        case StoreAnswer.Answered<List<InlayHint>> answered -> answered.value();
+                        // No hints for this region, which is what a region the store has nothing to
+                        // annotate already gets. The next request over the same range is served
+                        // normally; the store boundary has already warned, naming the statement.
+                        case StoreAnswer.OutOfBudget<List<InlayHint>> ignored -> List.<InlayHint>of();
+                    });
                 span.detail("hints", hints.size());
                 return hints;
             }
@@ -240,9 +272,15 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                     // One read transaction around the whole popup, as completion takes: a hover
                     // assembled from two snapshots could name a class from before a capture and
                     // describe it from after.
-                    return workspace.answering(uri, store ->
+                    return switch (workspace.answering(uri, store ->
                         Hovers.compute(workspace.vocabulary(), file, store, pos,
-                            workspace.inlayHintConfig().hoverClassification())).orElse(null);
+                            workspace.inlayHintConfig().hoverClassification()))) {
+                        case StoreAnswer.Answered<Optional<Hover>> answered ->
+                            answered.value().orElse(null);
+                        // No popup, which is what a cursor on something the store has nothing to
+                        // say about already gets. The store boundary has already warned.
+                        case StoreAnswer.OutOfBudget<Optional<Hover>> ignored -> null;
+                    };
                 });
             }
         });

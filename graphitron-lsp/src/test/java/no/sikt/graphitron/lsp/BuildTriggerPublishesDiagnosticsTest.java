@@ -48,7 +48,7 @@ class BuildTriggerPublishesDiagnosticsTest {
         try (var fixture = StoreFixture.of(tmp, SDL)) {
             String uri = Path.of(fixture.sourceName()).toUri().toString();
             var workspace = new Workspace();
-            workspace.setStore(new StoreAccess(fixture.reader(), StoreFixture.GRAPH));
+            workspace.setStore(fixture.access());
             var service = new GraphitronTextDocumentService(workspace);
             var client = new RecordingClient();
             service.setClient(client);
@@ -94,7 +94,7 @@ class BuildTriggerPublishesDiagnosticsTest {
         try (var fixture = StoreFixture.of(tmp, SDL)) {
             String uri = Path.of(fixture.sourceName()).toUri().toString();
             var workspace = new Workspace();
-            workspace.setStore(new StoreAccess(fixture.reader(), StoreFixture.GRAPH));
+            workspace.setStore(fixture.access());
             var service = new GraphitronTextDocumentService(workspace);
             var client = new RecordingClient();
             service.setClient(client);

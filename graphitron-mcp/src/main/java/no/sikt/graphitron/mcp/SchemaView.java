@@ -1,6 +1,7 @@
 package no.sikt.graphitron.mcp;
 
 import io.modelcontextprotocol.spec.McpSchema;
+import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 
@@ -56,8 +57,21 @@ final class SchemaView {
         int limit = McpWire.intArg(args, "limit", DEFAULT_LIMIT);
         if (limit < 1) limit = DEFAULT_LIMIT;
 
-        var answer = SchemaQueries.read(reader, store.graphName(), typeFilter,
-            McpWire.stringArg(args, "cursor"), limit);
+        return switch (SchemaQueries.read(reader, store.graphName(), typeFilter,
+            McpWire.stringArg(args, "cursor"), limit)) {
+            case StoreAnswer.Answered<SchemaQueries.SchemaAnswer> read ->
+                render(read.value(), typeFilter);
+            // An empty type list would read as a graph declaring no types, which is the one thing a
+            // read that never finished must not be mistaken for.
+            case StoreAnswer.OutOfBudget<SchemaQueries.SchemaAnswer> expired ->
+                DiagnosticFacets.outOfBudget("schema", expired);
+        };
+    }
+
+    /** Maps one answered page onto the wire, with the lifecycle axes it was read alongside. */
+    private static McpSchema.CallToolResult render(
+        SchemaQueries.SchemaAnswer answer, Optional<String> typeFilter
+    ) {
         var page = answer.page();
 
         var fields = new LinkedHashMap<String, Object>();

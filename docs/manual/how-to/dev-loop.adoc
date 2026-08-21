@@ -51,6 +51,8 @@ the generated output is identical.
 
 That is the expected message, not a failure. The cache only makes a run start faster; the build reads your schema and generates exactly the same code without it, so there is nothing to configure and nothing to clean up. If you would rather have the warm start back for a long build, stop the dev session for its duration.
 
+*A surface goes quiet after a build.* If hovers or inlay hints stop appearing for a schema that was fine a moment ago, and the build log carries a warning about a store read that ran out of its budget, a relation the language server reads has become too expensive to answer. The editor keeps whatever it was already showing rather than telling you the schema changed, so nothing you see is wrong; it is just no longer being refreshed for that surface. The warning names the statement, which is what to bring to a bug report. Diagnostics you can already see stay on screen: a drain that ran out of budget publishes nothing rather than clearing them. The budgets are not configurable, and the next request is served normally, so there is nothing to do about it locally beyond reporting the statement.
+
 For the full picture of how the schema watcher, classpath watcher, and generator dispatch cooperate inside the `dev` goal, see xref:../../architecture/how-to/dev-loop-internals.adoc#dev-loop-detail[the dev loop reference] in the architecture docs.
 
 [#compiled-classes]

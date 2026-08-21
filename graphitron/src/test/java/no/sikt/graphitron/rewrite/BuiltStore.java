@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
@@ -121,9 +122,18 @@ public final class BuiltStore implements AutoCloseable {
         return storeHome;
     }
 
-    /** A reader of this store, for the reads a dev session makes through one. */
+    /**
+     * A reader of this store, for the reads a dev session makes through one. Unbounded, for the
+     * reason every fixture reader is: a harness naming a number would smuggle a wall-clock
+     * threshold into a tier that must not fail for being slow.
+     */
     public StoreReader reader() {
-        return store.reader();
+        return reader(new ReadBudget.Unbounded());
+    }
+
+    /** A reader under a stated budget, for the cases whose subject <em>is</em> the budget. */
+    public StoreReader reader(ReadBudget budget) {
+        return store.reader(budget);
     }
 
     @Override

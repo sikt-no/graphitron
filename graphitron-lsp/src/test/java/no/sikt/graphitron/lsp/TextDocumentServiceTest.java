@@ -72,7 +72,7 @@ class TextDocumentServiceTest {
         var cursor = new Position(0, source.indexOf('"') + 1);
 
         try (var fixture = StoreFixture.ofCatalog(tmp, "type Query { x: Int }\n");
-             var access = new StoreAccess(fixture.reader(), StoreFixture.GRAPH)) {
+             var access = fixture.access()) {
             assertThat(labelsAt(access, fixture, source, cursor)).contains("film", "actor");
         }
     }
@@ -94,7 +94,7 @@ class TextDocumentServiceTest {
         var cursor = new Position(1, 23);
 
         try (var fixture = StoreFixture.ofCatalog(tmp, "type Query { x: Int }\n");
-             var access = new StoreAccess(fixture.reader(), StoreFixture.GRAPH)) {
+             var access = fixture.access()) {
             assertThat(labelsAt(access, fixture, source, cursor)).contains("film", "actor");
         }
     }
@@ -165,7 +165,7 @@ class TextDocumentServiceTest {
     @Test
     void didOpenPublishesDiagnosticsForUnknownTable(@TempDir Path tmp) throws Exception {
         try (var fixture = StoreFixture.ofCatalog(tmp, "type Query { x: Int }\n");
-             var access = new StoreAccess(fixture.reader(), StoreFixture.GRAPH)) {
+             var access = fixture.access()) {
             var workspace = new no.sikt.graphitron.lsp.state.Workspace();
             workspace.setStore(access);
             var proxy = startServer(new GraphitronLanguageServer(workspace));
@@ -204,7 +204,7 @@ class TextDocumentServiceTest {
             """;
 
         try (var fixture = StoreFixture.ofCatalog(tmp, "type Query { x: Int }\n");
-             var access = new StoreAccess(fixture.reader(), StoreFixture.GRAPH)) {
+             var access = fixture.access()) {
             var workspace = new no.sikt.graphitron.lsp.state.Workspace();
             workspace.setStore(access);
             var proxy = startServer(new GraphitronLanguageServer(workspace));
@@ -236,7 +236,7 @@ class TextDocumentServiceTest {
     @Test
     void definitionRequestRoundTripsToTheParsedDeclaration(@TempDir Path tmp) throws Exception {
         try (var fixture = StoreFixture.ofCatalog(tmp, "type Query { x: Int }\n");
-             var access = new StoreAccess(fixture.reader(), StoreFixture.GRAPH)) {
+             var access = fixture.access()) {
             String filmFqn = fixture.tableClassFqn("film");
             fixture.withJavaSource(tmp, filmFqn, """
                 public class Film {

@@ -231,7 +231,7 @@ class LintQuickFixTest {
     private static Workspace session(StoreFixture fixture, String buffer) {
         var workspace = new Workspace();
         workspace.didOpen(uriOf(fixture), 1, buffer);
-        workspace.setStore(new StoreAccess(fixture.reader(), StoreFixture.GRAPH));
+        workspace.setStore(fixture.access());
         return workspace;
     }
 

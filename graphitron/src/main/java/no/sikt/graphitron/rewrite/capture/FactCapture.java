@@ -392,6 +392,13 @@ public final class FactCapture {
      * error 50200, SQL state {@code HYT00}). Keying on that rather than on a message or a vendor
      * code also keeps a deadlock out, which arrives as a
      * {@link java.sql.SQLTransactionRollbackException} and keeps its retry.
+     *
+     * <p>That the type is enough holds only while no writer session carries a statement budget. An
+     * expired {@link no.sikt.graphitron.model.boot.ReadBudget} raises the same
+     * {@link SQLTimeoutException} with vendor code 57014, and this predicate would read it as lock
+     * contention and demote the store to memory for a query that was merely too slow. The read side
+     * therefore keys on the vendor code rather than the type; whoever gives a writer a budget has to
+     * do the same here.
      */
     static boolean timedOutOnALock(Throwable failure) {
         for (Throwable cause = failure; cause != null; cause = cause.getCause()) {

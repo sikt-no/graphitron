@@ -1,7 +1,7 @@
 ---
 id: R773
 title: "The LSP's store reads answer inside a time budget, or fail"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 3
 theme: lsp
@@ -221,112 +221,128 @@ way: unbounded times uncounted becomes bounded times uncounted. Closing it means
 statement-count tests for surfaces this item does not otherwise touch, which is a separate item's
 work; file it as Backlog when this one lands rather than widening this one to reach it.
 
-## Implementation
+## What shipped
+
+Every symbol below exists as named. The design section above is unchanged and is what the
+implementation followed; this section is what a reviewer greps.
 
 **`graphitron-model`, `no.sikt.graphitron.model.boot`**
 
-* New `ReadBudget`, sealed, two arms: `Bounded(long millis)` (rejecting non-positive values, since
-  H2 reads `0` as no limit and a caller that meant unbounded has an arm for it) and `Unbounded`.
-  Carries the `SET QUERY_TIMEOUT` rendering so no caller writes the statement.
-* New `StoreAnswer<T>`, sealed: `Answered(T value)` and `OutOfBudget(String sql)`, the statement text
-  being what makes the warning diagnostic rather than merely present.
-* New expired-statement predicate beside the reader, walking the cause chain for a `SQLException`
-  whose vendor code is 57014. Named for what it detects, not for `SQLTimeoutException`.
-* `StoreReader` takes a `ReadBudget` at construction and issues its `SET QUERY_TIMEOUT` beside the
-  existing `ISOLATION` statement. `read` returns `StoreAnswer<T>`, catching `DataAccessException`,
-  testing the predicate, and rethrowing anything that is not an expired statement unchanged: a
-  genuine query error is still a defect and must not become an `OutOfBudget`. The rollback that ends
-  every read runs on both paths, which the probe confirms leaves the session usable for the next one.
-* `GraphitronModelStore.reader()` becomes `reader(ReadBudget)`, with no defaulted overload. Four
-  `{@link}` references to the retired no-arg form break with it, two in `GraphitronModelStore`'s own
-  javadoc (`{@link #reader()}`) and two in `StoreReader`'s class javadoc
-  (`{@link GraphitronModelStore#reader()}`), one of which is the "second reader per thread" sentence
-  this design leans on. The Javadoc reference gate fails the build on all four, so they are repointed
-  in the same commit rather than found later.
+* `ReadBudget`, sealed: `Bounded(long millis)` (refusing non-positive values) and `Unbounded`. It
+  renders the `SET QUERY_TIMEOUT` command (`sessionCommand()`) and its own wording for a warning
+  (`describe()`), so no caller spells either.
+* `StoreAnswer<T>`, sealed: `Answered(T value)` and `OutOfBudget(String sql, ReadBudget budget)`. No
+  convenience unwrap, deliberately.
+* `StoreReader` takes a `ReadBudget` at construction and issues its session command beside the
+  existing `ISOLATION` statement. `read` returns `StoreAnswer<T>`; `StoreReader.ranOutOfBudget` is
+  the new predicate, walking the cause chain for a `SQLException` whose vendor code is 57014, and
+  anything that is not an aborted statement is rethrown unchanged. The rollback runs on both paths.
+  `budget()` exposes the reader's own budget.
+* `GraphitronModelStore.reader(ReadBudget)` replaces the no-argument mint, with no defaulted
+  overload. All four `{@link}` references to the retired form are repointed.
 
-**`graphitron` (`FactCapture`)**
+**`graphitron`**
 
-* `timedOutOnALock`'s javadoc gains the boundary: it keys on the exception type, which is sound only
-  while no writer session carries a statement budget, and what to key on instead if one ever does.
-  No behaviour change.
+* `FactCapture.timedOutOnALock`'s javadoc gains the boundary: keying on the exception type is sound
+  only while no writer session carries a statement budget, and what to key on if one ever does. No
+  behaviour change.
 
 **`graphitron-maven-plugin` (`DevMojo`)**
 
-* The `lspStore` mint becomes two readers, interactive and session-wide, passed to one `StoreAccess`,
-  with named budget constants rather than literals at the call site so the two cannot drift: an
-  interactive budget in the low seconds (well above anything `LspTrace`'s 100 ms `SLOW` threshold
-  would ever tag, because the target is unbounded pathology and not latency policing) and a larger
-  session-wide one.
-* The `mcpStore` mint states a generous turn-scale budget.
+* Three named budget constants rather than literals at the mint: `INTERACTIVE_READ_BUDGET` (3 s),
+  `SESSION_READ_BUDGET` (30 s), `MCP_READ_BUDGET` (60 s). The `lspStore` mint passes the first two to
+  one `StoreAccess`; the `mcpStore` mint passes the third.
 
 **`graphitron-lsp`**
 
-* `StoreAccess` takes two `StoreReader`s and closes both. `answering` stops delegating to
-  `answeringAll` and both call a private form taking the reader explicitly, so a keystroke does not
-  borrow the session-wide reader. Each door's javadoc states its grain.
-* All three doors propagate `StoreAnswer` rather than unwrapping it: `answering`, `answeringAll`, and
-  `readingSessionGraph`, which the propagation list previously missed and which is the door both
-  vocabulary loads use. `Workspace`'s two doors of the same name follow.
-* `Workspace` holds the last good `LspVocabulary` and keeps it on `OutOfBudget` at both load sites
-  (`setStore` at the `store == null` fork, and `markAllForRecalculation`).
-* Each surface states its posture in an exhaustive switch: `Hovers`, `Completions`, `Definitions`,
-  `InlayHints`, `CodeActions` return what they have;
-  `GraphitronTextDocumentService.publishDiagnosticsForRecalculate` skips the publish for an affected
-  URI entirely rather than publishing an empty list.
-* One warn-level log per expired budget, at the boundary that owns the decision rather than at each
-  surface, naming the statement and the budget.
+* `StoreAccess` holds two `StoreReader`s and closes both. `answering` no longer delegates to
+  `answeringAll`; both call a private `resolving` form taking the reader explicitly, so a keystroke
+  cannot borrow the session-wide reader. Each door's javadoc states its grain.
+* All three doors return `StoreAnswer`, `readingSessionGraph` included, and `Workspace`'s two doors
+  of the same name follow. A session with no store answers `Answered` around the absent handle,
+  which is what it always meant.
+* `Workspace.loadVocabulary` is the one place the vocabulary is read, from both `setStore` and
+  `markAllForRecalculation`, and keeps the last good value on `OutOfBudget`.
+* Every surface states its posture in an exhaustive switch: `Hovers` (no popup),
+  `Completions` (no items), `Definitions` (no jump), `InlayHints` (no hints),
+  `CodeActions` (the SDL actions still ship, the row-backed quick-fixes do not), and
+  `GraphitronTextDocumentService.publishDiagnosticsForRecalculate`, which publishes nothing at all
+  rather than an empty list. The drain's trace span records `outOfBudget`.
+* One warn-level line per expired budget, in `StoreAccess.warned`, naming the budget and the
+  statement. At the boundary rather than at each surface: what to show is the surface's decision,
+  whether the developer hears about it at all is the store boundary's.
 
 **`graphitron-mcp`**
 
-* Four production sites call `reader.read` and each states the fail-the-call posture: `CatalogCorpus`
-  (line 45 at the time of writing), `CatalogQueries` (238), `SchemaQueries` (369), `CodeQueries`
-  (164). `StoreReader` is threaded through roughly ten `GraphitronMcpServer` signatures, so the
-  return-type change surfaces there too even where no posture is decided.
-* The error response names the budget and the statement. It must not be an empty result set, for the
-  reason the design section gives: an agent reads silence as absence.
+* `CatalogCorpus.read`, `CatalogQueries.describe`, `SchemaQueries.read` and `CodeQueries.read` all
+  return `StoreAnswer`. `DiagnosticFacets.outOfBudget` is the shared error response, beside
+  `refusal` and for its reason; `SchemaView.schemaResult`, `GraphitronMcpServer.codeResult` and
+  `GraphitronMcpServer.catalogDescribeResult` each switch and fail the call. The wire shape is
+  `isError` plus the budget and the statement, never an empty result set.
+* `CatalogSearchIndex` is the fourth site and needed a posture the four-site list did not anticipate;
+  see the deviations below.
 
 ## Tests
 
-The shape of the suite follows from the tiers, not from the clock. Nothing here asserts a duration.
+Nothing below asserts a duration. Two mechanisms carry that: an overrun is provoked by a query that
+does not terminate rather than by one that is merely slow, and the door-routing case turns on a
+session setting rather than on a clock.
 
-* **The pathological shape, in `graphitron-model`.** A fixture relation carrying the duplicate-row
-  recursion `fact-model.adoc` documents ("a recursive term that joins on one column and projects
-  another turns two rows differing only in the projected column into identical output rows; `UNION
-  ALL` keeps both"), read through a `Bounded` reader, asserting the `OutOfBudget` arm. The shape is
-  non-terminating by construction, so the assertion is about an arm and never about how long anything
-  took; `fact-model.adoc` also records that "forty stated rows reproduce the hang", so this needs no
-  census-scale fixture. The fixture must build the shape from a relation of its own: the two
-  relations that carried the defect are respectively deleted and fixed, and naming either would pin
-  a shape that is gone.
-* **The session command reaches the session.** An `ExecuteListener`-derived handle in the shape of
-  `DiagnosticsStatementCountTest.counting` observes that a `Bounded` mint issues its `SET
-  QUERY_TIMEOUT` and an `Unbounded` mint issues none. Asserts a statement, not a time.
-* **A genuine query error is not an `OutOfBudget`.** A malformed statement through a `Bounded` reader
-  still throws, so the arm cannot become a catch-all that swallows defects.
-* **The reader survives an expired budget.** A read that runs out of budget, followed by an ordinary
-  read on the same reader that answers correctly. This is the property the probe observed and the one
-  a rollback bug would break.
-* **Diagnostics leave the previous publish standing.** A drain that runs out of budget publishes
-  *nothing* for the affected URI, asserted against the test client's recorded publishes: the failure
-  this catches is a second publish carrying an empty list, which would clear the developer's
-  squiggles. This is the case that justifies the arm over an `Optional`, so it is the case that must
-  exist.
-* **The vocabulary keeps its last good value.** A reload that runs out of budget leaves the previously
-  loaded vocabulary resolving coordinates, rather than the empty one that resolves none.
-* **An MCP tool call fails rather than answering emptily.** A tool whose read runs out of budget
-  returns an error naming the budget, asserted against the tool's response. The failure this catches
-  is an empty result set, which is the shape an agent would read as "no such fact".
-* **A keystroke does not borrow the session-wide budget.** The two readers are distinguishable in a
-  fixture (different budgets, or the `ExecuteListener` handle above), and a read through `answering`
-  is asserted to go through the interactive one. This is the case that catches the delegation being
-  re-collapsed into `answeringAll` by a later reader who sees two methods doing the same thing.
-* **Exhaustiveness is the compiler's.** The sealed `StoreAnswer` and the undefaulted mint mean a new
-  surface or a new caller cannot silently inherit a posture, so no meta-test is needed for it.
+* **`StoreBudgetTest`** (`graphitron-model`): the budget is installed on the session and on no
+  other reader's; a non-terminating read arrives as the `OutOfBudget` arm carrying the statement; a
+  genuine query error still throws; a reader that ran out of budget answers the next read; a
+  non-positive `Bounded` is refused.
+* **`StoreOutOfBudgetTest`** (`graphitron-lsp`): a drain that runs out of budget leaves the previous
+  publish standing, asserted against a recording client's publish list, so an empty second publish
+  fails the case; a vocabulary reload that runs out of budget keeps the same instance; each door
+  reaches the reader its grain states, which is the case that catches the delegation being
+  re-collapsed; a session with no store answers absent rather than out of budget.
+* **`StoreOutOfBudgetTest`** (`graphitron-mcp`): the `schema` tool errors rather than paging no
+  types, and `catalog.describe` errors rather than reporting the table not found, which is the
+  sharper hazard of the two. Both assert the response names the budget and the statement.
+* **`RunawayRelation`** and **`StoreAnswers`** (`graphitron-model` test-jar) are the two new shared
+  harness pieces. The first swaps a relation for a view of the same shape whose evaluation never
+  terminates, which is how a case provokes an overrun through the real production query; the second
+  unwraps an answer in a case that is about something else, and fails loudly on the other arm.
+* Exhaustiveness is the compiler's: the sealed `StoreAnswer` and the undefaulted mint mean a new
+  surface or a new caller cannot silently inherit a posture.
 
-**A disclosed gap.** Nothing above pins that a real query stays inside a real budget. That is a
-benchmark, the project refuses benchmarks in this tier for good reason, and the absence is deliberate
-rather than an oversight. What is pinned is that an unbounded query becomes a bounded, typed,
-diagnosable failure.
+**A disclosed gap, unchanged from the plan.** Nothing pins that a real query stays inside a real
+budget. That is a benchmark, and the absence is deliberate. What is pinned is that an unbounded query
+becomes a bounded, typed, diagnosable failure.
+
+## Deviations from the approved plan
+
+Five, all narrower than the design and each recorded here rather than folded in silently.
+
+1. **`OutOfBudget` carries the budget as well as the statement.** The plan spelled it
+   `OutOfBudget(String sql)`, and also required the MCP error response to name the budget. The tool
+   site does not know which reader answered, so the arm carries the `ReadBudget` and `describe()`
+   renders it. Same for the LSP warning.
+2. **The session-command test asserts H2's own setting, not an `ExecuteListener`.** The plan proposed
+   a listener handle in the shape of `DiagnosticsStatementCountTest.counting`. That cannot work here:
+   the reader issues its session command through the JDBC `Statement` beside the isolation level, not
+   through `DSLContext`, so a jOOQ listener would see neither and would pass whatever the reader did.
+   `information_schema.settings` reports `QUERY_TIMEOUT` per session, which is a stronger assertion
+   (the budget reached the session) and still a setting rather than a duration.
+3. **The out-of-budget cases outside `graphitron-model` provoke the overrun by relation swap.** The
+   plan's fixture note covers the model-tier case, where the test issues the runaway query itself.
+   The LSP and MCP postures have to be provoked through the *production* query, which a test cannot
+   rewrite, so `RunawayRelation` makes the relation underneath it non-terminating instead. The
+   alternative was a budget small enough that an ordinary query overruns, which is the wall-clock
+   threshold the tier refuses.
+4. **The non-terminating cases carry a hang guard.** `@Timeout(60s, SEPARATE_THREAD)`, matching
+   `PersistentStoreTest`'s existing use. It asserts nothing about the 500 ms budget under test; it
+   exists so a broken mechanism fails a case instead of wedging the build, which is the failure mode
+   that would otherwise be hardest to diagnose.
+5. **`CatalogSearchIndex` got a fifth posture, and it is not fail-the-call.** The plan named four
+   `reader.read` sites and one posture for all of them. `CatalogCorpus.read`'s caller is the semantic
+   index's self-observation, not a tool call: the index is a pure function of the census, so a census
+   read that did not finish says nothing about whether the live index is stale. Keeping the live
+   index is therefore an answer from a census one capture old rather than a degradation, and only a
+   *first* observation that overruns has nothing to fall back on, which `search` reports as a
+   `SearchOutcome.Degraded` with an `outOfBudget` status. It never returns an empty hit list, which
+   is the principle the plan's posture was protecting.
 
 ## Developer documentation (first-client check)
 
@@ -341,9 +357,18 @@ it, and this adds the sibling symptom. Draft:
 > is what to bring to a bug report. Diagnostics you can already see stay on screen: a drain that ran
 > out of budget publishes nothing rather than clearing them.
 
+Shipped, in the "The loop in detail" section beside the store-contention symptom it is the sibling of,
+with one sentence added to the draft: the budgets are not configurable and the next request is served
+normally, so there is nothing to do locally beyond reporting the statement.
+
 No user-facing surface beyond that: no new goal, directive, output format or wire-protocol change, and
 the budgets are constants rather than configuration. If a consumer ever needs to raise one, that is a
 follow-up with a real request behind it and not a knob added on speculation.
+
+Contributor-facing, `docs/architecture/how-to/dev-loop-internals.adoc` gained a paragraph in the
+"how the goal is wired internally" section: three readers, which door reaches which, why the split is
+per latency contract rather than per consumer, and each surface's posture. A contributor reading that
+page would otherwise not learn that the session holds more than one reader.
 
 ## Retired vocabulary
 
@@ -355,6 +380,10 @@ follow-up with a real request behind it and not a knob added on speculation.
   reaches nothing. That bounds *wasted* work where this item bounds *unbounded* work, and the two are
   separable; it wants its own item.
 * **A per-request deadline in the handlers.** Rejected above on mechanism: it cannot stop the SQL.
+* **Statement-count enforcers for `Completions` and `CodeActions`.** The pre-existing gap named in
+  `## Why a statement budget is enough to bound a request`, filed as its own Backlog item
+  (`roadmap/completion-and-code-action-statement-counts.md`) as the plan directed rather than widened
+  into this one.
 * **Budgets on the write path.** A build's capture legitimately takes seconds and reasons about
   `FILE_LOCK_MILLIS` already. Giving a writer a statement budget is what would make
   `timedOutOnALock` wrong, which is why this item documents that boundary instead of crossing it.

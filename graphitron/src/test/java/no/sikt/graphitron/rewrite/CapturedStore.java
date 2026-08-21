@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
@@ -436,9 +437,20 @@ public final class CapturedStore implements AutoCloseable {
         return file;
     }
 
-    /** A reader of this store, for the cases whose subject is the read boundary rather than a query. */
+    /**
+     * A reader of this store, for the cases whose subject is the read boundary rather than a query.
+     *
+     * <p>Unbounded, and every fixture reader in the reactor says the same thing for the same reason:
+     * a harness that named a number would be asserting a wall-clock threshold in a tier that must
+     * not fail for being slow. The arm says "no budget" structurally instead.
+     */
     public StoreReader reader() {
-        return store.reader();
+        return reader(new ReadBudget.Unbounded());
+    }
+
+    /** A reader under a stated budget, for the cases whose subject <em>is</em> the budget. */
+    public StoreReader reader(ReadBudget budget) {
+        return store.reader(budget);
     }
 
     /** The pipeline's own two handles; null unless this store came from {@link #ofPipeline}. */

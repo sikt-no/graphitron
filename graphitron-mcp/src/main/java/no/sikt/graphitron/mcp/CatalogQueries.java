@@ -1,5 +1,6 @@
 package no.sikt.graphitron.mcp;
 
+import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Condition;
@@ -228,12 +229,14 @@ final class CatalogQueries {
      *     rebuilt per transaction: the {@code DSLContext} a read is handed is valid for that call only,
      *     so a handle built outside one would carry a query surface whose transaction has ended
      */
-    static TableResolution describe(
+    static StoreAnswer<TableResolution> describe(
         StoreReader reader, String graphName, String tableArg, Optional<String> schemaArg
     ) {
         var spelling = Spelling.parse(tableArg, schemaArg);
         if (spelling.isEmpty()) {
-            return new TableResolution.NotFound();
+            // No statement is issued, so there is no budget to overrun: a malformed spelling is an
+            // answer this method reached on its own.
+            return new StoreAnswer.Answered<>(new TableResolution.NotFound());
         }
         return reader.read(dsl -> resolve(new StoreHandle(dsl, graphName), spelling.get()));
     }

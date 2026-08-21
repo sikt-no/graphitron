@@ -1,8 +1,11 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
+import no.sikt.graphitron.lsp.state.StoreAccess;
+import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.test.RunawayRelation;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.BuiltStore;
 import no.sikt.graphitron.rewrite.CapturedStore;
@@ -335,9 +338,49 @@ final class StoreFixture implements AutoCloseable {
         return LspVocabulary.load(handle());
     }
 
-    /** A reader of this store, for the cases whose subject is the read boundary rather than a query. */
+    /**
+     * A reader of this store, for the cases whose subject is the read boundary rather than a query.
+     * Unbounded, as every fixture reader is: a harness naming a number would put a wall-clock
+     * threshold in a tier that must not fail for being slow.
+     */
     StoreReader reader() {
         return captured != null ? captured.reader() : built.reader();
+    }
+
+    /** A reader of this store under a stated budget, for the cases whose subject is the budget. */
+    StoreReader reader(ReadBudget budget) {
+        return captured != null ? captured.reader(budget) : built.reader(budget);
+    }
+
+    /**
+     * This store's read access as a session holds it: two unbounded readers behind one
+     * {@link StoreAccess}, which is the production shape with the budgets taken out. A case whose
+     * subject <em>is</em> the budgets uses {@link #access(ReadBudget, ReadBudget)} and states them.
+     */
+    StoreAccess access() {
+        return access(graphName);
+    }
+
+    /** The same, seen as another graph, for the cases about one graph reading another's rows. */
+    StoreAccess access(String otherGraph) {
+        return new StoreAccess(reader(), reader(), otherGraph);
+    }
+
+    /**
+     * The production shape with the budgets in: an interactive reader and a session-wide one, each
+     * under the budget it is handed, so a case can tell which door reached which reader.
+     */
+    StoreAccess access(ReadBudget interactive, ReadBudget sessionWide) {
+        return new StoreAccess(reader(interactive), reader(sessionWide), graphName);
+    }
+
+    /**
+     * Makes every read of {@code relation} non-terminating, so a bounded reader touching it runs out
+     * of budget through the real query rather than through a threshold a case picked.
+     * {@link RunawayRelation} carries the reasoning.
+     */
+    void makeRunaway(String relation) {
+        RunawayRelation.install(dsl(), relation);
     }
 
     /** The schema file this fixture captured, spelled as the store's {@code source_name} spells it. */

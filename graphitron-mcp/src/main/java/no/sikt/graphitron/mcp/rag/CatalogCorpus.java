@@ -1,5 +1,6 @@
 package no.sikt.graphitron.mcp.rag;
 
+import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 
@@ -41,7 +42,7 @@ public final class CatalogCorpus {
      *     transaction rather than held, the {@code DSLContext} a read is handed being valid for that
      *     call only
      */
-    public static List<CorpusTable> read(StoreReader reader, String graphName) {
+    public static StoreAnswer<List<CorpusTable>> read(StoreReader reader, String graphName) {
         return reader.read(dsl -> read(new StoreHandle(dsl, graphName)));
     }
 

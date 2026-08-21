@@ -3,6 +3,7 @@ package no.sikt.graphitron.lsp.state;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.trace.LspTrace;
+import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 
@@ -176,9 +177,27 @@ public final class Workspace {
      */
     public void setStore(StoreAccess store) {
         this.store = store;
-        this.vocabulary = store == null
-            ? LspVocabulary.empty()
-            : store.readingSessionGraph(LspVocabulary::load);
+        if (store == null) {
+            this.vocabulary = LspVocabulary.empty();
+            return;
+        }
+        loadVocabulary(store);
+    }
+
+    /**
+     * Re-reads the directive vocabulary, and keeps the last good one when the read ran out of its
+     * budget. The vocabulary is session state rather than one answer: degrading it to
+     * {@link LspVocabulary#empty()} would resolve no cursor to any coordinate on <em>every</em>
+     * surface for <em>every</em> file until the next build, quietly, which is a far worse outcome
+     * than answering the next request from a vocabulary one capture old. Before the first successful
+     * load the last good one is the empty one, which is what a session before its first build has in
+     * any case.
+     */
+    private void loadVocabulary(StoreAccess access) {
+        switch (access.readingSessionGraph(LspVocabulary::load)) {
+            case StoreAnswer.Answered<LspVocabulary> answered -> vocabulary = answered.value();
+            case StoreAnswer.OutOfBudget<LspVocabulary> ignored -> { }
+        }
     }
 
     /**
@@ -192,12 +211,18 @@ public final class Workspace {
      * <p>This is the only door to the store. Nothing hands out a query surface that outlives the
      * call, since a handle used after its transaction has ended is a read that can tear against a
      * capture.
+     *
+     * <p>A read that ran out of its budget is the one outcome those three absences do not cover, and
+     * it arrives as {@link StoreAnswer.OutOfBudget} rather than folded in with them. A handler's
+     * response to it happens to look the same (no hover, no hints, the list unchanged), but the
+     * distinction absence cannot carry is that somebody should hear about this one, so the caller
+     * states its posture instead of inheriting silence.
      */
-    public <R> R answering(String uri, Function<Optional<StoreHandle>, R> answer) {
+    public <R> StoreAnswer<R> answering(String uri, Function<Optional<StoreHandle>, R> answer) {
         StoreAccess access = store;
         Optional<String> sourceName = StoreAccess.sourceNameOf(uri);
         if (access == null || sourceName.isEmpty()) {
-            return answer.apply(Optional.empty());
+            return new StoreAnswer.Answered<>(answer.apply(Optional.empty()));
         }
         return access.answering(sourceName.get(), answer);
     }
@@ -212,12 +237,12 @@ public final class Workspace {
      * a membership each, so a drain of forty files paid eighty statements before reading a fact; this
      * pays one membership resolution for the set and lets the caller read the facts in one go.
      */
-    public <R> R answeringAll(
+    public <R> StoreAnswer<R> answeringAll(
         Collection<String> uris, Function<Function<String, Optional<StoreHandle>>, R> answer
     ) {
         StoreAccess access = store;
         if (access == null) {
-            return answer.apply(uri -> Optional.empty());
+            return new StoreAnswer.Answered<>(answer.apply(uri -> Optional.empty()));
         }
         var sourceNames = new LinkedHashMap<String, String>();
         for (String uri : uris) {
@@ -283,7 +308,7 @@ public final class Workspace {
     public void markAllForRecalculation() {
         StoreAccess access = store;
         if (access != null) {
-            vocabulary = access.readingSessionGraph(LspVocabulary::load);
+            loadVocabulary(access);
         }
         enqueueAndNotify(() -> files.keySet().forEach(this::enqueue));
     }

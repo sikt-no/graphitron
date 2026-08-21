@@ -6,6 +6,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 
+import static no.sikt.graphitron.model.test.StoreAnswers.answered;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -23,7 +24,7 @@ class CatalogCorpusTest {
     @Test
     void theCorpusIsTheCensusWithItsTablesAndColumnsInTheirStatedOrder(@TempDir Path tmp) {
         try (var fixture = StoreFixture.ofCatalog(tmp)) {
-            var corpus = CatalogCorpus.read(fixture.reader(), fixture.graphName());
+            var corpus = answered(CatalogCorpus.read(fixture.reader(), fixture.graphName()));
 
             assertThat(corpus).extracting(CorpusTable::id)
                 .as("ordered by the pair the id is spelled from, which is the order the hash digests")
@@ -50,7 +51,7 @@ class CatalogCorpusTest {
     @Test
     void theDescriptorCarriesTheCensusCommentsAndDegradesWithoutThem(@TempDir Path tmp) {
         try (var fixture = StoreFixture.ofCatalog(tmp)) {
-            var corpus = CatalogCorpus.read(fixture.reader(), fixture.graphName());
+            var corpus = answered(CatalogCorpus.read(fixture.reader(), fixture.graphName()));
 
             String film = CatalogDescriptors.descriptor(table(corpus, "public.film"));
             assertThat(film).startsWith("Table film (film)\nComment: One film in the rental catalogue.\n");
@@ -77,7 +78,7 @@ class CatalogCorpusTest {
     @Test
     void aNameTwoSchemasDeclareIsTwoCorpusEntries(@TempDir Path tmp) {
         try (var fixture = StoreFixture.ofMultiSchemaCatalog(tmp)) {
-            var corpus = CatalogCorpus.read(fixture.reader(), fixture.graphName());
+            var corpus = answered(CatalogCorpus.read(fixture.reader(), fixture.graphName()));
 
             assertThat(corpus).extracting(CorpusTable::id)
                 .contains("multischema_a.event", "multischema_b.event");
@@ -95,12 +96,12 @@ class CatalogCorpusTest {
     void aGraphsCorpusExcludesAnotherGraphsCatalog(@TempDir Path tmp) {
         try (var fixture = StoreFixture.ofCatalog(tmp)
             .andGraph("sibling", StoreFixture.MULTISCHEMA_JOOQ_PACKAGE)) {
-            var own = CatalogCorpus.read(fixture.reader(), fixture.graphName());
+            var own = answered(CatalogCorpus.read(fixture.reader(), fixture.graphName()));
             assertThat(own).extracting(CorpusTable::id)
                 .contains("public.film")
                 .noneMatch(id -> id.startsWith("multischema_"));
 
-            var sibling = CatalogCorpus.read(fixture.reader(), "sibling");
+            var sibling = answered(CatalogCorpus.read(fixture.reader(), "sibling"));
             assertThat(sibling).extracting(CorpusTable::id)
                 .contains("multischema_a.event")
                 .noneMatch(id -> id.startsWith("public."));
@@ -115,7 +116,7 @@ class CatalogCorpusTest {
     @Test
     void aCaptureWithNoCatalogYieldsAnEmptyCorpus(@TempDir Path tmp) {
         try (var fixture = StoreFixture.withoutCatalog(tmp)) {
-            assertThat(CatalogCorpus.read(fixture.reader(), fixture.graphName())).isEmpty();
+            assertThat(answered(CatalogCorpus.read(fixture.reader(), fixture.graphName()))).isEmpty();
         }
     }
 

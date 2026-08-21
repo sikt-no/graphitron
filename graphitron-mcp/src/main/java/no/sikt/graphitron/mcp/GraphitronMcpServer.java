@@ -12,6 +12,7 @@ import no.sikt.graphitron.mcp.rag.EmbeddingStore;
 import no.sikt.graphitron.mcp.rag.RagConfig;
 import no.sikt.graphitron.mcp.rag.WarmState;
 import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
+import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
@@ -512,8 +513,18 @@ public final class GraphitronMcpServer implements AutoCloseable {
         String table = McpWire.stringArg(args, "table").orElse("");
         Optional<String> schema = McpWire.stringArg(args, "schema");
 
+        CatalogQueries.TableResolution resolution;
+        switch (CatalogQueries.describe(reader, store.graphName(), table, schema)) {
+            case StoreAnswer.Answered<CatalogQueries.TableResolution> read -> resolution = read.value();
+            // Never the notFound arm: an agent told a table is not in the catalog stops looking for
+            // it, and a read that ran out of budget said nothing about whether it is there.
+            case StoreAnswer.OutOfBudget<CatalogQueries.TableResolution> expired -> {
+                return DiagnosticFacets.outOfBudget("catalog.describe", expired);
+            }
+        }
+
         var fields = new LinkedHashMap<String, Object>();
-        String summary = switch (CatalogQueries.describe(reader, store.graphName(), table, schema)) {
+        String summary = switch (resolution) {
             case CatalogQueries.TableResolution.Resolved r -> {
                 fields.put("resolution", "resolved");
                 mapResolvedTable(fields, r.table());
@@ -674,8 +685,21 @@ public final class GraphitronMcpServer implements AutoCloseable {
         int limit = McpWire.intArg(args, "limit", CodeQueries.DEFAULT_LIMIT);
         if (limit < 1) limit = CodeQueries.DEFAULT_LIMIT;
 
-        var answer = CodeQueries.read(reader, store.graphName(), kind.get(), name,
-            McpWire.stringArg(args, "cursor"), limit);
+        return switch (CodeQueries.read(reader, store.graphName(), kind.get(), name,
+            McpWire.stringArg(args, "cursor"), limit)) {
+            case StoreAnswer.Answered<CodeQueries.CodeAnswer> read ->
+                renderCode(read.value(), kind.get(), name);
+            // An empty class list would read as a classpath holding nothing of that kind, which is
+            // the conclusion a caller must not be allowed to draw from a read that never finished.
+            case StoreAnswer.OutOfBudget<CodeQueries.CodeAnswer> expired ->
+                DiagnosticFacets.outOfBudget("code", expired);
+        };
+    }
+
+    /** Maps one answered census page onto the wire, beside what the declaration family said. */
+    private static McpSchema.CallToolResult renderCode(
+        CodeQueries.CodeAnswer answer, CodeQueries.Kind kind, Optional<String> name
+    ) {
         var page = answer.page();
 
         var classes = new ArrayList<Map<String, Object>>(page.classes().size());
@@ -687,7 +711,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
         fields.put("classes", classes);
         page.nextCursor().ifPresent(c -> fields.put("nextCursor", c));
 
-        String summary = "code: " + page.total() + " " + kind.get().name().toLowerCase(Locale.ROOT)
+        String summary = "code: " + page.total() + " " + kind.name().toLowerCase(Locale.ROOT)
             + " class(es)" + name.map(n -> " matching '" + n + "'").orElse("")
             + "; showing " + page.classes().size()
             + (page.nextCursor().isPresent() ? " (more available)" : "") + ".";

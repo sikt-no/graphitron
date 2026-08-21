@@ -4,6 +4,7 @@ import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.state.Workspace;
+import no.sikt.graphitron.model.boot.StoreAnswer;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Position;
 
@@ -40,7 +41,7 @@ public final class Completions {
         var locationOpt = vocab.locateAt(directive, pos, source);
         // One read transaction around the whole answer, the fallback included. A popup assembled
         // from two snapshots could offer a class from before a capture and its methods from after.
-        return workspace.answering(uri, store -> {
+        var answer = workspace.answering(uri, store -> {
             if (locationOpt.isPresent()) {
                 var context = CompletionContext.from(locationOpt.get(), source);
                 var behaviorOpt = vocab.behaviorAt(context.coordinate());
@@ -59,6 +60,14 @@ public final class Completions {
             return store.map(s -> ArgNameCompletions.generate(vocab, s, directive, pos, lspPos, source))
                 .orElseGet(List::of);
         });
+        return switch (answer) {
+            case StoreAnswer.Answered<List<CompletionItem>> answered -> answered.value();
+            // No items, which leaves the editor showing whatever list it already had rather than
+            // replacing it with a claim about the schema. The store boundary has already warned,
+            // naming the statement that overran; nothing here is worth telling the author about at
+            // a completion site, where every absence looks the same from the cursor.
+            case StoreAnswer.OutOfBudget<List<CompletionItem>> ignored -> List.of();
+        };
     }
 
     /**

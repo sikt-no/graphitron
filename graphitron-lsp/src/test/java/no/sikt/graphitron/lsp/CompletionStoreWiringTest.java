@@ -62,7 +62,7 @@ class CompletionStoreWiringTest {
     void theOpenDocumentsOwnGraphAnswersForIt(@TempDir Path tmp) {
         try (var fixture = StoreFixture.of(tmp, StoreFixture.GRAPH, "type Query { x: Int }\n",
                 List.of(StoreFixture.jarClass("com.example.FilmService", List.of())));
-             var access = new StoreAccess(fixture.reader(), StoreFixture.GRAPH)) {
+             var access = fixture.access()) {
 
             var workspace = new Workspace();
             workspace.setStore(access);
@@ -116,7 +116,7 @@ class CompletionStoreWiringTest {
         try (var fixture = StoreFixture.ofFiles(tmp,
                 "queries", "type Query { x(id: ID): Int }\n",
                 "nodes", "type Film @node(typeId: \"Film\") { id: ID }\n");
-             var access = new StoreAccess(fixture.reader(), StoreFixture.GRAPH)) {
+             var access = fixture.access()) {
 
             var workspace = new Workspace();
             workspace.setStore(access);

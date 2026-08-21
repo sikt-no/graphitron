@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static no.sikt.graphitron.model.test.StoreAnswers.answered;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -197,12 +198,13 @@ class CatalogSearchIndexTest {
 
     /** The ids the census holds, for the cases whose claim is that an answer comes from it. */
     private static List<String> corpusIds(StoreReader reader) {
-        return CatalogCorpus.read(reader, StoreFixture.GRAPH).stream().map(CorpusTable::id).toList();
+        return answered(CatalogCorpus.read(reader, StoreFixture.GRAPH)).stream()
+            .map(CorpusTable::id).toList();
     }
 
     /** The corpus as the index composes it, read back through the same query the index reads. */
     private static List<String> composed(StoreReader reader) {
-        return CatalogCorpus.read(reader, StoreFixture.GRAPH).stream()
+        return answered(CatalogCorpus.read(reader, StoreFixture.GRAPH)).stream()
             .map(CatalogDescriptors::descriptor)
             .toList();
     }

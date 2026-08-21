@@ -1,5 +1,6 @@
 package no.sikt.graphitron.mcp.rag;
 
+import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.boot.StoreReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,6 +72,12 @@ public final class CatalogSearchIndex implements AutoCloseable {
     private AsyncWarm<EmbeddingStore> liveWarm;
     /** Every store ever built, closed together on {@link #close()} (commits writers, frees readers). */
     private final List<EmbeddingStore> tracked = new ArrayList<>();
+    /**
+     * The degradation text for a census read that ran out of budget, cleared by the next read that
+     * answers. Only read where there is no live index at all: with one, the live index is the
+     * answer and there is nothing to degrade.
+     */
+    private volatile String censusOverran;
 
     /**
      * @param reader       the store the census is read from, minted and closed by the host that owns
@@ -108,6 +115,15 @@ public final class CatalogSearchIndex implements AutoCloseable {
      */
     public SearchOutcome search(String query, int limit) {
         AsyncWarm<EmbeddingStore> warm = observe();
+        if (warm == null) {
+            // The census read ran out of budget and there is no prior index to answer from, so
+            // there is nothing to rank. Reported as a degradation rather than as no hits: an agent
+            // handed an empty hit list concludes the catalog holds nothing matching its query.
+            String reason = censusOverran;
+            return new SearchOutcome.Degraded(reason != null ? reason
+                : "the catalog census read ran past its budget, so the semantic index could not be "
+                    + "built; the structured catalog tools remain available.", "outOfBudget");
+        }
         return switch (warm.state()) {
             case WarmState.Ready<EmbeddingStore> ready -> searchReady(ready.handle(), query, limit);
             case WarmState.Warming<EmbeddingStore> warming -> degraded(warming, "warming");
@@ -121,7 +137,15 @@ public final class CatalogSearchIndex implements AutoCloseable {
      * {@link #search} instead and reports the degradation while warming.
      */
     public WarmState<EmbeddingStore> awaitWarm() {
-        return observe().await();
+        AsyncWarm<EmbeddingStore> warm = observe();
+        // No warm was ever kicked because the census read ran out of budget. Failed rather than
+        // Warming: nothing is in flight, so a caller waiting for this would wait forever.
+        if (warm != null) {
+            return warm.await();
+        }
+        String reason = censusOverran;
+        return new WarmState.Failed<>(new IllegalStateException(
+            reason != null ? reason : "the catalog census read ran past its budget"));
     }
 
     private SearchOutcome searchReady(EmbeddingStore store, String query, int limit) {
@@ -147,7 +171,26 @@ public final class CatalogSearchIndex implements AutoCloseable {
      */
     private AsyncWarm<EmbeddingStore> observe() {
         synchronized (lock) {
-            var entries = composeCorpus(CatalogCorpus.read(reader, graphName));
+            List<CorpusTable> corpus;
+            switch (CatalogCorpus.read(reader, graphName)) {
+                case StoreAnswer.Answered<List<CorpusTable>> answered -> {
+                    corpus = answered.value();
+                    censusOverran = null;
+                }
+                // The index this class holds is a function of the census, so a census read that did
+                // not finish says nothing about whether it is stale. Keeping the live index is
+                // therefore an answer from a census one capture old rather than a degradation; only
+                // a first observation that overruns has nothing to fall back on, and `search`
+                // reports that as one. Never re-embedded from a partial read.
+                case StoreAnswer.OutOfBudget<List<CorpusTable>> expired -> {
+                    censusOverran = "the catalog census read ran past its "
+                        + expired.budget().describe() + " budget and was aborted, so the semantic "
+                        + "index could not be built. The statement that overran: " + expired.sql();
+                    LOGGER.warn("{}", censusOverran);
+                    return liveWarm;
+                }
+            }
+            var entries = composeCorpus(corpus);
             var descriptors = entries.stream().map(Entry::descriptor).toList();
             String hash = CatalogDescriptors.corpusHash(descriptors);
             if (liveWarm != null && hash.equals(liveHash)) {

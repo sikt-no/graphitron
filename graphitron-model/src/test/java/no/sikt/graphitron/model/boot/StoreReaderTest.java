@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
+import static no.sikt.graphitron.model.test.StoreAnswers.answered;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
@@ -35,24 +36,31 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class StoreReaderTest {
 
+    /**
+     * Every case here is about which rows a reader sees, never about how long a read took, so each
+     * one names its budget structurally as the absence of one. What a budget does is
+     * {@link StoreBudgetTest}'s subject.
+     */
+    private static final ReadBudget UNBOUNDED = new ReadBudget.Unbounded();
+
     @Test
     void oneReadIsOneSnapshot() {
-        try (var store = FactStores.inMemory(); var reader = store.reader()) {
+        try (var store = FactStores.inMemory(); var reader = store.reader(UNBOUNDED)) {
             seedRound(store.dsl(), "first");
 
             // Both queries belong to one read, with a whole round committing between them: the
             // shape of a handler that asks about a type and then about its fields.
-            List<List<String>> asked = reader.read(dsl -> {
+            List<List<String>> asked = answered(reader.read(dsl -> {
                 List<String> before = graphNames(dsl);
                 seedRound(store.dsl(), "second");
                 return List.of(before, graphNames(dsl));
-            });
+            }));
 
             assertThat(asked.getFirst()).containsExactly("first");
             assertThat(asked.getLast())
                 .as("the second query answers from the snapshot the first one did")
                 .containsExactly("first");
-            assertThat(reader.read(StoreReaderTest::graphNames))
+            assertThat(answered(reader.read(StoreReaderTest::graphNames)))
                 .as("the commit is not lost, only deferred to the next read")
                 .containsExactly("first", "second");
         }
@@ -60,13 +68,15 @@ class StoreReaderTest {
 
     @Test
     void aPersistedStoreMintsAReaderOntoItsOwnFile(@TempDir Path tmp) {
-        try (var store = FactStores.fileBacked(tmp.resolve("store-home")); var reader = store.reader()) {
+        try (var store = FactStores.fileBacked(tmp.resolve("store-home"));
+             var reader = store.reader(UNBOUNDED)) {
             seedRound(store.dsl(), "persisted");
 
             assertThat(store.location())
                 .as("the file-backed shape, so the reader resolved a path rather than a memory name")
                 .isPresent();
-            assertThat(reader.read(StoreReaderTest::graphNames)).containsExactly("persisted");
+            assertThat(answered(reader.read(StoreReaderTest::graphNames)))
+                .containsExactly("persisted");
         }
     }
 
@@ -74,12 +84,12 @@ class StoreReaderTest {
     void closingOneReaderLeavesTheStoreAndItsSiblingsReadable() {
         try (var store = FactStores.inMemory()) {
             seedRound(store.dsl(), "shared");
-            var first = store.reader();
-            var second = store.reader();
+            var first = store.reader(UNBOUNDED);
+            var second = store.reader(UNBOUNDED);
 
             first.close();
 
-            assertThat(second.read(StoreReaderTest::graphNames)).containsExactly("shared");
+            assertThat(answered(second.read(StoreReaderTest::graphNames))).containsExactly("shared");
             assertThat(graphNames(store.dsl())).containsExactly("shared");
             second.close();
             assertThat(graphNames(store.dsl()))

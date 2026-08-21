@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
@@ -27,6 +28,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
+import static no.sikt.graphitron.model.test.StoreAnswers.answered;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
@@ -148,8 +150,8 @@ class PersistentStoreTest {
                     .isPresent();
                 assertThat(second.dsl().fetchCount(GRAPHQL_TYPE)).isEqualTo(types);
             }
-            try (var reader = held.reader()) {
-                int readerTypes = reader.read(dsl -> dsl.fetchCount(GRAPHQL_TYPE));
+            try (var reader = held.reader(new ReadBudget.Unbounded())) {
+                int readerTypes = answered(reader.read(dsl -> dsl.fetchCount(GRAPHQL_TYPE)));
                 assertThat(readerTypes)
                     .as("the reader surface the LSP and MCP answer from").isEqualTo(types);
             }

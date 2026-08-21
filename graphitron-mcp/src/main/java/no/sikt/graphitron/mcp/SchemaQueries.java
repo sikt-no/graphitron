@@ -1,5 +1,6 @@
 package no.sikt.graphitron.mcp;
 
+import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Condition;
@@ -362,7 +363,7 @@ final class SchemaQueries {
      * @param typeFilter narrows to one type, which returns it or nothing; the page's own bound and
      *     cursor are then beside the point, one type being one entry
      */
-    static SchemaAnswer read(
+    static StoreAnswer<SchemaAnswer> read(
         StoreReader reader, String graphName, Optional<String> typeFilter, Optional<String> cursor,
         int limit
     ) {
