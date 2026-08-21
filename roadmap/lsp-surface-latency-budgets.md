@@ -422,10 +422,11 @@ definition read here is the same move R793's step 2 describes.
 Two boundaries, so neither item waits on the other. R795 does not touch the
 drain's statement. R793 does not restate the budget-grain question, and its own
 "not in scope" already refuses raising a budget, which is consistent with the
-split. The asynchronous-drain item beside it removes the drain from the
-triggering thread, which would stop `didOpen` blocking whatever this item
-settles about budgets; it is worth doing either way and is not a substitute for
-knowing why the statement costs what it does.
+split. The asynchronous-drain item beside it has since shipped, so the drain no
+longer runs on the thread that triggered it and `didOpen` no longer blocks
+whatever this item settles about budgets. That was worth doing either way and it
+is not a substitute for knowing why the statement costs what it does, which is
+still R793's.
 
 ## Retired vocabulary
 
