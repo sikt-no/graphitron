@@ -14,6 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
+| `R775` | The Spec gate reviewer lands findings, not fixes: half of R769's spec was written by its reviewers | Spec | 2026-08-21 | [plan](reviewer-findings-not-reviewer-edits.md) |
 | `R769` | withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms | Spec | 2026-08-21 <sub>created 2026-08-20</sub> | [plan](seeded-store-boots-per-thread.md) |
 | `R772` | The dev loop holds a live fact store no developer can query | Spec | 2026-08-21 | [plan](dev-loop-store-sql-console.md) |
 | `R763` | Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path | Spec | 2026-08-20 | [plan](sakila-example-tests-run-one-at-a-time.md) |
@@ -585,6 +586,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### tooling
 
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
+- `R775` [**The Spec gate reviewer lands findings, not fixes: half of R769's spec was written by its reviewers**](reviewer-findings-not-reviewer-edits.md) — Spec, dx
 - `R768` [**The build boots the fact schema 1051 times, and a reset costs a fraction of a boot**](store-boots-once-per-test-not-once-per-build.md) — Backlog, dx
 - `R769` [**withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms**](seeded-store-boots-per-thread.md) — Spec, dx
 - `R772` [**The dev loop holds a live fact store no developer can query**](dev-loop-store-sql-console.md) — Spec, dx
