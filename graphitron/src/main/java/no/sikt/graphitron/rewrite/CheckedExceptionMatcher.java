@@ -57,6 +57,7 @@ final class CheckedExceptionMatcher {
         for (var fqn : declaredExceptions) {
             Class<?> ex;
             try {
+                // nameability: exempt (declared exception read off a reflected throws clause)
                 ex = Class.forName(fqn, false, codegenLoader);
             } catch (ClassNotFoundException e) {
                 unmatched.add(fqn + " (not on classifier classpath)");
@@ -99,6 +100,7 @@ final class CheckedExceptionMatcher {
             case ExceptionHandler eh -> {
                 Class<?> handlerClass;
                 try {
+                    // nameability: exempt (revalidates the @error className TypeBuilder.validateExceptionClass already gated)
                     handlerClass = Class.forName(eh.exceptionClassName(), false, codegenLoader);
                 } catch (ClassNotFoundException ignored) {
                     yield false;

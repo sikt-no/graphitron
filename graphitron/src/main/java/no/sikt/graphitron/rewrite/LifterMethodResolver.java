@@ -49,6 +49,7 @@ final class LifterMethodResolver {
             String methodName, String parentFqClassName) {
         Class<?> lifterClass;
         try {
+            // nameability: exempt (author-written @sourceRow className is gated at SourceRowDirectiveResolver before this resolve)
             lifterClass = Class.forName(lifterClassName, false, loader);
         } catch (ClassNotFoundException e) {
             return rejected(site + ": lifter class '" + lifterClassName + "' could not be loaded");
@@ -56,6 +57,7 @@ final class LifterMethodResolver {
 
         Class<?> parentClass;
         try {
+            // nameability: exempt (parent backing class derived from the model, not author text)
             parentClass = Class.forName(parentFqClassName, false, loader);
         } catch (ClassNotFoundException e) {
             return rejected(site + ": parent backing class '" + parentFqClassName

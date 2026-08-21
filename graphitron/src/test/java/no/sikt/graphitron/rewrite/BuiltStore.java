@@ -81,7 +81,8 @@ public final class BuiltStore implements AutoCloseable {
             var ctx = new RewriteContext(
                 inputs,
                 tmp, graphName, out, out.resolve("resources"), OUTPUT_PACKAGE, jooqPackage,
-                classpathRoots, Thread.currentThread().getContextClassLoader(), List.of(),
+                no.sikt.graphitron.rewrite.ClasspathEntry.projectRoots(classpathRoots),
+                Thread.currentThread().getContextClassLoader(), List.of(),
                 lintConfig, null, null, null, storeHome,
                 SchemaRecipe.literalOver(inputs, RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS),
                 null);

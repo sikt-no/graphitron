@@ -251,7 +251,8 @@ public final class CatalogBuilder {
      */
     public static List<CompletionData.ExternalReference> buildExternalReferences(RewriteContext ctx) {
         var roots = ctx.classpathRoots().isEmpty()
-            ? List.of(ctx.basedir().resolve("target/classes"))
+            ? List.of(no.sikt.graphitron.rewrite.ClasspathEntry.project(
+                ctx.basedir().resolve("target/classes")))
             : ctx.classpathRoots();
         // Bytecode-derived structure only; the class / method Javadoc the hover
         // path renders is overlaid from the LSP source index at request time.

@@ -1665,6 +1665,7 @@ class FieldBuilder {
     private static boolean isNumberColumnClass(String columnClass) {
         try {
             return Number.class.isAssignableFrom(
+                // nameability: exempt (jOOQ catalog column class on the plugin's own loader)
                 Class.forName(columnClass, false, FieldBuilder.class.getClassLoader()));
         } catch (ClassNotFoundException e) {
             return true; // not loadable here — admit rather than false-reject
@@ -3882,6 +3883,7 @@ class FieldBuilder {
 
         Class<?> payloadCls;
         try {
+            // nameability: exempt (payload class from a reflected service signature)
             payloadCls = Class.forName(result.fqClassName(), false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             return new ErrorChannelResult.Reject(
@@ -4235,6 +4237,7 @@ class FieldBuilder {
             case ErrorType.ValidationHandler ignored -> "graphql.GraphQLError";
         };
         try {
+            // nameability: exempt (revalidates the @error className TypeBuilder.validateExceptionClass already gated, or a fixed JDK / graphql-java name)
             return Class.forName(fqn, false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             return null;
@@ -4476,6 +4479,7 @@ class FieldBuilder {
         ClassName payloadClassName;
         try {
             payloadClassName = ClassName.get(
+                // nameability: exempt (payload class from a reflected service signature)
                 Class.forName(result.fqClassName(), false, ctx.codegenLoader()));
         } catch (ClassNotFoundException e) {
             payloadClassName = ClassName.bestGuess(result.fqClassName());
@@ -6925,6 +6929,7 @@ class FieldBuilder {
      */
     private java.lang.reflect.Type keyColumnJavaType(ColumnRef keyColumn) {
         try {
+            // nameability: exempt (jOOQ catalog column class)
             return Class.forName(keyColumn.columnClass(), false, ctx.codegenLoader());
         } catch (ClassNotFoundException | LinkageError unreadable) {
             return Object.class;
@@ -7081,6 +7086,7 @@ class FieldBuilder {
             var classified = typeBuilder.lookAheadVerdict(s.getName());
             if (classified instanceof GraphitronType.ScalarType st
                     && st.resolution().javaType() instanceof no.sikt.graphitron.javapoet.ClassName cn) {
+                // nameability: exempt (Java type from an already-classified scalar verdict)
                 try { return Class.forName(cn.reflectionName(), false, ctx.codegenLoader()); }
                 catch (ClassNotFoundException e) { return Object.class; }
             }
@@ -7099,6 +7105,7 @@ class FieldBuilder {
                 case null, default -> null;
             };
             if (fqcn != null) {
+                // nameability: exempt (fqClassName from an already-classified type verdict)
                 try { return Class.forName(fqcn, false, ctx.codegenLoader()); }
                 catch (ClassNotFoundException e) { return Object.class; }
             }
@@ -7346,6 +7353,7 @@ class FieldBuilder {
 
         Class<?> parentClass;
         try {
+            // nameability: exempt (parent backing class from an already-classified type verdict)
             parentClass = Class.forName(parentFqClassName, false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             return new AccessorDerivation.None();
@@ -7572,6 +7580,7 @@ class FieldBuilder {
         }
         Class<?> parentClass;
         try {
+            // nameability: exempt (parent backing class from an already-classified type verdict)
             parentClass = Class.forName(parentFqClassName, false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             return cannotProduceKey(parentTypeName, site, tr, keyOwner, parentFqClassName);
@@ -7885,6 +7894,7 @@ class FieldBuilder {
 
         Class<?> parentClass;
         try {
+            // nameability: exempt (parent backing class from an already-classified type verdict)
             parentClass = Class.forName(parentFqClassName, false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             return new PolymorphicRecordParentResolution.Rejected(Rejection.structural(

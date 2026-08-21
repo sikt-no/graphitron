@@ -31,6 +31,35 @@ class ClasspathScannerTest {
 
     private static final String JOOQ_PKG = "no.sikt.graphitron.rewrite.test.jooq";
 
+    /** Bare paths wrapped as {@code PROJECT}: the classification-neutral scan these cases exercise. */
+    private static java.util.List<CompletionData.ExternalReference> scanPaths(
+            java.util.List<Path> entries, String jooqPackage) {
+        return ClasspathScanner.scan(
+            no.sikt.graphitron.rewrite.ClasspathEntry.projectRoots(entries), jooqPackage);
+    }
+
+    @Test
+    void aTransitiveEntryContributesNothingAndIsNotOpened(@TempDir Path tmp) throws IOException {
+        // The negative direction of the width cut: a TRANSITIVE entry is skipped before it is
+        // opened, so its classes never reach the census however valid its bytes are. "Not
+        // opened" is pinned by absence plus the directory case below: a directory whose classes
+        // would scan fine under any other origin contributes nothing under TRANSITIVE.
+        Path declaredClasses = tmp.resolve("declared");
+        writePublicClass(declaredClasses, "com.example.Kept");
+        Path transitiveClasses = tmp.resolve("transitive");
+        writePublicClass(transitiveClasses, "com.example.Dropped");
+
+        var refs = ClasspathScanner.scan(java.util.List.of(
+            new no.sikt.graphitron.rewrite.ClasspathEntry(declaredClasses,
+                no.sikt.graphitron.rewrite.ClasspathEntry.Origin.DECLARED, "com.example:kept"),
+            new no.sikt.graphitron.rewrite.ClasspathEntry(transitiveClasses,
+                no.sikt.graphitron.rewrite.ClasspathEntry.Origin.TRANSITIVE, "com.example:dropped")),
+            JOOQ_PKG);
+
+        assertThat(refs).extracting(CompletionData.ExternalReference::className)
+            .containsExactly("com.example.Kept");
+    }
+
     @Test
     void emptyWhenClassesDirectoryIsAbsent(@TempDir Path basedir) {
         var refs = ClasspathScanner.scan(basedir.resolve("target/classes"), JOOQ_PKG);
@@ -46,7 +75,7 @@ class ClasspathScannerTest {
         writePublicClass(moduleB, "no.sikt.example.service.SampleQueryService");
         writePublicClass(moduleB, "no.sikt.example.service.CategoryConditions");
 
-        var refs = ClasspathScanner.scan(java.util.List.of(moduleA, moduleB), JOOQ_PKG);
+        var refs = scanPaths(java.util.List.of(moduleA, moduleB), JOOQ_PKG);
 
         assertThat(refs).extracting(CompletionData.ExternalReference::className)
             .containsExactlyInAnyOrder(
@@ -64,7 +93,7 @@ class ClasspathScannerTest {
         writePublicClass(moduleA, "no.sikt.example.SharedClass");
         writePublicClass(moduleB, "no.sikt.example.SharedClass");
 
-        var refs = ClasspathScanner.scan(java.util.List.of(moduleA, moduleB), JOOQ_PKG);
+        var refs = scanPaths(java.util.List.of(moduleA, moduleB), JOOQ_PKG);
 
         assertThat(refs).hasSize(1);
         assertThat(refs.get(0).className()).isEqualTo("no.sikt.example.SharedClass");
@@ -75,7 +104,7 @@ class ClasspathScannerTest {
         writePublicClass(real, "com.example.Real");
         Path missing = real.resolveSibling("does-not-exist");
 
-        var refs = ClasspathScanner.scan(java.util.List.of(missing, real), JOOQ_PKG);
+        var refs = scanPaths(java.util.List.of(missing, real), JOOQ_PKG);
 
         assertThat(refs).extracting(CompletionData.ExternalReference::className)
             .containsExactly("com.example.Real");
@@ -685,8 +714,8 @@ class ClasspathScannerTest {
         Path jar = jarWith(java.util.Map.of("com/example/Shared.class",
             classBytes("com.example.Shared", ClassFile.ACC_PUBLIC)));
 
-        var directoryFirst = ClasspathScanner.scan(List.of(classes, jar), JOOQ_PKG);
-        var jarFirst = ClasspathScanner.scan(List.of(jar, classes), JOOQ_PKG);
+        var directoryFirst = scanPaths(List.of(classes, jar), JOOQ_PKG);
+        var jarFirst = scanPaths(List.of(jar, classes), JOOQ_PKG);
 
         // One row either way, attributed to whichever entry a classloader would have resolved it
         // from, so the census and the codegen loader agree on which copy is the one.
@@ -702,7 +731,7 @@ class ClasspathScannerTest {
         Path notAJar = classes.resolve("broken.jar");
         Files.write(notAJar, new byte[] {1, 2, 3});
 
-        var refs = ClasspathScanner.scan(List.of(notAJar, classes), JOOQ_PKG);
+        var refs = scanPaths(List.of(notAJar, classes), JOOQ_PKG);
 
         assertThat(refs).extracting(CompletionData.ExternalReference::className)
             .containsExactly("com.example.Readable");

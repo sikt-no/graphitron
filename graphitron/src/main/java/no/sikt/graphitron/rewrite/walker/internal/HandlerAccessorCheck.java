@@ -92,6 +92,7 @@ public final class HandlerAccessorCheck {
             case ErrorType.ValidationHandler ignored -> "graphql.GraphQLError";
         };
         try {
+            // nameability: exempt (revalidates the @error className TypeBuilder.validateExceptionClass already gated, or a fixed JDK / graphql-java name)
             return Class.forName(fqn, false, codegenLoader);
         } catch (ClassNotFoundException e) {
             return null;

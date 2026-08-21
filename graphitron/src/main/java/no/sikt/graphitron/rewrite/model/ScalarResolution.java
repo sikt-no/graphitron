@@ -62,10 +62,20 @@ public sealed interface ScalarResolution permits ScalarResolution.Successful, Sc
     ) implements Successful {}
 
     sealed interface Rejected extends ScalarResolution
-        permits Rejected.ClassNotFound, Rejected.FieldNotFound, Rejected.FieldNotAccessible,
-                Rejected.NullAtCodegen, Rejected.NotAScalarType, Rejected.CoercingErased {
+        permits Rejected.ClassNotFound, Rejected.UndeclaredClass, Rejected.FieldNotFound,
+                Rejected.FieldNotAccessible, Rejected.NullAtCodegen, Rejected.NotAScalarType,
+                Rejected.CoercingErased {
 
         record ClassNotFound(String fqn) implements Rejected {}
+
+        /**
+         * The named class may well resolve at codegen (through a transitive dependency or the
+         * plugin's own classpath), but no classpath entry this module may name carries it, so the
+         * nameability rule rejects it before any load is attempted. {@code reason} is the
+         * canonical sentence from {@code ClasspathNameability}, naming the carrying coordinate
+         * where one was found.
+         */
+        record UndeclaredClass(String fqn, String reason) implements Rejected {}
 
         record FieldNotFound(String className, String fieldName) implements Rejected {}
 

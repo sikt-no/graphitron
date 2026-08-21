@@ -48,6 +48,7 @@ public final class ClassAccessorResolver {
     private static final Class<?> DATA_FETCHING_ENVIRONMENT;
     static {
         try {
+            // nameability: exempt (probes the plugin's own graphql-java API, no author-written name)
             DATA_FETCHING_ENVIRONMENT = Class.forName("graphql.schema.DataFetchingEnvironment");
         } catch (ClassNotFoundException e) {
             throw new IllegalStateException("graphql-java DataFetchingEnvironment not on classpath", e);

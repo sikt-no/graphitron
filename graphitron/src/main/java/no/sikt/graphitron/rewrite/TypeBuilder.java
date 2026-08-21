@@ -1364,7 +1364,8 @@ class TypeBuilder {
                     "@" + DIR_SCALAR_TYPE + " requires a non-blank scalar reference of the form "
                         + "'fully.qualified.Class.FIELD' pointing at a public static final GraphQLScalarType."));
             }
-            var resolution = ScalarTypeResolver.resolveFromDirectiveValue(scalarFqn, name, ctx.codegenLoader());
+            var resolution = ScalarTypeResolver.resolveFromDirectiveValue(
+                scalarFqn, name, ctx.codegenLoader(), ctx.nameability());
             if (resolution instanceof ScalarResolution.Successful s) {
                 return new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(name, location, s, scalarType);
             }
@@ -1430,6 +1431,8 @@ class TypeBuilder {
             case ScalarResolution.Rejected.ClassNotFound r -> Rejection.structural(
                 "scalar '" + scalarName + "': @scalarType references class '" + r.fqn()
                     + "' which is not on the codegen classpath.");
+            case ScalarResolution.Rejected.UndeclaredClass r -> Rejection.structural(
+                "scalar '" + scalarName + "': @scalarType " + r.reason());
             case ScalarResolution.Rejected.FieldNotFound r -> Rejection.structural(
                 "scalar '" + scalarName + "': @scalarType references field '" + r.fieldName()
                     + "' on '" + r.className() + "' which does not exist.");
@@ -1731,6 +1734,7 @@ class TypeBuilder {
             List<ParticipantRef> participants) {
         Class<?> columnClass;
         try {
+            // nameability: exempt (discriminator column class from the jOOQ catalog)
             columnClass = Class.forName(discriminator.columnClass(), false, ctx.codegenLoader());
         } catch (ClassNotFoundException notLoadable) {
             return null;
@@ -2180,7 +2184,13 @@ class TypeBuilder {
     // Instance method (not static) so it can read ctx.codegenLoader(); the explicit-parameter
     // sibling lives at CheckedExceptionMatcher.unmatched, which crosses a class boundary.
     private String validateExceptionClass(String className, String handlerKind) {
+        if (ctx.nameability().verdictFor(className)
+                instanceof ClasspathNameability.Verdict.Rejected rejected) {
+            return "@error handler {handler: " + handlerKind + ", className: \"" + className
+                + "\"}: " + rejected.reason();
+        }
         try {
+            // nameability: checked (author-written @error handler className, gated above)
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             if (!Throwable.class.isAssignableFrom(cls)) {
                 return "@error handler {handler: " + handlerKind + ", className: \"" + className

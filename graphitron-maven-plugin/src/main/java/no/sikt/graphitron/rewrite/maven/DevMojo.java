@@ -597,7 +597,10 @@ public class DevMojo extends AbstractRewriteMojo {
      * compile classpath alone never sees it.
      */
     private List<Path> resolveExecutionClasspath() throws MojoExecutionException {
-        var paths = new LinkedHashSet<>(resolveCompileClasspath());
+        var paths = new LinkedHashSet<Path>();
+        for (var entry : resolveCompileClasspath()) {
+            paths.add(entry.path());
+        }
         try {
             for (String element : project.getTestClasspathElements()) {
                 paths.add(Path.of(element).toAbsolutePath().normalize());
@@ -927,7 +930,8 @@ public class DevMojo extends AbstractRewriteMojo {
         }
         Path classesDir = resolveGraphitronClassesDirectory(project.getBasedir().toPath());
         try {
-            this.incrementalCompiler = new IncrementalCompiler(classesDir, resolveCompileClasspath());
+            this.incrementalCompiler = new IncrementalCompiler(classesDir,
+                resolveCompileClasspath().stream().map(no.sikt.graphitron.rewrite.ClasspathEntry::path).toList());
         } catch (Exception e) {
             getLog().warn("graphitron:dev: incremental compile unavailable; "
                 + "generating without compiling this session: " + e.getMessage());
@@ -1087,7 +1091,8 @@ public class DevMojo extends AbstractRewriteMojo {
         // Watch every reactor project's target/classes so service/condition/record
         // classes declared in sibling modules also trigger rebuilds.
         var roots = new java.util.LinkedHashSet<Path>();
-        for (Path root : ctx.classpathRoots()) {
+        for (var entry : ctx.classpathRoots()) {
+            Path root = entry.path();
             if (java.nio.file.Files.isDirectory(root)) {
                 roots.add(root);
             }

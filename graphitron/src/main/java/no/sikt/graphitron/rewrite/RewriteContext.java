@@ -20,18 +20,17 @@ import java.util.Set;
  * {@link GraphQLRewriteGenerator#GraphQLRewriteGenerator(RewriteContext)} and is accessible to
  * every pipeline stage through the generator instance.
  *
- * @param classpathRoots the compile classpath the class census is taken over: every reactor
- *                       project's {@code ${project.build.outputDirectory}} plus the resolved
- *                       compile dependencies, jars included, when the mojo runs inside Maven;
- *                       empty for unit-tier callers that don't ship classes. This is the same
- *                       list {@code codegenLoader} is built over, by construction rather than by
- *                       coincidence, which is the point: a class the loader resolves is a class
- *                       the census holds. It previously carried reactor output directories only,
- *                       on the premise that consumer vocabulary lives in reactor source rather
- *                       than in third-party libraries, and
- *                       {@code @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")}
- *                       falsifies that: it generates fine and reads as an unknown class in the
- *                       editor, because the two paths were reading different classpaths.
+ * @param classpathRoots the classified compile classpath: every reactor project's
+ *                       {@code ${project.build.outputDirectory}} plus the resolved compile
+ *                       dependencies, jars included, each carrying the
+ *                       {@link ClasspathEntry.Origin} the producer decided, when the mojo runs
+ *                       inside Maven; empty for unit-tier callers that don't ship classes. This
+ *                       is the same list {@code codegenLoader} is built over; the loader projects
+ *                       every entry while the class census reads only the non-{@code TRANSITIVE}
+ *                       ones, so the census is a projection of the loader's list rather than a
+ *                       second list that must agree with it. A class the census skips can still
+ *                       load at codegen; {@link ClasspathNameability} is what rejects a schema
+ *                       that names one.
  * @param codegenLoader  classloader the reflection path uses to resolve consumer-declared
  *                       service / record / condition / jOOQ-catalog classes. The Mojo builds a
  *                       {@link java.net.URLClassLoader} over the project's compile classpath
@@ -98,7 +97,7 @@ public record RewriteContext(
     Path outputResourcesDirectory,
     String outputPackage,
     String jooqPackage,
-    List<Path> classpathRoots,
+    List<ClasspathEntry> classpathRoots,
     ClassLoader codegenLoader,
     List<Path> compileSourceRoots,
     LintConfig lintConfig,
@@ -264,7 +263,8 @@ public record RewriteContext(
     /**
      * Fifteen-arg overload: defaults {@code storeDirectory} to {@code null}, so the fact store is
      * in-memory and dies with the run, and mints a literal recipe over {@code schemaInputs} with
-     * {@code schemaFileExtensions} as its filter.
+     * {@code schemaFileExtensions} as its filter. Takes bare classpath paths and wraps each as
+     * {@link ClasspathEntry.Origin#PROJECT}, the classification for callers with none to give.
      */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
@@ -284,7 +284,7 @@ public record RewriteContext(
         DependencyVersions dependencyVersions
     ) {
         this(schemaInputs, basedir, graphName, outputDirectory, outputResourcesDirectory,
-            outputPackage, jooqPackage, classpathRoots, codegenLoader,
+            outputPackage, jooqPackage, ClasspathEntry.projectRoots(classpathRoots), codegenLoader,
             compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn, dependencyVersions,
             null, literalRecipe(schemaInputs, schemaFileExtensions), null);
     }

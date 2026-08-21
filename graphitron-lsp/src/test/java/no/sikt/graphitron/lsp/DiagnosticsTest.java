@@ -674,7 +674,13 @@ class DiagnosticsTest {
         var diags = compute(file, withClasses);
 
         assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("Missing").contains("class");
+        // The message states the census's scope and leaves the cause open: the store cannot
+        // tell a typo from a real class in an undeclared jar, and "not found on the compile
+        // classpath" would be false for the latter, which the codegen loader does resolve.
+        assertThat(diags.get(0).getMessage())
+            .contains("com.example.Missing")
+            .contains("census covers this module and its declared dependencies")
+            .doesNotContain("Not found on the compile classpath");
     }
 
     @Test

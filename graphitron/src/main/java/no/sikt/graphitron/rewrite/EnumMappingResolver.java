@@ -212,6 +212,7 @@ final class EnumMappingResolver {
     EnumValidation validateEnumFilter(String graphqlTypeName, ColumnRef column) {
         Class<?> colClass;
         try {
+            // nameability: exempt (jOOQ catalog column class)
             colClass = Class.forName(column.columnClass(), false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             return NOT_ENUM;

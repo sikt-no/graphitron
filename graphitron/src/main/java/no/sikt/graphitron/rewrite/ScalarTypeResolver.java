@@ -213,6 +213,9 @@ public final class ScalarTypeResolver {
     private static ConstantCheck checkConstant(String classFqn, String fieldName, ClassLoader loader) {
         Class<?> owner;
         try {
+            // nameability: checked (author-written @scalarType names are gated at
+            // resolveFromDirectiveValue; the other callers resolve plugin-realm constants no
+            // author wrote)
             owner = Class.forName(classFqn, false, loader);
         } catch (ClassNotFoundException e) {
             return new ConstantCheck(new ScalarResolution.Rejected.ClassNotFound(classFqn), null, null);
@@ -405,11 +408,31 @@ public final class ScalarTypeResolver {
      * declared name rather than the constant's name.
      */
     public static ScalarResolution resolveFromDirectiveValue(String scalarFqn, String sdlName, ClassLoader loader) {
+        return resolveFromDirectiveValue(scalarFqn, sdlName, loader, ClasspathNameability.inert());
+    }
+
+    /**
+     * Nameability-enforcing variant of
+     * {@link #resolveFromDirectiveValue(String, String, ClassLoader)}: the directive value is an
+     * author-written class name, so the class part is put to {@code nameability} before any load
+     * is attempted, and a rejection surfaces as
+     * {@link ScalarResolution.Rejected.UndeclaredClass} carrying the canonical reason. This is
+     * the entry point the directive-read path uses; the plain overloads stay inert for callers
+     * with no classification to enforce against (the spec built-ins and the federation-namespace
+     * scalars resolve plugin-realm constants no author wrote).
+     */
+    public static ScalarResolution resolveFromDirectiveValue(
+        String scalarFqn, String sdlName, ClassLoader loader, ClasspathNameability nameability) {
         return switch (ConstantReferenceGrammar.split(scalarFqn)) {
             case ConstantReferenceGrammar.Reference.Malformed m ->
                 new ScalarResolution.Rejected.ClassNotFound(m.value());
-            case ConstantReferenceGrammar.Reference.Parsed p ->
-                resolveFromConstantFqn(p.classFqn(), p.fieldName(), sdlName, loader);
+            case ConstantReferenceGrammar.Reference.Parsed p -> {
+                if (nameability.verdictFor(p.classFqn())
+                        instanceof ClasspathNameability.Verdict.Rejected rejected) {
+                    yield new ScalarResolution.Rejected.UndeclaredClass(p.classFqn(), rejected.reason());
+                }
+                yield resolveFromConstantFqn(p.classFqn(), p.fieldName(), sdlName, loader);
+            }
         };
     }
 

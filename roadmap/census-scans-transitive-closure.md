@@ -444,6 +444,37 @@ totals to a file named by PID at JVM exit; the PID matters because a Maven build
 executing store statements and only the build's own one performs captures. And record the persisted
 store's size on disk before and after, which is the number a consumer notices.
 
+### Measured at implementation
+
+All numbers from the implementing sandbox, a slower machine than the one the predictions were taken
+on; shapes are what transfer.
+
+- **The trail question is settled: Maven populates it.** In a real `graphitron-sakila-example` build,
+  all 157 resolved artifacts carried a populated `Artifact.getDependencyTrail()`, and a two-element
+  trail identified exactly the pom's 15 declared dependencies. The trail is the directness predicate;
+  the declared join (groupId, artifactId, type, classifier) is the fallback for an unpopulated trail
+  only, and is unit-pinned separately.
+- **Classified entries: 169 to 27, exactly as predicted.** The real classified list for
+  `graphitron-sakila-example` is 1 `PROJECT` + 11 `SIBLING` + 15 `DECLARED` + 142 `TRANSITIVE`; the
+  census reads 27 entries and never opens the other 142.
+- **Scan, best of three warm runs over that real list, same machine both ways:** all entries scanned,
+  672 ms and 11,704 classes; after the cut, 281 ms and 4,524 classes. The predicted 648 to ~200 ms
+  and 11,537 to 4,355 classes hold in shape; the absolute numbers are this sandbox's.
+- **Workspace store after one full reactor build:** 222,448 census rows, 4,667 `jvm_class` rows,
+  446 MB on disk, against the pre-cut segment's 424,344 census rows, 12,025 classes and 796 MB. The
+  pre-cut segment had accumulated more graphs across builds, so only the census axis is comparable,
+  and it roughly halves as predicted.
+- **The write side moved less than predicted, and is recorded as measured per this section's own
+  rule: 28%, not half.** Same machine, `ExecuteListener` on the store's `DSLContext`, the module's
+  five `graphitron:generate` executions in one build: the `jvm_` family's deletes and merges total
+  12.8 s per build with the wide census against 9.2 s with the cut (two narrow runs within 10 ms of
+  each other). Two caveats before treating 28% as the truth of the mechanism: the narrow runs
+  executed against store tables still holding the wide partitions a preceding wide run left behind
+  (a skipped source's partition is deliberately not deleted, per the provenance note above), which
+  keeps the delete statements' table scans large; and the member-level merges R762 targets dominate
+  what remains, four `JVM_METHOD*` statements carrying about 5.0 of the 9.2 s. The row cut this item
+  makes and the member cut R762 makes compose, and the write side is where R762's half lives.
+
 ## User documentation (first-client check)
 
 The rule is user-facing, so the doc draft is part of the design. `docs/manual/how-to/external-code.adoc`

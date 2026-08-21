@@ -55,6 +55,13 @@ final class ClasspathSources {
      * the name so the caller can hang its class row off it. A reference no scan produced carries no
      * entry; those are hand-built stand-ins, and the census they belong to is unpartitionable by
      * construction, so they are recorded against the empty source rather than dropped.
+     *
+     * <p>Lazy on the first class read also states a silence: a classpath entry the scan skipped
+     * (a transitive-only jar) produces no {@code store_source} row at all, so nothing in the
+     * store records that the entry existed and was deliberately not read. That is the intended
+     * design rather than a gap. Provenance is a use-site fact and would be wrong on a
+     * store-global, definition-keyed relation: a jar direct for module A is transitive for module
+     * B, and one workspace store holds both modules' graphs.</p>
      */
     String record(FactSink sink, String sourceName) {
         String name = sourceName == null ? "" : sourceName;

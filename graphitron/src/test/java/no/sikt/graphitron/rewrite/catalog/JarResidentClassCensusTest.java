@@ -84,9 +84,26 @@ class JarResidentClassCensusTest {
     }
 
     private static RewriteContext contextOver(Path basedir, Path... entries) {
+        // The jar is classified DECLARED, the way a real consumer's library arrives: this test's
+        // subject (a jar-resident class reaches the census) is unchanged by the transitive cut,
+        // because the cut skips only TRANSITIVE entries.
+        var classified = java.util.Arrays.stream(entries)
+            .map(entry -> no.sikt.graphitron.rewrite.catalog.ClasspathScanner.isJar(entry)
+                ? new no.sikt.graphitron.rewrite.ClasspathEntry(entry,
+                    no.sikt.graphitron.rewrite.ClasspathEntry.Origin.DECLARED,
+                    "com.example:fixture-library")
+                : no.sikt.graphitron.rewrite.ClasspathEntry.project(entry))
+            .toList();
+        var inputs = java.util.List.<no.sikt.graphitron.rewrite.schema.input.SchemaInput>of();
         return new RewriteContext(
-            List.of(), basedir, "JarResidentClassCensusTest", basedir.resolve("target/generated"),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE, List.of(entries));
+            inputs, basedir, "JarResidentClassCensusTest", basedir.resolve("target/generated"),
+            basedir.resolve("target/generated-resources"),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE, classified,
+            Thread.currentThread().getContextClassLoader(), java.util.List.of(),
+            null, null, null, null, null,
+            no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.literalOver(
+                inputs, RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS),
+            null);
     }
 
     private static Path jarWith(Path directory, String entryName, byte[] bytes) throws IOException {

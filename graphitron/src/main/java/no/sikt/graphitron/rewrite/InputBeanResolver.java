@@ -1143,6 +1143,7 @@ final class InputBeanResolver {
         String candidate = raw;
         while (true) {
             try {
+                // nameability: exempt (signature-derived type name, not a name anyone wrote)
                 return Class.forName(candidate, false, ctx.codegenLoader());
             } catch (ClassNotFoundException e) {
                 int lastDot = candidate.lastIndexOf('.');

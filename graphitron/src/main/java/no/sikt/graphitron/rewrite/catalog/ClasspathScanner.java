@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.catalog;
 
+import no.sikt.graphitron.rewrite.ClasspathEntry;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -26,19 +28,22 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 /**
- * Walks the consumer's compile classpath and enumerates the public top-level classes plus their
- * public methods so the LSP can offer them as completion / hover / diagnostic targets for
+ * Walks the consumer's declared compile classpath and enumerates the public top-level classes plus
+ * their public methods so the LSP can offer them as completion / hover / diagnostic targets for
  * {@code @service} / {@code @condition} / {@code @record} / {@code @scalarType}, and so the fact
- * store's class census is the set the codegen loader can resolve. Reads {@code .class} bytes via
+ * store's class census is the set a schema is permitted to name. Reads {@code .class} bytes via
  * the stdlib {@link java.lang.classfile} API; no external dependency.
  *
- * <p>Directories and jars alike. The scan used to skip anything that was not a directory, on the
- * premise that consumer vocabulary lives in reactor source rather than in third-party libraries.
- * {@code @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")} falsifies that outright: it
- * generates fine, because codegen resolves the constant reflectively through a loader built over
- * the whole compile classpath, and red-squiggles in the editor, because this scan never opened the
- * jar. The same gap is latent at every other class-bearing coordinate, so the census is the
- * classpath rather than a category within it.
+ * <p>Directories and jars alike, but declared jars only. The scan used to skip anything that was
+ * not a directory, on the premise that consumer vocabulary lives in reactor source rather than in
+ * third-party libraries. {@code @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")}
+ * falsified that outright: it generated fine, because codegen resolves the constant reflectively,
+ * and red-squiggled in the editor, because this scan never opened the jar. Jars are therefore in.
+ * The transitive tail is out again, by classification rather than by category: a
+ * {@link ClasspathEntry.Origin#TRANSITIVE} entry is skipped before it is opened, because nothing
+ * an author writes may name a class from a dependency the module did not declare. The codegen
+ * loader still resolves such a class; {@code ClasspathNameability} is what makes naming one a
+ * build failure instead of a silent divergence between the census and the loader.
  *
  * <p>The class filter is generous on purpose: enums and interfaces stay in,
  * because consumers do reference them as {@code @record} class names and as
@@ -76,20 +81,26 @@ public final class ClasspathScanner {
     private ClasspathScanner() {}
 
     /**
-     * Walks one classpath entry. Convenience overload kept for tests and
-     * single-entry callers; production reads from {@link #scan(List, String)}.
+     * Walks one classpath entry, classified {@link ClasspathEntry.Origin#PROJECT}. Convenience
+     * overload kept for tests and single-entry callers; production reads from
+     * {@link #scan(List, String)}.
      */
     public static List<CompletionData.ExternalReference> scan(Path entry, String jooqPackage) {
-        return scan(List.of(entry), jooqPackage);
+        return scan(List.of(ClasspathEntry.project(entry)), jooqPackage);
     }
 
     /**
-     * Walks every entry in {@code classpathEntries} and returns class records in deterministic
-     * order. A directory is walked; a {@code .jar} is opened and its entries fed through the same
-     * filter, which is already byte-oriented. Each entry is treated independently and FQNs are
-     * deduplicated across them, so a class present under more than one entry surfaces once, at the
-     * entry that comes first in classpath order. That is where a classloader would resolve it, so
-     * the census and the codegen loader agree on which copy is the one.
+     * Walks every non-{@code TRANSITIVE} entry in {@code classpathEntries} and returns class
+     * records in deterministic order. A directory is walked; a {@code .jar} is opened and its
+     * entries fed through the same filter, which is already byte-oriented. A
+     * {@link ClasspathEntry.Origin#TRANSITIVE} entry is skipped before it is opened: decompression
+     * dominates the scan's cost, so the only cut that moves the number is opening fewer jars, and
+     * the census's claim is what an author may name, which a transitive jar's classes are not.
+     *
+     * <p>Each entry is treated independently and FQNs are deduplicated across them, so a class
+     * present under more than one entry surfaces once, at the entry that comes first in classpath
+     * order. That is where a classloader would resolve it, so the census and the codegen loader
+     * agree on which copy is the one.
      *
      * <p>Entries that do not exist on disk are skipped silently; the normal pre-{@code mvn compile}
      * state has zero existing entries and returns an empty list.
@@ -99,11 +110,15 @@ public final class ClasspathScanner {
      * most expensive thing in the store stops being thrown away by any edit that invalidates
      * anything.
      */
-    public static List<CompletionData.ExternalReference> scan(List<Path> classpathEntries, String jooqPackage) {
+    public static List<CompletionData.ExternalReference> scan(List<ClasspathEntry> classpathEntries, String jooqPackage) {
         var jooqPrefix = jooqPackage.isEmpty() ? null : jooqPackage + ".";
         var seen = new LinkedHashSet<String>();
         var refs = new ArrayList<CompletionData.ExternalReference>();
-        for (Path entry : classpathEntries) {
+        for (ClasspathEntry classified : classpathEntries) {
+            if (classified.origin() == ClasspathEntry.Origin.TRANSITIVE) {
+                continue;
+            }
+            Path entry = classified.path();
             String source = entry.toString();
             if (Files.isDirectory(entry)) {
                 scanDirectory(entry, jooqPrefix, source, seen, refs);

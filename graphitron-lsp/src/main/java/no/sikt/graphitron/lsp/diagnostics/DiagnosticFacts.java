@@ -95,9 +95,10 @@ final class DiagnosticFacts {
     /**
      * What a census says about one name an author wrote. Three outcomes rather than a boolean, for
      * {@link no.sikt.graphitron.lsp.facts.ClasspathClasses.Presence}'s reason: a name a populated
-     * census does not hold will not resolve at codegen either, and a census holding nothing is a
-     * consumer who has not built yet, whose schema is not full of wrong names. One vocabulary for
-     * every census here, so no arm of the judgement can hold the two questions in the wrong order.
+     * census does not hold is a name the author cannot use as written, and a census holding nothing
+     * is a consumer who has not built yet, whose schema is not full of wrong names. One vocabulary
+     * for every census here, so no arm of the judgement can hold the two questions in the wrong
+     * order.
      */
     enum Resolution {
 

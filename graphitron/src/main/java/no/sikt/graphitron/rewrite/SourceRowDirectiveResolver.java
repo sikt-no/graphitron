@@ -164,6 +164,11 @@ final class SourceRowDirectiveResolver {
             return new Resolved.Rejected(Rejection.structural("@sourceRow on '" + parentTypeName + "." + fieldName
                 + "' is missing 'method'"));
         }
+        if (ctx.nameability().verdictFor(lifterClassName)
+                instanceof ClasspathNameability.Verdict.Rejected rejected) {
+            return new Resolved.Rejected(Rejection.structural("@sourceRow on '" + parentTypeName
+                + "." + fieldName + "': " + rejected.reason()));
+        }
 
         // 4. Reflect the lifter method. The class load, the by-name static-method lookup and the
         //    single-parameter check are the preamble every @sourceRow site shares, so they live in

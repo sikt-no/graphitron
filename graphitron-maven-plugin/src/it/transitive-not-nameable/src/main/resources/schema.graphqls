@@ -1,0 +1,15 @@
+type Query {
+    films: [Film!]!
+    # The load-bearing field: names a class that reaches the compile classpath only through
+    # graphitron-sakila-db's own dependency on org.jooq:jooq. The codegen loader resolves it,
+    # which is exactly why census absence would be the wrong predicate; the nameability rule
+    # rejects it anyway, naming the coordinate to declare.
+    viaTransitive: String @service(service: {
+        className: "org.jooq.impl.DSL",
+        method: "currentTimestamp"})
+}
+
+type Film @table(name: "film") {
+    filmId: Int! @field(name: "FILM_ID")
+    title: String! @field(name: "TITLE")
+}

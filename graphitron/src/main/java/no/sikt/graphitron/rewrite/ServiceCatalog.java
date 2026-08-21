@@ -76,6 +76,7 @@ class ServiceCatalog {
     Optional<TableRef> resolveTableByRecordClassName(ClassName recordClass) {
         try {
             return resolveTableByRecordClass(
+                // nameability: exempt (jOOQ catalog record class, a catalog concept the census excludes by design)
                 Class.forName(recordClass.reflectionName(), false, ctx.codegenLoader()));
         } catch (ClassNotFoundException e) {
             return Optional.empty();
@@ -244,7 +245,12 @@ class ServiceCatalog {
         if (className == null || methodName == null) {
             return new DecodeResult(null, Rejection.structural("service reference is incomplete"));
         }
+        if (ctx.nameability().verdictFor(className)
+                instanceof ClasspathNameability.Verdict.Rejected rejected) {
+            return new DecodeResult(null, Rejection.structural("@service " + rejected.reason()));
+        }
         try {
+            // nameability: checked (author-written @service className, gated above)
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             MethodPick pick = pickMethod(cls, className, methodName);
             if (pick instanceof MethodPick.Rejected rejected) {
@@ -748,7 +754,12 @@ class ServiceCatalog {
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, Rejection.structural("table method reference is incomplete"));
         }
+        if (ctx.nameability().verdictFor(className)
+                instanceof ClasspathNameability.Verdict.Rejected rejected) {
+            return new ServiceReflectionResult(null, Rejection.structural("@condition " + rejected.reason()));
+        }
         try {
+            // nameability: checked (author-written @condition className, gated above)
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             MethodPick pick = pickMethod(cls, className, methodName);
             if (pick instanceof MethodPick.Rejected rejected) {
@@ -860,7 +871,12 @@ class ServiceCatalog {
      */
     ServiceReflectionResult reflectExternalField(String className, String methodName,
             TableRef parentTable) {
+        if (ctx.nameability().verdictFor(className)
+                instanceof ClasspathNameability.Verdict.Rejected rejected) {
+            return new ServiceReflectionResult(null, Rejection.structural("@externalField " + rejected.reason()));
+        }
         try {
+            // nameability: checked (author-written @externalField className, gated above)
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             MethodPick pick = pickMethod(cls, className, methodName);
             if (pick instanceof MethodPick.Rejected rejected) {
@@ -1035,6 +1051,7 @@ class ServiceCatalog {
      */
     static CallSiteExtraction legacyArgExtraction(String typeName, ClassLoader codegenLoader) {
         try {
+            // nameability: exempt (declared parameter type read off a reflected signature, not a name anyone wrote)
             if (Class.forName(typeName, false, codegenLoader).isEnum()) {
                 return new CallSiteExtraction.EnumValueOf(typeName);
             }
@@ -1067,6 +1084,7 @@ class ServiceCatalog {
         var classifiedTypes = ctx.scalarVerdicts.values();
         Class<?> javaClass;
         try {
+            // nameability: exempt (declared parameter type read off a reflected signature, not a name anyone wrote)
             javaClass = Class.forName(typeName, false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             // Unloadable declared type: fall through to Direct (the reflect path has already
@@ -1767,6 +1785,7 @@ class ServiceCatalog {
         String methodName = ref.methodName();
         Class<?> cls;
         try {
+            // nameability: exempt (<sessionState> mount/unmount target is plugin configuration, not schema text)
             cls = Class.forName(className, false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             rejections.add(new ReflectionError.ClassNotLoaded(className));

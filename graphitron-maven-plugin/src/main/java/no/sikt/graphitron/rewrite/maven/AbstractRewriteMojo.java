@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite.maven;
 
 import graphql.schema.idl.errors.SchemaProblem;
+import no.sikt.graphitron.rewrite.ClasspathEntry;
+import no.sikt.graphitron.rewrite.ClasspathEntry.Origin;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.ValidationError;
@@ -21,6 +23,7 @@ import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.descriptor.PluginDescriptor;
 import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.model.Dependency;
 import org.apache.maven.model.Model;
 import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 import org.apache.maven.project.MavenProject;
@@ -38,6 +41,8 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.HexFormat;
 import java.util.List;
@@ -657,24 +662,175 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * The compile classpath the incremental compile engine scans once at dev startup: the
-     * consumer's compile dep graph plus every reactor sibling's {@code target/classes} (the
-     * same set {@link #resolveClasspathRoots()} feeds the LSP catalog scan). This is exactly a
-     * {@code StandardJavaFileManager}'s input set; the engine front-loads its own output dir so
-     * already-compiled units resolve as dependencies of a later round.
+     * The classified compile classpath: the consumer's compile dep graph plus every reactor
+     * sibling's {@code target/classes}, one {@link ClasspathEntry} per path with the
+     * {@link ClasspathEntry.Origin} decided here, at the one producer. The codegen loader, the
+     * incremental compile engine and the dev execution loader project every entry's path; the
+     * class census reads the non-{@code TRANSITIVE} ones; the nameability rule reads the whole
+     * classification. One list whose elements carry the decision, rather than a second, narrower
+     * resolve method beside this one: two sibling path lists are structurally interchangeable and
+     * their subset relation would live only in prose.
      */
-    protected final List<Path> resolveCompileClasspath() throws MojoExecutionException {
-        var paths = new LinkedHashSet<Path>();
+    protected final List<ClasspathEntry> resolveCompileClasspath() throws MojoExecutionException {
+        List<String> compileElements;
         try {
-            for (String element : project.getCompileClasspathElements()) {
-                paths.add(Path.of(element).toAbsolutePath().normalize());
-            }
+            compileElements = project.getCompileClasspathElements();
         } catch (DependencyResolutionRequiredException e) {
             throw new MojoExecutionException(
-                "Failed to assemble the project compile classpath for incremental compile.", e);
+                "Failed to assemble the project compile classpath.", e);
         }
-        paths.addAll(resolveClasspathRoots());
-        return new ArrayList<>(paths);
+        return classifyCompileClasspath(
+            compileElements,
+            projectOutputDirectory(),
+            project.getArtifacts(),
+            project.getDependencies(),
+            reactorOutputCoordinates());
+    }
+
+    /** This module's own compile-output directory, normalized; the {@code PROJECT} arm's anchor. */
+    private Path projectOutputDirectory() {
+        String dir = project.getBuild() == null ? null : project.getBuild().getOutputDirectory();
+        return dir == null
+            ? project.getBasedir().toPath().resolve("target/classes").toAbsolutePath().normalize()
+            : Path.of(dir).toAbsolutePath().normalize();
+    }
+
+    /**
+     * Every reactor project's compile-output directory mapped to the name the {@code SIBLING}
+     * rejection message needs: {@code groupId:artifactId} for a loaded reactor project, the
+     * module directory name for a {@link #siblingModuleBasedirs() convention-scanned sibling}
+     * (an unloaded sibling has no {@link MavenProject} to read coordinates from). Insertion
+     * order follows {@link #reactorProjects()} then declared {@code <modules>} order, matching
+     * what {@link #resolveCompileSourceRoots()} follows on the source-root side.
+     */
+    private Map<Path, String> reactorOutputCoordinates() {
+        var byPath = new LinkedHashMap<Path, String>();
+        for (MavenProject p : reactorProjects()) {
+            String dir = p.getBuild() == null ? null : p.getBuild().getOutputDirectory();
+            if (dir == null) continue;
+            byPath.putIfAbsent(Path.of(dir).toAbsolutePath().normalize(),
+                p.getGroupId() + ":" + p.getArtifactId());
+        }
+        for (Path base : siblingModuleBasedirs()) {
+            Path fileName = base.getFileName();
+            byPath.putIfAbsent(base.resolve("target/classes").toAbsolutePath().normalize(),
+                fileName != null ? fileName.toString() : base.toString());
+        }
+        return byPath;
+    }
+
+    /**
+     * The classification decode: Maven's untyped view of the classpath in, the classified
+     * {@link ClasspathEntry} list out, so {@link Artifact} and {@link Dependency} never cross
+     * into {@code graphitron} (the {@link #decodeDependencyVersions} precedent). Per path, in
+     * compile-classpath order with the reactor outputs folded in behind:
+     *
+     * <ul>
+     *   <li>this module's own output: {@code PROJECT};</li>
+     *   <li>a resolved artifact this module declares: {@code DECLARED};</li>
+     *   <li>a reactor project's output the module does not declare: {@code SIBLING}, carrying
+     *       the module name the build-side rejection message needs;</li>
+     *   <li>a resolved artifact the module does not declare: {@code TRANSITIVE};</li>
+     *   <li>a path no artifact and no reactor project accounts for: {@code DECLARED} with no
+     *       coordinate, keeping the entry in the census, because dropping an unattributable
+     *       entry would silently defeat both the census and the rule it feeds.</li>
+     * </ul>
+     *
+     * <p>Directness reads {@link Artifact#getDependencyTrail()} where resolution populated it (a
+     * two-element trail is the artifact itself under the project root, so anything longer arrived
+     * through another dependency), and falls back to joining the artifact against
+     * {@code declaredDependencies} on groupId, artifactId, type and classifier, never version,
+     * since dependencyManagement rewrites versions. No scope set is minted here: intersecting the
+     * declared coordinates with what {@code getCompileClasspathElements()} returned leaves the
+     * scope question answered by Maven and by {@link #GENERATED_CODE_SCOPES}' existing argument.
+     */
+    static List<ClasspathEntry> classifyCompileClasspath(
+        List<String> compileClasspathElements,
+        Path projectOutputDirectory,
+        Collection<Artifact> resolvedArtifacts,
+        Collection<Dependency> declaredDependencies,
+        Map<Path, String> reactorOutputs
+    ) {
+        var artifactByPath = new LinkedHashMap<Path, Artifact>();
+        if (resolvedArtifacts != null) {
+            for (Artifact artifact : resolvedArtifacts) {
+                if (artifact == null || artifact.getFile() == null) continue;
+                artifactByPath.putIfAbsent(
+                    artifact.getFile().toPath().toAbsolutePath().normalize(), artifact);
+            }
+        }
+        var declaredKeys = new HashSet<String>();
+        if (declaredDependencies != null) {
+            for (Dependency dependency : declaredDependencies) {
+                if (dependency == null) continue;
+                declaredKeys.add(dependencyKey(dependency.getGroupId(), dependency.getArtifactId(),
+                    dependency.getType(), dependency.getClassifier()));
+            }
+        }
+        var byPath = new LinkedHashMap<Path, ClasspathEntry>();
+        for (String element : compileClasspathElements) {
+            if (element == null) continue;
+            Path path = Path.of(element).toAbsolutePath().normalize();
+            if (byPath.containsKey(path)) continue;
+            byPath.put(path, classifyElement(path, projectOutputDirectory, artifactByPath,
+                declaredKeys, reactorOutputs));
+        }
+        for (Map.Entry<Path, String> reactor : reactorOutputs.entrySet()) {
+            Path path = reactor.getKey();
+            if (byPath.containsKey(path) || !Files.isDirectory(path)) continue;
+            Origin origin = path.equals(projectOutputDirectory) ? Origin.PROJECT : Origin.SIBLING;
+            byPath.put(path, new ClasspathEntry(path,
+                origin, origin == Origin.PROJECT ? null : reactor.getValue()));
+        }
+        return List.copyOf(byPath.values());
+    }
+
+    private static ClasspathEntry classifyElement(
+        Path path, Path projectOutputDirectory, Map<Path, Artifact> artifactByPath,
+        Set<String> declaredKeys, Map<Path, String> reactorOutputs
+    ) {
+        if (path.equals(projectOutputDirectory)) {
+            return new ClasspathEntry(path, Origin.PROJECT, null);
+        }
+        Artifact artifact = artifactByPath.get(path);
+        if (artifact != null && isDirect(artifact, declaredKeys)) {
+            return new ClasspathEntry(path, Origin.DECLARED,
+                artifact.getGroupId() + ":" + artifact.getArtifactId());
+        }
+        String reactorCoordinate = reactorOutputs.get(path);
+        if (reactorCoordinate != null) {
+            // A reactor module's output this module did not declare, whether it arrived through
+            // the reactor fold or transitively through another dependency: offerable in the
+            // census, rejected by the build naming the module, which is SIBLING's whole point.
+            return new ClasspathEntry(path, Origin.SIBLING, reactorCoordinate);
+        }
+        if (artifact != null) {
+            return new ClasspathEntry(path, Origin.TRANSITIVE,
+                artifact.getGroupId() + ":" + artifact.getArtifactId());
+        }
+        return new ClasspathEntry(path, Origin.DECLARED, null);
+    }
+
+    /**
+     * Whether {@code artifact} was declared by this module rather than dragged in transitively.
+     * The dependency trail, where resolution populated it, states this in one place: element zero
+     * is the project itself, so a two-element trail is a direct dependency. The declared join is
+     * the fallback for an unpopulated trail only.
+     */
+    private static boolean isDirect(Artifact artifact, Set<String> declaredKeys) {
+        List<String> trail = artifact.getDependencyTrail();
+        if (trail != null && trail.size() >= 2) {
+            return trail.size() == 2;
+        }
+        return declaredKeys.contains(dependencyKey(artifact.getGroupId(),
+            artifact.getArtifactId(), artifact.getType(), artifact.getClassifier()));
+    }
+
+    /** The declared-join key: groupId, artifactId, type and classifier, never version. */
+    private static String dependencyKey(String groupId, String artifactId, String type, String classifier) {
+        return groupId + ":" + artifactId
+            + ":" + (type == null || type.isEmpty() ? "jar" : type)
+            + ":" + (classifier == null ? "" : classifier);
     }
 
     /**
@@ -795,36 +951,15 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * Compile-output directories from every reactor project. One half of
-     * {@link #resolveCompileClasspath()}, which is what the context now carries: the class census
-     * has to be the set the codegen loader can resolve, and this half alone is not it.
-     *
-     * <p>In a {@link #singleProjectReactor() single-project reactor}, each
-     * {@link #siblingModuleBasedirs() sibling}'s {@code target/classes} is folded in through
-     * the same existence filter and dedup as the reactor roots, so a sibling already present in
-     * a non-trivial reactor collapses to a no-op.
-     */
-    private List<Path> resolveClasspathRoots() {
-        var roots = new LinkedHashSet<>(collectExistingDirs(reactorProjects(), p -> {
-            String dir = p.getBuild() == null ? null : p.getBuild().getOutputDirectory();
-            return dir == null ? List.of() : List.of(dir);
-        }));
-        for (Path base : siblingModuleBasedirs()) {
-            addExistingDir(roots, base.resolve("target/classes"));
-        }
-        return new ArrayList<>(roots);
-    }
-
-    /**
      * Compile source-root directories from every reactor project: the hand-written
      * {@code src/main/java} roots plus the generated-sources roots discovered on disk by
      * {@link #generatedSourceRoots(MavenProject)} (jOOQ output among them). The LSP parses
      * these to recover Java declaration positions and Javadoc for goto-definition / hover.
      *
      * <p>Resolved over the same {@link #reactorProjects()} set as
-     * {@link #resolveClasspathRoots()} through the shared {@link #collectExistingDirs}
-     * traversal, so the scan path and the walk path cannot drift in which modules they cover: a
-     * class scanned for completion is a class whose source root is walked for goto-definition.
+     * {@link #reactorOutputCoordinates()}, so the scan path and the walk path cannot drift in
+     * which modules they cover: a class scanned for completion is a class whose source root is
+     * walked for goto-definition.
      *
      * <p>The generated-sources half is taken from disk rather than from
      * {@code project.getCompileSourceRoots()}, which only carries a generated-sources root once
@@ -837,7 +972,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     private List<Path> resolveCompileSourceRoots() {
         var roots = new LinkedHashSet<>(
             collectExistingDirs(reactorProjects(), AbstractRewriteMojo::compileSourceRootsOf));
-        // Same sibling set as resolveClasspathRoots(): a sibling scanned for
+        // Same sibling set as reactorOutputCoordinates(): a sibling scanned for
         // completion also gets its source roots walked for goto-definition.
         for (Path base : siblingModuleBasedirs()) {
             addExistingDir(roots, base.resolve("src/main/java"));
@@ -924,9 +1059,9 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * Shared traversal behind {@link #resolveClasspathRoots()} and
-     * {@link #resolveCompileSourceRoots()}: normalise the directories {@code extractor} pulls
-     * off each project and keep the existing ones, de-duplicated in encounter order.
+     * Shared traversal behind {@link #resolveCompileSourceRoots()} and
+     * {@link #unwalkedScannedModules(Iterable)}: normalise the directories {@code extractor}
+     * pulls off each project and keep the existing ones, de-duplicated in encounter order.
      * Package-private so the classpath/source-root parity can be pinned with a unit test over
      * hand-built projects, without standing up a {@link MavenSession}.
      */
@@ -1083,23 +1218,27 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
 
     /**
      * The project-aware classloader the reflection path uses to resolve consumer
-     * service / record / condition / jOOQ-catalog classes: exactly
+     * service / record / condition / jOOQ-catalog classes: every entry of
      * {@link #resolveCompileClasspath()}, which is also what the context carries as
-     * {@code classpathRoots} for the class census. Reading the one method rather than
-     * reassembling its two halves here is what makes "a class the loader resolves is a class the
-     * census holds" true by construction; when the two were assembled separately they agreed by
-     * coincidence, and the coincidence had already broken. The parent is the plugin's own loader
-     * so the generator's classes still resolve and a consumer-side override under
-     * {@code <plugin><dependencies>} still wins through the parent chain.
+     * {@code classpathRoots}. Reading the one classified list rather than reassembling it here is
+     * what keeps the census a projection of the loader's list; when the two were assembled
+     * separately they agreed by coincidence, and the coincidence had already broken. The loader
+     * projects every entry while the census skips the {@code TRANSITIVE} ones, so a class can
+     * resolve here without being nameable in a schema; the nameability rule
+     * ({@code ClasspathNameability} over the same list) is what rejects a schema that names one.
+     * The parent is the plugin's own loader so the generator's classes still resolve; delegation
+     * is therefore parent-first for anything the plugin also carries, which is why the
+     * nameability rule probes entries for the name instead of asking where a loaded class came
+     * from.
      */
     private URLClassLoader buildCodegenLoader() throws MojoExecutionException {
         var urls = new LinkedHashSet<URL>();
-        for (Path entry : resolveCompileClasspath()) {
+        for (ClasspathEntry entry : resolveCompileClasspath()) {
             try {
-                urls.add(entry.toUri().toURL());
+                urls.add(entry.path().toUri().toURL());
             } catch (MalformedURLException e) {
                 throw new MojoExecutionException(
-                    "Failed to add classpath entry " + entry + " to the codegen classpath.", e);
+                    "Failed to add classpath entry " + entry.path() + " to the codegen classpath.", e);
             }
         }
         return new URLClassLoader(urls.toArray(URL[]::new), getClass().getClassLoader());

@@ -403,6 +403,21 @@ class BuildContext {
         return ctx.codegenLoader();
     }
 
+    /**
+     * The nameability rule over {@link RewriteContext#classpathRoots()}, built on first use and
+     * shared by every author-written-name site in the run so each probed jar is listed once.
+     * Inert (every name nameable) when the context carries no classpath roots, which is every
+     * unit-tier caller; see {@link ClasspathNameability}.
+     */
+    ClasspathNameability nameability() {
+        if (nameability == null) {
+            nameability = new ClasspathNameability(ctx.classpathRoots());
+        }
+        return nameability;
+    }
+
+    private ClasspathNameability nameability;
+
     void addWarning(BuildWarning warning) {
         warnings.add(warning);
     }
@@ -2348,6 +2363,7 @@ class BuildContext {
         }
         String rawTypeName = typeName.contains("<") ? typeName.substring(0, typeName.indexOf('<')) : typeName;
         try {
+            // nameability: exempt (parameter type read off a reflected @condition signature)
             Class<?> cls = Class.forName(rawTypeName, false, codegenLoader());
             var entry = catalog.findTableByClass(cls);
             if (entry.isPresent()) {
@@ -2425,6 +2441,7 @@ class BuildContext {
         String rawTypeName = typeName.contains("<") ? typeName.substring(0, typeName.indexOf('<')) : typeName;
         Class<?> cls;
         try {
+            // nameability: exempt (parameter type read off a reflected @condition signature)
             cls = Class.forName(rawTypeName, false, codegenLoader());
         } catch (ClassNotFoundException notOnLoader) {
             // Not a class on the codegen loader, so it cannot map to a catalog table; not assertable.

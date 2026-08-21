@@ -329,10 +329,18 @@ class AbstractRewriteMojoTest {
         var ctx = mojo.buildContext();
 
         // Classpath side: the sibling service module's target/classes is scanned,
-        // alongside the spec module's own.
-        assertThat(ctx.classpathRoots()).contains(
-            serviceClasses.toAbsolutePath().normalize(),
-            specClasses.toAbsolutePath().normalize());
+        // alongside the spec module's own, and each carries its classification: the module's
+        // own output is PROJECT, the convention-scanned sibling is SIBLING named by its module
+        // directory, which is what the build-side rejection message needs.
+        assertThat(ctx.classpathRoots())
+            .extracting(no.sikt.graphitron.rewrite.ClasspathEntry::path,
+                no.sikt.graphitron.rewrite.ClasspathEntry::origin,
+                no.sikt.graphitron.rewrite.ClasspathEntry::coordinate)
+            .contains(
+                org.assertj.core.groups.Tuple.tuple(specClasses.toAbsolutePath().normalize(),
+                    no.sikt.graphitron.rewrite.ClasspathEntry.Origin.PROJECT, null),
+                org.assertj.core.groups.Tuple.tuple(serviceClasses.toAbsolutePath().normalize(),
+                    no.sikt.graphitron.rewrite.ClasspathEntry.Origin.SIBLING, "service-module"));
         // ...so the sibling's @condition class lands as an external reference: the
         // catalog scan the LSP runs over exactly these roots now sees it.
         var refs = ClasspathScanner.scan(ctx.classpathRoots(), "no.sikt.example.jooq");

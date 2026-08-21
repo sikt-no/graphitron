@@ -703,8 +703,10 @@ public final class Diagnostics {
     /**
      * One finding's verdict, over answers the store has already given. Every arm that stays silent does
      * so for a reason the census told it, and the reasons are one rule: a name a populated census does
-     * not hold will not resolve at codegen either, and a census holding nothing is a consumer who has
-     * not built or compiled yet, whose schema is not full of wrong names.
+     * not hold is a name the author cannot use as written, whether a typo or a class in an undeclared
+     * dependency (the build's nameability check is what tells those apart and names the coordinate),
+     * and a census holding nothing is a consumer who has not built or compiled yet, whose schema is
+     * not full of wrong names.
      */
     private static void judge(
         Finding finding, DiagnosticFacts.Answers answers, byte[] source, List<Diagnostic> out
@@ -729,14 +731,21 @@ public final class Diagnostics {
             }
             case Finding.ClassName(var range, var fqn) -> {
                 if (answers.className(fqn) == DiagnosticFacts.Resolution.UNKNOWN) {
+                    // Scope, not cause: the census cannot tell a typo from a real class in an
+                    // undeclared jar, so the message says what the census covers and leaves the
+                    // cause open. The build-side nameability check is what names a coordinate.
                     out.add(diagnostic(range, "Unknown class '" + fqn
-                        + "'. Not found on the compile classpath."));
+                        + "'. The census covers this module and its declared dependencies; a class"
+                        + " reachable only through a transitive dependency must be declared before"
+                        + " it can be named here."));
                 }
             }
             case Finding.ScalarClassName(var range, var fqn) -> {
                 if (answers.className(fqn) == DiagnosticFacts.Resolution.UNKNOWN) {
                     out.add(diagnostic(range, "Unknown class '" + fqn
-                        + "' on @scalarType. Not found on the compile classpath."));
+                        + "' on @scalarType. The census covers this module and its declared"
+                        + " dependencies; a class reachable only through a transitive dependency"
+                        + " must be declared before it can be named here."));
                 }
             }
             case Finding.NodeTypeName(var range, var typeName) ->

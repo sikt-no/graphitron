@@ -2,41 +2,36 @@
 :description: Plug a custom Java method into a directive that takes `ExternalCodeReference!`.
 :!toc:
 
-Four of the rewrite's directives (`@service`, `@externalField`, `@condition`, `@enum`) hand the resolution of a slot off to a developer-supplied Java target via the shared `ExternalCodeReference` input. The mechanics are uniform across all four: a fully-qualified class name on the rewrite plugin's classpath, an optional method name that defaults to the GraphQL field name, and an optional `argMapping:` for renaming Java parameters. This recipe walks through each piece once.
+Four of the rewrite's directives (`@service`, `@externalField`, `@condition`, `@enum`) hand the resolution of a slot off to a developer-supplied Java target via the shared `ExternalCodeReference` input. The mechanics are uniform across all four: a fully-qualified class name from the module's declared compile classpath, an optional method name that defaults to the GraphQL field name, and an optional `argMapping:` for renaming Java parameters. This recipe walks through each piece once.
 
 (The deprecated `@record` directive still parses the same `ExternalCodeReference` shape, but it is ignored: a class-backed type's binding is reflected from its producer's return or parameter type, not from a directive. See xref:result-types.adoc[How-to: Result-type variants].)
 
-== Make the class reachable
+[[make-the-class-nameable]]
+== Make the class nameable
 
-The rewrite's Maven plugin reflects on the named class at code-generation time (via `Class.forName(...)`). The class therefore has to be on the *plugin's* classpath, not the consumer module's compile classpath. Declare the carrying artifact under the plugin's own `<dependencies>` block:
+A named class must live in this module, in another module of the same Maven project, or in a dependency this module declares itself. A class that is only reachable through another dependency's dependencies is not nameable: declare it, and it becomes nameable. The generator rejects a schema that names an undeclared class, and the editor marks it before you build.
+
+The recipe is one ordinary `<dependency>` block on the consumer module:
 
 [source,xml]
 ----
-<plugin>
-    <groupId>no.sikt</groupId>
-    <artifactId>graphitron-maven-plugin</artifactId>
-    <version>${graphitron.version}</version>
-    <executions>
-        <execution>
-            <goals><goal>generate</goal></goals>
-        </execution>
-    </executions>
-    <dependencies>
-        <!-- Carries the @service / @externalField / @condition /
-             @sourceRow / @enum target classes, plus the Java classes that back
-             class-backed types (reflected from their producers). -->
-        <dependency>
-            <groupId>com.example</groupId>
-            <artifactId>my-services</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-    </dependencies>
-</plugin>
+<dependencies>
+    <!-- Carries the @service / @externalField / @condition /
+         @sourceRow / @enum target classes, plus the Java classes that back
+         class-backed types (reflected from their producers). -->
+    <dependency>
+        <groupId>com.example</groupId>
+        <artifactId>my-services</artifactId>
+        <version>${project.version}</version>
+    </dependency>
+</dependencies>
 ----
 
-The dependency is plugin-scoped: the consumer module never imports the artifact at compile time (the generator emits sources that wire in via `DSLContext`-mediated reflection bindings, not via direct `import` statements). Putting the artifact in the *outer* `<dependencies>` block instead would compile the consumer module against it for no benefit and pollute the runtime jar.
+Compile scope is right, not incidental: the generated resolvers call these classes directly, so the consumer module compiles against them and carries them at runtime.
 
-`graphitron-sakila-example` follows this pattern: the example POM declares `graphitron-sakila-service` (which carries `SampleQueryService`, `FilmService`, `InventoryExtensions`, etc.) under the `<plugin>...<dependencies>` block of the `graphitron-maven-plugin` plugin in `graphitron-sakila-example/pom.xml`, not under the module's outer dependency list.
+`graphitron-sakila-example` follows this pattern: the example POM declares `graphitron-sakila-service` (which carries `SampleQueryService`, `FilmService`, `InventoryExtensions`, etc.) in its outer `<dependencies>` list.
+
+*A `<plugin><dependencies>` block does not make a class nameable.* An earlier revision of this page said the opposite, instructing that the carrying artifact "has to be on the plugin's classpath" under the `graphitron-maven-plugin` element's own `<dependencies>`. If your build is set up that way, move the `<dependency>` element from the plugin block to the module's `<dependencies>`. The plugin-block route never sufficed on its own: generated code references these classes, so an artifact only the plugin could load already failed the module's own compile at the first generated reference. What changes with the nameability rule is when you hear about it and what the message says; the failure now happens at the generate that caused it, naming the class and the coordinate to declare.
 
 == Reference the class from the schema
 
@@ -66,7 +61,7 @@ type Query {
 }
 ----
 
-Reflection failures (class not on the plugin classpath, method not present, signature does not match the directive's expected shape) surface at build time with a directive-specific message: `service method could not be resolved — <reason>` for `@service`, and so on. The `<reason>` is the underlying reflection exception when the class or method is missing, or a constraint message when the signature is wrong.
+Resolution failures (a class outside the nameable set above, a method not present, a signature that does not match the directive's expected shape) surface at build time with a directive-specific message: `service method could not be resolved — <reason>` for `@service`, and so on. The `<reason>` names the coordinate to declare when the class sits in an undeclared dependency, the underlying reflection exception when the class or method is missing, or a constraint message when the signature is wrong.
 
 == Map GraphQL arguments to Java parameter names
 
@@ -117,7 +112,7 @@ The deprecated `@record` directive parses the same `record:` (`ExternalCodeRefer
 == Constraints
 
 * `className:` must be a fully-qualified class name. Package-prefix short-name resolution is not implemented; spell out the FQCN for now.
-* The carrying artifact must be on the *plugin's* classpath (the `<plugin>...<dependencies>` block), not the module's outer `<dependencies>`. The generator runs at build time and only sees what the plugin can load.
+* The carrying artifact must be declared in the module's own `<dependencies>`. A `<plugin>...<dependencies>` block does not make a class nameable, and neither does an artifact arriving transitively through another dependency; see <<make-the-class-nameable>>.
 * Reflection runs at code-generation time, not at server startup. A typo in `className:` or `method:` fails the `mvn install` that builds the consumer module, not at request time.
 * `argMapping:` is `"javaParam: graphqlArg"`, not `"graphqlArg: javaParam"`. The Java side comes first because that is what the reflected method signature reads.
 * `ExternalCodeReference.name:` is *removed and no longer supported*. It was a short alias resolved through the Maven plugin's `<namedReferences>` mappings; the argument and that plugin parameter are both gone. A schema still carrying `name:` fails to load, because the argument is no longer declared on the `ExternalCodeReference` input. Replace each site with `className:` and the fully qualified class name.

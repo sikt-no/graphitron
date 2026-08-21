@@ -262,6 +262,7 @@ final class RecordBindingResolver {
                 Optional<TableRef> tableOpt = svc.resolveTable(tableSqlName);
                 tableOpt.ifPresent(table -> {
                     try {
+                        // nameability: exempt (jOOQ catalog record class)
                         Class<?> recordClass = Class.forName(
                             table.recordClass().reflectionName(), false, ctx.codegenLoader());
                         addResultObservation(obj.getName(), new ProducerBinding.RootTable(
@@ -581,6 +582,7 @@ final class RecordBindingResolver {
 
         Class<?> recordClass;
         try {
+            // nameability: exempt (jOOQ catalog record class)
             recordClass = Class.forName(
                 table.recordClass().reflectionName(), false, ctx.codegenLoader());
         } catch (ClassNotFoundException ignored) {
@@ -639,6 +641,7 @@ final class RecordBindingResolver {
 
         Class<?> recordClass;
         try {
+            // nameability: exempt (jOOQ catalog record class)
             recordClass = Class.forName(
                 table.recordClass().reflectionName(), false, ctx.codegenLoader());
         } catch (ClassNotFoundException ignored) {
@@ -793,6 +796,7 @@ final class RecordBindingResolver {
 
         Class<?> recordClass;
         try {
+            // nameability: exempt (jOOQ catalog record class)
             recordClass = Class.forName(
                 targetTable.recordClass().reflectionName(), false, ctx.codegenLoader());
         } catch (ClassNotFoundException ignored) {
@@ -1010,6 +1014,7 @@ final class RecordBindingResolver {
 
     private Method findUniqueMethod(String className, String methodName) {
         try {
+            // nameability: exempt (revalidates @service / @externalField names ServiceCatalog already gated; this observation pass skips silently)
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             Method found = null;
             for (Method m : cls.getDeclaredMethods()) {
