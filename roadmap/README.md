@@ -30,7 +30,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R728` | @nodeId encode and decode become store relations, and an instruction the generator drops fails the build | In Progress | 2026-08-20 <sub>created 2026-08-19</sub> | [plan](nodeid-effective-at-every-coordinate.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-20 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
-| `R773` | The LSP's store reads answer inside a time budget, or fail | In Review | 2026-08-21 | [plan](lsp-store-reads-inside-a-time-budget.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
@@ -502,7 +501,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R626` [**LSP argMapping completions and diagnostics at the @routine coordinate**](lsp-argmapping-routine-coordinate.md) — Backlog, architecture
 - `R430` [**LSP publishes graphitron:dev compile diagnostics against generated-file URIs**](lsp-compile-diagnostics-publish.md) — Backlog, feature
 - `R578` [**Raise the LSP unknown-input-field diagnostic to Error severity**](unknown-input-field-diagnostic-severity.md) — Backlog, cleanup
-- `R773` [**The LSP's store reads answer inside a time budget, or fail**](lsp-store-reads-inside-a-time-budget.md) — In Review, architecture
 - `R782` [**Completions and code actions get statement-count enforcers**](completion-and-code-action-statement-counts.md) — Backlog, architecture
 - `R381` [**LSP-guided @reference path authoring**](lsp-reference-path-authoring.md) — Spec, architecture
 - `R345` [**Surface schema parse failures as LSP red squiggles**](lsp-squiggle-schema-parse-failure.md) — Backlog, feature
