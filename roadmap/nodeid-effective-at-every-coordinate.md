@@ -573,6 +573,28 @@ nothing was generating there to go red. Stage 4 did not widen to it, its exit na
 stage 5 owes it either an emitter at those two coordinates or a refusal; what it must not do is let the
 relation keep claiming a resolution nobody performs.
 
+**Discharged in stage 5 as a refusal, and writing it found a third arm and corrected the invariant's
+own wording.** The gap was stated as two coordinates on a table parent, and it is three: the root
+`@service` arm drops the directive too, for the same reason and with no `@nodeId` arm of its own to
+reach. So the refusal is not a patch on the table-parent classifier but a placement gate beside the
+one `@referenceFor` already has, on the field's directives rather than on its parent, which is why one
+gate covers arms that share nothing else. It is a deferral rather than a structural refusal: the
+producer hands back one value and encoding it is the same helper call every other carrier makes, so
+what is missing is an emitter and not the author's understanding. The two messages share their lead
+and differ in the remedy, because the remedy differs: an `@service` producer returns a Java value and
+can call the generated encoder itself, while an `@externalField` producer returns a jOOQ expression
+and cannot.
+
+**The invariant clause was the thing that needed correcting, not the relation.** "Let the relation keep
+claiming a resolution nobody performs" reads as though the row were the fault, and following it would
+have narrowed the encode population to what emits today. The tree already had a shape that refutes
+that reading: a `@nodeId(typeName:)` field over an authored path that does not collapse to the parent's
+own columns has a `PROJECTED_COLUMNS` row and is *deferred* at the reference carrier, and has been
+since before this item. So presence in a resolution relation was never an emitter's existence, and
+saying it was would make the relation track emitter maturity, changing rows in a graph whose schema
+nobody touched. The relation keeps both shapes and now says so, naming the two deferrals; what the
+build owed was a word at the coordinate, which is what the gate emits.
+
 That gap also corrected the slot relation itself. Its named-parameter arm shipped demanding one
 producer candidate, which every other reader of `intent_field_producer_method` does, and here that was
 wrong in a way its own comment already contradicted: dropping the rows makes the use site look like
@@ -1253,8 +1275,12 @@ replacement.
    also what settles the type precondition stage 4 left owing. The design section above states each.
    The projector followed as `NodeIdDecodeDefects`, the fourth component on `StoreDetections`, with
    its pipeline tier; the convergence clause turned into a shared `NodeIdMessages` rather than three
-   copied helpers, for the reason the design section gives. What remains of the stage is the second
-   gap it named: the producer-backed output field the encode relation claims and the classifier drops.
+   copied helpers, for the reason the design section gives. The stage's last piece was the second gap
+   it named, the producer-backed output field the classifier drops, and it shipped as a deferral at a
+   placement gate covering three arms rather than the two the gap named. That closed the silence and
+   left the encode relation's population alone, for the reason the design section gives: a resolution
+   relation's row was never an emitter's existence, and the tree had a deferred `@nodeId` shape with a
+   claiming row before this item started.
 6. **Site 4a, the message and the page.** The auto-discovery rejection separates its two causes; the
    manual page's single-hop claim is corrected; the reverse filter gets the execution-tier row-count
    pin it has never had. Independent of every other stage and the smallest thing in the item.
@@ -1502,7 +1528,12 @@ on the wire.
   refusals only, and there are two because a composite key has a remedy the sibling family's messages
   never had to offer. These fixtures capture both corpora rather than SDL alone, for the reason the
   design section records, and name their own public service stub because the census does not see a
-  package-private one.
+  package-private one. The producer-backed deferral is a sixth class at this tier,
+  `NodeIdProducerBackedFieldPipelineTest`: the three arms that drop the directive, and the three
+  things the gate must leave alone, which are a producer-backed field carrying no `@nodeId`, a
+  coordinate that encodes today, and a coordinate whose own rejection is the more specific one. The
+  last of those is the case that would go red if the gate ever ran ahead of a classifier's own
+  reflection failure and replaced a precise cause with a vague one.
 * **Store tier**, for the two relations whose whole content is a fork. The destination and the
   Java-slot fork are pinned together in one class over the seeded store, because each is defined as
   the population the other does not claim: a case asserting only the destination would pass equally

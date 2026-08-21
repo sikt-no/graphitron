@@ -2813,7 +2813,48 @@ class FieldBuilder {
                     + "polymorphic fields, non-polymorphic fields, and root fields have no participant "
                     + "set to bind a path to). Remove the @referenceFor directive."));
         }
+        // Placement gate: @nodeId on an output field whose value a producer method returns. Every
+        // classifier that can see such a field answers the producer directive and returns before
+        // reaching its @nodeId arm, so the directive is dropped and the producer's own value
+        // reaches the consumer where an encoded id was asked for. The gate sits here rather than in
+        // one classifier because three arms drop it the same way (the @service and @externalField
+        // arms on a table parent, and the root @service arm), and no arm honours both directives:
+        // the one carrier that encodes a producer's value, ChildField.SingleRecordIdField, reads
+        // the producer off its parent payload, never off the field carrying @nodeId. A
+        // coordinate that already failed keeps its own rejection, which is the more specific one.
+        if (fieldDef.hasAppliedDirective(DIR_NODE_ID)
+                && !(result instanceof UnclassifiedField)
+                && (fieldDef.hasAppliedDirective(DIR_SERVICE)
+                    || fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD))) {
+            return new UnclassifiedField(parentTypeName, fieldDef.getName(), locationOf(fieldDef),
+                producerBackedNodeIdDeferral(fieldDef));
+        }
         return result;
+    }
+
+    /**
+     * The deferral for {@code @nodeId} at a coordinate whose value a producer method returns.
+     * Deferred rather than structural because the shape is one graphitron means to carry out: the
+     * producer hands back one value and encoding it is the same helper call every other carrier
+     * makes, so what is missing is an emitter and not the author's understanding.
+     *
+     * <p>The lead is one fact for both producers, the value not being a projection of the parent's
+     * own columns to encode from. The tail differs because what an author can do instead differs:
+     * an {@code @service} producer returns a Java value and can call the generated encoder itself,
+     * while an {@code @externalField} producer returns a jOOQ expression and cannot.
+     */
+    private static Rejection producerBackedNodeIdDeferral(GraphQLFieldDefinition fieldDef) {
+        boolean viaService = fieldDef.hasAppliedDirective(DIR_SERVICE);
+        String lead = "@nodeId classifies but does not encode at a coordinate whose value @"
+            + (viaService ? DIR_SERVICE : DIR_EXTERNAL_FIELD)
+            + " produces, so the producer's own value would reach the consumer unencoded";
+        return Rejection.deferred(viaService
+            ? lead + ". Until that encode lands, drop @nodeId here and have the producer return the"
+                + " id already encoded: the generated NodeIdEncoder is public and declares an"
+                + " encode method per @node type."
+            : lead + ". Until that encode lands, drop @nodeId here and encode from a field the"
+                + " parent's own key columns back; an @externalField method returns a jOOQ"
+                + " expression rather than a value it could encode itself.");
     }
 
     private GraphitronField classifyFieldInner(GraphQLFieldDefinition fieldDef, String parentTypeName, GraphitronType parentType,
