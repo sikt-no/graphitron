@@ -1,7 +1,7 @@
 ---
 id: R795
 title: "No language-server surface blocks the editor"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: lsp
@@ -464,3 +464,33 @@ written. The scan-count enforcer of step 4 is a new mechanism rather than an
 extension of one in the tree (nothing reads H2's `scanCount` today), which the
 spec is honest about pricing; R793's "whichever of the two lands second should
 extend that enforcer" settles the ownership, so this is not a gap.
+
+### Round 2, Spec → Ready, signed off (session_01MtzM82PqeYAJ1tBFafctX8, 2026-08-21)
+
+All five of round 1's findings are closed, and two of them by more than was
+asked. Finding 1 is settled in the direction round 1 named as the coherent
+alternative: the budget stays a runaway guard, `LspTrace`'s slow-span threshold
+keeps latency, and the reversal is argued rather than asserted. Finding 2 was
+answered by going and measuring, which also produced the thing the spec was
+missing: the arm's cost tracks `sql_table`'s row count, so the scaling dimension
+is the consumer's catalog rather than their class census, and that is now stated
+as the unmeasured direction. Finding 3 moved the step into `StoreAccess` and
+finding 4's fork is picked. Finding 5's step 2 now instructs the shape the
+controls actually measured, and the count correction landed in both places.
+
+Verified for this pass: `StoreAccess.answering`, `answeringAll` and
+`readingSessionGraph` exist as named, and `inlayHint` reaches the store through
+`answering`, so step 3's premise is real rather than assumed: a document-scoped
+inlay request and a cursor-blocking hover do serialize on one reader today.
+
+Three observations, none blocking and none needing a reply. The revision put its
+responses in the plan body and the commit message rather than as notes beneath
+each finding, so this pass audited by re-reading rather than by reading a delta;
+the convention is in `roadmap/workflow.adoc` under item file conventions. Step 3
+is conditional on step 1's measurement with a qualitative criterion ("expensive
+enough to block a cursor queued behind it"); the material for that call is
+present, and `LspTrace`'s 100 ms tag is the obvious yardstick if the implementer
+wants a number. And an `inlayHint` request carries a range rather than a
+document, so "the whole-file request" is a ceiling rather than what an editor
+sends; measuring the ceiling is the conservative direction for a should-we-split
+decision, so the framing is loose in a way that does not mislead.

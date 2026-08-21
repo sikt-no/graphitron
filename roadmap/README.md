@@ -15,8 +15,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
-| `R795` | No language-server surface blocks the editor | Spec | 2026-08-21 | [plan](lsp-surface-latency-budgets.md) |
 | `R793` | The diagnostics drain overruns its 30 s session budget on a real workspace | Spec | 2026-08-21 | [plan](diagnostics-drain-overruns-its-session-budget.md) |
+| `R795` | No language-server surface blocks the editor | Ready | 2026-08-21 | [plan](lsp-surface-latency-budgets.md) |
 | `R784` | Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it | Ready | 2026-08-21 | [plan](straddling-reference-update-partition.md) |
 | `R796` | The diagnostics drain never runs on the thread that triggered it | In Review | 2026-08-21 | [plan](diagnostics-drain-leaves-the-triggering-thread.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
@@ -506,7 +506,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### lsp
 
 - `R626` [**LSP argMapping completions and diagnostics at the @routine coordinate**](lsp-argmapping-routine-coordinate.md) — Backlog, architecture
-- `R795` [**No language-server surface blocks the editor**](lsp-surface-latency-budgets.md) — Spec, bug
+- `R795` [**No language-server surface blocks the editor**](lsp-surface-latency-budgets.md) — Ready, bug
 - `R796` [**The diagnostics drain never runs on the thread that triggered it**](diagnostics-drain-leaves-the-triggering-thread.md) — In Review, bug
 - `R793` [**The diagnostics drain overruns its 30 s session budget on a real workspace**](diagnostics-drain-overruns-its-session-budget.md) — Spec, bug
 - `R794` [**LSP connection teardown logs SEVERE stack traces for stream-closed writes**](lsp-teardown-stream-closed-write-noise.md) — Spec, architecture
