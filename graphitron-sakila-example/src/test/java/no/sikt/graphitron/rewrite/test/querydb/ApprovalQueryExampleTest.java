@@ -37,6 +37,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * also writes the divergent result to {@code <name>.actual.json} next to the approved
  * file so the next iteration is "diff the two files; if the new shape is correct, mv
  * actual onto approved".
+ *
+ * <p>One rule the pattern brings with it, and the query file says so too: approval compares the
+ * <em>whole</em> response, so the query has to ask for a set it names. An unfiltered root field
+ * returns whatever the table holds, which makes the approved file a claim about the database rather
+ * than about the query, and any other test that writes that table breaks it.
  */
 @ExecutionTier
 class ApprovalQueryExampleTest {

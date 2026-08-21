@@ -17,8 +17,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R769` | withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms | In Review | 2026-08-21 <sub>created 2026-08-20</sub> | [plan](seeded-store-boots-per-thread.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R784` | Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it | Spec | 2026-08-21 | [plan](straddling-reference-update-partition.md) |
-| `R763` | Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path | In Progress | 2026-08-21 <sub>created 2026-08-20</sub> | [plan](sakila-example-tests-run-one-at-a-time.md) |
 | `R785` | Docs-index generator dies on a second stale-stamp run in a reused Maven JVM | In Review | 2026-08-21 | [plan](docs-index-native-load-in-reused-jvm.md) |
+| `R763` | Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path | In Review | 2026-08-21 <sub>created 2026-08-20</sub> | [plan](sakila-example-tests-run-one-at-a-time.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
 | `R705` | A condition-join hop in a reference filter path is rejected, though the emitter it needs already ships | Spec | 2026-08-21 <sub>created 2026-08-18</sub> | [plan](condition-join-hops-in-reference-filter-paths.md) |
@@ -594,7 +594,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R769` [**withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms**](seeded-store-boots-per-thread.md) — In Review, dx
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
 - `R785` [**Docs-index generator dies on a second stale-stamp run in a reused Maven JVM**](docs-index-native-load-in-reused-jvm.md) — In Review, tooling
-- `R763` [**Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path**](sakila-example-tests-run-one-at-a-time.md) — In Progress, dx
+- `R763` [**Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path**](sakila-example-tests-run-one-at-a-time.md) — In Review, dx
 - `R764` [**graphitron-model ships its junit-platform.properties to three consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
 - `R780` [**srp names the reviewer as the disqualified party: the session grep takes the first ID in the body, not the trailer**](srp-disqualified-session-read-from-trailer.md) — Backlog, dx
 - `R779` [**Did findings-not-fixes cut the bounce loop? Measure the plan-body blame fraction over three bounced items**](findings-convention-round-count-measurement.md) — Backlog, dx

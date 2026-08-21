@@ -175,9 +175,10 @@ class ProjectionSqlBaselineTest {
     @Test
     void polymorphicRoot_narrowUnionThenPerTypenameSelects() {
         execute("{ search { name } }");
-        assertThat(SQL_LOG)
+        assertThat(SQL_LOG.stream().map(ProjectionSqlBaselineTest::collapseValuesTuples).toList())
             .as("polymorphic root: stage 1 is the narrow UNION ALL (typename, pk, sort), stage 2 "
-                + "is one VALUES-joined SELECT per participant; VALUES arity rides the seed rows")
+                + "is one VALUES-joined SELECT per participant, with the tuple run collapsed "
+                + "because its arity is the number of rows the union returned")
             .containsExactlyInAnyOrder(
                 "select 'actor' as \"__typename\", \"public\".\"actor\".\"actor_id\" as \"__pk0__\", "
                     + "\"public\".\"actor\".\"actor_id\" as \"__sort__\" from \"public\".\"actor\" "
@@ -187,14 +188,25 @@ class ProjectionSqlBaselineTest {
                     + "order by \"__sort__\"",
                 "select \"public\".\"actor\".\"first_name\", "
                     + "'actor' as \"__typename\", \"actorinput\".\"idx\" from \"public\".\"actor\" "
-                    + "join (values (?, ?), (?, ?), (?, ?)) as \"actorinput\" (\"idx\", \"actor_id\") "
+                    + "join (values (?, ?)) as \"actorinput\" (\"idx\", \"actor_id\") "
                     + "on \"public\".\"actor\".\"actor_id\" = \"actorinput\".\"actor_id\" "
                     + "order by \"actorinput\".\"idx\"",
                 "select \"public\".\"film\".\"title\", "
                     + "'film' as \"__typename\", \"filminput\".\"idx\" from \"public\".\"film\" "
-                    + "join (values (?, ?), (?, ?), (?, ?), (?, ?), (?, ?)) as \"filminput\" (\"idx\", \"film_id\") "
+                    + "join (values (?, ?)) as \"filminput\" (\"idx\", \"film_id\") "
                     + "on \"public\".\"film\".\"film_id\" = \"filminput\".\"film_id\" "
                     + "order by \"filminput\".\"idx\"");
+    }
+
+    /**
+     * Collapses a batch's VALUES tuple run to a single tuple. A polymorphic stage-2 statement
+     * carries one tuple per key the stage-1 union returned, so over {@code film} its arity is
+     * whatever the table holds, and eleven other classes in this module insert films. The statement
+     * shape is what this baseline pins; arity is pinned where the parent set is bounded, in
+     * {@code BatchedChildSqlBaselineTest}.
+     */
+    private static String collapseValuesTuples(String sql) {
+        return sql.replaceAll("(\\(\\?, \\?\\), )+\\(\\?, \\?\\)", "(?, ?)");
     }
 
     @Test

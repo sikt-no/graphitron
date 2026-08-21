@@ -79,7 +79,7 @@ curl -s -X POST http://localhost:8080/graphql \
   -d '{"query":"{ customers { firstName storeAddress { address district } } }"}'
 ----
 
-The first three customers belong to store 1 (address `47 MySakila Drive`); the other two belong to store 2 (address `28 MySQL Boulevard`).
+Mary, Patricia and Barbara belong to store 1 (address `47 MySakila Drive`); Linda and Elizabeth belong to store 2 (address `28 MySQL Boulevard`).
 
 == When references are inferred
 

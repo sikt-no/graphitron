@@ -4,6 +4,7 @@ import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 
 import java.util.Map;
 
@@ -15,11 +16,14 @@ import static org.hamcrest.Matchers.startsWith;
 /**
  * Smoke check that the Quarkus + JAX-RS shell boots and serves a GraphQL request end-to-end:
  * POST {@code /graphql} → live Postgres → non-empty response, plus the self-hosted GraphiQL
- * playground page and its asset endpoint. The only HTTP-shaped tests in the module; everything
- * else stays at the schema/engine level.
+ * playground page and its asset endpoint. This class holds the claim that the built-in endpoint is
+ * reachable at all; {@link GraphQLOverHttpConformanceTest}, {@link MountedEndpointTest} and
+ * {@link OverlappingMountTest} are the module's other HTTP-shaped tests, and everything else stays
+ * at the schema/engine level.
  */
 @QuarkusTest
 @QuarkusTestResource(SmokeTestPostgresResource.class)
+@ResourceLock(QuarkusTestLock.KEY)
 @ExecutionTier
 class GraphqlResourceSmokeTest {
 

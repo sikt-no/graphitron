@@ -1,7 +1,7 @@
 ---
 id: R763
 title: "Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path"
-status: In Progress
+status: In Review
 bucket: dx
 priority: 2
 theme: tooling
@@ -234,6 +234,67 @@ Verification of the win is the matched pair from the measurement section re-take
 `mvnd install -Plocal-db` before and after, with the module's own wall clock read from the reactor
 summary. Expect the module near 69 s against 92.5 s and the build near 317 s against 340 s. Absolute
 seconds will differ per machine; the module figure is the one to hold.
+
+## What the implementation found
+
+The four changes landed as planned. The Spec reviewer's ruling on the second meta-test was to abandon
+it: "earns its container" is not a property of the assertion vocabulary, because a `@QuarkusTest`
+legitimately pins CDI wiring, an interceptor, config or a startup effect without asserting a status
+code, and this module already carries the fixtures such a test would use. Its intent went into the
+first meta-test's failure message instead. `QuarkusTestLockEnforcementTest` is the enforcer, and it
+was checked by deleting one annotation and watching it fail.
+
+**Sixty assertion sites, not seven.** The seven the experiment surfaced were the ones a particular
+interleaving happened to hit. Fifty-nine methods in `GraphQLQueryTest` and one in
+`ProjectionSqlBaselineTest` assert something that only holds while `film` or `content` holds nothing
+but the seed. Finding them by interleaving would have taken many runs, so the sweep used a
+deterministic detector instead: insert three films and two content rows shaped like the ones the
+module's writers create (`rating` left to its `'G'` default, `length` and `release_year` null, the
+content attached to film 1), run the suite, and every case that asserts what the table holds fails
+on the spot. The suite is green with those rows present, which is the property the item wanted and a
+stronger statement than three green runs.
+
+Four shapes came up that the plan did not anticipate:
+
+* **`film.rating` defaults to `'G'`.** Every film a fixture inserts without naming a rating is
+  G-rated, so `films(rating: G)` and a G-filtered `totalCount` were counting other classes' rows. The
+  PG films are the ones the seed can own, and the two cases now say why in place.
+* **A facet count needs a bounded base, and `FilmExtraFilter.lengthIs` supplies one.** It is a
+  non-facet filter field, so it joins every facet arm's base predicate and stands in for none of
+  their own. Bounding on the seeded films' five lengths works because `film.length` has no default,
+  so an inserted film carries null there and falls outside.
+* **The approval worked example compared a whole response to an unfiltered root field.** An approval
+  file over `films` is a claim about the database rather than about the query, and consumers copy
+  this file. It now names its five rows, and the class javadoc says why an approval query must.
+* **Two pairs of `email` cleanup bands overlapped.** Four classes write `email` and the module
+  already gives each a hundred-wide `message_no` band, but their `@AfterEach` deletes were
+  open-ended (`>= 100`, `>= 300`), so each reached into its neighbour's band and deleted rows that
+  class had in flight. Bounded at both ends. This is the one writer-side fix in the item and it is
+  the same defect as the `TutorialSmokeTest` delete: cleanup scoped wider than the rows a class owns.
+
+Two notes for the next reader:
+
+* **A count over an unfiltered relation cannot be made exact, and comparing two requests is not a
+  fix.** `searchConnection` takes no filter, so the first attempt at
+  `searchConnection_totalCount_independentOfAfterCursor` read `totalCount` on two pages and compared
+  them. The full build failed it with 8 against 9: a film landed between the two requests. The case
+  now walks to the last page and reads the count once, where a count that inherited the seek
+  predicate would report at most a page's worth against the union's eight.
+* **Moving `TutorialSmokeTest` to map assertions surfaced a false sentence in the tutorial.** Page 4
+  claimed the first three customers belong to store 1; the seed puts Mary, Patricia and Barbara
+  there and Linda and Elizabeth in store 2. The old string-matching assertions could not see it
+  because both addresses appear in the response either way. Prose corrected.
+
+Measured on a contended 4 vCPU sandbox, alternating arms, `surefire:test` on the module:
+**59-61 s before, 44 s after** (three readings: 43.7, 44.2, 44.1), so about 15 s off the module and
+therefore off the build's wall clock. Proportionally the same 25% the item projected; the absolute
+figure is smaller because the baseline here is slower than the box the item was measured on. The
+module's own total moved 105 s to 99 s, which is noisier than the surefire figure because
+`graphitron:generate` and `quarkus:build` dominate it. No
+`Discovered 2 'junit-platform.properties'` warning, confirmed by grep rather than assumed.
+
+One case renamed: `filmsFaceted_noFilter_countsMatchPlainAggregates` is now
+`filmsFaceted_noFacetFilter_countsMatchPlainAggregates`, since it carries a non-facet filter.
 
 ## Roadmap entries
 

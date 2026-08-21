@@ -53,6 +53,14 @@ class BulkUpdateSetAgreementExecutionTest {
     // mailbox 9, distinct from SelfFkNodeIdUpdateExecutionTest's mailbox-5 rows, so the two never collide.
     private static final int MAILBOX_BOB = 9;
     private static final int MAILBOX_ALICE = 5;
+
+    /**
+     * This class's {@code email.message_no} band, and the range its cleanup deletes. Four classes in
+     * this module write {@code email}; each owns a hundred-wide band so that one class's cleanup
+     * cannot reach another's rows while both are running.
+     */
+    private static final int MESSAGE_NO_BAND_START = 300;
+    private static final int MESSAGE_NO_BAND_END = 399;
     private static final int ROOT_MESSAGE_NO = 1;
     private static final String NOTE_PREFIX = "R342B-";
 
@@ -81,9 +89,11 @@ class BulkUpdateSetAgreementExecutionTest {
         dsl.deleteFrom(DSL.table("film_endorsement"))
             .where(DSL.field("note", String.class).like(NOTE_PREFIX + "%"))
             .execute();
+        // Bounded at both ends: DmlSqlBaselineTest owns the 700 band in the same mailbox, so an
+        // open-ended `>= 300` would delete its in-flight rows.
         dsl.deleteFrom(DSL.table("email"))
             .where(DSL.field("mailbox_id", Integer.class).eq(MAILBOX_BOB))
-            .and(DSL.field("message_no", Integer.class).ge(300))
+            .and(DSL.field("message_no", Integer.class).between(MESSAGE_NO_BAND_START, MESSAGE_NO_BAND_END))
             .execute();
     }
 

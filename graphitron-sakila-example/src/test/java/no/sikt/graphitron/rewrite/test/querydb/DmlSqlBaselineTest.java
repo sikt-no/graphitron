@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * and the encoded negative ({@code deleteFilms}: exactly one statement, no companion). UPSERT
  * is retired from the execution corpus and cannot be pinned at this tier.
  *
- * <p>Email fixtures seed their own rows in mailbox 9 at {@code message_no >= 700} (other email
+ * <p>Email fixtures seed their own rows in mailbox 9 in the 700 message_no band (other email
  * tests own the lower ranges) and clean up after; seeding happens before the per-test SQL-log
  * clear so seed statements never enter a pin.
  *
@@ -58,6 +58,14 @@ class DmlSqlBaselineTest {
     static final java.util.List<String> SQL_LOG = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     private static final int MAILBOX_BOB = 9;
+
+    /**
+     * This class's {@code email.message_no} band, and the range its cleanup deletes. Four classes in
+     * this module write {@code email}; each owns a hundred-wide band so that one class's cleanup
+     * cannot reach another's rows while both are running.
+     */
+    private static final int MESSAGE_NO_BAND_START = 700;
+    private static final int MESSAGE_NO_BAND_END = 799;
 
     @BeforeAll
     static void startDatabase() {
@@ -94,9 +102,11 @@ class DmlSqlBaselineTest {
 
     @AfterEach
     void revertMutationEffects() {
+        // Bounded at both ends: BulkUpdateSetAgreementExecutionTest owns the 300 band in the same
+        // mailbox, and a band that runs to infinity is a band that overlaps its neighbours.
         dsl.deleteFrom(DSL.table("email"))
             .where(DSL.field("mailbox_id", Integer.class).eq(MAILBOX_BOB))
-            .and(DSL.field("message_no", Integer.class).ge(700))
+            .and(DSL.field("message_no", Integer.class).between(MESSAGE_NO_BAND_START, MESSAGE_NO_BAND_END))
             .execute();
         // Every row this class creates or updates carries a PIN-prefixed title (film and
         // content alike; the UPDATE pins target self-seeded rows, never init.sql's).

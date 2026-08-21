@@ -6,6 +6,7 @@ import io.restassured.response.Response;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,6 +28,7 @@ import static org.hamcrest.Matchers.startsWith;
  */
 @QuarkusTest
 @QuarkusTestResource(SmokeTestPostgresResource.class)
+@ResourceLock(QuarkusTestLock.KEY)
 @ExecutionTier
 class MountedEndpointTest {
 

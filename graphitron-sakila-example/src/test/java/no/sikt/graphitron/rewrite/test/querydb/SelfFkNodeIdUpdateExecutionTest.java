@@ -48,6 +48,14 @@ class SelfFkNodeIdUpdateExecutionTest {
     private static final int MAILBOX_BOB = 9;
     private static final int ROOT_MESSAGE_NO = 1;
 
+    /**
+     * This class's {@code email.message_no} band, and the range its cleanup deletes. Four classes in
+     * this module write {@code email}; each owns a hundred-wide band so that one class's cleanup
+     * cannot reach another's rows while both are running.
+     */
+    private static final int MESSAGE_NO_BAND_START = 200;
+    private static final int MESSAGE_NO_BAND_END = 299;
+
     @BeforeAll
     static void startDatabase() {
         var localUrl = System.getProperty("test.db.url");
@@ -70,11 +78,13 @@ class SelfFkNodeIdUpdateExecutionTest {
 
     @AfterEach
     void cleanUpUpdatedRows() {
-        // Each test owns a distinct message_no >= 100 in alice's mailbox; drop them so cleanup is
-        // scoped and never touches the seeded roots.
+        // Each test owns a distinct message_no in this class's band, and the cleanup names both
+        // ends of it. Four classes in this module write `email`, each owning a hundred-wide band;
+        // an open-ended `>= 100` would reach into SelfFkNodeIdInsertExecutionTest's band and delete
+        // its in-flight rows whenever the two ran at the same time.
         dsl.deleteFrom(DSL.table("email"))
             .where(DSL.field("mailbox_id", Integer.class).eq(MAILBOX_ALICE))
-            .and(DSL.field("message_no", Integer.class).ge(100))
+            .and(DSL.field("message_no", Integer.class).between(MESSAGE_NO_BAND_START, MESSAGE_NO_BAND_END))
             .execute();
     }
 

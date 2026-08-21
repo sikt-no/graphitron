@@ -125,6 +125,72 @@ class GraphQLQueryTest {
         }
     }
 
+    // ===== The seeded film rows, and why a case narrows to them =====
+    //
+    // init.sql seeds five films at film_id 1 to 5. Eleven other test classes in this module write to
+    // `film`, and on the local-db path (what CI and a contributor sandbox use) every class in the
+    // module shares one database, so an unfiltered root field over `film` returns their rows too.
+    //
+    // "The query returned five films" and "the film table holds only the seed" are different claims.
+    // A case here means the first, so it identifies the rows it is about (by id where the query
+    // selects one, by title otherwise) and asserts over those. Asserting a row count over an
+    // unfiltered root field means the second, and its symptom is this class failing on rows it never
+    // wrote. Where a count is genuinely the subject, the query gains a filter that bounds it.
+
+    /** The films {@code init.sql} seeds, in {@code film_id} order. */
+    private static final List<Integer> SEEDED_FILM_IDS = List.of(1, 2, 3, 4, 5);
+
+    /** The seeded films' titles, in {@code film_id} order. */
+    private static final List<String> SEEDED_FILM_TITLES = List.of(
+        "ACADEMY DINOSAUR", "ACE GOLDFINGER", "ADAPTATION HOLES", "AFFAIR PREJUDICE", "AGENT TRUMAN");
+
+    /** The seeded rows of a film list, in the order the query returned them. Needs {@code filmId} selected. */
+    private static List<Map<String, Object>> seededById(Map<String, Object> data, String field) {
+        return seededById((List<Map<String, Object>>) data.get(field));
+    }
+
+    /** The seeded rows of a film list, in the order the query returned them. Needs {@code filmId} selected. */
+    private static List<Map<String, Object>> seededById(List<Map<String, Object>> films) {
+        return films.stream().filter(f -> SEEDED_FILM_IDS.contains(f.get("filmId"))).toList();
+    }
+
+    /**
+     * The rows {@code init.sql} seeds into {@code content}, in {@code content_id} order: two FILM
+     * and two SHORT. Two other classes in this module insert FILM-typed content rows, so a case
+     * over {@code allContent} picks its own rows out by title for the same reason the film cases do.
+     */
+    private static final List<String> SEEDED_CONTENT_TITLES = List.of(
+        "ACADEMY DINOSAUR (extended)", "ACE GOLDFINGER (extended)", "Sunrise", "Interlude");
+
+    /** The seeded rows of a content list, in the order the query returned them. Needs {@code title} selected. */
+    private static List<Map<String, Object>> seededContent(List<Map<String, Object>> items) {
+        return items.stream().filter(i -> SEEDED_CONTENT_TITLES.contains(i.get("title"))).toList();
+    }
+
+    /** A connection field's {@code nodes} list. */
+    private static List<Map<String, Object>> nodesOf(Map<String, Object> data, String field) {
+        return (List<Map<String, Object>>) ((Map<String, Object>) data.get(field)).get("nodes");
+    }
+
+    /**
+     * The seeded films' titles out of a node list, in the order the query returned them. For a case
+     * whose subject is row order: the seeded rows' relative order is the query's doing, while which
+     * other rows sit between them is not.
+     */
+    private static List<String> seededTitlesInOrder(List<Map<String, Object>> nodes) {
+        return nodes.stream()
+            .map(n -> (String) n.get("title"))
+            .filter(SEEDED_FILM_TITLES::contains)
+            .toList();
+    }
+
+    /** The seeded rows of a film list, in the order the query returned them. Needs {@code title} selected. */
+    private static List<Map<String, Object>> seededByTitle(Map<String, Object> data, String field) {
+        return ((List<Map<String, Object>>) data.get(field)).stream()
+            .filter(f -> SEEDED_FILM_TITLES.contains(f.get("title")))
+            .toList();
+    }
+
     // ===== Aliasing scalar build-through + execution =====
 
     @Test
@@ -165,8 +231,8 @@ class GraphQLQueryTest {
             .hasSize(5)
             .first(as(MAP)).containsKey("firstName");
         assertThat(data).extractingByKey("films", as(LIST))
-            .hasSize(5)
-            .first(as(MAP)).containsKey("title");
+            .hasSizeGreaterThanOrEqualTo(5)
+            .first(as(MAP)).containsOnlyKeys("title");
     }
 
     @Test
@@ -436,7 +502,9 @@ class GraphQLQueryTest {
     @Test
     void films_returnsAllFilms() {
         Map<String, Object> data = execute("{ films { filmId title } }");
-        assertThat(data).extractingByKey("films", as(LIST)).hasSize(5);
+        assertThat(seededById(data, "films"))
+            .extracting(f -> f.get("title"))
+            .containsExactlyElementsOf(SEEDED_FILM_TITLES);
     }
 
     // Note: under gated correlation-key arms every service-child query is self-pinning — the
@@ -452,9 +520,8 @@ class GraphQLQueryTest {
         // through the SQL VALUES table and back, with value-based Row.equals/hashCode joining
         // the developer's response Map to the framework's input keys.
         Map<String, Object> data = execute("{ films { title titleLowercase } }");
-        assertThat(data).extractingByKey("films", as(list(Map.class)))
-            .hasSize(5)
-            .allSatisfy(f -> {
+        var films = assertThat(seededByTitle(data, "films")).hasSize(5);
+        films.allSatisfy(f -> {
                 var title = (String) f.get("title");
                 var titleLowercase = (String) f.get("titleLowercase");
                 assertThat(titleLowercase)
@@ -473,9 +540,8 @@ class GraphQLQueryTest {
         // from one that read the parent row; the unmasked case is
         // films_titleTitlecase_withoutSelectingTitle_serviceFetchesItsOwnColumn.
         Map<String, Object> data = execute("{ films { title titleTitlecase } }");
-        assertThat(data).extractingByKey("films", as(list(Map.class)))
-            .hasSize(5)
-            .allSatisfy(f -> {
+        var films = assertThat(seededByTitle(data, "films")).hasSize(5);
+        films.allSatisfy(f -> {
                 var title = (String) f.get("title");
                 var titleTitlecase = (String) f.get("titleTitlecase");
                 String expected = expectedTitleCase(title);
@@ -496,10 +562,13 @@ class GraphQLQueryTest {
         // rather than expecting it on the key. Regress either and the field resolves to a
         // titlecased null, so this test is the behaviour behind the manual's claim rather than
         // the docs going quietly stale.
+        // The query selects no key, so this case cannot identify its own rows among the ones other
+        // classes insert concurrently. That the seeded five all resolved is the whole claim: a
+        // regression on either half resolves them to a titlecased null.
         Map<String, Object> data = execute("{ films { titleTitlecase } }");
         assertThat(data).extractingByKey("films", as(list(Map.class)))
             .extracting(f -> f.get("titleTitlecase"))
-            .containsExactlyInAnyOrder(
+            .contains(
                 "Academy Dinosaur",
                 "Ace Goldfinger",
                 "Adaptation Holes",
@@ -521,16 +590,22 @@ class GraphQLQueryTest {
         // Selecting only the two colliding participants isolates the seam.
         Map<String, Object> data = execute("{ films { titleTitlecase Length { inventoryId } } }");
         var films = (java.util.List<Map<String, Object>>) data.get("films");
-        assertThat(films).hasSize(5);
         assertThat(films)
-            .as("every film's titleTitlecase resolves — pre-fix this threw a MappingException")
+            .as("every seeded film's titleTitlecase resolves — pre-fix this threw a MappingException "
+                + "for every film, so the seeded five are enough to observe it")
             .extracting(f -> f.get("titleTitlecase"))
-            .containsExactlyInAnyOrder(
+            .contains(
                 "Academy Dinosaur", "Ace Goldfinger", "Adaptation Holes",
                 "Affair Prejudice", "Agent Truman");
+        // Selecting a key would defeat the fixture, so the seeded rows are picked out by the
+        // titlecased title the service returned for them.
+        var seededTitlecase = List.of("Academy Dinosaur", "Ace Goldfinger", "Adaptation Holes",
+            "Affair Prejudice", "Agent Truman");
         int totalInventory = 0;
         for (var f : films) {
-            totalInventory += ((java.util.List<?>) f.get("Length")).size();
+            if (seededTitlecase.contains(f.get("titleTitlecase"))) {
+                totalInventory += ((java.util.List<?>) f.get("Length")).size();
+            }
         }
         assertThat(totalInventory)
             .as("the colliding multiset sibling resolves too: films 1-3 each carry one inventory row")
@@ -582,9 +657,8 @@ class GraphQLQueryTest {
         // returns Map<Row1<Integer>, String> with uppercased titles. End-to-end verification of
         // the KeyLift/SourceKey model and shared emitters against PostgreSQL.
         Map<String, Object> data = execute("{ films { title titleUppercase } }");
-        assertThat(data).extractingByKey("films", as(list(Map.class)))
-            .hasSize(5)
-            .allSatisfy(f -> {
+        var films = assertThat(seededByTitle(data, "films")).hasSize(5);
+        films.allSatisfy(f -> {
                 var title = (String) f.get("title");
                 var titleUppercase = (String) f.get("titleUppercase");
                 assertThat(titleUppercase)
@@ -603,7 +677,7 @@ class GraphQLQueryTest {
         // "__rk_" + env.getField().getResultKey(). All seeded films map to language_id=1 ("English").
         // The Sakila language.name column is char(20), so PostgreSQL pads — strip before compare.
         Map<String, Object> data = execute("{ films { title languageName } }");
-        var films = assertThat(data).extractingByKey("films", as(list(Map.class))).hasSize(5);
+        var films = assertThat(seededByTitle(data, "films")).hasSize(5);
         films.extracting(f -> ((String) f.get("languageName")).strip()).containsOnly("English");
         films.extracting(f -> f.get("title")).doesNotContainNull();
     }
@@ -616,7 +690,7 @@ class GraphQLQueryTest {
         // the result Record by "__rk_" + env.getField().getResultKey() at request time.
         // All seeded films have language_id=1, so the expression resolves to true for each.
         Map<String, Object> data = execute("{ films { title isEnglish } }");
-        var films = assertThat(data).extractingByKey("films", as(list(Map.class))).hasSize(5);
+        var films = assertThat(seededByTitle(data, "films")).hasSize(5);
         films.extracting(f -> f.get("isEnglish")).containsOnly(Boolean.TRUE);
         films.extracting(f -> f.get("title")).doesNotContainNull();
     }
@@ -638,8 +712,10 @@ class GraphQLQueryTest {
         // once unaliased and once aliased in the same query — the mixed case that kills any
         // source-only or record-probing read. The unaliased occurrence's result key is the field
         // name; the aliased one's is the alias. Both must resolve to the same value.
-        Map<String, Object> data = execute("{ films { languageName a: languageName isEnglish x: isEnglish } }");
-        var films = assertThat(data).extractingByKey("films", as(list(Map.class))).hasSize(5);
+        // filmId rides along only so the case can pick out the rows it seeded from the ones other
+        // classes insert while it runs; it is not part of the alias fixture.
+        Map<String, Object> data = execute("{ films { filmId languageName a: languageName isEnglish x: isEnglish } }");
+        var films = assertThat(seededById(data, "films")).hasSize(5);
         films.allSatisfy(f -> {
             assertThat(((String) f.get("languageName")).strip()).isEqualTo("English");
             assertThat(((String) f.get("a")).strip()).isEqualTo("English");
@@ -683,7 +759,7 @@ class GraphQLQueryTest {
         // unbucketed). The two aliases carry the same sub-selection, so per film they must return
         // equal lists.
         Map<String, Object> data = execute("{ films { filmId a: Length { inventoryId } b: Length { inventoryId } } }");
-        assertThat(data).extractingByKey("films", as(list(Map.class)))
+        assertThat(seededById(data, "films"))
             .hasSize(5)
             .allSatisfy(f -> assertThat(f.get("a")).isEqualTo(f.get("b")));
     }
@@ -696,7 +772,7 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute("""
             { films { filmId inlineBundle { a: language { name } b: language { name } } } }
             """);
-        assertThat(data).extractingByKey("films", as(list(Map.class)))
+        assertThat(seededById(data, "films"))
             .hasSize(5)
             .allSatisfy(f -> {
                 Map<String, Object> bundle = (Map<String, Object>) f.get("inlineBundle");
@@ -712,8 +788,10 @@ class GraphQLQueryTest {
         // alias ("foo") of the same field. Document aliases are unrestricted, so this is a legal
         // query; the write side mints __rk___rk_foo and __rk_foo — still distinct — so both resolve
         // rather than colliding. Pins that the prefix separates the client and generator namespaces.
-        Map<String, Object> data = execute("{ films { __rk_foo: languageName foo: languageName } }");
-        assertThat(data).extractingByKey("films", as(list(Map.class)))
+        // filmId rides along only so the case can pick out the seeded rows; the two aliases are the
+        // fixture.
+        Map<String, Object> data = execute("{ films { filmId __rk_foo: languageName foo: languageName } }");
+        assertThat(seededById(data, "films"))
             .hasSize(5)
             .allSatisfy(f -> {
                 assertThat(((String) f.get("__rk_foo")).strip()).isEqualTo("English");
@@ -950,11 +1028,11 @@ class GraphQLQueryTest {
         // silent wrong-answer.
         Map<String, Object> data = execute(
             "{ filmsByEffectiveNullability { filmId } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByEffectiveNullability");
-        assertThat(films)
-            .as("omitting the nullable filter must return the unfiltered baseline of 5 films, "
-                + "not the empty set produced by the pre-R230 `film_id IN (null)` cascade")
-            .hasSize(5);
+        assertThat(data).extractingByKey("filmsByEffectiveNullability", as(list(Map.class)))
+            .as("omitting the nullable filter must return the unfiltered baseline, not the empty "
+                + "set an unguarded `film_id IN (null)` renders as the literal false")
+            .extracting(f -> f.get("filmId"))
+            .containsAll(SEEDED_FILM_IDS);
     }
 
     @Test
@@ -1096,9 +1174,13 @@ class GraphQLQueryTest {
             + "{ totalCount nodes { filmId } } }");
         var conn = assertThat(data).extractingByKey("filmsConnectionByOptionalIds", as(MAP));
         conn.extractingByKey("nodes", as(list(Map.class)))
-            .hasSize(5)
-            .extracting(n -> n.get("filmId")).containsExactly(1, 2, 3, 4, 5);
-        conn.containsEntry("totalCount", 5);
+            .extracting(n -> n.get("filmId"))
+            .as("the page walks the table from the start rather than being zeroed by `IN ()`")
+            .containsSequence(1, 2, 3, 4, 5);
+        conn.extractingByKey("totalCount", as(INTEGER))
+            .as("and the count path composes the same identity condition rather than counting zero")
+            .isNotNull()
+            .isGreaterThanOrEqualTo(SEEDED_FILM_IDS.size());
     }
 
     @Test
@@ -1141,22 +1223,22 @@ class GraphQLQueryTest {
         // ASC, ACADEMY (0.99) trails. Asserting that *both* runtime directions return this
         // exact order pins the opt-out semantics (no regression to multiplier semantics) AND
         // that the baked-in DESC actually takes effect (no regression to ASC).
+        //
+        // The order is read off the seeded rows' relative positions rather than off a fixed page:
+        // film.rental_rate carries DEFAULT 4.99, so a film another class inserts without naming a
+        // rate leads a rate-DESC walk and would push the seed out of a `first: 5` page.
         Map<String, Object> ascResult = execute(
-            "{ filmsOrderedConnection(order: [{field: RATE_DESC_TITLE_ASC, direction: ASC}], first: 5) "
+            "{ filmsOrderedConnection(order: [{field: RATE_DESC_TITLE_ASC, direction: ASC}]) "
             + "{ nodes { title } } }");
         Map<String, Object> descResult = execute(
-            "{ filmsOrderedConnection(order: [{field: RATE_DESC_TITLE_ASC, direction: DESC}], first: 5) "
+            "{ filmsOrderedConnection(order: [{field: RATE_DESC_TITLE_ASC, direction: DESC}]) "
             + "{ nodes { title } } }");
-        var ascTitles = assertThat(ascResult).extractingByKey("filmsOrderedConnection", as(MAP))
-            .extractingByKey("nodes", as(list(Map.class)))
-            .extracting(n -> n.get("title"));
-        var descTitles = assertThat(descResult).extractingByKey("filmsOrderedConnection", as(MAP))
-            .extractingByKey("nodes", as(list(Map.class)))
-            .extracting(n -> n.get("title"));
-        ascTitles.containsExactly("ACE GOLDFINGER", "ADAPTATION HOLES", "AFFAIR PREJUDICE",
+        var expected = List.of("ACE GOLDFINGER", "ADAPTATION HOLES", "AFFAIR PREJUDICE",
             "AGENT TRUMAN", "ACADEMY DINOSAUR");
-        descTitles.containsExactly("ACE GOLDFINGER", "ADAPTATION HOLES", "AFFAIR PREJUDICE",
-            "AGENT TRUMAN", "ACADEMY DINOSAUR");
+        assertThat(seededTitlesInOrder(nodesOf(ascResult, "filmsOrderedConnection")))
+            .containsExactlyElementsOf(expected);
+        assertThat(seededTitlesInOrder(nodesOf(descResult, "filmsOrderedConnection")))
+            .containsExactlyElementsOf(expected);
     }
 
     @Test
@@ -1170,12 +1252,11 @@ class GraphQLQueryTest {
         // regression (rate ASC would put ACADEMY first), and from a secondary-direction
         // regression (title DESC would reverse the 2.99 group) — so it independently pins both
         // per-entry directions, not just that the heterogeneous spec compiles and runs.
+        // Read off the seeded rows' relative positions: rental_rate carries DEFAULT 4.99, so a film
+        // another class inserts leads this walk and would push the seed out of a `first: 5` page.
         Map<String, Object> data = execute(
-            "{ filmsByRateDescTitleAsc(first: 5) { nodes { filmId title } } }");
-        var conn = assertThat(data).extractingByKey("filmsByRateDescTitleAsc", as(MAP));
-        conn.extractingByKey("nodes", as(list(Map.class)))
-            .hasSize(5)
-            .extracting(n -> n.get("title"))
+            "{ filmsByRateDescTitleAsc { nodes { filmId title } } }");
+        assertThat(seededTitlesInOrder(nodesOf(data, "filmsByRateDescTitleAsc")))
             .containsExactly("ACE GOLDFINGER", "ADAPTATION HOLES", "AFFAIR PREJUDICE",
                 "AGENT TRUMAN", "ACADEMY DINOSAUR");
     }
@@ -1189,8 +1270,13 @@ class GraphQLQueryTest {
         // A resolution-layer regression that drops direction: for primaryKey-mode would emit ASC
         // and return 1..5, breaking this test. A pipeline assertion alone would not catch a
         // seek/emission regression.
+        //
+        // Addressed with `last` rather than `first`: the tail of a film_id-DESC walk is the five
+        // lowest ids, which are the seeded rows whatever else the table holds, while its head is
+        // whatever another class inserted most recently. Under ASC the same `last: 5` would return
+        // the five highest ids ascending, so the direction is still what this assertion decides.
         Map<String, Object> data = execute(
-            "{ filmsConnectionDesc(first: 5) { nodes { filmId } } }");
+            "{ filmsConnectionDesc(last: 5) { nodes { filmId } } }");
         var conn = assertThat(data).extractingByKey("filmsConnectionDesc", as(MAP));
         conn.extractingByKey("nodes", as(list(Map.class)))
             .hasSize(5)
@@ -1235,11 +1321,13 @@ class GraphQLQueryTest {
         // filmsByNodeIdArg is a fetch field (the classifier lifts the argument-level same-table
         // @nodeId onto the `WHERE film_id IN (...)` rail). An empty list narrows by nothing
         // (DSL.noCondition() identity) rather than emitting `IN () = false`, so the field returns
-        // the unfiltered baseline of 5 films — the argument-level sibling of
-        // films_filteredBySameTableNodeId_emptyListReturnsUnfilteredBaseline.
+        // the unfiltered baseline — the argument-level sibling of
+        // films_filteredBySameTableNodeId_emptyListReturnsUnfilteredBaseline. An `IN () = false`
+        // regression returns nothing, so the seeded rows being present is the discriminator.
         Map<String, Object> data = execute("{ filmsByNodeIdArg(ids: []) { filmId title } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByNodeIdArg");
-        assertThat(films).hasSize(5);
+        assertThat(data).extractingByKey("filmsByNodeIdArg", as(list(Map.class)))
+            .extracting(f -> f.get("filmId"))
+            .containsAll(SEEDED_FILM_IDS);
     }
 
     @Test
@@ -1277,17 +1365,22 @@ class GraphQLQueryTest {
         // list-arity sibling.
         Map<String, Object> data = execute(
             "{ filmsBySameTableNodeId(filter: {filmIds: []}) { filmId } }");
-        assertThat(data).extractingByKey("filmsBySameTableNodeId", as(LIST)).hasSize(5);
+        assertThat(data).extractingByKey("filmsBySameTableNodeId", as(list(Map.class)))
+            .extracting(f -> f.get("filmId"))
+            .containsAll(SEEDED_FILM_IDS);
     }
 
     @Test
     void films_filteredByRating() {
         // Test data: ACADEMY DINOSAUR=PG, ACE GOLDFINGER=G, ADAPTATION HOLES=NC_17,
         //            AFFAIR PREJUDICE=G, AGENT TRUMAN=PG
-        Map<String, Object> data = execute("{ films(rating: G) { title } }");
+        // PG rather than G, and this is load-bearing: film.rating carries DEFAULT 'G', so every
+        // film another class in this module inserts without naming one is G-rated. No fixture sets
+        // rating explicitly, so PG is the value that bounds this filter to the seed.
+        Map<String, Object> data = execute("{ films(rating: PG) { title } }");
         assertThat(data).extractingByKey("films", as(list(Map.class)))
             .extracting(f -> f.get("title"))
-            .containsExactlyInAnyOrder("ACE GOLDFINGER", "AFFAIR PREJUDICE");
+            .containsExactlyInAnyOrder("ACADEMY DINOSAUR", "AGENT TRUMAN");
     }
 
     @Test
@@ -1311,10 +1404,8 @@ class GraphQLQueryTest {
     @Test
     void films_orderedByFilmId() {
         Map<String, Object> data = execute("{ films { title } }");
-        assertThat(data).extractingByKey("films", as(list(Map.class)))
-            .extracting(f -> f.get("title"))
-            .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER", "ADAPTATION HOLES",
-                "AFFAIR PREJUDICE", "AGENT TRUMAN");
+        assertThat(seededTitlesInOrder((List<Map<String, Object>>) data.get("films")))
+            .containsExactlyElementsOf(SEEDED_FILM_TITLES);
     }
 
     @Test
@@ -1445,11 +1536,14 @@ class GraphQLQueryTest {
 
     @Test
     void filmsConnection_defaultPageSize_returnsUpToDefault() {
-        // Default page size is 100; test DB has 5 films, so all 5 are returned
+        // No `first` supplied: the default page size is 100, so the page is not trimmed below the
+        // seeded rows. Asserting the page size itself would assert how many films the table holds.
         Map<String, Object> data = execute(
             "{ filmsConnection { nodes { filmId } } }");
         assertThat(data).extractingByKey("filmsConnection", as(MAP))
-            .extractingByKey("nodes", as(LIST)).hasSize(5);
+            .extractingByKey("nodes", as(list(Map.class)))
+            .extracting(n -> n.get("filmId"))
+            .containsAll(SEEDED_FILM_IDS);
     }
 
     @Test
@@ -1475,8 +1569,10 @@ class GraphQLQueryTest {
 
     @Test
     void filmsConnection_lastPage_hasNextPageFalse() {
+        // Addressed from the end rather than by counting to it: `last` lands on the final page
+        // whatever the table holds, and the claim is that the final page reports no next page.
         Map<String, Object> data = execute(
-            "{ filmsConnection(first: 5) { nodes { title } pageInfo { hasNextPage } } }");
+            "{ filmsConnection(last: 5) { nodes { title } pageInfo { hasNextPage } } }");
         var conn = assertThat(data).extractingByKey("filmsConnection", as(MAP));
         conn.extractingByKey("nodes", as(LIST)).hasSize(5);
         conn.extractingByKey("pageInfo", as(MAP)).containsEntry("hasNextPage", false);
@@ -1622,14 +1718,17 @@ class GraphQLQueryTest {
 
     @Test
     void filmsConnection_backward_returnsLastNFilms() {
+        // `last` with no cursor addresses the end of the connection, so which rows come back is a
+        // property of the table rather than of the query. What the query decides is the rest: two
+        // rows, still in the connection's ascending film_id order (the emitted CTE inverts the
+        // ORDER BY to take the tail and then restores it), at the end of the walk.
         Map<String, Object> data = execute(
-            "{ filmsConnection(last: 2) { nodes { title } pageInfo { hasNextPage hasPreviousPage } } }");
+            "{ filmsConnection(last: 2) { nodes { filmId } pageInfo { hasNextPage hasPreviousPage } } }");
         var conn = assertThat(data).extractingByKey("filmsConnection", as(MAP));
-        // last 2 in ascending film_id order: AFFAIR PREJUDICE, AGENT TRUMAN
         conn.extractingByKey("nodes", as(list(Map.class)))
             .hasSize(2)
-            .extracting(n -> n.get("title"))
-            .containsExactly("AFFAIR PREJUDICE", "AGENT TRUMAN");
+            .extracting(n -> (Integer) n.get("filmId"))
+            .isSortedAccordingTo(java.util.Comparator.naturalOrder());
         conn.extractingByKey("pageInfo", as(MAP))
             .containsEntry("hasPreviousPage", true)
             .containsEntry("hasNextPage", false);
@@ -1637,19 +1736,20 @@ class GraphQLQueryTest {
 
     @Test
     void filmsConnection_backward_withBeforeCursor_returnsPrevPage() {
-        // First get the last page to obtain a before cursor (startCursor of last page)
-        Map<String, Object> lastPageData = execute(
-            "{ filmsConnection(last: 2) { nodes { title } pageInfo { startCursor } } }");
-        String startCursor = assertThat(lastPageData).extractingByKey("filmsConnection", as(MAP))
+        // The before cursor comes off a forward page rather than off `last: 2`, which would address
+        // the end of the table and hand this case a cursor into whatever rows another class had
+        // inserted. Four rows forward from the start is cursor(4) whatever the table holds.
+        Map<String, Object> forwardData = execute(
+            "{ filmsConnection(first: 4) { pageInfo { endCursor } } }");
+        String startCursor = assertThat(forwardData).extractingByKey("filmsConnection", as(MAP))
             .extractingByKey("pageInfo", as(MAP))
-            .extractingByKey("startCursor", as(STRING))
+            .extractingByKey("endCursor", as(STRING))
             .isNotNull()
             .actual();
 
         // Paginate backwards before that cursor
         Map<String, Object> prevPageData = execute(
             "{ filmsConnection(last: 2, before: \"" + startCursor + "\") { nodes { title } } }");
-        // last: 2 returns [AFFAIR PREJUDICE (4), AGENT TRUMAN (5)]; startCursor = cursor(4).
         // "2 items before cursor(4)" in ascending order = items 2, 3: ACE GOLDFINGER, ADAPTATION HOLES.
         assertThat(prevPageData).extractingByKey("filmsConnection", as(MAP))
             .extractingByKey("nodes", as(list(Map.class)))
@@ -1663,18 +1763,29 @@ class GraphQLQueryTest {
     void filmsConnection_totalCount_returnsTotalRowCount() {
         // Structural FilmsConnection declares totalCount: Int; root fetcher binds (table, condition)
         // onto ConnectionResult so ConnectionHelper.totalCount issues SELECT count(*) on demand.
+        // filmsConnection takes no filter, so the exact number is a property of the table, not of
+        // the query: the exact-count claim lives on the bounded sibling
+        // filmsOrderedConnection_totalCount_underFilter_appliesSamePredicate. What is asserted here
+        // is that the field is wired at all and counts rows rather than resolving null or zero.
         Map<String, Object> data = execute(
             "{ filmsConnection { totalCount } }");
         assertThat(data).extractingByKey("filmsConnection", as(MAP))
-            .containsEntry("totalCount", 5);
+            .extractingByKey("totalCount", as(INTEGER))
+            .isNotNull()
+            .isGreaterThanOrEqualTo(SEEDED_FILM_IDS.size());
     }
 
     @Test
     void filmsOrderedConnection_totalCount_underFilter_appliesSamePredicate() {
-        // SELECT count(*) is run with the same Condition the page query used; rating=G filter
-        // restricts the count to the 2 G-rated films in the seed data.
+        // SELECT count(*) is run with the same Condition the page query used; the rating filter
+        // restricts the count to the 2 PG-rated films in the seed data.
+        //
+        // PG rather than G, and this is load-bearing: film.rating carries DEFAULT 'G', so every
+        // film another class in this module inserts without naming a rating is G-rated and would
+        // inflate a G-filtered count. No fixture sets rating explicitly, so PG bounds the count to
+        // the seed. A writer that starts inserting PG films has to revisit this.
         Map<String, Object> data = execute(
-            "{ filmsOrderedConnection(rating: G, first: 1) { totalCount nodes { title } } }");
+            "{ filmsOrderedConnection(rating: PG, first: 1) { totalCount nodes { title } } }");
         var conn = assertThat(data).extractingByKey("filmsOrderedConnection", as(MAP));
         conn.containsEntry("totalCount", 2);
         conn.extractingByKey("nodes", as(LIST)).hasSize(1); // page-trimmed by first:1
@@ -1729,9 +1840,15 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void filmsFaceted_noFilter_countsMatchPlainAggregates() {
+    void filmsFaceted_noFacetFilter_countsMatchPlainAggregates() {
+        // A facet count is a count, so the query bounds the base it counts. `extra.lengthIs` is a
+        // non-facet filter field: it belongs to every facet arm's base predicate and to none of
+        // their own predicates, so it bounds all arms alike without standing in for a facet. The
+        // five values are the seeded films' lengths, and film.length has no default, so every film
+        // another class in this module inserts carries NULL there and falls outside the bound.
         Map<String, Object> data = execute(
-            "{ filmsFaceted { facets { rating { value count } length { value count } } } }");
+            "{ filmsFaceted(extra: {lengthIs: [48, 50, 86, 117, 169]}) "
+            + "{ facets { rating { value count } length { value count } } } }");
         // SELECT rating, COUNT(*) FROM film GROUP BY rating — enum values surface as the
         // GraphQL enum (NC-17's SDL name is NC_17), counts DESC then enum declaration order.
         assertThat(facetValues(data, "rating"))
@@ -1758,7 +1875,8 @@ class GraphQLQueryTest {
         // with their global counts, so the user can pivot), while the length facet applies it
         // (only the two G films' lengths remain). The page itself is filtered as usual.
         Map<String, Object> data = execute("""
-            { filmsFaceted(filter: { rating: [G] }) {
+            { filmsFaceted(filter: { rating: [G] },
+                           extra: {lengthIs: [48, 50, 86, 117, 169]}) {
                 facets { rating { value count } length { value count } }
                 nodes { title }
             } }""");
@@ -1867,8 +1985,12 @@ class GraphQLQueryTest {
     void filmsFaceted_nullableFacet_preservesTheNullBucket() {
         // original_language_id is NULL for every seeded film; the nullable-element facet
         // preserves the NULL group as its own bucket and the decoded value round-trips as null.
+        // The non-facet `extra.lengthIs` bound keeps the bucket's count about the seeded films
+        // rather than about every film in the table; see
+        // filmsFaceted_noFacetFilter_countsMatchPlainAggregates.
         Map<String, Object> data = execute(
-            "{ filmsFaceted { facets { originalLanguage { value count } } } }");
+            "{ filmsFaceted(extra: {lengthIs: [48, 50, 86, 117, 169]}) "
+            + "{ facets { originalLanguage { value count } } } }");
         assertThat(facetValues(data, "originalLanguage"))
             .extracting(v -> v.get("value"), v -> v.get("count"))
             .containsExactly(org.assertj.core.groups.Tuple.tuple(null, 5));
@@ -2179,7 +2301,7 @@ class GraphQLQueryTest {
             .hasSize(1)
             .first(as(MAP)).extractingByKey("films", as(list(Map.class)))
             .extracting(f -> f.get("filmId"))
-            .containsExactlyInAnyOrder(1, 2, 3, 4, 5);
+            .containsAll(SEEDED_FILM_IDS);
     }
 
     @Test
@@ -2198,7 +2320,8 @@ class GraphQLQueryTest {
         var langs = assertThat(data).extractingByKey("languageByKey", as(list(Map.class))).hasSize(3);
         langs.filteredOn(l -> Integer.valueOf(1).equals(l.get("languageId")))
             .singleElement(as(MAP))
-            .extractingByKey("films", as(LIST)).hasSize(5);
+            .extractingByKey("films", as(list(Map.class)))
+            .extracting(f -> f.get("filmId")).containsAll(SEEDED_FILM_IDS);
         langs.filteredOn(l -> Integer.valueOf(2).equals(l.get("languageId")))
             .singleElement(as(MAP))
             .extractingByKey("films", as(LIST)).isEmpty();
@@ -2219,7 +2342,8 @@ class GraphQLQueryTest {
         var langs = assertThat(data).extractingByKey("languageByKey", as(list(Map.class)));
         langs.extracting(l -> l.get("languageId")).containsExactly(3, 1, 2);
         langs.element(0, as(MAP)).extractingByKey("films", as(LIST)).isEmpty();
-        langs.element(1, as(MAP)).extractingByKey("films", as(LIST)).hasSize(5);
+        langs.element(1, as(MAP)).extractingByKey("films", as(list(Map.class)))
+            .extracting(f -> f.get("filmId")).containsAll(SEEDED_FILM_IDS);
         langs.element(2, as(MAP)).extractingByKey("films", as(LIST)).isEmpty();
     }
 
@@ -3028,11 +3152,8 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "{ films { filmDetails { title } } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
-        assertThat(films).hasSize(5);
         assertThat(films).extracting(f -> ((Map<String, Object>) f.get("filmDetails")).get("title"))
-            .containsExactly(
-                "ACADEMY DINOSAUR", "ACE GOLDFINGER", "ADAPTATION HOLES",
-                "AFFAIR PREJUDICE", "AGENT TRUMAN");
+            .containsAll(SEEDED_FILM_TITLES);
     }
 
     // ===== Record-sourced lookup-keyed batched read: @record parent + @splitQuery + @lookupKey =====
@@ -3182,6 +3303,7 @@ class GraphQLQueryTest {
         // the inner anchor.
         Map<String, Object> data = execute("""
             { films {
+                filmId
                 languageName
                 isEnglish
                 projected {
@@ -3192,7 +3314,7 @@ class GraphQLQueryTest {
                 }
             } }
             """);
-        var films = assertThat(data).extractingByKey("films", as(list(Map.class))).hasSize(5);
+        var films = assertThat(seededById(data, "films")).hasSize(5);
         films.allSatisfy(f -> {
             // language.name is char(20) in Sakila, so PostgreSQL pads — strip before compare.
             var flatLanguageName = ((String) f.get("languageName")).strip();
@@ -3218,7 +3340,7 @@ class GraphQLQueryTest {
         // Requesting summary across the films root list: each row carries its own
         // FilmSummary projection, including the per-row release_year.
         Map<String, Object> data = execute("{ films { filmId summary { releaseYear } } }");
-        assertThat(data).extractingByKey("films", as(list(Map.class))).allSatisfy(f ->
+        assertThat(seededById(data, "films")).hasSize(5).allSatisfy(f ->
             // All seeded films carry release_year 2006
             assertThat(f.get("summary")).asInstanceOf(MAP)
                 .containsKey("releaseYear")
@@ -3610,11 +3732,13 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     void implicitInputCondition_nullField_omitsPredicate_returnsAll() {
         // filmId: null → DSL.val(null, table.FILM_ID) null-guard skips the predicate →
-        // no WHERE filter → all 5 films returned. "Absent means unconstrained" semantics.
+        // no WHERE filter → every film comes back, the seeded five among them. "Absent means
+        // unconstrained" semantics; the sibling that supplies a filmId narrows to one row.
         Map<String, Object> data = execute(
             "{ filmsWithImplicitInput(filter: {filmId: null}) { filmId } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsWithImplicitInput");
-        assertThat(films).hasSize(5);
+        assertThat(data).extractingByKey("filmsWithImplicitInput", as(list(Map.class)))
+            .extracting(f -> f.get("filmId"))
+            .containsAll(SEEDED_FILM_IDS);
     }
 
     @Test
@@ -3626,9 +3750,11 @@ class GraphQLQueryTest {
         // ((film_id >= 2) AND (film_id = 1)), but with suppression it returns 4 rows (2..5).
         Map<String, Object> data = execute(
             "{ filmsWithImplicitInputOuterOverride(filter: {filmId: \"1\"}) { filmId } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsWithImplicitInputOuterOverride");
-        assertThat(films).extracting(f -> f.get("filmId"))
-            .containsExactlyInAnyOrder(2, 3, 4, 5);
+        assertThat(data).extractingByKey("filmsWithImplicitInputOuterOverride", as(list(Map.class)))
+            .extracting(f -> f.get("filmId"))
+            .contains(2, 3, 4, 5)
+            .as("film 1 is excluded by the override's own film_id >= 2")
+            .doesNotContain(1);
     }
 
     @Test
@@ -4068,10 +4194,13 @@ class GraphQLQueryTest {
 
     @Test
     void queryServiceRecord_filmCount_returnsScalar() {
-        // SampleQueryService.filmCount returns Integer; graphql-java coerces to Int!.
-        // Five films are seeded by init.sql.
+        // SampleQueryService.filmCount returns Integer; graphql-java coerces to Int!. The service
+        // counts the film table, and other classes in this module insert films, so the assertion is
+        // that a count came back at all rather than what it counted to.
         Map<String, Object> data = execute("{ filmCount }");
-        assertThat(data.get("filmCount")).isEqualTo(5);
+        assertThat(data).extractingByKey("filmCount", as(INTEGER))
+            .isNotNull()
+            .isGreaterThanOrEqualTo(SEEDED_FILM_IDS.size());
     }
 
     @Test
@@ -4140,8 +4269,9 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "{ allContent { __typename contentId title } }");
         List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allContent");
-        assertThat(items).hasSize(4);
-        assertThat(items).extracting(i -> i.get("__typename"))
+        assertThat(seededContent(items))
+            .as("each seeded row routes to the participant its discriminator names")
+            .extracting(i -> i.get("__typename"))
             .containsExactlyInAnyOrder("FilmContent", "FilmContent", "ShortContent", "ShortContent");
     }
 
@@ -4154,11 +4284,12 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute("""
             { allContent {
                 __typename
+                title
                 ... on FilmContent { length }
             } }
             """);
         List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allContent");
-        var filmItems = items.stream()
+        var filmItems = seededContent(items).stream()
             .filter(i -> "FilmContent".equals(i.get("__typename")))
             .toList();
         assertThat(filmItems).hasSize(2);
@@ -4182,18 +4313,24 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void filmContent_singleValue_routesToFilmContent() {
-        // Film #1 (ACADEMY DINOSAUR) has a content entry with CONTENT_TYPE='FILM' and film_id=1.
+        // Film #2 (ACE GOLDFINGER) has a content entry with CONTENT_TYPE='FILM' and film_id=2.
         // filmContent is a ChildField.TableInterfaceField on Film, resolved via the FK
         // content.film_id → film.film_id. The TypeResolver must route it to FilmContent.
+        //
+        // Film 2 rather than film 1, and the choice is load-bearing: filmContent is
+        // single-cardinality, so a second content row on the same film makes the fetch throw
+        // TooManyRows. The two classes in this module that insert content attach their rows to
+        // film 1, so film 2 is the parent this case can own. A writer that starts attaching to
+        // film 2 has to revisit this.
         Map<String, Object> data = execute(
-            "{ filmById(film_id: [\"1\"]) { filmContent { __typename contentId title } } }");
+            "{ filmById(film_id: [\"2\"]) { filmContent { __typename contentId title } } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
         assertThat(films).hasSize(1);
         var film = films.get(0);
         var content = (Map<String, Object>) film.get("filmContent");
         assertThat(content).isNotNull();
         assertThat(content.get("__typename")).isEqualTo("FilmContent");
-        assertThat(content.get("title")).isEqualTo("ACADEMY DINOSAUR (extended)");
+        assertThat(content.get("title")).isEqualTo("ACE GOLDFINGER (extended)");
     }
 
     @Test
@@ -4235,9 +4372,11 @@ class GraphQLQueryTest {
             .as("one batched child statement for all three films; captured: " + SQL_LOG)
             .hasSize(1);
 
+        // Buckets narrowed to the seeded content rows: the other classes that write `content`
+        // attach their rows to a film, so a bucket can hold rows this case did not seed.
         var byFilmId = films.stream().collect(java.util.stream.Collectors.toMap(
             f -> String.valueOf(f.get("filmId")),
-            f -> (List<Map<String, Object>>) f.get("filmContents")));
+            f -> seededContent((List<Map<String, Object>>) f.get("filmContents"))));
         assertThat(byFilmId.get("1")).extracting(c -> c.get("title"))
             .containsExactly("ACADEMY DINOSAUR (extended)");
         assertThat(byFilmId.get("2")).extracting(c -> c.get("title"))
@@ -4259,13 +4398,16 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute("""
             { filmById(film_id: ["1", "2"]) { filmContents {
                 __typename
+                title
                 ... on FilmContent { rating }
             } } }
             """);
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
-        var contents = films.stream()
+        // Bounded by film id, but not by content: the other classes that write `content` attach
+        // their rows to film 1, so the seeded rows are picked out by title.
+        var contents = seededContent(films.stream()
             .flatMap(f -> ((List<Map<String, Object>>) f.get("filmContents")).stream())
-            .toList();
+            .toList());
         assertThat(contents).hasSize(2);
         assertThat(contents).allSatisfy(c ->
             assertThat(c.get("rating"))
@@ -4302,11 +4444,12 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute("""
             { allContent {
                 __typename
+                title
                 ... on FilmContent { rating }
             } }
             """);
         List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allContent");
-        var filmItems = items.stream()
+        var filmItems = seededContent(items).stream()
             .filter(i -> "FilmContent".equals(i.get("__typename")))
             .toList();
         assertThat(filmItems).hasSize(2);
@@ -4367,11 +4510,13 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute("""
             { allContent {
                 __typename
+                title
                 ... on FilmContent { length }
                 ... on ShortContent { description }
             } }
             """);
-        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allContent");
+        List<Map<String, Object>> items = seededContent(
+            (List<Map<String, Object>>) data.get("allContent"));
         var filmItems = items.stream()
             .filter(i -> "FilmContent".equals(i.get("__typename")))
             .toList();
@@ -4411,10 +4556,13 @@ class GraphQLQueryTest {
                 "{ allContentConnection(" + args + ") { totalCount pageInfo { hasNextPage endCursor } "
                 + "edges { node { __typename title } } } }");
             var connection = (Map<String, Object>) data.get("allContentConnection");
-            assertThat(connection.get("totalCount"))
-                .as("totalCount counts the base under the discriminator restriction, so it agrees "
-                    + "with the walk's length rather than with any joined row count")
-                .isEqualTo(4);
+            // allContentConnection takes no filter and two other classes insert into `content`, so
+            // the exact count is a property of the table. The claim that totalCount counts the base
+            // rather than a joined row set is held by allPartiesConnection's walk below, on the
+            // joined shape where it can go wrong and over a table nothing in this module writes.
+            assertThat(connection).extractingByKey("totalCount", as(INTEGER))
+                .isNotNull()
+                .isGreaterThanOrEqualTo(SEEDED_CONTENT_TITLES.size());
             var edges = (List<Map<String, Object>>) connection.get("edges");
             assertThat(edges).hasSize(1);
             var node = (Map<String, Object>) edges.get(0).get("node");
@@ -4435,14 +4583,18 @@ class GraphQLQueryTest {
     void allContentConnection_backwardPage_takesTheLastRowsInForwardOrder() {
         // first: null is required, not incidental: @asConnection synthesises `first` carrying the
         // default page size, and the helper rejects a request that specifies both ends.
+        //
+        // `last` with no cursor addresses the end of the table, so which rows come back is not this
+        // query's doing; that the page is returned in forward order is, which is the name of the
+        // case. The before-cursor sibling below pins the row identities on a bounded page.
         Map<String, Object> data = execute(
-            "{ allContentConnection(first: null, last: 2) { edges { node { __typename title } } } }");
+            "{ allContentConnection(first: null, last: 2) { edges { node { contentId } } } }");
         var connection = (Map<String, Object>) data.get("allContentConnection");
         var edges = (List<Map<String, Object>>) connection.get("edges");
-        assertThat(edges).extracting(e -> ((Map<String, Object>) e.get("node")).get("title"))
-            .containsExactly("Sunrise", "Interlude");
-        assertThat(edges).extracting(e -> ((Map<String, Object>) e.get("node")).get("__typename"))
-            .containsExactly("ShortContent", "ShortContent");
+        assertThat(edges)
+            .hasSize(2)
+            .extracting(e -> (Integer) ((Map<String, Object>) e.get("node")).get("contentId"))
+            .isSortedAccordingTo(java.util.Comparator.naturalOrder());
     }
 
     @Test
@@ -4876,8 +5028,14 @@ class GraphQLQueryTest {
         for (int filmId : new int[] {1, 2}) {
             var connection = byId.get(filmId);
             var edges = (List<Map<String, Object>>) connection.get("edges");
-            assertThat(edges).hasSize(1);
-            var node = (Map<String, Object>) edges.get(0).get("node");
+            // The page is bounded by `first`, but which content rows fall in it is not: the other
+            // classes that write `content` attach to a film too. Narrow to the seeded row, which
+            // sorts first on the content primary key.
+            var nodes = seededContent(edges.stream()
+                .map(e -> (Map<String, Object>) e.get("node"))
+                .toList());
+            assertThat(nodes).hasSize(1);
+            var node = nodes.get(0);
             assertThat(node.get("__typename")).isEqualTo("FilmContent");
             assertThat(node.get("rating"))
                 .as("the gated subselect's alias survives the windowed staging and the scatter")
@@ -4909,11 +5067,13 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute("""
             { allContent {
                 __typename
+                title
                 ... on FilmContent { length rating }
                 ... on ShortContent { description }
             } }
             """);
-        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allContent");
+        List<Map<String, Object>> items = seededContent(
+            (List<Map<String, Object>>) data.get("allContent"));
         var filmItems = items.stream()
             .filter(i -> "FilmContent".equals(i.get("__typename")))
             .toList();
@@ -4945,10 +5105,12 @@ class GraphQLQueryTest {
         // Actor rows under the Searchable interface contract; __typename resolves per row.
         Map<String, Object> data = execute("{ search { __typename name } }");
         List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("search");
-        assertThat(items).hasSize(8);
         long films = items.stream().filter(i -> "Film".equals(i.get("__typename"))).count();
         long actors = items.stream().filter(i -> "Actor".equals(i.get("__typename"))).count();
-        assertThat(films).isEqualTo(5);
+        // Both branches of the union have to be present, which is the claim. The actor count is
+        // exact because nothing in this module writes `actor`; the film count is a floor because
+        // eleven classes write `film`.
+        assertThat(films).isGreaterThanOrEqualTo(5);
         assertThat(actors).isEqualTo(3);
     }
 
@@ -4973,7 +5135,7 @@ class GraphQLQueryTest {
         var actorRows = items.stream()
             .filter(i -> "Actor".equals(i.get("__typename")))
             .toList();
-        assertThat(filmRows).hasSize(5);
+        assertThat(filmRows).hasSizeGreaterThanOrEqualTo(5);
         assertThat(actorRows).hasSize(3);
         assertThat(filmRows).allSatisfy(i -> {
             assertThat(i.get("filmId")).as("Film.filmId").isNotNull();
@@ -5020,9 +5182,10 @@ class GraphQLQueryTest {
             } }
             """);
         List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("documents");
-        assertThat(items).hasSize(8);
+        assertThat(items).hasSizeGreaterThanOrEqualTo(8);
         assertThat(items).extracting(i -> (String) i.get("__typename"))
-            .allSatisfy(tn -> assertThat(tn).isIn("Film", "Actor"));
+            .allSatisfy(tn -> assertThat(tn).isIn("Film", "Actor"))
+            .contains("Film", "Actor");
     }
 
     @Test
@@ -5118,19 +5281,30 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void searchConnection_lastPage_hasNextPageFalse() {
-        // first: 8 returns all 8 rows; hasNextPage is false because over-fetch returns 8 rows
-        // (less than pageSize+1 = 9).
-        Map<String, Object> data = execute("""
-            { searchConnection(first: 8) {
-                nodes { __typename }
-                pageInfo { hasNextPage }
-            } }
-            """);
-        var conn = (Map<String, Object>) data.get("searchConnection");
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
-        assertThat(nodes).hasSize(8);
-        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
-        assertThat(pageInfo.get("hasNextPage")).isEqualTo(false);
+        // Walked to the end rather than sized to it. searchConnection synthesises forward
+        // pagination only, so the last page cannot be addressed directly, and a `first` sized to
+        // the seed stops being the last page the moment another class inserts a film. What the
+        // claim needs is a page with nothing past it, wherever that falls: hasNextPage is false
+        // there because the limit+1 over-fetch probe comes back short.
+        String after = null;
+        Map<String, Object> pageInfo;
+        int walked = 0;
+        do {
+            String args = after == null ? "first: 8" : "first: 8, after: \"" + after + "\"";
+            Map<String, Object> data = execute("{ searchConnection(" + args + ") "
+                + "{ nodes { __typename } pageInfo { hasNextPage endCursor } } }");
+            var conn = (Map<String, Object>) data.get("searchConnection");
+            walked += ((List<Map<String, Object>>) conn.get("nodes")).size();
+            pageInfo = (Map<String, Object>) conn.get("pageInfo");
+            after = (String) pageInfo.get("endCursor");
+        } while (Boolean.TRUE.equals(pageInfo.get("hasNextPage")) && walked < 200);
+
+        assertThat(pageInfo.get("hasNextPage"))
+            .as("the walk reached a page with nothing past it")
+            .isEqualTo(false);
+        assertThat(walked)
+            .as("and got there over the seeded rows rather than by finding the union empty")
+            .isGreaterThanOrEqualTo(8);
     }
 
     @Test
@@ -5138,8 +5312,10 @@ class GraphQLQueryTest {
     void searchConnection_inlineFragmentsResolvePerTypeOnConnectionPath() {
         // Confirms the connection path retains TypeResolver routing: inline fragments dispatch
         // per concrete type so Film rows have filmId+title, Actor rows have actorId+firstName.
+        // The page is wide enough to hold both branches whatever the film table holds; a page
+        // sized to the seed would drop rows once another class inserted a film.
         Map<String, Object> data = execute("""
-            { searchConnection(first: 8) {
+            { searchConnection(first: 100) {
                 nodes {
                     __typename
                     ... on Film { filmId title }
@@ -5151,7 +5327,7 @@ class GraphQLQueryTest {
         List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
         var filmRows = nodes.stream().filter(i -> "Film".equals(i.get("__typename"))).toList();
         var actorRows = nodes.stream().filter(i -> "Actor".equals(i.get("__typename"))).toList();
-        assertThat(filmRows).hasSize(5);
+        assertThat(filmRows).hasSizeGreaterThanOrEqualTo(5);
         assertThat(actorRows).hasSize(3);
         assertThat(filmRows).allSatisfy(i -> {
             assertThat(i.get("filmId")).as("Film.filmId").isNotNull();
@@ -5188,29 +5364,49 @@ class GraphQLQueryTest {
     void searchConnection_totalCount_returnsTotalRowCountAcrossParticipants() {
         // ConnectionResult carries the UNION-ALL derived table 'pages' so
         // ConnectionHelper.totalCount runs SELECT count(*) FROM (UNION ALL Film + Actor) AS pages.
-        // 5 films + 3 actors = 8 total; the count is independent of the page window.
+        // The seed is 5 films + 3 actors; searchConnection takes no filter and other classes in
+        // this module insert films, so the count is asserted as a floor. What that still
+        // discriminates is the failure this case is for: a count over one branch of the union
+        // instead of both reports 3 or 5, and an unwired count reports null.
         Map<String, Object> data = execute("""
             { searchConnection(first: 1) { totalCount } }
             """);
         var conn = (Map<String, Object>) data.get("searchConnection");
-        assertThat(conn.get("totalCount")).isEqualTo(8);
+        assertThat(conn).extractingByKey("totalCount", as(INTEGER))
+            .isNotNull()
+            .isGreaterThanOrEqualTo(8);
     }
 
     @Test
     @SuppressWarnings("unchecked")
     void searchConnection_totalCount_independentOfAfterCursor() {
-        // The count is over the full UNION ALL, not the page window — so paging past the start
-        // with an after cursor still reports the full 8.
-        Map<String, Object> page1Data = execute("""
-            { searchConnection(first: 3) { pageInfo { endCursor } } }
-            """);
-        var pageInfo1 = (Map<String, Object>) ((Map<String, Object>) page1Data.get("searchConnection")).get("pageInfo");
-        String endCursor = (String) pageInfo1.get("endCursor");
+        // The count is over the full UNION ALL, not the page window: paging past the start with an
+        // after cursor must not shrink it.
+        //
+        // Read on the *last* page, which is what makes one number enough. There the rows after the
+        // cursor number at most the page size, so a count that inherited the seek predicate reports
+        // three or fewer while the whole union is at least the seed's eight. Comparing two pages'
+        // counts instead would be the more direct statement of the claim and is not available: they
+        // are two requests, and a film another class inserts between them fails the comparison for
+        // a reason that is not this query's.
+        String after = null;
+        Map<String, Object> conn;
+        Map<String, Object> pageInfo;
+        int walked = 0;
+        do {
+            String args = after == null ? "first: 3" : "first: 3, after: \"" + after + "\"";
+            Map<String, Object> data = execute("{ searchConnection(" + args + ") "
+                + "{ totalCount nodes { __typename } pageInfo { hasNextPage endCursor } } }");
+            conn = (Map<String, Object>) data.get("searchConnection");
+            walked += ((List<Map<String, Object>>) conn.get("nodes")).size();
+            pageInfo = (Map<String, Object>) conn.get("pageInfo");
+            after = (String) pageInfo.get("endCursor");
+        } while (Boolean.TRUE.equals(pageInfo.get("hasNextPage")) && walked < 200);
 
-        Map<String, Object> page2Data = execute(
-            "{ searchConnection(first: 3, after: \"" + endCursor + "\") { totalCount } }");
-        var conn = (Map<String, Object>) page2Data.get("searchConnection");
-        assertThat(conn.get("totalCount")).isEqualTo(8);
+        assertThat(conn).extractingByKey("totalCount", as(INTEGER))
+            .as("the count on the final page still spans the whole union, not the rows past its cursor")
+            .isNotNull()
+            .isGreaterThanOrEqualTo(8);
     }
 
     @Test
@@ -5247,7 +5443,9 @@ class GraphQLQueryTest {
             { documentsConnection(first: 1) { totalCount } }
             """);
         var conn = (Map<String, Object>) data.get("documentsConnection");
-        assertThat(conn.get("totalCount")).isEqualTo(8);
+        assertThat(conn).extractingByKey("totalCount", as(INTEGER))
+            .isNotNull()
+            .isGreaterThanOrEqualTo(8);
     }
 
     // ===== Composite-PK participants in connection mode =====

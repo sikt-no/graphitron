@@ -1,7 +1,8 @@
-# All films, ordered by primary key (default order). The seed data is five rows with
-# stable titles; the approved JSON next to this file pins the exact expected response.
+# Five films, named by id. An approval test compares the whole response, so it has to query a
+# bounded set: `films` with no argument would return every row in the table, and in this module
+# other test classes insert films while this one runs. Ask for the rows you approved.
 {
-    films {
+    filmById(film_id: ["1", "2", "3", "4", "5"]) {
         filmId
         title
         rating

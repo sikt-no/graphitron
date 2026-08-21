@@ -1,5 +1,5 @@
 {
-  "films" : [ {
+  "filmById" : [ {
     "filmId" : 1,
     "title" : "ACADEMY DINOSAUR",
     "rating" : "PG"
