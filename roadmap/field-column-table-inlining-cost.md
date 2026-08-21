@@ -51,3 +51,20 @@ it.
 
 Found by, not caused by, the store-performance skill's dry run. Filed separately rather than widened
 into that item, whose subject is the methodology.
+
+## A live reader has since turned up, which moves the premise above
+
+Added by the session that filed `roadmap/diagnostics-drain-overruns-its-session-budget.md`. The claim
+that nothing reads this relation in a way that pays the cost today is no longer safe. The language
+server's diagnostics drain reads it, in the one statement `DiagnosticFacts` issues per graph, and on a
+real dev session that statement overran its 30 s budget and was aborted, so a developer's diagnostics
+stopped tracking their schema. That is the "first real reader" this item's own reasoning says the lever
+should be pulled for, and it is not a build-time reader, which is why the build's timings did not see
+it coming.
+
+What it does not establish is that this relation is the expensive term in that statement. The drain
+reads it filtered by graph and by explicit type-field pairs, unlike the 151-second unfiltered
+measurement, and the statement also carries the census-side join shape that
+`roadmap/goto-definition-navigation-budget.md` measured at about 1.1 s per evaluation on this store.
+Attribution across that statement's roughly twenty subqueries belongs to the drain's own item; what
+belongs here is that the reader now exists and the cost has somewhere to land.

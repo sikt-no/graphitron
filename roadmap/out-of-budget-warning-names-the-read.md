@@ -74,6 +74,20 @@ the line itself rather than in the manual. The logger name is spelled out becaus
 developer types into a logback config, and it is the boundary's own logger, so naming it costs
 nothing that a rename would not already have to touch.
 
+## Two neighbours
+
+`roadmap/lsp-teardown-stream-closed-write-noise.md` is the same principle applied to the same console
+from the other end: it removes a burst of `SEVERE` stack traces that a routine editor reattach
+produces, on the grounds that noise trains a developer to ignore the one console where a real dev-loop
+failure would appear. This item removes a thousand-character `WARNING` on the same grounds. They touch
+no common code, and a reviewer of either should read the other's problem statement, because the
+standard being set is "what a line in this console has to earn".
+
+`roadmap/goto-definition-navigation-budget.md` asks whether navigation gets its own reader and its own
+budget. That is a question about which door answers, and this item's vocabulary is deliberately
+independent of it: a third reader changes what `DEFINITION` is answered by and not what it is called,
+so a new budget lands here as a different number in the same sentence.
+
 ## What does not change
 
 * No posture. Every surface still does exactly what it does today with an `OutOfBudget` arm; the

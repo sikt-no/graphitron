@@ -73,9 +73,29 @@ empty list to clear the client's squiggles. Publishing the drain's stale list af
 restore diagnostics for a buffer the developer has closed. The publish loop therefore skips any URI
 the workspace no longer holds a view for.
 
-**Shutdown.** The executor is shut down when the server does, so `graphitron:dev` does not keep a
-live thread past `exit`. Daemon threads make the JVM exit correct regardless; the explicit shutdown is
-what makes a drain in flight stop being published into a closing client.
+**Shutdown, on the seam another item is already building.** The executor is shut down when the
+connection ends, so `graphitron:dev` does not keep a live thread or a live drain past a detach. Daemon
+threads make JVM exit correct regardless; the explicit shutdown is what stops a drain in flight from
+publishing into a closing client.
+
+Where that shutdown goes is not this item's call to make alone.
+`roadmap/lsp-teardown-stream-closed-write-noise.md` is at Spec on the same path, and its second
+deliverable establishes exactly the seam this needs: `exit()` is a client-driven notification a
+disconnecting editor may never send, so the `finally` in `DevServer.serve` is the only place
+guaranteed to run, and the recalculate listener is compare-and-cleared there rather than
+unconditionally, because a reconnect can install its listener before the old connection's teardown
+runs. An executor whose lifetime matches that listener's belongs in the same place, cleared under the
+same compare. So: if that item lands first, this one hangs its shutdown on the seam it introduces; if
+this one lands first, it puts the shutdown where that item's reasoning says the clear must go, so the
+two do not grow two teardown hooks with different rules. Neither blocks the other, and the reviewer of
+whichever comes second should check that one place owns per-connection teardown.
+
+One sentence of that item's problem statement changes when this one lands, and its author should know:
+it observes that a stale listener's `publishDiagnostics` "throws `JsonRpcException` straight into
+whichever thread fired the recalculation, which in the dev loop is a Maven thread rather than an lsp4j
+one". After this item that throw lands on the drain thread instead. Its deliverable 1 wrapper is
+unaffected, catching at the message consumer regardless of caller, and its deliverable 2 remains the
+correct fix: an executor does not make a dead listener right, it only moves where the failure surfaces.
 
 ## What does not change
 
