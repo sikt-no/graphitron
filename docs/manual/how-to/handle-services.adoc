@@ -148,7 +148,7 @@ input FilmUpdateInput {
 }
 ----
 
-The two names resolve to one write, in a stated precedence order: the live (non-deprecated) field wins, and where every name on a column is deprecated (a rename chain part-way to removal) the latest-declared one wins. So a client sending only `year` still writes; a client sending both gets `releaseYear`; a client sending neither leaves the column untouched. Reordering the fields in the schema does not change the outcome.
+The two names resolve to one write, in a stated precedence order: the live (non-deprecated) field wins, and where every name on a column is deprecated (a rename chain part-way to removal) the latest-declared one wins. So a client sending only `year` still writes; a client sending both gets `releaseYear`; a client sending neither leaves the column untouched. While one name is still live, reordering the two fields in the schema does not change the outcome; only in the all-deprecated case does declaration order decide.
 
 *Two live fields on one column are still an error*, named at build time: without a `@deprecated` marker there is nothing saying which of them the author meant to win. The fix is to remove one, point its `@field(name:)` at a different column, or mark the superseded one `@deprecated` to declare it an alias.
 
