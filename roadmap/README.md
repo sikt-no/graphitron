@@ -31,7 +31,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R728` | @nodeId encode and decode become store relations, and an instruction the generator drops fails the build | In Progress | 2026-08-20 <sub>created 2026-08-19</sub> | [plan](nodeid-effective-at-every-coordinate.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-20 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R771` | A skill for authoring nested jOOQ at one grain, driven from the right relation | In Review | 2026-08-21 | [plan](nested-jooq-grain-and-anchor-skill.md) |
-| `R770` | A skill that makes store slowness a database question first, not a Java one | In Review | 2026-08-21 | [plan](relational-first-store-debugging-skill.md) |
 | `R773` | The LSP's store reads answer inside a time budget, or fail | In Review | 2026-08-21 | [plan](lsp-store-reads-inside-a-time-budget.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -601,7 +600,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R764` [**graphitron-model ships its junit-platform.properties to three consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
 - `R780` [**srp names the reviewer as the disqualified party: the session grep takes the first ID in the body, not the trailer**](srp-disqualified-session-read-from-trailer.md) — Backlog, dx
 - `R771` [**A skill for authoring nested jOOQ at one grain, driven from the right relation**](nested-jooq-grain-and-anchor-skill.md) — In Review, dx
-- `R770` [**A skill that makes store slowness a database question first, not a Java one**](relational-first-store-debugging-skill.md) — In Review, dx
 - `R779` [**Did findings-not-fixes cut the bounce loop? Measure the plan-body blame fraction over three bounced items**](findings-convention-round-count-measurement.md) — Backlog, dx, blocked by [reviewer-findings-not-reviewer-edits](reviewer-findings-not-reviewer-edits.md)
 - `R766` [**Five generate executions run one after another on the last node of the critical path**](sakila-example-generate-executions-serialize.md) — Backlog, dx
 - `R733` [**Hold the build wall clock with a budget, and take the derived-read slices R732 left unmeasured**](build-wall-clock-guardrail.md) — Backlog, dx
