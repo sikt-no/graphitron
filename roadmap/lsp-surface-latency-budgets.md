@@ -20,10 +20,10 @@ project has: it is the only one where a slow answer arrives into a blocked curso
 so a slow answer and no answer are the same outcome to the person waiting.
 
 The item is scoped to every surface rather than to the one that was reported,
-because one surface's budget is the wrong unit. Six surfaces read the fact store
-and they share a single three-second budget that was not chosen for any of them
-in particular. Measuring all six is also what found that the reported surface is
-not the worst one.
+because one surface's budget is the wrong unit. Six surfaces read the fact store:
+five request surfaces sharing one three-second budget that was not chosen for any
+of them in particular, and the drain on its own thirty-second one. Measuring all
+six is also what found that the reported surface is not the worst one.
 
 ## What was measured
 
@@ -68,13 +68,42 @@ spread down the file, under the production budgets (`INTERACTIVE_READ_BUDGET`
 | Overran its 30 s budget and published nothing.
 |===
 
-Two caveats on those figures, both of which make them floors rather than
-estimates. The fixture's class census is empty, so every arm that resolves a
-consumer class or method name does less work than in a real session. And the
-inlay figure is too cheap to trust: inlay hints are configuration-gated through
-`applyPulledInlayHintConfig`, the probe pulled no configuration, and a surface
-that returned nothing is not a surface that was measured. Confirming that number
-against an enabled configuration is the first task below.
+One caveat stands on those figures. The inlay figure is too cheap to trust:
+inlay hints are configuration-gated through `applyPulledInlayHintConfig`, the
+probe pulled no configuration, and a surface that returned nothing is not a
+surface that was measured. Confirming that number against an enabled
+configuration is the first task below.
+
+A second caveat was checked and withdrawn, and what it turned into matters more
+than the caveat did. The figures above came off a fixture with an empty class
+census, so every arm resolving a consumer class or method name did less work than
+in a real session. Re-measured against a census scanned from four real reactor
+outputs, 1096 classes and 4073 methods:
+
+[cols="3,1,1",options="header"]
+|===
+| Read | Empty census | Populated census
+
+| One `DeclarationFacts` statement
+| 1154 to 1475 ms
+| 905 to 1184 ms
+
+| The `redirects` arm alone
+| 1109 ms
+| 960 ms
+
+| Every other arm, each alone
+| 1 to 22 ms
+| 1 to 28 ms
+|===
+
+The population does not move the cost, and the reason is the finding: the arm's
+expense is `sql_table`'s row count times one evaluation of the view, and
+`sql_table` is a function of the consumer's *database catalog*, not of their
+class census. Sakila declares 61 tables. A consumer whose catalog declares
+several hundred pays proportionally, which is the direction that puts this arm
+past even the three-second guard, and it is the scaling dimension to state
+because it is the one nothing here measured.
 
 The drain figure is **not this item's** to fix. R793 already owns the drain
 overrun, filed from a real dev session, and states that what it is missing is
@@ -144,12 +173,15 @@ Recorded because three of them refuted a candidate fix:
 | The shape that works, and the only one that does.
 |===
 
-So the lever is the join's driving side, not a `meta_materialize` registration
-and not a rewrite of the view. What one row of this answer means is one
-(backing class, bound table) pair, and the relation that owns that key is the
-backing relation, not the catalog census; the arm departs from the wrong end.
+So the lever is the join's *shape*, not a `meta_materialize` registration and not
+a rewrite of the view. It is specifically not the placement of the predicates or
+of the `FROM`: the two refuted controls are both ways of asking H2 to filter
+first, and H2 reordered past both. What separates the working control from the
+others is that a correlated lookup gives the planner no driving side to choose.
+What one row of this answer means is one (backing class, bound table) pair, and
+the relation that owns that key is the backing relation, not the catalog census.
 The arm needs the census's columns and not merely its existence, so the working
-shape has to project them while still driving from the filtered backing side.
+control is the evidence for the shape rather than the patch itself.
 
 `DeclarationHovers` reads the same arms, so this carries the declaration-name
 hover with it. That is also why hover's 96 ms maximum should not be read as
@@ -161,45 +193,88 @@ reach this arm.
 ### 1. Confirm the inlay figure
 
 Pull an enabled inlay configuration in the harness and re-measure the whole-file
-request. Until that number exists, the surface is unmeasured rather than fast,
-and the budget below cannot be set for it. This is first because it can change
-what the rest of the item has to cover.
+request. Until that number exists, the surface is unmeasured rather than fast.
+This is first because step 3 turns on it: whether inlay is expensive enough to
+block a cursor queued behind it is the question that decides whether the door
+split there is worth a third connection.
 
-### 2. The redirect arm departs from the backing side
+### 2. The redirect arm reaches the census through a correlated lookup
 
-Rewrite the arm so the filtered derived relation drives and the census is
-reached per surviving class name. The measured `EXISTS` control is the shape;
-the arm needs projection rather than existence, so the candidate is a correlated
-lookup on the census keyed by the class name, in the grain the `nested-jooq`
-skill describes: one row of the answer is one pair, driven from the relation
-that owns the key.
+Not a driving-side rewrite. The arm already reads
+`.from(INTENT_TYPE_BACKING).join(SQL_TABLE).on(...)` with both cheap predicates
+already in its `where`, so an instruction to make the filtered relation drive
+names an edit an implementer would find already made. H2 reorders the join
+regardless, which is what the refuted derived-table and `IN`-subquery controls
+measured: two ways of saying "filter first" that H2 was free to ignore, and did.
+
+What changes is the shape, to one H2 has no freedom to reorder: the census is
+reached as a correlated lookup keyed by the class name, evaluated per surviving
+backing row, rather than as a join partner it can pick as the driving side. That
+is the grain the `nested-jooq` skill describes, one row of the answer being one
+(backing class, bound table) pair driven from the relation that owns the key.
+Measured on the populated census at 15 ms against the production shape's 881 ms,
+which is the same sixty-fold the `EXISTS` control showed and confirms the shape
+rather than the predicate placement is what carries it.
+
+The arm needs the census's columns, not merely its existence, so the `EXISTS`
+control is the evidence and not the patch.
 
 The constraint is that the answer must not change. `DeclarationFacts` is one
 statement by design, and both readers of these arms
 (`DeclarationDefinitions` and `DeclarationHovers`) must keep the rows they have
 today, including the ordering the arm states.
 
-### 3. A budget per grain, not one for every keystroke
+### 3. The budget stays a runaway guard; the door is what splits
 
-`DevMojo` holds three budgets today: `INTERACTIVE_READ_BUDGET` at 3 s covering
-every request surface, `SESSION_READ_BUDGET` at 30 s for the drain and session
-state, and `MCP_READ_BUDGET` at 60 s. The first is the one that is wrong, and it
-is wrong by being one figure for six surfaces with different contracts. A
-navigation request blocks a cursor; a hover popup arriving late is a popup
-arriving late.
+The budget is not the lever, and the earlier draft of this step was wrong about
+it. `INTERACTIVE_READ_BUDGET`'s own javadoc records the decision: the low-seconds
+figure is "deliberately not a latency policy", the target is "a query that would
+otherwise never return", and "a threshold tight enough to police slowness would
+start refusing correct answers on a loaded machine". That decision was right, and
+this item is not the exception to it. A budget miss is not a slow answer, it is
+*no* answer, rendered in the editor as a jump that does not happen: the same
+thing the developer reported as a broken feature. A dev session routinely runs
+beside a full reactor build, so a threshold in the low hundreds of milliseconds
+would drop correct answers on exactly the machine state where a developer is most
+likely to be navigating. Tightening it would trade a stall the next steps remove
+for a silence they cannot.
 
-The measured medians are 4 to 20 ms and the comfortable maxima 15 to 96 ms, so
-there is better than an order of magnitude of headroom under a budget in the low
-hundreds of milliseconds. Setting it there turns a pathological read from a
-three-second stall into an instant miss, which is the outcome a blocked cursor
-wants.
+It would also have been incoherent with step 4, which rejects the budget-arm
+enforcer on the argument that a slow enough machine flips it. That argument does
+not become weaker when the same clock is moved into production.
 
-Open for the reviewer: whether this is a new reader per grain or a tighter bound
-on the existing interactive one. `StoreReader`'s javadoc argues a reader per
-grain costs no statements and stops two grains serializing behind each other,
-which is the argument the existing two readers were split on, and points the
-same way here. Against it: three readers is three connections for a session that
-had two, and the grains may not contend in practice.
+Latency already has an owner, and the javadoc names it: `LspTrace`'s slow-span
+threshold, `graphitron.lsp.trace.slowMs`, default 100. After step 2 a definition
+read is a few tens of milliseconds, which makes that tag meaningful for the first
+time rather than a line every navigation prints. Nothing needs to move there;
+what needed to change is this spec's claim that the budget should do that job.
+
+What *is* wrong is that the five request surfaces share one reader, and
+`StoreAccess` is where that is decided rather than `DevMojo`. Its three doors
+partition the grains: `answering` for every interactive surface, `answeringAll`
+for the drain alone, `readingSessionGraph` for session state. Reads on one reader
+serialize, which `StoreAccess`'s javadoc gives as the whole reason there are two
+readers and not one, and behind `answering` the same serialization is still
+there: a whole-file inlay request and a cursor-blocking hover queue against each
+other on one connection, with the cursor waiting on the request nobody is looking
+at. That is the mechanism behind "trying it in different places gives a lot of
+hangs" in a way no single surface's own cost explains.
+
+So the split is by *who is waiting*, not by a number. `inlayHint` moves behind a
+door of its own with a reader of its own: it is the one request surface whose cost
+scales with the document rather than the cursor, it is re-requested on every
+viewport change, and a hint arriving late is invisible where a cursor arriving
+late is not. Hover, definition, completion and code action stay on `answering`,
+all four being cursor-blocking and cheap once step 2 lands. Every reader keeps a
+low-seconds runaway guard; no reader acquires a latency policy.
+
+Two honest qualifications. `StoreAccess`'s javadoc closes by inviting a split
+when "a second interactive caller of `answeringAll`" appears, which is not this
+trigger, so this extends that javadoc's reasoning about head-of-line blocking
+rather than cashing the invitation it actually wrote. And the split is worth a
+third connection only if the contention is real; step 1 is what says whether
+inlay is expensive enough to block anything, which is why it is first and why
+this step's shape depends on its answer.
 
 ### 4. Every surface is enforced, not spot-checked
 
@@ -240,18 +315,19 @@ surface's own statement is a far narrower claim than a ceiling over every
 relation in the schema, so the number is defensible in a way that one is not.
 
 **A budget-arm enforcer.** Drive every surface at a spread of coordinates over a
-realistically captured schema with the reader's budget set to the production
-navigation figure, and assert every answer is `StoreAnswer.Answered` rather than
-`StoreAnswer.OutOfBudget`, which is `StoreOutOfBudgetTest`'s own trick run the
-other way round. It encodes the wanted property most directly and imports the
-budget as a production setting rather than inventing a threshold. Set against it:
-a slow enough machine flips it, which is the wall clock the tiers refuse, and
-adopting it here would leave the project with two enforcer currencies for one
-question.
+realistically captured schema and assert every answer is `StoreAnswer.Answered`
+rather than `StoreAnswer.OutOfBudget`, which is `StoreOutOfBudgetTest`'s own
+trick run the other way round. It encodes the wanted property most directly.
+Set against it, and decisively now that step 3 has settled: the only budget it
+could import is the low-seconds runaway guard, so it would pass a surface that
+takes two and a half seconds, which is the defect this item was filed for. To
+catch that it would need a threshold of its own, invented here, and a slow
+enough machine then flips it. That is the wall clock the tiers refuse, and it
+would leave the project with two enforcer currencies for one question.
 
-Either way the enforcer covers all six surfaces including the two R782 adds
-counts for, so the two items should land in an order where the later one does
-not re-enumerate the set.
+Either way the enforcer covers all six surfaces: the five request surfaces,
+including the two R782 adds counts for, plus the drain. So the two items should
+land in an order where the later one does not re-enumerate the set.
 
 ## What this hands to R793
 
