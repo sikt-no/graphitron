@@ -51,7 +51,7 @@ read, and the first move is attribution across its subqueries rather than a hunt
 relation.
 
 **The leading hypothesis, and it is measured.**
-`roadmap/goto-definition-navigation-budget.md` diagnosed the same shape one statement over:
+`roadmap/lsp-surface-latency-budgets.md` diagnosed the same shape one statement over:
 `DeclarationFacts`'s `redirects` arm joins the census relation `sql_table` to the derived relation
 `intent_type_backing` on the class name, H2 drives from the census side, and the derived relation is
 therefore evaluated once per catalog table with its cheap filter applied after the expansion instead
@@ -61,19 +61,29 @@ the census by `EXISTS`) measured 20 ms.
 
 The drain's aborted statement contains that join, on that key:
 `intent_type_backing join sql_table on sql_table.record_class_fqn = intent_type_backing.class_name`.
-That makes this item the concrete answer to that item's own third open question, "whether other
-single-statement readers join a derived relation from the census side the same way": one does, and it
-is `DiagnosticFacts`. It also means the lever is likely already known, so the work here is attribution
-and confirmation rather than a fresh diagnosis.
+So the lever may already be known, which makes the work here attribution and confirmation rather than
+a fresh diagnosis. That item also carries the scan-count signature to look for, about 3782 for the
+slow driving order against roughly 60 for the rewrite, which is a sharper thing to grep a plan for
+than "one large number".
+
+**And the overrun is reproducible before any of this starts.** That item's probe drove the real
+request methods over the sakila example's schema and recorded the drain, via `didOpen`, at 31310 ms
+against the 30 s budget, publishing nothing. So this item no longer opens with a dev-session report it
+has to reproduce: the fixture is stood up and the failure is in a harness.
 
 **What not to re-run.** `roadmap/field-column-table-inlining-cost.md` measured
 `intent_field_column_table` at 151 s for 116 rows unfiltered, with every one of its nine children
 cheap, and attributed the cost to view inlining rather than to anything underneath it. That relation is
 in the drain's statement, which makes the drain a live reader of it, but the drain reads it filtered by
-graph and by three explicit type-field pairs, and the navigation item's control puts a filtered derived
-relation of this family at 22 ms. So the static multiplicity ranking is the wrong place to start here:
-what matters is whether the drain's *filters* reach the relation before its expansion or after, which
-is the same question the leading hypothesis asks.
+graph and by three explicit type-field pairs, and the latency item's control puts a filtered derived
+relation of this family at 22 ms.
+
+The static multiplicity ranking is therefore the wrong place to start, and that is now measured rather
+than argued: the latency item timed all six language-server surfaces and recorded that three of them
+read relations in the fifteen heaviest while the slow one read none, so reading a heavy relation
+predicted nothing about a surface's cost. `DiagnosticFacts` reading `intent_field_column_table` is one
+of those three. What matters is whether this statement's filters reach a relation before its expansion
+or after, which is the question the leading hypothesis asks.
 
 **Steps.**
 
@@ -99,10 +109,15 @@ is the same question the leading hypothesis asks.
    case in the relation's own arithmetic, and the refresh of a 151-second view is a cost to price
    rather than assume.
 
-**Coordination.** If the navigation item ships its fix to `DeclarationFacts` first, re-measure before
-doing anything here: the lever may transfer to `DiagnosticFacts` unchanged, and the two statements
-should not grow two different spellings of one correction. Whichever lands second should leave the
-shape stated in one place.
+**Coordination.** `roadmap/lsp-surface-latency-budgets.md` states the boundary from its side and this
+item holds the other half of it: that item does not touch this statement, and this item does not
+restate the budget-per-grain question or ask for a larger budget. What the two must not do is grow two
+spellings of one correction, so if that item lands its driving-side fix to `DeclarationFacts` first,
+re-measure here before writing anything: the lever may transfer to `DiagnosticFacts` unchanged.
+
+The enforcer currency is shared, and that item has already adopted this one's: a scan-count ceiling
+over a surface's own statement, never a wall clock. Whichever of the two lands second should extend
+that enforcer rather than introduce a second currency for the same property.
 
 **Acceptance.** The drain's statement, against that populated capture, finishes with headroom inside
 the interactive budget rather than merely inside the session one, and the plan's scan counts say why.

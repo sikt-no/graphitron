@@ -26,7 +26,11 @@ notification ahead of it returns. `$/cancelRequest` waits with the rest, so the 
 hatch is unreachable exactly when it is needed. An editor whose LSP client issues any request
 synchronously therefore blocks its own UI for as long as our drain runs, which is what a developer
 reports as the editor freezing rather than as diagnostics being late. That report has been made
-against a real session, with the drain holding for the full 30 s.
+against a real session, with the drain holding for the full 30 s, and
+`roadmap/lsp-surface-latency-budgets.md` has since reproduced it in a harness: the real request methods
+over the sakila example's schema put the drain, via `didOpen`, at 31310 ms. Every surface it measured
+beside that one answered in a median of 4 to 20 ms, which is the asymmetry this item is about. Those
+surfaces are fast and they are queued behind the one that is not.
 
 `markAllForRecalculation`, called from `DevMojo` after each build, occupies the watcher thread for the
 same duration. Less visible, and still the thread the dev loop needs for the next swap.

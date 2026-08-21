@@ -65,6 +65,6 @@ it coming.
 What it does not establish is that this relation is the expensive term in that statement. The drain
 reads it filtered by graph and by explicit type-field pairs, unlike the 151-second unfiltered
 measurement, and the statement also carries the census-side join shape that
-`roadmap/goto-definition-navigation-budget.md` measured at about 1.1 s per evaluation on this store.
+`roadmap/lsp-surface-latency-budgets.md` measured at about 1.1 s per evaluation on this store.
 Attribution across that statement's roughly twenty subqueries belongs to the drain's own item; what
 belongs here is that the reader now exists and the cost has somewhere to land.

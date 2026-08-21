@@ -83,7 +83,7 @@ failure would appear. This item removes a thousand-character `WARNING` on the sa
 no common code, and a reviewer of either should read the other's problem statement, because the
 standard being set is "what a line in this console has to earn".
 
-`roadmap/goto-definition-navigation-budget.md` asks whether navigation gets its own reader and its own
+`roadmap/lsp-surface-latency-budgets.md` asks whether navigation gets its own reader and its own
 budget. That is a question about which door answers, and this item's vocabulary is deliberately
 independent of it: a third reader changes what `DEFINITION` is answered by and not what it is called,
 so a new budget lands here as a different number in the same sentence.
