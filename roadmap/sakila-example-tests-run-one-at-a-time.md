@@ -1,7 +1,7 @@
 ---
 id: R763
 title: "Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path"
-status: In Review
+status: Ready
 bucket: dx
 priority: 2
 theme: tooling
@@ -295,6 +295,71 @@ module's own total moved 105 s to 99 s, which is noisier than the surefire figur
 
 One case renamed: `filmsFaceted_noFilter_countsMatchPlainAggregates` is now
 `filmsFaceted_noFacetFilter_countsMatchPlainAggregates`, since it carries a non-facet filter.
+
+## Reviewer findings
+
+**In Review → Done, first pass: rework.** The four changes landed as described and the win is real
+(`mvn install -Plocal-db` green, 838 tests, 0 failures, module `SUCCESS [01:36 min]`, summed
+surefire class time 114.5 s against a shorter surefire wall clock, so classes overlapped; no
+`Discovered 2 'junit-platform.properties'`). One finding blocks the gate, and it is narrow.
+
+**Three assertions in `GraphQLQueryTest` still assert what the `film` table holds.** All three are
+in the `filmsOrderedConnection` title-ordering cluster, and all three assert the exact contents of a
+title-ordered page over a set the query does not bound:
+
+* `filmsOrderedConnection_orderByTitle_paginatesAlphabetically`: `order: TITLE ASC, first: 3` over
+  the unfiltered root field, `containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER",
+  "ADAPTATION HOLES")`. That is the claim "the three alphabetically first films in the table are the
+  seed's".
+* `filmsOrderedConnection_orderByTitle_cursorNavigation`: the same walk at `first: 2` plus its
+  `after` cursor, so both pages inherit the same dependence.
+* `filmsOrderedConnection_filterPlusOrderPlusPagination_combinesAllThree`: `rating: G,
+  order: TITLE ASC, first: 1`, `containsExactly("ACE GOLDFINGER")`. This one is the same
+  `DEFAULT 'G'` hazard the item found and wrote down twice, and fixed at its two sibling sites
+  (`films_filteredByRating` and
+  `filmsOrderedConnection_totalCount_underFilter_appliesSamePredicate`) by moving them to `PG`.
+  Filtering on `G` bounds nothing, because every film another class inserts without naming a rating
+  is G-rated.
+
+Reproduced with the item's own detector method, extended by the one shape it did not vary. The
+detector inserted films with `rating` left to its default and `length`/`release_year` null, but not
+a *title* that sorts before the seed's, so a title-ordered page never moved. Insert one
+(`insert into film (title, language_id) values ('A DETECTOR FILM', 1)`, which lands G-rated with a
+null length, exactly like the module's own writers' rows) and run the class:
+
+```
+Tests run: 377, Failures: 3
+  filmsOrderedConnection_filterPlusOrderPlusPagination_combinesAllThree:2095
+  filmsOrderedConnection_orderByTitle_cursorNavigation:2117
+  filmsOrderedConnection_orderByTitle_paginatesAlphabetically:2083
+```
+
+The rest of the sweep holds up against the same detector. Nothing else in the module fails, and the
+other whole-table shapes checked out: `film.text_rating` and `film.length` carry no default, so
+`films(textRating: G)` and the `extra.lengthIs` facet bound are safe as documented;
+`filmsOrderedConnection_defaultOrder_paginatesById` is safe because `serial` only climbs, so the
+seed permanently owns the lowest ids; nothing in the module writes `customer` or `actor`, so
+`TutorialSmokeTest`'s five-customer assertions and the exact actor counts are sound; the four
+`email` bands are bounded at both ends and each class's `message_no` literals fall inside its own
+band; and the four `@QuarkusTest` classes all carry `QuarkusTestLock.KEY`.
+
+**What would satisfy the gate.** Make the three cases state what they mean rather than what the
+table holds. The file already carries the tool for it: `seededTitlesInOrder` is what the rate-DESC
+siblings use, and reading the seeded rows' relative order out of an untrimmed walk is the same move
+those cases made for the same reason (a `first: n` page is not the seed's page once another class
+inserts a row that sorts ahead of it). For the `rating: G` case, `PG` is the bounded filter, as at
+its two siblings. Then re-run the detector with a low-sorting title as well as a default-rating one,
+and say so.
+
+Two non-blocking notes, neither a gate condition:
+
+* The body says the abandoned "earns its container" meta-test's intent "went into the first
+  meta-test's failure message instead". `QuarkusTestLockEnforcementTest`'s message explains the lock
+  and points at `QuarkusTestLock`; it does not ask whether the class needs a container at all. Either
+  put that sentence in the message or drop the claim.
+* `QuarkusTestLockEnforcementTest` skips class files whose name contains `$`, so a nested
+  `@QuarkusTest` class would not be seen. It shares that with `TierAnnotationEnforcementTest`, so it
+  is a pre-existing property of the walk shape rather than something this item introduced.
 
 ## Roadmap entries
 
