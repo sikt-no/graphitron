@@ -433,12 +433,15 @@ class FactCaptureAgreementTest {
         registrations.put("intent_node_id_decode_hop", Arm.DERIVED);
         registrations.put("intent_node_id_decode_hop_column", Arm.DERIVED);
         registrations.put("intent_node_id_decode_column", Arm.DERIVED);
+        registrations.put("intent_node_id_decode_slot", Arm.DERIVED);
+        registrations.put("intent_node_id_decode", Arm.DERIVED);
         registrations.put("intent_foreign_key_column_pair", Arm.DERIVED);
         registrations.put("intent_node_id_encode", Arm.DERIVED);
         registrations.put("intent_argmapping_pair", Arm.DERIVED);
         registrations.put("intent_argmapping_pair_live", Arm.DERIVED);
         registrations.put("intent_spelled_table_live", Arm.DERIVED);
         registrations.put("intent_argument_scope_table_live", Arm.DERIVED);
+        registrations.put("intent_node_id_decode_hop_column_live", Arm.DERIVED);
         registrations.put("intent_argmapping_segment_binding", Arm.DERIVED);
         registrations.put("intent_argmapping_binding_leaf", Arm.DERIVED);
         registrations.put("intent_argmapping_bound_parameter_type", Arm.DERIVED);

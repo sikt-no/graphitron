@@ -5346,431 +5346,6 @@ COMMENT ON COLUMN intent_input_occurrence_override.override_type_name IS 'witnes
 COMMENT ON COLUMN intent_input_occurrence_override.override_field_name IS 'witness: the overriding site''s field name';
 COMMENT ON COLUMN intent_input_occurrence_override.override_argument_name IS 'witness: the overriding site''s argument name; NULL when the witness is a field-site condition (graphitron_field_condition''s key shape), non-NULL when it is the argument-site relation''s row';
 
-CREATE VIEW intent_node_id_instruction
-  (graph_name, site, type_name, field_name, argument_name, path, use_site,
-   basis, node_type_name, carries_reference_path,
-   source_name, source_line, source_column) AS
-WITH instructed (graph_name, site, type_name, field_name, argument_name, path, use_site,
-                 node_type_ref, has_reference, source_name, source_line, source_column) AS (
-  SELECT n.graph_name, 'OUTPUT_FIELD', n.type_name, n.field_name, CAST(NULL AS VARCHAR),
-         CAST(NULL AS VARCHAR), n.type_name || '.' || n.field_name, n.node_type_ref,
-         CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step s
-                            WHERE s.graph_name = n.graph_name AND s.type_name = n.type_name
-                              AND s.field_name = n.field_name)
-              THEN TRUE ELSE FALSE END,
-         n.source_name, n.source_line, n.source_column
-    FROM graphitron_field_node_id n
-    JOIN graphql_type t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
-     AND t.kind = 'OBJECT'
-   UNION ALL
-  SELECT n.graph_name, 'INPUT_FIELD', n.type_name, n.field_name, NULL,
-         p.path, p.path, n.node_type_ref,
-         CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step s
-                            WHERE s.graph_name = n.graph_name AND s.type_name = n.type_name
-                              AND s.field_name = n.field_name)
-              THEN TRUE ELSE FALSE END,
-         n.source_name, n.source_line, n.source_column
-    FROM graphitron_field_node_id n
-    JOIN graphql_type t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
-     AND t.kind = 'INPUT_OBJECT'
-    JOIN intent_input_occurrence_path_step st
-      ON st.graph_name = n.graph_name AND st.container_type_name = n.type_name
-     AND st.field_name = n.field_name
-    JOIN intent_input_occurrence_path p
-      ON p.graph_name = st.graph_name AND p.path = st.path AND p.depth = st.ordinal
-   UNION ALL
-  SELECT n.graph_name, 'ARGUMENT', n.type_name, n.field_name, n.argument_name,
-         NULL, n.type_name || '.' || n.field_name || '(' || n.argument_name || ')',
-         n.node_type_ref,
-         CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument_reference_step s
-                            WHERE s.graph_name = n.graph_name AND s.type_name = n.type_name
-                              AND s.field_name = n.field_name
-                              AND s.argument_name = n.argument_name)
-              THEN TRUE ELSE FALSE END,
-         n.source_name, n.source_line, n.source_column
-    FROM graphitron_argument_node_id n
-),
-slot_table (graph_name, site, type_name, field_name, argument_name, path,
-            table_source_name, table_schema, table_name) AS (
-  SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
-         tg.to_source_name, tg.to_schema, tg.to_table
-    FROM instructed i
-    JOIN intent_field_reference_step_target tg
-      ON tg.graph_name = i.graph_name AND tg.type_name = i.type_name
-     AND tg.field_name = i.field_name
-     AND tg.position = (SELECT MAX(s.position) FROM graphitron_field_reference_step s
-                         WHERE s.graph_name = tg.graph_name AND s.type_name = tg.type_name
-                           AND s.field_name = tg.field_name AND s.ordinal = tg.ordinal)
-   WHERE i.site = 'OUTPUT_FIELD' AND i.has_reference
-   UNION
-  SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
-         tg.to_source_name, tg.to_schema, tg.to_table
-    FROM instructed i
-    JOIN intent_argument_reference_step_target tg
-      ON tg.graph_name = i.graph_name AND tg.type_name = i.type_name
-     AND tg.field_name = i.field_name AND tg.argument_name = i.argument_name
-     AND tg.position = (SELECT MAX(s.position) FROM graphitron_argument_reference_step s
-                         WHERE s.graph_name = tg.graph_name AND s.type_name = tg.type_name
-                           AND s.field_name = tg.field_name
-                           AND s.argument_name = tg.argument_name AND s.ordinal = tg.ordinal)
-   WHERE i.site = 'ARGUMENT' AND i.has_reference
-   UNION
-  SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
-         u.table_source_name, u.table_schema, u.table_name
-    FROM instructed i
-    JOIN intent_argument_scope_table u
-      ON u.graph_name = i.graph_name AND u.type_name = i.type_name
-     AND u.field_name = i.field_name AND u.argument_name = i.argument_name
-   WHERE i.site = 'ARGUMENT' AND NOT i.has_reference
-   UNION
-  SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
-         u.table_source_name, u.table_schema, u.table_name
-    FROM instructed i
-    JOIN intent_input_occurrence_path p
-      ON p.graph_name = i.graph_name AND p.path = i.path
-    JOIN intent_argument_scope_table u
-      ON u.graph_name = p.graph_name AND u.type_name = p.root_type_name
-     AND u.field_name = p.root_field_name AND u.argument_name = p.root_argument_name
-   WHERE i.site = 'INPUT_FIELD'
-),
-table_node (graph_name, table_source_name, table_schema, table_name, type_name, candidates) AS (
-  SELECT bt.graph_name, bt.table_source_name, bt.table_schema, bt.table_name, bt.type_name,
-         CAST(COUNT(*) OVER (PARTITION BY bt.graph_name, bt.table_source_name,
-                                          bt.table_schema, bt.table_name) AS INT)
-    FROM intent_resolved_type_binding bt
-    JOIN intent_node_type nt
-      ON nt.graph_name = bt.graph_name AND nt.type_name = bt.type_name
-)
-SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
-       'EXPLICIT_TYPE_NAME', nt.type_name, i.has_reference,
-       i.source_name, i.source_line, i.source_column
-  FROM instructed i
-  JOIN intent_node_type nt
-    ON nt.graph_name = i.graph_name AND nt.type_name = i.node_type_ref
- UNION ALL
-SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
-       'CONTAINING_NODE_TYPE', nt.type_name, i.has_reference,
-       i.source_name, i.source_line, i.source_column
-  FROM instructed i
-  JOIN intent_node_type nt
-    ON nt.graph_name = i.graph_name AND nt.type_name = i.type_name
- WHERE i.node_type_ref IS NULL AND i.site = 'OUTPUT_FIELD' AND NOT i.has_reference
- UNION ALL
-SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
-       'TARGET_TABLE_NODE_TYPE', tn.type_name, i.has_reference,
-       i.source_name, i.source_line, i.source_column
-  FROM instructed i
-  JOIN slot_table s
-    ON s.graph_name = i.graph_name AND s.site = i.site AND s.type_name = i.type_name
-   AND s.field_name = i.field_name
-   AND (s.argument_name = i.argument_name OR (s.argument_name IS NULL AND i.argument_name IS NULL))
-   AND (s.path = i.path OR (s.path IS NULL AND i.path IS NULL))
-  JOIN table_node tn
-    ON tn.graph_name = s.graph_name AND tn.table_source_name = s.table_source_name
-   AND tn.table_schema = s.table_schema AND tn.table_name = s.table_name
- WHERE i.node_type_ref IS NULL AND tn.candidates = 1
-   AND NOT (i.site = 'OUTPUT_FIELD' AND NOT i.has_reference)
- UNION ALL
-SELECT f.graph_name, 'OUTPUT_FIELD', f.type_name, f.field_name, NULL, NULL,
-       f.type_name || '.' || f.field_name,
-       'OWN_ID_FIELD', nt.type_name,
-       CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step s
-                          WHERE s.graph_name = f.graph_name AND s.type_name = f.type_name
-                            AND s.field_name = f.field_name)
-            THEN TRUE ELSE FALSE END,
-       f.source_name, f.source_line, f.source_column
-  FROM graphql_field f
-  JOIN intent_node_type nt
-    ON nt.graph_name = f.graph_name AND nt.type_name = f.type_name
- WHERE f.field_name = 'id' AND f.named_type = 'ID'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_field_node_id n
-                    WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name
-                      AND n.field_name = f.field_name)
- UNION ALL
-SELECT a.graph_name, 'ARGUMENT', a.type_name, a.field_name, a.argument_name, NULL,
-       a.type_name || '.' || a.field_name || '(' || a.argument_name || ')',
-       'TARGET_ID_NAME', nt.type_name,
-       CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument_reference_step s
-                          WHERE s.graph_name = a.graph_name AND s.type_name = a.type_name
-                            AND s.field_name = a.field_name
-                            AND s.argument_name = a.argument_name)
-            THEN TRUE ELSE FALSE END,
-       a.source_name, a.source_line, a.source_column
-  FROM graphql_argument a
-  JOIN graphql_field f
-    ON f.graph_name = a.graph_name AND f.type_name = a.type_name
-   AND f.field_name = a.field_name
-  JOIN intent_node_type nt
-    ON nt.graph_name = a.graph_name AND nt.type_name = f.named_type
- WHERE a.argument_name = 'id' AND a.named_type = 'ID'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_argument_node_id n
-                    WHERE n.graph_name = a.graph_name AND n.type_name = a.type_name
-                      AND n.field_name = a.field_name AND n.argument_name = a.argument_name)
- UNION ALL
-SELECT f.graph_name, 'INPUT_FIELD', f.type_name, f.field_name, NULL, p.path, p.path,
-       'TARGET_ID_NAME', tn.type_name,
-       CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step s
-                          WHERE s.graph_name = f.graph_name AND s.type_name = f.type_name
-                            AND s.field_name = f.field_name)
-            THEN TRUE ELSE FALSE END,
-       f.source_name, f.source_line, f.source_column
-  FROM graphql_field f
-  JOIN graphql_type t ON t.graph_name = f.graph_name AND t.type_name = f.type_name
-   AND t.kind = 'INPUT_OBJECT'
-  JOIN intent_input_occurrence_path_step st
-    ON st.graph_name = f.graph_name AND st.container_type_name = f.type_name
-   AND st.field_name = f.field_name
-  JOIN intent_input_occurrence_path p
-    ON p.graph_name = st.graph_name AND p.path = st.path AND p.depth = st.ordinal
-  JOIN intent_argument_scope_table u
-    ON u.graph_name = p.graph_name AND u.type_name = p.root_type_name
-   AND u.field_name = p.root_field_name AND u.argument_name = p.root_argument_name
-  JOIN table_node tn
-    ON tn.graph_name = u.graph_name AND tn.table_source_name = u.table_source_name
-   AND tn.table_schema = u.table_schema AND tn.table_name = u.table_name
- WHERE f.field_name = 'id' AND f.named_type = 'ID' AND tn.candidates = 1
-   AND NOT EXISTS (SELECT 1 FROM graphitron_field_node_id n
-                    WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name
-                      AND n.field_name = f.field_name);
-COMMENT ON VIEW intent_node_id_instruction IS 'Every slot carrying the @nodeId instruction, and which node type it names. The population the resolution relations and the defect view both partition, and the reason this exists as a relation rather than as each of their own WHERE clauses: the detection is "instructed and not carried out", so an instruction the population misses is a coordinate that stays silent, and a population two readers spell separately is two populations. Three sites, and site is the discriminator every other column''s nullness is determined by, on intent_argmapping_pair''s terms: an argument name where the site is an argument, an occurrence path where it is an input field, and the stated absent bucket elsewhere. Direction is deliberately not a column: an OUTPUT_FIELD encodes and the other two decode, which follows from the site and from which resolution relation answered, so a column would be a third spelling of a fact two relations already carry. The instruction has three authored forms and this relation states five bases over them, because the two inference rules and the two name-carried cases are different rules rather than one rule with cases. They are disjoint rather than ranked, which is what lets this be a plain union with no windowed collapse over it, and the disjointness is by construction: the three directive bases require a captured row and the two name-carried bases require the absence of one, EXPLICIT_TYPE_NAME requires a written typeName: and the two inference bases its absence, and the two inference bases split on the site-and-@reference predicate the manual states them with. Grain is the instruction and its use site. An argument and an output field are their own use site; an input field''s use sites come from intent_input_occurrence_path, so one input field carrying one directive is as many rows as there are coordinates consuming it. That is load-bearing rather than tidy: one input type may be consumed where the target resolves and where it cannot, so a row keyed on the instruction alone would have to pick one answer for two consumers, which is the argument ArgmappingProjectionDefects already makes for its own messages. An input field on an input type nothing reaches produces no occurrence path, so no use site, so no row; that is not a reachability gate but the observation that a decode is "these values go here" and with no consuming coordinate there is no here. Population boundary, stated because a hole here reads as a fact everywhere downstream: an instruction whose named or inferred type resolves to no node type is not a row. Those coordinates already meet a shipped rejection naming the type, so admitting them would put an instruction in the population that neither resolves nor draws either of the defect view''s verdicts, breaking the partition to restate a message. The one shape this relation cannot yet enumerate is an input field carrying its own @reference path: the target views resolve a path from a type''s table binding, an input type has none, and no relation resolves an input-field path''s terminal. Such a slot with an explicit typeName: is a row here like any other; only its bare form is missing, and closing it wants an input-site target view rather than a wider rule here.';
-COMMENT ON COLUMN intent_node_id_instruction.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row';
-COMMENT ON COLUMN intent_node_id_instruction.site IS 'which SDL site carries the instruction, in a closed vocabulary of three: OUTPUT_FIELD, INPUT_FIELD, ARGUMENT. The column a consumer switches on, the one that decides the direction, and the one every other column''s nullness is determined by. The two field sites share one captured relation and are told apart by the owning type''s kind, which is how the capture side already tells them apart';
-COMMENT ON COLUMN intent_node_id_instruction.type_name IS 'the type owning the slot: an object type on OUTPUT_FIELD, an input object type on INPUT_FIELD, the argument''s owning type on ARGUMENT';
-COMMENT ON COLUMN intent_node_id_instruction.field_name IS 'the slot''s field name, or on ARGUMENT the field the argument sits on';
-COMMENT ON COLUMN intent_node_id_instruction.argument_name IS 'the argument carrying the instruction on the ARGUMENT site; NULL on the two field sites, determined by site rather than independent of it, which is what makes the nullness a stated rule instead of a missing value';
-COMMENT ON COLUMN intent_node_id_instruction.path IS 'the occurrence path this row''s use site is, on the INPUT_FIELD site; NULL on the other two, whose slot is its own use site. The serialized key of intent_input_occurrence_path, so the use site''s own coordinate and every step of the descent are one join away and nothing here is parsed';
-COMMENT ON COLUMN intent_node_id_instruction.use_site IS 'the consuming coordinate serialized, in intent_argmapping_pair''s vocabulary: Type.field for an output field, Type.field(argument) for an argument, and the occurrence path itself for an input field, that path already being this serialization. Carried because a message needs one string and the components differ by site; those components are columns beside it, so nothing parses this';
-COMMENT ON COLUMN intent_node_id_instruction.basis IS 'which rule stated the instruction and resolved its target, in a closed vocabulary of five disjoint rules. EXPLICIT_TYPE_NAME: @nodeId(typeName: T). CONTAINING_NODE_TYPE: bare @nodeId on a non-@reference object field whose containing type is itself a node, the manual''s inference rule (a). TARGET_TABLE_NODE_TYPE: bare @nodeId whose target comes from a table, the manual''s inference rule (b), demanding exactly one node type over that table. OWN_ID_FIELD: a node type''s own id field with no directive, which is a node ID by construction. TARGET_ID_NAME: a slot named for the target''s own id with no directive, an argument of a node-returning field or an input field consumed against a node-backed table. Provenance and shape at once, which is why it is one column and not two: typeName: is rejected outright on a node type''s own id field, so the forms are not interchangeable and a rejection has to be able to say which one the author wrote';
-COMMENT ON COLUMN intent_node_id_instruction.node_type_name IS 'the node type the instruction names, written or inferred; never NULL, the population being instructions whose target resolved. What the opaque format''s other end is: intent_resolved_node_key_column on this name and the graph gives the key columns in order, and intent_resolved_node_type_id gives the typeId';
-COMMENT ON COLUMN intent_node_id_instruction.carries_reference_path IS 'whether the slot carries an @reference path of its own, read on the captured relation the slot''s site keys: the argument-site steps on ARGUMENT, the field-site steps on the two field sites. Carried because it decides how the instruction navigates to the node type''s table and because two of the bases above are already disjoint on it, so a reader resolving the navigation would otherwise re-derive a predicate this view has already evaluated. It says a path is written and nothing about whether one resolves; where the path resolves to is the reference-target views'' answer and a slot whose path reaches nothing is TRUE here all the same';
-COMMENT ON COLUMN intent_node_id_instruction.source_name IS 'the SDL file the instruction was captured from; the directive application''s own position on the three directive bases, and the slot declaration''s on the two name-carried ones, there being no application to locate';
-COMMENT ON COLUMN intent_node_id_instruction.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN intent_node_id_instruction.source_column IS 'source column, 1-based per the graphql-java convention';
-
-CREATE VIEW intent_node_id_decode_endpoint
-  (graph_name, site, type_name, field_name, argument_name, path, use_site, node_type_name,
-   navigation, from_source_name, from_schema, from_table,
-   to_source_name, to_schema, to_table) AS
-SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
-       i.node_type_name,
-       CASE WHEN i.carries_reference_path AND i.site = 'INPUT_FIELD' THEN 'UNRESOLVED_PATH'
-            WHEN i.carries_reference_path THEN 'AUTHORED_PATH'
-            WHEN bt.table_source_name = sc.table_source_name
-             AND bt.table_schema = sc.table_schema
-             AND bt.table_name = sc.table_name THEN 'SAME_TABLE'
-            ELSE 'DISCOVERED_KEY' END,
-       sc.table_source_name, sc.table_schema, sc.table_name,
-       bt.table_source_name, bt.table_schema, bt.table_name
-  FROM intent_node_id_instruction i
-  LEFT JOIN intent_input_occurrence_path p
-    ON p.graph_name = i.graph_name AND p.path = i.path AND i.site = 'INPUT_FIELD'
-  JOIN intent_argument_scope_table sc
-    ON sc.graph_name = i.graph_name
-   AND sc.type_name = COALESCE(p.root_type_name, i.type_name)
-   AND sc.field_name = COALESCE(p.root_field_name, i.field_name)
-   AND sc.argument_name = COALESCE(p.root_argument_name, i.argument_name)
-  JOIN intent_resolved_type_binding bt
-    ON bt.graph_name = i.graph_name AND bt.type_name = i.node_type_name
-   AND bt.candidates = 1
- WHERE i.site IN ('ARGUMENT', 'INPUT_FIELD');
-COMMENT ON VIEW intent_node_id_decode_endpoint IS 'Where a decode starts and where it has to arrive: for every slot carrying the @nodeId instruction on a decoding site, the table the slot''s own predicate binds on and the table the named node type''s keys live on. The relation the decode''s hop child, its key-column child and the destination over them all read, and it exists because those three would otherwise each resolve the same two tables: the destination is a reduction over the key-column child, the key-column child walks the hops, and the hops need a departure, so the endpoints have to be stated once below all three rather than recomputed inside each. Decoding sites only, which is the direction rule stated as a population rather than as a column: an output field encodes and the two input-side sites decode, so this relation''s WHERE clause is where the direction lives and no reader switches on one. The departure is intent_argument_scope_table''s answer at the consuming argument, which for an argument is its own coordinate and for an input field is the coordinate at the head of its occurrence path, both reached in one pass over the population; the two would be a union arm each and each would name the instruction relation again, which is the multiplicity the fact model''s own measurements warn about, so the occurrence path joins outer and the coordinate is picked by COALESCE. The arrival is the node type''s resolved binding, demanded unambiguous for the reason the departure is: two candidate tables are two different key tuples, and a decode against a table the author never named is worse than a decode that does not resolve. The navigation column is the whole reading this relation adds beyond the two tables, and it is a closed vocabulary of four. SAME_TABLE is own-row identity: the slot supplies encoded ids of the very rows it binds on, so the keys land on the row''s own key columns and there is nothing to walk. AUTHORED_PATH is an @reference the author wrote, whose hops the argument-site reference-target views resolve. DISCOVERED_KEY is neither written nor identity, where the resolution is the one foreign key declared on the departing table that reaches the arriving one. UNRESOLVED_PATH is the one shape no relation can walk yet: an input field carrying its own @reference, whose path departs an input type that binds no table, so the target views have nothing to resolve it from. It is a stated value rather than an absence on purpose, absence here being indistinguishable from a chain that contributed no local column, which is what a junction chain legitimately is; a consumer that treated the two alike would route a path it never read to a remote binding and call it resolved.';
-COMMENT ON COLUMN intent_node_id_decode_endpoint.graph_name IS 'the owning graph''s partition, carried from the instruction';
-COMMENT ON COLUMN intent_node_id_decode_endpoint.site IS 'ARGUMENT or INPUT_FIELD, as on the instruction; the OUTPUT_FIELD site is absent by construction, an output field encoding rather than decoding';
-COMMENT ON COLUMN intent_node_id_decode_endpoint.type_name IS 'the type owning the slot, as on the instruction';
-COMMENT ON COLUMN intent_node_id_decode_endpoint.field_name IS 'the slot''s field name, or on ARGUMENT the field the argument sits on';
-COMMENT ON COLUMN intent_node_id_decode_endpoint.argument_name IS 'the argument carrying the instruction on ARGUMENT; NULL on INPUT_FIELD, determined by site as on the instruction';
-COMMENT ON COLUMN intent_node_id_decode_endpoint.path IS 'the occurrence path this row''s use site is, on INPUT_FIELD; NULL on ARGUMENT. With the four columns above this is the key, and it is the key the two children carry';
-COMMENT ON COLUMN intent_node_id_decode_endpoint.use_site IS 'the consuming coordinate serialized, carried from the instruction so a message needs no second join';
-COMMENT ON COLUMN intent_node_id_decode_endpoint.node_type_name IS 'the node type the instruction named, whose key columns the decode yields; intent_resolved_node_key_column on this name and the graph is the other end of the opaque format';
-COMMENT ON COLUMN intent_node_id_decode_endpoint.navigation IS 'how the decode reaches the arriving table, in a closed vocabulary of four: SAME_TABLE for own-row identity with nothing to walk, AUTHORED_PATH for an @reference the author wrote, DISCOVERED_KEY for the one foreign key declared on the departing table that reaches the arriving one, UNRESOLVED_PATH for an input field carrying its own @reference, which no relation resolves yet. The column the hop child''s arms are disjoint on, and the column that keeps the unresolvable shape a statement rather than an empty hop set indistinguishable from a chain that lifted nothing';
-COMMENT ON COLUMN intent_node_id_decode_endpoint.from_source_name IS 'the departing table''s catalog partition: the table the slot''s predicate binds on, which is the argument''s scope table at its own site or at the head of its occurrence path';
-COMMENT ON COLUMN intent_node_id_decode_endpoint.from_schema IS 'the departing table''s SQL schema';
-COMMENT ON COLUMN intent_node_id_decode_endpoint.from_table IS 'the departing table''s SQL name';
-COMMENT ON COLUMN intent_node_id_decode_endpoint.to_source_name IS 'the arriving table''s catalog partition: the node type''s own resolved binding, the table its key columns sit on';
-COMMENT ON COLUMN intent_node_id_decode_endpoint.to_schema IS 'the arriving table''s SQL schema';
-COMMENT ON COLUMN intent_node_id_decode_endpoint.to_table IS 'the arriving table''s SQL name; equal to the departing one exactly on the SAME_TABLE navigation, which is how that value is decided rather than a coincidence a reader has to check';
-
-CREATE VIEW intent_node_id_decode_hop
-  (graph_name, site, type_name, field_name, argument_name, path, position, via,
-   from_source_name, from_schema, from_table,
-   to_source_name, to_schema, to_table, constraint_name, fk_on_from, last_position) AS
-SELECT graph_name, site, type_name, field_name, argument_name, path, position, via,
-       from_source_name, from_schema, from_table,
-       to_source_name, to_schema, to_table, constraint_name, fk_on_from,
-       CAST(MAX(position) OVER (
-         PARTITION BY graph_name, site, type_name, field_name, argument_name, path) AS INT)
-  FROM (SELECT e.graph_name, e.site, e.type_name, e.field_name, e.argument_name, e.path,
-               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.position ELSE 0 END AS position,
-               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.via
-                    ELSE 'DISCOVERED' END AS via,
-               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.from_source_name
-                    ELSE e.from_source_name END AS from_source_name,
-               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.from_schema
-                    ELSE e.from_schema END AS from_schema,
-               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.from_table
-                    ELSE e.from_table END AS from_table,
-               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.to_source_name
-                    ELSE e.to_source_name END AS to_source_name,
-               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.to_schema
-                    ELSE e.to_schema END AS to_schema,
-               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.to_table
-                    ELSE e.to_table END AS to_table,
-               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.constraint_name
-                    ELSE d.constraint_name END AS constraint_name,
-               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.fk_on_from
-                    ELSE TRUE END AS fk_on_from
-          FROM intent_node_id_decode_endpoint e
-          LEFT JOIN intent_argument_reference_step_target tg
-            ON e.navigation = 'AUTHORED_PATH'
-           AND tg.graph_name = e.graph_name AND tg.type_name = e.type_name
-           AND tg.field_name = e.field_name AND tg.argument_name = e.argument_name
-           AND tg.ordinal = 0 AND tg.candidates = 1
-          LEFT JOIN (SELECT rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name,
-                            rc.referenced_source_name, rc.referenced_schema,
-                            rc.referenced_table,
-                            CAST(COUNT(*) OVER (
-                              PARTITION BY rc.source_name, rc.table_schema, rc.table_name,
-                                           rc.referenced_source_name, rc.referenced_schema,
-                                           rc.referenced_table) AS INT) AS candidates
-                       FROM sql_referential_constraint rc) d
-            ON e.navigation = 'DISCOVERED_KEY' AND d.candidates = 1
-           AND d.source_name = e.from_source_name AND d.table_schema = e.from_schema
-           AND d.table_name = e.from_table
-           AND d.referenced_source_name = e.to_source_name
-           AND d.referenced_schema = e.to_schema AND d.referenced_table = e.to_table
-         WHERE tg.position IS NOT NULL OR d.constraint_name IS NOT NULL) walked;
-COMMENT ON VIEW intent_node_id_decode_hop IS 'The foreign-key hops a decode traverses from the slot''s own table to the node type''s, one row per hop in authored order. The ordinal-keyed child of intent_node_id_decode_endpoint, following the parent-plus-steps shape intent_input_occurrence_path and its step relation already use, so a reader takes the path as rows in order rather than parsing a serialized one. Two populations reach it and the endpoint relation''s navigation column is what tells them apart, so they are disjoint by construction and not by a predicate stated twice. An authored path contributes the hops the argument-site reference-target view resolved, which is why authoring that view was this work''s stated prerequisite: a @nodeId filter path is an argument-site path and there was no relation that walked one. An unwritten one contributes the single foreign key declared on the departing table that reaches the arriving one, which is the resolution the classifier performs where nothing was written, and it is stated here rather than deferred to intent_field_reference_discovery because that relation answers for a field''s two endpoints and these two endpoints are a different pair: the departing table is the argument''s scope and the arriving one is the node type''s, neither of which is the field''s named type in the general case. Exactly one such key is demanded, which is the classifier''s own arity: two keys are two different predicates and picking one would filter on a relationship the author never named. Written as one pass with the columns picked by CASE rather than as one union arm per navigation, so the endpoint relation is named once; its subtree is the deepest thing under here and a second naming of it would dominate the read, which the fact model has measured on a comparable tree. Two navigations contribute nothing and each means something different. SAME_TABLE has no hops because there is nothing to walk, the keys landing on the row''s own key columns, so an empty hop set at that navigation is the answer rather than a failure. UNRESOLVED_PATH has no hops because no relation resolves an input-field path''s terminal yet, and reading the two alike is precisely the misreading the navigation column exists to prevent. Absence at the other two navigations is a chain that stopped: the reference-target view carries only the elements it could show the chain reaches, and the discovery arm carries nothing where no single key connects the pair. A hop whose via is NAME_MATCH joins on no foreign key at all and carries a NULL constraint; such a step is refused upstream on a @nodeId path, and it is a row here because it is a hop the path resolved, the refusal being a consumer''s reading rather than this relation''s.';
-COMMENT ON COLUMN intent_node_id_decode_hop.graph_name IS 'the owning graph''s partition, carried from the endpoint relation';
-COMMENT ON COLUMN intent_node_id_decode_hop.site IS 'ARGUMENT or INPUT_FIELD, as on the endpoint relation';
-COMMENT ON COLUMN intent_node_id_decode_hop.type_name IS 'the type owning the slot, as on the endpoint relation';
-COMMENT ON COLUMN intent_node_id_decode_hop.field_name IS 'the slot''s field name, as on the endpoint relation';
-COMMENT ON COLUMN intent_node_id_decode_hop.argument_name IS 'the argument carrying the instruction on ARGUMENT; NULL on INPUT_FIELD, as on the endpoint relation';
-COMMENT ON COLUMN intent_node_id_decode_hop.path IS 'the occurrence path on INPUT_FIELD; NULL on ARGUMENT. With the four columns above and the position below this is the key';
-COMMENT ON COLUMN intent_node_id_decode_hop.position IS 'the hop''s 0-based position along the path, in authored order; always 0 on a discovered key, that arm resolving one hop and never a chain. Contiguous from 0 up to wherever the chain stopped, which is the reference-target view''s own property carried through';
-COMMENT ON COLUMN intent_node_id_decode_hop.via IS 'which arm resolved the hop: KEY, TABLE or NAME_MATCH carried from the reference-target view where the author wrote the path, DISCOVERED where nothing was written and the single connecting key answered. A closed vocabulary of four, and what a reader asks to learn whether every hop is a foreign key at all, a NAME_MATCH hop joining on none';
-COMMENT ON COLUMN intent_node_id_decode_hop.from_source_name IS 'the departing table''s catalog partition: the slot''s own table at position 0, the previous hop''s arrival after that';
-COMMENT ON COLUMN intent_node_id_decode_hop.from_schema IS 'the departing table''s SQL schema';
-COMMENT ON COLUMN intent_node_id_decode_hop.from_table IS 'the departing table''s SQL name';
-COMMENT ON COLUMN intent_node_id_decode_hop.to_source_name IS 'the arriving table''s catalog partition; the node type''s own table at the terminal hop, an intermediate table before it';
-COMMENT ON COLUMN intent_node_id_decode_hop.to_schema IS 'the arriving table''s SQL schema';
-COMMENT ON COLUMN intent_node_id_decode_hop.to_table IS 'the arriving table''s SQL name';
-COMMENT ON COLUMN intent_node_id_decode_hop.constraint_name IS 'the foreign key the hop joins on, written or discovered. Its own sql_referential_constraint key is this name under whichever endpoint declares it, which fk_on_from says. NULL on a NAME_MATCH hop, which joins on no foreign key';
-COMMENT ON COLUMN intent_node_id_decode_hop.fk_on_from IS 'TRUE when the departing table declares the foreign key, FALSE when the arriving one does; the hop''s direction, and what says which side of the key''s column pairing is the local column. Always TRUE on a discovered key, the discovery demanding a key the departing table declares, which is the classifier''s own rule and not a simplification here. NULL on a NAME_MATCH hop';
-COMMENT ON COLUMN intent_node_id_decode_hop.last_position IS 'the greatest position this coordinate''s path reached, so the terminal hop is the row whose position equals this. Carried because the lift the key-column child computes has to know where the chain ends and asking the question outside would name this relation a second time, which is the same reason the reference-target views carry their own arities. The greatest position rather than a count of rows, because the two agree only where the positions are contiguous, and they need not be: a position whose route is ambiguous contributes no hop, so a chain can have a gap, and a count would then point at a position that is not the terminal. Under a gap nothing lifts either way, the walk being unable to cross it, so this is a statement that stays true rather than a behaviour that changes';
-
-CREATE VIEW intent_node_id_decode_hop_column
-  (graph_name, site, type_name, field_name, argument_name, path, position, pair_position,
-   from_column_name, to_column_name, last_position) AS
-SELECT h.graph_name, h.site, h.type_name, h.field_name, h.argument_name, h.path,
-       h.position, fk.position,
-       CASE WHEN h.fk_on_from THEN fk.column_name ELSE fk.referenced_column_name END,
-       CASE WHEN h.fk_on_from THEN fk.referenced_column_name ELSE fk.column_name END,
-       h.last_position
-  FROM intent_node_id_decode_hop h
-  JOIN intent_foreign_key_column_pair fk
-    ON fk.constraint_name = h.constraint_name
-   AND ((h.fk_on_from
-         AND fk.source_name = h.from_source_name AND fk.table_schema = h.from_schema
-         AND fk.table_name = h.from_table
-         AND fk.referenced_source_name = h.to_source_name
-         AND fk.referenced_schema = h.to_schema AND fk.referenced_table = h.to_table)
-     OR (NOT h.fk_on_from
-         AND fk.source_name = h.to_source_name AND fk.table_schema = h.to_schema
-         AND fk.table_name = h.to_table
-         AND fk.referenced_source_name = h.from_source_name
-         AND fk.referenced_schema = h.from_schema AND fk.referenced_table = h.from_table));
-COMMENT ON VIEW intent_node_id_decode_hop_column IS 'One hop of a decode path oriented along the walk: for each position of the hop''s foreign key, the column on the table the hop departs beside the column on the table it arrives at. intent_node_id_decode_hop says which key a hop joins on and which end declares it; this relation is that key''s column pairing turned the walk''s way round, so a reader takes departing and arriving without having to know which end the catalog put the key on. That reorientation is the only thing here, and it is worth a relation rather than a CASE at each reader because two readers need it and they would express it differently. The lift the key-column child computes walks these rows forward, and a rendered join reads them as its ON clause. Orientation is fk_on_from''s whole purpose: on a hop whose departing table declares the key the departing column is the key''s own and the arriving one is what it references, and on a reverse hop the two swap. The two branches are disjoint on that column and not on the endpoints, which is what keeps a self-referencing key one pairing rather than two mirrored ones. A hop joining on no foreign key contributes nothing, which is the name-matched element over a function result: it keys by column name and declares no constraint, so there is no pairing to state and the shape is refused above rather than modelled here. The path''s extent travels with the rows, the greatest position being carried through from the parent hop so the terminal hop is identified without naming that relation again, which is the same reason it carries it.';
-COMMENT ON COLUMN intent_node_id_decode_hop_column.graph_name IS 'the owning graph''s partition, carried from the hop';
-COMMENT ON COLUMN intent_node_id_decode_hop_column.site IS 'ARGUMENT or INPUT_FIELD, as on the hop';
-COMMENT ON COLUMN intent_node_id_decode_hop_column.type_name IS 'the type owning the slot, as on the hop';
-COMMENT ON COLUMN intent_node_id_decode_hop_column.field_name IS 'the slot''s field name, as on the hop';
-COMMENT ON COLUMN intent_node_id_decode_hop_column.argument_name IS 'the argument on ARGUMENT; NULL on INPUT_FIELD, as on the hop';
-COMMENT ON COLUMN intent_node_id_decode_hop_column.path IS 'the occurrence path on INPUT_FIELD; NULL on ARGUMENT, as on the hop';
-COMMENT ON COLUMN intent_node_id_decode_hop_column.position IS 'the hop''s own 0-based position along the path, carried from the hop; with the pair position beside it and the coordinate above, this is the key';
-COMMENT ON COLUMN intent_node_id_decode_hop_column.pair_position IS 'the 0-based position within the hop''s foreign key, the same position on both sides of the pair. The order a tuple predicate over this hop has to preserve, and what makes the walk positional rather than a name lookup that happens to agree';
-COMMENT ON COLUMN intent_node_id_decode_hop_column.from_column_name IS 'the column on the table this hop departs: the key''s own column where the departing table declares it, the column it references where the arriving table does';
-COMMENT ON COLUMN intent_node_id_decode_hop_column.to_column_name IS 'the column on the table this hop arrives at, the other half of the pair. What the next hop''s departing column is matched against, and at the terminal hop what a node key column is matched against';
-COMMENT ON COLUMN intent_node_id_decode_hop_column.last_position IS 'the greatest position the path reached, carried from the hop; the terminal hop is the one whose position equals this';
-
-CREATE VIEW intent_node_id_decode_column
-  (graph_name, site, type_name, field_name, argument_name, path, position, tier,
-   key_column_name, local_column_name) AS
-WITH RECURSIVE lifted (graph_name, site, type_name, field_name, argument_name, path,
-                       position, last_position, local_column_name, arrived_column_name) AS (
-  SELECT hc.graph_name, hc.site, hc.type_name, hc.field_name, hc.argument_name, hc.path,
-         hc.position, hc.last_position, hc.from_column_name, hc.to_column_name
-    FROM intent_node_id_decode_hop_column hc
-   WHERE hc.position = 0
-  UNION
-  SELECT l.graph_name, l.site, l.type_name, l.field_name, l.argument_name, l.path,
-         hc.position, l.last_position, l.local_column_name, hc.to_column_name
-    FROM lifted l
-    JOIN intent_node_id_decode_hop_column hc
-      ON hc.graph_name = l.graph_name AND hc.site = l.site AND hc.type_name = l.type_name
-     AND hc.field_name = l.field_name
-     AND (hc.argument_name = l.argument_name
-          OR (hc.argument_name IS NULL AND l.argument_name IS NULL))
-     AND (hc.path = l.path OR (hc.path IS NULL AND l.path IS NULL))
-     AND hc.position = l.position + 1
-     AND UPPER(hc.from_column_name) = UPPER(l.arrived_column_name)
-)
-SELECT e.graph_name, e.site, e.type_name, e.field_name, e.argument_name, e.path,
-       k.position, k.tier, k.column_name,
-       CASE WHEN e.navigation = 'SAME_TABLE' THEN k.column_name ELSE l.local_column_name END
-  FROM intent_node_id_decode_endpoint e
-  JOIN intent_resolved_node_key_column k
-    ON k.graph_name = e.graph_name AND k.type_name = e.node_type_name
-  LEFT JOIN lifted l
-    ON e.navigation <> 'SAME_TABLE'
-   AND l.graph_name = e.graph_name AND l.site = e.site AND l.type_name = e.type_name
-   AND l.field_name = e.field_name
-   AND (l.argument_name = e.argument_name
-        OR (l.argument_name IS NULL AND e.argument_name IS NULL))
-   AND (l.path = e.path OR (l.path IS NULL AND e.path IS NULL))
-   AND l.position = l.last_position
-   AND UPPER(l.arrived_column_name) = UPPER(k.column_name);
-COMMENT ON VIEW intent_node_id_decode_column IS 'Where each value a decode yields lands: one row per position of the node type''s key, carrying that key column and the column on the slot''s own table the value lifts back to, or nothing where no such column exists. The relation site 4b dissolves into. A decode whose every position carries a local column binds locally on a tuple of the row''s own table; one whose positions carry none binds the node type''s own key columns on the node type''s own table inside a correlated EXISTS; and a junction chain is the second because the lift contributes no local column, not because anything rejects it. Those were one conjunct in the resolution this replaces, which picked the local shape when the terminal key''s referenced columns were the node key as a multiset and rejected a chain that translated a column before the question was reached, so the remote shape was unreachable for a multi-hop path. Here they are two facts and the second is a column being null. The lift is a forward walk and not the backward one it reads as. Walking back from the terminal hop is how a reader thinks about it and it has no recursive form; the same fact stated forward does, and it is an invariant carried along the chain: a row says "this column of the departing table is, after this many hops, this column of the table reached". The seed is the first hop''s own pairing, and each step keeps the local column and replaces the arrived one, joining on the next hop''s departing column matching the current arrived one by name. A hop that translates a column is therefore not a rejection and not a special case: the chain for that position simply has nothing to join to and stops, which is exactly what a lift failing means. Matching is by SQL name folded on both sides, which is the same comparison the resolution it replaces makes and inherits its reason: two columns of one table are the same column when their names agree, whatever the catalog''s case. Permutation needs no separate treatment either. The terminal arrival is matched against the key column rather than against a position, so a foreign key declared in a different column order from an @node(keyColumns:) list lands each column at the position the key states, and the transposition the key-column relation''s own comment warns about cannot arise from a positional pairing here. A position with several arrivals is several rows, which takes a malformed catalog to produce, and this relation counts nothing and prefers nothing. Total over the endpoint population crossed with the resolved key, which is the property the destination above depends on: every position of every decode has a row, so all-carry and none-carry are readings of a complete set rather than of whatever survived a join. A partial lift is therefore visible as such, and it is a real shape rather than a modelling gap: a terminal hop whose arriving columns cover only part of the node''s key lifts the part it reaches, which a compound key pinned wider than the constraint produces and a reverse hop produces routinely, that hop arriving on the key''s own columns and reaching whichever of the node''s key columns the departure happens to share. No destination vocabulary names that case, and the reduction above treats anything short of every position as binding remotely, which is always correct where a tuple predicate is not; recording it position by position is what lets a diagnostic say which position was the one that did not arrive. A node type resolving no key columns has no rows at all, absence there being the key relation''s own statement that no tier answered rather than anything about this decode.';
-COMMENT ON COLUMN intent_node_id_decode_column.graph_name IS 'the owning graph''s partition, carried from the endpoint relation';
-COMMENT ON COLUMN intent_node_id_decode_column.site IS 'ARGUMENT or INPUT_FIELD, as on the endpoint relation';
-COMMENT ON COLUMN intent_node_id_decode_column.type_name IS 'the type owning the slot, as on the endpoint relation';
-COMMENT ON COLUMN intent_node_id_decode_column.field_name IS 'the slot''s field name, as on the endpoint relation';
-COMMENT ON COLUMN intent_node_id_decode_column.argument_name IS 'the argument on ARGUMENT; NULL on INPUT_FIELD, as on the endpoint relation';
-COMMENT ON COLUMN intent_node_id_decode_column.path IS 'the occurrence path on INPUT_FIELD; NULL on ARGUMENT, as on the endpoint relation';
-COMMENT ON COLUMN intent_node_id_decode_column.position IS 'the 0-based position within the node type''s key, carried from intent_resolved_node_key_column; the order the decode returns values in, so a tuple predicate binds this row''s local column against the value at this position';
-COMMENT ON COLUMN intent_node_id_decode_column.tier IS 'which population answered for the key column, carried from intent_resolved_node_key_column so a reader learns whether the key was pinned in SDL, stated by the generated model, or the bound table''s primary key without joining back. Provenance, and what a message naming a key column stands on';
-COMMENT ON COLUMN intent_node_id_decode_column.key_column_name IS 'the node type''s key column at this position, as the winning tier spells it. What the decode yields a value for, and what a remote binding puts the value against on the node type''s own table';
-COMMENT ON COLUMN intent_node_id_decode_column.local_column_name IS 'the column on the slot''s own table this position lifts back to, spelled as the catalog spells it, or NULL where the walk reached no such column. The whole discriminator of the two table destinations: every position carrying one is a local tuple predicate, none carrying one is a correlated EXISTS on the node type''s own table. NULL is a stated absence rather than a missing value, and the site is what determines it in the sense the nullable-by-kind discipline allows: on the identity navigation it is the key column itself, on a lifting chain the column the chain reached, and on a translating chain nothing, which is a rule about the navigation rather than an unfilled slot';
-
-CREATE VIEW intent_node_id_encode
-  (graph_name, type_name, field_name, use_site, node_type_name, source, arity) AS
-SELECT graph_name, type_name, field_name, use_site, node_type_name, source, arity
-  FROM (SELECT i.graph_name, i.type_name, i.field_name, i.use_site, i.node_type_name,
-               CASE WHEN bt.table_name IS NOT NULL AND pm.field_name IS NULL
-                    THEN 'PROJECTED_COLUMNS' ELSE 'READ_VALUE' END AS source,
-               k.arity
-          FROM intent_node_id_instruction i
-          JOIN (SELECT graph_name, type_name, CAST(COUNT(*) AS INT) AS arity
-                  FROM intent_resolved_node_key_column
-                 GROUP BY graph_name, type_name) k
-            ON k.graph_name = i.graph_name AND k.type_name = i.node_type_name
-          LEFT JOIN intent_resolved_type_binding bt
-            ON bt.graph_name = i.graph_name AND bt.type_name = i.type_name
-           AND bt.candidates = 1
-          LEFT JOIN (SELECT DISTINCT graph_name, type_name, field_name
-                       FROM intent_field_producer_reference) pm
-            ON pm.graph_name = i.graph_name AND pm.type_name = i.type_name
-           AND pm.field_name = i.field_name
-         WHERE i.site = 'OUTPUT_FIELD') resolved
- WHERE source = 'PROJECTED_COLUMNS' OR arity = 1;
-COMMENT ON VIEW intent_node_id_encode IS 'How an output field carrying the @nodeId instruction produces the tuple it encodes. The encoding half of the resolution, and a separate relation from the decode rather than one relation with a direction column, because the two answer different questions and sharing a row shape would leave half the columns nullable by kind: a decode has a destination that receives a tuple and, where that destination is a table, a column correspondence and possibly a join path, while an encode has a source that produces one and never has either. Direction is therefore not a column anywhere; it follows from the site and from which of the two relations answered. Output fields only, which is that rule stated as a population. Two sources, and the discriminator is whether a column tuple is in scope at all. PROJECTED_COLUMNS is everything that encodes today: the field sits on a type some table stands for and nothing overrides how its value is produced, so the key columns are selectable and the encode wraps them at the projection, whether they are the row''s own or reached through an authored path. READ_VALUE is the rest, and it is one source rather than four because the four spellings differ only in the mechanism a value arrives by: an accessor on a backing class, a by-name record read, a typed column off a record, or graphql-java''s own property machinery all hand the generator one value, and the encode applies to what the read yielded. The two conditions that put a field there are a containing type no table stands for, which is what an @error type is, and a field whose value a named producer method returns, which overrides the projection its containing type would otherwise offer. That second condition reads the producer reference and not the method it resolves to, on purpose: an @externalField naming a method the classpath census never saw still means the value is read rather than projected, and asking the resolved relation would have made an unresolvable reference look like a projection, which is the one reading that puts a base64 string where a column belongs. One precondition is stated here and it is arity: a read yields one value, so a node type whose key is several columns cannot be encoded from one, and such a coordinate has no row. A projection has no such limit, the whole tuple being in scope, which is why the arity demand is written once against the source rather than as a blanket filter. Absence is therefore not the message and never should be read as one: an instruction with no row here was not carried out, and which precondition stopped it is the detection stratum''s statement with the operands to make it, on the same terms that keep the candidate and projection relations beside the argMapping family disjoint by construction rather than each re-testing the other''s predicate.';
-COMMENT ON COLUMN intent_node_id_encode.graph_name IS 'the owning graph''s partition, carried from the instruction';
-COMMENT ON COLUMN intent_node_id_encode.type_name IS 'the object type owning the encoding field';
-COMMENT ON COLUMN intent_node_id_encode.field_name IS 'the encoding field''s name within that type. With the two columns above this is the key: an output field is its own use site, so there is no third component and no path, which is the shape difference from the decode stated as a narrower key';
-COMMENT ON COLUMN intent_node_id_encode.use_site IS 'the coordinate serialized, carried from the instruction so a message needs no second join; always Type.field here, an output field being its own use site';
-COMMENT ON COLUMN intent_node_id_encode.node_type_name IS 'the node type whose identity is being encoded, written or inferred. intent_resolved_node_key_column on this name and the graph gives the columns to encode from, in order, and intent_resolved_node_type_id gives the prefix they are encoded under';
-COMMENT ON COLUMN intent_node_id_encode.source IS 'where the tuple comes from, in a closed vocabulary of two: PROJECTED_COLUMNS where the key columns are selectable at the field''s own site and the encode wraps them at the projection, READ_VALUE where the field''s value arrives through a read and the encode applies to what the read yielded. The column a consumer switches on, and what says whether the arity demand applied';
-COMMENT ON COLUMN intent_node_id_encode.arity IS 'how many columns the node type''s key has, counted over the rows intent_resolved_node_key_column already answered with rather than by reading that relation a second time, which is the shape the fact model has measured as dominant on a comparable tree. Always 1 on a READ_VALUE row, that being the precondition; unbounded on a projection. Carried because a consumer emitting the encode needs the width and because a message about a refused sibling coordinate names this number';
-
 CREATE VIEW intent_argmapping_pair_live
   (graph_name, site, use_site, type_name, field_name, argument_name, ordinal, step_position,
    position, param_name, argument_path, source_name, source_line, source_column) AS
@@ -6400,6 +5975,558 @@ COMMENT ON COLUMN intent_argmapping_projection_defect.source_column IS 'source c
 -- also each loaded relation's one key throughout. graphql_syntax_error is the one arm keyed
 -- otherwise, on the source it refused, and its own comment argues why.
 
+CREATE VIEW intent_node_id_instruction
+  (graph_name, site, type_name, field_name, argument_name, path, use_site,
+   basis, node_type_name, carries_reference_path,
+   source_name, source_line, source_column) AS
+WITH instructed (graph_name, site, type_name, field_name, argument_name, path, use_site,
+                 node_type_ref, has_reference, source_name, source_line, source_column) AS (
+  SELECT n.graph_name, 'OUTPUT_FIELD', n.type_name, n.field_name, CAST(NULL AS VARCHAR),
+         CAST(NULL AS VARCHAR), n.type_name || '.' || n.field_name, n.node_type_ref,
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step s
+                            WHERE s.graph_name = n.graph_name AND s.type_name = n.type_name
+                              AND s.field_name = n.field_name)
+              THEN TRUE ELSE FALSE END,
+         n.source_name, n.source_line, n.source_column
+    FROM graphitron_field_node_id n
+    JOIN graphql_type t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
+     AND t.kind = 'OBJECT'
+   UNION ALL
+  SELECT n.graph_name, 'INPUT_FIELD', n.type_name, n.field_name, NULL,
+         p.path, p.path, n.node_type_ref,
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step s
+                            WHERE s.graph_name = n.graph_name AND s.type_name = n.type_name
+                              AND s.field_name = n.field_name)
+              THEN TRUE ELSE FALSE END,
+         n.source_name, n.source_line, n.source_column
+    FROM graphitron_field_node_id n
+    JOIN graphql_type t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
+     AND t.kind = 'INPUT_OBJECT'
+    JOIN intent_input_occurrence_path_step st
+      ON st.graph_name = n.graph_name AND st.container_type_name = n.type_name
+     AND st.field_name = n.field_name
+    JOIN intent_input_occurrence_path p
+      ON p.graph_name = st.graph_name AND p.path = st.path AND p.depth = st.ordinal
+   UNION ALL
+  SELECT n.graph_name, 'ARGUMENT', n.type_name, n.field_name, n.argument_name,
+         NULL, n.type_name || '.' || n.field_name || '(' || n.argument_name || ')',
+         n.node_type_ref,
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument_reference_step s
+                            WHERE s.graph_name = n.graph_name AND s.type_name = n.type_name
+                              AND s.field_name = n.field_name
+                              AND s.argument_name = n.argument_name)
+              THEN TRUE ELSE FALSE END,
+         n.source_name, n.source_line, n.source_column
+    FROM graphitron_argument_node_id n
+),
+slot_table (graph_name, site, type_name, field_name, argument_name, path,
+            table_source_name, table_schema, table_name) AS (
+  SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
+         tg.to_source_name, tg.to_schema, tg.to_table
+    FROM instructed i
+    JOIN intent_field_reference_step_target tg
+      ON tg.graph_name = i.graph_name AND tg.type_name = i.type_name
+     AND tg.field_name = i.field_name
+     AND tg.position = (SELECT MAX(s.position) FROM graphitron_field_reference_step s
+                         WHERE s.graph_name = tg.graph_name AND s.type_name = tg.type_name
+                           AND s.field_name = tg.field_name AND s.ordinal = tg.ordinal)
+   WHERE i.site = 'OUTPUT_FIELD' AND i.has_reference
+   UNION
+  SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
+         tg.to_source_name, tg.to_schema, tg.to_table
+    FROM instructed i
+    JOIN intent_argument_reference_step_target tg
+      ON tg.graph_name = i.graph_name AND tg.type_name = i.type_name
+     AND tg.field_name = i.field_name AND tg.argument_name = i.argument_name
+     AND tg.position = (SELECT MAX(s.position) FROM graphitron_argument_reference_step s
+                         WHERE s.graph_name = tg.graph_name AND s.type_name = tg.type_name
+                           AND s.field_name = tg.field_name
+                           AND s.argument_name = tg.argument_name AND s.ordinal = tg.ordinal)
+   WHERE i.site = 'ARGUMENT' AND i.has_reference
+   UNION
+  SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
+         u.table_source_name, u.table_schema, u.table_name
+    FROM instructed i
+    JOIN intent_argument_scope_table u
+      ON u.graph_name = i.graph_name AND u.type_name = i.type_name
+     AND u.field_name = i.field_name AND u.argument_name = i.argument_name
+   WHERE i.site = 'ARGUMENT' AND NOT i.has_reference
+   UNION
+  SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
+         u.table_source_name, u.table_schema, u.table_name
+    FROM instructed i
+    JOIN intent_input_occurrence_path p
+      ON p.graph_name = i.graph_name AND p.path = i.path
+    JOIN intent_argument_scope_table u
+      ON u.graph_name = p.graph_name AND u.type_name = p.root_type_name
+     AND u.field_name = p.root_field_name AND u.argument_name = p.root_argument_name
+   WHERE i.site = 'INPUT_FIELD'
+),
+table_node (graph_name, table_source_name, table_schema, table_name, type_name, candidates) AS (
+  SELECT bt.graph_name, bt.table_source_name, bt.table_schema, bt.table_name, bt.type_name,
+         CAST(COUNT(*) OVER (PARTITION BY bt.graph_name, bt.table_source_name,
+                                          bt.table_schema, bt.table_name) AS INT)
+    FROM intent_resolved_type_binding bt
+    JOIN intent_node_type nt
+      ON nt.graph_name = bt.graph_name AND nt.type_name = bt.type_name
+)
+SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
+       'EXPLICIT_TYPE_NAME', nt.type_name, i.has_reference,
+       i.source_name, i.source_line, i.source_column
+  FROM instructed i
+  JOIN intent_node_type nt
+    ON nt.graph_name = i.graph_name AND nt.type_name = i.node_type_ref
+ UNION ALL
+SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
+       'CONTAINING_NODE_TYPE', nt.type_name, i.has_reference,
+       i.source_name, i.source_line, i.source_column
+  FROM instructed i
+  JOIN intent_node_type nt
+    ON nt.graph_name = i.graph_name AND nt.type_name = i.type_name
+ WHERE i.node_type_ref IS NULL AND i.site = 'OUTPUT_FIELD' AND NOT i.has_reference
+ UNION ALL
+SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
+       'TARGET_TABLE_NODE_TYPE', tn.type_name, i.has_reference,
+       i.source_name, i.source_line, i.source_column
+  FROM instructed i
+  JOIN slot_table s
+    ON s.graph_name = i.graph_name AND s.site = i.site AND s.type_name = i.type_name
+   AND s.field_name = i.field_name
+   AND (s.argument_name = i.argument_name OR (s.argument_name IS NULL AND i.argument_name IS NULL))
+   AND (s.path = i.path OR (s.path IS NULL AND i.path IS NULL))
+  JOIN table_node tn
+    ON tn.graph_name = s.graph_name AND tn.table_source_name = s.table_source_name
+   AND tn.table_schema = s.table_schema AND tn.table_name = s.table_name
+ WHERE i.node_type_ref IS NULL AND tn.candidates = 1
+   AND NOT (i.site = 'OUTPUT_FIELD' AND NOT i.has_reference)
+ UNION ALL
+SELECT f.graph_name, 'OUTPUT_FIELD', f.type_name, f.field_name, NULL, NULL,
+       f.type_name || '.' || f.field_name,
+       'OWN_ID_FIELD', nt.type_name,
+       CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step s
+                          WHERE s.graph_name = f.graph_name AND s.type_name = f.type_name
+                            AND s.field_name = f.field_name)
+            THEN TRUE ELSE FALSE END,
+       f.source_name, f.source_line, f.source_column
+  FROM graphql_field f
+  JOIN intent_node_type nt
+    ON nt.graph_name = f.graph_name AND nt.type_name = f.type_name
+ WHERE f.field_name = 'id' AND f.named_type = 'ID'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_node_id n
+                    WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name
+                      AND n.field_name = f.field_name)
+ UNION ALL
+SELECT a.graph_name, 'ARGUMENT', a.type_name, a.field_name, a.argument_name, NULL,
+       a.type_name || '.' || a.field_name || '(' || a.argument_name || ')',
+       'TARGET_ID_NAME', nt.type_name,
+       CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument_reference_step s
+                          WHERE s.graph_name = a.graph_name AND s.type_name = a.type_name
+                            AND s.field_name = a.field_name
+                            AND s.argument_name = a.argument_name)
+            THEN TRUE ELSE FALSE END,
+       a.source_name, a.source_line, a.source_column
+  FROM graphql_argument a
+  JOIN graphql_field f
+    ON f.graph_name = a.graph_name AND f.type_name = a.type_name
+   AND f.field_name = a.field_name
+  JOIN intent_node_type nt
+    ON nt.graph_name = a.graph_name AND nt.type_name = f.named_type
+ WHERE a.argument_name = 'id' AND a.named_type = 'ID'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argument_node_id n
+                    WHERE n.graph_name = a.graph_name AND n.type_name = a.type_name
+                      AND n.field_name = a.field_name AND n.argument_name = a.argument_name)
+ UNION ALL
+SELECT f.graph_name, 'INPUT_FIELD', f.type_name, f.field_name, NULL, p.path, p.path,
+       'TARGET_ID_NAME', tn.type_name,
+       CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step s
+                          WHERE s.graph_name = f.graph_name AND s.type_name = f.type_name
+                            AND s.field_name = f.field_name)
+            THEN TRUE ELSE FALSE END,
+       f.source_name, f.source_line, f.source_column
+  FROM graphql_field f
+  JOIN graphql_type t ON t.graph_name = f.graph_name AND t.type_name = f.type_name
+   AND t.kind = 'INPUT_OBJECT'
+  JOIN intent_input_occurrence_path_step st
+    ON st.graph_name = f.graph_name AND st.container_type_name = f.type_name
+   AND st.field_name = f.field_name
+  JOIN intent_input_occurrence_path p
+    ON p.graph_name = st.graph_name AND p.path = st.path AND p.depth = st.ordinal
+  JOIN intent_argument_scope_table u
+    ON u.graph_name = p.graph_name AND u.type_name = p.root_type_name
+   AND u.field_name = p.root_field_name AND u.argument_name = p.root_argument_name
+  JOIN table_node tn
+    ON tn.graph_name = u.graph_name AND tn.table_source_name = u.table_source_name
+   AND tn.table_schema = u.table_schema AND tn.table_name = u.table_name
+ WHERE f.field_name = 'id' AND f.named_type = 'ID' AND tn.candidates = 1
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_node_id n
+                    WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name
+                      AND n.field_name = f.field_name);
+COMMENT ON VIEW intent_node_id_instruction IS 'Every slot carrying the @nodeId instruction, and which node type it names. The population the resolution relations and the defect view both partition, and the reason this exists as a relation rather than as each of their own WHERE clauses: the detection is "instructed and not carried out", so an instruction the population misses is a coordinate that stays silent, and a population two readers spell separately is two populations. Three sites, and site is the discriminator every other column''s nullness is determined by, on intent_argmapping_pair''s terms: an argument name where the site is an argument, an occurrence path where it is an input field, and the stated absent bucket elsewhere. Direction is deliberately not a column: an OUTPUT_FIELD encodes and the other two decode, which follows from the site and from which resolution relation answered, so a column would be a third spelling of a fact two relations already carry. The instruction has three authored forms and this relation states five bases over them, because the two inference rules and the two name-carried cases are different rules rather than one rule with cases. They are disjoint rather than ranked, which is what lets this be a plain union with no windowed collapse over it, and the disjointness is by construction: the three directive bases require a captured row and the two name-carried bases require the absence of one, EXPLICIT_TYPE_NAME requires a written typeName: and the two inference bases its absence, and the two inference bases split on the site-and-@reference predicate the manual states them with. Grain is the instruction and its use site. An argument and an output field are their own use site; an input field''s use sites come from intent_input_occurrence_path, so one input field carrying one directive is as many rows as there are coordinates consuming it. That is load-bearing rather than tidy: one input type may be consumed where the target resolves and where it cannot, so a row keyed on the instruction alone would have to pick one answer for two consumers, which is the argument ArgmappingProjectionDefects already makes for its own messages. An input field on an input type nothing reaches produces no occurrence path, so no use site, so no row; that is not a reachability gate but the observation that a decode is "these values go here" and with no consuming coordinate there is no here. Population boundary, stated because a hole here reads as a fact everywhere downstream: an instruction whose named or inferred type resolves to no node type is not a row. Those coordinates already meet a shipped rejection naming the type, so admitting them would put an instruction in the population that neither resolves nor draws either of the defect view''s verdicts, breaking the partition to restate a message. The one shape this relation cannot yet enumerate is an input field carrying its own @reference path: the target views resolve a path from a type''s table binding, an input type has none, and no relation resolves an input-field path''s terminal. Such a slot with an explicit typeName: is a row here like any other; only its bare form is missing, and closing it wants an input-site target view rather than a wider rule here.';
+COMMENT ON COLUMN intent_node_id_instruction.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row';
+COMMENT ON COLUMN intent_node_id_instruction.site IS 'which SDL site carries the instruction, in a closed vocabulary of three: OUTPUT_FIELD, INPUT_FIELD, ARGUMENT. The column a consumer switches on, the one that decides the direction, and the one every other column''s nullness is determined by. The two field sites share one captured relation and are told apart by the owning type''s kind, which is how the capture side already tells them apart';
+COMMENT ON COLUMN intent_node_id_instruction.type_name IS 'the type owning the slot: an object type on OUTPUT_FIELD, an input object type on INPUT_FIELD, the argument''s owning type on ARGUMENT';
+COMMENT ON COLUMN intent_node_id_instruction.field_name IS 'the slot''s field name, or on ARGUMENT the field the argument sits on';
+COMMENT ON COLUMN intent_node_id_instruction.argument_name IS 'the argument carrying the instruction on the ARGUMENT site; NULL on the two field sites, determined by site rather than independent of it, which is what makes the nullness a stated rule instead of a missing value';
+COMMENT ON COLUMN intent_node_id_instruction.path IS 'the occurrence path this row''s use site is, on the INPUT_FIELD site; NULL on the other two, whose slot is its own use site. The serialized key of intent_input_occurrence_path, so the use site''s own coordinate and every step of the descent are one join away and nothing here is parsed';
+COMMENT ON COLUMN intent_node_id_instruction.use_site IS 'the consuming coordinate serialized, in intent_argmapping_pair''s vocabulary: Type.field for an output field, Type.field(argument) for an argument, and the occurrence path itself for an input field, that path already being this serialization. Carried because a message needs one string and the components differ by site; those components are columns beside it, so nothing parses this';
+COMMENT ON COLUMN intent_node_id_instruction.basis IS 'which rule stated the instruction and resolved its target, in a closed vocabulary of five disjoint rules. EXPLICIT_TYPE_NAME: @nodeId(typeName: T). CONTAINING_NODE_TYPE: bare @nodeId on a non-@reference object field whose containing type is itself a node, the manual''s inference rule (a). TARGET_TABLE_NODE_TYPE: bare @nodeId whose target comes from a table, the manual''s inference rule (b), demanding exactly one node type over that table. OWN_ID_FIELD: a node type''s own id field with no directive, which is a node ID by construction. TARGET_ID_NAME: a slot named for the target''s own id with no directive, an argument of a node-returning field or an input field consumed against a node-backed table. Provenance and shape at once, which is why it is one column and not two: typeName: is rejected outright on a node type''s own id field, so the forms are not interchangeable and a rejection has to be able to say which one the author wrote';
+COMMENT ON COLUMN intent_node_id_instruction.node_type_name IS 'the node type the instruction names, written or inferred; never NULL, the population being instructions whose target resolved. What the opaque format''s other end is: intent_resolved_node_key_column on this name and the graph gives the key columns in order, and intent_resolved_node_type_id gives the typeId';
+COMMENT ON COLUMN intent_node_id_instruction.carries_reference_path IS 'whether the slot carries an @reference path of its own, read on the captured relation the slot''s site keys: the argument-site steps on ARGUMENT, the field-site steps on the two field sites. Carried because it decides how the instruction navigates to the node type''s table and because two of the bases above are already disjoint on it, so a reader resolving the navigation would otherwise re-derive a predicate this view has already evaluated. It says a path is written and nothing about whether one resolves; where the path resolves to is the reference-target views'' answer and a slot whose path reaches nothing is TRUE here all the same';
+COMMENT ON COLUMN intent_node_id_instruction.source_name IS 'the SDL file the instruction was captured from; the directive application''s own position on the three directive bases, and the slot declaration''s on the two name-carried ones, there being no application to locate';
+COMMENT ON COLUMN intent_node_id_instruction.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN intent_node_id_instruction.source_column IS 'source column, 1-based per the graphql-java convention';
+
+CREATE VIEW intent_node_id_decode_endpoint
+  (graph_name, site, type_name, field_name, argument_name, path, use_site, node_type_name,
+   navigation, from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table) AS
+SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
+       i.node_type_name,
+       CASE WHEN i.carries_reference_path AND i.site = 'INPUT_FIELD' THEN 'UNRESOLVED_PATH'
+            WHEN i.carries_reference_path THEN 'AUTHORED_PATH'
+            WHEN bt.table_source_name = sc.table_source_name
+             AND bt.table_schema = sc.table_schema
+             AND bt.table_name = sc.table_name THEN 'SAME_TABLE'
+            ELSE 'DISCOVERED_KEY' END,
+       sc.table_source_name, sc.table_schema, sc.table_name,
+       bt.table_source_name, bt.table_schema, bt.table_name
+  FROM intent_node_id_instruction i
+  LEFT JOIN intent_input_occurrence_path p
+    ON p.graph_name = i.graph_name AND p.path = i.path AND i.site = 'INPUT_FIELD'
+  JOIN intent_argument_scope_table sc
+    ON sc.graph_name = i.graph_name
+   AND sc.type_name = COALESCE(p.root_type_name, i.type_name)
+   AND sc.field_name = COALESCE(p.root_field_name, i.field_name)
+   AND sc.argument_name = COALESCE(p.root_argument_name, i.argument_name)
+  JOIN intent_resolved_type_binding bt
+    ON bt.graph_name = i.graph_name AND bt.type_name = i.node_type_name
+   AND bt.candidates = 1
+ WHERE i.site IN ('ARGUMENT', 'INPUT_FIELD');
+COMMENT ON VIEW intent_node_id_decode_endpoint IS 'Where a decode starts and where it has to arrive: for every slot carrying the @nodeId instruction on a decoding site, the table the slot''s own predicate binds on and the table the named node type''s keys live on. The relation the decode''s hop child, its key-column child and the destination over them all read, and it exists because those three would otherwise each resolve the same two tables: the destination is a reduction over the key-column child, the key-column child walks the hops, and the hops need a departure, so the endpoints have to be stated once below all three rather than recomputed inside each. Decoding sites only, which is the direction rule stated as a population rather than as a column: an output field encodes and the two input-side sites decode, so this relation''s WHERE clause is where the direction lives and no reader switches on one. The departure is intent_argument_scope_table''s answer at the consuming argument, which for an argument is its own coordinate and for an input field is the coordinate at the head of its occurrence path, both reached in one pass over the population; the two would be a union arm each and each would name the instruction relation again, which is the multiplicity the fact model''s own measurements warn about, so the occurrence path joins outer and the coordinate is picked by COALESCE. The arrival is the node type''s resolved binding, demanded unambiguous for the reason the departure is: two candidate tables are two different key tuples, and a decode against a table the author never named is worse than a decode that does not resolve. The navigation column is the whole reading this relation adds beyond the two tables, and it is a closed vocabulary of four. SAME_TABLE is own-row identity: the slot supplies encoded ids of the very rows it binds on, so the keys land on the row''s own key columns and there is nothing to walk. AUTHORED_PATH is an @reference the author wrote, whose hops the argument-site reference-target views resolve. DISCOVERED_KEY is neither written nor identity, where the resolution is the one foreign key declared on the departing table that reaches the arriving one. UNRESOLVED_PATH is the one shape no relation can walk yet: an input field carrying its own @reference, whose path departs an input type that binds no table, so the target views have nothing to resolve it from. It is a stated value rather than an absence on purpose, absence here being indistinguishable from a chain that contributed no local column, which is what a junction chain legitimately is; a consumer that treated the two alike would route a path it never read to a remote binding and call it resolved.';
+COMMENT ON COLUMN intent_node_id_decode_endpoint.graph_name IS 'the owning graph''s partition, carried from the instruction';
+COMMENT ON COLUMN intent_node_id_decode_endpoint.site IS 'ARGUMENT or INPUT_FIELD, as on the instruction; the OUTPUT_FIELD site is absent by construction, an output field encoding rather than decoding';
+COMMENT ON COLUMN intent_node_id_decode_endpoint.type_name IS 'the type owning the slot, as on the instruction';
+COMMENT ON COLUMN intent_node_id_decode_endpoint.field_name IS 'the slot''s field name, or on ARGUMENT the field the argument sits on';
+COMMENT ON COLUMN intent_node_id_decode_endpoint.argument_name IS 'the argument carrying the instruction on ARGUMENT; NULL on INPUT_FIELD, determined by site as on the instruction';
+COMMENT ON COLUMN intent_node_id_decode_endpoint.path IS 'the occurrence path this row''s use site is, on INPUT_FIELD; NULL on ARGUMENT. With the four columns above this is the key, and it is the key the two children carry';
+COMMENT ON COLUMN intent_node_id_decode_endpoint.use_site IS 'the consuming coordinate serialized, carried from the instruction so a message needs no second join';
+COMMENT ON COLUMN intent_node_id_decode_endpoint.node_type_name IS 'the node type the instruction named, whose key columns the decode yields; intent_resolved_node_key_column on this name and the graph is the other end of the opaque format';
+COMMENT ON COLUMN intent_node_id_decode_endpoint.navigation IS 'how the decode reaches the arriving table, in a closed vocabulary of four: SAME_TABLE for own-row identity with nothing to walk, AUTHORED_PATH for an @reference the author wrote, DISCOVERED_KEY for the one foreign key declared on the departing table that reaches the arriving one, UNRESOLVED_PATH for an input field carrying its own @reference, which no relation resolves yet. The column the hop child''s arms are disjoint on, and the column that keeps the unresolvable shape a statement rather than an empty hop set indistinguishable from a chain that lifted nothing';
+COMMENT ON COLUMN intent_node_id_decode_endpoint.from_source_name IS 'the departing table''s catalog partition: the table the slot''s predicate binds on, which is the argument''s scope table at its own site or at the head of its occurrence path';
+COMMENT ON COLUMN intent_node_id_decode_endpoint.from_schema IS 'the departing table''s SQL schema';
+COMMENT ON COLUMN intent_node_id_decode_endpoint.from_table IS 'the departing table''s SQL name';
+COMMENT ON COLUMN intent_node_id_decode_endpoint.to_source_name IS 'the arriving table''s catalog partition: the node type''s own resolved binding, the table its key columns sit on';
+COMMENT ON COLUMN intent_node_id_decode_endpoint.to_schema IS 'the arriving table''s SQL schema';
+COMMENT ON COLUMN intent_node_id_decode_endpoint.to_table IS 'the arriving table''s SQL name; equal to the departing one exactly on the SAME_TABLE navigation, which is how that value is decided rather than a coincidence a reader has to check';
+
+CREATE VIEW intent_node_id_decode_hop
+  (graph_name, site, type_name, field_name, argument_name, path, use_site, position, via,
+   from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table, constraint_name, fk_on_from, last_position) AS
+SELECT graph_name, site, type_name, field_name, argument_name, path, use_site, position, via,
+       from_source_name, from_schema, from_table,
+       to_source_name, to_schema, to_table, constraint_name, fk_on_from,
+       CAST(MAX(position) OVER (PARTITION BY graph_name, use_site) AS INT)
+  FROM (SELECT e.graph_name, e.site, e.type_name, e.field_name, e.argument_name, e.path,
+               e.use_site,
+               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.position ELSE 0 END AS position,
+               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.via
+                    ELSE 'DISCOVERED' END AS via,
+               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.from_source_name
+                    ELSE e.from_source_name END AS from_source_name,
+               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.from_schema
+                    ELSE e.from_schema END AS from_schema,
+               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.from_table
+                    ELSE e.from_table END AS from_table,
+               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.to_source_name
+                    ELSE e.to_source_name END AS to_source_name,
+               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.to_schema
+                    ELSE e.to_schema END AS to_schema,
+               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.to_table
+                    ELSE e.to_table END AS to_table,
+               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.constraint_name
+                    ELSE d.constraint_name END AS constraint_name,
+               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN tg.fk_on_from
+                    ELSE TRUE END AS fk_on_from
+          FROM intent_node_id_decode_endpoint e
+          LEFT JOIN intent_argument_reference_step_target tg
+            ON e.navigation = 'AUTHORED_PATH'
+           AND tg.graph_name = e.graph_name AND tg.type_name = e.type_name
+           AND tg.field_name = e.field_name AND tg.argument_name = e.argument_name
+           AND tg.ordinal = 0 AND tg.candidates = 1
+          LEFT JOIN (SELECT rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name,
+                            rc.referenced_source_name, rc.referenced_schema,
+                            rc.referenced_table,
+                            CAST(COUNT(*) OVER (
+                              PARTITION BY rc.source_name, rc.table_schema, rc.table_name,
+                                           rc.referenced_source_name, rc.referenced_schema,
+                                           rc.referenced_table) AS INT) AS candidates
+                       FROM sql_referential_constraint rc) d
+            ON e.navigation = 'DISCOVERED_KEY' AND d.candidates = 1
+           AND d.source_name = e.from_source_name AND d.table_schema = e.from_schema
+           AND d.table_name = e.from_table
+           AND d.referenced_source_name = e.to_source_name
+           AND d.referenced_schema = e.to_schema AND d.referenced_table = e.to_table
+         WHERE tg.position IS NOT NULL OR d.constraint_name IS NOT NULL) walked;
+COMMENT ON VIEW intent_node_id_decode_hop IS 'The foreign-key hops a decode traverses from the slot''s own table to the node type''s, one row per hop in authored order. The ordinal-keyed child of intent_node_id_decode_endpoint, following the parent-plus-steps shape intent_input_occurrence_path and its step relation already use, so a reader takes the path as rows in order rather than parsing a serialized one. Two populations reach it and the endpoint relation''s navigation column is what tells them apart, so they are disjoint by construction and not by a predicate stated twice. An authored path contributes the hops the argument-site reference-target view resolved, which is why authoring that view was this work''s stated prerequisite: a @nodeId filter path is an argument-site path and there was no relation that walked one. An unwritten one contributes the single foreign key declared on the departing table that reaches the arriving one, which is the resolution the classifier performs where nothing was written, and it is stated here rather than deferred to intent_field_reference_discovery because that relation answers for a field''s two endpoints and these two endpoints are a different pair: the departing table is the argument''s scope and the arriving one is the node type''s, neither of which is the field''s named type in the general case. Exactly one such key is demanded, which is the classifier''s own arity: two keys are two different predicates and picking one would filter on a relationship the author never named. Written as one pass with the columns picked by CASE rather than as one union arm per navigation, so the endpoint relation is named once; its subtree is the deepest thing under here and a second naming of it would dominate the read, which the fact model has measured on a comparable tree. Two navigations contribute nothing and each means something different. SAME_TABLE has no hops because there is nothing to walk, the keys landing on the row''s own key columns, so an empty hop set at that navigation is the answer rather than a failure. UNRESOLVED_PATH has no hops because no relation resolves an input-field path''s terminal yet, and reading the two alike is precisely the misreading the navigation column exists to prevent. Absence at the other two navigations is a chain that stopped: the reference-target view carries only the elements it could show the chain reaches, and the discovery arm carries nothing where no single key connects the pair. A hop whose via is NAME_MATCH joins on no foreign key at all and carries a NULL constraint; such a step is refused upstream on a @nodeId path, and it is a row here because it is a hop the path resolved, the refusal being a consumer''s reading rather than this relation''s.';
+COMMENT ON COLUMN intent_node_id_decode_hop.graph_name IS 'the owning graph''s partition, carried from the endpoint relation';
+COMMENT ON COLUMN intent_node_id_decode_hop.site IS 'ARGUMENT or INPUT_FIELD, as on the endpoint relation';
+COMMENT ON COLUMN intent_node_id_decode_hop.type_name IS 'the type owning the slot, as on the endpoint relation';
+COMMENT ON COLUMN intent_node_id_decode_hop.field_name IS 'the slot''s field name, as on the endpoint relation';
+COMMENT ON COLUMN intent_node_id_decode_hop.argument_name IS 'the argument carrying the instruction on ARGUMENT; NULL on INPUT_FIELD, as on the endpoint relation';
+COMMENT ON COLUMN intent_node_id_decode_hop.path IS 'the occurrence path on INPUT_FIELD; NULL on ARGUMENT, as on the endpoint relation. Carried for a reader that wants the descent as rows rather than as the one string beside it, and no longer part of the key';
+COMMENT ON COLUMN intent_node_id_decode_hop.use_site IS 'the consuming coordinate serialized, carried from the endpoint relation. With the graph and the position below, the whole of this relation''s key, and that is why it is here rather than only on the parent: the five coordinate columns above are the same key spelled in parts, two of them nullable by site, so a reader joining on them writes four null-safe disjunctions and gets a predicate no plan can use. This column is never NULL and the two sites cannot collide in it, an argument serializing as Type.field(argument) and an input field as an occurrence path of at least one step, so it keys the same rows the parts do. The lift walks this relation''s rows against themselves and that walk is the reader the collapse was measured on';
+COMMENT ON COLUMN intent_node_id_decode_hop.position IS 'the hop''s 0-based position along the path, in authored order; always 0 on a discovered key, that arm resolving one hop and never a chain. Contiguous from 0 up to wherever the chain stopped, which is the reference-target view''s own property carried through';
+COMMENT ON COLUMN intent_node_id_decode_hop.via IS 'which arm resolved the hop: KEY, TABLE or NAME_MATCH carried from the reference-target view where the author wrote the path, DISCOVERED where nothing was written and the single connecting key answered. A closed vocabulary of four, and what a reader asks to learn whether every hop is a foreign key at all, a NAME_MATCH hop joining on none';
+COMMENT ON COLUMN intent_node_id_decode_hop.from_source_name IS 'the departing table''s catalog partition: the slot''s own table at position 0, the previous hop''s arrival after that';
+COMMENT ON COLUMN intent_node_id_decode_hop.from_schema IS 'the departing table''s SQL schema';
+COMMENT ON COLUMN intent_node_id_decode_hop.from_table IS 'the departing table''s SQL name';
+COMMENT ON COLUMN intent_node_id_decode_hop.to_source_name IS 'the arriving table''s catalog partition; the node type''s own table at the terminal hop, an intermediate table before it';
+COMMENT ON COLUMN intent_node_id_decode_hop.to_schema IS 'the arriving table''s SQL schema';
+COMMENT ON COLUMN intent_node_id_decode_hop.to_table IS 'the arriving table''s SQL name';
+COMMENT ON COLUMN intent_node_id_decode_hop.constraint_name IS 'the foreign key the hop joins on, written or discovered. Its own sql_referential_constraint key is this name under whichever endpoint declares it, which fk_on_from says. NULL on a NAME_MATCH hop, which joins on no foreign key';
+COMMENT ON COLUMN intent_node_id_decode_hop.fk_on_from IS 'TRUE when the departing table declares the foreign key, FALSE when the arriving one does; the hop''s direction, and what says which side of the key''s column pairing is the local column. Always TRUE on a discovered key, the discovery demanding a key the departing table declares, which is the classifier''s own rule and not a simplification here. NULL on a NAME_MATCH hop';
+COMMENT ON COLUMN intent_node_id_decode_hop.last_position IS 'the greatest position this coordinate''s path reached, so the terminal hop is the row whose position equals this. Carried because the lift the key-column child computes has to know where the chain ends and asking the question outside would name this relation a second time, which is the same reason the reference-target views carry their own arities. The greatest position rather than a count of rows, because the two agree only where the positions are contiguous, and they need not be: a position whose route is ambiguous contributes no hop, so a chain can have a gap, and a count would then point at a position that is not the terminal. Under a gap nothing lifts either way, the walk being unable to cross it, so this is a statement that stays true rather than a behaviour that changes';
+
+CREATE VIEW intent_node_id_decode_hop_column_live
+  (graph_name, site, type_name, field_name, argument_name, path, use_site, position,
+   pair_position, from_column_name, to_column_name, last_position) AS
+SELECT h.graph_name, h.site, h.type_name, h.field_name, h.argument_name, h.path, h.use_site,
+       h.position, fk.position,
+       CASE WHEN h.fk_on_from THEN fk.column_name ELSE fk.referenced_column_name END,
+       CASE WHEN h.fk_on_from THEN fk.referenced_column_name ELSE fk.column_name END,
+       h.last_position
+  FROM intent_node_id_decode_hop h
+  JOIN intent_foreign_key_column_pair fk
+    ON fk.constraint_name = h.constraint_name
+   AND ((h.fk_on_from
+         AND fk.source_name = h.from_source_name AND fk.table_schema = h.from_schema
+         AND fk.table_name = h.from_table
+         AND fk.referenced_source_name = h.to_source_name
+         AND fk.referenced_schema = h.to_schema AND fk.referenced_table = h.to_table)
+     OR (NOT h.fk_on_from
+         AND fk.source_name = h.to_source_name AND fk.table_schema = h.to_schema
+         AND fk.table_name = h.to_table
+         AND fk.referenced_source_name = h.from_source_name
+         AND fk.referenced_schema = h.from_schema AND fk.referenced_table = h.from_table));
+COMMENT ON VIEW intent_node_id_decode_hop_column_live IS 'This states the rule and is evaluated on demand. The canonical name intent_node_id_decode_hop_column beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_node_id_decode_hop_column.';
+COMMENT ON COLUMN intent_node_id_decode_hop_column_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_node_id_decode_hop_column.graph_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_node_id_decode_hop_column_live.site IS 'the site of a row of this rule, materialized into intent_node_id_decode_hop_column.site, whose comment carries what the value means';
+COMMENT ON COLUMN intent_node_id_decode_hop_column_live.type_name IS 'the type_name of a row of this rule, materialized into intent_node_id_decode_hop_column.type_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_node_id_decode_hop_column_live.field_name IS 'the field_name of a row of this rule, materialized into intent_node_id_decode_hop_column.field_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_node_id_decode_hop_column_live.argument_name IS 'the argument_name of a row of this rule, materialized into intent_node_id_decode_hop_column.argument_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_node_id_decode_hop_column_live.path IS 'the path of a row of this rule, materialized into intent_node_id_decode_hop_column.path, whose comment carries what the value means';
+COMMENT ON COLUMN intent_node_id_decode_hop_column_live.use_site IS 'the use_site of a row of this rule, materialized into intent_node_id_decode_hop_column.use_site, whose comment carries what the value means';
+COMMENT ON COLUMN intent_node_id_decode_hop_column_live.position IS 'the position of a row of this rule, materialized into intent_node_id_decode_hop_column.position, whose comment carries what the value means';
+COMMENT ON COLUMN intent_node_id_decode_hop_column_live.pair_position IS 'the pair_position of a row of this rule, materialized into intent_node_id_decode_hop_column.pair_position, whose comment carries what the value means';
+COMMENT ON COLUMN intent_node_id_decode_hop_column_live.from_column_name IS 'the from_column_name of a row of this rule, materialized into intent_node_id_decode_hop_column.from_column_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_node_id_decode_hop_column_live.to_column_name IS 'the to_column_name of a row of this rule, materialized into intent_node_id_decode_hop_column.to_column_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_node_id_decode_hop_column_live.last_position IS 'the last_position of a row of this rule, materialized into intent_node_id_decode_hop_column.last_position, whose comment carries what the value means';
+
+CREATE TABLE intent_node_id_decode_hop_column (
+  graph_name       VARCHAR,
+  site             VARCHAR,
+  type_name        VARCHAR,
+  field_name       VARCHAR,
+  argument_name    VARCHAR,
+  path             VARCHAR,
+  use_site         VARCHAR,
+  position         INTEGER,
+  pair_position    INTEGER,
+  from_column_name VARCHAR,
+  to_column_name   VARCHAR,
+  last_position    INTEGER,
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE intent_node_id_decode_hop_column IS 'One hop of a decode path oriented along the walk: for each position of the hop''s foreign key, the column on the table the hop departs beside the column on the table it arrives at. intent_node_id_decode_hop says which key a hop joins on and which end declares it; this relation is that key''s column pairing turned the walk''s way round, so a reader takes departing and arriving without having to know which end the catalog put the key on. That reorientation is the only thing here, and it is worth a relation rather than a CASE at each reader because two readers need it and they would express it differently. The lift the key-column child computes walks these rows forward, and a rendered join reads them as its ON clause. Orientation is fk_on_from''s whole purpose: on a hop whose departing table declares the key the departing column is the key''s own and the arriving one is what it references, and on a reverse hop the two swap. The two branches are disjoint on that column and not on the endpoints, which is what keeps a self-referencing key one pairing rather than two mirrored ones. A hop joining on no foreign key contributes nothing, which is the name-matched element over a function result: it keys by column name and declares no constraint, so there is no pairing to state and the shape is refused above rather than modelled here. The path''s extent travels with the rows, the greatest position being carried through from the parent hop so the terminal hop is identified without naming that relation again, which is the same reason it carries it. Materialized: this relation is a table refilled from intent_node_id_decode_hop_column_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
+COMMENT ON COLUMN intent_node_id_decode_hop_column.graph_name IS 'the owning graph''s partition, carried from the hop';
+COMMENT ON COLUMN intent_node_id_decode_hop_column.site IS 'ARGUMENT or INPUT_FIELD, as on the hop';
+COMMENT ON COLUMN intent_node_id_decode_hop_column.type_name IS 'the type owning the slot, as on the hop';
+COMMENT ON COLUMN intent_node_id_decode_hop_column.field_name IS 'the slot''s field name, as on the hop';
+COMMENT ON COLUMN intent_node_id_decode_hop_column.argument_name IS 'the argument on ARGUMENT; NULL on INPUT_FIELD, as on the hop';
+COMMENT ON COLUMN intent_node_id_decode_hop_column.path IS 'the occurrence path on INPUT_FIELD; NULL on ARGUMENT, as on the hop, and carried for the same reason: a reader that wants the descent as rows, never as a join key';
+COMMENT ON COLUMN intent_node_id_decode_hop_column.use_site IS 'the consuming coordinate serialized, carried from the hop; with the graph, the position and the pair position, the key. The column the lift joins on, for the reason the hop states';
+COMMENT ON COLUMN intent_node_id_decode_hop_column.position IS 'the hop''s own 0-based position along the path, carried from the hop; with the pair position beside it, the use site and the graph, this is the key';
+COMMENT ON COLUMN intent_node_id_decode_hop_column.pair_position IS 'the 0-based position within the hop''s foreign key, the same position on both sides of the pair. The order a tuple predicate over this hop has to preserve, and what makes the walk positional rather than a name lookup that happens to agree';
+COMMENT ON COLUMN intent_node_id_decode_hop_column.from_column_name IS 'the column on the table this hop departs: the key''s own column where the departing table declares it, the column it references where the arriving table does';
+COMMENT ON COLUMN intent_node_id_decode_hop_column.to_column_name IS 'the column on the table this hop arrives at, the other half of the pair. What the next hop''s departing column is matched against, and at the terminal hop what a node key column is matched against';
+COMMENT ON COLUMN intent_node_id_decode_hop_column.last_position IS 'the greatest position the path reached, carried from the hop; the terminal hop is the one whose position equals this';
+
+CREATE VIEW intent_node_id_decode_column
+  (graph_name, site, type_name, field_name, argument_name, path, use_site, node_type_name,
+   position, tier, key_column_name, local_column_name) AS
+WITH RECURSIVE lifted (graph_name, use_site, position, last_position,
+                       local_column_name, arrived_column_name) AS (
+  SELECT hc.graph_name, hc.use_site, hc.position, hc.last_position,
+         hc.from_column_name, UPPER(hc.to_column_name)
+    FROM intent_node_id_decode_hop_column hc
+   WHERE hc.position = 0
+  UNION
+  SELECT l.graph_name, l.use_site, hc.position, l.last_position,
+         l.local_column_name, UPPER(hc.to_column_name)
+    FROM lifted l
+    JOIN intent_node_id_decode_hop_column hc
+      ON hc.graph_name = l.graph_name AND hc.use_site = l.use_site
+     AND hc.position = l.position + 1
+     AND UPPER(hc.from_column_name) = l.arrived_column_name
+)
+SELECT e.graph_name, e.site, e.type_name, e.field_name, e.argument_name, e.path, e.use_site,
+       e.node_type_name, k.position, k.tier, k.column_name,
+       CASE WHEN e.navigation = 'SAME_TABLE' THEN k.column_name ELSE l.local_column_name END
+  FROM intent_node_id_decode_endpoint e
+  JOIN intent_resolved_node_key_column k
+    ON k.graph_name = e.graph_name AND k.type_name = e.node_type_name
+  LEFT JOIN lifted l
+    ON e.navigation <> 'SAME_TABLE'
+   AND l.graph_name = e.graph_name AND l.use_site = e.use_site
+   AND l.position = l.last_position
+   AND l.arrived_column_name = UPPER(k.column_name);
+COMMENT ON VIEW intent_node_id_decode_column IS 'Where each value a decode yields lands: one row per position of the node type''s key, carrying that key column and the column on the slot''s own table the value lifts back to, or nothing where no such column exists. The relation site 4b dissolves into. A decode whose every position carries a local column binds locally on a tuple of the row''s own table; one whose positions carry none binds the node type''s own key columns on the node type''s own table inside a correlated EXISTS; and a junction chain is the second because the lift contributes no local column, not because anything rejects it. Those were one conjunct in the resolution this replaces, which picked the local shape when the terminal key''s referenced columns were the node key as a multiset and rejected a chain that translated a column before the question was reached, so the remote shape was unreachable for a multi-hop path. Here they are two facts and the second is a column being null. The lift is a forward walk and not the backward one it reads as. Walking back from the terminal hop is how a reader thinks about it and it has no recursive form; the same fact stated forward does, and it is an invariant carried along the chain: a row says "this column of the departing table is, after this many hops, this column of the table reached". The seed is the first hop''s own pairing, and each step keeps the local column and replaces the arrived one, joining on the next hop''s departing column matching the current arrived one by name. A hop that translates a column is therefore not a rejection and not a special case: the chain for that position simply has nothing to join to and stops, which is exactly what a lift failing means. Matching is by SQL name with the case folded, which is the same comparison the resolution it replaces makes and inherits its reason: two columns of one table are the same column when their names agree, whatever the catalog''s case. The fold is applied once, to the arrival each step records, so every later comparison against it is against a value already folded rather than against a second call; the local column is deliberately left as the catalog spells it, that one being rendered into a join and not matched against anything. Permutation needs no separate treatment either. The terminal arrival is matched against the key column rather than against a position, so a foreign key declared in a different column order from an @node(keyColumns:) list lands each column at the position the key states, and the transposition the key-column relation''s own comment warns about cannot arise from a positional pairing here. A position with several arrivals is several rows, which takes a malformed catalog to produce, and this relation counts nothing and prefers nothing. Total over the endpoint population crossed with the resolved key, which is the property the destination above depends on: every position of every decode has a row, so all-carry and none-carry are readings of a complete set rather than of whatever survived a join. A partial lift is therefore visible as such, and it is a real shape rather than a modelling gap: a terminal hop whose arriving columns cover only part of the node''s key lifts the part it reaches, which a compound key pinned wider than the constraint produces and a reverse hop produces routinely, that hop arriving on the key''s own columns and reaching whichever of the node''s key columns the departure happens to share. No destination vocabulary names that case, and the reduction above treats anything short of every position as binding remotely, which is always correct where a tuple predicate is not; recording it position by position is what lets a diagnostic say which position was the one that did not arrive. A node type resolving no key columns has no rows at all, absence there being the key relation''s own statement that no tier answered rather than anything about this decode.';
+COMMENT ON COLUMN intent_node_id_decode_column.graph_name IS 'the owning graph''s partition, carried from the endpoint relation';
+COMMENT ON COLUMN intent_node_id_decode_column.site IS 'ARGUMENT or INPUT_FIELD, as on the endpoint relation';
+COMMENT ON COLUMN intent_node_id_decode_column.type_name IS 'the type owning the slot, as on the endpoint relation';
+COMMENT ON COLUMN intent_node_id_decode_column.field_name IS 'the slot''s field name, as on the endpoint relation';
+COMMENT ON COLUMN intent_node_id_decode_column.argument_name IS 'the argument on ARGUMENT; NULL on INPUT_FIELD, as on the endpoint relation';
+COMMENT ON COLUMN intent_node_id_decode_column.path IS 'the occurrence path on INPUT_FIELD; NULL on ARGUMENT, as on the endpoint relation, and carried for a reader that wants the descent rather than as a join key';
+COMMENT ON COLUMN intent_node_id_decode_column.use_site IS 'the consuming coordinate serialized, carried from the endpoint relation; with the graph and the position, the key. The whole decode family keys on this pair, for the reason the hop relation states: the five coordinate columns are the same key in parts, two of them nullable by site, so joining on them costs four null-safe disjunctions and yields a predicate no plan can use';
+COMMENT ON COLUMN intent_node_id_decode_column.node_type_name IS 'the node type the instruction named, carried from the endpoint relation; the type whose key this row is a position of, and what a reader over these rows alone needs in order to say which key it is looking at';
+COMMENT ON COLUMN intent_node_id_decode_column.position IS 'the 0-based position within the node type''s key, carried from intent_resolved_node_key_column; the order the decode returns values in, so a tuple predicate binds this row''s local column against the value at this position';
+COMMENT ON COLUMN intent_node_id_decode_column.tier IS 'which population answered for the key column, carried from intent_resolved_node_key_column so a reader learns whether the key was pinned in SDL, stated by the generated model, or the bound table''s primary key without joining back. Provenance, and what a message naming a key column stands on';
+COMMENT ON COLUMN intent_node_id_decode_column.key_column_name IS 'the node type''s key column at this position, as the winning tier spells it. What the decode yields a value for, and what a remote binding puts the value against on the node type''s own table';
+COMMENT ON COLUMN intent_node_id_decode_column.local_column_name IS 'the column on the slot''s own table this position lifts back to, spelled as the catalog spells it, or NULL where the walk reached no such column. The whole discriminator of the two table destinations: every position carrying one is a local tuple predicate, none carrying one is a correlated EXISTS on the node type''s own table. NULL is a stated absence rather than a missing value, and the site is what determines it in the sense the nullable-by-kind discipline allows: on the identity navigation it is the key column itself, on a lifting chain the column the chain reached, and on a translating chain nothing, which is a rule about the navigation rather than an unfilled slot';
+
+CREATE VIEW intent_node_id_decode_slot
+  (graph_name, site, type_name, field_name, argument_name, path, use_site, node_type_name,
+   root_type_name, root_field_name, root_argument_name,
+   carrier, param_name, java_type, candidates) AS
+WITH rooted (graph_name, site, type_name, field_name, argument_name, path, use_site,
+             node_type_name, root_type_name, root_field_name, root_argument_name) AS (
+  SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
+         i.node_type_name,
+         COALESCE(op.root_type_name, i.type_name),
+         COALESCE(op.root_field_name, i.field_name),
+         COALESCE(op.root_argument_name, i.argument_name)
+    FROM intent_node_id_instruction i
+    LEFT JOIN intent_input_occurrence_path op
+      ON i.site = 'INPUT_FIELD' AND op.graph_name = i.graph_name AND op.path = i.path
+   WHERE i.site IN ('ARGUMENT', 'INPUT_FIELD')
+)
+SELECT graph_name, site, type_name, field_name, argument_name, path, use_site, node_type_name,
+       root_type_name, root_field_name, root_argument_name, carrier, param_name, java_type,
+       CAST(COUNT(*) OVER (PARTITION BY graph_name, use_site) AS INT)
+  FROM (SELECT r.graph_name, r.site, r.type_name, r.field_name, r.argument_name, r.path,
+               r.use_site, r.node_type_name, r.root_type_name, r.root_field_name,
+               r.root_argument_name, 'MAPPED_PARAMETER' AS carrier,
+               ap.param_name, bp.java_type
+          FROM rooted r
+          JOIN intent_argmapping_binding_leaf l
+            ON l.graph_name = r.graph_name AND l.bound_kind = 'ARGUMENT'
+           AND l.bound_type_name = r.root_type_name
+           AND l.bound_field_name = r.root_field_name
+           AND l.bound_argument_name = r.root_argument_name
+          JOIN intent_argmapping_pair ap
+            ON ap.graph_name = l.graph_name AND ap.site = l.site
+           AND ap.use_site = l.use_site AND ap.position = l.position
+          LEFT JOIN intent_argmapping_bound_parameter_type bp
+            ON bp.graph_name = ap.graph_name AND bp.site = ap.site
+           AND bp.use_site = ap.use_site AND bp.position = ap.position
+        UNION ALL
+        SELECT r.graph_name, r.site, r.type_name, r.field_name, r.argument_name, r.path,
+               r.use_site, r.node_type_name, r.root_type_name, r.root_field_name,
+               r.root_argument_name, 'NAMED_PARAMETER',
+               mp.parameter_name, tr.referenced_class
+          FROM rooted r
+          JOIN intent_field_producer_method pm
+            ON pm.graph_name = r.graph_name AND pm.type_name = r.root_type_name
+           AND pm.field_name = r.root_field_name AND pm.candidates = 1
+          JOIN jvm_method_parameter mp
+            ON mp.source_name = pm.source_name AND mp.class_name = pm.class_name
+           AND mp.method_name = pm.method_name AND mp.descriptor = pm.descriptor
+           AND mp.parameter_name = r.root_argument_name
+          LEFT JOIN jvm_method_parameter_type_ref tr
+            ON tr.source_name = mp.source_name AND tr.class_name = mp.class_name
+           AND tr.method_name = mp.method_name AND tr.descriptor = mp.descriptor
+           AND tr.position = mp.position AND tr.type_path = ''
+         WHERE NOT EXISTS (SELECT 1 FROM intent_argmapping_pair x
+                            WHERE x.graph_name = r.graph_name
+                              AND x.type_name = r.root_type_name
+                              AND x.field_name = r.root_field_name
+                              AND x.param_name = mp.parameter_name)) arms;
+COMMENT ON VIEW intent_node_id_decode_slot IS 'The Java parameter a decoding @nodeId instruction''s value descends into, where it descends into one at all, and the type that parameter takes. The relation the decode''s destination forks on first, and the fork is not between two shapes of predicate but between a predicate and consumer code: a slot carrying the instruction never delivers the wire format to a consumer, so where the value reaches Java the departing table the endpoint relation resolved receives nothing and no predicate is emitted from it. What decides that is the root of the use site rather than the instruction''s own coordinate, which is the whole reason this relation is cheap and the reason it is correct. An argument''s value reaches Java when a producer parameter is fed from it; an input field''s value reaches Java exactly when the argument its occurrence path descends from does, the field being one step inside a value handed to that parameter. So both sites ask one question at one coordinate, the occurrence path supplies that coordinate for the input-field site and the instruction is its own for the argument site, and no relation about classes, type backings or class members is read at all. An earlier shape asked instead which class member received the value, and it was both slower by an order of magnitude and answering a question one step past the fork. Two carriers, disjoint by construction. MAPPED_PARAMETER is an argMapping pair whose path binds the root argument itself, which is how a bean or a record is fed the whole argument, and it covers both the pair that stops at the argument and the pair that names a key column beyond it, those being one destination differing only in provenance. NAMED_PARAMETER is the producer method declaring a parameter of the root argument''s own name with no pair on that parameter, which is the match the generator itself makes and the coordinate at which the wire format reached consumer code unread. The absence of a pair on the parameter is what makes the two disjoint, and it is read on the parameter rather than on the argument because a pair redirects a parameter to some other argument and the name match must not then claim it. Presence and type are two facts here and keeping them apart is the one place this relation must not inherit its neighbour''s reading. intent_argmapping_bound_parameter_type has no row where the census cannot type a parameter, and its readers are free to treat that absence as no answer. Here absence means something else: no row is "this decode binds a predicate", so an untypeable parameter arriving as absence would route a value bound for Java to a table predicate that has nothing to bind. Both arms therefore reach the type by outer join and an untypeable parameter is a row with a null type, which is what lets a consumer carry the decode out on arity alone and ask for a type only when it is about to refuse. Ambiguity is rows and nothing is preferred: an overloaded method or a class two classpath entries declare resolves more than one row and candidates says so, on the neighbouring relation''s own terms. The stated limit is one shape, and it is the one this relation''s coordinate choice trades away. An argMapping path that descends into the argument and binds one input field below it (a pair spelled arg.field) hands that one field to a parameter while its siblings still bind predicates, and this relation sees no row for either, its arms asking about the root argument and that path binding something under it. Saying which occurrence path such a pair names is a reconciliation between two decompositions of one descent rather than a join, and until that is stated an input field reached only that way is read as binding a predicate.';
+COMMENT ON COLUMN intent_node_id_decode_slot.graph_name IS 'the owning graph''s partition, carried from the instruction';
+COMMENT ON COLUMN intent_node_id_decode_slot.site IS 'ARGUMENT or INPUT_FIELD, as on the instruction; the OUTPUT_FIELD site is absent by construction, an output field encoding rather than decoding';
+COMMENT ON COLUMN intent_node_id_decode_slot.type_name IS 'the type owning the slot carrying the instruction, as on the instruction: the argument''s owning type on ARGUMENT, the input object type on INPUT_FIELD. Not the root coordinate, which is the three columns below';
+COMMENT ON COLUMN intent_node_id_decode_slot.field_name IS 'the instruction''s field name, or on ARGUMENT the field the argument sits on';
+COMMENT ON COLUMN intent_node_id_decode_slot.argument_name IS 'the argument carrying the instruction on ARGUMENT; NULL on INPUT_FIELD, determined by site as on the instruction';
+COMMENT ON COLUMN intent_node_id_decode_slot.path IS 'the occurrence path this row''s use site is, on INPUT_FIELD; NULL on ARGUMENT. Carried for a reader that wants the descent as rows, never as a join key';
+COMMENT ON COLUMN intent_node_id_decode_slot.use_site IS 'the consuming coordinate serialized, carried from the instruction; with the graph, the key of the instruction this row is about, and what the decode relation joins on';
+COMMENT ON COLUMN intent_node_id_decode_slot.node_type_name IS 'the node type the instruction named, carried from the instruction so a message about this parameter needs no second join';
+COMMENT ON COLUMN intent_node_id_decode_slot.root_type_name IS 'the type owning the field the value''s descent starts at: the instruction''s own type on ARGUMENT, the occurrence path''s root type on INPUT_FIELD. The coordinate both arms resolve the parameter against, carried because it is the coordinate a message has to name when the parameter it found is several steps above the slot the author annotated';
+COMMENT ON COLUMN intent_node_id_decode_slot.root_field_name IS 'the field the descent starts at, on the same terms as the type beside it; the field whose producer method declares the parameter';
+COMMENT ON COLUMN intent_node_id_decode_slot.root_argument_name IS 'the argument the descent starts at: the instruction''s own argument on ARGUMENT, the occurrence path''s root argument on INPUT_FIELD. Equal to argument_name exactly on the ARGUMENT site, which is how that value is decided rather than a coincidence a reader has to check';
+COMMENT ON COLUMN intent_node_id_decode_slot.carrier IS 'which rule found the parameter, a closed vocabulary of two. MAPPED_PARAMETER: an argMapping pair binds the root argument, so the parameter it names receives the whole argument. NAMED_PARAMETER: no pair names that parameter and the producer method declares one of the root argument''s own name. Provenance and shape at once, as on the instruction''s basis column, because a refusal has to be able to say how the parameter was found: an author who wrote no argMapping is told about a name match and an author who wrote one is told about their own entry';
+COMMENT ON COLUMN intent_node_id_decode_slot.param_name IS 'the parameter''s own name in Java, which on both arms is the name the match was made on: the pair''s left side, or the declared parameter name the argument matched';
+COMMENT ON COLUMN intent_node_id_decode_slot.java_type IS 'the fully qualified binary name of the type the parameter takes, at the root of its declared type. NULL where no census could read it: a consumer compiled without -parameters, a reference resolving no method, a primitive parameter, or a position naming no class. The root and not the peel, deliberately, so that this is the same value intent_argmapping_bound_parameter_type states and a type agreement a projection already performs cannot answer differently depending on which arm found the parameter. A container-typed parameter therefore reports the container, and that a list of node ids is a coherent request rather than a mistake is stated on the leaf relation and is a consumer''s reading, not this relation''s';
+COMMENT ON COLUMN intent_node_id_decode_slot.candidates IS 'how many rows this use site resolved, counted over both carriers. One is the ordinary answer; more than one is an overloaded method or a class two classpath entries declare, and this relation distinguishes neither. A reader requiring one type requires this to be one rather than picking, which is the discipline intent_argmapping_bound_parameter_type states for its own version of this column; a reader asking only whether the value reaches Java ignores it';
+
+CREATE VIEW intent_node_id_decode
+  (graph_name, site, type_name, field_name, argument_name, path, use_site,
+   node_type_name, destination, arity) AS
+SELECT DISTINCT w.graph_name, w.site, w.type_name, w.field_name, w.argument_name, w.path,
+       w.use_site, w.node_type_name,
+       CASE WHEN w.lifted = w.positions THEN 'OWN_TABLE_COLUMNS'
+            ELSE 'TARGET_TABLE_COLUMNS' END,
+       w.positions
+  FROM (SELECT c.graph_name, c.site, c.type_name, c.field_name, c.argument_name, c.path,
+               c.use_site, c.node_type_name,
+               CAST(COUNT(*) OVER (PARTITION BY c.graph_name, c.use_site) AS INT) AS positions,
+               CAST(COUNT(c.local_column_name) OVER (PARTITION BY c.graph_name, c.use_site)
+                    AS INT) AS lifted
+          FROM intent_node_id_decode_column c) w
+ WHERE NOT EXISTS (SELECT 1 FROM intent_node_id_decode_slot s
+                    WHERE s.graph_name = w.graph_name AND s.use_site = w.use_site);
+COMMENT ON VIEW intent_node_id_decode IS 'How one decoding @nodeId instruction is carried out: one row per instruction and use site, naming the destination that receives the decoded tuple. An instruction with no row here was not carried out, and absence is therefore never a message but the membership condition a defect view is keyed on, which is what keeps a resolution and a rejection from restating one fact. The reduction this relation performs is the whole of the junction-table case. A decode whose every key position lifted to a column of the row''s own table binds locally on a tuple of that table; one where any position did not binds the node type''s own key columns on the node type''s own table inside a correlated EXISTS; and a chain through a junction table is the second because its lift contributes no local column, not because anything rejects it. Those were one conjunct in the resolution this replaces, which picked the local shape when the terminal key''s referenced columns were the node key as a multiset, so the remote shape was unreachable for a multi-hop path and a chain that translated a column met a rejection before the question was asked. Here they are a count against a count. Anything short of every position is remote, which is always correct where a tuple predicate is not, and which position failed to arrive is the key-column child''s answer rather than this relation''s. Two destinations of a vocabulary of four, and the two absent ones are absent for a reason each rather than as a gap. A decode landing in a Java slot is excluded from this population outright, on intent_node_id_decode_slot''s answer, because a slot receives the value and the departing table then binds nothing;; that exclusion is what makes the two destinations here total over what remains rather than a default the Java coordinates fall into. What each of those two slot destinations then needs is its own precondition and neither is a reading of this reduction: a slot typed as a generated record has to be the record of the node type''s own table, which is a shipped refusal today, and a record standing for the enclosing input type receives the tuple on its own table''s columns rather than on the argument''s scope table, so its lift departs somewhere this relation''s endpoints do not. Both arrive with the fact that decides them. Population boundary, stated because a hole here reads as a fact everywhere downstream: this relation''s rows come from the endpoint population, so an instruction whose departing or arriving table did not resolve unambiguously has no row and is a defect rather than a decode. The node type''s key arity is carried rather than counted by each reader, both because a message about a single-valued slot names the count and because the arity is what decides a destination this relation does not yet name.';
+COMMENT ON COLUMN intent_node_id_decode.graph_name IS 'the owning graph''s partition, carried from the instruction';
+COMMENT ON COLUMN intent_node_id_decode.site IS 'ARGUMENT or INPUT_FIELD, as on the instruction; the OUTPUT_FIELD site encodes and is answered by intent_node_id_encode instead';
+COMMENT ON COLUMN intent_node_id_decode.type_name IS 'the type owning the slot, as on the instruction';
+COMMENT ON COLUMN intent_node_id_decode.field_name IS 'the slot''s field name, or on ARGUMENT the field the argument sits on';
+COMMENT ON COLUMN intent_node_id_decode.argument_name IS 'the argument carrying the instruction on ARGUMENT; NULL on INPUT_FIELD, determined by site as on the instruction';
+COMMENT ON COLUMN intent_node_id_decode.path IS 'the occurrence path this row''s use site is, on INPUT_FIELD; NULL on ARGUMENT. Carried for a reader that wants the descent as rows, never as a join key';
+COMMENT ON COLUMN intent_node_id_decode.use_site IS 'the consuming coordinate serialized, carried from the instruction; with the graph, this relation''s key, and the key its two children carry';
+COMMENT ON COLUMN intent_node_id_decode.node_type_name IS 'the node type the instruction named, whose key the decode yields; intent_resolved_node_key_column on this name and the graph is the other end of the opaque format, and intent_node_id_decode_column is that key already paired with where each position lands';
+COMMENT ON COLUMN intent_node_id_decode.destination IS 'what receives the decoded tuple, in a closed vocabulary of four of which this relation currently answers two. OWN_TABLE_COLUMNS: every key position lifted to a column of the row''s own table, so the predicate binds locally on a tuple of it with no join. TARGET_TABLE_COLUMNS: at least one position did not, so the predicate binds the node type''s own key columns on its own table inside a correlated EXISTS, which is the shape a junction chain takes and the shape a non-unique path wants. JOOQ_RECORD and SINGLE_KEY_COLUMN are the two slot destinations, excluded from this population rather than defaulted into either value above, and the view comment says which fact each waits on';
+COMMENT ON COLUMN intent_node_id_decode.arity IS 'how many key columns the node type resolved, counted over intent_resolved_node_key_column. Carried rather than counted per reader for two reasons that are one fact: a refusal at a single-valued slot names this number, and it is the number that decides whether such a slot can carry the instruction at all';
+
+CREATE VIEW intent_node_id_encode
+  (graph_name, type_name, field_name, use_site, node_type_name, source, arity) AS
+SELECT graph_name, type_name, field_name, use_site, node_type_name, source, arity
+  FROM (SELECT i.graph_name, i.type_name, i.field_name, i.use_site, i.node_type_name,
+               CASE WHEN bt.table_name IS NOT NULL AND pm.field_name IS NULL
+                    THEN 'PROJECTED_COLUMNS' ELSE 'READ_VALUE' END AS source,
+               k.arity
+          FROM intent_node_id_instruction i
+          JOIN (SELECT graph_name, type_name, CAST(COUNT(*) AS INT) AS arity
+                  FROM intent_resolved_node_key_column
+                 GROUP BY graph_name, type_name) k
+            ON k.graph_name = i.graph_name AND k.type_name = i.node_type_name
+          LEFT JOIN intent_resolved_type_binding bt
+            ON bt.graph_name = i.graph_name AND bt.type_name = i.type_name
+           AND bt.candidates = 1
+          LEFT JOIN (SELECT DISTINCT graph_name, type_name, field_name
+                       FROM intent_field_producer_reference) pm
+            ON pm.graph_name = i.graph_name AND pm.type_name = i.type_name
+           AND pm.field_name = i.field_name
+         WHERE i.site = 'OUTPUT_FIELD') resolved
+ WHERE source = 'PROJECTED_COLUMNS' OR arity = 1;
+COMMENT ON VIEW intent_node_id_encode IS 'How an output field carrying the @nodeId instruction produces the tuple it encodes. The encoding half of the resolution, and a separate relation from the decode rather than one relation with a direction column, because the two answer different questions and sharing a row shape would leave half the columns nullable by kind: a decode has a destination that receives a tuple and, where that destination is a table, a column correspondence and possibly a join path, while an encode has a source that produces one and never has either. Direction is therefore not a column anywhere; it follows from the site and from which of the two relations answered. Output fields only, which is that rule stated as a population. Two sources, and the discriminator is whether a column tuple is in scope at all. PROJECTED_COLUMNS is everything that encodes today: the field sits on a type some table stands for and nothing overrides how its value is produced, so the key columns are selectable and the encode wraps them at the projection, whether they are the row''s own or reached through an authored path. READ_VALUE is the rest, and it is one source rather than four because the four spellings differ only in the mechanism a value arrives by: an accessor on a backing class, a by-name record read, a typed column off a record, or graphql-java''s own property machinery all hand the generator one value, and the encode applies to what the read yielded. The two conditions that put a field there are a containing type no table stands for, which is what an @error type is, and a field whose value a named producer method returns, which overrides the projection its containing type would otherwise offer. That second condition reads the producer reference and not the method it resolves to, on purpose: an @externalField naming a method the classpath census never saw still means the value is read rather than projected, and asking the resolved relation would have made an unresolvable reference look like a projection, which is the one reading that puts a base64 string where a column belongs. One precondition is stated here and it is arity: a read yields one value, so a node type whose key is several columns cannot be encoded from one, and such a coordinate has no row. A projection has no such limit, the whole tuple being in scope, which is why the arity demand is written once against the source rather than as a blanket filter. Absence is therefore not the message and never should be read as one: an instruction with no row here was not carried out, and which precondition stopped it is the detection stratum''s statement with the operands to make it, on the same terms that keep the candidate and projection relations beside the argMapping family disjoint by construction rather than each re-testing the other''s predicate.';
+COMMENT ON COLUMN intent_node_id_encode.graph_name IS 'the owning graph''s partition, carried from the instruction';
+COMMENT ON COLUMN intent_node_id_encode.type_name IS 'the object type owning the encoding field';
+COMMENT ON COLUMN intent_node_id_encode.field_name IS 'the encoding field''s name within that type. With the two columns above this is the key: an output field is its own use site, so there is no third component and no path, which is the shape difference from the decode stated as a narrower key';
+COMMENT ON COLUMN intent_node_id_encode.use_site IS 'the coordinate serialized, carried from the instruction so a message needs no second join; always Type.field here, an output field being its own use site';
+COMMENT ON COLUMN intent_node_id_encode.node_type_name IS 'the node type whose identity is being encoded, written or inferred. intent_resolved_node_key_column on this name and the graph gives the columns to encode from, in order, and intent_resolved_node_type_id gives the prefix they are encoded under';
+COMMENT ON COLUMN intent_node_id_encode.source IS 'where the tuple comes from, in a closed vocabulary of two: PROJECTED_COLUMNS where the key columns are selectable at the field''s own site and the encode wraps them at the projection, READ_VALUE where the field''s value arrives through a read and the encode applies to what the read yielded. The column a consumer switches on, and what says whether the arity demand applied';
+COMMENT ON COLUMN intent_node_id_encode.arity IS 'how many columns the node type''s key has, counted over the rows intent_resolved_node_key_column already answered with rather than by reading that relation a second time, which is the shape the fact model has measured as dominant on a comparable tree. Always 1 on a READ_VALUE row, that being the precondition; unbounded on a projection. Carried because a consumer emitting the encode needs the width and because a message about a refused sibling coordinate names this number';
+
 CREATE TABLE rejection_validation_error (
   graph_name    VARCHAR NOT NULL,
   ordinal       INT     NOT NULL,
@@ -6735,7 +6862,9 @@ INSERT INTO meta_materialize VALUES
   ('intent_spelled_table_live', 'intent_spelled_table',
    'Named from six other view bodies and reached thirty-nine times in one read of the deepest derivation over it, and it carries a COUNT(*) OVER, so no outer predicate prunes it and no rewrite restores pushdown. Correct as a view and far too expensive to evaluate per naming, which is the registration case rather than the impossibility one.'),
   ('intent_argument_scope_table_live', 'intent_argument_scope_table',
-   'Five namings across four view bodies, and one of those readers joins it on a coalesced coordinate rather than on a column, so no plan prunes it and it is evaluated once per driving row. Measured against a real schema, one evaluation is seventy milliseconds and the reader has sixty-nine rows, which is where that reader''s five seconds came from and, through it, the seven and a half seconds each of the two relations below it cost. Cheap to compute once and ruinous to compute per row, which is the registration case; the alternative of restructuring the coalesced join was tried and measured and H2 inlines the derived table straight back.');
+   'Five namings across four view bodies, and one of those readers joins it on a coalesced coordinate rather than on a column, so no plan prunes it and it is evaluated once per driving row. Measured against a real schema, one evaluation is seventy milliseconds and the reader has sixty-nine rows, which is where that reader''s five seconds came from and, through it, the seven and a half seconds each of the two relations below it cost. Cheap to compute once and ruinous to compute per row, which is the registration case; the alternative of restructuring the coalesced join was tried and measured and H2 inlines the derived table straight back.'),
+  ('intent_node_id_decode_hop_column_live', 'intent_node_id_decode_hop_column',
+   'One reader, and it is a recursive walk over these very rows, which is a shape no other registration here has. A recursive term joins its own accumulated output against this relation once per accumulated row, so a relation named in the step is evaluated as many times as the walk has rows rather than once, and inlining it makes the whole hop chain under it the thing being re-evaluated. Measured against a real schema: this relation is one and a half seconds on its own, the walk accumulates around twenty rows, and the walk does not finish inside a two-minute timeout, while the same walk over these rows as a table is a little over three seconds for the whole reader. Collapsing the walk''s six-column coordinate key onto the use site was tried first, on the theory that four null-safe disjunctions were what stopped the step from being planned; it is a real simplification and it is kept, and it moved the timeout not at all, which is what says the cost is the re-evaluation rather than the predicate. Refresh is not free here, the source reading the whole hop chain each time, so this registration is a claim that something reads the relation often and it is made in the increment that adds that reader.');
 
 CREATE TABLE meta_materialize_dependency (
   source_view_name VARCHAR NOT NULL,

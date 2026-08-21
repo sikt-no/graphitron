@@ -434,10 +434,18 @@ artefact of the machine and not of the registration. It is recorded here because
 this section believed it and claimed the registration was worth 1:23, which is the fourth thing this
 item has had to take back for reading a difference off runs that were not comparable.
 
-The scope table's registration is **level with trunk**, 8:56 against 9:00 and inside the spread of
-repeated runs, and the hop column's **costs about 1:14** on top of it. So the reactor does not pay for
-the scope table's registration and does not pay for it either; what justifies it is the per-relation
-cost, which is same-process and reproducible where these totals are not. The two still have opposite
+**Those totals do not support a conclusion either, and this is the last time this item quotes one.**
+Five runs of `graphitron-model` on this machine, across code that differs by at most one registration:
+1:10, 1:29, 2:39, 2:43, 2:48. A 2.4-times spread on the same module means the minute-scale differences
+in the table above are the machine, and the 7:37 discarded two paragraphs up was discarded for being
+one run of exactly this spread rather than for being uniquely bad. Reading a registration's cost off a
+reactor pair has now been wrong four times in this item for one reason each time, which is one reason:
+a single run of a noisy total. What replaces it is the measurement that is same-process and repeats,
+`CapturedStore` open time. The hop column registration takes that from about 5.0 s to between 8.9 and
+10.2 s across several runs, so its refresh is **about 4 s per store open**, and how many opens a
+reactor build makes is a separate question this item does not need to answer to decide a registration.
+
+The scope table's registration is therefore neither shown to help nor shown to hurt on the reactor. What justifies it is the per-relation cost, which is same-process and reproducible where these totals are not. The two still have opposite
 signs on the build, which rules out both of the single-factor explanations this item reached for. It is not that a registration's refresh is free, and it is not that a refresh costs a
 view evaluation per store open and therefore never pays: it is refresh cost against reads avoided.
 The scope table refreshes in seventy milliseconds and four view bodies name it, so materialising it
@@ -445,6 +453,74 @@ removes far more re-evaluation than the refresh adds. The hop column relation re
 whole hop chain and has exactly one reader, the lift, which no build-time consumer exercises yet, so
 every refresh today buys nothing. That is why its registration moves to the stage that adds the
 consumer rather than shipping dormant.
+
+**What the stage that adds the consumer then found, which is a fifth thing this item has had to take
+back.** The hop column registration landed as planned and the destination relation is its reader. Two
+other things were tried on the way and only one of them survived measurement.
+
+The first was a simplification of the lift's key. The hop relations keyed on five coordinate columns,
+two of them nullable by site, so the recursive step joined on four null-safe disjunctions and a fold
+applied to both sides of a column comparison. All of that was replaced by the use site, which is one
+non-null column the endpoint relation already carries and which the two sites cannot collide in. The
+theory was that an unplannable predicate was what made the step re-read its input. It is a real
+simplification and it is kept, and it moved the timeout **not at all**: the lift still did not finish
+in two minutes. What that rules out is the predicate as the cause, leaving the re-evaluation, which is
+what the registration addresses and what took the relation from no answer to 3.0 s. What the collapse
+may be worth is on the refresh rather than the read, the source view's window now partitioning by two
+columns instead of five, and that is not separately measured.
+
+The second was a reading of how H2 behaves in a join, and the first version of it was wrong. The
+destination is a reduction over the key-column relation, so the relation naming it joins that
+reduction, the instruction population, and the node key's arity. Spelled that way it does not finish
+in two minutes. The first diagnosis blamed the exclusion of Java-slot coordinates, because
+`NOT EXISTS`, `NOT IN` and an outer join tested for null all timed out while `EXCEPT` returned the same
+rows in 2.65 s, and that difference was written into a comment as a rule about anti-joins. Then the
+control was run: the same query with **no exclusion at all** also times out. So the anti-join was
+never the cause. What decides it is the operand count. Two relations and the expensive one is
+evaluated once, at 5.91 s; add a third, even one as cheap as a `COUNT(*)` group-by over sixteen rows,
+and H2 reorders into probing the expensive one per driving row.
+
+[cols="3,1",options="header"]
+|===
+| shape | cost
+
+| the reduction alone | 3.12 s
+| instruction joined to the reduction | 5.91 s
+| that plus the arity group-by (no exclusion at all) | no answer in 120 s
+| four spellings of the exclusion, on top of that | no answer in 120 s
+|===
+
+So the fix is neither a spelling nor a registration: it is to stop having three operands. The
+reduction is expressible as two window functions over the key-column relation's own rows, which makes
+the destination relation one pass over one relation plus a correlated probe of the slot relation. That
+terminates at 10.7 s and needs no further registration. It is left at 10.7 s deliberately: nothing
+generates from it yet, and an expensive unread relation costs nothing, which is the same rule that
+kept the hop column relation unregistered until this stage.
+
+**The Java-slot fork was also being asked one step too late, and that was worth an order of
+magnitude.** The first version of `intent_node_id_decode_slot` asked which class member receives the
+value: the type backing of the instruction's owning type, then that class's member of the field's
+name, then the member's declared type. It cost 3.0 s, of which the member lookup was 3.3 s measured on
+its own, and registering it was going to add that to every store open. It was also answering a
+question one step past the fork. What decides whether a decoded value reaches consumer code is not
+which member receives it but whether the argument the value descends from is fed to a parameter at
+all: an input field's value reaches Java exactly when its occurrence path's root argument does. Keyed
+at that root, the relation reads the occurrence path (a table) and two cheap census joins, needs no
+type backing and no member relation, and costs **0.28 s**. It is also the more correct question, since
+a bean-backed input type that carries no `@table` has no backing this schema resolves while its root
+argument is plainly a parameter.
+
+**Two destinations ship here and two do not, and the split is per precondition rather than per
+convenience.** `OWN_TABLE_COLUMNS` and `TARGET_TABLE_COLUMNS` are the reduction, total over the
+endpoint population once Java-slot coordinates are excluded from it. `JOOQ_RECORD` needs the slot's
+record class to be the record of the node type's own table, which is a refusal the tree ships today
+and a fact this relation does not yet read; and the record standing for an enclosing input type
+receives the tuple on its own table's columns rather than on the argument's scope table, so its lift
+departs a table the endpoint relation does not resolve. Each arrives with the fact that decides it.
+The exclusion is what makes this honest rather than a gap: a coordinate whose value reaches Java draws
+no destination row at all, so nothing is defaulted into a table predicate that has nothing to bind,
+and the stated hole is one shape, an `argMapping` path that descends into an argument and binds a
+single input field below it while its siblings still bind predicates.
 
 **A captured fact is the lever neither of those is, and it is the one this family should have reached
 for first.** A registration trades a refresh for avoided re-evaluations and has to win that trade; a
@@ -851,6 +927,17 @@ replacement.
 Stage 6 is independent throughout. Stages 1 and 2 are the spine and nothing after them lands without
 them.
 
+**Stage 2 is being taken in sub-increments, and one of its exits has moved.** The population and the
+two children shipped first, then the measurement work the section above records, then the destination
+relation. The two table destinations ship with the destination relation; the two slot destinations
+(`JOOQ_RECORD` and `SINGLE_KEY_COLUMN`, and with the latter the inferred arm and the `BARE_NODE_ID`
+edit) ship after it, each with the precondition that decides it, for the reason stated at the end of
+that section. Nothing generates from any of these rows until `NodeIdLeafResolver` becomes a reader, so
+the ordering inside stage 2 changes what is checkable per commit and not what stage 2 exits on: every
+`@nodeId` shape that generates today still has to have a row naming what it uses before stage 3 starts.
+The Java-slot fork itself ships with the table destinations rather than after them, because the two
+table destinations are only total once the coordinates that reach Java are out of their population.
+
 ## Tests
 
 Behaviour, at the tier that can observe it. No test asserts that a relation agrees with the classified
@@ -891,6 +978,14 @@ of as more of the same.
   matching case draw the *same* resolution rather than different ones, which is the claim that the
   two forms are one destination. The partition against R668 is then over arity rather than over
   spelling, and is pinned as such.
+* **Store tier**, for the two relations whose whole content is a fork. The destination and the
+  Java-slot fork are pinned together in one class over the seeded store, because each is defined as
+  the population the other does not claim: a case asserting only the destination would pass equally
+  well with the fork seeing nothing, and a decode routed to a table predicate when its value goes to a
+  parameter is exactly the bug that shape hides. So each case states both, and the fork's rows render
+  the root coordinate they were answered at, that being the whole of what makes an input-field row
+  correct. The sakila schema exercises neither fork arm, every `@nodeId` there binding a predicate, so
+  without these cases the fork would ship on no evidence at all.
 * **Unit tier.** `NodeIdLeafResolverTest` gains the junction-chain case, and
   `multiHopLiftTranslationRejected` is *rewritten* from a rejection assertion to a remote-binding
   assertion rather than deleted, so the fixture that proved the old gate proves the new routing. A
