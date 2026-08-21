@@ -288,3 +288,125 @@ found a real defect. The gate is not too strict; the loop is fed by who repairs 
 the gate has nothing to evaluate. Whether Backlog → Spec should refuse to promote a draft with
 open forks is a separate question with its own trade-off (a spec that must settle everything up
 front is a spec that guesses), and it belongs in its own item.
+
+## Reviewer findings
+
+### Spec → Ready gate, 2026-08-21, session_01AnCqfHKP3pRumxwLHKUotV: revisions requested
+
+Withheld on question one, on the acceptance rather than on the goal or the design. This round uses
+the convention the item proposes, `++##++` section and one `++###++` round, so the shape it
+standardizes is the shape it was reviewed under.
+
+**What passed.** Question two is clear: the item extends a convention already in the tree rather
+than standing a parallel mechanism beside one, it picks the plurality and most recent spelling on
+stated grounds, and it changes no guard. Every anchor the Implementation section names exists as
+named and every quoted sentence matches its source verbatim: the single `Spec --> Spec` edge, the
+reviewer-rule paragraph's last sentence, the `Retired vocabulary` bullet under "Item file
+conventions", the "Minimum four commits" preamble, canonical-path step 2, the srp Verdict bullet,
+the srp rework bullet's "capture the finding in the spec body for the next pass", the "Template
+design intent" section, and the `Spec | Spec` row in the roadmap skill's table. Every number in
+the evidence section is exact: the blame on R769 splits 139 / 73 / 61 of 273 lines, which is 49%;
+the three commits grew the body 166 → 223 → 273 inside 37 minutes and 10 seconds; the four
+existing review sections carry the three headings under the four filenames given, earliest dated
+2026-08-11; R759 cleared on one spec-review commit and R732 took five, both as recorded in
+`roadmap/changelog.md`.
+
+Two claims the item does not make are worth recording, because they are the load-bearing ones and
+they hold. First, the convention's precedent is complete, not partial: on R773 one session
+appended 81 lines with zero deletions and committed that alone, a second session revised the plan
+body, and the first session then signed off. Second, the reviewer-rule guard really does pass on
+its own terms under the new flow, because `.claude/skills/srp/SKILL.md` step 4 resolves the
+disqualified session from `git log -1` on the spec file alone. After a findings commit and an
+author revision, the last committer is the author, so the returning reviewer is not disqualified.
+The claim that only the prose needs changing is mechanically true.
+
+**Finding 1, blocking, question one: the acceptance has no reachable home, so the item has no
+Done condition.** The Tests section makes the acceptance "R769 itself, plus the next three items
+that bounce" and says to "record the round count and the blame fraction in this item's own
+findings section as the items land". The convention bullet this item writes says of that same
+section: "The whole log dies with the file at Done, so it cannot rot." Both cannot hold. The next
+three bounced items land after this one does, so either the measurement is written into a file
+that is deleted before the measurement exists, or the item is held at In Review waiting on three
+unrelated items, which `depends-on: []` does not express and which no reader would infer. The Done
+gate's fourth question asks which named artifact demonstrates the goal is delivered, and as
+written the answer is a measurement that cannot be taken before the gate. An item whose whole
+purpose is to stop bounce loops should not set up a bounce at its own Done gate.
+
+This is not an argument for adding the build gate the Tests section declines. That reasoning is
+sound: a grep for the heading would fire on every clean spec. It is an argument that the
+substitute needs a home that outlives the item file. What would satisfy the finding: say plainly
+that Done turns on the three prose edits landing, and give the measurement a durable home. The
+changelog entry is one candidate and is a permanent artifact that may be cited by path; a
+follow-up Backlog item that carries the measurement and the falsification test is another, and
+`docs/architecture/explanation/development-principles.adoc` already frames that move as the
+expected one ("a review-only label is an invitation: filing the meta-test that pins it is roadmap
+material"). Either resolves it. The choice is the author's, which is why this round does not make
+it.
+
+**Finding 2, factual correction for the author to land: the "settled" quote is spec body, not a
+commit message.** The item attributes "Both decisions this section left to the reviewer are
+settled" to reviewer B's commit message, and says it opens it. That sentence is not in either
+reviewer's commit message. It is line 166 of `roadmap/seeded-store-boots-per-thread.md`, written
+by reviewer B's commit `3b6adca` into the spec body, mid-section. Reviewer B's commit message
+opens "Spec -> Ready withheld on question two." The correction strengthens the argument rather
+than weakening it, which is why it is worth making: structural fact 1 says reviewer prose "reaches
+the next reviewer already carrying the word settled", and a reviewer writing "are settled" into
+the plan body is a strictly better illustration of that than the same words in a commit message,
+since a commit message is not what the next reviewer inherits as spec text. The rest of the
+narrative checks out, including the author's "Two decisions for the reviewer" at lines 112 to 113
+of the authoring commit, and reviewer A's commit message naming the four direct-boot classes at
+exactly seven sites while proposing the pin that drops the term.
+
+**Finding 3, factual correction for the author to land: one of the four is not bottom-of-file.**
+"Four items in `roadmap/` carry a bottom-of-file review section today" is not true of
+`web-session-maven-build-log.md`, where the two review sections sit at lines 85 and 142 and a
+plan section, `++##++ Explicitly out of scope`, follows at 194. The count of four is right and the
+headings are right; only the position claim is. This matters slightly beyond precision, because
+the new convention bullet specifies "at the end of the item file, below every plan section", so
+the emergent practice is less uniform on placement than the paragraph claims and the item is
+standardizing placement too, not only spelling. R773 also diverges on shape, answering findings in
+a separate `++##++ Author revision` section rather than under each finding. Neither divergence
+weakens the case for standardizing; both are worth naming as things the standard decides rather
+than inherits.
+
+**Non-blocking, no action expected.** The `++##++` escapes are correct inside the workflow.adoc
+replacement blocks and match `workflow.adoc` line 79, so they should not be "fixed" there. In the
+item's own descriptive prose they render literally on GitHub and as monospace through the
+roadmap-tool md-to-adoc render; this item is the only one in `roadmap/` using them, and it is
+purely presentational. Separately, a spelling gate does become possible once the three
+legacy-spelling items drain, since a check that no item file carries `++##++ Review record` or
+`++##++ Reviewer decisions` would fire only on the thing the standard forbids rather than on every
+clean spec. That is Backlog material and deliberately not this item's scope. Finally, the two
+`Spec --> Spec` Mermaid edges and the two duplicate `Spec | Spec` rows in the roadmap skill's
+table are both inert: `Main.ALLOWED_TRANSITIONS` stores targets as a `Set`, and the skill's table
+is documentation of it rather than input to it.
+
+**Addendum, same round, after a trunk sync during the review.** R769 took a fourth pass while this
+round was being written, in commit `81c190e` from a fifth session, and it followed the convention
+this item proposes: 81 insertions, zero deletions, into a `++##++ Reviewer findings (Spec → Ready
+gate, 2026-08-21)` section with the plan body untouched. Three consequences, and the first two are
+in the item's favour.
+
+The premise is stronger than the item claims. The "Roadmap entries" section recommends that R769
+adopt the convention for its next pass rather than waiting on this item, and that has now happened
+without any prompting from here. Five items carry a bottom-of-file review section, not four, and
+`++##++ Reviewer findings` is three of five rather than two of four, so the plurality argument the
+spelling choice rests on is firmer than the paragraph makes it.
+
+The bounce count is a moving target and should stop being pinned. The body says "R769 has bounced
+three times", which commit `66197ce` had corrected downward from four; it is four now and will be
+five if the next pass withholds. Rewriting it to "at least three" or to a figure the sentence does
+not depend on would stop the number from rotting under the item, since the argument needs only
+that two consecutive bounces landed on reviewer-authored prose.
+
+The third consequence sharpens finding 1 with a counterexample the tree just produced, and is the
+reason this addendum blocks rather than merely informs. The acceptance says to `git blame` the
+item file at sign-off and take "the fraction of surviving lines written by a reviewer session".
+On R769 right now that fraction is 215 of 354 lines, or 61%, up from the 49% the item quotes as the
+figure to beat. The rise is not the convention failing; it is the convention working, because the
+81 new reviewer-written lines are findings and the plan body is untouched. So the metric as
+specified moves the wrong way on a fully compliant item, and would read as regression at exactly
+the moment it should read as success. The metric has to be the reviewer-written fraction of the
+*plan body*, excluding the findings section, and the item's own 49% figure is already that number
+rather than the one its instruction computes. Fixing the acceptance therefore means fixing what it
+measures as well as where it is recorded.
