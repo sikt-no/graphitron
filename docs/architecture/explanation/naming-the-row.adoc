@@ -1,5 +1,5 @@
 = Naming the row
-:description: A friendly introduction to the fact store's naming habit: say what one row means, name the table after that sentence, and let questions be views.
+:description: A friendly introduction to the fact store's naming habit: say what one row means, name the table after that sentence, and let questions be queries over the facts.
 :!toc:
 
 The generator keeps everything it learns in a small relational database called the fact store.
@@ -57,8 +57,10 @@ schema file, the catalog, the classfile.
 "This classfile declares this supertype through this clause" passes. "This directive application
 spelled this argument" passes. The failing sentences usually split, under mild pressure, into two
 or three passing ones, and that split is the habit doing its work: the question you started from
-still gets answered, but by a *view* that joins the facts, not by a table that froze the
-question.
+still gets answered, but by a *query* that joins the facts, not by a table that froze the
+question. And when a question turns out to be one that several readers keep asking, its query is
+pushed down into the database as a named *view*, so the rule is written once and everyone reads
+the same answer.
 
 == A worked example: which table backs a type?
 
@@ -96,12 +98,13 @@ Debugging a wrong answer starts with `SELECT`, not with a debugger: query the vi
 the facts under it, and at each step there is an independent source to compare against.
 
 *New capabilities are additions.* A new fact lands as a new relation beside the old ones, and a
-new question lands as a new view over them. Existing tables do not change shape to accommodate
-it, so existing readers do not notice.
+new question lands as a query over them, promoted to a shared view once more than one reader
+asks it. Existing tables do not change shape to accommodate it, so existing readers do not
+notice.
 
 *Consumers agree by construction.* The generator, the language server, and the documentation
-tools read the same base tables through their own views. There is no moment where two private
-copies of the model drift apart, because there are no private copies.
+tools each ask their own queries against the same base tables and shared views. There is no
+moment where two private copies of the model drift apart, because there are no private copies.
 
 *Tests get real oracles.* A fact table can be checked against the file, catalog, or classfile it
 transcribes. A question-shaped table has no independent source; the only available oracle is the
