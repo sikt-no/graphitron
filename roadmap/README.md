@@ -24,9 +24,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R685` | The class census scans the transitive dependency closure | Ready | 2026-08-21 <sub>created 2026-08-16</sub> | [plan](census-scans-transitive-closure.md) |
 | `R728` | @nodeId encode and decode become store relations, and an instruction the generator drops fails the build | In Progress | 2026-08-21 <sub>created 2026-08-19</sub> | [plan](nodeid-effective-at-every-coordinate.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-20 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
+| `R685` | The class census scans the transitive dependency closure | In Progress | 2026-08-21 <sub>created 2026-08-16</sub> | [plan](census-scans-transitive-closure.md) |
 | `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | In Review | 2026-08-21 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -517,7 +517,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R522` [**Reconcile the emitted-code seam-pin assertion convention with the testing doc**](emitted-seam-pin-assertion-convention.md) — Backlog, tech-debt
 - `R762` [**The census stores every class member to answer questions only ever asked by name**](census-stores-members-it-reads-by-name.md) — Backlog, architecture
 - `R462` [**Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder**](nested-fetcher-outgoing-field-edges.md) — Spec, bug
-- `R685` [**The class census scans the transitive dependency closure**](census-scans-transitive-closure.md) — Ready, architecture
+- `R685` [**The class census scans the transitive dependency closure**](census-scans-transitive-closure.md) — In Progress, architecture
 - `R620` [**The dev loop reads the whole classpath twice per pass**](dev-loop-duplicate-classpath-scan.md) — Backlog, architecture
 - `R637` [**graphitron:dev reports schema-load failures as infrastructure**](dev-schema-load-failure-classification.md) — Backlog, bug
 - `R757` [**A hard-killed dev session leaves a store file that never warms again**](hard-killed-holder-poisons-warm-start.md) — Backlog, cleanup

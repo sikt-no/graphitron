@@ -1,7 +1,7 @@
 ---
 id: R685
 title: "The class census scans the transitive dependency closure"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: dev-loop
