@@ -1,7 +1,7 @@
 ---
 id: R784
 title: "Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it"
-status: Spec
+status: Ready
 bucket: feature
 priority: 2
 theme: mutation-write
@@ -133,7 +133,7 @@ CREATE TABLE catalogue_item (
 
 The pair is deliberately slot-hostile: the `Catalogue` decode record is `(tenant_id, catalog_code)`, so the straddler's single SET column `catalog_code` sits at the second decode slot. Positional inference over the one-column SET group would read the first slot and write the tenant id into the catalogue code; the fixture fails loudly without stage 1. Seed two tenants with two catalogues each and a few items.
 
-**Schema**: `Catalogue` and `CatalogueItem` `@node` types plus `updateCatalogueItem` (single-row) and a bulk list variant in `graphitron-sakila-service`'s `schema.graphqls`, the input carrying `id: ID!` and `catalogueId: ID! @nodeId(typeName: "Catalogue")`.
+**Schema**: `Catalogue` and `CatalogueItem` `@node` types plus `updateCatalogueItem` (single-row) and a bulk list variant in `graphitron-sakila-example`'s `src/main/resources/graphql/schema.graphqls`, the input carrying `id: ID!` and `catalogueId: ID! @nodeId(typeName: "Catalogue")`.
 
 **Unit tier** (`UpdateRowsWalkerTest`): rework `compositeReferenceStraddlesKey_crossTableFk_rejectsWithMixedCarrierKeyMembership` into partition assertions (in-key column with a second contributor becomes an agreement obligation naming both sides, out-of-key becomes SET); new cases for the nullable straddler rejection (asserting the carried matched key and write target), the sole-contributor in-key column landing in WHERE, the own-columns straddle still rejecting, the two-straddlers-share-a-column tiebreak, and slot values on the flattened rows.
 
