@@ -17,8 +17,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R775` | The Spec gate reviewer lands findings, not fixes: half of R769's spec was written by its reviewers | Spec | 2026-08-21 | [plan](reviewer-findings-not-reviewer-edits.md) |
 | `R769` | withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms | Spec | 2026-08-21 <sub>created 2026-08-20</sub> | [plan](seeded-store-boots-per-thread.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
-| `R772` | The dev loop holds a live fact store no developer can query | Spec | 2026-08-21 | [plan](dev-loop-store-sql-console.md) |
 | `R763` | Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path | Spec | 2026-08-20 | [plan](sakila-example-tests-run-one-at-a-time.md) |
+| `R772` | The dev loop holds a live fact store no developer can query | Ready | 2026-08-21 | [plan](dev-loop-store-sql-console.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | Spec | 2026-08-21 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
@@ -591,7 +591,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R768` [**The build boots the fact schema 1051 times, and a reset costs a fraction of a boot**](store-boots-once-per-test-not-once-per-build.md) — Backlog, dx
 - `R769` [**withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms**](seeded-store-boots-per-thread.md) — Spec, dx
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
-- `R772` [**The dev loop holds a live fact store no developer can query**](dev-loop-store-sql-console.md) — Spec, dx
+- `R772` [**The dev loop holds a live fact store no developer can query**](dev-loop-store-sql-console.md) — Ready, dx
 - `R763` [**Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path**](sakila-example-tests-run-one-at-a-time.md) — Spec, dx
 - `R764` [**graphitron-model ships its junit-platform.properties to three consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
 - `R771` [**A skill for authoring nested jOOQ at one grain, driven from the right relation**](nested-jooq-grain-and-anchor-skill.md) — In Review, dx
