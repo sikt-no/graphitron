@@ -271,3 +271,84 @@ awk '{c+=$1; t+=$2} END {print c" boots, "t" ms"}' /tmp/boots.txt
 # for BASE TABLE in PUBLIC excluding META\_% and STORE_STAMP, and time TRUNCATE over that list
 # with SET REFERENTIAL_INTEGRITY FALSE around it. Twenty rounds; the first is cold and reads high.
 ```
+
+## Reviewer findings (Spec → Ready gate, 2026-08-21)
+
+Independent reviewer session, status stays `Spec`, plan body untouched. The findings-only
+deliverable is deliberate: the defect below is the one an earlier reviewer already identified, and
+the reason it is still in the body is that reviewers have been landing fixes instead of findings.
+That is R775's subject, and this section extends the emergent convention it documents rather than
+adding a fifth voice to the plan.
+
+**The first gate question passes without reservation**, and the plan's load-bearing premise was
+re-derived from the tree rather than trusted. `MaterializeDependencies.populate` reads
+`Materializations.registrations` (over `meta_materialize`), `INFORMATION_SCHEMA.VIEWS` and
+`INFORMATION_SCHEMA.TABLES`, and nothing else; no fact relation is touched, so no row a case writes
+can invalidate `meta_materialize_dependency` and a reset really is the clear alone. Two further
+claims that would have broken the mechanism are also clean: the DDL declares no identity column and
+no sequence, so `TRUNCATE` without `RESTART IDENTITY` genuinely reproduces a freshly booted store;
+and the four materialization targets are `intent_`-prefixed, so the `META\_%` exclusion does not
+accidentally leave a previous case's derived rows behind. `StoreRefresh` is package-private in
+`graphitron`, which depends on `graphitron-model` and its test-jar, so the plan is right that it is
+unreachable and right to stand a second clear beside it. `withSeededStore(String, ...)` does reach
+the store through the one-argument form, so the re-entrancy note about where the flag sits is
+correct and worth keeping.
+
+**What blocks is the second question, and it is confined to the boot-count pin.** The pin as spelled
+cannot pass, and the two sentences that state it disagree with each other.
+
+The counter is placed on `FactStores` specifically so that the out-of-scope classes' boots pass
+through it, and the plan cites that as the virtue that makes the home right. Those classes boot per
+case, not per class: `MaterializationOrderTest` calls its private `withStore` from 8 of its cases,
+`MaterializeRegistryGateTest` from 6, `StoreReaderTest` opens 3 stores across its 3 cases (two
+`inMemory`, one `fileBacked`), and `CommentRenderabilityGateTest` opens 2. That is 19 boots that
+survive this change by design. So after the change the instrument reads roughly 23 boots (4 from the
+funnel plus those 19) against at most 4 distinct booting threads, and:
+
+* "count the distinct thread identities alongside the boots and assert the two are equal" is false
+  by about 19 on the first run;
+* "the boot counter reporting one per thread rather than 420", in the verification paragraph, is not
+  what the instrument will report either.
+
+The author's original formulation, still present higher in the same section ("bounded by the thread
+count plus the four direct-boot classes' own opens"), is the correct shape and is what the two later
+sentences replaced.
+
+**What would satisfy the gate is not restoring the bound verbatim, because the two arms differ in
+what the invariant catches, and picking between them is a design decision the plan should make
+rather than the implementer.** A loose ceiling over all boots is stable but goes quiet about the
+thing the pin exists for: it cannot distinguish "the funnel regressed to a boot per case" from "one
+of the four out-of-scope classes grew four more cases", so it degrades into a number somebody
+periodically raises. The equality invariant is the one with teeth, and it is stateable, but only if
+the counter separates the two populations, for instance a funnel counter incremented where the
+thread-local holder boots and a separate total on `FactStores`, with the equality asserted on the
+funnel half and the ceiling on the total. That partition also has a cost the plan should name: it
+weakens the argument for `FactStores` as the single home, and it means the other three modules
+inherit a two-part instrument rather than a one-part one. Either arm is defensible. What the
+implementer cannot be handed is a section that asserts both.
+
+One consequence worth folding in while the pin is being rewritten, since it has the same root: the
+headline projection subtracts the whole 133.0 s of in-situ boot time, which is where "about 182
+seconds to about 49" comes from, but those 19 surviving boots are roughly 6 s of it. The plan says
+elsewhere that the saving is computed net of the out-of-scope classes; it is not. The number stays
+inside its own "about", so this is not separately blocking, but the corrected pin and the corrected
+projection are the same fact stated twice.
+
+### Non-blocking
+
+* `graphitron-model/src/test/resources/junit-platform.properties` argues the module's concurrency
+  safety on exactly the property this change removes: "the store mints a UUID-named H2 database per
+  call, so two classes share no rows". After this change two classes on one thread share a store and
+  are kept apart by the reset instead. "Nothing else in the fixture changes" should say that this
+  comment does, because it is the file a contributor reads to find out why the module is safe to run
+  concurrently, and it would then be stating the old reason.
+* "a production surface with no production caller, which is the drift smell the principles name":
+  the principles define the drift smell as a copy that can diverge from its source, which is a
+  different thing. The conclusion is well supported without the citation, on `FactStores`' own
+  javadoc and on the argument the plan gives in the next sentence. The one place the drift smell is
+  named correctly is the two-lists argument in `## Tests`.
+* Sightings that have drifted since the measurement, all of them pre-disclaimed by the plan and none
+  affecting a conclusion: 145 clearable base tables rather than 144, 189 `withSeededStore` sites
+  across 30 classes rather than 158 across 29, 433 `@Test` methods rather than 423, and 45
+  `FactStores` sites downstream rather than 40. The seven direct-boot sites and the four class names
+  are exact.
