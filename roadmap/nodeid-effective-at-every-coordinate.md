@@ -1,7 +1,7 @@
 ---
 id: R728
 title: "@nodeId encode and decode become store relations, and an instruction the generator drops fails the build"
-status: In Review
+status: Ready
 bucket: feature
 priority: 3
 theme: nodeid
@@ -2293,3 +2293,70 @@ Verified at the tier the finding was measured at, plus the reactor: `NodeIdProdu
 The manual's producer-parameter section carries the bare spelling with its example and its two
 refusals, inference rule (b) in the argument table now names this coordinate, and the
 `typeName:`-is-required constraint says what "neither rule fires" means here.
+
+## Reviewer findings, round three
+
+Round two's finding is fixed, and verified independently rather than read off the response. The bare
+spelling at the named-parameter carrier now reaches the decode: `films(key: ID! @nodeId): [Film!]!`
+over `getFilmsByIntegerKey` classifies to the decode on `film_id`, the ambiguity over a shared table
+is refused naming both node types, and the scalar-returning field is refused naming the absent table.
+The inference lives in one place with one wording, `NodeIdLeafResolver` reads it, and the
+fall-through comment the last round objected to is gone. Round one's three findings remain fixed.
+
+One finding, and it is the same shape as the last one at a narrower coordinate.
+
+### 5. The walk shares one of the store's two scope rungs, and the spec says it shares both
+
+`inferNodeTypeAtSlot` arrives at the table from `unwrapAll(fieldDef.getType())` through
+`tableNameForTypeName`, which is the store's `NAMED_TYPE_TABLE` rung. `intent_argument_scope_table`
+has a second rung beneath it, `MUTATION_TABLE`, which is what answers where the field returns a
+payload type nothing binds: that relation's own comment says a delete surface returns a scalar or a
+status type and its arguments still bind against the table the mutation names. The walk does not read
+that rung, so the shape it answers is the shape the store answers with its lower one.
+
+Measured on a service-backed delete, the canonical surface the rung exists for:
+
+```graphql
+type Mutation {
+    deleteFilm(key: ID! @nodeId): String
+        @mutation(typeName: DELETE, table: "film")
+        @service(service: {className: "...", method: "..."})
+}
+```
+
+The walk refuses the field: `@nodeId without typeName: cannot infer node type, the field's return
+type 'String' binds no table to inherit a target from. Add typeName: explicitly.` The store, captured
+from the same SDL, resolves it: `intent_argument_scope_table` carries one row for that argument with
+`basis = MUTATION_TABLE` and `table_name = film`, `intent_node_id_instruction` carries the argument
+with `basis = TARGET_TABLE_NODE_TYPE` and `node_type_name = Film`, and the defect view mints a verdict
+whose prose quotes `@nodeId(typeName: "Film")` back at an author who wrote no `typeName:` at all. The
+explicit spelling of the same coordinate classifies, so the coordinate is supported and it is the bare
+form alone that is refused.
+
+So the sentence stating this absence is the wrong way round. "The store is silent at that shape,
+having no scope table and so no instruction row, so the walk is the stricter of the two by one case"
+is measurably false where the mutation names its table: the store has both, and the walk is not
+stricter but differently based. The claim also stands in main sources, where it outlives this
+document: `BuildContext.inferNodeTypeOverTable`'s javadoc says the callers "differ only in how they
+arrive at the table, which is what keeps the walk and the store one rule rather than two", and
+`inferNodeTypeAtSlot`'s says the two "arrive at the same table from the two directions". A comment
+asserting an invariant a reachable schema contradicts is worse than no comment, because the next
+contributor reads it and does not go looking for the rung.
+
+The distance from round two's finding is real and worth stating: nothing is silently handed the wire
+format here, the build fails, and the message an author meets names a fix that works. That is the
+item's own invariant holding. What does not hold is the rule the two coordinates are said to share,
+at a shape the fact model documents as the reason its lower rung exists.
+
+What would satisfy this. Either the walk reads the second rung, which is one lookup off the `fieldDef`
+already in hand, `MutationInputResolver` reading `@mutation`'s `table` argument off that same field
+today; or the narrowing is declared, in the spec and in both javadocs, as the one rung the walk shares
+with the store and the one it does not yet, with the owed rung recorded rather than described as a
+silence on the store's side. Either way one case at the tier this was measured at, and the manual's
+inference rule (b) and `typeName:`-is-required constraint saying which of the two a delete surface
+falls under, since as written they tell an author the return table is the whole rule.
+
+For the record, one shape I checked and am not raising: a connection-returning field, where the store
+reads the authored element type through `graphitron_field_synthesis` and the walk would read the
+expanded wrapper. `@service` at the root refuses Connection return types outright, bare and explicit
+alike, so the two cannot disagree there.
