@@ -1,13 +1,13 @@
 ---
 id: R685
 title: "The class census scans the transitive dependency closure"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: dev-loop
 depends-on: []
 created: 2026-08-16
-last-updated: 2026-08-16
+last-updated: 2026-08-21
 ---
 
 # The class census scans the transitive dependency closure
