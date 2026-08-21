@@ -94,7 +94,9 @@ The projection emitter is the design precedent throughout: every step below move
 onto the vocabulary the projection rail already dispatches (`JoinStep.Hop` plus the `On` seal),
 rather than teaching the FK-shaped filter types new arms. The body names symbols rather than line
 numbers; re-locate at pickup. A principles consultation reshaped items 1 through 5 from the first
-draft; where a draft position was reversed, the reversal and its reason are stated inline.
+draft, and three Spec reviews reshaped items 1, 2, 4, 5, 7, 9 and 10 after that; where a position
+was reversed, the reversal and its reason are stated inline, and Review resolutions below carries
+the decisions that took more than a sentence.
 
 ### 1. Make `ServiceCatalog.terminalTableForReference` total over what can reach it
 
@@ -106,9 +108,10 @@ scalar-leaf output field (item 7) ended up with its accidental generic rejection
 empty case that would remain after widening, `On.Lateral`, is unconstructable through `parsePath`
 (`TableExpr.RoutineCall` is minted only by `FieldBuilder`'s routine arms, never by
 `parsePathElement`; re-verify at pickup). So make the walk total:
-`TableRef terminalTableForReference(List<JoinStep.Hop> path, TableRef start)`, folding
+`TableRef terminalTableForReference(List<JoinStep> path, TableRef start)`, folding
 `hop.targetTable()` with a throwing `On.Lateral` arm that mirrors
 `PathFragments.emitBackwardBridging`'s posture on shapes its callers cannot legally hold.
+
 `resolveColumnForReference`'s `Optional` then means exactly one thing, a missing column, and the
 two candidate-hint call sites drop their empty-list fallbacks (`.orElseGet(List::of)` in
 `BuildContext.classifyInputField`'s branch, `.orElse(List.of())` in the scalar-leaf branch), so a
@@ -117,6 +120,13 @@ the stale javadoc sentence, "a condition-only step's target table is unknown at 
 (`FieldBuilder`'s scalar-arg `@reference` branch, `BuildContext.classifyInputField`'s
 plain-`@reference` branch, and `FieldBuilder`'s output scalar-leaf branch) consume only the
 terminal table or column, never FK pairs, so no FK-only variant of the walk needs to survive.
+
+The parameter type stays at the sealed root deliberately, decided at the third Spec review. What
+buys totality is the sealed switch, not the element type: `JoinStep` permits only `Hop`, so
+`switch (step) { case JoinStep.Hop h -> ... }` is exhaustive and the compiler enforces it. Lifting
+the parameter to `List<JoinStep.Hop>` would instead force every caller to hold a lifted list, and
+all four pass `path.elements()` / `refPath.elements()`, which is where the cascade of the retired
+type-lift proposal started (see Review resolutions, A).
 
 ### 2. One resolution rule for a condition hop's target, keyed on the available source
 
@@ -148,6 +158,23 @@ the method's second parameter is not a concrete generated table class. That is t
 improvement (the reflection answer is just as authoritative at an output terminal as at a filter
 site), not an accident of the collapse. `validateConditionParamTables` keeps firing unchanged;
 hop 0's origin table is the filter's own start table, which is always resolved at both sites.
+
+**Which hops may see a declared target**, settled at the second Spec review and stated here so the
+collapse cannot be read as licence to widen it. `declaredTarget` is *this hop's* declared target,
+and only a chain-ending terminal element has one. The positional test therefore stays at the call
+site in `resolvePathElements` (`isTerminal ? declaredTargetRef : null`) and only the callee's
+branch collapses; the parameter that goes away is `isTerminal`, not the position rule. Handing
+`declaredTarget` to every element uniformly would resolve an *intermediate* condition hop to the
+carrier field's return table instead of reflecting on the method's second parameter, which breaks
+`GraphitronSchemaBuilderTest.ColumnReferenceFieldCase.CONDITION_INTERMEDIATE_REFLECTS_METHOD_PARAM`
+(path `[{condition: TestConditionStub.intermediate}, {table: "actor"}]` on a `film` carrier,
+asserting the hop resolves to `film_actor` by reflection).
+
+The preference direction is declared-target-over-reflection, and it is load-bearing rather than
+arbitrary: preferring the declared target is what keeps `TestConditionStub.terminalWrongTarget` a
+Check 2 finding (a concrete parameter disagreeing with the table the emitter will hand it) instead
+of a resolution failure, which is the same fact this item asserts when it says
+`validateConditionParamTables` keeps firing unchanged.
 
 ### 3. Retire one rejection, restate the other
 
@@ -187,32 +214,44 @@ own voice has settled this question: `ParentCorrelation.OnParentJoin` deliberate
 per `JoinStep`'s two-axis model.
 
 The reach slot becomes a small path-grain carrier rather than a bare list: a
-`ReachPath(List<JoinStep.Hop> hops)` record whose compact constructor rejects a lateral hop once,
-at construction, replacing `FkHop.narrow`'s per-hop throw as the produce-time enforcer.
-`ColumnTerm.reach()` and `Predicate.Authored.reach()` carry it, and
+`ReachPath(List<JoinStep.Hop> hops)` record whose compact constructor narrows the classified steps
+once and rejects a lateral hop, at construction, replacing `FkHop.narrow`'s per-hop throw as the
+produce-time enforcer. `ColumnTerm.reach()` and `Predicate.Authored.reach()` carry it, and
 `ConditionGlueRenderer.declareReachAliases` keys its alias map on the named carrier instead of a
-raw `List`. One semantic to preserve deliberately: the current map is an `IdentityHashMap` on
+raw `List`. Because `ReachPath` is a new type it declares the hop-typed component freely, and its
+constructor is the single narrowing site for the whole filter rail: `ConditionCommands` hands it
+the classified `List<JoinStep>` and reads hops back. That is what lets this item retire `FkHop`
+without lifting any existing component's declared type (see Review resolutions, A).
+
+One semantic to preserve deliberately: the current map is an `IdentityHashMap` on
 purpose (its javadoc mints locals per reach *occurrence*, `reachIndex` per reach), and a record
 carrier is equals-keyed, so a plain `HashMap` on `ReachPath` would merge structurally equal
 reaches from different terms. Merging is safe for the generated SQL (each `EXISTS` is a
 self-contained subquery) but leaves dead locals and is a separate decision this item does not
-take; the map stays identity-keyed on the `ReachPath` instance.
+take; the map stays identity-keyed on the `ReachPath` instance. The first Spec review floated
+carrying the renderer's `reachIndex` inside `ReachPath` so a plain `HashMap` would do; declined,
+because that index is minted by `declareReachAliases`'s own declaration loop and is emission-scoped
+numbering. Putting it in a plan-layer record would make two structurally identical reaches unequal
+for a reason the plan layer holds no opinion about. The per-occurrence semantic is stated on
+`ReachPath`'s javadoc instead of the map's, which is where a reader looks for it.
 
 This is deliberately not the rejected sealed per-hop vocabulary (`Keyed`/`Conditioned` arms): that shape carries nothing `JoinStep.Hop` + `On` cannot, and every
 shared helper of item 5 would have to translate across it. One carrier, one check, and the hops
 stay `JoinStep.Hop` + `On`.
 
-The same type lift extends to the model components this item's diff already rewrites:
+No existing component's declared type changes. An earlier draft also lifted
 `ParsedPath.elements()`, `BodyParam.RemoteColumnPredicate.joinPath`, and the `joinPath` components
-of `ArgumentRef.ScalarArg.ColumnBackedArg` and `InputField.ColumnBackedReferenceField` declare
-`List<JoinStep.Hop>` instead of the sealed root (`JoinStep` permits only `Hop`, so the lift is
-mechanical), retiring the `instanceof JoinStep.Hop` narrowings on those paths.
+of `ArgumentRef.ScalarArg.ColumnBackedArg` and `InputField.ColumnBackedReferenceField` to
+`List<JoinStep.Hop>`, on the grounds that `JoinStep` permits only `Hop`. That is true of the seal
+but not of the generic: Java generics are invariant, so the lift is a compile error at every
+consumer that has not lifted with it, and `elements()` alone feeds 47 read sites across five
+classifier files. Dropped at the third Spec review; the reasoning is in Review resolutions, A.
 
-This shrinks the census R485 works over rather than depending on it, but note what R485 actually
-is: its own scope is a helper pair (`isFkHop`/`pairsOf`) consolidating the ~40 inline FK-hop
-narrowing idioms, not a type lift, and this diff both deletes a slice of those idioms and retires
-`FkHop`, whose narrowing was one of them. R485's body carries a scope note to that effect (added
-alongside this revision); components this diff does not touch keep the root type.
+What is left of the idea belongs to R485, whose scope is a helper pair (`isFkHop`/`pairsOf`)
+consolidating the ~40 inline FK-hop narrowing idioms. This diff shrinks that census incidentally
+by retiring `FkHop`, whose narrowing was one of them, and R485's body carries a scope note to that
+effect. Every component this diff touches keeps the root type; only `ReachPath`, which is new,
+is hop-typed.
 
 The `FkTargetConditionFilter` arm of `ConditionCommands` (the `@nodeId` + `@condition` reach) keeps
 its FK-only guarantee upstream at item 3's restated validator deferral, not through the type
@@ -231,15 +270,46 @@ The first draft floated hoisting the dispatch into `JoinFragments`; that inverts
 charters (`JoinFragments` is the below-narrowing layer whose every entry point takes a proven
 `On.ColumnPairs`, never a raw `On`; `PathFragments` holds the arms above that narrowing). So the
 dispatch stays where the charters put it: extract
-`PathFragments.hopZeroCorrelation(JoinStep.Hop hop, String firstAlias, String parentLocal, String
-pathKindLabel)` from the inner switch of `correlationWhere`'s `OnParentJoin` arm and have that arm
-delegate to it; `ConditionGlueRenderer.reachExists` then calls `hopZeroCorrelation` for the hop-0
-correlation and the existing `PathFragments.emitBackwardBridging` for interior hops. The filter
+`PathFragments.hopZeroCorrelation(JoinStep.Hop hop, String firstAlias, String parentLocal)` from
+the inner switch of `correlationWhere`'s `OnParentJoin` arm and have that arm delegate to it;
+`ConditionGlueRenderer.reachExists` then calls `hopZeroCorrelation` for the hop-0
+correlation and the existing `PathFragments.emitBackwardBridging` for interior hops. No
+`pathKindLabel` parameter: the label exists on `emitBackwardBridging` and `correlationWhere`
+because their `On.Lateral` and `OnLiftedSlots` arms interpolate it, and the inner switch being
+extracted throws "ParentCorrelation.OnParentJoin cannot wrap a lateral hop", which carries none. The filter
 renderer ends up with zero seal switches of its own, a future `On` arm has exactly one place to
 land per dispatch point, and `JoinFragments`' charter stays true. The condition method's call
 convention is unchanged: `(source, target)` where source is the previous hop's table (the filtered
 table itself at hop 0) and target is the hop's own table, the same convention `appendHopFilters`
 and the projection arms already emit.
+
+**The reach also starts emitting its hops' own `filter()` predicates**, which it does not do today.
+This was found at the third Spec review and folded in here rather than spun out; the reasoning for
+folding it in is in Review resolutions, F. `reachExists` emits the walk-back joins, the hop-0
+correlation and the inner term, and stops. It never calls `PathFragments.appendHopFilters`, and no
+site in the filter rail reads `JoinStep.Hop#filter()` at all: not `ConditionCommands`, not `FkHop`,
+not `ColumnTerm`, not the glue renderer. The projection sibling this item takes as its precedent
+does call it, at `PathFragments.scalarInnerSelect` and at both `ProjectionUnitRenderer` sites.
+
+The consequence is reachable today, with none of this item's changes. A `{key: …, condition: …}` or
+`{table: …, condition: …}` path element folds its condition into `Hop.filter()` and leaves the hop
+foreign-key-derived, pinned by `GraphitronSchemaBuilderTest.KEY_WITH_CONDITION_PRESERVES_WHERE_FILTER`
+and its `{table:}` twin. So `on()` is `On.ColumnPairs`, both rejection guards pass (each tests only
+`on()`), `FieldBuilder.wrapIfRemote` carries the path into `BodyParam.RemoteColumnPredicate`
+verbatim, `narrowPath` narrows it, and the emitted `EXISTS` omits the author's predicate. The
+generated filter is silently *wider* than the schema declares: rows the predicate should exclude
+are matched.
+
+The fix is the one call `scalarInnerSelect` already makes; `reachExists` holds the hop aliases and
+the `"table"` parent local it needs. Two facts make it cheap to land here rather than separately.
+Nothing pins the current behaviour: no filter carrier anywhere uses the shape, and the two folded
+`{key:, condition:}` elements in `schema.graphqls` both sit on the `SplitFilterParent` output
+fields, so no baseline SQL and no pipeline case has to be renegotiated. Re-check at pickup with a
+scan for path elements carrying a `key:` or `table:` alongside a `condition:`. And the semantics the filter rail is losing are already
+proven on the output rail by the `SplitFilterParent.targetSplit` / `targetInline` execution
+fixtures, whose whole point is that a hop-0 `filter()` gives each parent its own verdict; the
+filter-rail fixture in item 10 mirrors that shape. It carries its own acceptance row so the Done
+gate checks it as a correctness fix rather than inside the feature.
 
 ### 6. All positions supported
 
@@ -260,6 +330,12 @@ the shape as legal on a hand-built carrier. Include the unlock deliberately with
 execution coverage rather than adding a new guard to preserve an accidental rejection; relaxing a
 producer's check obliges auditing every consumer of the relaxed shape in the same change, and the
 walker has exactly three consumers.
+
+Which blocker fires depends on where the condition hop sits, and the item 10 rows follow that split.
+The generic unknown-column rejection is the *interior* shape (`[{condition:}, {table:}]`), where the
+walker is the only blocker and item 1 alone unlocks it. The condition-only *terminal* shape fails
+earlier, at `resolveConditionJoinTarget`'s terminal arm, so that carrier needs item 2 as well; it is
+the row item 10 retargets.
 
 The unlock is more than a new emitter arm becoming reachable, but state the delta precisely (the
 first draft's version of this paragraph overstated it; corrected at the Spec review).
@@ -305,6 +381,16 @@ wrong):
 * Keep the recommendation that a conventionally-foreign-key relationship should be declared as a
   jOOQ synthetic FK and filtered through `{key:}`; the condition form is for predicates with no key
   to declare.
+* Correct the third stale claim in the same Pitfalls list, folded in at the second Spec review:
+  "*`path:` must be non-empty.* `@reference(path: [])` fails graphql-java parsing." It does not.
+  The empty list is legal SDL and both filter surfaces classify it and bind `Local`, pinned by
+  `ReferenceFilterRemoteColumnPipelineTest.surface2_scalarArg_elementLessPath_bindsLocal` and its
+  `surface1` twin. State what actually happens (an element-less path binds the carrier's own table)
+  and leave whether the inert form *should* be rejected to R692, which owns that decision but not
+  this false claim.
+* State that a hop's own `condition:` predicate (the `{key:, condition:}` form) is emitted inside
+  the filter's `EXISTS`, per item 5. The page currently says nothing either way, and until this
+  item it was not true.
 
 For the reviewer's benefit the two doc corrections carry different evidence: the FK-only filter
 rule is retired on the strength of this item's own new tests, while the "classify-only /
@@ -315,318 +401,213 @@ the existing execution fixtures.
 
 Per the testing rubric, pipeline beats unit beats execution where the assertion fits the tier:
 
+The split across tiers below is the second Spec review's, replacing a single pipeline bullet that
+asked for a generated-body string match. `docs/architecture/how-to/testing.adoc` bans code-string
+body matching at the pipeline tier in as many words, and names the home this change actually wants:
+renderer arm tests, "the preferred home for per-arm structural assertions on command-driven
+emission". Item 5 is what makes `ConditionGlueRenderer`'s reach dispatch total over the `On` seal,
+so the new dispatch point belongs there and the emitted SQL belongs at the execution tier.
+
 * **Pipeline** (`ReferenceFilterRemoteColumnPipelineTest`): `surface2_conditionJoinPath_isRejected`
-  is the only rejection pin either surface has today (the input-field surface has none). It flips
-  to acceptance, and the input-field surface gains its first cases alongside it, asserting the
-  classified carrier and the generated `TypeSpec` shape (the `EXISTS` embedding the two-arg method
-  call). These cases carry the contract rather than flipping existing pins; per item 3, the deleted
-  guards were never test-enforced. Add mixed-path cases in both orders (condition-then-key,
-  key-then-condition) and truth-table entries in `GraphitronSchemaBuilderTest` beside the existing
-  output-side condition-hop rows.
+  is the only rejection pin either surface has today. It flips to acceptance. The input-field
+  surface has five `surface1` cases already; what it lacks is a condition-hop case and a rejection
+  pin of any kind, and it gains the former. Assertions stay at this tier's grain: the classified
+  carrier, the `FilterBinding.Remote` verdict, and the lowered command rows (the
+  `ConditionCommandsPipelineTest` shape, SDL to reach rows, no javapoet). Per item 3 the deleted
+  guards were never test-enforced on the input-field surface, so these cases are the first
+  enforcement either direction gets there. Add mixed-path cases in both orders (condition-then-key,
+  key-then-condition).
+* **Pipeline truth table** (`GraphitronSchemaBuilderTest`, beside the existing output-side
+  condition-hop rows): filter-position condition hops on both surfaces. Two existing rows in the
+  `ColumnReferenceFieldCase` family move, and item 2's collapse is why:
+  - `CONDITION_ONLY_NO_RETURN_TYPE_TABLE_REJECTED` pins the message the collapse retires, on the
+    carrier item 7 unlocks (`actorName: String @reference(path: [{condition: TestConditionStub.join}])`
+    on a `@table`-bound `Film`, asserting "cannot resolve target table" and "no `@table` binding").
+    Post-collapse the site has no declared target, so it reflects on `join`, whose signature is
+    `(Table<?>, Table<?>)`; the case still rejects, with the wildcard-parameter message. Retarget
+    it and rename it for what it now pins, a wildcard second parameter at a site with no declared
+    target. The retired text is declared in Retired vocabulary.
+  - Add the acceptance sibling that row leaves uncovered: the same scalar-leaf carrier with a
+    concrete-typed condition method, resolving its terminal by reflection and finding the column.
+    That is item 7's unlock at the truth table, and the pair makes the resolvable-versus-
+    unresolvable distinction explicit rather than implied.
+  - `CONDITION_INTERMEDIATE_REFLECTS_METHOD_PARAM` must stay green unchanged. It is the guard on
+    item 2's positional rule (see item 2); if the collapse is implemented as a uniform
+    `declaredTarget`, this row fails, which is the intended signal.
+* **Renderer arm** (new `ConditionGlueRendererTest`, following `ProjectionUnitRendererTest`'s
+  shape: record literals at the point of assertion, no schema, no catalog): `hopZeroCorrelation`'s
+  `On.Predicate` arm, its `On.ColumnPairs` arm for the unchanged case, and the interior-hop
+  bridging delegation. This is the one genuinely new dispatch point item 5 creates and the tier the
+  guide builds for it; the class does not exist yet.
 * **Unit**: a validator case proving `validateInputColumnBackedReferenceField` accepts a
   condition-hop filter carrier, and a pinned case for item 3's restated FK-target `@nodeId`
-  deferral standing on its own now that its old emitter rationale is gone. Item 7's consumer audit
-  lands its coverage in the consumers' own tests per that item; `ParentCorrelationArmTest` grows a
-  case only for model-level facts.
-* **Execution** (`GraphQLQueryTest`, new fixtures beside `ReferencePathConditionFixtures` with
-  concrete parameter types per item 2): a filter through a single terminal condition hop; a filter
-  through an FK-then-condition bridge; assertions on `EXISTS` grain (no row multiplication when the
-  path matches many rows, no dropped parents on non-match). Also a filter through a
+  deferral standing on its own now that its old emitter rationale is gone. Nothing pins either
+  validator message today, so the kind change from `structural` to `deferred` breaks no assertion.
+  Item 7's consumer audit lands its coverage in the consumers' own tests per that item;
+  `ParentCorrelationArmTest` grows a case only for model-level facts.
+* **Execution** (`GraphQLQueryTest`, with new methods on `ReferencePathConditionFixtures`, which
+  already mixes wildcard and concrete parameter types, so concrete-typed additions per item 2 are
+  the established shape rather than a new class): a filter through a single terminal condition hop;
+  a filter through an FK-then-condition bridge; assertions on `EXISTS` grain (no row multiplication
+  when the path matches many rows, no dropped parents on non-match). Also a filter through a
   reverse-direction `{key:}` hop (parent reaching into its children's columns), pinning the
   `EXISTS`-over-many grain the motivation section leans on, which no test proves today. One case
-  each for the scalar-leaf unlock of item 7. Compilation-tier coverage rides the fixtures for free.
+  each for the scalar-leaf unlock of item 7.
+* **Execution, item 5's hop-filter fix, its own acceptance row**: a filter whose path is a single
+  `{key:, condition:}` hop, over seeded rows where the hop's predicate excludes some rows the FK
+  slot alone would match. Mirror `SplitFilterParent`'s shape, which proves the same semantic on the
+  output rail: rows sharing an FK-slot value but differing in the column the predicate reads. The
+  assertion is that the excluded rows do not come back, which fails on today's emission.
+* **SQL baseline** (`ConditionSqlBaselineTest` in `graphitron-sakila-example`): the rendered
+  statement for one condition-hop filter, so the `EXISTS` embedding the two-argument call is pinned
+  as SQL where the guide puts it rather than as a generated-code substring at the pipeline tier.
+  Compilation-tier coverage rides the fixtures for free.
 
-## Open review items (Spec review, 2026-08-19)
+## Review resolutions
 
-Two things the Spec → Ready review could not sign off without the author's decision. Everything
-else in the plan verified against the tree; the two inline corrections above (item 3's testedness
-claim, item 7's `OnParentJoin` premise) are already folded in.
+Three Spec reviews (2026-08-19, 2026-08-20, 2026-08-21) raised seven items, A through G, and a
+handful of non-blocking notes. All are addressed in the plan above; this section records what was
+decided where the decision was not obvious from the plan text, so the next reviewer reads decisions
+rather than re-deriving them. Nothing here is outstanding.
 
-### A. Item 4's lift of `ParsedPath.elements()` is not mechanical
+### A. The type lift is dropped, not resized
 
-The item calls the lift to `List<JoinStep.Hop>` mechanical on the grounds that `JoinStep` permits
-only `Hop`. That is true of the *seal* but not of the *generic*: Java generics are invariant, so a
-`List<JoinStep.Hop>` is not assignable to a `List<JoinStep>` parameter. `ParsedPath.elements()` is
-not a leaf component; it is the single source feeding every path consumer in the classifier, and
-lifting its declared type is a compile error at each one that has not lifted with it:
+The reviews established that lifting `ParsedPath.elements()` and the three carrier components to
+`List<JoinStep.Hop>` is not mechanical. `JoinStep` permits only `Hop`, so the *seal* is a
+single-arm one, but Java generics are invariant, so a `List<JoinStep.Hop>` is not assignable where
+a `List<JoinStep>` is expected. `elements()` is the single source feeding every path consumer in
+the classifier: 47 read sites (`FieldBuilder` 31, `TypeBuilder` 4, `BuildContext` 4,
+`NodeIdLeafResolver` 5, `SourceRowDirectiveResolver` 3), nine `List<JoinStep> joinPath` components
+on `ChildField` plus its interface accessor, `buildParentCorrelation` and
+`resolveColumnForReference`, and eight test-source files holding hand-built `List<JoinStep>`
+fixtures. The lift is a compile error at each site that has not lifted with it.
 
-* 47 `.elements()` reads across `BuildContext`, `FieldBuilder`, `TypeBuilder`,
-  `NodeIdLeafResolver`, and `SourceRowDirectiveResolver`.
-* the nine `List<JoinStep> joinPath` components of `ChildField` plus its `joinPath()` interface
-  accessor, all constructed from `elements()`.
-* `BuildContext.buildParentCorrelation(List<JoinStep>, TableRef)` and
-  `ServiceCatalog.resolveColumnForReference(String, List<JoinStep>, ...)`.
-* the test-side hand-built fixtures typed `List<JoinStep>` (`ColumnReferenceFieldValidationTest`,
-  `TableFieldValidationTest`, `BatchedTableFieldValidationTest`, `BatchedLookupValidationTest`,
-  `InlineLookupValidationTest`, `ColumnBackedFieldInvariantTest`, `TypeFetcherGeneratorTest`,
-  `TestFixtures.pcFor`).
+The reviews offered three resolutions: lift only the three carriers and convert at their
+construction sites, add a lifted `ParsedPath.hops()` sibling accessor, or declare the cascade in
+scope. All three are declined in favour of a fourth: **drop the type lift from this item entirely.**
 
-So the lift as written forces exactly the census-wide type lift the same paragraph disclaims
-("components this diff does not touch keep the root type"), and which the R485 scope note also
-places outside R485. The three carrier components (`BodyParam.RemoteColumnPredicate`,
-`ArgumentRef.ScalarArg.ColumnBackedArg`, `InputField.ColumnBackedReferenceField`) *can* be lifted in
-isolation, but only if `elements()` stays at the root type and each construction site converts.
-Pick one and say so:
+* `ReachPath` is a *new* type (item 4), so it declares `List<JoinStep.Hop>` freely, and its compact
+  constructor becomes the single narrowing site for the whole filter rail. That is what `FkHop`'s
+  retirement actually needed; the lift was never load-bearing for it.
+* Item 1's walker does not need it either. Totality comes from the sealed switch, not the element
+  type, so the walker keeps `List<JoinStep>` and all four call sites keep passing `elements()`
+  unchanged. This is the third review's non-blocking note, promoted: it removes item 1's dependence
+  on A's outcome, which was most of A's stakes.
+* Lifting the three existing carriers would trade N read-site narrowings for one construction-site
+  narrowing per carrier. That is the exact consolidation R485 exists for, and it belongs there:
+  R485's scope is the `isFkHop`/`pairsOf` helper pair over the ~40 inline narrowing idioms, of
+  which this diff removes a slice for free by retiring `FkHop`.
+* The `hops()` sibling accessor was the tempting option and is the worst of the three. It stands two
+  accessors over the same data with different static types, and consumers then migrate on no
+  schedule, which is a parallel mechanism beside an existing one rather than an extension of it.
 
-. Drop `ParsedPath.elements()` from the lift set; lift only the three carriers, converting at their
-  construction sites.
-. Add a lifted sibling accessor (`ParsedPath.hops()`) beside `elements()`, so consumers migrate
-  incrementally and this diff migrates only the sites it already rewrites.
-. Declare the census-wide cascade in scope, with a size estimate, and reconcile it with the R485
-  scope note.
+Net effect: no existing component's declared type changes, the cascade does not happen, and this
+item stays a feature item.
 
-### B. Item 2's collapse breaks a pinned diagnostic no item accounts for
+### B. The retired diagnostic's pinned row is retargeted, and gains a sibling
 
 `GraphitronSchemaBuilderTest.ColumnReferenceFieldCase.CONDITION_ONLY_NO_RETURN_TYPE_TABLE_REJECTED`
-pins the behavior the collapse retires, on exactly the carrier item 7 unlocks. Its SDL is
-`actorName: String @reference(path: [{condition: TestConditionStub.join}])` on a `@table`-bound
-`Film`, and it asserts the rejection reason contains "cannot resolve target table" and
-"no `@table` binding". Post-collapse that site has no declared target, so it reflects on
-`TestConditionStub.join`, whose signature is `(Table<?>, Table<?>)`; the case still rejects, but
-with the wildcard-parameter message. The test fails as written.
+pins the behaviour item 2's collapse retires, on exactly the carrier item 7 unlocks. Item 10 now
+names it, with the retarget spelled out: post-collapse the site has no declared target, reflects on
+`TestConditionStub.join`'s `(Table<?>, Table<?>)` signature, and rejects with the wildcard-parameter
+message instead, so the row is renamed for what it now pins. The retired message text is declared
+in Retired vocabulary.
 
-Item 2 states the output-site shift in prose, but this row is not named there, item 10 adds truth
-table rows rather than retargeting one, and the retired message text is absent from Retired
-vocabulary. Owed: name the row in item 10 with the intended new assertion (retarget to the reworded
-reflection message, or point the fixture at `TestConditionStub.intermediate` if the case should keep
-pinning a resolvable-vs-unresolvable distinction), and add "cannot resolve target table because the
-carrier field's return type has no `@table` binding" to Retired vocabulary.
+The row also gains an acceptance sibling rather than merely moving: the same carrier with a
+concrete-typed condition method, which resolves and classifies. Pointing the existing fixture at
+`TestConditionStub.intermediate` was the other option the review offered; the pair is better,
+because the distinction being pinned is resolvable-versus-unresolvable and one row can only show
+one side of it.
 
-### Non-blocking, author's call
+### C. Item 2 states which hops may read a declared target
 
-* **`ReachPath` and the identity map.** Keeping the map identity-keyed preserves today's semantics
-  exactly (the current key, `List<FkHop>`, is equally equals-bearing, so `IdentityHashMap` is
-  already load-bearing for the same reason). But `ReachPath` is a *new* named carrier, and the
-  per-occurrence identity has a natural home inside it: carry the `reachIndex` the loop already
-  mints, key a plain `HashMap`, and the subtlety disappears without taking the reach-merging
-  decision item 4 defers. Cheaper than the paragraph explaining why the map must stay identity-keyed.
-* **`ArgBinding`'s `{@link FkHop}`.** `command/ArgBinding.java`'s class javadoc links `FkHop` as its
-  exemplar ("This pairs a borrowed ref with producer data, like ..."). Retiring `FkHop` fails the
-  javadoc reference gate there. The retirement sweep catches it, but naming it in Retired vocabulary
-  saves a build cycle; that sentence needs a new exemplar, not a `{@code}` downgrade.
-* **Item 10's fixture wording.** "new fixtures beside `ReferencePathConditionFixtures`" reads as a
-  new class. That file already mixes `Table<?>` and concrete-typed methods
-  (`filmActorJunctionToActor`, `splitFilterParentIncluded`), so adding methods to it is the
-  established shape; one word settles it.
+Folded into item 2 as its own paragraph. The rule is that `declaredTarget` is *this hop's* declared
+target and only a chain-ending terminal element has one, so the positional test stays at the call
+site (`isTerminal ? declaredTargetRef : null`) and only the callee's branch collapses; the parameter
+that disappears is `isTerminal`. Item 10 names
+`CONDITION_INTERMEDIATE_REFLECTS_METHOD_PARAM` as the guard that fails if the collapse is
+implemented as a uniform `declaredTarget`, and the acceptance list requires it green unchanged.
 
-## Open review items (second Spec review, 2026-08-20)
-
-Independent session, different from the one that last committed this file. A and B above were
-re-verified against the tree and both still stand exactly as written, so they are not restated:
-the 47 `.elements()` reads across the five named files, the nine `List<JoinStep> joinPath`
-components in `ChildField` plus its interface accessor, the eight test-side `List<JoinStep>`
-fixtures, and `CONDITION_ONLY_NO_RETURN_TYPE_TABLE_REJECTED`'s SDL and both assertion substrings
-all match. `TestConditionStub.join` is `(org.jooq.Table<?>, org.jooq.Table<?>)`, so B's predicted
-post-collapse failure is the wildcard-parameter message, as it says. Three further items are owed.
-
-### C. Item 2 must say which hops may see a declared target
-
-Item 2's rationale, "what decides the answer is not the hop's position but the available source",
-reads as licence to hand `declaredTarget` to every hop. It is not.
-`BuildContext.resolvePathElements` threads one `targetSqlTableName` (the carrier field's return
-`@table`) past every element and uses `isTerminal` to decide which element may read it. A
-`declaredTarget` supplied uniformly would resolve an *intermediate* condition hop to the field's
-return table instead of reflecting on the method's second parameter. That is wrong on its face and
-it breaks
-`GraphitronSchemaBuilderTest.ColumnReferenceFieldCase.CONDITION_INTERMEDIATE_REFLECTS_METHOD_PARAM`,
-whose path is `[{condition: TestConditionStub.intermediate}, {table: "actor"}]` on a `film` carrier
-returning `Actor` and which asserts the hop's target resolves to `film_actor` by reflection.
-
-The rule is coherent once stated precisely: `declaredTarget` is *this hop's* declared target, and
-only a chain-ending terminal element has one, so the positional test stays at the call site
-(`isTerminal ? declaredTargetRef : null`) and only the callee's branch collapses. One sentence in
-item 2 settles it. Also worth saying which way the preference points and why: preferring the
-declared target over reflection is what keeps `TestConditionStub.terminalWrongTarget` a Check 2
-finding rather than a resolution failure, which is the same fact item 2 already asserts when it
-says `validateConditionParamTables` keeps firing unchanged.
-
-Verified on the reviewer's side and recorded so the next reader need not re-derive it: the collapse
-does *not* undermine `BuildContext.computeTerminalTargetVerdict`'s `On.Predicate` arm, whose
-"Match by construction" rests on the terminal target coming from the return `@table`. Every
+The second review also verified, and this is recorded so it is not re-derived, that the collapse
+does not undermine `BuildContext.computeTerminalTargetVerdict`'s `On.Predicate` arm: every
 `parsePath` call site passing a non-null `returnTableRef` passes that same table's name as
 `targetSqlTableName`, and the gate returns `NotApplicable` when `returnTableRef` is null, so
-wherever it actually compares, the declared target was used and the tautology holds. Only the
-arm's prose goes stale (see E).
+wherever it compares, the declared target was used. Only that arm's prose goes stale, and Retired
+vocabulary carries it.
 
-### D. Item 10's pipeline bullet names an assertion form the tier guide bans
+### D. The tests are re-tiered
 
-"asserting the classified carrier and the generated `TypeSpec` shape (the `EXISTS` embedding the
-two-arg method call)" is method-body content, and the pipeline-tier section of
-`docs/architecture/how-to/testing.adoc` says "Banned: code-string body matching". The same guide
-names the home this change actually wants: renderer arm tests are "the preferred home for per-arm
-structural assertions on command-driven emission", and item 5 is exactly what makes
-`ConditionGlueRenderer`'s reach dispatch total over the `On` seal. Item 10 proposes no renderer-arm
-case at all, which leaves the one genuinely new dispatch point uncovered at the tier built for it.
+Item 10's single pipeline bullet asked for a generated-body string match, which the pipeline tier
+bans in as many words, and proposed no case at the tier the guide names for exactly this change.
+Item 10 is now five bullets: pipeline asserts the classified carrier and lowered command rows with
+no javapoet; the truth table carries the classification verdicts; a new `ConditionGlueRendererTest`
+covers `hopZeroCorrelation`'s arms from record literals, which is where per-arm structural
+assertions on command-driven emission belong; execution covers grain and rows; and
+`ConditionSqlBaselineTest` pins the rendered `EXISTS` as SQL.
 
-Precedent cuts both ways, so this is a decision to record rather than a flat error:
-`ConditionGluePipelineTest` is a `@PipelineTier` class and already asserts
-`primaryBody).contains("decodeBarRowsOrThrow(")`. But the last Done-gate review in this
-neighbourhood checked "no code-string assertions on generated method bodies" explicitly, so an
-implementer following item 10 literally walks into that check. Splitting the bullet costs nothing:
-the pipeline tier asserts the classified carrier plus the command rows (SDL to reach rows, the
-`ConditionCommandsPipelineTest` shape, no javapoet), a `ConditionGlueRenderer` arm test asserts
-`hopZeroCorrelation`'s predicate arm from record literals, and the emitted `EXISTS` is pinned where
-the guide puts it, at `ConditionSqlBaselineTest` or the execution tier.
+`ConditionGlueRendererTest` does not exist yet and is new work in this item.
+`ConditionSqlBaselineTest` does exist, in `graphitron-sakila-example`, and already pins condition
+family `EXISTS` statements including their runtime-prefixed aliases, so the new pin is one more
+string in an established harness.
 
-### E. Retired vocabulary under-declares item 2's footprint
+### E. Retired vocabulary declares all three layers of item 2's footprint
 
-Item 2 retires the terminal-versus-intermediate framing, not just one message, and the sweep at the
-Done gate reads this section. Add:
+Rewritten to name the message text, the `isTerminal` parameter plus the "intermediate-hop
+`@condition` method" prefix shared by all three reflection-arm rejections, and the terminal-versus-
+intermediate prose framing with its roughly ten sites enumerated by file.
 
-* the "cannot resolve target table because the carrier field's return type has no `@table`
-  binding" text (already owed by B),
-* the `isTerminal` parameter and the "intermediate-hop `@condition` method" message prefix, which
-  opens all three of `resolveConditionJoinTarget`'s reflection-arm rejections, and
-* the "terminal branch" / "terminal-hop arm" / "intermediate-hop arm" framing in prose. It sits in
-  roughly ten places, four in `BuildContext` (`resolveConditionJoinTarget`'s own javadoc, the
-  `computeTerminalTargetVerdict` javadoc, that method's inline `On.Predicate` comment, and the
-  Check 2 comment in `parsePathElement`'s condition arm) and the rest in
-  `MultiSchemaConditionParamTest`, `TestConditionStub` (both the `intermediate` and
-  `terminalWrongTarget` fixtures) and `GraphitronSchemaBuilderTest`. Re-count at pickup.
+### F. The dropped hop predicate is fixed here, with its own acceptance row
 
-### Non-blocking, second pass
+Raised at the third review: `ConditionGlueRenderer.reachExists` never calls
+`PathFragments.appendHopFilters`, and nothing in the filter rail reads `JoinStep.Hop#filter()`, so a
+`{key:, condition:}` filter path emits an `EXISTS` without the author's predicate and the filter
+comes out wider than declared. The projection rail this item takes as precedent does emit it.
 
-* **A third stale claim in the same manual file.** `join-with-references.adoc`'s Pitfalls list
-  says "*`path:` must be non-empty.* `@reference(path: [])` fails graphql-java parsing. Every
-  reference declares at least one hop." It does not fail: the empty list is legal SDL, and both
-  filter surfaces classify it and bind `Local`, pinned by
-  `ReferenceFilterRemoteColumnPipelineTest.surface2_scalarArg_elementLessPath_bindsLocal` and its
-  `surface1` twin. R692 owns the decision about whether the inert form *should* be rejected; it
-  does not own the false claim. Item 9 already rewrites the neighbouring sections of this file for
-  exactly this class of staleness, so folding in the one-line correction is cheaper than a separate
-  pass. Author's call whether it rides here or goes into R692's body.
-* **Item 10's "first cases" wording.** "the input-field surface gains its first cases alongside it"
-  undersells what is there: `ReferenceFilterRemoteColumnPipelineTest` carries five `surface1` cases
-  today. What that surface lacks is a condition-hop case, and a rejection pin of any kind.
-* **The first pass's three non-blocking notes all check out.** `command/ArgBinding.java`'s class
-  javadoc does use `{@link FkHop}` rather than `{@code}`, so the reference gate does fire on the
-  retirement; `declareReachAliases`'s `IdentityHashMap` is keyed and documented as the note says;
-  and `ReferencePathConditionFixtures` already mixes wildcard and concrete parameter types.
+Folded into item 5 rather than spun out, on four grounds. The fix is the one call the projection
+sibling already makes, and `reachExists` holds the aliases and parent local it needs. Nothing pins
+the current behaviour: no filter carrier uses the shape and the two folded `{key:, condition:}`
+elements in `schema.graphqls` both sit on the `SplitFilterParent` output fields, so no baseline SQL
+or pipeline case has to be renegotiated, which makes this the cheapest moment it will ever be. This
+item makes the shape more likely to be authored, since once condition hops are legal in filter
+paths, `{key:, condition:}` becomes the natural spelling for "foreign key plus one more
+predicate". And the semantics being
+restored are already proven on the output rail by the `SplitFilterParent` execution fixtures, so
+the filter-rail fixture mirrors a shape that exists rather than inventing one.
 
-Everything else verified against the tree: both rejection sites and their message text; the walker
-and its stale javadoc sentence; its three consumers and the two candidate-hint fallbacks item 1
-deletes; `resolveConditionJoinTarget`'s two arms; `On.Lateral` minted only by `FieldBuilder`'s
-routine arm at one site and never by `parsePathElement`; `FkHop`, `narrowPath`, `reachExists`'s
-unconditional `.pairs()` reads and the `FkHop` blast radius (six main-source files, the test-side
-hits being the unrelated `isFkHop` / `filteredFkHop` helper names);
-`PathFragments.correlationWhere`'s `On.Predicate` arm verbatim, `emitBackwardBridging`'s signature,
-and both class charters as item 5 quotes them; `OnParentJoin`'s no-`condition()`-accessor javadoc
-and its dispatch instruction verbatim; item 7's corrected premise in
-`buildParentCorrelation`'s `On.ColumnPairs` arm; the `FkTargetConditionFilter` reach reaching only
-from the carrier the surviving validator block gates, and `NodeIdLeafResolver`'s FK-only-at-every-
-position loop; the four `remoteBindingUnsupported` rail sites; all three manual claims item 9
-retires plus the shipped execution fixtures that falsify them; the legacy directive snapshot's
-locations and `ReferenceElement.condition`; the changelog quote verbatim; and R485's scope note and
-R676's framing.
+Against folding it in: it is a correctness fix inside a feature item, and a green feature suite
+could hide it. That is what the separate acceptance row is for. If the fix turns out to want its own
+item once someone is in the code, splitting it out is a normal In Progress plan edit, not a reopen.
 
-## Open review items (third Spec review, 2026-08-21)
+### G. `JoinFragments`' charter is declared retired vocabulary
 
-Independent session, different from both prior reviewers and from the authoring sessions. Status
-stays Spec: A through E are all still unanswered, no commit has touched this file since the second
-review, and two further items are owed. A through E were re-verified rather than taken on trust and
-all five hold; the re-verification is recorded compactly so the next reader need not repeat it.
+The charter names "the command's `{@code FkHop}` narrowing" as the reason its entry points may
+assume `On.ColumnPairs`. Item 5 quotes that charter as its justification for keeping the new
+dispatch in `PathFragments`, so the sentence is load-bearing for this item's own argument, and the
+`{@code}` reference means the javadoc gate will not catch it. Declared alongside `ArgBinding`'s
+`{@link FkHop}`, both with the instruction to re-point rather than delete: the mechanism is real, it
+just moves to `ReachPath`'s constructor and `PathFragments`' per-hop dispatch.
 
-* **A** holds. 47 `.elements()` reads, distributed exactly as stated (`FieldBuilder` 31,
-  `TypeBuilder` 4, `BuildContext` 4, `NodeIdLeafResolver` 5, `SourceRowDirectiveResolver` 3); nine
-  `List<JoinStep> joinPath` components in `ChildField`; eight test-side files declaring
-  `List<JoinStep>`, the ones named.
-* **B** holds. `CONDITION_ONLY_NO_RETURN_TYPE_TABLE_REJECTED` asserts both substrings, and the
-  terminal arm's message is verbatim the text E asks to declare retired.
-* **C** holds. `resolvePathElements` computes `isTerminal = endsChain && (localIndex ==
-  totalElements - 1)` and threads one `targetSqlTableName`;
-  `CONDITION_INTERMEDIATE_REFLECTS_METHOD_PARAM` asserts `film_actor` by reflection on the
-  `intermediate` stub.
-* **D** holds. `docs/architecture/how-to/testing.adoc` bans code-string body matching at the
-  pipeline tier in as many words, and blesses renderer arm tests as "the preferred home for per-arm
-  structural assertions on command-driven emission".
-* **E** holds and is if anything understated: all three of `resolveConditionJoinTarget`'s
-  reflection-arm rejections open with "intermediate-hop `@condition` method", and its javadoc frames
-  the whole method as "the terminal-hop arm ... the intermediate-hop arm".
+### Non-blocking notes, all resolved
 
-### F. The filter rail drops per-hop `filter()` predicates, and item 5 walks into it
-
-`ConditionGlueRenderer.reachExists` emits the walk-back joins, the hop-0 correlation and the inner
-term, and nothing else. It never calls `PathFragments.appendHopFilters`, and no other site in the
-filter rail reads `JoinStep.Hop#filter()`: `ConditionCommands`, `FkHop`, `ColumnTerm` and the glue
-renderer contain no `filter()` read at all. The projection sibling this item takes as its precedent
-does call it (`PathFragments.scalarInnerSelect`, and both `ProjectionUnitRenderer` sites).
-
-That gap is reachable on a filter carrier today, without any of this item's changes. A
-`{key: …, condition: …}` or `{table: …, condition: …}` path element folds its condition into
-`Hop.filter()` and leaves the hop FK-derived, pinned by
-`GraphitronSchemaBuilderTest.KEY_WITH_CONDITION_PRESERVES_WHERE_FILTER` and its `{table:}` twin. So
-`on()` is `On.ColumnPairs`, both rejection guards pass (each tests only `on()`), `wrapIfRemote`
-carries the path into `BodyParam.RemoteColumnPredicate` verbatim, `narrowPath` narrows it happily,
-and the generated `EXISTS` omits the author's predicate. The filter is silently *wider* than
-declared: rows the predicate should exclude are matched.
-
-This is not R705's bug, but it is R705's problem in three ways. Item 5's whole case is that the
-filter rail moves onto the vocabulary the projection rail already dispatches, and this is the one
-place the two rails still disagree after item 5 lands. Items 4 and 5 both cite `appendHopFilters` as
-the shared calling convention, which reads as a claim that the filter rail already emits those
-calls. And item 10's new mixed-path cases (condition-then-key, key-then-condition) are precisely
-where an implementer authoring fixtures would hit it, most likely as a wrong-rows execution
-failure with no guard pointing at the cause.
-
-Owed: one decision, stated. Either fold the call into item 5 (`reachExists` already holds the hop
-aliases and the `"table"` parent local, so it is the same one-line addition `scalarInnerSelect`
-makes, plus a case pinning it), or declare it out of scope with its own Backlog item and say how
-item 10's fixtures stay clear of the shape. Silently inheriting it is the outcome to avoid, because
-after item 5 the divergence no longer has a mechanical excuse.
-
-### G. The `FkHop` retirement's prose footprint is under-declared
-
-Retired vocabulary names `FkHop`, `FkHop.narrow` and `ConditionCommands.narrowPath` as symbols, and
-the first pass's non-blocking note caught `command/ArgBinding.java`'s `{@link FkHop}`. One more
-prose site: `JoinFragments`'s class javadoc closes with "Every entry point takes a proven
-`{@link On.ColumnPairs}` (the command's `{@code FkHop}` narrowing), never a raw `{@code On}`."
-
-It matters more than a stray mention. Item 5 quotes this charter as its reason for keeping the
-dispatch in `PathFragments`, so the sentence is load-bearing for the item's own argument, and after
-item 4 the parenthetical names a retired type while the narrowing it describes has moved into
-`PathFragments`' per-hop dispatch and `ReachPath`'s constructor. Because the reference is
-`{@code}` and not `{@link}`, the javadoc reference gate will not catch it; only the Done-gate sweep
-will, and only if it is declared. Add it beside the `ArgBinding` note, with the replacement wording
-naming the new narrowing site rather than deleting the provenance.
-
-### Non-blocking, third pass
-
-* **Item 1's walker signature presupposes A's resolution.** The proposed
-  `TableRef terminalTableForReference(List<JoinStep.Hop> path, TableRef start)` lifts the parameter
-  type, and all four call sites pass `path.elements()` / `refPath.elements()`, typed
-  `List<JoinStep>`. Under A's option 1 (leave `elements()` at the root type) that signature does not
-  compile without a conversion at each site, which A's options do not mention. Worth noting that the
-  lift is not what buys totality: `JoinStep` permits only `Hop`, so a `List<JoinStep>` walk is total
-  with a sealed switch, and keeping the parameter at the root type decouples item 1 from A entirely.
-  That shrinks what A has to decide.
-* **`hopZeroCorrelation`'s `pathKindLabel` parameter has nothing to say.** The label exists on
-  `emitBackwardBridging` and `correlationWhere` because their `On.Lateral` and `OnLiftedSlots` arms
-  interpolate it. The inner switch item 5 extracts throws "ParentCorrelation.OnParentJoin cannot
-  wrap a lateral hop", which carries no label. Drop the parameter from the proposed signature.
-* **Item 7's stated failure mode is right for some shapes, not the primary one.** "It fails today
-  with a generic unknown-column rejection because the same walker returns empty" holds for a path
-  whose condition hop is interior (`[{condition:}, {table:}]` on a scalar leaf). For the
-  condition-only terminal shape, the failure comes earlier, at `resolveConditionJoinTarget`'s
-  terminal arm, which is finding B's case. Item 2 already carries that fact; one clause in item 7
-  pointing at it would stop a reader concluding the walker is the only blocker on that carrier.
-* **One consumer audited on the reviewer's side, and it is clean.**
-  `TenantBindingIndex`'s `BodyParam.RemoteColumnPredicate` arm recurses on `remote.inner()` and
-  never reads the join path, so it is hop-kind-agnostic and needs nothing from item 7's audit.
-  Recorded so the audit does not spend a pass on it.
-
-Everything else spot-checked against the tree and matching the plan: both rejection sites,
-`referenceFilterConditionJoinRejection`'s text and the `On.ColumnPairs`-only guard at each;
-`terminalTableForReference`'s body and its stale javadoc sentence verbatim; both filter sites
-passing `targetSqlTableName = null` into `parsePath`; `Rejection.deferred` existing as a factory
-with live users; neither validator message being asserted anywhere in the test tree, so item 3's
-testedness split is right on both halves and the surviving FK-target `@nodeId` block can change
-kind without breaking a pin; `PathFragments.correlationWhere`'s `OnParentJoin` inner switch and
-`emitBackwardBridging`'s signature, both as item 5 needs them; `declareReachAliases`'s
-`IdentityHashMap` and `reachExists`'s two unconditional `.pairs()` reads; the `FkHop` blast radius
-(six main-source files); `surface2_conditionJoinPath_isRejected` asserting "condition-join" and
-"foreign key" on an intermediate-hop path with an FK terminal; the five `surface1` cases; and
-`ColumnReferenceFieldValidationTest.CONDITION_METHOD` expecting no errors on a hand-built
-condition-path carrier.
+* **The `ReachPath` identity map.** The first review suggested carrying the renderer's `reachIndex`
+  inside `ReachPath` so a plain `HashMap` would key correctly. Declined in item 4: that index is
+  minted by `declareReachAliases`'s own loop and is emission-scoped numbering, so putting it in a
+  plan-layer record would make two structurally identical reaches unequal for a reason the plan
+  layer holds no opinion about. The map stays identity-keyed and the per-occurrence semantic moves
+  onto `ReachPath`'s javadoc, where a reader looks for it.
+* **`hopZeroCorrelation`'s `pathKindLabel`.** Dropped from the proposed signature in item 5; the
+  extracted switch has no arm that interpolates a label.
+* **Item 7's stated failure mode.** Item 7 now distinguishes the interior-hop shape, where the
+  walker is the only blocker, from the condition-only terminal shape, which needs item 2 as well.
+* **Item 10's fixture and "first cases" wording.** Both corrected in item 10: methods on
+  `ReferencePathConditionFixtures` rather than a new class, and the input-field surface has five
+  cases already, lacking a condition-hop case and a rejection pin rather than lacking cases.
+* **The third stale manual claim.** Folded into item 9: the Pitfalls list says
+  `@reference(path: [])` fails graphql-java parsing, and two pipeline tests pin it classifying and
+  binding `Local`. R692 owns whether the inert form should be rejected, not the false claim.
+* **`TenantBindingIndex` cleared for item 7's audit.** Its `BodyParam.RemoteColumnPredicate` arm
+  recurses on `remote.inner()` and never reads the join path, so it is hop-kind-agnostic. Recorded
+  so the audit does not spend a pass on it.
 
 ## Non-goals
 
@@ -641,11 +622,35 @@ condition-path carrier.
 
 ## Retired vocabulary
 
-* `FkHop`, `FkHop.narrow`, and `ConditionCommands.narrowPath` (item 4 retires all three).
+* `FkHop`, `FkHop.narrow`, and `ConditionCommands.narrowPath` (item 4 retires all three). Two
+  prose sites name `FkHop` and both need a replacement rather than a deletion, because both are
+  explaining a real mechanism that moves to `ReachPath`'s constructor and `PathFragments`'
+  per-hop dispatch:
+  - `command/ArgBinding.java`'s class javadoc links it as its exemplar ("This pairs a borrowed ref
+    with producer data, like `{@link FkHop}`"). This one is `{@link}`, so the javadoc reference
+    gate fires on the retirement; it needs a new exemplar, not a `{@code}` downgrade.
+  - `JoinFragments`'s class charter closes with "Every entry point takes a proven
+    `{@link On.ColumnPairs}` (the command's `{@code FkHop}` narrowing), never a raw `{@code On}`."
+    Item 5 quotes this charter as its reason for keeping the dispatch in `PathFragments`, so the
+    sentence is load-bearing for this item's own argument. The reference is `{@code}`, so the
+    javadoc gate will *not* catch it and only this declaration will.
 * `referenceFilterConditionJoinRejection` and its message text, "traverses a condition-join
   (non-foreign-key) hop, which is not yet supported", in both its `FieldBuilder` and validator
   copies.
 * The walker javadoc claim "a condition-only step's target table is unknown at build time".
+* Item 2's whole terminal-versus-intermediate framing, not just one message. The sweep reads this
+  list, so all three layers are named:
+  - the message text "cannot resolve target table because the carrier field's return type has no
+    `@table` binding" (`resolveConditionJoinTarget`'s terminal arm);
+  - the `isTerminal` parameter, and the "intermediate-hop `@condition` method" prefix, which opens
+    all three of the reflection arm's rejections (fewer-than-two-parameters, wildcard target
+    parameter, unresolvable parameter class);
+  - the "terminal branch" / "terminal-hop arm" / "intermediate-hop arm" framing in prose, roughly
+    ten sites. Four are in `BuildContext`: `resolveConditionJoinTarget`'s own javadoc, the
+    `computeTerminalTargetVerdict` javadoc, that method's inline `On.Predicate` comment, and the
+    Check 2 comment in `parsePathElement`'s condition arm. The rest are in
+    `MultiSchemaConditionParamTest`, `TestConditionStub` (both the `intermediate` and
+    `terminalWrongTarget` fixtures) and `GraphitronSchemaBuilderTest`. Re-count at pickup.
 * The "proven FK" reach framing wherever prose states it: `ColumnTerm.reach`'s "proven FK hop
   path", `ConditionGlueRenderer`'s "the row's proven FK hops", and the validator's "defensive
   mirror against future path-resolution changes" rationale comment (the change it guarded against
@@ -656,9 +661,21 @@ condition-path carrier.
 ## Acceptance
 
 Full reactor green (`mvn install -Plocal-db`), including the new execution fixtures against
-PostgreSQL. The pipeline truth table carries acceptance rows for filter-position condition hops on
-both surfaces. The manual page states the lifted contract with no stale claims. Retirement sweep run
-at the Done gate per `roadmap/workflow.adoc`.
+PostgreSQL. Then, one row per thing this item claims to deliver:
+
+* The pipeline truth table carries acceptance rows for filter-position condition hops on both
+  surfaces, and `CONDITION_INTERMEDIATE_REFLECTS_METHOD_PARAM` is still green unchanged.
+* `ConditionGlueRendererTest` exists and covers both arms of `hopZeroCorrelation`.
+* The scalar-leaf output carrier classifies with a concrete-typed condition method and rejects with
+  a wildcard one, both pinned at the truth table.
+* Item 5's hop-filter fix has its own execution row: a `{key:, condition:}` filter whose predicate
+  excludes rows the FK slot alone would match, and the excluded rows do not come back. This is a
+  correctness fix riding along, so it is checked on its own and not inferred from the feature's
+  cases being green.
+* The manual page states the lifted contract, the concrete-parameter-type requirement, and the
+  hop-predicate emission, with all three stale claims gone.
+* Retirement sweep run at the Done gate per `roadmap/workflow.adoc`, against the three-layer
+  declaration above rather than the symbol names alone.
 
 ## Adjacent stale documentation
 
