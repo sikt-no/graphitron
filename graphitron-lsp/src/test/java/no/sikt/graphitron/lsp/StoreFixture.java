@@ -367,12 +367,21 @@ final class StoreFixture implements AutoCloseable {
     }
 
     /**
-     * The production shape with the budgets in, which the annotation reader shares with the cursor's
-     * as the dev goal has it: a case can still tell which door reached which reader, since each door
-     * holds a connection of its own.
+     * The production shape with the budgets in, the annotation reader sharing the cursor's as the dev
+     * goal has it.
      */
     StoreAccess access(ReadBudget interactive, ReadBudget sessionWide) {
-        return new StoreAccess(reader(interactive), reader(interactive), reader(sessionWide),
+        return access(interactive, interactive, sessionWide);
+    }
+
+    /**
+     * The same with the annotation reader's budget stated separately, for the cases whose subject is
+     * which door reached which reader. Production gives that reader the interactive budget, so a case
+     * that needs to tell the two connections apart has to label them, and a budget read back as a
+     * session setting is the label: it says which connection answered without timing anything.
+     */
+    StoreAccess access(ReadBudget interactive, ReadBudget annotation, ReadBudget sessionWide) {
+        return new StoreAccess(reader(interactive), reader(annotation), reader(sessionWide),
             graphName);
     }
 

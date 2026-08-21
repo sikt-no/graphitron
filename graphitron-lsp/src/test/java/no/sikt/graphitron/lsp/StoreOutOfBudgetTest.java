@@ -56,6 +56,13 @@ class StoreOutOfBudgetTest {
     private static final ReadBudget INTERACTIVE = new ReadBudget.Bounded(500);
     private static final ReadBudget SESSION_WIDE = new ReadBudget.Bounded(1_500);
 
+    /**
+     * A budget no production reader holds, standing in for the annotation reader's identity. That
+     * reader takes the interactive budget in a real session, so a case asserting which connection
+     * answered has to label the two apart; nothing here says an annotation read may take longer.
+     */
+    private static final ReadBudget ANNOTATION = new ReadBudget.Bounded(900);
+
     /** How H2 reports the statement budget of the session a read is running on. */
     private static final String QUERY_TIMEOUT =
         "SELECT setting_value FROM information_schema.settings WHERE setting_name = 'QUERY_TIMEOUT'";
@@ -195,14 +202,22 @@ class StoreOutOfBudgetTest {
      * reader the drain owns, which is both the wrong budget and the head-of-line blocking two
      * readers exist to remove. The budgets are read back as settings, so this turns on which
      * connection answered and never on how long anything took.
+     *
+     * <p>{@code annotating} is here for the same reason and is the easier one to re-collapse, since
+     * it differs from {@code answering} in neither shape nor budget, only in which connection it
+     * holds. Folding it back would put an inlay request over a whole region in front of the cursor
+     * again, which is what it was doing when a fifty-line request spent the whole interactive budget
+     * and produced nothing.
      */
     @Test
     void eachDoorReachesTheReaderItsGrainStates() {
         try (var fixture = StoreFixture.of(tmp, SDL);
-             var access = fixture.access(INTERACTIVE, SESSION_WIDE)) {
+             var access = fixture.access(INTERACTIVE, ANNOTATION, SESSION_WIDE)) {
             String sourceName = fixture.sourceName();
 
             String onAnswering = answered(access.answering(StoreRead.HOVER, sourceName,
+                handle -> budgetOf(handle.orElseThrow())));
+            String onAnnotating = answered(access.annotating(StoreRead.INLAY_HINTS, sourceName,
                 handle -> budgetOf(handle.orElseThrow())));
             String onAnsweringAll = answered(access.answeringAll(StoreRead.DIAGNOSTICS,
                 List.of(sourceName), handles -> budgetOf(handles.of(sourceName).orElseThrow())));
@@ -212,6 +227,10 @@ class StoreOutOfBudgetTest {
             assertThat(onAnswering)
                 .as("a keystroke answers on the interactive reader")
                 .isEqualTo("500");
+            assertThat(onAnnotating)
+                .as("an annotation read answers on a reader of its own, so a cursor never queues "
+                    + "behind a whole-region request")
+                .isEqualTo("900");
             assertThat(onAnsweringAll)
                 .as("the drain answers on the session-wide reader")
                 .isEqualTo("1500");

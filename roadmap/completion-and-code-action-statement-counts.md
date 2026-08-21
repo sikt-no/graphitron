@@ -30,3 +30,12 @@ The work is two more tests in the existing tier, modelled on the four that exist
 change is expected. The tier's own rule holds: it counts statements and asserts no duration, so
 neither test may grow a wall-clock assertion. If either surface turns out to issue a count that
 tracks the document, that is a finding for its own item rather than something to absorb here.
+
+**What has landed since, and what it does not do.** `SurfaceScanCountTest` (from
+`roadmap/lsp-surface-latency-budgets.md`) already drives all six surfaces, these two included, and
+holds each to a ceiling on the rows its statements scan. That does not subsume this item: a scan
+ceiling bounds what one request's statements read, and it happens to be measured over however many
+statements the surface issued, so it cannot see a count that grows. The two enforcers bound
+different factors of the same product, which is what the paragraph above says. What it does mean is
+that the set of surfaces is already enumerated in one place, so this item adds the two counts and
+does not re-enumerate; the drive seams it needs are the ones that test already uses.
