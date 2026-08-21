@@ -1,13 +1,13 @@
 ---
 id: R753
 title: "Accept @deprecated alias fields sharing a write column on jOOQ-record inputs"
-status: Spec
+status: Ready
 bucket: bug
 priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-08-20
-last-updated: 2026-08-20
+last-updated: 2026-08-21
 ---
 
 # Accept @deprecated alias fields sharing a write column on jOOQ-record inputs
