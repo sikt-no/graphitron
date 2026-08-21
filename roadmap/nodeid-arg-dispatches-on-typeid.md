@@ -1,7 +1,7 @@
 ---
 id: R673
 title: "A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId"
-status: Ready
+status: In Review
 bucket: bug
 priority: 3
 theme: nodeid
@@ -129,17 +129,16 @@ Two filings do come out of the 2026-08-21 comment, and neither is a phase of thi
 
 Notifications, and a dependency in neither direction. R728's implementer gains a named consumer for the participant-keyed instruction arm and the first interface or union fixture its store-tier suite lacks. R676 and R726 want that same arm and should know a third item is asking for it. The javadoc sequencing in D7 is this item's to carry, being the one still in Spec.
 
-## Implementation landed ahead of the Spec sign-off (2026-08-21)
+## Implementation shipped at `2a446ec9d` (2026-08-21)
 
-The implementation is on the branch `claude/r673-nodeid-arg-dispatches-on-typeid`, at the user's
-explicit request, while this item is still in `Spec`. The `Spec -> Ready` gate has not run: it needs a
-session other than the one that landed the spec revision, and the same session wrote the code. So the
-status stays `Spec` rather than being walked forward through transitions whose guard has not been
-satisfied. A reviewer picking this up decides two things at once, whether the plan is right and
-whether the code is the plan, and the second one is cheap to check because the diff follows D1 to D7
-in order.
+The implementation was written while this item was still in `Spec`, at the user's explicit request,
+and the independent `Spec -> Ready` sign-off landed at `e9d1349ea` from a session distinct from both
+the spec author and the implementer. So the plan the code implements is the approved one, and the
+ordering cost the item paid is that the sign-off could not have caught a design problem before the
+code existed. It found none; its own verification pass is in that commit's message.
 
-What shipped, against the plan:
+The diff follows D1 to D7 in order, which is what makes the Done gate's first question cheap to
+check. What shipped, against the plan:
 
 * **D1** `CallSiteExtraction.PruneOnMismatch` beside `ThrowOnMismatch`, and `ConditionGlueRenderer.decodeCall`'s mode selection is now an exhaustive switch over the seal.
 * **D2** `FieldBuilder.resolveNodeIdArgTargets` is the single producer, returning a sealed `NodeIdArgTarget` per `@nodeId` argument (`SharedTarget` / `PerParticipant`) plus the per-participant plans, so the participant loop does not resolve the same leaves twice. The dispatch fact is `NodeIdArgDispatch`, reached through one new `ParticipantFilterField.nodeIdArgDispatches()` accessor. Deviation from the plan's literal shape: the map is a `SequencedMap` rather than a `Map`, because `Map.copyOf` does not preserve iteration order and the generated guard's candidate list and helper registration order are both order-sensitive.
