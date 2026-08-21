@@ -1155,6 +1155,36 @@ absorbed into a verdict it does not fit or judged by a relation that cannot see 
 value of stating it was never the claim itself but that each gap has to be named to be excluded, and
 naming this one is what found the rejection that had been covering it.
 
+**The projector shipped as `NodeIdDecodeDefects`, and the one thing it added beyond the decode was a
+shared vocabulary.** It is the fourth component on `StoreDetections`, wired in `FactCapture.detect`
+beside the two families already there, and it gates on `intent_type_domain` exactly as
+`AuthoredClaimConflicts` does, with the same one-sentence reason in its own javadoc. Both arms are
+`Rejection.structural`, neither is a deferral, and the messages name the operands the view compared
+and nothing it did not.
+
+The convergence the stage asked for turned out to need a home rather than a habit. "The message
+vocabulary converges with `ArgmappingProjectionDefects.rejectionOf`" is satisfiable by copying three
+helpers, and copied text is what drifts: a wording improved on one side and not the other reads as two
+different rules for one fault. So `nodeIdSpelling`, the qualified-type shortener and the key-column
+list moved into a `NodeIdMessages` the two families share, and what stayed private to each is the part
+that genuinely differs. The remedies differ because the carrier does: an author who wrote an
+`argMapping` entry is told about their entry, and an author who wrote none is told about the name
+match that found the parameter, which is what the `carrier` column exists to make sayable. Both arms
+here offer two remedies rather than one, and the second is the other family's population: declare the
+parameter as the node type's own generated record, or bind one key column to it with `argMapping`. A
+refusal that named only the first would be telling an author to change a signature when an entry in
+the directive they already wrote is the smaller change.
+
+**The pipeline tier needed both corpora, which is the one fixture fact worth recording.** Every
+existing fixture for the sibling family captures SDL alone, and that is enough there. It is not enough
+here: the jOOQ catalog is what types a key column and the classpath census is what types a parameter,
+so a fixture missing either constructs a stand-aside it did not mean to and asserts an absence for the
+wrong reason. The census also takes public top-level classes only, so the tree's shared
+package-private service stub is invisible to it however well reflection resolves the same method, and
+the fixtures name a small public stub of their own. Seven cases: the two verdicts, the two remedies
+each drawing no verdict, both readings of an untypeable parameter (no type verdict at one column, an
+arity verdict still at two), and the domain gate.
+
 ## Stages
 
 Ordered so each stage is separately verifiable, and so nothing ships a rejection ahead of its
@@ -1221,7 +1251,10 @@ replacement.
    unresolved instruction, the partition is a stratification with four named gaps rather than an
    absolute one, and the encode half stays in the walk that already holds both its operands, which is
    also what settles the type precondition stage 4 left owing. The design section above states each.
-   What remains of the stage is the projector and the pipeline tier that reads it.
+   The projector followed as `NodeIdDecodeDefects`, the fourth component on `StoreDetections`, with
+   its pipeline tier; the convergence clause turned into a shared `NodeIdMessages` rather than three
+   copied helpers, for the reason the design section gives. What remains of the stage is the second
+   gap it named: the producer-backed output field the encode relation claims and the classifier drops.
 6. **Site 4a, the message and the page.** The auto-discovery rejection separates its two causes; the
    manual page's single-hop claim is corrected; the reverse filter gets the execution-tier row-count
    pin it has never had. Independent of every other stage and the smallest thing in the item.
@@ -1462,7 +1495,14 @@ on the wire.
   sentence is left as written because the way it is wrong is worth keeping: it was drafted before
   stage 2c found that a slot the value lands *inside* wants a walk into the class, and a bean member
   therefore neither resolves nor refuses. So the matrix is the `@service` parameter's, and the bean
-  member's row is a stated gap rather than an assertion waiting to be written.
+  member's row is a stated gap rather than an assertion waiting to be written. Shipped as
+  `NodeIdDecodeDefectsTest`, and the matrix grew one axis in the writing: each precondition's refusal,
+  each precondition's *remedy* drawing no refusal, both readings of a parameter the census cannot
+  type, and the domain gate. The remedy cases are the half that keeps this family honest about adding
+  refusals only, and there are two because a composite key has a remedy the sibling family's messages
+  never had to offer. These fixtures capture both corpora rather than SDL alone, for the reason the
+  design section records, and name their own public service stub because the census does not see a
+  package-private one.
 * **Store tier**, for the two relations whose whole content is a fork. The destination and the
   Java-slot fork are pinned together in one class over the seeded store, because each is defined as
   the population the other does not claim: a case asserting only the destination would pass equally

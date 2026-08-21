@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
+import no.sikt.graphitron.rewrite.derive.NodeIdDecodeDefects;
 import no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections;
 import no.sikt.graphitron.rewrite.derive.StoreDetections;
 import no.sikt.graphitron.rewrite.derive.ClassifiedRun;
@@ -321,14 +322,14 @@ public final class FactCapture {
      * own question needs (the classification domain, derived from captured SDL facts at capture
      * cadence), so its accept line is a fact of the store rather than of the walk's reach.
      *
-     * <p>Beside the two detections the pass reads the {@code argMapping} family's positive half,
+     * <p>Beside the detections the pass reads the {@code argMapping} family's positive half,
      * {@link ResolvedKeyProjections}, which the plan emits from. It is read here for the reason the
      * detections are: the store handle is this method's, and a phase that wanted the fact later would
      * have to reopen the store to ask.
      *
-     * <p>The {@code argMapping} family reads only SDL facts and shares the classified-run arm
-     * anyway: a run with no classified model is a run whose verdict has already been pronounced
-     * elsewhere, and there is no build for these rejections to fail.
+     * <p>The two {@code @nodeId} families read only SDL facts and the classpath census, and share the
+     * classified-run arm anyway: a run with no classified model is a run whose verdict has already
+     * been pronounced elsewhere, and there is no build for these rejections to fail.
      */
     private static StoreDetections detect(DSLContext dsl, GraphIdentity graph,
                                           ClassifiedRun classified) {
@@ -338,6 +339,7 @@ public final class FactCapture {
                 TypeBackingClassRows.write(dsl, graph.name(), present.backingClasses());
                 yield new StoreDetections(AuthoredClaimConflicts.detect(dsl, graph.name()),
                     ArgmappingProjectionDefects.detect(dsl, graph.name()),
+                    NodeIdDecodeDefects.detect(dsl, graph.name()),
                     ResolvedKeyProjections.read(dsl, graph.name()));
             }
         };

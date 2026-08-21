@@ -17,6 +17,12 @@ import java.util.List;
  * would otherwise recover by parsing a message. {@link #violations()} is the one place the error
  * stream is assembled, in family declaration order, so no caller decides the order for itself.
  *
+ * <p>{@link #argmappingProjections} and {@link #nodeIdDecodes} are two families rather than one
+ * because they refuse the same two {@code @nodeId} facts at two carriers a store row tells apart, an
+ * {@code argMapping} entry binding the node id and a producer parameter matching its name, and each
+ * keys its rows on the coordinate its own remedy names. One family spanning both would have had to
+ * pick one keying and restate the other's rows under it.
+ *
  * <p>Not every member is a detection, and {@link #keyProjections} is the first that is not: it is the
  * positive half of the {@code argMapping} node-id resolution, read for the plan to emit from rather
  * than to reject. It rides here because the store handle does, opened for the capture and closed with
@@ -26,12 +32,14 @@ import java.util.List;
  */
 public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                               ArgmappingProjectionDefects.Detection argmappingProjections,
+                              NodeIdDecodeDefects.Detection nodeIdDecodes,
                               ResolvedKeyProjections.Projections keyProjections) {
 
     /** The empty detection, for callers running capture without the detection pass. */
     public static StoreDetections empty() {
         return new StoreDetections(AuthoredClaimConflicts.Detection.empty(),
             ArgmappingProjectionDefects.Detection.empty(),
+            NodeIdDecodeDefects.Detection.empty(),
             ResolvedKeyProjections.Projections.empty());
     }
 
@@ -39,6 +47,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
     public List<ValidationError> violations() {
         var out = new ArrayList<>(claims.violations());
         out.addAll(argmappingProjections.violations());
+        out.addAll(nodeIdDecodes.violations());
         return List.copyOf(out);
     }
 

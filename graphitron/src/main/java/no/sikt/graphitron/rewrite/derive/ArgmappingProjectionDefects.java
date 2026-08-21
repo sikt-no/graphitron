@@ -14,8 +14,10 @@ import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_PROJECTION_DEFECT;
-import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTION;
+import static no.sikt.graphitron.rewrite.derive.NodeIdMessages.keyColumnsOf;
+import static no.sikt.graphitron.rewrite.derive.NodeIdMessages.nodeIdSpelling;
+import static no.sikt.graphitron.rewrite.derive.NodeIdMessages.simpleName;
 
 /**
  * The {@code @nodeId} key-projection rules for {@code argMapping}, projected from the store: an
@@ -57,6 +59,11 @@ import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTIO
  * the decoded ids that nothing builds yet. Both shrink as emitters land rather than being deleted,
  * and a projection either arm covers fails the build saying so, which is the honest state: emitting
  * nothing, or emitting the raw base64, are the two outcomes they exist to prevent.
+ *
+ * <p>The message vocabulary is shared with {@link NodeIdDecodeDefects}, which refuses the same two
+ * facts one carrier over, where a producer parameter's name matches the {@code @nodeId} argument
+ * instead of an entry here binding it. {@link NodeIdMessages} holds what must not drift between them;
+ * the remedies differ, and differ because the carrier does.
  *
  * <p>Locations are the view's: the owning directive application's own position, so a message points
  * at the {@code argMapping} the author wrote rather than at the input type's declaration. The
@@ -309,24 +316,6 @@ public final class ArgmappingProjectionDefects {
     }
 
     /**
-     * The node type's resolved key columns, in key order: the candidate list a message offers, read
-     * as rows off the relation that resolved them rather than as a render the view joined and this
-     * had to split apart. Empty where the type is unnamed and where no tier answered for it, which
-     * are two different facts the caller tells apart by {@code nodeTypeRef}.
-     */
-    private static List<String> keyColumnsOf(DSLContext dsl, String graphName, String nodeTypeRef) {
-        if (nodeTypeRef == null) {
-            return List.of();
-        }
-        var k = INTENT_RESOLVED_NODE_KEY_COLUMN;
-        return dsl.select(k.COLUMN_NAME)
-            .from(k)
-            .where(k.GRAPH_NAME.eq(graphName), k.TYPE_NAME.eq(nodeTypeRef))
-            .orderBy(k.POSITION)
-            .fetch(r -> r.value1());
-    }
-
-    /**
      * Decodes one verdict into the {@link Rejection} arm the report carries. The unknown-column arm
      * is a typed {@link Rejection.AuthorError.UnknownName} so an editor offers the key list as a
      * fix rather than reading it out of prose; the other three are structural, there being no closed
@@ -378,20 +367,6 @@ public final class ArgmappingProjectionDefects {
     }
 
     /**
-     * The trailing name of a fully qualified Java type. Both types in a mismatch message are
-     * qualified in the store because that is what makes them comparable; a message reads better
-     * unqualified, and two types that differ only in package are the rarer case than two that
-     * differ in name.
-     */
-    private static String simpleName(String javaType) {
-        if (javaType == null) {
-            return "an unresolved type";
-        }
-        int dot = javaType.lastIndexOf('.');
-        return dot < 0 ? javaType : javaType.substring(dot + 1);
-    }
-
-    /**
      * The two things a dot may open, as a message states them. One clause rather than two rules: the
      * separator has always meant "open the thing at this position", and what a thing opens into
      * follows from what it is.
@@ -404,11 +379,6 @@ public final class ArgmappingProjectionDefects {
     private static String article(String typeName) {
         return typeName != null && !typeName.isEmpty()
             && "AEIOUaeiou".indexOf(typeName.charAt(0)) >= 0 ? "an" : "a";
-    }
-
-    /** {@code @nodeId(typeName: "X")} where the author named a type, {@code @nodeId} where not. */
-    private static String nodeIdSpelling(String nodeTypeRef) {
-        return nodeTypeRef == null ? "@nodeId" : "@nodeId(typeName: \"" + nodeTypeRef + "\")";
     }
 
     /**

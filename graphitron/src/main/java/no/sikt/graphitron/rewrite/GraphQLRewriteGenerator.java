@@ -392,13 +392,15 @@ public class GraphQLRewriteGenerator {
      * Runs the capture loads into a fact store for this pass, runs the store-backed detections
      * over it, and returns the {@link StoreDetections} product they share: the
      * violations for the caller's error stream, and the field-conflict claims the LSP/MCP
-     * snapshot's {@code Conflicted} projection overlay consumes. Two families read the store here.
+     * snapshot's {@code Conflicted} projection overlay consumes. Three families read the store here.
      * The authored-claim conflict rule reports from the claim views over the classification
      * domain, a captured-fact population rather than anything the walk reached; what the walked
      * model still contributes is the {@link ClassifiedRun} discriminator and the backing classes
-     * it carries. The {@code argMapping} node-id rules
-     * ({@link no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects}) report from the SDL
-     * views alone and are gated on nothing of the walk's. Every other relation still shadows the
+     * it carries. The two {@code @nodeId} rules
+     * ({@link no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects} for a node id an
+     * {@code argMapping} entry binds, {@link no.sikt.graphitron.rewrite.derive.NodeIdDecodeDefects}
+     * for one a producer parameter's name receives) report from the captured corpora alone and are
+     * gated on nothing of the walk's. Every other relation still shadows the
      * live pipeline unread, kept honest by the agreement tests until its own consumer migrates.
      *
      * <p>Both loads read exactly what the pipeline beside them reads: the parsed registry (before
