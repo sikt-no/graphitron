@@ -9,6 +9,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.util.PolymorphicSelectionSetClassGenerator;
+import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.render.ProjectionCall;
 import no.sikt.graphitron.render.ValuesJoinRowBuilder;
 import no.sikt.graphitron.rewrite.model.Arity;
@@ -20,6 +21,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.KeyLift;
+import no.sikt.graphitron.rewrite.model.NodeIdArgDispatch;
 import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.ParticipantCorrelation;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
@@ -157,6 +159,8 @@ public final class MultiTablePolymorphicEmitter {
             String fieldName,
             List<ParticipantRef> participants,
             Map<String, List<WhereFilter>> participantFilters,
+            List<NodeIdArgDispatch> nodeIdArgDispatches,
+            CompositeDecodeHelperRegistry registry,
             boolean isList,
             String outputPackage) {
         var tableBoundParticipants = participants.stream()
@@ -164,7 +168,8 @@ public final class MultiTablePolymorphicEmitter {
             .map(p -> (ParticipantRef.TableBound) p)
             .toList();
         var methods = new ArrayList<MethodSpec>();
-        methods.add(buildMainFetcher(ctx, parentTypeName, fieldName, tableBoundParticipants, participantFilters, isList, outputPackage));
+        methods.add(buildMainFetcher(ctx, parentTypeName, fieldName, tableBoundParticipants, participantFilters,
+            nodeIdArgDispatches, registry, isList, outputPackage));
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, false, outputPackage));
         }
@@ -612,6 +617,8 @@ public final class MultiTablePolymorphicEmitter {
             String fieldName,
             List<ParticipantRef> participants,
             Map<String, List<WhereFilter>> participantFilters,
+            List<NodeIdArgDispatch> nodeIdArgDispatches,
+            CompositeDecodeHelperRegistry registry,
             int defaultPageSize,
             String outputPackage) {
         var tableBoundParticipants = participants.stream()
@@ -620,7 +627,7 @@ public final class MultiTablePolymorphicEmitter {
             .toList();
         var methods = new ArrayList<MethodSpec>();
         methods.add(buildRootConnectionFetcher(ctx, parentTypeName, fieldName, tableBoundParticipants,
-            participantFilters, defaultPageSize, outputPackage));
+            participantFilters, nodeIdArgDispatches, registry, defaultPageSize, outputPackage));
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, true,
                 outputPackage));
@@ -670,6 +677,102 @@ public final class MultiTablePolymorphicEmitter {
         return methods;
     }
 
+    // ===== Matches-none guard for per-participant @nodeId dispatch =====
+
+    /**
+     * The field-level client error a dispatching {@code @nodeId} argument keeps alive.
+     *
+     * <p>When the participants of a multitable root resolve different node types for one
+     * {@code @nodeId} argument, each branch prunes itself on a decode miss
+     * ({@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.PruneOnMismatch}), so exactly the
+     * branch owning the supplied id contributes rows. Nothing in that lowering distinguishes
+     * "belongs to a sibling branch" from "belongs to no branch at all": without this guard an id of
+     * an unrelated node type, or a right-prefix-wrong-arity id, would prune every branch and degrade
+     * to an empty result instead of the client error every other {@code @nodeId} argument surfaces.
+     * So the fetcher checks each present wire id against every branch's decoder before stage 1 runs,
+     * and throws the generated {@code GraphitronClientException} naming the candidate types when none
+     * of them accepts it. {@code NodeIdEncoder.peekTypeId} is read only to word the message.
+     *
+     * <p>The decoders are the ones the branches consume, minted here as this class's own private
+     * helpers through {@code registry}: the branch copies live on the participant
+     * {@code <Type>Conditions} classes, which a fetcher body cannot reach.
+     *
+     * <p>Emitted by both root fetchers. {@code @asConnection} over this shape is admitted (with a
+     * lint advisory) rather than rejected, and its per-branch WHERE carries the prune for free, so
+     * without the guard there the no-branch-matches case would degrade to a silently empty page.
+     */
+    private static CodeBlock nodeIdDispatchGuard(List<NodeIdArgDispatch> dispatches,
+            CompositeDecodeHelperRegistry registry, String outputPackage) {
+        if (dispatches.isEmpty()) return CodeBlock.of("");
+        var clientException = ClassName.get(outputPackage + ".schema", "GraphitronClientException");
+        var b = CodeBlock.builder();
+        for (var dispatch : dispatches) {
+            String wireLocal = dispatch.argName() + "NodeIdWire";
+            b.addStatement("$T $L = env.getArguments().get($S)",
+                Object.class, wireLocal, dispatch.argName());
+            if (dispatch.list()) {
+                String listLocal = dispatch.argName() + "NodeIdList";
+                String elementLocal = dispatch.argName() + "NodeId";
+                b.beginControlFlow("if ($L instanceof $T<?> $L)", wireLocal, LIST, listLocal);
+                b.beginControlFlow("for ($T $L : $L)", Object.class, elementLocal, listLocal);
+                b.beginControlFlow("if ($L)", noBranchDecodes(dispatch, registry, elementLocal));
+                b.add(dispatchFailureThrow(dispatch, clientException, elementLocal));
+                b.endControlFlow();
+                b.endControlFlow();
+                b.endControlFlow();
+            } else {
+                b.beginControlFlow("if ($L != null && $L)",
+                    wireLocal, noBranchDecodes(dispatch, registry, wireLocal));
+                b.add(dispatchFailureThrow(dispatch, clientException, wireLocal));
+                b.endControlFlow();
+            }
+        }
+        return b.build();
+    }
+
+    /** {@code decode<A>Key(wire) == null && decode<B>Key(wire) == null && ...} over every branch. */
+    private static CodeBlock noBranchDecodes(NodeIdArgDispatch dispatch,
+            CompositeDecodeHelperRegistry registry, String wireLocal) {
+        var b = CodeBlock.builder();
+        boolean first = true;
+        for (var decode : dispatch.decodeByParticipant().values()) {
+            if (!first) b.add(" && ");
+            first = false;
+            // Scalar mode whatever the argument's shape: the guard walks a list element by element,
+            // and the list helper's all-mismatched-collapses-to-empty return cannot name the element.
+            b.add("$L($L) == null",
+                registry.register(decode, CompositeDecodeHelperRegistry.Mode.SKIP, false), wireLocal);
+        }
+        return b.build();
+    }
+
+    /**
+     * The throw: peek the wire prefix, then raise the client error with the two-branch message. A
+     * prefix matching one of the candidates means the id is that type's but its key arity is wrong,
+     * which reads as malformed rather than as a wrong type.
+     */
+    private static CodeBlock dispatchFailureThrow(NodeIdArgDispatch dispatch,
+            ClassName clientException, String wireLocal) {
+        var encoderClass = dispatch.decodeByParticipant().firstEntry().getValue().encoderClass();
+        String textLocal = wireLocal + "Text";
+        String peekedLocal = wireLocal + "Peeked";
+        String candidates = String.join(", ", dispatch.candidateNodeTypeNames());
+        var malformed = CodeBlock.builder().add("$L == null", peekedLocal);
+        for (var decode : dispatch.decodeByParticipant().values()) {
+            malformed.add(" || $S.equals($L)", decode.typeId(), peekedLocal);
+        }
+        return CodeBlock.builder()
+            .addStatement("$T $L = $T.peekTypeId($L instanceof String $L ? $L : null)",
+                String.class, peekedLocal, encoderClass, wireLocal, textLocal, textLocal)
+            .addStatement("throw new $T($L\n    ? $S + $L + $S\n    : $S + $L + $S + $L + $S)",
+                clientException, malformed.build(),
+                "Invalid node id \"", wireLocal,
+                "\" for this argument: not a valid id, expected an id of one of: " + candidates,
+                "Invalid node id \"", wireLocal, "\" for this argument: decodes to type \"",
+                peekedLocal, "\", expected an id of one of: " + candidates)
+            .build();
+    }
+
     /**
      * Root-side fetcher (no parent-FK WHERE, no batching). Runs stage 1 (narrow UNION ALL of
      * per-branch {@code (typename, pk0..pkN, sort)} projections), groups results by
@@ -685,6 +788,7 @@ public final class MultiTablePolymorphicEmitter {
             String parentTypeName,
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, List<WhereFilter>> participantFilters,
+            List<NodeIdArgDispatch> nodeIdArgDispatches, CompositeDecodeHelperRegistry registry,
             boolean isList, String outputPackage) {
 
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
@@ -713,6 +817,9 @@ public final class MultiTablePolymorphicEmitter {
             builder.endControlFlow();
             return builder.build();
         }
+
+        // Ahead of stage 1: an id no branch can decode is a client mistake, not an empty result.
+        builder.addCode(nodeIdDispatchGuard(nodeIdArgDispatches, registry, outputPackage));
 
         builder.addCode(buildStage1Block(participants, Map.of(), participantFilters,
             parentTypeName, fieldName, outputPackage, null, null));
@@ -901,6 +1008,7 @@ public final class MultiTablePolymorphicEmitter {
             String parentTypeName,
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, List<WhereFilter>> participantFilters,
+            List<NodeIdArgDispatch> nodeIdArgDispatches, CompositeDecodeHelperRegistry registry,
             int defaultPageSize, String outputPackage) {
 
         var connectionResultClass = ClassName.get(outputPackage + ".util",
@@ -939,6 +1047,10 @@ public final class MultiTablePolymorphicEmitter {
             builder.endControlFlow();
             return builder.build();
         }
+
+        // Ahead of stage 1, exactly as the list twin: without it a no-branch-matches id would
+        // silently page empty instead of surfacing the client error.
+        builder.addCode(nodeIdDispatchGuard(nodeIdArgDispatches, registry, outputPackage));
 
         // Sort-key Field<T>: validator enforces uniform PK arity across participants.
         // Single-PK participants project the PK column directly and the sort key is typed as the

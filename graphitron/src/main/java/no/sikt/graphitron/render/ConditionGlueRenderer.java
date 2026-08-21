@@ -282,10 +282,19 @@ public final class ConditionGlueRenderer {
      * terms guard on {@code != null} unless the binding is proven non-null; list terms
      * additionally skip the empty list (an empty {@code IN ()} would render constant false and
      * zero the query rather than contributing no conjunct).
+     *
+     * <p>A pruning NodeId binding ({@link CallSiteExtraction.PruneOnMismatch}) forks off first: for
+     * it, a {@code null} local can mean "the caller supplied an id this branch cannot decode", which
+     * the presence guards above would render as an unfiltered branch. See
+     * {@link #appendPruningAnd}.
      */
     private static void appendGuardedAnd(MethodSpec.Builder builder, ColumnTerm term, CodeBlock expr) {
         String local = term.binding().localName();
         boolean list = term.binding().param().list();
+        if (decodeLeafOf(term.binding().param().extraction()) instanceof CallSiteExtraction.PruneOnMismatch) {
+            appendPruningAnd(builder, term, expr);
+            return;
+        }
         if (list) {
             if (term.nonNull()) {
                 builder.addStatement("if (!$L.isEmpty()) condition = condition.and($L)", local, expr);
@@ -300,6 +309,57 @@ public final class ConditionGlueRenderer {
                 builder.addStatement("if ($L != null) condition = condition.and($L)", local, expr);
             }
         }
+    }
+
+    /**
+     * The pruning fork of {@link #appendGuardedAnd}: a decode miss on this branch must render
+     * {@code DSL.falseCondition()} (the branch structurally cannot match the supplied id), while an
+     * absent filter must still render no conjunct. Three cells, because the local alone cannot always
+     * tell the two apart:
+     *
+     * <ul>
+     *   <li><b>Non-null scalar</b> ({@code id: ID!}): absent is unreachable, so a {@code null} local
+     *       is a mismatch outright.</li>
+     *   <li><b>List</b>: the prune-mode list helper returns {@code null} for an absent or empty wire
+     *       list and a list otherwise, so a non-null <em>empty</em> return can only mean every element
+     *       mismatched. An empty wire list keeps the shipped list-filter semantics (no conjunct),
+     *       matching a single-table {@code @nodeId} list.</li>
+     *   <li><b>Nullable scalar</b>: {@code null} conflates absent with mismatched and no sentinel
+     *       exists in an arbitrary key type, so this cell guards on wire presence, the same args-map
+     *       read the extraction expression already performs. A presence test, never a second
+     *       decode.</li>
+     * </ul>
+     */
+    private static void appendPruningAnd(MethodSpec.Builder builder, ColumnTerm term, CodeBlock expr) {
+        String local = term.binding().localName();
+        var param = term.binding().param();
+        if (param.list()) {
+            builder.addStatement("if ($L != null) condition = condition.and($L.isEmpty() ? $T.falseCondition() : $L)",
+                local, local, DSL, expr);
+            return;
+        }
+        if (term.nonNull()) {
+            builder.addStatement("condition = condition.and($L != null ? $L : $T.falseCondition())",
+                local, expr, DSL);
+            return;
+        }
+        builder.addStatement("if ($L != null) condition = condition.and($L != null ? $L : $T.falseCondition())",
+            pruningPresenceRead(param), local, expr, DSL);
+    }
+
+    /**
+     * The wire-presence read for a nullable pruning scalar. Only a top-level argument reaches here: a
+     * nested-input leaf whose participants diverge is rejected at classification time, so a pruning
+     * binding is always rooted at the args map under its own argument name.
+     */
+    private static CodeBlock pruningPresenceRead(CallParam param) {
+        if (!(param.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys)) {
+            throw new IllegalStateException(
+                "a pruning NodeId binding reached the glue renderer through a nested extraction ('"
+                + param.name() + "'); a divergent nested @nodeId leaf rejects at classification time"
+                + " and never lowers to a pruning branch filter");
+        }
+        return CodeBlock.of("args.get($S)", param.name());
     }
 
     private static CodeBlock authoredExpr(Predicate.Authored authored, Map<List<FkHop>, List<String>> aliasesByReach) {
@@ -412,11 +472,17 @@ public final class ConditionGlueRenderer {
         };
     }
 
+    /**
+     * The decode helper call for one NodeId binding. Exhaustive over the seal rather than a
+     * two-valued test, so a third failure mode has to state its mode here instead of silently
+     * inheriting a neighbour's.
+     */
     private static CodeBlock decodeCall(CompositeDecodeHelperRegistry registry,
             CallSiteExtraction.NodeIdDecodeKeys nidk, boolean list, CodeBlock wireExpr) {
-        var mode = nidk instanceof CallSiteExtraction.ThrowOnMismatch
-            ? CompositeDecodeHelperRegistry.Mode.THROW
-            : CompositeDecodeHelperRegistry.Mode.SKIP;
+        var mode = switch (nidk) {
+            case CallSiteExtraction.ThrowOnMismatch ignored -> CompositeDecodeHelperRegistry.Mode.THROW;
+            case CallSiteExtraction.PruneOnMismatch ignored -> CompositeDecodeHelperRegistry.Mode.SKIP;
+        };
         return CodeBlock.of("$L($L)", registry.register(nidk.decodeMethod(), mode, list), wireExpr);
     }
 

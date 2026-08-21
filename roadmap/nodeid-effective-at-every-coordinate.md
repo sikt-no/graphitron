@@ -1358,3 +1358,17 @@ stage 3 expresses it there.
 * **R262** (Done) rejects `@nodeId` on a non-`ID` coordinate at validate time: the precedent for the
   rejection half, and the reason its vocabulary is already established. This item extends the same
   judgement from the slot's *type* to what the slot can *hold*.
+* **R673** (`nodeid-arg-dispatches-on-typeid`) landed its implementation while this item is in
+  flight, and gives the population a named consumer plus the fixtures its store-tier suite lacks.
+  Two facts for this item's implementer. First, the multitable coordinate produces no
+  `intent_node_id_instruction` row on either bare-inference arm (the arms reach the slot's table
+  through `intent_argument_scope_table`, which demands an unambiguous binding, and a multitable
+  return type has none), so R673 computes the cross-participant verdict on the Java side, in
+  `FieldBuilder`, behind a single producer whose signature and sealed verdict do not depend on
+  whether the inputs are computed or read: if the participant-keyed arm ever lands, one call site
+  repoints. Second, `NodeIdInstructionTest` still carries no interface or union case, and R673
+  deliberately did not add one, because pinning today's silence would freeze a consequence of
+  `intent_argument_scope_table`'s certainty demand as though it were a decision. The sakila
+  fixtures R673 added (`Query.occupantById`, `occupantsByIds`, `occupantByOptionalId`,
+  `occupantsByIdsConnection` over `AddressOccupant = Customer | Staff`, with `Staff` now
+  `@node`-backed) are the shape that store-tier case wants once the population question is settled.

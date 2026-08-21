@@ -206,3 +206,14 @@ Detail: `roadmap/audits/2026-08-20-nodeid-relation-impact-sweep.md`, Findings 1 
 - The no-unique-FK rejection under a participant names `@referenceFor` and the override escape; single-table wording is unchanged.
 - All failing participants surface together with typed, participant-coordinate rejections.
 - Full `mvn install -Plocal-db` green.
+
+## A third item now asks for the participant-keyed arm (2026-08-21)
+
+R673 (bare `@nodeId` argument dispatch on a polymorphic-returning field) landed its implementation
+computing the cross-participant question on the Java side, in `FieldBuilder`, over the classified
+participant set, because `intent_node_id_instruction` produces no row at a multitable coordinate on
+either bare-inference arm. Its producer takes the field definition plus the table-bound participant
+set and returns a sealed per-argument verdict, so a participant-keyed relation arm becomes the thing
+that producer reads instead of the thing it computes: one call site to repoint. So the arm this item
+names in "The relations have no participant dimension" now has three consumers waiting on it
+(this item, R673, and R726), which is worth knowing when deciding who owns widening the population.

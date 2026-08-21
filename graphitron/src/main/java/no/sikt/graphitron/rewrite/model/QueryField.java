@@ -161,11 +161,13 @@ public sealed interface QueryField extends RootField
         SourceLocation location,
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
-        List<ParticipantFilters> participantFilters
+        List<ParticipantFilters> participantFilters,
+        List<NodeIdArgDispatch> nodeIdArgDispatches
     ) implements QueryField, ParticipantFilterField {
         public QueryInterfaceField {
             participants = List.copyOf(participants);
             participantFilters = List.copyOf(participantFilters);
+            nodeIdArgDispatches = List.copyOf(nodeIdArgDispatches);
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.NoClaim();
@@ -183,11 +185,13 @@ public sealed interface QueryField extends RootField
         SourceLocation location,
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
-        List<ParticipantFilters> participantFilters
+        List<ParticipantFilters> participantFilters,
+        List<NodeIdArgDispatch> nodeIdArgDispatches
     ) implements QueryField, ParticipantFilterField {
         public QueryUnionField {
             participants = List.copyOf(participants);
             participantFilters = List.copyOf(participantFilters);
+            nodeIdArgDispatches = List.copyOf(nodeIdArgDispatches);
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.NoClaim();

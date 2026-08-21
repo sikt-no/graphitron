@@ -30,6 +30,23 @@ class MultiTableFilterLoweringTest {
         type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
         """;
 
+    /**
+     * The same two participants, each a node type over its own table. A <em>bare</em>
+     * {@code @nodeId} on a field returning their union therefore infers a different node type per
+     * participant, which is the divergence the per-branch dispatch exists for.
+     */
+    private static final String NODE_BACKED_CUSTOMER_STAFF =
+        """
+        type Customer implements Node @table(name: "customer") @node {
+            id: ID! @nodeId
+            firstName: String @field(name: "first_name")
+        }
+        type Staff implements Node @table(name: "staff") @node {
+            id: ID! @nodeId
+            firstName: String @field(name: "first_name")
+        }
+        """;
+
     @Test
     void unionField_fieldFilter_lowersPerParticipant() {
         var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
@@ -314,6 +331,162 @@ class MultiTableFilterLoweringTest {
                 .as("an authored @nodeId filter decodes with throw-on-mismatch semantics")
                 .isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
         }
+        assertThat(union.nodeIdArgDispatches())
+            .as("an explicit @nodeId(typeName:) pins one node type on every branch, so there is"
+                + " nothing to dispatch and the field carries no dispatch fact")
+            .isEmpty();
+    }
+
+    @Test
+    void bareNodeIdOverDivergentParticipants_prunesPerBranchAndCarriesTheDispatchFact() {
+        // A bare @nodeId argument on a root returning Customer | Staff: each participant infers its
+        // own node type, so the argument means a different id per branch. Every branch keeps only
+        // the ids it can decode (PruneOnMismatch), and the field carries the per-participant
+        // decoders the fetcher's matches-none guard checks a supplied id against.
+        var schema = TestSchemaHelper.buildSchema(NODE_BACKED_CUSTOMER_STAFF + """
+            union Occupant = Customer | Staff
+            type Query { occupantById(id: ID! @nodeId): Occupant }
+            """);
+        var field = schema.field("Query", "occupantById");
+        assertThat(field).isInstanceOf(QueryField.QueryUnionField.class);
+        var union = (QueryField.QueryUnionField) field;
+        assertThat(union.participantFilters()).hasSize(2);
+        for (var pf : union.participantFilters()) {
+            var gcf = pf.filters().stream()
+                .filter(f -> f instanceof GeneratedConditionFilter)
+                .map(f -> (GeneratedConditionFilter) f)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                    "participant '" + pf.participant().typeName() + "' carries no GeneratedConditionFilter: "
+                        + pf.filters()));
+            var callParam = gcf.callParams().stream()
+                .filter(p -> p.name().equals("id"))
+                .findFirst()
+                .orElseThrow();
+            assertThat(callParam.extraction())
+                .as("participant '" + pf.participant().typeName() + "' prunes rather than throws")
+                .isInstanceOf(CallSiteExtraction.PruneOnMismatch.class);
+            assertThat(((CallSiteExtraction.PruneOnMismatch) callParam.extraction()).decodeMethod().nodeTypeName())
+                .as("and it decodes its own node type, not a sibling's")
+                .isEqualTo(pf.participant().typeName());
+        }
+        assertThat(union.nodeIdArgDispatches())
+            .singleElement()
+            .satisfies(dispatch -> {
+                assertThat(dispatch.argName()).isEqualTo("id");
+                assertThat(dispatch.list()).isFalse();
+                assertThat(dispatch.decodeByParticipant().keySet())
+                    .as("one decoder per participant, in participant order")
+                    .containsExactly("Customer", "Staff");
+                assertThat(dispatch.candidateNodeTypeNames()).containsExactly("Customer", "Staff");
+            });
+    }
+
+    @Test
+    void bareNodeIdListOverDivergentParticipants_prunesPerBranch() {
+        // The list form of the same divergence. Nothing about the verdict is arity-sensitive; the
+        // shape rides the dispatch fact so the generated guard can name the offending element.
+        var schema = TestSchemaHelper.buildSchema(NODE_BACKED_CUSTOMER_STAFF + """
+            union Occupant = Customer | Staff
+            type Query { occupantsByIds(ids: [ID!] @nodeId): [Occupant!]! }
+            """);
+        var union = (QueryField.QueryUnionField) schema.field("Query", "occupantsByIds");
+        for (var pf : union.participantFilters()) {
+            var gcf = (GeneratedConditionFilter) pf.filters().stream()
+                .filter(f -> f instanceof GeneratedConditionFilter)
+                .findFirst()
+                .orElseThrow();
+            assertThat(gcf.callParams().stream()
+                    .filter(p -> p.name().equals("ids"))
+                    .findFirst()
+                    .orElseThrow()
+                    .extraction())
+                .isInstanceOf(CallSiteExtraction.PruneOnMismatch.class);
+        }
+        assertThat(union.nodeIdArgDispatches())
+            .singleElement()
+            .satisfies(dispatch -> assertThat(dispatch.list()).isTrue());
+    }
+
+    @Test
+    void bareNodeIdOnDivergentNestedInputLeaf_rejects() {
+        // Same defect, different plumbing: a nested-input bare @nodeId leaf would also mean a
+        // different id per branch. Dispatch covers top-level arguments, so this shape rejects at
+        // classification time with an author error naming the leaf and the participants' answers
+        // rather than misbinding silently.
+        var schema = TestSchemaHelper.buildSchema(NODE_BACKED_CUSTOMER_STAFF + """
+            input OccupantIdFilter { occupantId: ID @nodeId }
+            union Occupant = Customer | Staff
+            type Query { occupants(filter: OccupantIdFilter): [Occupant!]! }
+            """);
+        var field = schema.field("Query", "occupants");
+        assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        var unc = (GraphitronField.UnclassifiedField) field;
+        assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+        assertThat(unc.reason())
+            .contains("filter.occupantId")
+            .contains("Customer")
+            .contains("Staff")
+            .contains("@nodeId(typeName:");
+    }
+
+    @Test
+    void bareNodeIdOnSharedTargetNestedInputLeaf_lowersUnchanged() {
+        // The shared-target nested leaf keeps working: both participants FK to `address`, the
+        // explicit typeName pins one node type, and the leaf lowers as it did before.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Address implements Node @table(name: "address") @node { id: ID! @nodeId }
+            type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+            type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
+            input OccupantAddressFilter { addressId: [ID!] @nodeId(typeName: "Address") }
+            union Occupant = Customer | Staff
+            type Query { occupants(filter: OccupantAddressFilter): [Occupant!]! }
+            """);
+        var field = schema.field("Query", "occupants");
+        assertThat(field).isInstanceOf(QueryField.QueryUnionField.class);
+        var union = (QueryField.QueryUnionField) field;
+        assertThat(union.participantFilters()).hasSize(2);
+        assertThat(union.nodeIdArgDispatches()).isEmpty();
+        for (var pf : union.participantFilters()) {
+            var gcf = (GeneratedConditionFilter) pf.filters().stream()
+                .filter(f -> f instanceof GeneratedConditionFilter)
+                .findFirst()
+                .orElseThrow();
+            var nif = (CallSiteExtraction.NestedInputField) gcf.callParams().stream()
+                .filter(p -> p.name().equals("addressId"))
+                .findFirst()
+                .orElseThrow()
+                .extraction();
+            assertThat(nif.leaf())
+                .as("a shared-target nested @nodeId leaf still throws on a wrong-type id")
+                .isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
+        }
+    }
+
+    @Test
+    void singleBaseTableInterface_ambiguousBareNodeId_rejects() {
+        // The scope cut for the single-base-table polymorphic arms, made a test rather than a
+        // claim. Those arms never dispatch because their participants share one table, hence one id
+        // space; what keeps that true is that a bare @nodeId over a table backing more than one node
+        // type is rejected as ambiguous instead of resolved to one of them. If this ever resolves
+        // instead of rejecting, those arms can misbind exactly the way a multitable root could.
+        var schema = TestSchemaHelper.buildSchema("""
+            interface MediaItem @table(name: "film") @discriminate(on: "text_rating") { title: String }
+            type Film implements MediaItem & Node @table(name: "film") @discriminator(value: "film") @node {
+                id: ID! @nodeId
+                title: String
+            }
+            type FilmPrint implements Node @table(name: "film") @node(typeId: "FilmPrint") { id: ID! @nodeId }
+            type Query {
+                media(filmId: ID! @nodeId): [MediaItem!]!
+                print: FilmPrint
+            }
+            """);
+        var field = schema.field("Query", "media");
+        assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        assertThat(((GraphitronField.UnclassifiedField) field).reason())
+            .as("two node types over the base table make the bare inference ambiguous")
+            .contains("ambiguous");
     }
 
     @Test

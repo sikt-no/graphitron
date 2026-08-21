@@ -109,7 +109,7 @@ public sealed interface CallSiteExtraction
     }
 
     /**
-     * Decode a base64 NodeId at the call-site root into typed key values. One arm, describing how
+     * Decode a base64 NodeId at the call-site root into typed key values. Two arms, describing how
      * a {@code null} return from {@link HelperRef.Decode decode<TypeName>} (malformed input or
      * typeId mismatch) surfaces:
      *
@@ -122,14 +122,19 @@ public sealed interface CallSiteExtraction
      *       helper's message distinguishes a structurally-malformed id from a well-formed wrong-type
      *       id. For filters this gives up the Relay heterogeneous-id-source pattern by design:
      *       one bad element fails the whole field rather than narrowing the set.</li>
+     *   <li>{@link PruneOnMismatch}: one branch of a multitable polymorphic root whose participants
+     *       resolve <em>different</em> node types for the same {@code @nodeId} argument. A
+     *       {@code null} decode means the supplied id belongs to a sibling branch, so this branch
+     *       cannot match and its filter renders {@code DSL.falseCondition()}. The client error still
+     *       exists, one level up: the fetcher checks the id against every branch's decoder before
+     *       stage 1 runs and throws when none of them accepts it, so the failure mode moves from
+     *       branch granularity to field granularity rather than disappearing.</li>
      * </ul>
      *
-     * <p>The category survives its own second arm on purpose. A silent-drop sibling existed for the
-     * legacy metadata-driven carriers, which were the only producers that could not tell a client
-     * mistake from a schema the author never wrote; with those retired, every decode on this carrier
-     * is one the author asked for, and dropping a bad element silently would hide the mistake. The
-     * interface stays because consumers switch on "is this a nodeId decode" rather than on the
-     * failure mode, and because the failure mode is the axis a future arm would vary.
+     * <p>Pruning is not the retired silent-drop sibling. That arm existed for the legacy
+     * metadata-driven carriers, which could not tell a client mistake from a schema the author never
+     * wrote, and it hid the mistake. This arm prunes a branch that structurally cannot match, under
+     * a field-level guard that keeps a genuinely bad id an error.
      *
      * <p>The third failure mode (NullOnMismatch) is dispatcher-driven (Query.node, Query.nodes,
      * federated _entities) and does not appear here as a carrier arm; see
@@ -139,7 +144,8 @@ public sealed interface CallSiteExtraction
      * the call-site emitter reaches the per-Node {@code decode<TypeName>} helper through a typed
      * structural reference rather than reconstructing names from a typeId string.
      */
-    sealed interface NodeIdDecodeKeys extends CallSiteExtraction permits ThrowOnMismatch {
+    sealed interface NodeIdDecodeKeys extends CallSiteExtraction
+            permits ThrowOnMismatch, PruneOnMismatch {
 
         /** The pre-resolved {@code decode<TypeName>} helper reference. */
         HelperRef.Decode decodeMethod();
@@ -152,6 +158,24 @@ public sealed interface CallSiteExtraction
      * input-object-field) and by {@code @nodeId} lookup / mutation keys.
      */
     record ThrowOnMismatch(HelperRef.Decode decodeMethod) implements NodeIdDecodeKeys {}
+
+    /**
+     * Render {@code DSL.falseCondition()} instead of a comparison when the decode returns
+     * {@code null}: the id decodes for a sibling branch of the same polymorphic field, so this
+     * branch structurally cannot match and contributes no rows.
+     *
+     * <p>Produced only for a {@code @nodeId} argument of a multitable polymorphic root
+     * ({@code QueryInterfaceField} / {@code QueryUnionField}) whose participants resolve pairwise
+     * distinct node types for that argument, one arm per participant carrying that participant's own
+     * decoder. The field carries the same per-participant decoders as its dispatch fact, and the
+     * generated fetcher rejects an id no participant decodes before any branch runs, so
+     * "no branch matched" stays a client error while "this branch did not match" stays a filter miss.
+     *
+     * <p>Distinguishing absent from mismatched is the renderer's obligation, not this arm's: the
+     * glue guards a nullable scalar on wire presence and reads an empty (non-null) list return from
+     * the prune-mode list helper as all-elements-mismatched.
+     */
+    record PruneOnMismatch(HelperRef.Decode decodeMethod) implements NodeIdDecodeKeys {}
 
     /**
      * Decode a base64 NodeId into a jOOQ {@code TableRecord} for a {@code @service} input-bean

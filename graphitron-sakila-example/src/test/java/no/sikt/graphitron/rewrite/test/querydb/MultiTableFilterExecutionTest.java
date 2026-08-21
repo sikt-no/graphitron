@@ -29,6 +29,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code buildStage1ConnectionBlock}, which previously emitted no per-branch {@code WHERE} and gains
  * one). Seed data: customers include {@code Mary}; staff include {@code Mike}; the two sets do not
  * overlap, so a two-value filter isolates exactly one row per participant.
+ *
+ * <p>The second half of the class proves the same surface for a {@code @nodeId} argument whose node
+ * type differs per participant: a bare {@code @nodeId} on a field returning the union means a
+ * {@code Customer} id against {@code customer} and a {@code Staff} id against {@code staff}. Each
+ * branch matches only its own ids, an id belonging to neither is still a client error naming both
+ * candidates, and both root fetchers (plain and {@code @asConnection}) carry that error.
  */
 @ExecutionTier
 class MultiTableFilterExecutionTest {
@@ -255,6 +261,189 @@ class MultiTableFilterExecutionTest {
             .as("a wrong-type node id surfaces as a GraphQL error")
             .isNotEmpty();
         assertThat(result.getErrors().get(0).getMessage()).contains("Address");
+    }
+
+    // ===== Per-participant @nodeId dispatch =====
+    //
+    // A *bare* @nodeId on a field returning AddressOccupant infers a different node type per
+    // participant: `Customer` on the customer branch, `Staff` on the staff branch. Each branch keeps
+    // only the ids it can decode, and the fetcher rejects an id no branch decodes before stage 1
+    // runs, so "no branch matched" is a client error while "this branch did not match" is a filter
+    // miss. Seed data: customers Mary(1) … Elizabeth(5); staff Mike(1), Jon(2).
+
+    private static String customerId(int id) {
+        return no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", id);
+    }
+
+    private static String staffId(int id) {
+        return no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Staff", id);
+    }
+
+    private static java.util.List<graphql.GraphQLError> errorsOf(String query) {
+        var input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build();
+        return graphql.execute(input).getErrors();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void dispatch_customerId_returnsTheCustomerRow() {
+        // The reported repro: before dispatch, the first branch's decode-or-throw failed the whole
+        // field for any id belonging to another participant.
+        Map<String, Object> data = execute("""
+            { occupantById(id: "%s") {
+                __typename
+                ... on Customer { firstName }
+                ... on Staff { firstName }
+            } }
+            """.formatted(customerId(1)));
+        Map<String, Object> row = (Map<String, Object>) data.get("occupantById");
+        assertThat(row.get("__typename")).isEqualTo("Customer");
+        assertThat(row.get("firstName")).isEqualTo("Mary");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void dispatch_staffId_returnsTheStaffRow() {
+        Map<String, Object> data = execute("""
+            { occupantById(id: "%s") {
+                __typename
+                ... on Customer { firstName }
+                ... on Staff { firstName }
+            } }
+            """.formatted(staffId(1)));
+        Map<String, Object> row = (Map<String, Object>) data.get("occupantById");
+        assertThat(row.get("__typename")).isEqualTo("Staff");
+        assertThat(row.get("firstName")).isEqualTo("Mike");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void dispatch_mixedIdList_returnsExactlyTheNamedRowsOfBothTypes() {
+        // The primary pin: an unpruned branch would add rows here, and unlike the single-valued form
+        // this cannot be masked as an order-dependent __typename. Customer Mary and staff Jon share
+        // no name and no key space.
+        Map<String, Object> data = execute("""
+            { occupantsByIds(ids: ["%s", "%s"]) {
+                __typename
+                ... on Customer { firstName }
+                ... on Staff { firstName }
+            } }
+            """.formatted(customerId(1), staffId(2)));
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("occupantsByIds");
+        assertThat(rows).hasSize(2);
+        assertThat(rows).extracting(r -> (String) r.get("firstName"))
+            .containsExactlyInAnyOrder("Mary", "Jon");
+        assertThat(rows).extracting(r -> (String) r.get("__typename"))
+            .containsExactlyInAnyOrder("Customer", "Staff");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void dispatch_idsOfOneParticipantOnly_prunesTheOtherBranch() {
+        // Two customer ids and no staff id: the staff branch cannot match either, so it renders
+        // false and contributes nothing rather than going unfiltered.
+        Map<String, Object> data = execute("""
+            { occupantsByIds(ids: ["%s", "%s"]) {
+                __typename
+                ... on Customer { firstName }
+            } }
+            """.formatted(customerId(1), customerId(3)));
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("occupantsByIds");
+        assertThat(rows).extracting(r -> (String) r.get("firstName"))
+            .containsExactlyInAnyOrder("Mary", "Linda");
+        assertThat(rows).extracting(r -> (String) r.get("__typename"))
+            .containsOnly("Customer");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void dispatch_nullableArgumentAbsent_leavesTheFieldUnfiltered() {
+        // The D3 nullable-scalar cell, absent half: no conjunct on either branch, so every occupant
+        // comes back. A branch that read "absent" as "mismatched" would return nothing here.
+        Map<String, Object> data = execute("""
+            { occupantByOptionalId { __typename } }
+            """);
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("occupantByOptionalId");
+        assertThat(rows).extracting(r -> (String) r.get("__typename"))
+            .as("five customers and two staff, unfiltered")
+            .containsOnly("Customer", "Staff");
+        assertThat(rows).hasSize(7);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void dispatch_nullableArgumentPresent_prunesTheNonMatchingBranch() {
+        // The same cell, present half: the wire value is there, the staff branch cannot decode it,
+        // and the difference between the two halves is exactly what the wire-presence guard carries.
+        Map<String, Object> data = execute("""
+            { occupantByOptionalId(id: "%s") {
+                __typename
+                ... on Customer { firstName }
+            } }
+            """.formatted(customerId(2)));
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("occupantByOptionalId");
+        assertThat(rows).singleElement().satisfies(r -> {
+            assertThat(r.get("__typename")).isEqualTo("Customer");
+            assertThat(r.get("firstName")).isEqualTo("Patricia");
+        });
+    }
+
+    @Test
+    void dispatch_idOfNoParticipant_surfacesClientErrorNamingTheCandidates() {
+        // A Film id decodes for neither branch. Pruning every branch would page empty; the guard
+        // keeps it the client error every other @nodeId argument surfaces, with the candidate set in
+        // place of the single expected type.
+        String filmId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        var errors = errorsOf("""
+            { occupantById(id: "%s") { __typename } }
+            """.formatted(filmId));
+        assertThat(errors).isNotEmpty();
+        assertThat(errors.get(0).getMessage())
+            .contains("decodes to type")
+            .contains("Customer")
+            .contains("Staff");
+    }
+
+    @Test
+    void dispatch_malformedId_surfacesTheMalformedBranchMessage() {
+        var errors = errorsOf("""
+            { occupantById(id: "not-a-node-id") { __typename } }
+            """);
+        assertThat(errors).isNotEmpty();
+        assertThat(errors.get(0).getMessage())
+            .contains("not a valid id")
+            .contains("Customer")
+            .contains("Staff");
+    }
+
+    @Test
+    void dispatch_connectionForm_idOfNoParticipant_errorsRatherThanPagingEmpty() {
+        // The second root fetcher. @asConnection over a same-table @nodeId is admitted with a lint
+        // advisory, its branches inherit the prune through the shared extraction, and without the
+        // guard on this path the same bad id would come back as an empty page.
+        String filmId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        var errors = errorsOf("""
+            { occupantsByIdsConnection(first: 5, ids: ["%s"]) { edges { node { __typename } } } }
+            """.formatted(filmId));
+        assertThat(errors)
+            .as("a no-branch-matches id fails the field on the connection path too")
+            .isNotEmpty();
+        assertThat(errors.get(0).getMessage()).contains("Customer").contains("Staff");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void dispatch_connectionForm_mixedIdList_pagesBothParticipants() {
+        Map<String, Object> data = execute("""
+            { occupantsByIdsConnection(first: 5, ids: ["%s", "%s"]) {
+                edges { node { __typename } }
+            } }
+            """.formatted(customerId(1), staffId(2)));
+        Map<String, Object> connection = (Map<String, Object>) data.get("occupantsByIdsConnection");
+        List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
+        assertThat(edges).hasSize(2);
+        assertThat(edges).extracting(e -> (String) ((Map<String, Object>) e.get("node")).get("__typename"))
+            .containsExactlyInAnyOrder("Customer", "Staff");
     }
 
     @Test

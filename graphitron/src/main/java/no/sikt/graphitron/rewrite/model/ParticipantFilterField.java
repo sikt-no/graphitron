@@ -15,4 +15,16 @@ import java.util.List;
  */
 public interface ParticipantFilterField {
     List<ParticipantFilters> participantFilters();
+
+    /**
+     * The field's {@code @nodeId} arguments whose node type differs per participant, each carrying the
+     * per-branch decoders the fetcher's matches-none guard checks a supplied id against. Empty when
+     * every {@code @nodeId} argument resolves one shared node type across the participants, which is
+     * every explicit {@code @nodeId(typeName:)} and every bare one over participants that share a
+     * node type.
+     *
+     * <p>One accessor rather than a component per leaf record: the fact is the same on both, and the
+     * branch filters it pairs with already live beside the field rather than on it.
+     */
+    List<NodeIdArgDispatch> nodeIdArgDispatches();
 }

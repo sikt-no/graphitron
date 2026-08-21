@@ -46,3 +46,14 @@ Raised there rather than duplicated here.
 
 Detail and the verification behind it: `roadmap/audits/2026-08-20-nodeid-relation-impact-sweep.md`,
 Finding 1.
+
+## The consuming-field seam now exists (2026-08-21)
+
+R673 landed per-participant dispatch for a bare `@nodeId` **argument** on a multitable root, and with
+it the seam this item's consistency check wants: one producer in `FieldBuilder` that takes the field
+definition plus the table-bound participant set and answers, per `@nodeId` leaf, whether the
+participants agree on the node type (`SharedTarget`) or disagree (`PerParticipant`). The divergence
+this item reports is that same computation read as a diagnostic rather than as a dispatch fact, so
+the question is no longer where to detect it: it is what the right answer is per shape. R673 answers
+two of them already, dispatch for a top-level argument and a build-time rejection naming the
+participants for a nested-input leaf, so what remains here is the shapes R673 left out of scope.

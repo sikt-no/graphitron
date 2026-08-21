@@ -31,7 +31,11 @@ import java.util.Map;
  * {@code key.valuesRow()} for arity-N) are baked into a readable statement-form body, so the
  * call site collapses to {@code <name>(wireExpr)}.
  *
- * <p>Skip and throw modes get separate helpers (different bodies). The throw arm raises the
+ * <p>Skip and throw modes get separate helpers (different bodies). The skip arm drops what it
+ * cannot decode, and its list form returns {@code null} for an absent <em>or empty</em> wire list,
+ * so a non-null empty return says "every element mismatched" and the pruning call site
+ * ({@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.PruneOnMismatch}) can tell that from
+ * an absent filter without re-reading the wire. The throw arm raises the
  * generated {@code GraphitronClientException} on a {@code null} decode rather than filtering it
  * out, carrying a two-branch message that distinguishes structurally-malformed input from a
  * well-formed wrong-type id (it peeks the wire prefix via {@code NodeIdEncoder.peekTypeId}).
@@ -144,6 +148,14 @@ public final class CompositeDecodeHelperRegistry {
 
         if (list) {
             builder.addStatement("if (!(wire instanceof $T<?> nodeIds)) return null", List.class);
+            if (mode == Mode.SKIP) {
+                // Absent and empty both return null, which is what makes a non-null empty return
+                // mean "every element mismatched". The pruning call site reads that difference (an
+                // empty wire list keeps the unfiltered list-filter semantics; an all-mismatched one
+                // renders DSL.falseCondition()) and cannot recover it by re-reading the wire from
+                // inside the glue body.
+                builder.addStatement("if (nodeIds.isEmpty()) return null");
+            }
             if (mode == Mode.THROW) {
                 // Decode and the null-check share one statement lambda so the offending wire value
                 // (`nodeId`) is in scope at the throw; the bad element names itself in the message.
@@ -200,7 +212,7 @@ public final class CompositeDecodeHelperRegistry {
      */
     private CodeBlock decodeFailureThrow(HelperRef.Decode decode, String peekArg, String msgVar) {
         ClassName clientException = ClassName.get(outputPackage + ".schema", "GraphitronClientException");
-        String typeName = strippedTypeName(decode.methodName());
+        String typeName = decode.nodeTypeName();
         return CodeBlock.builder()
             .addStatement("$T peeked = $T.peekTypeId($L)", String.class, decode.encoderClass(), peekArg)
             .addStatement("throw new $T($L)", clientException,
@@ -225,6 +237,11 @@ public final class CompositeDecodeHelperRegistry {
             "\", expected a " + typeName + " id");
     }
 
+    /**
+     * The node type name behind a {@code decode<TypeName>} method name. Mirrors
+     * {@link HelperRef.Decode#nodeTypeName()}, which the model exposes for the same convention;
+     * this overload exists because {@link #helperName} is handed the bare method name.
+     */
     private static String strippedTypeName(String decodeMethod) {
         return decodeMethod.startsWith("decode")
             ? decodeMethod.substring("decode".length())

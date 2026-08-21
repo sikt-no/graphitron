@@ -138,6 +138,29 @@ Argument and input decoders use the `ThrowOnMismatch` contract: a malformed base
 
 This is intentionally different from the dispatcher path. `Query.node(id:)` and `Query.nodes(ids:)` use the `NullOnMismatch` contract: a malformed or wrong-typeId ID returns `null` (per Relay's "if no such object exists, the field returns null"). The asymmetry is the opacity contract: clients should not be able to probe for valid IDs by mining server errors. Argument-typed `@nodeId` *asserts* the IDs are of the expected type; `Query.node(id:)` *queries* whether an ID resolves at all.
 
+[#polymorphic-nodeid-argument]
+=== A `@nodeId` argument on a field returning an interface or union
+
+What the argument asserts is a *set* of types when the field returns a multi-table interface or union and the `@nodeId` carries no `typeName:`. Each implementation infers its own node type from its own table, so one argument means "a `Customer` ID" against the `customer` table and "a `Staff` ID" against the `staff` table:
+
+[source,graphql]
+----
+union AddressOccupant = Customer | Staff
+
+type Query {
+    occupantById(id: ID! @nodeId): AddressOccupant
+}
+----
+
+The generated fetcher dispatches: each branch of the query matches only the IDs it can decode, so exactly the branch owning the supplied ID returns a row, and a Relay client gets what the schema shape promises. The assertion still holds, over the candidate set rather than over a single type: an ID that no implementation can decode fails the request as a `GraphitronClientException` naming every candidate, before any SQL runs.
+
+[source]
+----
+Invalid node id "MjAwMTE6LTE2" for this argument: decodes to type "20011", expected an id of one of: Customer, Staff
+----
+
+Two shapes stay outside dispatch. Writing `@nodeId(typeName: "Address")` pins one node type for every branch, which is the shape to reach for when the argument really does mean one type (an FK-target filter, say), and it keeps the single-type error message. And a bare `@nodeId` on a *nested input field* of such a field is rejected at build time rather than dispatched: name the type explicitly there.
+
 == `Query.node` and `Query.nodes` dispatch
 
 The two Relay entry points are emitted automatically when at least one `@node` type is classified for the schema:

@@ -128,3 +128,25 @@ None beyond this item. Nested-leaf dispatch and union-arm pruning are named out 
 Two filings do come out of the 2026-08-21 comment, and neither is a phase of this item: the payload shape, once its repro says whether it is a bug or an absent capability, and the child field only if its repro still misbinds on a current build. Ask the reporter for both repros before filing either.
 
 Notifications, and a dependency in neither direction. R728's implementer gains a named consumer for the participant-keyed instruction arm and the first interface or union fixture its store-tier suite lacks. R676 and R726 want that same arm and should know a third item is asking for it. The javadoc sequencing in D7 is this item's to carry, being the one still in Spec.
+
+## Implementation landed ahead of the Spec sign-off (2026-08-21)
+
+The implementation is on the branch `claude/r673-nodeid-arg-dispatches-on-typeid`, at the user's
+explicit request, while this item is still in `Spec`. The `Spec -> Ready` gate has not run: it needs a
+session other than the one that landed the spec revision, and the same session wrote the code. So the
+status stays `Spec` rather than being walked forward through transitions whose guard has not been
+satisfied. A reviewer picking this up decides two things at once, whether the plan is right and
+whether the code is the plan, and the second one is cheap to check because the diff follows D1 to D7
+in order.
+
+What shipped, against the plan:
+
+* **D1** `CallSiteExtraction.PruneOnMismatch` beside `ThrowOnMismatch`, and `ConditionGlueRenderer.decodeCall`'s mode selection is now an exhaustive switch over the seal.
+* **D2** `FieldBuilder.resolveNodeIdArgTargets` is the single producer, returning a sealed `NodeIdArgTarget` per `@nodeId` argument (`SharedTarget` / `PerParticipant`) plus the per-participant plans, so the participant loop does not resolve the same leaves twice. The dispatch fact is `NodeIdArgDispatch`, reached through one new `ParticipantFilterField.nodeIdArgDispatches()` accessor. Deviation from the plan's literal shape: the map is a `SequencedMap` rather than a `Map`, because `Map.copyOf` does not preserve iteration order and the generated guard's candidate list and helper registration order are both order-sensitive.
+* **D3** the three trichotomy cells render as `appendPruningAnd` in the glue renderer, and the prune-mode list helper returns null for an absent *or empty* wire list.
+* **D4** `MultiTablePolymorphicEmitter.nodeIdDispatchGuard`, emitted ahead of stage 1 in both root fetchers, minting its decoders through the fetcher class's own `CompositeDecodeHelperRegistry`.
+* **D5** the divergent nested-input leaf rejects out of the same producer, naming the leaf's dotted path, each participant, and the node type it resolved.
+* **D6/D7** `NodeIdLeafResolver` and `CallSiteExtraction` javadoc rewritten, the user manual's global-id chapter gains the polymorphic-argument section, and the `@nodeId` reference chapter gains the matching constraint bullet. Two stale sentences in `LookupRows` that the second arm falsified are corrected too.
+* Tests: five new pipeline-tier cases in `MultiTableFilterLoweringTest` (including the scope-cut enforcer for the single-base-table arm), one unit-tier case in `CompositeDecodeHelperRegistryTest`, ten execution-tier cases in `MultiTableFilterExecutionTest`, and the sakila fixtures the Tests section names.
+
+Full `mvn install -Plocal-db` green.

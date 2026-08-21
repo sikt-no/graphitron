@@ -155,8 +155,8 @@ public final class LookupRows {
     }
 
     /**
-     * Per-binding slot for a NodeId-decoded arg: which extraction arm (Skip or Throw) governs
-     * the per-row decode, and which positional {@code Record<N>} value to read.
+     * Per-binding slot for a NodeId-decoded arg: the extraction it decodes through, and which
+     * positional {@code Record<N>} value to read. Lookup keys only ever carry the throwing arm.
      */
     private record DecodeBinding(CallSiteExtraction.NodeIdDecodeKeys extraction, int index) {
 
@@ -270,9 +270,10 @@ public final class LookupRows {
             builder.addStatement("$T $L = ($L instanceof $T _s) ? $T.$L(_s) : null",
                 recordType, recLocal, rawElem, String.class, encoderClass, methodName);
             builder.beginControlFlow("if ($L == null)", recLocal);
-            // One failure mode left on this carrier: a malformed or wrong-type id is a client
-            // mistake and fails the field. The silent-drop alternative went with the arms that
-            // produced it.
+            // The only failure mode a lookup key can take: a malformed or wrong-type id is a client
+            // mistake and fails the field. The carrier's pruning sibling belongs to a polymorphic
+            // root's per-participant branches, where a miss means another branch owns the id; a
+            // lookup has one target table and no sibling to hand it to.
             builder.addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
                 "Decoded NodeId did not match the expected type for argument '" + argName + "'");
             builder.endControlFlow();

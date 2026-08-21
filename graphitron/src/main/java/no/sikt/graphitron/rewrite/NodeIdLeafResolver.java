@@ -61,11 +61,19 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
  * input-field side; {@link ArgumentRef.ScalarArg.ColumnBackedArg} /
  * {@link ArgumentRef.ScalarArg.ColumnBackedReferenceArg} on the argument side).
  *
- * <p>Failure mode is fixed at {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch}:
- * a malformed or wrong-type id fails the field. The implicit arm in
- * {@code FieldBuilder.classifyArgument} (no {@code @nodeId} declared) uses
- * {@code ThrowOnMismatch}; that arm covers synthesised lookup-key paths where a
- * wrong-type id is a contract violation rather than a filter miss.
+ * <p>The failure mode is the caller's to pick, and the resolver takes no view: it resolves one leaf
+ * against one containing table and never sees the participant set the choice depends on. Almost
+ * every caller picks {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch}, so a malformed or
+ * wrong-type id fails the field; the implicit arm in {@code FieldBuilder.classifyArgument} (no
+ * {@code @nodeId} declared) does too, covering synthesised lookup-key paths where a wrong-type id is
+ * a contract violation rather than a filter miss. The exception is a {@code @nodeId} argument on a
+ * multitable polymorphic root whose participants resolve <em>different</em> node types for it: there
+ * this resolver runs once per participant, each against that participant's own table, and the
+ * per-branch answers are what diverge. Those branches take
+ * {@link CallSiteExtraction.NodeIdDecodeKeys.PruneOnMismatch} so each matches only its own ids, and
+ * the field keeps the client error at field granularity through a generated guard. The divergence
+ * itself is computed in {@code FieldBuilder} over the classified participant set, which is the only
+ * site that can see it.
  *
  * <p>Condition resolution is intentionally not owned by this resolver: caller-shape state
  * differs (input-field uses {@link BuildContext#buildInputFieldCondition}; argument uses
@@ -95,11 +103,10 @@ final class NodeIdLeafResolver {
          * Carriers wrap with {@code isLookupKey: true} on the argument side; on the input-field
          * side this folds onto column-shaped successors.
          *
-         * <p>The {@code decodeMethod} is exposed directly rather than wrapped in an extraction
-         * arm, a shape that dates from when the failure mode was caller-specific. Every caller now
-         * wraps it in {@code ThrowOnMismatch} (the {@code @lookupKey}
-         * contract; lookup-key dispatch on a wrong-type id is a contract violation rather than
-         * a silent miss).
+         * <p>The {@code decodeMethod} is exposed directly rather than wrapped in an extraction arm,
+         * which is what lets the caller pick the failure mode: {@code ThrowOnMismatch} everywhere a
+         * wrong-type id is a mistake (the {@code @lookupKey} contract included), and
+         * {@code PruneOnMismatch} on the one shape where it means "another branch owns this id".
          *
          * @param refTypeName  the resolved (or inferred) GraphQL type name of {@code T}
          * @param decodeMethod {@code decode<TypeName>} helper resolved on the target NodeType

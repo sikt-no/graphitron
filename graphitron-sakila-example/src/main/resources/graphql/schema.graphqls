@@ -772,6 +772,30 @@ type Query {
     # registry (the class hosting the branch call site).
     occupantsByAddress(addressId: [ID!] @nodeId(typeName: "Address")): [AddressOccupant!]!
 
+    # Per-participant @nodeId dispatch fixtures. A *bare* @nodeId on a field returning the union
+    # infers its node type from each participant's own table, so `id` means a Customer id on the
+    # customer branch and a Staff id on the staff branch. Each branch matches only its own ids
+    # (a decode miss renders DSL.falseCondition() for that branch) and the fetcher rejects an id no
+    # branch decodes before stage 1 runs, so a Film id is still a client error.
+    #
+    # The reported single-cardinality lookup shape (sikt-no/graphitron issue 526):
+    occupantById(id: ID! @nodeId): AddressOccupant
+
+    # The list form: mixed Customer and Staff ids must return exactly the named rows of both types,
+    # which the single-cardinality form can mask as an order-dependent __typename.
+    occupantsByIds(ids: [ID!] @nodeId): [AddressOccupant!]!
+
+    # The nullable-scalar cell: absent leaves the field unfiltered, a present id of one branch
+    # prunes the other. Nullability is why this cell guards on wire presence rather than on the
+    # decoded local (null conflates absent with mismatched in an arbitrary key type).
+    occupantByOptionalId(id: ID @nodeId): [AddressOccupant!]!
+
+    # The connection form of the same dispatch. @asConnection over a same-table @nodeId is admitted
+    # with a lint advisory rather than rejected, so the second root fetcher needs the same
+    # matches-none guard: without it a no-branch-matches id pages empty instead of erroring.
+    occupantsByIdsConnection(ids: [ID!] @nodeId): [AddressOccupant!]!
+        @asConnection(defaultFirstValue: 5)
+
     # R384 phase c fixtures: developer @condition on a multitable union. The condition method's
     # Table<?> first parameter serves every UNION branch (the emitter passes each branch's own
     # stage-1 table local); shared columns resolve by name. Field-level form (no args):
@@ -1488,7 +1512,13 @@ type OccupantLocation {
     })
 }
 
-type Staff @table(name: "staff") {
+# Node-backed so AddressOccupant = Customer | Staff is a fully node-backed union, which is what
+# makes a bare @nodeId on a root query returning that union infer a *different* node type per
+# participant (Customer id on one branch, Staff id on the other) and exercise per-branch dispatch.
+# StoreManager shares the staff table but carries no @node, so the resolver's bare-inference
+# ambiguity arm stays quiet: the table goes from zero node types to exactly one.
+type Staff implements Node @table(name: "staff") @node {
+    id:        ID!     @nodeId
     staffId:   Int!    @field(name: "STAFF_ID")
     firstName: String! @field(name: "FIRST_NAME")
     lastName:  String! @field(name: "LAST_NAME")

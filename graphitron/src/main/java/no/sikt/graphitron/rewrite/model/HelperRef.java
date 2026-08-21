@@ -87,6 +87,15 @@ public sealed interface HelperRef {
             outputColumnShape = List.copyOf(outputColumnShape);
         }
 
+        /**
+         * The GraphQL node type this decoder answers for: {@link #methodName()} with its
+         * {@code decode} prefix stripped. Every emitter that names the type in a message or a
+         * derived helper name reads it here, so the prefix convention has one home.
+         */
+        public String nodeTypeName() {
+            return methodName.startsWith("decode") ? methodName.substring("decode".length()) : methodName;
+        }
+
         @Override public TypeName returnType() {
             int n = outputColumnShape.size();
             ClassName recordN = ClassName.get("org.jooq", "Record" + n);
