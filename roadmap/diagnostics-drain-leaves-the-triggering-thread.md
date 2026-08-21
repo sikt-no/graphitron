@@ -1,7 +1,7 @@
 ---
 id: R796
 title: "The diagnostics drain never runs on the thread that triggered it"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: lsp
