@@ -132,11 +132,16 @@ public final class SeededStore {
     /**
      * An empty in-memory store, for a case that anchors its own graphs or asserts on a relation
      * with no graph partition at all.
+     *
+     * <p>Empty rather than fresh, and the difference is only ever visible as speed. The store
+     * belongs to the calling thread, which booted it on its first case and keeps it;
+     * {@link ThreadConfinedStore} clears every relation a case can write to before handing it over,
+     * so a body meets what a boot would have given it without paying for one. Nesting two calls on
+     * one thread throws rather than silently sharing, since the inner clear would empty the outer
+     * body's rows.
      */
     public static void withSeededStore(Consumer<DSLContext> body) {
-        try (var store = FactStores.inMemory()) {
-            body.accept(store.dsl());
-        }
+        ThreadConfinedStore.run(body);
     }
 
     /**

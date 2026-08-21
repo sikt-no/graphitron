@@ -22,7 +22,12 @@ import org.jooq.DSLContext;
  * can assert that one surface lost its answer while the session kept working.
  *
  * <p>Test-only, and deliberately one-way: the swap is DDL against a fixture's private store, which
- * dies with the case.
+ * has to die with the case, so a case that installs this owns the store it installs it into. Not
+ * usable inside {@link SeededStore#withSeededStore(java.util.function.Consumer)}, whose store the
+ * thread keeps and reuses: the rename would leave a later case reading a non-terminating view.
+ * {@link ThreadConfinedStore} refuses rather than hangs, the clear still naming a relation that is
+ * now a view and H2 declining to truncate one, but the thread's store is spent either way. Take one
+ * from {@link FactStores} and close it.
  */
 public final class RunawayRelation {
 

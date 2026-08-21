@@ -6,6 +6,7 @@ import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * A fact store for a test to assert against, in the two shapes the store has: private and
@@ -28,8 +29,18 @@ import java.nio.file.Path;
  * <p>This harness owns no lifetime. Every entry point hands back a {@link GraphitronModelStore}
  * the caller closes, normally through try-with-resources, so a case that holds two stores at once
  * or reopens one directory is expressible here rather than having to reach past the harness.
+ *
+ * <p>It counts what it opens, and that count is the only instrument that sees every boot in a run.
+ * A schema boot is the most expensive thing a fact-store test can do, so this module runs almost
+ * every case on a store {@link ThreadConfinedStore} booted once per thread and clears between
+ * bodies; {@link #boots()} is what notices a path that boots per case appearing beside it. The
+ * count carries no policy of its own, because the harness is reached from four modules and what
+ * counts as too many boots is each one's own claim: the module that owns a funnel states its
+ * budget next to the funnel.
  */
 public final class FactStores {
+
+    private static final AtomicLong BOOTS = new AtomicLong();
 
     private FactStores() {}
 
@@ -39,6 +50,7 @@ public final class FactStores {
      * the handle closes.
      */
     public static GraphitronModelStore inMemory() {
+        BOOTS.incrementAndGet();
         return GraphitronModelStore.open();
     }
 
@@ -52,7 +64,18 @@ public final class FactStores {
      * shared home carries a previous case's rows into the next one's assertions.
      */
     public static GraphitronModelStore fileBacked(Path home) {
+        BOOTS.incrementAndGet();
         return GraphitronModelStore.openAt(home);
+    }
+
+    /**
+     * How many stores this harness has opened so far in this JVM, across every thread and every
+     * entry point. Monotonic, so a reader that wants a run's total reads it at the end of the run;
+     * a module holding itself to a budget checks it where its own cases pass, which is what
+     * {@link ThreadConfinedStore} does.
+     */
+    public static long boots() {
+        return BOOTS.get();
     }
 
     /**

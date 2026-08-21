@@ -1,7 +1,7 @@
 ---
 id: R769
 title: "withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms"
-status: In Progress
+status: In Review
 bucket: dx
 priority: 1
 theme: tooling
@@ -511,3 +511,67 @@ rather than sent back for a fourth round.
   `TRUNCATE` a view, and the whole-set guard fails on the same reset, so the collision surfaces as a
   loud error rather than a silent leak. That is the rescoped guard from round two doing the job it
   was rescoped for.
+
+## Implementation notes (In Progress, 2026-08-21)
+
+Landed as planned, with one design fork the plan did not anticipate and one repair the tree asked
+for. Both are below rather than in the plan body, since the plan is the reviewed artifact.
+
+**Measured, alternated arms, one 4 vCPU sandbox.** Module test-class time 191.1 s before, 65.2 s
+after; module wall clock 47.8 s before, 28.5 s after (two samples each way, 48.6 / 47.0 and
+28.7 / 28.3). Maven's own phases account for 16.9 s of both, measured with `-DskipTests`, so the
+test execution itself goes from 30.9 s to 11.6 s. That is the figure the plan's "near 14 s against
+46.8" was about; the 28.5 s is the same run with the build overhead the plan's baseline also
+carried. 452 cases pass, the 445 that existed plus 7 new.
+
+The baseline is 191.1 s rather than the plan's 182.3 s because `StoreBudgetTest` landed in between,
+which is also why 23 boots survive rather than 19.
+
+**Boot counts, from a shutdown hook rather than a projection: 31 stores in the run, 8 of them the
+funnel's, on 8 distinct threads.** Eight, at `fixed.parallelism=4`. The pool compensates for blocked
+tasks and runs classes on more threads than it is sized for, so `boots == 4` would fail today and
+the plan's insistence on the equality over the literal four was not caution. The other 23 are the
+five direct-boot classes, exactly the recount in the round-two note.
+
+**The fork: where the ceiling on the total is enforced.** The plan says to assert it, and a test
+method cannot. The counter is monotonic and classes run concurrently in an unspecified order, so an
+assertion in a class the scheduler reached early reads a fraction of the run and passes on a suite
+that ended far over budget; the plan's own acceptance asks for randomised class order, which makes
+that position random too. So the number is checked where cases pass rather than in a case:
+`ThreadConfinedStore.run` compares `FactStores.boots()` against the budget on every funnel call,
+which samples the total continuously across the whole run and names the case that was running when
+it went. The gap is a boot after the run's last funnel call, at most one class's worth.
+
+That moved the budget off `FactStores`, and the first attempt showed why it had to. Enforced inside
+`FactStores.inMemory`, it failed eight classes in `graphitron` with "opened 118 stores, past its
+budget of 60": the harness is on four modules' test classpaths, and the three this item defers boot
+per case in the hundreds by design. `FactStores` therefore counts and states no policy, which is the
+plan's own argument for putting the total there made sharper, and the budget sits next to the funnel
+whose claim it is. When another module adopts a funnel it states its own.
+
+**The repair: `StoreFixtureGuardTest`.** A structural guard in `graphitron` walks the reactor's test
+sources and fails on a test class that names `GraphitronModelStore` outside a declared harness, so
+the new class had to be declared. It is a `HOMES` entry rather than an `EXEMPT` one: it opens a
+store because handing one out is what it is for. Neither exemption reason fits, and restructuring it
+to hold only a `DSLContext` would have hidden from the scanner the one thing worth declaring, that
+this class holds a store it deliberately never closes. Its javadoc now says the entry is the only
+one that owns a lifetime rather than handing it out.
+
+**Both guards were made to fail before being trusted.** Adding `STORE_GRAPH` to the clear's
+exclusions produced "the clear did not put the store back into its booted state: STORE_GRAPH holds 1
+rows where a booted store holds 0"; dropping the `META\_%` exclusion produced the boot-state failure
+naming both registry tables. Reverted after each.
+
+**The DDL trap from the round-two note is closed and measured rather than reasoned about.** A funnel
+case that runs `RunawayRelation.install` fails on the next reset with jOOQ's
+`Cannot truncate "PUBLIC.STORE_GRAPH"`, the clear still naming a relation the rename turned into a
+view. Loud, and before the non-terminating view is ever read, so it cannot hang. `RunawayRelation`'s
+javadoc now says it is not usable inside `withSeededStore` and why, and `ThreadConfinedStore`'s says
+DDL is out of bounds for a funnel case because the partition is derived once.
+
+**Acceptance.** Six green runs under `ClassOrderer$Random` (three before the ceiling moved, three
+after), with the class order verified to actually differ between runs. Full reactor `mvn install
+-Plocal-db` green, including the Javadoc reference gate and the docs render.
+
+Not done here, and left for the plan's own "Roadmap entries" section to be acted on separately: R768
+still records the re-materialization question as open.

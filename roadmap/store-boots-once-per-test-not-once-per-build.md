@@ -69,13 +69,21 @@ Measured against a booted in-memory store, 20 rounds, warm JVM:
 | reset total, clear plus re-materialize | **9.26 ms** |
 
 So a reset is **15x** cheaper than a boot on the conservative reading, and **163x** cheaper if the
-re-materialization turns out to be unnecessary. That question is open and it is the largest single
-unknown in this item: `MaterializeDependencies.populate` derives from the `meta_` family, and the
-`meta_` tables plus `store_stamp` are exactly what a reset must *not* clear (the DDL seeds authored
-`meta_` rows with an `INSERT`). If nothing a test writes can invalidate the materialized dependency
-edges, the 8.41 ms is not part of a reset and the ratio is the larger one. A booted store holds zero
-rows outside `meta_` and `store_stamp`, which is what makes `TRUNCATE` on everything else the right
-shape.
+re-materialization turns out to be unnecessary. **That question is settled, in the direction that
+makes this item cheaper**, and the open-questions section below carries the argument:
+`MaterializeDependencies.populate` reads the registry and the catalog's stored view definitions and
+no fact relation, so nothing a test writes and nothing a clear removes can invalidate
+`meta_materialize_dependency`. A reset is the 0.85 ms clear alone. Every saving figure in this item
+was computed on the conservative reading and is therefore a floor. A booted store holds zero rows
+outside `meta_` and `store_stamp`, which is what makes `TRUNCATE` on everything else the right shape.
+
+R769 has since landed the mechanism in `graphitron-model`, which is this item's first slice, so the
+remaining three modules adopt a proven mechanism rather than a proposed one. Measured there: 31
+boots where there were 420, module test-class time 191.1 s to 65.2 s, test execution wall clock
+30.9 s to 11.6 s. Its plan body carries the reset's shape, the leak guard's scope and the two-part
+boot counter; read it before scoping a second module, and note that `FactStores` deliberately counts
+boots without holding any module to a budget, because the three modules here still boot per case in
+the hundreds by design.
 
 ## What it would save, and what that estimate rests on
 

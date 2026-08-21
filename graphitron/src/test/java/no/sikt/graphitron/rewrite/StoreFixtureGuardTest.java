@@ -55,6 +55,13 @@ class StoreFixtureGuardTest {
      * usable without the ones above it: a writer test never captures, a view test never runs a
      * crawler, and a crawler test never runs a build.
      *
+     * <p>One of them is not a harness an author reaches for. {@code ThreadConfinedStore} is
+     * package-private under {@link no.sikt.graphitron.model.test.SeededStore}, and it is here
+     * because it is the one thing in the reactor that <em>owns</em> a store's lifetime rather than
+     * handing it out: it keeps one per test thread and clears it between bodies, so a seeded case
+     * pays for a truncate instead of the fact schema. An author routed to {@code SeededStore} has
+     * been routed to it already.
+     *
      * <p>Two levels are deliberately absent, and for the same reason: {@link FactWriters} and
      * {@link no.sikt.graphitron.model.test.SeededStore} put rows in a store the caller already
      * holds, so they open nothing and this guard has no question to ask of them.
@@ -62,6 +69,9 @@ class StoreFixtureGuardTest {
     private static final List<Home> HOMES = List.of(
         new Home("graphitron-model/src/test/java/no/sikt/graphitron/model/test/FactStores.java",
             "the store's lifetime, in-memory and file-backed, under names rather than a flag"),
+        new Home("graphitron-model/src/test/java/no/sikt/graphitron/model/test/ThreadConfinedStore.java",
+            "one store per test thread to the seeded cases above it, cleared rather than rebooted "
+                + "between bodies, and never handed out as a lifetime the caller owns"),
         new Home("graphitron/src/test/java/no/sikt/graphitron/rewrite/CapturedStore.java",
             "a real capture walk over a fixture document, for tests about the crawlers"),
         new Home("graphitron/src/test/java/no/sikt/graphitron/rewrite/BuiltStore.java",
