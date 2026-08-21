@@ -90,16 +90,46 @@ blocking survives untouched. Only the session command actually stops the stateme
 
 ### One reader per latency contract, not one per consumer
 
-The LSP has two read grains behind one `StoreAccess` today, and they want different budgets. A
-cursor-keyed request answers a keystroke. The whole-workspace diagnostics drain is triggered by a
-completed build, runs inline on the notification thread, and is the read that most wants headroom and
-least wants to fail. Handing both the same budget would give the drain the interactive number.
+The LSP has three read grains behind one `StoreAccess` today, and they do not want the same budget. A
+cursor-keyed request answers a keystroke. The whole-workspace diagnostics drain runs inline on the
+notification thread and is the read that most wants headroom and least wants to fail; it is triggered
+by a completed build *and* by a file being opened, since `didOpen` and `markAllForRecalculation` are
+both funnels into `enqueueAndNotify`, so "build-triggered" would understate when it runs. And the
+vocabulary load is neither: it is session state, read once per triggering event rather than per
+answer. Handing all three the same budget would give the drain and the vocabulary a keystroke's
+number.
 
-So the LSP mints two readers, one per grain, and states a budget on each; the turn-based MCP server
-mints one with a generous budget. `StoreReader`'s own javadoc already blesses this ("the remedy if it
-ever bites is a second reader per thread, which `reader()` mints as readily as the first"), and it
-buys a second thing for free: a build-triggered drain and a keystroke stop serializing behind each
-other, which is half the head-of-line problem gone without a separate mechanism.
+So the LSP mints two readers, an interactive one and a session-wide one, and states a budget on each;
+the turn-based MCP server mints one with a generous budget. `StoreReader`'s own javadoc already
+blesses this ("the remedy if it ever bites is a second reader per thread, which `reader()` mints as
+readily as the first"), and it buys a second thing for free: a drain and a keystroke stop serializing
+behind each other, which is half the head-of-line problem gone without a separate mechanism.
+
+**The grains are routed by door, because the doors already partition them exactly.** This is what
+makes the split cheap rather than invasive, and it is a fact about the tree rather than an aspiration:
+
+| Door | Callers today | Grain |
+|---|---|---|
+| `StoreAccess.answering` | five, all interactive (`Hovers`, `Completions`, `Definitions`, `InlayHints`, `CodeActions`) | keystroke |
+| `StoreAccess.answeringAll` | one, `publishDiagnosticsForRecalculate` | drain |
+| `StoreAccess.readingSessionGraph` | two, both `LspVocabulary` loads | session state |
+
+So `StoreAccess` keeps its single instance and its single lifetime, and holds two readers rather than
+one: `answering` takes the interactive reader, `answeringAll` and `readingSessionGraph` take the
+session-wide one. The alternative, two `StoreAccess` instances in `Workspace`, is rejected because it
+duplicates the graph-name tiebreak and the membership resolution that are the class's reason to
+exist, and doubles the null checks in three `Workspace` methods plus the "set once by whoever started
+the session" invariant its field comment states.
+
+One edit makes this work and it is the whole cost: `StoreAccess.answering` is currently *implemented
+as* `answeringAll(List.of(sourceName), ...)`, so as written it would borrow the session-wide reader
+for every keystroke. The delegation splits into a private form taking the reader explicitly, with the
+two public doors passing their own.
+
+The residual risk is disclosed rather than designed away: a caller that picks the wrong door gets the
+wrong budget. Each door's javadoc states its grain so the choice is visible at the call site, and the
+consequence is a mis-sized budget, never a wrong answer. If a second interactive caller of
+`answeringAll` ever appears, the door is the thing to split, not the budget.
 
 Note against a shape this item deliberately does *not* take: `FactCapture` narrows `LOCK_TIMEOUT`
 around one row and restores it afterwards, on the stated grounds that "the two rows deserve different
@@ -147,6 +177,13 @@ exists so that "no graph has read this file" is not indistinguishable from an em
   the warning: absence is silent and normal, an expired budget names the statement it died on. Nothing
   in the returned value carries the difference and nothing should, because a caller that could branch
   on it would be deciding policy the handler already decided.
+* **The MCP server fails the tool call.** Its posture is not the LSP's and does not follow from it:
+  a turn-based server has no prior state to keep and no screen to leave standing, so both LSP
+  postures are vacuous there. What it has instead is a caller that reasons about the result, and an
+  agent handed an empty tool result concludes the fact does not exist. So an expired budget becomes
+  an error response naming the budget and the statement, never an empty result set. This is the same
+  principle that produced the arm in the first place, applied to a consumer whose reader draws the
+  opposite conclusion from silence.
 
 ### Its own predicate, in its own module
 
@@ -166,12 +203,23 @@ boundary in this item rather than leaving a trap for whoever sets the next budge
 ### Why a statement budget is enough to bound a request
 
 `SET QUERY_TIMEOUT` bounds a statement, and a read transaction may issue several, so the budget alone
-is not a request bound. It does not need to be. The `*StatementCountTest` tier already pins each
-feature at O(1) statements per recalculation and asserts the count does not track the document's size,
-so the product of the two enforcers is what bounds a request's store time and neither is sufficient
-alone. Stating that in both directions also says what this item must not do: it must not add a
-wall-clock assertion to the statement-count tier, whose refusal to fail for slowness is the property
-that makes it trustworthy.
+is not a request bound. Where a statement count is also pinned, the product of the two is the bound
+and neither is sufficient alone. Stating that in both directions says what this item must not do: it
+must not add a wall-clock assertion to the statement-count tier, whose refusal to fail for slowness is
+the property that makes it trustworthy.
+
+The tier's coverage is four of the six surfaces that read the store, not all of them, and the
+difference matters enough to state rather than round off. `InlayHintStatementCountTest`,
+`DeclarationHoverStatementCountTest`, `DeclarationDefinitionStatementCountTest` and
+`DiagnosticsStatementCountTest` pin their surfaces at O(1) statements and assert the count does not
+track the document's size. `Completions` and `CodeActions` read through the same `answering` door and
+are pinned by none of them, so for those two the budget is the only bound and a request's store time
+is budget times an uncounted number of statements.
+
+That is a pre-existing gap this item neither creates nor closes, and it is strictly improved either
+way: unbounded times uncounted becomes bounded times uncounted. Closing it means two more
+statement-count tests for surfaces this item does not otherwise touch, which is a separate item's
+work; file it as Backlog when this one lands rather than widening this one to reach it.
 
 ## Implementation
 
@@ -189,7 +237,12 @@ that makes it trustworthy.
   testing the predicate, and rethrowing anything that is not an expired statement unchanged: a
   genuine query error is still a defect and must not become an `OutOfBudget`. The rollback that ends
   every read runs on both paths, which the probe confirms leaves the session usable for the next one.
-* `GraphitronModelStore.reader()` becomes `reader(ReadBudget)`, with no defaulted overload.
+* `GraphitronModelStore.reader()` becomes `reader(ReadBudget)`, with no defaulted overload. Four
+  `{@link}` references to the retired no-arg form break with it, two in `GraphitronModelStore`'s own
+  javadoc (`{@link #reader()}`) and two in `StoreReader`'s class javadoc
+  (`{@link GraphitronModelStore#reader()}`), one of which is the "second reader per thread" sentence
+  this design leans on. The Javadoc reference gate fails the build on all four, so they are repointed
+  in the same commit rather than found later.
 
 **`graphitron` (`FactCapture`)**
 
@@ -199,24 +252,38 @@ that makes it trustworthy.
 
 **`graphitron-maven-plugin` (`DevMojo`)**
 
-* The `lspStore` mint becomes two readers, one per grain, with named budget constants rather than
-  literals at the call site so the two cannot drift: an interactive budget in the low seconds (well
-  above anything `LspTrace`'s 100 ms `SLOW` threshold would ever tag, because the target is unbounded
-  pathology and not latency policing) and a larger drain budget.
+* The `lspStore` mint becomes two readers, interactive and session-wide, passed to one `StoreAccess`,
+  with named budget constants rather than literals at the call site so the two cannot drift: an
+  interactive budget in the low seconds (well above anything `LspTrace`'s 100 ms `SLOW` threshold
+  would ever tag, because the target is unbounded pathology and not latency policing) and a larger
+  session-wide one.
 * The `mcpStore` mint states a generous turn-scale budget.
 
 **`graphitron-lsp`**
 
-* `StoreAccess.answering` / `answeringAll` propagate `StoreAnswer` rather than unwrapping it, and
-  `Workspace`'s two doors of the same name do the same.
+* `StoreAccess` takes two `StoreReader`s and closes both. `answering` stops delegating to
+  `answeringAll` and both call a private form taking the reader explicitly, so a keystroke does not
+  borrow the session-wide reader. Each door's javadoc states its grain.
+* All three doors propagate `StoreAnswer` rather than unwrapping it: `answering`, `answeringAll`, and
+  `readingSessionGraph`, which the propagation list previously missed and which is the door both
+  vocabulary loads use. `Workspace`'s two doors of the same name follow.
 * `Workspace` holds the last good `LspVocabulary` and keeps it on `OutOfBudget` at both load sites
-  (`setStore` and `markAllForRecalculation`).
+  (`setStore` at the `store == null` fork, and `markAllForRecalculation`).
 * Each surface states its posture in an exhaustive switch: `Hovers`, `Completions`, `Definitions`,
   `InlayHints`, `CodeActions` return what they have;
   `GraphitronTextDocumentService.publishDiagnosticsForRecalculate` skips the publish for an affected
   URI entirely rather than publishing an empty list.
 * One warn-level log per expired budget, at the boundary that owns the decision rather than at each
   surface, naming the statement and the budget.
+
+**`graphitron-mcp`**
+
+* Four production sites call `reader.read` and each states the fail-the-call posture: `CatalogCorpus`
+  (line 45 at the time of writing), `CatalogQueries` (238), `SchemaQueries` (369), `CodeQueries`
+  (164). `StoreReader` is threaded through roughly ten `GraphitronMcpServer` signatures, so the
+  return-type change surfaces there too even where no posture is decided.
+* The error response names the budget and the statement. It must not be an empty result set, for the
+  reason the design section gives: an agent reads silence as absence.
 
 ## Tests
 
@@ -246,6 +313,13 @@ The shape of the suite follows from the tiers, not from the clock. Nothing here 
   exist.
 * **The vocabulary keeps its last good value.** A reload that runs out of budget leaves the previously
   loaded vocabulary resolving coordinates, rather than the empty one that resolves none.
+* **An MCP tool call fails rather than answering emptily.** A tool whose read runs out of budget
+  returns an error naming the budget, asserted against the tool's response. The failure this catches
+  is an empty result set, which is the shape an agent would read as "no such fact".
+* **A keystroke does not borrow the session-wide budget.** The two readers are distinguishable in a
+  fixture (different budgets, or the `ExecuteListener` handle above), and a read through `answering`
+  is asserted to go through the interactive one. This is the case that catches the delegation being
+  re-collapsed into `answeringAll` by a later reader who sees two methods doing the same thing.
 * **Exhaustiveness is the compiler's.** The sealed `StoreAnswer` and the undefaulted mint mean a new
   surface or a new caller cannot silently inherit a posture, so no meta-test is needed for it.
 
@@ -368,3 +442,38 @@ why the fixture instruction not to name either relation is right. Every quotatio
 `fact-model.adoc`, the statement-count tier, and `Workspace.answering`'s javadoc is verbatim.
 
 The reviewer session that landed this block is disqualified from approving the resulting revision.
+
+## Author revision (2026-08-21)
+
+Every finding accepted; all six are checkable and all six were re-checked against the tree rather
+than taken from the review. The design is unchanged, which matches the reviewer's own reading that
+the design is not what needed revising. What changed is the blast radius.
+
+**Blocking 1, MCP posture.** Now decided, in `## An expired budget is its own arm` and in a
+`graphitron-mcp` implementation heading naming all four `reader.read` sites. The posture is to fail
+the tool call, and the reasoning is the reviewer's own observation that the LSP postures are vacuous
+for a turn-based server: what MCP has instead is a caller that reads silence as absence, so an empty
+result set is the one thing it must not return.
+
+**Blocking 2, `readingSessionGraph`.** Now named as the third door in the propagation list.
+
+**Blocking 3, the plumbing shape.** Picked, and the fact that picks it is new to the item: the three
+doors partition the three grains one-to-one today (five interactive callers on `answering`, exactly
+one on `answeringAll`, two on `readingSessionGraph`, all verified FQN-aware). So `StoreAccess` keeps
+one instance and holds two readers, routed by door, and the two-instance alternative is rejected in
+writing. The delegation split the reviewer identified at `StoreAccess:62` is called out as the one
+edit that makes it work, with a test that catches it being re-collapsed. The residual risk (a caller
+picking the wrong door gets a mis-sized budget) is disclosed rather than designed away.
+
+**Non-blocking 1, the false claim.** Corrected. The tier pins four of six store-reading surfaces;
+`Completions` and `CodeActions` are pinned by none, so for those two the budget is the only bound.
+Stated as a named gap, strictly improved by this item either way, with the two missing enforcers
+called out as a Backlog follow-up rather than scope pulled into this item.
+
+**Non-blocking 2, the javadoc links.** In the implementation list now. One correction to the finding:
+there are four, not three, and they span two classes. Two are `{@link #reader()}` in
+`GraphitronModelStore` itself, two are `{@link GraphitronModelStore#reader()}` in `StoreReader`'s
+class javadoc.
+
+**Non-blocking 3, the drain's triggers.** Corrected where the grain is described: `didOpen` and
+`markAllForRecalculation` are both funnels into `enqueueAndNotify`, so the drain is not build-only.
