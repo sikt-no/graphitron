@@ -1,13 +1,13 @@
 ---
 id: R763
 title: "Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path"
-status: Spec
+status: Ready
 bucket: dx
 priority: 2
 theme: tooling
 depends-on: []
 created: 2026-08-20
-last-updated: 2026-08-20
+last-updated: 2026-08-21
 ---
 
 # Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path
@@ -128,9 +128,12 @@ classes. They are HTTP tests. Together they are **5.8 s** of test time (4.714, 0
 
 `TutorialSmokeTest` is the exception. Every assertion is on GraphQL response shape; the only
 HTTP-shaped ones are `statusCode(200)` and `errors == null`, both in its private `post` helper and
-incidental to all six cases. Its `@AfterEach` also runs `DELETE FROM film WHERE film_id > 5`, the
-module's only unscoped destructive cleanup: every `querydb` writer deletes by UUID marker, title or a
-specific id. Under concurrency this class silently deletes other classes' fixture rows.
+incidental to all six cases. Its `@AfterEach` also runs `DELETE FROM film WHERE film_id > 5`, the only
+unscoped destructive cleanup in the module that lands on a table other classes use: every `querydb`
+writer to `film` deletes by UUID marker, title or a specific id. The one other unscoped delete,
+`RoutineCarrierRlsExecutionTest`'s three `delete from secure_note` calls, is safe because that class
+is the only one in the module that touches `secure_note`. Under concurrency `TutorialSmokeTest`
+silently deletes other classes' fixture rows.
 
 ### `GraphQLQueryTest` asserts a property of the whole database
 
