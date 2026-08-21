@@ -7,7 +7,7 @@ priority: 3
 theme: nodeid
 depends-on: []
 created: 2026-08-19
-last-updated: 2026-08-20
+last-updated: 2026-08-21
 ---
 
 # @nodeId encode and decode become store relations, and an instruction the generator drops fails the build
@@ -182,6 +182,14 @@ produces the tuple. Two sources:
 relations resolve them and the classifier reads the rows, which is R682's direction
 (`roadmap/planners-read-facts-emitters-read-commands.md`: planners read facts) arriving early for one
 directive rather than being retrofitted onto a Java sealed hierarchy a release later.
+
+*Corrected during stage 2.* That paragraph is wrong about which tier can read, and the section
+"The resolver cannot be the reader" below carries the argument and what replaced it. In short: the
+resolver runs inside the classification walk, the walk runs before capture, and a relation over
+captured facts is therefore not readable from it at all. What this item delivers instead is the
+resolver stating the relation's own reduction rather than a different one, so the two are one rule
+spelled twice rather than two rules that agree until one changes; the reader is R682's planner, which
+sits after capture.
 
 **Where a view cannot express the walk, materialize it, through the registered mechanism rather than
 by hand.** The lift is a positional-subset check between adjacent hops, and computing the lifted tuple
@@ -641,12 +649,19 @@ whole reach, selecting from the terminal alias, bridging back through hops `n-1 
 correlating hop 0 against the row's own table. `FkTargetConditionFilter` says so in its own javadoc
 ("Single-hop for the common case; multi-hop walked inside the `EXISTS`").
 
-What blocks it is upstream, and it is one conjunct doing the work of two. `NodeIdLeafResolver` picks
-`DirectFk` when `permutationToKeyColumns` succeeds on the terminal hop, while `DirectFk`'s *meaning*
+What blocks it is upstream, and it was one conjunct doing the work of two. `NodeIdLeafResolver` picked
+`DirectFk` when `permutationToKeyColumns` succeeded on the terminal hop, while `DirectFk`'s *meaning*
 is "the decoded keys lift to a tuple on the field's own table". Those are two facts and the resolver
-checks one, because `validateLift` runs earlier and rejects rather than recording that no lift
+checked one, because `validateLift` runs earlier and rejects rather than recording that no lift
 exists. `TranslatedFk`, whose whole premise is "no own-table tuple, bind on the target inside an
-`EXISTS`", is therefore unreachable for a multi-hop path.
+`EXISTS`", was therefore unreachable for a multi-hop path.
+
+The conjunct is split as of stage 2, and only the gate is left. The resolver now lands each key
+position on a column of the row's own table or on nothing, and picks the arm on whether every position
+landed, which is the reduction the relation performs; `permutationToKeyColumns` went with it, an
+arrival matched against a key column needing no realignment. So what stage 3 removes is `validateLift`
+and nothing else: the landing it would consult is already computed beside it, and an unlanded position
+already routes to the remote arm wherever the gate is not standing in front of it.
 
 In the relation those are two columns. A decode whose `intent_node_id_decode_column` rows all
 carry a local column is `OWN_TABLE_COLUMNS`; one whose rows carry none is `TARGET_TABLE_COLUMNS`; and
@@ -704,6 +719,59 @@ remote binding today would replace a stated author-facing rejection with an unty
 throw. Widening it is R705's work, which retires `FkHop`, `FkHop.narrow` and `narrowPath` outright.
 So a condition hop keeps its own rejection through this item, and R705 inherits the relation rather
 than co-authoring it.
+
+### The resolver cannot be the reader, and the tree had already said so
+
+The plan above says `NodeIdLeafResolver` becomes a reader of `intent_node_id_decode`. It cannot, and
+the obstacle is not effort: `NodeIdLeafResolver` runs inside the classification walk, the walk runs
+before capture, and a relation over captured facts has no rows yet when the resolver is asked. The
+generator's order is walk, then capture, then detections, then plan, and capture is placed after the
+walk on purpose, taking the classified model as an input.
+
+The tree states this rule already, in the class this item's own earlier stage extended.
+`ArgmappingProjectionDefects` explains why two of its arms are not the walk's: both "are questions
+about captured directive facts and the walk runs before capture", so "the walk carries every segment
+it cannot resolve against SDL and judges none of them", because "a rule spelled in the walk instead
+would be an earlier second copy that wins by rejecting first, which is how one family ends up with two
+answers that agree until one changes". Read against the plan's sentence, that argument says the
+opposite of "the resolver becomes a reader": what belongs in the store is the judgment, and what
+belongs after capture is the reader.
+
+R682 settles where the reader goes, and settles it by having already faced this. Its planner half
+starts at the plan rather than at the walk, for a reason it states outright: the plan "sits after
+capture, so nothing about the pipeline's stage order has to change". Moving capture ahead of the walk
+is a change to that stage order, it is R682's to make or decline, and this item is not the place to
+make it unilaterally on behalf of one directive.
+
+So the deliverable changes shape and not direction. The resolver stops stating a *different* rule from
+the relation's:
+
+* The arm choice becomes the relation's own reduction, "did every position of the node type's key land
+  on a column of the row's own table". It was two facts checked as one conjunct, the terminal hop's
+  referenced columns compared against the key as a multiset, with a chain that translated a column
+  refused before the question was reached.
+* The lift becomes per-position landings, computed by the forward walk the relation's own comment
+  argues for, each pairing carrying "this column of the departing table is, after this many hops, this
+  column of the table reached". The backward walk it replaces could not express a position that failed
+  to land; it indexed into the previous hop unconditionally, which is why a gate had to run first.
+* Matching an arrival against the key column rather than against a position retires the separate
+  permutation step, exactly as the relation's comment says it does. Three helpers become one.
+* `JoinPathResult` retires for a two-armed result carrying a `Rejection` rather than its prose, so the
+  auto-discovery arm's typed rejections stop being flattened and re-wrapped as structural. Those two
+  arms are defensive-only today, so nothing in the corpus reaches them and there is no behaviour to
+  pin; the value is that the slot no longer downgrades what a reachable arm would carry.
+
+Behaviour is preserved on every shape the corpus can express, and that is a claim about the catalog
+rather than a hope. `@node(keyColumns:)` must name a real unique key and a foreign key references one,
+so the reachable relations between the two column sets are equal-as-a-set, which both spellings call
+local, and anything else, which both call remote. The one shape where the two answers differ is a key
+strictly inside a foreign key's referenced columns, which needs two nested unique constraints on one
+table; the new answer there is the relation's and is the better predicate, and no fixture was added to
+reach it.
+
+What this leaves for stage 3 is the deletion the plan promised. `validateLift` is now the only thing
+turning an unlanded position into a rejection, and the landing it would have to consult is already
+computed beside it.
 
 ### The dropped encode is the whole read family, not the `@error` type
 
@@ -966,7 +1034,9 @@ replacement.
    two encode sources, and the decode relation's key-column child with its lift plus its hop child.
    The `SINGLE_KEY_COLUMN` destination gains its inferred arm, which is what makes sites 1 and 2
    resolve rather than refuse, and `BARE_NODE_ID`'s text is edited down to the arity fact in the same
-   stage. `NodeIdLeafResolver` becomes a reader of the rows rather than the resolver of the facts. Exit: every `@nodeId` shape that generates today has a row naming the
+   stage. `NodeIdLeafResolver` stops spelling a different reduction from the decode relation's, which
+   is as far towards reading the rows as this item goes; "The resolver cannot be the reader" above says
+   why, and hands the reader itself to R682. Exit: every `@nodeId` shape that generates today has a row naming the
    destination or source it actually uses; a `@service` method whose parameter type matches a
    single-column node key receives the decoded value and never the base64; and the tree's existing
    `@nodeId` behaviour suite stays green apart from the four `BARE_NODE_ID` cases the arity rule
@@ -1011,12 +1081,12 @@ them.
 two children shipped first, then the measurement work the section above records, then the destination
 relation with its two table destinations, then the two slot destinations with the key-shape relation
 that decides both. All four are now stated. Then the `BARE_NODE_ID` edit with the inferred arm's
-consumer-side half, which is the increment recorded below. What still travels separately is
-`NodeIdLeafResolver` becoming a reader of these rows, which is the last of stage 2. Nothing generates
-from `intent_node_id_decode` until it does, so the ordering inside stage 2 changes what is checkable
-per commit and not what stage 2 exits on: every `@nodeId` shape that generates today still has to have
-a row naming what it uses before stage 3 starts. The Java-slot fork itself ships with the table
-destinations rather than after them, because the two table destinations are only total once the
+consumer-side half, which is the increment recorded below. Last, `NodeIdLeafResolver` converging on the
+decode relation's own reduction, which is where the exit moved: it was written as the resolver becoming
+a reader of these rows, and the resolver runs before the rows exist. "The resolver cannot be the
+reader" carries that argument; stage 2 exits on the relations being total and on the resolver spelling
+their rule rather than a second one, and R682 owns the read. The Java-slot fork itself ships with the
+table destinations rather than after them, because the two table destinations are only total once the
 coordinates that reach Java are out of their population.
 
 **The arity rule landed at the `argMapping` site, and it landed by adding a population rather than by
@@ -1111,6 +1181,18 @@ a case that merely stood on a single-key fixture is expected and says the fixtur
 case never declared; a red in a message assertion is expected wherever this item edits that message.
 A red anywhere else is a missed resolution. The fixtures now carry both arities and every case names
 which it binds, so the next increment's reds are readable without a list.
+
+The increment after it drew no reds at all, which is the answer that rule wanted. Converging the
+resolver on the decode relation's reduction is behaviour-preserving over everything the catalog can
+express, so `NodeIdLeafResolverTest`'s eleven cases stayed green through a replaced discriminator, a
+replaced lift walk and a retired result type, and the case that pins a non-identity permutation stayed
+green through the retirement of the permutation step itself. Two of the eleven were renamed, their
+names having stated the discriminator that went; a rename is not a red and the sweep is what found
+them. The one shape where the old and new answers differ is unreachable in this catalog, and the
+attempt to reach it is worth recording: pinning a node key strictly inside a foreign key's referenced
+columns fails at the `@node` gate, which demands a real unique key, so producing that shape means
+declaring two nested unique constraints on one table and no fixture does. A test asserting it would
+have had to ship the fixture, and the shape is not what this item is about.
 
 * **Pipeline tier**, carrying the primary behavioural weight. The junction chain lowering to a remote
   binding with a two-hop path, on both the argument and the input-field surfaces. Each of the four
@@ -1293,6 +1375,13 @@ a null payload and no committed row.
   from that draft, so the sweep has nothing to find here; the entry stands so a reader of the earlier
   draft knows the argument was withdrawn and not merely reworded.
 
+Four of those entries are already discharged, in the stage-2 increment that converged the resolver on
+the decode relation's reduction: `JoinPathResult`, and the three statements of the one-conjunct
+discriminator. The `resolveFkJoinPath` javadoc entry is half discharged, the shape no longer being
+named for the property; the sentence describing the gate itself stays while the gate does, which is
+stage 3. Two test names carried the same one-conjunct reading and went with the javadoc, the sweep
+being about the vocabulary and not about the file it sits in.
+
 `CONDITION_STEP_MARKER` is deliberately *not* retired here, and neither is the rejection it anchors;
 see the emitter argument under Design. The Done-gate sweep should read a surviving
 `CONDITION_STEP_MARKER` as intact rather than as a missed retirement.
@@ -1315,10 +1404,19 @@ stage 3 expresses it there.
 * **R682** (`planners-read-facts-emitters-read-commands`, Spec) is the architecture this item works
   inside. Its sentence is that capture writes facts, the walk's sealed leaves dissolve into those
   facts, planners read facts and produce commands, and emitters render commands. Making the `@nodeId`
-  encode and decode relations and turning `NodeIdLeafResolver` into a reader is that sentence applied
-  to one
-  directive, ahead of R682 rather than against it. Worth telling that item's author, because the
-  `@nodeId` decode and encode facts are one fewer thing its planner rewrite has to source.
+  encode and decode relations is that sentence applied to one directive, ahead of R682 rather than
+  against it. Worth telling that item's author, because the `@nodeId` decode and encode facts are one
+  fewer thing its planner rewrite has to source.
+
+  It also inherits one thing this item found it could not do, and the finding is R682's rather than a
+  loose end here. This item planned for `NodeIdLeafResolver` to read the decode relation, and the
+  resolver runs inside the walk, which runs before capture; the argument is under "The resolver cannot
+  be the reader". The consequence for R682 is that the `@nodeId` destination is a fact whose reader has
+  to be its planner, and that the walk-side resolver it deletes is by then spelling the relation's own
+  reduction rather than a rival one, so the conversion is a lookup replacing a computation that already
+  agrees. If R682 ever does move capture ahead of the walk, the argument its planner half rests on
+  ("nothing about the pipeline's stage order has to change") is the thing being revisited, and this
+  item's stage 2 is one more caller that would benefit.
 * **R742** (shipped; see `roadmap/changelog.md`) is why this item states its own derivation depth.
   It measured the precedent this plan follows, `intent_argmapping_projection_defect`, at 2066 relation
   instantiations and 24.5 seconds for one read, and diagnosed the cause as H2 inlining views with no

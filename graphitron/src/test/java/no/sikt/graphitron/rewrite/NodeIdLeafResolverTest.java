@@ -24,10 +24,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Resolver-tier coverage for {@link NodeIdLeafResolver}: pins the variant choice itself,
  * independent of carrier construction. The resolver picks
- * {@link NodeIdLeafResolver.Resolved.FkTarget.DirectFk DirectFk} when the FK's target columns
- * positionally match the NodeType's key columns, and
- * {@link NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk TranslatedFk} when they differ.
- * Sibling resolvers ({@link OrderByResolver}, {@link LookupMappingResolver}, etc.) are
+ * {@link NodeIdLeafResolver.Resolved.FkTarget.DirectFk DirectFk} when every position of the
+ * NodeType's key lands on a column of the row's own table, and
+ * {@link NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk TranslatedFk} when any position lands on
+ * none. Sibling resolvers ({@link OrderByResolver}, {@link LookupMappingResolver}, etc.) are
  * exercised end-to-end through pipeline tests.
  *
  * <p>Wiring: {@link GraphitronSchemaBuilder#buildContextForTests} runs the schema generator and
@@ -55,9 +55,9 @@ class NodeIdLeafResolverTest {
     private static final RewriteContext PUBLIC_CTX = TestConfiguration.testContext();
 
     @Test
-    void directFk_whenFkTargetColumnsPositionallyMatchNodeTypeKeys() {
-        // bar.id_1 → baz.id is a unique FK; baz's NodeType keyColumn is `id`. FK target {id}
-        // positionally matches NodeType key {id} → DirectFk.
+    void directFk_whenEveryKeyPositionLandsOnAnOwnTableColumn() {
+        // bar.id_1 → baz.id is a unique FK; baz's NodeType keyColumn is `id`. The hop arrives on
+        // `id`, which is the key, so the one position lands on bar.id_1 → DirectFk.
         String sdl = """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
             type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
@@ -86,9 +86,10 @@ class NodeIdLeafResolverTest {
     }
 
     @Test
-    void translatedFk_whenFkTargetColumnsDifferFromNodeTypeKeys() {
+    void translatedFk_whenAKeyPositionLandsOnNoOwnTableColumn() {
         // child_ref.parent_alt_key → parent_node.alt_key, but ParentNode's NodeType keyColumn
-        // is parent_node.pk_id. FK target {alt_key} ≠ NodeType key {pk_id} → TranslatedFk.
+        // is parent_node.pk_id. The hop arrives on `alt_key`, so the key column `pk_id` lands
+        // nowhere and no own-table tuple holds the decoded value → TranslatedFk.
         String sdl = """
             type ParentNode implements Node @table(name: "parent_node") @node { id: ID! }
             type ChildRef @table(name: "child_ref") {

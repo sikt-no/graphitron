@@ -124,21 +124,28 @@ final class NodeIdLeafResolver {
          * reachable through {@code joinPath}; decoded keys feed the
          * {@code In} / {@code RowIn} / {@code Eq} / {@code RowEq} body params.
          *
-         * <p>Sealed into two arms on the positional-correspondence question between the FK's
-         * target-side columns and {@code T}'s {@code keyColumns}. Both arms are emittable on the
-         * read side; they differ in which table the predicate binds, which the consuming carriers
-         * record as a {@link no.sikt.graphitron.rewrite.model.FilterBinding}:
+         * <p>Sealed into two arms on one question: does every position of {@code T}'s key land on a
+         * column of the field's own table? Both arms are emittable on the read side; they differ in
+         * which table the predicate binds, which the consuming carriers record as a
+         * {@link no.sikt.graphitron.rewrite.model.FilterBinding}:
          *
          * <ul>
-         *   <li>{@link DirectFk}: FK target-side columns are {@code T}'s key columns as a multiset.
-         *       The decoded keys lift to a tuple on the field's own table, so the predicate binds
-         *       locally with no JOIN ({@code FilterBinding.Local}).</li>
-         *   <li>{@link TranslatedFk}: FK target-side columns differ from {@code T}'s key columns
-         *       (e.g. parent_node + child_ref where the FK targets parent.alt_key but the
-         *       NodeType key is parent.pk_id). No column on the field's own table holds the decoded
-         *       value, so the predicate binds {@code keyColumns} on {@code T.table()} inside a
-         *       correlated {@code EXISTS} ({@code FilterBinding.Remote}).</li>
+         *   <li>{@link DirectFk}: every position landed, so the decoded keys are a tuple on the
+         *       field's own table and the predicate binds locally with no JOIN
+         *       ({@code FilterBinding.Local}).</li>
+         *   <li>{@link TranslatedFk}: at least one position did not, so no tuple on the field's own
+         *       table holds the decoded value and the predicate binds {@code keyColumns} on
+         *       {@code T.table()} inside a correlated {@code EXISTS}
+         *       ({@code FilterBinding.Remote}).</li>
          * </ul>
+         *
+         * <p>Landing is per position and by column name, which is what makes the arm choice one fact
+         * rather than two. A hop arriving on a column the next hop does not depart from carries
+         * nothing further, and a key column nothing arrived at simply has no landing: there is no
+         * separate translation test, and no separate permutation step either, a foreign key declared
+         * in a different column order from {@code @node(keyColumns:)} landing each column at the
+         * position the key states. The fact model states the same reduction over a per-position local
+         * column that is null exactly where a position did not land.
          */
         sealed interface FkTarget extends Resolved {
             String refTypeName();
@@ -148,35 +155,27 @@ final class NodeIdLeafResolver {
             List<JoinStep> joinPath();
 
             /**
-             * Direct-FK arm: the terminal hop's target-side columns positionally match {@code T}'s
-             * key columns. The body emitter binds decoded keys directly against
-             * {@code liftedSourceColumns}, the resolver-computed column tuple on the field's own
-             * containing table that aligns positionally with {@code keyColumns}.
+             * Local-binding arm: every position of {@code T}'s key landed on a column of the field's
+             * own containing table. The body emitter binds decoded keys directly against
+             * {@code liftedSourceColumns}, those landings in key order.
              *
-             * <p>For single-hop paths, {@code liftedSourceColumns ==
-             * joinPath.get(0).sourceSideColumns()}.
-             *
-             * <p>For multi-hop paths (length &ge; 2), each intermediate hop satisfies the lift
-             * predicate (its source-side columns are a positional sub-tuple of the previous hop's
-             * target-side columns by SQL name), so the terminal hop's source-side tuple lifts
-             * back through the chain to a sub-tuple of the first hop's source-side columns. The
-             * lifted tuple lives on the parent's own table and the emitter binds against it
-             * exactly the way single-hop direct-FK does. The predicate stays "row's column tuple ∈
-             * decoded keys"; chain length is a classifier-time concept only.
+             * <p>Chain length is a classifier-time concept only. A single hop lands the key on the
+             * hop's own departing columns; a chain lands it on the departing columns of its first
+             * hop, each carried forward hop by hop. Either way the tuple lives on the parent's own
+             * table and the predicate is "row's column tuple ∈ decoded keys".
              *
              * <p>{@code fkSourceColumns} always carries the first hop's full source-side tuple;
-             * readers should prefer {@code liftedSourceColumns}. For length-1 paths the two are
-             * equal by construction.
+             * readers should prefer {@code liftedSourceColumns}. For a single hop whose key covers
+             * the whole pairing the two are equal.
              *
              * @param refTypeName          the resolved (or inferred) GraphQL type name of {@code T}
              * @param targetTable          resolved {@link TableRef} for {@code T.table()}
              * @param decodeMethod         {@code decode<TypeName>} helper resolved on the target NodeType
              * @param keyColumns           {@code T}'s key columns
              * @param fkSourceColumns      first hop's source-side columns (legacy slot)
-             * @param liftedSourceColumns  resolver-computed column tuple on the parent's own
-             *                             table, positionally aligned with {@code keyColumns}
-             * @param joinPath             FK path from the containing table to {@code T.table()};
-             *                             length-1 single-hop or length-&ge;2 identity-carrying chain
+             * @param liftedSourceColumns  where each key position landed, on the parent's own table,
+             *                             in {@code keyColumns} order
+             * @param joinPath             FK path from the containing table to {@code T.table()}
              * @param selfReference        {@code true} when {@code T.table()} equals the containing
              *                             table (a self-FK): the lifted columns point at a sibling
              *                             row, never the row's own identity, so the carrier is
@@ -197,11 +196,17 @@ final class NodeIdLeafResolver {
                 implements FkTarget {}
 
             /**
-             * Translated-FK arm: FK target columns differ from {@code T}'s key columns, so SQL has
-             * to convert a decoded key into an FK-column value before it can filter. Read-side
-             * carriers take a {@code FilterBinding.Remote} and lower to the correlated {@code EXISTS}
-             * a joined {@code @reference} filter already uses; no own-table tuple exists, which is
-             * why the write and {@code @lookupKey} rails refuse the shape at their own gates.
+             * Remote-binding arm: at least one position of {@code T}'s key landed on no column of
+             * the field's own table, so SQL has nothing local to compare a decoded key against.
+             * Read-side carriers take a {@code FilterBinding.Remote} and lower to the correlated
+             * {@code EXISTS} a joined {@code @reference} filter already uses; no own-table tuple
+             * exists, which is why the write and {@code @lookupKey} rails refuse the shape at their
+             * own gates.
+             *
+             * <p>The commonest cause is a foreign key referencing something other than the node's
+             * key, a child_ref pointing at parent.alt_key while the node key is parent.pk_id, and
+             * that is where the arm's name comes from. Its precondition is the absent landing, not
+             * the present translation, so a chain reaching here is this arm's too.
              *
              * <p>Carries no {@code liftedSourceColumns} and no {@code selfReference}: there is
              * nothing to lift, and the self-FK fact only routes write-side partitions.
@@ -210,7 +215,7 @@ final class NodeIdLeafResolver {
              * @param targetTable  resolved {@link TableRef} for {@code T.table()}
              * @param decodeMethod {@code decode<TypeName>} helper resolved on the target NodeType
              * @param keyColumns   {@code T}'s key columns
-             * @param joinPath     single-hop FK path from the containing table to {@code T.table()}
+             * @param joinPath     the FK path from the containing table to {@code T.table()}
              */
             record TranslatedFk(
                     String refTypeName,
@@ -313,22 +318,22 @@ final class NodeIdLeafResolver {
             return new Resolved.Rejected(ctx.unknownTableRejection(targetTableResolution, targetTableName));
         }
         TableRef targetTable = targetTableResolved.entry().toTableRef(targetTableName);
-        var joinPath = resolveFkJoinPath(leaf, leafName, containingTable, targetTableName, targetTable);
-        if (joinPath.error() != null) {
-            return new Resolved.Rejected(Rejection.structural(joinPath.error()));
+        var walk = resolveFkJoinPath(leaf, leafName, containingTable, targetTableName, targetTable,
+            keys.keyColumns());
+        if (walk instanceof PathResolution.Refused refused) {
+            return new Resolved.Rejected(refused.rejection());
         }
-        var firstHop = pairs(joinPath.path().get(0));
-        var terminalHop = pairs(joinPath.path().getLast());
-        // DirectFk discriminator: the terminal hop's target-side columns must equal the NodeType's
-        // key columns *as a set* (by SQL name). When equal as a set but in different order
-        // (typical of FKs declared in a different column order from @node(keyColumns:)), the
-        // lifted tuple is permuted into @node.keyColumns order so the emitter's positional
-        // binding between decoded keys and liftedSourceColumns stays semantically correct. The
-        // genuinely-different case (FK target columns are not @node.keyColumns) falls through to
-        // TranslatedFk.
-        int[] permutation = permutationToKeyColumns(terminalHop.targetSideColumns(), keys.keyColumns());
-        if (permutation != null) {
-            List<ColumnRef> liftedAligned = permute(joinPath.liftedSourceColumns(), permutation);
+        var walked = (PathResolution.Walked) walk;
+        var firstHop = pairs(walked.path().get(0));
+        // The arm choice, and the whole of it: every key position landing on a column of the row's
+        // own table is a local tuple predicate, any position landing nowhere is a correlated EXISTS
+        // on the node type's own table. Landing is computed once, per position, by landKeyColumns;
+        // nothing here re-asks whether a hop translated a column or whether the terminal key's
+        // referenced columns are the node key, those being two spellings of this one count.
+        if (walked.landings().stream().allMatch(l -> l.localColumn().isPresent())) {
+            List<ColumnRef> local = walked.landings().stream()
+                .map(l -> l.localColumn().orElseThrow())
+                .toList();
             // Self-FK: T.table() equals the containing table, reached here only because an explicit
             // @reference was present (the no-@reference same-table case short-circuited to SameTable
             // above). The lifted columns are the self-FK's child columns on the row's own table,
@@ -337,48 +342,10 @@ final class NodeIdLeafResolver {
             boolean selfReference = containingTable.sameTable(targetTableName);
             return new Resolved.FkTarget.DirectFk(
                 refTypeName, targetTable, decodeMethod, keys.keyColumns(),
-                firstHop.sourceSideColumns(), liftedAligned, joinPath.path(), selfReference);
+                firstHop.sourceSideColumns(), local, walked.path(), selfReference);
         }
         return new Resolved.FkTarget.TranslatedFk(
-            refTypeName, targetTable, decodeMethod, keys.keyColumns(), joinPath.path());
-    }
-
-    /**
-     * Returns the permutation that maps target-side column positions to NodeType-keyColumns
-     * positions, or {@code null} when the two lists are not the same multiset by SQL name.
-     *
-     * <p>Concretely: {@code result[j] = i} means {@code targetSideColumns.get(i).sqlName()} equals
-     * {@code keyColumns.get(j).sqlName()} (case-insensitive). The caller uses this to align any
-     * tuple paired with {@code targetSideColumns} positionally (e.g. the lifted source-column
-     * tuple) into {@code keyColumns} order: {@code aligned[j] = original[result[j]]}.
-     */
-    private static int[] permutationToKeyColumns(List<ColumnRef> targetSideColumns,
-                                                 List<ColumnRef> keyColumns) {
-        if (targetSideColumns.size() != keyColumns.size()) return null;
-        int n = keyColumns.size();
-        int[] perm = new int[n];
-        boolean[] used = new boolean[n];
-        for (int j = 0; j < n; j++) {
-            int found = -1;
-            for (int i = 0; i < n; i++) {
-                if (!used[i] && targetSideColumns.get(i).sqlName().equalsIgnoreCase(keyColumns.get(j).sqlName())) {
-                    found = i;
-                    break;
-                }
-            }
-            if (found < 0) return null;
-            used[found] = true;
-            perm[j] = found;
-        }
-        return perm;
-    }
-
-    private static <T> List<T> permute(List<T> source, int[] permutation) {
-        var out = new ArrayList<T>(permutation.length);
-        for (int j = 0; j < permutation.length; j++) {
-            out.add(source.get(permutation[j]));
-        }
-        return List.copyOf(out);
+            refTypeName, targetTable, decodeMethod, keys.keyColumns(), walked.path());
     }
 
     // ===== Helpers =====
@@ -421,57 +388,75 @@ final class NodeIdLeafResolver {
         return new TypeNameResult(candidates.get(0), null);
     }
 
-    private record JoinPathResult(List<JoinStep> path, List<ColumnRef> liftedSourceColumns, String error) {}
+    /**
+     * What resolving the path produced: either the hops it walks paired with where each of the node
+     * type's key positions landed, or the rejection that stopped it. Two arms rather than one record
+     * with nullable slots, and the rejection is a {@link Rejection} rather than its rendered prose:
+     * the auto-discovery arm below mints typed rejections carrying an attempt and a candidate list,
+     * and flattening those to a message and re-wrapping them as {@link Rejection#structural} threw
+     * away the components the diagnostics residue turns into a fix-it.
+     */
+    private sealed interface PathResolution {
+        record Walked(List<JoinStep> path, List<KeyLanding> landings) implements PathResolution {}
+
+        record Refused(Rejection rejection) implements PathResolution {}
+    }
 
     /**
-     * Resolves the FK join path from {@code containingTable} to {@code targetTableName}.
-     * {@code targetTable} is the already-resolved {@link TableRef} for {@code targetTableName},
-     * threaded into the explicit-{@code @reference} {@link BuildContext#parsePath} call so its
-     * terminal-target verdict compares jOOQ table-class identity rather than the {@code @table} echo.
+     * One position of the node type's key, and the column on the slot's own table the decoded value
+     * at that position lands on. Absent where the walk arrived at no such column, which is a stated
+     * absence and not a failure: it is what makes the predicate bind remotely.
+     */
+    private record KeyLanding(ColumnRef keyColumn, Optional<ColumnRef> localColumn) {}
+
+    /**
+     * Resolves the FK join path from {@code containingTable} to {@code targetTableName} and lands
+     * {@code keyColumns} on it. {@code targetTable} is the already-resolved {@link TableRef} for
+     * {@code targetTableName}, threaded into the explicit-{@code @reference}
+     * {@link BuildContext#parsePath} call so its terminal-target verdict compares jOOQ table-class
+     * identity rather than the {@code @table} echo.
      *
      * <p>Two intake shapes:
      * <ul>
      *   <li>Explicit {@code @reference(path: [{key: ...}, ...])}: parsed elements are taken as-is.
-     *       Length 1 (single-hop) is the existing direct-FK shape; length &ge; 2 (multi-hop) is
-     *       the identity-carrying-lift shape and only succeeds when every adjacent pair satisfies
-     *       the lift predicate. Every step must join on {@link On.ColumnPairs}; condition-only steps are
-     *       rejected with the {@link #CONDITION_STEP_MARKER} text.</li>
+     *       Length 1 is the single-hop shape; length &ge; 2 is a chain, and a chain currently only
+     *       succeeds when every adjacent pair carries the departing columns forward, that gate being
+     *       {@link #validateLift}. Every step must join on {@link On.ColumnPairs}; condition-only
+     *       steps are rejected with the {@link #CONDITION_STEP_MARKER} text.</li>
      *   <li>No {@code @reference}: single-hop FK auto-discovery via
      *       {@link JooqCatalog#findUniqueFkToTable}. Multi-hop is always explicit; auto-discovery
      *       does not search past one hop.</li>
      * </ul>
      *
-     * <p>On success the result carries the resolved path and the lifted source-column tuple: the
-     * column tuple on the parent's own table that is positionally aligned with the decoded
-     * NodeType keys. For length-1 paths the lifted tuple equals the first hop's source-side
-     * columns.
+     * <p>On success the landings are one per key position, in key order, each carrying the column on
+     * the parent's own table the position lands on or nothing. The caller reduces them to the arm;
+     * it does not re-derive them.
      */
-    private JoinPathResult resolveFkJoinPath(GraphQLDirectiveContainer leaf, String leafName,
+    private PathResolution resolveFkJoinPath(GraphQLDirectiveContainer leaf, String leafName,
                                              TableRef containingTable, String targetTableName,
-                                             TableRef targetTable) {
+                                             TableRef targetTable, List<ColumnRef> keyColumns) {
         if (leaf.hasAppliedDirective(DIR_REFERENCE)) {
             var path = ctx.parsePath(leaf, leafName, containingTable.tableName(), targetTableName, targetTable);
             if (path.hasError()) {
-                return new JoinPathResult(null, null, path.errorMessage());
+                return refuse(path.errorMessage());
             }
             if (path.elements().isEmpty()) {
-                return new JoinPathResult(null, null,
-                    "@reference path on @nodeId leaf '" + leafName + "': path is empty");
+                return refuse("@reference path on @nodeId leaf '" + leafName + "': path is empty");
             }
             for (int i = 0; i < path.elements().size(); i++) {
                 if (!(path.elements().get(i) instanceof JoinStep.Hop hop
                         && hop.on() instanceof On.ColumnPairs)) {
-                    return new JoinPathResult(null, null,
-                        "@reference path on @nodeId leaf '" + leafName + "': step " + (i + 1)
+                    return refuse("@reference path on @nodeId leaf '" + leafName + "': step " + (i + 1)
                         + " is a condition step; every step in a multi-hop @nodeId path "
                         + CONDITION_STEP_MARKER + " (use { key: ... } at every position).");
                 }
             }
             String liftError = validateLift(path.elements(), leafName);
             if (liftError != null) {
-                return new JoinPathResult(null, null, liftError);
+                return refuse(liftError);
             }
-            return new JoinPathResult(path.elements(), liftSourceColumns(path.elements()), null);
+            return new PathResolution.Walked(path.elements(),
+                landKeyColumns(path.elements(), keyColumns));
         }
         // No @reference: single-hop FK auto-discovery. Multi-hop is always explicit; the
         // auto-discovery fallback never searches past one hop. Disambiguation among A → ? → C
@@ -479,9 +464,8 @@ final class NodeIdLeafResolver {
         var inferred = ctx.catalog.findUniqueFkToTable(
             containingTable.tableName(), targetTableName);
         if (inferred.isEmpty()) {
-            return new JoinPathResult(null, null,
-                "no unique FK from '" + containingTable.tableName() + "' to '" + targetTableName
-                + "'; declare @reference(path: [{key: ...}]) to disambiguate");
+            return refuse("no unique FK from '" + containingTable.tableName() + "' to '"
+                + targetTableName + "'; declare @reference(path: [{key: ...}]) to disambiguate");
         }
         // findUniqueFkToTable resolved endpoints by class and returns the FK object itself;
         // hand it straight to synthesizeFkJoin rather than round-tripping through a bare-name
@@ -492,14 +476,22 @@ final class NodeIdLeafResolver {
             inferred.get(), containingTable.tableName(), leafName, 0, null, /*selfRefFkOnSource=*/true);
         return switch (fkStepResolution) {
             case BuildContext.FkJoinResolution.Resolved r ->
-                new JoinPathResult(List.of(r.hop()), r.pairs().sourceSideColumns(), null);
+                new PathResolution.Walked(List.of(r.hop()),
+                    landKeyColumns(List.of(r.hop()), keyColumns));
             case BuildContext.FkJoinResolution.UnknownTable u ->
-                new JoinPathResult(null, null,
-                    ctx.unknownTableRejection(u.failure(), u.requestedName()).message());
+                new PathResolution.Refused(
+                    ctx.unknownTableRejection(u.failure(), u.requestedName()));
             case BuildContext.FkJoinResolution.UnknownForeignKey uf ->
-                new JoinPathResult(null, null,
-                    ctx.unknownForeignKeyRejection(uf.fkName()).message());
+                new PathResolution.Refused(ctx.unknownForeignKeyRejection(uf.fkName()));
         };
+    }
+
+    /**
+     * The refusal for a cause this resolver states as prose of its own. The typed arms above build
+     * their {@link Rejection} directly and never route through here.
+     */
+    private static PathResolution refuse(String reason) {
+        return new PathResolution.Refused(Rejection.structural(reason));
     }
 
     /**
@@ -549,32 +541,65 @@ final class NodeIdLeafResolver {
     }
 
     /**
-     * Computes the lifted source-column tuple. Walks back from the terminal hop's source-side
-     * tuple, replacing each column at step {@code i} with the corresponding column in
-     * {@code hop[i-1].sourceSideColumns} at the same position the column held in
-     * {@code hop[i-1].targetSideColumns}. Precondition: {@link #validateLift} has returned
-     * {@code null} for {@code path}.
+     * Lands each key column on the column of the slot's own table that reaches it, or on nothing.
+     *
+     * <p>The walk runs forwards even though it reads as a walk back from the terminal hop. Each
+     * carried pair is an invariant along the chain, "this column of the departing table is, after
+     * this many hops, this column of the table reached": the seed is the first hop's own pairing, and
+     * each step keeps the departing column and replaces the arrived one, matching the next hop's
+     * departing column against the current arrival. A pair whose arrival the next hop does not depart
+     * from carries no further and contributes nothing, which is exactly what a position failing to
+     * lift means, so a chain that translates a column needs no special case here.
+     *
+     * <p>Matching is by SQL name with the case folded, the same comparison the whole resolver makes:
+     * two columns of one table are the same column when their names agree, whatever the catalog's
+     * case. Matching the arrival against the key column rather than against a position is also what
+     * makes the permutation disappear: a foreign key declared in a different column order from
+     * {@code @node(keyColumns:)} lands each column at the position the key states, and the caller's
+     * positional binding between decoded keys and local columns stays correct without a realignment
+     * step. The fact model computes the same landing per position, and its null is this absence.
      */
-    private static List<ColumnRef> liftSourceColumns(List<JoinStep> path) {
-        var lifted = new ArrayList<>(pairs(path.getLast()).sourceSideColumns());
-        for (int i = path.size() - 1; i >= 1; i--) {
-            var prev = pairs(path.get(i - 1));
-            var prevTargets = prev.targetSideColumns();
-            var prevSources = prev.sourceSideColumns();
-            var next = new ArrayList<ColumnRef>(lifted.size());
-            for (ColumnRef col : lifted) {
-                int pos = -1;
-                for (int j = 0; j < prevTargets.size(); j++) {
-                    if (prevTargets.get(j).sqlName().equalsIgnoreCase(col.sqlName())) {
-                        pos = j;
-                        break;
-                    }
-                }
-                next.add(prevSources.get(pos));
-            }
-            lifted = next;
+    private static List<KeyLanding> landKeyColumns(List<JoinStep> path, List<ColumnRef> keyColumns) {
+        var firstHop = pairs(path.get(0));
+        var carried = new ArrayList<Carried>(firstHop.sourceSideColumns().size());
+        for (int i = 0; i < firstHop.sourceSideColumns().size(); i++) {
+            carried.add(new Carried(firstHop.sourceSideColumns().get(i),
+                firstHop.targetSideColumns().get(i)));
         }
-        return List.copyOf(lifted);
+        for (int hop = 1; hop < path.size(); hop++) {
+            var current = pairs(path.get(hop));
+            var advanced = new ArrayList<Carried>(carried.size());
+            for (Carried pair : carried) {
+                int at = indexBySqlName(current.sourceSideColumns(), pair.arrived());
+                if (at >= 0) {
+                    advanced.add(new Carried(pair.local(), current.targetSideColumns().get(at)));
+                }
+            }
+            carried = advanced;
+        }
+        var landings = new ArrayList<KeyLanding>(keyColumns.size());
+        for (ColumnRef key : keyColumns) {
+            int at = indexBySqlName(carried.stream().map(Carried::arrived).toList(), key);
+            landings.add(new KeyLanding(key,
+                at < 0 ? Optional.empty() : Optional.of(carried.get(at).local())));
+        }
+        return List.copyOf(landings);
+    }
+
+    /**
+     * One pairing carried along the chain: the column on the slot's own table it departed, and the
+     * column of the table the chain has arrived at so far.
+     */
+    private record Carried(ColumnRef local, ColumnRef arrived) {}
+
+    /** First position in {@code columns} whose SQL name matches {@code wanted}, or {@code -1}. */
+    private static int indexBySqlName(List<ColumnRef> columns, ColumnRef wanted) {
+        for (int i = 0; i < columns.size(); i++) {
+            if (columns.get(i).sqlName().equalsIgnoreCase(wanted.sqlName())) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private static String sqlNames(List<ColumnRef> cols) {
