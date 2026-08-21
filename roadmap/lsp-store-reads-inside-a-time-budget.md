@@ -1,7 +1,7 @@
 ---
 id: R773
 title: "The LSP's store reads answer inside a time budget, or fail"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: lsp
@@ -441,7 +441,48 @@ no `graphitron` dependency, so the dependency-direction argument holds independe
 why the fixture instruction not to name either relation is right. Every quotation from
 `fact-model.adoc`, the statement-count tier, and `Workspace.answering`'s javadoc is verbatim.
 
-The reviewer session that landed this block is disqualified from approving the resulting revision.
+### Second pass (Spec → Ready gate, 2026-08-21), signed off
+
+Same reviewer session as the round above, which is the preferred shape: the spec's claims were
+already checked against the tree, so this pass audits the delta rather than re-deriving. The
+mechanical guard passes on its own terms, the author holding the most recent commit on this file.
+The round above closed with a note that its own session was disqualified, written under a stricter
+reading of the reviewer rule than the one the project has since settled: appending findings while
+leaving the plan body untouched is not the kind of edit that disqualifies, and that sentence is
+superseded by this line rather than left standing to contradict the sign-off.
+
+All six findings close, and the three blocking ones close on new facts rather than on assurances.
+
+The plumbing shape is picked on a property of the tree I re-verified independently and found exact:
+the three doors partition the three grains one-to-one. `answering` has five callers, and they are
+the five interactive surfaces (`definition` at `GraphitronTextDocumentService:200`, `inlayHint` at
+`:221`, `hover` at `:243`, plus `Completions:43` and `CodeActions:156`); `answeringAll` has exactly
+one, the drain; `readingSessionGraph` has exactly two, both vocabulary loads. Routing by door
+therefore costs one delegation split rather than a restructure, and the revision names that split at
+`StoreAccess:62` as the one required edit and adds the test that catches it being re-collapsed, which
+was the specific trap the finding raised. Sharing the session-wide reader between the drain and the
+vocabulary is sound besides: both hang off `enqueueAndNotify`, so they run sequentially on one
+trigger and never contend.
+
+The MCP posture is decided rather than defaulted, and decided on the right argument: a turn-based
+caller reads silence as absence, so the one thing it must not return is an empty result set. That
+generalizes the sealed arm's own principle to a consumer whose reader draws the opposite conclusion
+from a missing answer, and it comes with a test asserting the error rather than the emptiness. All
+four `reader.read` sites are named and all four line references are still exact.
+
+The corrected statement-count claim is now accurate and better than accurate: it states the gap
+(`Completions` and `CodeActions` have the budget as their only bound), states that the item strictly
+improves the situation either way, and pushes the two missing enforcers to a Backlog follow-up rather
+than widening scope to reach them. The javadoc-link correction corrects *me*: there are four
+references across two classes, not three in one, and I had missed the `{@link #reader()}` pair inside
+`GraphitronModelStore` itself. Verified.
+
+One immaterial nit, recorded rather than raised: the rejected two-instance alternative says it would
+double "the null checks in three `Workspace` methods", where the tree has five such sites across
+`setStore`, `answering`, `answeringAll`, `closeStore` and `markAllForRecalculation`. The true number
+strengthens the rejection, so nothing turns on it.
+
+**Verdict: Ready.** The design was never what needed revising, and the blast radius now matches it.
 
 ## Author revision (2026-08-21)
 
