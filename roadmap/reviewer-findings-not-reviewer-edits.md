@@ -20,17 +20,27 @@ prose enters the spec that nobody reviews as a draft: the next reviewer inherits
 "settled" and finds the defect in it, which is the bounce loop this item exists to stop.
 
 **Reviewers are already doing this, and the item's job is to standardize it rather than invent
-it.** Four items in `roadmap/` carry a bottom-of-file review section today, the earliest dated
-2026-08-11, under three different headings: `++##++ Reviewer findings` twice
-(`lsp-store-reads-inside-a-time-budget.md`, `web-session-maven-build-log.md`),
-`++##++ Review record` once (`upgrade-graphql-java-26.md`) and `++##++ Reviewer decisions` once
-(`write-input-deprecated-column-alias.md`). The most recent, on R773, landed the same day as this
-item: an independent session appended its findings, left the plan body untouched, and committed
-that alone. So the convention is emergent, ten days old, and unwritten, which is why it did not
-reach R769's reviewers. What is missing is the rule saying findings are the reviewer's *only*
-deliverable, one spelling of the heading, and the handback it implies. `++##++ Reviewer findings`
-is the spelling this item picks, on the ordinary grounds: it is the plurality and the most recent,
-so the convention extends a shape already in the tree instead of adding a fourth name.
+it.** Five items in `roadmap/` carry a review section today, the earliest dated 2026-08-11, under
+three different headings: `++##++ Reviewer findings` three times
+(`lsp-store-reads-inside-a-time-budget.md`, `web-session-maven-build-log.md`,
+`seeded-store-boots-per-thread.md`), `++##++ Review record` once (`upgrade-graphql-java-26.md`)
+and `++##++ Reviewer decisions` once (`write-input-deprecated-column-alias.md`). Two of them ran
+the full cycle this item describes without any prompting from it: on R773 a session appended 81
+lines with zero deletions and committed that alone, a second session revised the plan body, and
+the first session signed off; on R769 a fifth session did the same thing mid-way through this
+item's own review. So the convention is emergent, ten days old, and unwritten, which is why it did
+not reach R769's earlier reviewers.
+
+Three things are missing, and this item supplies them. The **rule** that findings are the
+reviewer's only deliverable, which is the part no existing example states and the part R769's
+first two rounds needed. One **spelling**: `++##++ Reviewer findings`, the plurality at three of
+five and the most recent, so the convention extends a shape already in the tree rather than adding
+a fourth name. And two smaller decisions the emergent practice does not agree on, which the
+standard therefore decides rather than inherits: **placement**, since
+`web-session-maven-build-log.md` carries its two review sections at lines 85 and 142 with a plan
+section following at 194, so "at the end of the file" is a choice and not an observation; and the
+**shape of the author's response**, since R773 answered in a separate `++##++ Author revision`
+section where this item puts each response beneath the finding it answers.
 
 Nothing changes for a consumer of the generated code or the plugin. The consumer here is the
 contributor and the reviewer sessions, and what changes for them is which party is allowed to
@@ -38,13 +48,16 @@ decide what the implementer will build.
 
 ## The evidence, from R769
 
-R769 has bounced three times. The first was on the author's own defect and the gate worked. The
-second and third were on prose a reviewer had written minutes earlier.
+R769 keeps bouncing, and the count is deliberately not pinned here because it moves: what the
+argument needs is only that **two consecutive bounces landed on prose a reviewer had written
+minutes earlier**, which the sequence below establishes and no later pass can undo. The first
+bounce was on the author's own defect and the gate worked exactly as designed.
 
-Three commits inside 37 minutes grew the body 166 → 223 → 273 lines. `git blame` on
-`roadmap/seeded-store-boots-per-thread.md` splits as 139 lines from the author, 73 from the
-first reviewer, 61 from the second: **49% of the spec under review was written by its
-reviewers.**
+Three commits inside 37 minutes grew the plan body 166 → 223 → 273 lines. `git blame` over that
+body splits as 139 lines from the author, 73 from the first reviewer, 61 from the second: **49% of
+the plan under review was written by its reviewers.** Read the plan body specifically, not the
+file: R769 now carries a findings section too, and counting that would measure the convention as a
+regression rather than as the thing working.
 
 The chain is exact, and worth reading as the failure mode rather than as three mistakes:
 
@@ -70,9 +83,12 @@ The chain is exact, and worth reading as the failure mode rather than as three m
 Two structural facts produced this, and both are addressable:
 
 1. **Reviewer prose is never reviewed as a draft.** It reaches the next reviewer already carrying
-   the word "settled". Reviewer B's commit message opens "Both decisions this section left to the
-   reviewer are settled"; the pin sat in a section neither A nor B flagged as open, so nobody
-   looked at it again.
+   the word "settled", written into the plan itself: reviewer B's commit put "Both decisions this
+   section left to the reviewer are settled" at line 166 of the spec body, where the next reviewer
+   reads it as the plan's own voice rather than as one session's claim. The pin sat in a section
+   neither A nor B flagged as open, so nobody looked at it again. A commit message saying the same
+   words would carry none of that weight, which is the whole distinction: what a reviewer writes
+   into the body becomes spec text, and spec text is what the next pass inherits.
 2. **Fresh context is the wrong asset for fixing.** The reviewer rule exists so the reviewer has
    no prior reasoning trail. That is right for finding a problem and wrong for repairing one,
    because the repairer has the least context about the parts they are not repairing. It is
@@ -181,13 +197,16 @@ Replace with:
 
 **4. A new bullet under "Item file conventions",** after the `Retired vocabulary` bullet:
 
-> * A reviewer's findings live in a `++##++ Reviewer findings` section at the end of the item file, below
->   every plan section, appended one `++###++` round per pass and never rewritten. A round names
->   the gate, the verdict, the reviewer's session ID and the date, then states the findings; the
->   verification narrative behind them belongs in the review commit's message, not here. The
->   author responds by revising the plan body and noting under each finding what they did, which
->   is what lets the returning reviewer audit a delta instead of re-reading the spec. The whole
->   log dies with the file at Done, so it cannot rot.
+> * A reviewer's findings live in a `++##++ Reviewer findings` section at the end of the item file,
+>   below every plan section, appended one `++###++` round per pass and never rewritten. A round
+>   names the gate, the verdict, the reviewer's session ID and the date, then states the findings;
+>   the verification narrative behind them belongs in the review commit's message, not here. The
+>   author responds by revising the plan body and adding a note directly beneath each finding
+>   saying what they did, leaving the finding's own text alone. That adjacency is the point: the
+>   returning reviewer audits a delta rather than re-reading the spec, and a response filed in a
+>   section of its own would make them cross-reference to find it. The whole section dies with the
+>   file at Done, so it cannot rot, which also means nothing that must outlive the item belongs in
+>   it.
 
 **5. The canonical path.** Step 2 today reads "*Reviewer (≠ author)* reads the plan, revises if
 needed (stays `Spec`), then signs off by flipping `status:` to `Ready`." Replace with:
@@ -247,30 +266,57 @@ No build gate. Every artifact here is prose that no test parses, and inventing a
 item files for a `## Reviewer findings` heading would fire on every clean spec, which is the wrong
 enforcer for a convention that only applies when a review withholds.
 
-The honest enforcer is the next reviewer, and the honest acceptance is a measurement.
+**Done turns on the three prose edits landing and reading correctly**, and that is the whole of
+this item's Done condition. The fourth gate question asks which named artifact demonstrates the
+goal is delivered; here the artifacts are the documented behaviour itself. `roadmap/workflow.adoc`
+carries the *Findings, not fixes* paragraph, the split `Spec → Spec` edges, the Item-file-conventions
+bullet and the rewritten canonical-path step. The `srp` Spec-stage template hands the reviewer back
+a findings section instead of an invitation to edit the plan. The `roadmap` skill's table names the
+two moves separately. A reviewer at the Done gate reads those four places and can say whether the
+rule they state is the rule this item argued for.
 
-**The acceptance is R769 itself, plus the next three items that bounce.** For each, `git blame`
-the item file at sign-off and take the fraction of surviving lines written by a reviewer session.
-Today's R769 figure is 49%. Under this change the figure for a bounced item should be the
-findings section alone, so a plan body with any reviewer-written line in it is the convention
-failing and the reason is worth reading.
+That is deliberately a weaker claim than "the loop stops", because the evidence for the loop
+stopping cannot exist at this item's Done gate and pretending otherwise is what would set up a
+bounce there. What *is* already in the tree is three worked examples of the convention operating:
+R773's full cycle (findings, author revision, sign-off by the original reviewer), R769's fourth
+pass, and this item's own review round, which was conducted under the convention it proposes.
+Three examples are not a measurement, and the Done gate should not be asked to treat them as one.
 
-**What would falsify the bet.** This trades one extra session per revision round for fewer
-rounds: a three-round item goes from three sessions to six if round count holds flat, and pays
-for itself only if round count falls. If the next three bounced items each still take three or
-more rounds *and* their findings are about author-written prose rather than reviewer-written
-prose, the diagnosis in this item is wrong and the loop has another cause. Record the round count
-and the blame fraction in this item's own findings section as the items land.
+**The measurement is real work on later data, so it gets its own item.** R779 carries it, and this
+item is not held open for it. `development-principles.adoc` names that move as the expected one:
+"a review-only label is an invitation; filing the meta-test that pins it is roadmap material." The
+changelog entry for this item should name R779 so the pointer outlives both files.
+
+Two things R779 must get right, and both are corrections to how this section originally posed the
+measurement:
+
+* **Measure the plan body, not the file.** A compliant bounced item *gains* reviewer-written lines,
+  because findings are reviewer-written by construction. Blaming the whole file reads success as
+  regression: R769's whole-file fraction moved from 49% to 61% across a fourth pass that followed
+  this convention perfectly, while its plan body stayed at 134 of 273 lines, or 49%. The metric is
+  the reviewer-written fraction of everything above the `++##++ Reviewer findings` heading, and the
+  49% quoted throughout this item is already that number.
+* **State the falsifier.** This trades one extra session per revision round for fewer rounds: a
+  three-round item goes from three sessions to six if the round count holds flat, and pays for
+  itself only if the count falls. If the next three bounced items each still take three or more
+  rounds *and* their findings are about author-written prose rather than reviewer-written prose,
+  the diagnosis here is wrong and the loop has another cause.
 
 ## Roadmap entries
 
-* R769 is the worked example and is mid-flight at three bounces. It should adopt the convention
-  for its next pass rather than waiting on this item, since four items already carry a findings
-  section and R769's outstanding finding is exactly the kind that wants an author's answer.
-* The three items already carrying a review section under another spelling
-  (`upgrade-graphql-java-26.md`, `write-input-deprecated-column-alias.md`,
-  `web-session-maven-build-log.md`) are not worth renaming in flight. They delete at Done, and a
-  rename would touch three specs mid-review to no reader's benefit.
+* **R779 carries the measurement** this item's Tests section hands off: the plan-body blame
+  fraction across the next three bounced items, against R769's 49% baseline, plus the falsifier.
+  It is filed rather than folded in because the data does not exist until after this item is Done
+  and the item file that would hold it is deleted at Done. This item does not depend on it.
+* R769 is the worked example and has already adopted the convention without prompting: its fourth
+  pass landed as findings with the plan body untouched, and it now waits on an author rather than
+  on another reviewer, which is the handback this item is written to make routine.
+* The two items still carrying a review section under another spelling
+  (`upgrade-graphql-java-26.md`, `write-input-deprecated-column-alias.md`) are not worth renaming
+  in flight. They delete at Done, and a rename would touch two specs mid-review to no reader's
+  benefit. A spelling gate becomes possible once they drain, since a check that no item carries
+  `++##++ Review record` or `++##++ Reviewer decisions` would fire only on the thing the standard
+  forbids rather than on every clean spec. That is Backlog material and not this item's scope.
 
 ## What this item deliberately does not do
 
@@ -343,6 +389,18 @@ expected one ("a review-only label is an invitation: filing the meta-test that p
 material"). Either resolves it. The choice is the author's, which is why this round does not make
 it.
 
+> *Author, session_013HS6GmX25Ne6MM27xoruJ6:* addressed, taking the follow-up-item arm. The Tests
+> section is rewritten. Done now turns on the three prose edits landing and reading correctly, and
+> the fourth gate question is answered against the four documented places a reviewer can read the
+> rule off. The section says plainly that "the loop stops" is a weaker claim it is not making at
+> this gate, and that the three worked examples now in the tree (R773's full cycle, R769's fourth
+> pass, this item's own review round) are examples rather than a measurement. The measurement went
+> to **R779**, filed, depending on this item by slug, carrying the metric, the R769 baseline and
+> the falsifier restated so it survives this file's deletion. This item does not wait on it, and the
+> changelog entry will name it. The changelog was the other candidate and I passed on it: an entry
+> records what happened and cannot hold a measurement's in-progress state across three later items,
+> where a Backlog item shows up in the roll-up and can.
+
 **Finding 2, factual correction for the author to land: the "settled" quote is spec body, not a
 commit message.** The item attributes "Both decisions this section left to the reviewer are
 settled" to reviewer B's commit message, and says it opens it. That sentence is not in either
@@ -357,6 +415,13 @@ narrative checks out, including the author's "Two decisions for the reviewer" at
 of the authoring commit, and reviewer A's commit message naming the four direct-boot classes at
 exactly seven sites while proposing the pin that drops the term.
 
+> *Author, session_013HS6GmX25Ne6MM27xoruJ6:* confirmed and landed. I checked before editing:
+> `3b6adca`'s message does not contain the sentence at all, and structural fact 1 now cites line
+> 166 of the spec body and says why the location is the point. The mis-attribution was mine and it
+> weakened my own argument, exactly as the finding says: a reviewer writing "are settled" into the
+> plan is what the next pass inherits as spec text, where the same words in a commit message are
+> not.
+
 **Finding 3, factual correction for the author to land: one of the four is not bottom-of-file.**
 "Four items in `roadmap/` carry a bottom-of-file review section today" is not true of
 `web-session-maven-build-log.md`, where the two review sections sit at lines 85 and 142 and a
@@ -368,6 +433,16 @@ standardizing placement too, not only spelling. R773 also diverges on shape, ans
 a separate `++##++ Author revision` section rather than under each finding. Neither divergence
 weakens the case for standardizing; both are worth naming as things the standard decides rather
 than inherits.
+
+> *Author, session_013HS6GmX25Ne6MM27xoruJ6:* confirmed and landed, and it improved the framing.
+> The opening now says five items rather than four, drops the word "bottom-of-file" from the
+> count, and separates what the item inherits (the heading, at three of five) from what it decides
+> (placement and response shape), citing `web-session-maven-build-log.md`'s 85/142/194 layout as
+> the reason placement is a choice. On the response shape I went with beneath-each-finding rather
+> than R773's separate `++##++ Author revision` section, and the conventions bullet now carries the
+> reason: the returning reviewer is auditing a delta, so the answer belongs next to the claim, and
+> a separate section makes them cross-reference. The bullet also says the author never edits the
+> finding text itself, only appends below it. This response is written in the shape it specifies.
 
 **Non-blocking, no action expected.** The `++##++` escapes are correct inside the workflow.adoc
 replacement blocks and match `workflow.adoc` line 79, so they should not be "fixed" there. In the
@@ -410,3 +485,22 @@ the moment it should read as success. The metric has to be the reviewer-written 
 *plan body*, excluding the findings section, and the item's own 49% figure is already that number
 rather than the one its instruction computes. Fixing the acceptance therefore means fixing what it
 measures as well as where it is recorded.
+
+> *Author, session_013HS6GmX25Ne6MM27xoruJ6:* all three consequences addressed, and the metric
+> point is the sharpest thing in this round. Reproduced it: R769's plan body ends at the findings
+> heading on line 275, and `git blame` over lines 1 to 273 still splits 139 / 73 / 61, so the plan
+> body sits at 134 of 273 lines, 49%, unchanged by the fourth pass that moved the whole file to
+> 61%. My instruction would have scored a perfectly compliant item as a 12-point regression. R779
+> now specifies the plan-body metric with the cut command, and carries R769 as the worked example
+> of the trap rather than only as the baseline. On the premise: the opening says five items and
+> three of five. On the bounce count: unpinned, the evidence section now turns on "two consecutive
+> bounces landed on reviewer-authored prose", which no later pass can move.
+>
+> On the non-blocking notes, no action taken and none intended, per your framing. The `++##++`
+> escapes stay as they are. The spelling gate is named in "Roadmap entries" as Backlog material
+> once the two legacy-spelling items drain, rather than filed now. The inert Mermaid and table
+> duplicates stay: they are documentation of `Main.ALLOWED_TRANSITIONS` rather than input to it,
+> and the two moves genuinely have different actors, which is what the reader needs to see.
+>
+> Back to you for the next pass. Nothing above the `++##++ Reviewer findings` heading was touched
+> by a reviewer, so the delta to audit is the plan body diff in this commit alone.
