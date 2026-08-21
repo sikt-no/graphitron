@@ -905,6 +905,31 @@ Two changes, and one of them has a shape the current signature does not admit.
   mechanism. R691 is discarded at this item's Done gate and its file stays as the redirect until
   then.
 
+*Shipped in stage 6, and the split found a message this tree had been writing correctly elsewhere the
+whole time.* `BuildContext.fkCountMessage` already separates zero from several for the
+direction-agnostic `@reference` path resolution: "no foreign key found between tables", "multiple
+foreign keys found", every candidate named, one worked `@reference` spelling. The auto-discovery site
+was the one foreign-key refusal in the tree that had not split, so the change is a message converging
+on the house one rather than a new wording to invent, and the third arm is what only a *directional*
+search can have. Two deliberate divergences from `fkCountMessage`, both stated in the new method's
+javadoc: the chained remedy names `{ key: ... }` per hop rather than showing a two-element example,
+and the condition-step escape hatch that message offers is not offered here, because a `@nodeId` path
+rejects condition steps.
+
+The signature change is the one the note above predicted, taken as a sealed result rather than a
+second method: `findUniqueFkToTable`'s `Optional` becomes `findOutgoingFkToTable`'s
+`OutgoingFkLookup` with `Unique`, `Ambiguous(fkNames)`, and `NoneInDirection(reverseFkNames)`,
+in the `TableResolution` / `ForeignKeyLookup` family of `JooqCatalog`-local result types. The arm
+count is the cause count, and the reverse names ride on the last arm rather than splitting it,
+because "which foreign keys connect these two tables the other way round" is evidence for the
+sentence and not a fourth conclusion. The FKs the existing direction filter *discards* are exactly
+that evidence, so the search already had the answer in hand and was dropping it.
+
+One consequence worth stating, because it is the reason the message matters more than the wording
+suggests: the constraint the reverse arm names is the whole remedy. An author who reads it writes one
+`@reference(path: [{key: ...}])` and the coordinate builds, lowering to the same correlated `EXISTS` a
+junction chain does. Nothing else about the shape was ever missing.
+
 ### Sites 1 and 2: the consumer never sees the wire format
 
 A plain argument on a `@service` field, and a member of a bean-backed `@service` input, are one
@@ -1109,6 +1134,11 @@ replacement.
 6. **Site 4a, the message and the page.** The auto-discovery rejection separates its two causes; the
    manual page's single-hop claim is corrected; the reverse filter gets the execution-tier row-count
    pin it has never had. Independent of every other stage and the smallest thing in the item.
+   Shipped, with the row-count pin having landed early: stage 3b took it alongside the junction
+   chain's, both reaching one execution class because they are two ways of reaching one binding. So
+   this stage is the refusal's three arms and the page, and the page needed one section more than the
+   list asked for, the reverse hop having been authorable all along with nothing telling an author
+   so.
 
 Stage 6 is independent throughout. Stages 1 and 2 are the spine and nothing after them lands without
 them.
@@ -1357,7 +1387,17 @@ on the wire.
   `multiHopLiftTranslationRejected` is *rewritten* from a rejection assertion to a remote-binding
   assertion rather than deleted, so the fixture that proved the old gate proves the new routing. A
   sibling case pins that an identity-carrying chain still binds locally with its lifted tuple, which
-  is the regression this change could plausibly cause and the spike shows it does not.
+  is the regression this change could plausibly cause and the spike shows it does not. Stage 6 adds
+  the search's own three arms in `JooqCatalogIdRefTest`, where two existing cases had been asserting
+  the same `isEmpty()` for the two causes and now assert different arms, which is the change stated as
+  a test. The `film` to `inventory` directionality case is the one worth reading: it used to say only
+  that nothing was found, and now names `inventory_film_id_fkey` as the constraint an author writes,
+  so the evidence the direction filter discards is pinned as evidence rather than as an absence. The
+  refusals themselves are pinned at the pipeline tier, in `GraphitronSchemaBuilderTest`'s reference
+  corpus, because a message an author meets is a property of the built schema and not of the catalog
+  helper: the ambiguous case names both candidates, the disconnected case offers the chain, and a new
+  case reaches `Customer` from `address` and is answered with the target-side constraint spelled as
+  the `@reference` that works.
 * **Compilation tier.** Rides `graphitron-sakila-example`. The hope that a junction is already in the
   schema held, so this cost SDL only and no `init.sql` change: three coordinates, the chain on the
   argument and input-field surfaces and the single reverse hop, each carrying its `@reference` because
@@ -1487,6 +1527,15 @@ a null payload and no committed row.
   the parent's own row?") and the two worked examples are peers. It also gained the write and
   `@lookupKey` refusals, which an author reaching the remote binding for the first time meets and the
   page had no reason to mention while the gate stood in front of them.
+* `docs/manual/how-to/multi-hop-nodeid-filter.adoc`, a third time, in stage 6. The single-hop
+  paragraph answers the page's own landing question instead of claiming an exemption from it, which is
+  R691 discharged. Two things the list did not ask for: the "two chains reach the `EXISTS`" paragraph
+  is now three shapes, the reverse hop having been missing from a page whose subject is exactly which
+  shapes bind remotely; and the auto-discovery section says out loud that the search is *directional*,
+  with the reverse hop as a worked example and the three refusals summarised by what each one asks the
+  author to do. The directionality is also contrasted with the `{table:}` shortcut on
+  `join-with-references.adoc`, which resolves a hop from either endpoint, because that asymmetry is
+  real and is what made the old single message read as wrong advice rather than as incomplete advice.
 * `docs/manual/reference/directives/error.adoc` gains the `@nodeId` extra-field case. Done in
   stage 4, and the worked example is the fixture: one accessor published twice, raw and encoded, which
   is what makes "the encode happens on the way out" a thing the reader can see rather than a claim.
@@ -1521,6 +1570,12 @@ a null payload and no committed row.
   carrier is a third and is not column-backed. The neighbouring sentence about arity goes with it: it
   justifies the arity-1 claim by "the carriers' constructor invariant", and the read carrier is not one
   of those carriers, so the refusal is stated in the encode relation instead.
+* `JooqCatalog.findUniqueFkToTable` and its `Optional` contract, along with the rejection text
+  "no unique FK from X to Y; declare `@reference(path: [{key: ...}])` to disambiguate" and the two
+  test names that read the two causes as one empty (`findUniqueFkToTable_multipleFks_returnsEmpty`,
+  `findUniqueFkToTable_noFkToTarget_returnsEmpty`). The directional search survives under
+  `findOutgoingFkToTable`; what retires is the presence-shaped answer and the single message.
+  Discharged in stage 6.
 * The previous draft's own claim that the detection is "capture-total and deliberately ungated by walk
   reach", along with its reasoning over `walk_claim_domain_type` / `walk_claim_domain_field`. The
   use-site grain answers the question those relations were being consulted about, and both relations
@@ -1673,7 +1728,15 @@ stage 3 expresses it there.
 * **R676** (`nodeid-filter-per-participant-paths`, Spec) states that its path grammar inherits "the
   identity-carrying lift validation ... the `NodeIdLeafResolver` arms behind `LIFT_FAILURE_MARKER`".
   Stage 3 removes that gate, so its author needs to know the constraint moved rather than vanished.
-  A notification, not a dependency in either direction.
+  A notification, not a dependency in either direction. Stage 6 adds a second thing to tell that
+  author, and it reaches further into their item than the first: both the diagnostic their report
+  quotes verbatim and the method their "Why it happens" section names are gone, replaced by
+  `findOutgoingFkToTable` and by three messages instead of one. Their reported shape is
+  `feide_applikasjon` reaching `miljo` differently per participant, so each participant now gets the
+  message for its own cause, and a participant whose foreign key is declared on `miljo` is told which
+  constraint to name. That does not solve their item, whose subject is that one stated path cannot
+  describe three differently-keyed tables, but it does change what an author sees before reaching
+  that wall, and the quoted line in their body is now historical rather than current.
 * **R723** (`reference-path-fanout-verdict`, Spec) is the item that warns when a `@reference` path fans
   out, and it gains something here. Its own scope section names authoring sibling views over
   `graphitron_argument_reference_step` as the prerequisite for covering argument-site paths, and
@@ -1687,7 +1750,11 @@ stage 3 expresses it there.
   the translated emission "is not yet shipping", both of which R57 made false. **Absorbed**: this item
   edits that page in two stages already, so the correction rides along and R691 is discarded at the
   Done gate rather than sending a third pass over one file. Its `status: Backlog` file is a tombstone
-  in the meantime.
+  in the meantime. Discharged in stage 6, and its diagnosis was right about the paragraph while the
+  fix turned out to be smaller than "name the two single-hop shapes": stage 3a had already made the
+  landing question the page's subject, so the paragraph only had to answer that question for the
+  single-hop case instead of asserting an exemption from it. Nothing was left for R691 to stand again
+  on, so its tombstone deletes at the Done gate as written.
 * **R731** (`resolved-key-column-forwards-a-spelling`, Backlog) is the weakness under this item's type
   precondition, and naming it here is how this item avoids pretending otherwise.
   `intent_resolved_node_key_column` answers with the winning tier's *spelling*, not a resolved column,

@@ -1,5 +1,5 @@
 = How-to: Multi-hop `@nodeId` filters
-:description: Reach a related node type through one or more intermediate tables, and read off which of the two predicates your chain compiles to.
+:description: Reach a related node type across foreign keys, forwards, backwards, or through intermediate tables, and read off which of the two predicates your path compiles to.
 :!toc:
 
 A filter input that decodes an opaque `@nodeId` of one type and applies it as a predicate against rows of a different type is the bread-and-butter shape for cross-table filtering. xref:join-with-references.adoc[`@reference`] declares the FK path, and every foreign-key chain the path grammar can state is emittable on the read side. What the chain decides is *which* predicate you get: a single-table predicate over the parent's own columns, or a correlated `EXISTS` that walks the chain.
@@ -8,13 +8,13 @@ A filter input that decodes an opaque `@nodeId` of one type and applies it as a 
 
 Ask it per key column: after walking the chain, is that column of `T`'s key observable on the parent's own row?
 
-With a single direct FK the answer is always yes: the FK source columns sit on the parent's row, so the predicate is `WHERE parent.fk_columns IN (decoded_keys)`. No JOIN, no subquery; one column tuple, one `IN` clause.
+With a single direct FK the answer is decided by where that FK lands on the node type's table. When its target-side columns are the node type's key columns, the decoded key sits on the parent's own row at the FK's source columns, so the predicate is `WHERE parent.fk_columns IN (decoded_keys)`: no JOIN, no subquery, one column tuple and one `IN` clause. When the FK targets some *other* unique column of that table instead, the parent's row carries that column's value and not the key, so no parent column holds the decoded value and the filter binds the node's key on the node's own table inside the same correlated `EXISTS` the chains below produce. One direct foreign key is therefore not a promise of a single-table predicate; the landing is.
 
 Across multiple hops the answer depends on whether each hop carries the previous hop's arrival forward. Walk the chain from the first hop: each hop keeps the column it departed the parent from and replaces the column it arrived at, so a hop that departs from a column the previous hop did not arrive at carries nothing further. When every key column is still being carried at the end, the chain has the same single-table shape a direct FK has, and this is the *identity-carrying lift*: the terminal tuple lifts back to a tuple on the parent's own row, positionally aligned with `T`'s NodeType keys. Chain length is then purely a classifier-time concept and the runtime touches one table.
 
 When a key column is carried nowhere, no parent column holds the decoded value, so the predicate binds `T`'s key on `T`'s own table inside a correlated `EXISTS` that joins the chain back to the parent row. Both worked examples below are real, and neither is a fallback for the other.
 
-Two chains reach the `EXISTS`, and it is worth seeing that they are one case. The first *translates*: some hop departs from a renamed or alternate-key column the previous hop never arrived at. The second is a *junction*: the parent reaches an intermediate table against a foreign key's direction, so the pairing lives in the junction row and not in either endpoint's columns. Nothing is renamed in a junction chain, which is why the question is about the landing and not about column names.
+Three shapes reach the `EXISTS`, and it is worth seeing that they are one case. One *translates*: a hop departs from a renamed or alternate-key column the previous hop never arrived at, or a single direct FK targets a unique column that is not the node's key. One is a *junction*: the parent reaches an intermediate table against a foreign key's direction, so the pairing lives in the junction row and not in either endpoint's columns. One is a *reverse hop*: the only foreign key connecting the two tables is declared on the node type's own table, so the parent's row holds no column pointing at the node at all. Nothing is renamed in the latter two, which is why the question is about the landing and not about column names.
 
 == Worked example: an identity-carrying 2-hop chain
 
@@ -110,11 +110,39 @@ The first hop departs `film.film_id` and arrives on `film_category.film_id`; the
 
 A junction is many-to-many, so a film in two of the requested categories matches through two junction rows. `EXISTS` is what keeps that from multiplying the film: it asks whether at least one row exists, so each matching parent comes back exactly once, and a null foreign-key column fails the correlation rather than duplicating or dropping a row.
 
-== Multi-hop is always explicit
+== Auto-discovery is single-hop and directional
 
-The auto-discovery fallback that lets you omit `@reference` when there is exactly one FK between two tables stays single-hop. Multi-hop chains must be declared explicitly with one `{ key: ... }` element per hop. Disambiguation among `A -> ? -> C` paths is the author's responsibility; the classifier never searches past one hop.
+The fallback that lets you omit `@reference` looks for exactly one foreign key that is declared on the parent's own table and references the node type's table. Two things it does not look for, each with its own build message.
 
-This keeps the auto-discovery path the same shape as today and pins the multi-hop opt-in to the SDL surface where the chain is visible at review time.
+*It does not search past one hop.* Multi-hop chains are declared explicitly, one `{ key: ... }` element per hop, and disambiguation among `A -> ? -> C` paths is the author's responsibility. This pins the multi-hop opt-in to the SDL surface where the chain is visible at review time.
+
+[#reverse-hop]
+*It does not search the other direction.* A foreign key declared on the node type's own table is not discovered, even when it is the only one connecting the two tables. That is the reverse hop, and naming the constraint is all it takes:
+
+[source,graphql]
+----
+type Customer implements Node @table(name: "customer") @node {
+    id: ID!
+}
+
+extend type Query {
+    # customer.address_id -> address.address_id. The foreign key is on customer, so
+    # reaching Customer from address traverses it backwards.
+    addresses(customerIds: [ID!] @nodeId(typeName: "Customer") @reference(path: [
+        {key: "customer_address_id_fkey"}
+    ])): [Address!]!
+}
+----
+
+An `address` row holds no `customer_id`, so this binds remotely exactly as a junction chain does, with one hop instead of two. It is non-unique the same way: two customers can share an address, and the `EXISTS` is what brings that address back once rather than twice.
+
+The direction is where this differs from the `{table:}` shortcut in xref:join-with-references.adoc[`@reference`] join paths, which resolves a hop from either endpoint and so needs only that one foreign key connects the pair. A `@nodeId` leaf's auto-discovery starts from the parent's row, because a single-table predicate is what it is trying to find, and only a foreign key leaving that row can produce one.
+
+Where auto-discovery declines, the build message says which of the three cases you are in, because the remedy differs:
+
+* *Several foreign keys leave the parent's table for the node type's table.* The message names every candidate and spells one of them as the `@reference` that picks it. This is the disambiguation case.
+* *None leaves it, but one is declared on the node type's table.* The message names that constraint, which is the reverse hop above. Nothing here is ambiguous, so nothing needs disambiguating; the path just has to be stated.
+* *No foreign key connects the two tables at all.* Auto-discovery is single-hop, so the remedy is a chain through the tables in between, or a corrected `@nodeId(typeName:)` when the node type named is not the one meant.
 
 == Where the chain is refused
 

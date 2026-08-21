@@ -741,21 +741,32 @@ public class JooqCatalog {
     }
 
     /**
-     * Returns the FK object when exactly one outgoing FK from {@code sourceTableSqlName} references
-     * {@code targetTableSqlName}; empty otherwise (zero or many). Returns the resolved jOOQ
-     * {@link ForeignKey} rather than its bare constraint name, so the caller can hand it
-     * straight to {@link BuildContext#synthesizeFkJoin} by class identity instead of round-tripping
-     * through a name re-lookup that would reintroduce cross-schema collision.
+     * Searches for a single outgoing FK from {@code sourceTableSqlName} to
+     * {@code targetTableSqlName}, and answers with what the search found rather than with a
+     * presence. The success arm carries the resolved jOOQ {@link ForeignKey} rather than its bare
+     * constraint name, so the caller can hand it straight to
+     * {@link BuildContext#synthesizeFkJoin} by class identity instead of round-tripping through a
+     * name re-lookup that would reintroduce cross-schema collision.
      *
      * <p>Directional: only FKs where {@code sourceTableSqlName} is the FK source (not the target)
      * are counted, via the identity-based {@link #foreignKeyOnSource}, so a schema-qualified
-     * source is not silently dropped.
+     * source is not silently dropped. The FKs the direction filter removes are what
+     * {@link OutgoingFkLookup.NoneInDirection} carries, because they are the constraints an author
+     * can name to reach the target the other way round.
      */
-    public Optional<ForeignKey<?, ?>> findUniqueFkToTable(String sourceTableSqlName, String targetTableSqlName) {
-        var matches = findForeignKeysBetweenTables(sourceTableSqlName, targetTableSqlName).stream()
+    public OutgoingFkLookup findOutgoingFkToTable(String sourceTableSqlName, String targetTableSqlName) {
+        var between = findForeignKeysBetweenTables(sourceTableSqlName, targetTableSqlName);
+        var outgoing = between.stream()
             .filter(fk -> foreignKeyOnSource(fk, sourceTableSqlName, /*selfRefHint=*/true))
             .toList();
-        return matches.size() == 1 ? Optional.of(matches.get(0)) : Optional.empty();
+        if (outgoing.size() == 1) {
+            return new OutgoingFkLookup.Unique(outgoing.get(0));
+        }
+        if (outgoing.size() > 1) {
+            return new OutgoingFkLookup.Ambiguous(outgoing.stream().map(ForeignKey::getName).toList());
+        }
+        return new OutgoingFkLookup.NoneInDirection(
+            between.stream().map(ForeignKey::getName).toList());
     }
 
     /**
@@ -1802,6 +1813,34 @@ public class JooqCatalog {
         /** More than one distinct FK matches after scoping; {@code schemas} names the colliding schemas. */
         record Ambiguous(List<String> schemas) implements ForeignKeyLookup {
             public Ambiguous { schemas = List.copyOf(schemas); }
+        }
+    }
+
+    /**
+     * Sealed outcome of the directional single-hop FK search
+     * {@link #findOutgoingFkToTable(String, String)}. Three arms rather than a presence, because
+     * the two ways the search can fail are different facts about the schema and an author acts on
+     * them differently: several candidates want one of them named, while none in the searched
+     * direction wants either a constraint declared on the target side named explicitly or a path
+     * through further tables. An {@link Optional} conflated the two, and the caller's message then
+     * had to offer disambiguation to an author who had nothing to disambiguate.
+     */
+    public sealed interface OutgoingFkLookup {
+        /** Exactly one FK leaves the source table for the target; carries the raw jOOQ instance. */
+        record Unique(ForeignKey<?, ?> fk) implements OutgoingFkLookup {}
+
+        /** Several FKs leave the source table for the target; {@code fkNames} names all of them. */
+        record Ambiguous(List<String> fkNames) implements OutgoingFkLookup {
+            public Ambiguous { fkNames = List.copyOf(fkNames); }
+        }
+
+        /**
+         * No FK leaves the source table for the target. {@code reverseFkNames} names the FKs that
+         * connect the two tables the other way round, declared on the target side, which is empty
+         * when no foreign key connects them at all.
+         */
+        record NoneInDirection(List<String> reverseFkNames) implements OutgoingFkLookup {
+            public NoneInDirection { reverseFkNames = List.copyOf(reverseFkNames); }
         }
     }
 }

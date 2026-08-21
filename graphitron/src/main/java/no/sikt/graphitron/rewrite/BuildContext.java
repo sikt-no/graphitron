@@ -3186,8 +3186,9 @@ class BuildContext {
      * verbatim via {@link JooqCatalog#findForeignKey(String, String)} (scoped by the record table);
      * otherwise the FK is <em>deduced</em> as the
      * single foreign key whose source side is {@code recordTable} and which references
-     * {@code nodeTableSqlName} (the directional {@code findUniqueFkToTable} deduction, materialised to
-     * the FK object). Zero or multiple such FKs reject through {@link #fkCountMessage}, asking the
+     * {@code nodeTableSqlName} (the same directional deduction
+     * {@link JooqCatalog#findOutgoingFkToTable} performs, inlined here and materialised to the FK
+     * object). Zero or multiple such FKs reject through {@link #fkCountMessage}, asking the
      * author to add {@code @reference(key:)}.
      *
      * <p>Column reconciliation is <em>by column identity, not position</em>: the decoded values

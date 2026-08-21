@@ -8,6 +8,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
@@ -15,7 +16,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
  * input-field classification ({@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField}
  * and {@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField}).
  *
- * <p>Sakila-catalog cases ({@code DEFAULT_JOOQ_PACKAGE}) exercise {@link JooqCatalog#findUniqueFkToTable},
+ * <p>Sakila-catalog cases ({@code DEFAULT_JOOQ_PACKAGE}) exercise {@link JooqCatalog#findOutgoingFkToTable},
  * {@link JooqCatalog#buildQualifierMap}, and {@link JooqCatalog#qualifierForFk} against real FK
  * metadata. Static-helper cases ({@link JooqCatalog#generateRoleName}) use plain {@code List<String>}
  * inputs and need no catalog instance.
@@ -38,35 +39,41 @@ class JooqCatalogIdRefTest {
         return new JooqCatalog(IDREF_JOOQ_PACKAGE);
     }
 
-    // --- findUniqueFkToTable ---
+    // --- findOutgoingFkToTable ---
 
     @Test
-    void findUniqueFkToTable_uniqueFk_returnsFkObject() {
+    void findOutgoingFkToTable_uniqueFk_returnsFkObject() {
         // Returns the resolved jOOQ ForeignKey object, not the bare constraint name.
-        var result = sakila().findUniqueFkToTable("inventory", "film");
-        assertThat(result).isPresent();
-        assertThat(result.get().getName()).isEqualToIgnoringCase("inventory_film_id_fkey");
+        var result = sakila().findOutgoingFkToTable("inventory", "film");
+        var unique = assertInstanceOf(JooqCatalog.OutgoingFkLookup.Unique.class, result);
+        assertThat(unique.fk().getName()).isEqualToIgnoringCase("inventory_film_id_fkey");
     }
 
     @Test
-    void findUniqueFkToTable_multipleFks_returnsEmpty() {
+    void findOutgoingFkToTable_multipleFks_namesEveryCandidate() {
         // film has two FKs to language: film_language_id_fkey and film_original_language_id_fkey
-        var result = sakila().findUniqueFkToTable("film", "language");
-        assertThat(result).isEmpty();
+        var result = sakila().findOutgoingFkToTable("film", "language");
+        var ambiguous = assertInstanceOf(JooqCatalog.OutgoingFkLookup.Ambiguous.class, result);
+        assertThat(ambiguous.fkNames())
+            .containsExactlyInAnyOrder("film_language_id_fkey", "film_original_language_id_fkey");
     }
 
     @Test
-    void findUniqueFkToTable_noFkToTarget_returnsEmpty() {
-        // actor has no FK to language
-        var result = sakila().findUniqueFkToTable("actor", "language");
-        assertThat(result).isEmpty();
+    void findOutgoingFkToTable_noFkEitherWay_namesNoReverseCandidate() {
+        // actor and language are not connected by a foreign key in either direction, which is a
+        // different fact from the directionality case below and the two used to be one empty.
+        var result = sakila().findOutgoingFkToTable("actor", "language");
+        var none = assertInstanceOf(JooqCatalog.OutgoingFkLookup.NoneInDirection.class, result);
+        assertThat(none.reverseFkNames()).isEmpty();
     }
 
     @Test
-    void findUniqueFkToTable_directionality_sourceNotTarget() {
-        // film is the FK target of inventory; there is no FK from film to inventory
-        var result = sakila().findUniqueFkToTable("film", "inventory");
-        assertThat(result).isEmpty();
+    void findOutgoingFkToTable_directionality_namesTheTargetSideFk() {
+        // film is the FK target of inventory; there is no FK from film to inventory, and the
+        // constraint that does connect them is the one an author names to reach inventory.
+        var result = sakila().findOutgoingFkToTable("film", "inventory");
+        var none = assertInstanceOf(JooqCatalog.OutgoingFkLookup.NoneInDirection.class, result);
+        assertThat(none.reverseFkNames()).containsExactly("inventory_film_id_fkey");
     }
 
     // --- buildQualifierMap ---

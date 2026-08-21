@@ -5289,8 +5289,11 @@ class GraphitronSchemaBuilderTest {
                 assertThat(uf.reason()).contains("1 input field could not be resolved");
                 assertThat(TestSchemaHelper.diagnosticMessages(schema))
                     .contains("Input field 'FilmFilterInput.languageIds'")
-                    .contains("no unique FK from 'film' to 'language'")
-                    .contains("declare @reference(path: [{key: ...}]) to disambiguate");
+                    .contains("multiple foreign keys found from table 'film' to 'language'")
+                    // Both candidates named, and one of them spelled as the @reference that works.
+                    .contains("film_language_id_fkey")
+                    .contains("film_original_language_id_fkey")
+                    .contains("@reference(path: [{key:");
             }),
 
         ID_REFERENCE_BAD_KEY(
@@ -5312,7 +5315,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         ID_REFERENCE_NO_FK_TO_TARGET(
-            "[ID!] @nodeId where the consumer's table has zero FKs to target → consumer rejects as UnclassifiedField",
+            "[ID!] @nodeId where no FK connects the two tables at all → refused naming the multi-hop remedy",
             """
             type Language implements Node @table(name: "language") @node { id: ID! @nodeId name: String }
             type Actor @table(name: "actor") { firstName: String }
@@ -5326,7 +5329,31 @@ class GraphitronSchemaBuilderTest {
                 assertThat(uf.reason()).contains("1 input field could not be resolved");
                 assertThat(TestSchemaHelper.diagnosticMessages(schema))
                     .contains("Input field 'ActorFilterInput.languageIds'")
-                    .contains("no unique FK from 'actor' to 'language'");
+                    .contains("no foreign key found between tables 'actor' and 'language'")
+                    // Nothing to disambiguate here, so the remedy offered is the chain, not a name.
+                    .contains("one '{key: \"<fk-name>\"}' element per hop");
+            }),
+
+        ID_REFERENCE_FK_ON_TARGET_SIDE(
+            "[ID!] @nodeId reaching the node type against the FK's direction → refused naming the "
+                + "target-side FK, the other cause the single message spent",
+            """
+            type Customer implements Node @table(name: "customer") @node { id: ID! @nodeId }
+            type Address @table(name: "address") { district: String }
+            input AddressFilterInput {
+              customerIds: [ID!] @nodeId(typeName: "Customer")
+            }
+            type Query { addresses(in: AddressFilterInput): [Address!]! }
+            """,
+            schema -> {
+                var uf = (UnclassifiedField) schema.field("Query", "addresses");
+                assertThat(uf.reason()).contains("1 input field could not be resolved");
+                assertThat(TestSchemaHelper.diagnosticMessages(schema))
+                    .contains("Input field 'AddressFilterInput.customerIds'")
+                    .contains("no foreign key found from table 'address' to 'customer'")
+                    .contains("auto-discovery searches that direction only")
+                    // The constraint the author writes to make this coordinate build.
+                    .contains("@reference(path: [{key: \"customer_address_id_fkey\"}])");
             }),
 
         ID_REFERENCE_MIXED_DIRECTIVES_CANONICAL_WINS(

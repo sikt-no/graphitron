@@ -419,7 +419,7 @@ final class NodeIdLeafResolver {
      *       one gate surviving because the {@code EXISTS} emitter is hop-general over foreign-key
      *       hops and over nothing else.</li>
      *   <li>No {@code @reference}: single-hop FK auto-discovery via
-     *       {@link JooqCatalog#findUniqueFkToTable}. Multi-hop is always explicit; auto-discovery
+     *       {@link JooqCatalog#findOutgoingFkToTable}. Multi-hop is always explicit; auto-discovery
      *       does not search past one hop.</li>
      * </ul>
      *
@@ -452,19 +452,18 @@ final class NodeIdLeafResolver {
         // No @reference: single-hop FK auto-discovery. Multi-hop is always explicit; the
         // auto-discovery fallback never searches past one hop. Disambiguation among A → ? → C
         // chains is the author's responsibility via per-hop { key: ... }.
-        var inferred = ctx.catalog.findUniqueFkToTable(
+        var lookup = ctx.catalog.findOutgoingFkToTable(
             containingTable.tableName(), targetTableName);
-        if (inferred.isEmpty()) {
-            return refuse("no unique FK from '" + containingTable.tableName() + "' to '"
-                + targetTableName + "'; declare @reference(path: [{key: ...}]) to disambiguate");
+        if (!(lookup instanceof JooqCatalog.OutgoingFkLookup.Unique unique)) {
+            return refuse(autoDiscoveryRefusal(lookup, containingTable.tableName(), targetTableName));
         }
-        // findUniqueFkToTable resolved endpoints by class and returns the FK object itself;
-        // hand it straight to synthesizeFkJoin rather than round-tripping through a bare-name
-        // re-lookup that risks cross-schema constraint-name collision.
+        // The search resolved endpoints by class and answers with the FK object itself; hand it
+        // straight to synthesizeFkJoin rather than round-tripping through a bare-name re-lookup
+        // that risks cross-schema constraint-name collision.
         // NodeId leafs are single-cardinality decoded keys against the parent's own table; the
         // shim's invariant places the FK on the parent (source) side, so selfRefFkOnSource=true.
         var fkStepResolution = ctx.synthesizeFkJoin(
-            inferred.get(), containingTable.tableName(), leafName, 0, null, /*selfRefFkOnSource=*/true);
+            unique.fk(), containingTable.tableName(), leafName, 0, null, /*selfRefFkOnSource=*/true);
         return switch (fkStepResolution) {
             case BuildContext.FkJoinResolution.Resolved r ->
                 new PathResolution.Walked(List.of(r.hop()),
@@ -483,6 +482,53 @@ final class NodeIdLeafResolver {
      */
     private static PathResolution refuse(String reason) {
         return new PathResolution.Refused(Rejection.structural(reason));
+    }
+
+    /**
+     * The prose for a single-hop auto-discovery that found no one foreign key, one sentence per
+     * cause because the remedy differs by cause. Several candidates is a disambiguation and names
+     * them. None in the searched direction is not: a foreign key declared on the target side
+     * reaches the target once the author names it, and where no foreign key connects the two
+     * tables at all the remedy is a path through the tables in between, or a corrected
+     * {@code typeName:}. Offering disambiguation to an author with nothing to disambiguate is what
+     * the single message did.
+     *
+     * <p>The vocabulary is {@link BuildContext#fkCountMessage}'s, which has split zero from several
+     * for the direction-agnostic {@code @reference} resolution all along: "no foreign key found
+     * between tables", "multiple foreign keys found", candidates named, one worked
+     * {@code @reference} spelling. The third arm is what only a <em>directional</em> search can
+     * have. Two deliberate divergences from that message: the chained remedy names
+     * {@code { key: ... }} per hop rather than a two-element example, and the condition-step escape
+     * hatch is not offered, because a {@code @nodeId} path rejects condition steps.
+     *
+     * @param source the table the search departed from, the table the slot's own parent is on
+     * @param target the node type's table
+     */
+    private static String autoDiscoveryRefusal(JooqCatalog.OutgoingFkLookup lookup,
+                                               String source, String target) {
+        return switch (lookup) {
+            case JooqCatalog.OutgoingFkLookup.Unique u -> throw new IllegalStateException(
+                "unreachable: the caller resolves the unique arm instead of refusing it");
+            case JooqCatalog.OutgoingFkLookup.Ambiguous a ->
+                "multiple foreign keys found from table '" + source + "' to '" + target
+                + "'; add a @reference directive to specify which one. Candidates: "
+                + String.join(", ", a.fkNames()) + " (e.g. '@reference(path: [{key: \""
+                + a.fkNames().get(0) + "\"}])')";
+            case JooqCatalog.OutgoingFkLookup.NoneInDirection n when !n.reverseFkNames().isEmpty() ->
+                "no foreign key found from table '" + source + "' to '" + target
+                + "', and auto-discovery searches that direction only. The foreign "
+                + (n.reverseFkNames().size() == 1 ? "key" : "keys") + " connecting them "
+                + (n.reverseFkNames().size() == 1 ? "is" : "are") + " declared on '" + target
+                + "': " + String.join(", ", n.reverseFkNames()) + ". A @reference reaches "
+                + (n.reverseFkNames().size() == 1 ? "it" : "the one you mean")
+                + " by naming it (e.g. '@reference(path: [{key: \""
+                + n.reverseFkNames().get(0) + "\"}])')";
+            case JooqCatalog.OutgoingFkLookup.NoneInDirection n ->
+                "no foreign key found between tables '" + source + "' and '" + target
+                + "'; auto-discovery is single-hop, so reach '" + target + "' through the tables"
+                + " in between with one '{key: \"<fk-name>\"}' element per hop, or correct"
+                + " @nodeId(typeName:) if '" + target + "' is not the type this filter means";
+        };
     }
 
     /**

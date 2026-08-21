@@ -701,7 +701,7 @@ class NodeIdPipelineTest {
      * Same-table {@code [ID!] @nodeId(typeName: T)} where T maps to the input's own table.
      * Semantics: filter rows whose composite primary key matches one of the decoded node IDs;
      * a primary-key IN predicate, not a FK join. The classifier short-circuits before
-     * {@code findUniqueFkToTable(t, t)} (which would always miss) and emits
+     * {@code findOutgoingFkToTable(t, t)} (which would always miss) and emits
      * {@link InputField.ColumnBackedField} carrying {@link CallSiteExtraction.ThrowOnMismatch}.
      */
     enum InputSameTableNodeIdCase {
