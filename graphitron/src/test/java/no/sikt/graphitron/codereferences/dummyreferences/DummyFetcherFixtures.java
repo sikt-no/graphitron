@@ -46,6 +46,22 @@ public final class DummyFetcherFixtures {
      */
     public record FilmHolder(FilmDetailsRating details) {}
 
+    /**
+     * Backs the read-family {@code @nodeId} encode on a class-backed parent: {@code filmKey} is
+     * typed as {@code film.film_id}'s own binding type, which is what an encode from a read needs
+     * the accessor to yield, and {@code filmLabel} is the same accessor shape typed as something
+     * else so the type disagreement has a fixture on the same class.
+     */
+    public record FilmKeyHolder(Integer filmKey, String filmLabel) {}
+
+    /**
+     * Backs a jOOQ table record reached through a parent accessor rather than returned by a
+     * producer: the SDL child type binds table-record-backed (so its reads resolve typed column
+     * constants) without the parent being a producer carrier, which is the shape whose
+     * {@code ID} fields the carrier leaf would otherwise claim.
+     */
+    public record FilmRecordHolder(no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord film) {}
+
     /** Class-backed producer shape for the @pivot mixed-source reach: slots as record components. */
     public record TranslatedTextsDto(String nn, String nb) {}
 

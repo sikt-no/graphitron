@@ -1295,17 +1295,35 @@ public sealed interface ChildField extends OutputField
      * own SDL wrapper unconditionally ({@code listOrSingle(returnType.wrapper(), Field)}), so
      * a list-shaped scalar such as an {@code @error} type's {@code path: [String!]!} models
      * {@code List} like every other wrapper-carrying leaf.
+     *
+     * <p>{@link #compaction()} is the wire direction, the same slot the column-backed carriers
+     * carry: {@link CallSiteCompaction.Direct} where the read's value is the field's value, and
+     * {@link CallSiteCompaction.NodeIdEncodeKeys} where the field carries
+     * {@code @nodeId(typeName:)} and the read's value is a node key to encode. The read is one
+     * value, so the encode arm here is single-key by construction; a composite-key node type at a
+     * read coordinate is refused at classify time, and the constructor invariant below is the
+     * backstop rather than the author-facing statement. Which of the four locator arms produced
+     * the value is independent of the direction, which is why one slot serves all four.
      */
     record RecordReadField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        ValueLocator locator
+        ValueLocator locator,
+        CallSiteCompaction compaction
     ) implements ChildField {
         public RecordReadField {
             java.util.Objects.requireNonNull(returnType, "returnType");
             java.util.Objects.requireNonNull(locator, "locator");
+            java.util.Objects.requireNonNull(compaction, "compaction");
+            if (compaction instanceof CallSiteCompaction.NodeIdEncodeKeys enc
+                    && enc.encodeMethod().paramSignature().size() != 1) {
+                throw new IllegalArgumentException(
+                    "RecordReadField '" + name + "' encodes from a read, which yields one value, so"
+                    + " the node key must be a single column; got arity "
+                    + enc.encodeMethod().paramSignature().size());
+            }
         }
         /**
          * Forks on {@link #returnType()}, not on the locator arm:
@@ -1323,8 +1341,15 @@ public sealed interface ChildField extends OutputField
          *       {@link ValueLocator.TypedColumn} locator, and {@link DomainReturnType.NoClaim}
          *       under the others, where no fact in the model names what the read yields.</li>
          * </ul>
+         *
+         * <p>An encode compaction answers ahead of both arms, on the column-backed carriers' own
+         * terms: what reaches the consumer is the encoded {@code String}, whatever the read
+         * yielded, so the claim is about the wire value and not about the locator.
          */
         @Override public DomainReturnType domainReturnType() {
+            if (compaction instanceof CallSiteCompaction.NodeIdEncodeKeys) {
+                return new DomainReturnType.Plain(STRING_CLASS);
+            }
             return switch (returnType) {
                 case ReturnTypeRef.ResultReturnType r -> DomainReturnType.claimForResultReturn(r);
                 case ReturnTypeRef.ScalarReturnType ignored -> switch (locator) {

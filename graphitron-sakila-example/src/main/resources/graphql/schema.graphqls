@@ -1803,10 +1803,23 @@ type FilmDetailsCarrier {
 # pins the single dispatch, the deduplication, and the sparse keys at once.
 type FilmKeySummary {
     label: String
+    # The read-family @nodeId encode. FilmKeySummary holds a fully populated FilmRecord, so `film`
+    # binds table-record-backed through the parent accessor rather than through a producer, and that
+    # is where the record-read leaf owns an ID coordinate: on a producer carrier (FilmDetailsCarrier
+    # above) the single-record id leaf claims it instead. Nothing here is projected, so the encode
+    # applies to what the read yields.
+    film: FilmKeyRow
     keyCensus: String @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService",
         method: "keyCensus"
     })
+}
+
+# The record FilmKeySummary holds, read through typed column constants off the in-memory record.
+# filmRef is the encode: the read yields film_id and the wire carries Film's node id.
+type FilmKeyRow {
+    filmRef: ID     @nodeId(typeName: "Film") @field(name: "film_id")
+    title:   String @field(name: "title")
 }
 
 # Shared class-backed value type: SharedTranslations is produced twice, by the batched child

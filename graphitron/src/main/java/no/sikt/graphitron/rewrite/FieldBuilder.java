@@ -3443,7 +3443,8 @@ class FieldBuilder {
             // locates nothing here (ValueLocator.DefaultRead).
             return new RecordReadField(parentTypeName, name, location,
                 ctx.resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)),
-                new ValueLocator.DefaultRead(name));
+                new ValueLocator.DefaultRead(name),
+                new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
         }
         return new UnclassifiedField(parentTypeName, name, location, Rejection.invalidSchema("fields on @error types must be scalar or enum"));
     }
@@ -6870,18 +6871,56 @@ class FieldBuilder {
      * parent is a {@link GraphitronType.JavaRecordType} or a {@link GraphitronType.PojoResultType}
      * with non-null {@code fqClassName} (the {@code parentBackingClass} threaded from
      * {@link TypeBuilder#recordBackingClasses()}).
+     *
+     * <p>{@code expectedReturnOverride} replaces the SDL-derived expectation where the read's
+     * value is not the field's value. An {@code ID} field carrying {@code @nodeId} maps to
+     * {@code String} from the SDL and the accessor yields a key column's own type, the encode
+     * standing between them, so comparing the accessor against the SDL type there would reject
+     * exactly the schemas this directive is for. {@code null} keeps the SDL-derived expectation.
      */
     private AccessorResolution resolveRecordAccessor(GraphQLFieldDefinition fieldDef, String accessorBaseName,
-            GraphitronType.ResultType parentResultType, Class<?> parentBackingClass) {
+            GraphitronType.ResultType parentResultType, Class<?> parentBackingClass,
+            java.lang.reflect.Type expectedReturnOverride) {
         if (parentBackingClass == null) return null;
         if (parentResultType instanceof GraphitronType.JooqRecordCarrier) return null;
         var order = parentResultType instanceof GraphitronType.JavaRecordType
             ? ClassAccessorResolver.CandidateOrder.RECORD_FIRST
             : ClassAccessorResolver.CandidateOrder.POJO_FIRST;
-        java.lang.reflect.Type expectedReturn = mapGraphQLTypeToReflectType(fieldDef.getType());
+        java.lang.reflect.Type expectedReturn = expectedReturnOverride != null
+            ? expectedReturnOverride
+            : mapGraphQLTypeToReflectType(fieldDef.getType());
         ClassAccessorResolver.ParamShape expectedArgs = mapArgsToParamShape(fieldDef);
         return ClassAccessorResolver.resolve(parentBackingClass, accessorBaseName,
             expectedReturn, expectedArgs, order);
+    }
+
+    /**
+     * The Java type a key column binds as, for comparison against what a read yields.
+     * {@code Object.class} where the codegen classloader cannot resolve it, which stands the
+     * comparison aside rather than failing it: an operand nobody could read is the one case where
+     * refusing would close a coordinate on the strength of a missing fact, and javac still sees
+     * the encode call.
+     */
+    private java.lang.reflect.Type keyColumnJavaType(ColumnRef keyColumn) {
+        try {
+            return Class.forName(keyColumn.columnClass(), false, ctx.codegenLoader());
+        } catch (ClassNotFoundException | LinkageError unreadable) {
+            return Object.class;
+        }
+    }
+
+    /**
+     * The read-side type disagreement: the encode needs the node key column's own type and the
+     * read yields something else. Both operands are named, the key column being the one the
+     * author cannot see from the coordinate they wrote.
+     */
+    private static Rejection readEncodeTypeMismatch(String parentTypeName, String name,
+            ReadWireDirection.Encode encode, String actual) {
+        return Rejection.structural(
+            "field '" + parentTypeName + "." + name + "': @nodeId(typeName: \"" + encode.nodeTypeName()
+            + "\") encodes the value this field reads, so the read has to yield key column '"
+            + encode.keyColumn().sqlName() + "' of type " + encode.keyColumn().columnClass()
+            + "; " + actual);
     }
 
     /**
@@ -6890,17 +6929,43 @@ class FieldBuilder {
      * routes an {@link AccessorResolution.Rejected} through {@link UnclassifiedField}, so the
      * {@link ValueLocator.JavaAccessor} arm only ever carries a
      * {@link AccessorResolution.Resolved}.
+     *
+     * <p>Also where the leaf's wire direction is decided, and where the read's own type is
+     * compared against what an encode needs. The comparison is per locator arm because the
+     * operand is: the typed-column arm has the column's binding type, the accessor arm has the
+     * accessor's declared return (checked by the resolver itself, given the key column as the
+     * expected return), and the by-name and default arms type nothing and so compare nothing.
+     * Only a {@link ReturnTypeRef.ScalarReturnType} carries a direction: an object-returning read
+     * has no single value to encode, and {@code @nodeId} on one is inert here exactly as it is on
+     * a table-backed parent.
      */
     private GraphitronField recordReadFieldOrUnclassified(GraphQLFieldDefinition fieldDef,
             String parentTypeName, String name, SourceLocation location, ReturnTypeRef returnType,
             String columnName, GraphitronType.ResultType parentResultType,
             Class<?> parentBackingClass) {
-        var accessor = resolveRecordAccessor(fieldDef, columnName, parentResultType, parentBackingClass);
+        var wire = returnType instanceof ReturnTypeRef.ScalarReturnType
+            ? resolveReadWireDirection(fieldDef, parentTypeName, name)
+            : new ReadWireDirection.AsRead();
+        if (wire instanceof ReadWireDirection.Refused refused) {
+            return new UnclassifiedField(parentTypeName, name, location, refused.rejection());
+        }
+        var encode = wire instanceof ReadWireDirection.Encode e ? e : null;
+
+        var accessor = resolveRecordAccessor(fieldDef, columnName, parentResultType, parentBackingClass,
+            encode == null ? null : keyColumnJavaType(encode.keyColumn()));
         if (accessor instanceof AccessorResolution.Rejected r) {
-            return new UnclassifiedField(parentTypeName, name, location,
-                Rejection.accessorMismatch(r.reason()));
+            return new UnclassifiedField(parentTypeName, name, location, encode == null
+                ? Rejection.accessorMismatch(r.reason())
+                : readEncodeTypeMismatch(parentTypeName, name, encode, r.reason()));
         }
         ColumnRef column = resolveColumnOnJooqTableRecord(columnName, parentResultType);
+        if (column != null && encode != null
+                && !column.columnClass().equals(encode.keyColumn().columnClass())) {
+            return new UnclassifiedField(parentTypeName, name, location,
+                readEncodeTypeMismatch(parentTypeName, name, encode,
+                    "column '" + column.sqlName() + "' on this record binds as "
+                    + column.columnClass()));
+        }
         ValueLocator locator;
         if (column != null) {
             locator = new ValueLocator.TypedColumn(column);
@@ -6915,7 +6980,10 @@ class FieldBuilder {
             // nothing; graphql-java's default property machinery reads the name.
             locator = new ValueLocator.DefaultRead(columnName);
         }
-        return new RecordReadField(parentTypeName, name, location, returnType, locator);
+        return new RecordReadField(parentTypeName, name, location, returnType, locator,
+            encode == null
+                ? new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()
+                : encode.compaction());
     }
 
     private ClassAccessorResolver.ParamShape mapArgsToParamShape(GraphQLFieldDefinition fieldDef) {
@@ -7964,38 +8032,11 @@ class FieldBuilder {
                     + " Remove the argument; a bare `@nodeId` (or no directive at all) says the same thing."));
             }
             if (typeName.isPresent()) {
-                ReturnTypeRef targetType = ctx.resolveReturnType(typeName.get(), new FieldWrapper.Single(true));
-                // The node fact comes from the pure NodeIndex (a fixed point, not the
-                // in-progress registry). An absent index entry that nonetheless names an existing
-                // SDL object is the "does not have @node" rejection; an absent entry naming
-                // nothing is the "does not exist in the schema" rejection. The NodeIndex carries
-                // no typeId-uniqueness exclusion, so a typeId-collided node resolves here and
-                // proceeds; the collision still fails the build at validateNodeTypeIdUniqueness
-                // before generation, so this is sound.
-                var targetNode = ctx.nodes.forName(typeName.get());
-                if (targetNode.isEmpty()) {
-                    // A target that exists in the SDL (any kind) but is not a node is the
-                    // "does not have @node" rejection; a name that resolves to nothing is the
-                    // "does not exist in the schema" rejection. SDL presence (getType != null) is
-                    // read-free and reproduces the old non-null-but-not-NodeType branch for every
-                    // classified target (objects, interfaces, scalars alike).
-                    if (ctx.schema.getType(typeName.get()) != null) {
-                        return new UnclassifiedField(parentTypeName, name, location, Rejection.structural("@nodeId(typeName:) type '" + typeName.get() + "' does not have @node"));
-                    }
-                    // The "did you mean" candidate set is sourced off the schema, not
-                    // ctx.types.keySet(): under the single classify-and-emit walk the registry is only
-                    // partially populated when a field classifies (its as-yet-unvisited siblings are not
-                    // registered), so the partial registry would make this hint walk-order dependent. The
-                    // schema's declared type names are a stable, registry-free, order-independent source.
-                    var candidates = ctx.schema.getAllTypesAsList().stream()
-                        .map(graphql.schema.GraphQLNamedType::getName)
-                        .filter(n -> !n.startsWith("__"))
-                        .toList();
-                    return new UnclassifiedField(parentTypeName, name, location, Rejection.unknownTypeName(
-                        "@nodeId(typeName:) type '" + typeName.get() + "' does not exist in the schema",
-                        typeName.get(), candidates));
+                var target = resolveNodeIdTarget(typeName.get());
+                if (target instanceof NodeIdTarget.Refused refused) {
+                    return new UnclassifiedField(parentTypeName, name, location, refused.rejection());
                 }
-                NodeType targetNodeType = targetNode.get();
+                NodeType targetNodeType = ((NodeIdTarget.Resolved) target).nodeType();
                 TableRef parentTable = tableType.table();
                 var nodeRefPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), targetNodeType.table().tableName(), targetNodeType.table());
                 if (nodeRefPath.hasError()) {
@@ -8102,6 +8143,131 @@ class FieldBuilder {
         }
         return new ColumnBackedField(parentTypeName, name, location, List.of(column.get()),
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
+    }
+
+    /**
+     * The node type an {@code @nodeId(typeName:)} names, or the rejection naming it produced.
+     * Shared by every coordinate that resolves a written target, so the two ways of naming
+     * nothing have one spelling each rather than one per call site.
+     */
+    private sealed interface NodeIdTarget {
+        record Resolved(NodeType nodeType) implements NodeIdTarget {}
+        record Refused(Rejection rejection) implements NodeIdTarget {}
+    }
+
+    /**
+     * Resolves a written {@code @nodeId(typeName:)} target.
+     *
+     * <p>The node fact comes from the pure {@code NodeIndex} (a fixed point, not the in-progress
+     * registry). An absent index entry that nonetheless names an existing SDL object is the
+     * "does not have @node" rejection; an absent entry naming nothing is the "does not exist in
+     * the schema" rejection. SDL presence ({@code getType != null}) is read-free and covers every
+     * classified target (objects, interfaces, scalars alike). The {@code NodeIndex} carries no
+     * typeId-uniqueness exclusion, so a typeId-collided node resolves here and proceeds; the
+     * collision still fails the build at {@code validateNodeTypeIdUniqueness} before generation,
+     * so this is sound.
+     *
+     * <p>The "did you mean" candidate set is sourced off the schema, not {@code ctx.types.keySet()}:
+     * under the single classify-and-emit walk the registry is only partially populated when a field
+     * classifies (its as-yet-unvisited siblings are not registered), so the partial registry would
+     * make this hint walk-order dependent. The schema's declared type names are a stable,
+     * registry-free, order-independent source.
+     */
+    private NodeIdTarget resolveNodeIdTarget(String typeName) {
+        var targetNode = ctx.nodes.forName(typeName);
+        if (targetNode.isPresent()) {
+            return new NodeIdTarget.Resolved(targetNode.get());
+        }
+        if (ctx.schema.getType(typeName) != null) {
+            return new NodeIdTarget.Refused(Rejection.structural(
+                "@nodeId(typeName:) type '" + typeName + "' does not have @node"));
+        }
+        var candidates = ctx.schema.getAllTypesAsList().stream()
+            .map(graphql.schema.GraphQLNamedType::getName)
+            .filter(n -> !n.startsWith("__"))
+            .toList();
+        return new NodeIdTarget.Refused(Rejection.unknownTypeName(
+            "@nodeId(typeName:) type '" + typeName + "' does not exist in the schema",
+            typeName, candidates));
+    }
+
+    /**
+     * The wire direction of a record-read leaf: whether the value the read yields goes to the
+     * consumer as-is or is encoded as a node id first, and what the encode needs from the read.
+     */
+    private sealed interface ReadWireDirection {
+        /** No {@code @nodeId} at the coordinate: the read's value is the field's value. */
+        record AsRead() implements ReadWireDirection {}
+        /**
+         * The read's value is the node type's sole key column and the encode wraps it.
+         * {@code keyColumn} is that column, carried because it is what the read has to yield: the
+         * accessor's expected return type, the by-name read's typed {@code Field}, and the operand
+         * a type disagreement is reported against are all this one fact.
+         */
+        record Encode(no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys compaction,
+                      String nodeTypeName, ColumnRef keyColumn)
+            implements ReadWireDirection {}
+        /** The instruction cannot be carried out at this coordinate. */
+        record Refused(Rejection rejection) implements ReadWireDirection {}
+    }
+
+    /**
+     * Resolves the wire direction for a coordinate classifying to
+     * {@link ChildField.RecordReadField}. The invariant this serves is that a slot carrying the
+     * instruction never delivers the wire format: the author wrote {@code @nodeId}, so the value
+     * on the wire is encoded, at a read exactly as at a projection.
+     *
+     * <p>Two refusals, and they are the read's own two preconditions rather than a directive
+     * grammar:
+     *
+     * <ul>
+     *   <li>{@code typeName:} is required. Bare {@code @nodeId} inherits its node from the
+     *       enclosing type, and a read-backed type stands for no table, so there is nothing to
+     *       inherit. Unlike the column-backed arm, this is not a missing-{@code @node} diagnostic
+     *       about the parent: no parent shape here could ever supply the target.</li>
+     *   <li>The key must be one column. {@code encode<TypeName>} takes N key values positionally
+     *       and a read yields one value, so a composite key at a read coordinate cannot be
+     *       encoded from it. The count is the operand the author needs, so the message carries
+     *       it.</li>
+     * </ul>
+     *
+     * <p>The type precondition is not decided here: which type the read yields is per-locator, so
+     * each arm in {@link #recordReadFieldOrUnclassified} compares the operand it actually has,
+     * and an arm that types nothing carries the encode out on arity alone with javac as the
+     * backstop. Falling back to the unencoded read is never an arm: that puts the raw key on the
+     * wire where the author asked for an id.
+     */
+    private ReadWireDirection resolveReadWireDirection(GraphQLFieldDefinition fieldDef,
+            String parentTypeName, String name) {
+        if (!fieldDef.hasAppliedDirective(DIR_NODE_ID)) {
+            return new ReadWireDirection.AsRead();
+        }
+        Optional<String> typeName = argString(fieldDef, DIR_NODE_ID, ARG_TYPE_NAME);
+        if (typeName.isEmpty()) {
+            return new ReadWireDirection.Refused(Rejection.structural(
+                "field '" + parentTypeName + "." + name + "': bare `@nodeId` inherits its node from"
+                + " the enclosing type, and '" + parentTypeName + "' stands for no table, so its"
+                + " fields are read rather than projected and there is no node to inherit."
+                + " Add `typeName:` to name the node this field identifies."));
+        }
+        var target = resolveNodeIdTarget(typeName.get());
+        if (target instanceof NodeIdTarget.Refused refused) {
+            return new ReadWireDirection.Refused(refused.rejection());
+        }
+        NodeType nodeType = ((NodeIdTarget.Resolved) target).nodeType();
+        var keyColumns = nodeType.nodeKeyColumns();
+        if (keyColumns.size() != 1) {
+            return new ReadWireDirection.Refused(Rejection.structural(
+                "field '" + parentTypeName + "." + name + "': node type '" + nodeType.name()
+                + "' has a key of " + keyColumns.size() + " columns ("
+                + keyColumns.stream().map(ColumnRef::sqlName).collect(java.util.stream.Collectors.joining(", "))
+                + "), and this field's value arrives through a read, which yields one value."
+                + " A composite key can only be encoded where the whole tuple is in scope, which is"
+                + " a field on a type some table stands for."));
+        }
+        return new ReadWireDirection.Encode(
+            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(nodeType.encodeMethod()),
+            nodeType.name(), keyColumns.get(0));
     }
 
     /**

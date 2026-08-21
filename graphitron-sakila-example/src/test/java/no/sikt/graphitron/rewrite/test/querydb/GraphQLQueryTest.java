@@ -3109,6 +3109,26 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void nodeIdOnARecordRead_putsTheEncodedIdOnTheWire() {
+        // The read-family encode, end to end. FilmKeyRow is the FilmRecord FilmKeySummary holds,
+        // reached through the parent accessor, so filmRef's value arrives through a typed column
+        // read off an in-memory record and never through a SELECT-side projection. What the
+        // directive has to guarantee is the same there as at a projection: the consumer gets the
+        // node id, never the raw key. Only the runtime can say which, since the classified leaf
+        // carries an encode either way and the raw key would have been a legal Int on the wire.
+        //
+        // Three rows over two distinct films, so the pairing also shows the encode is per row
+        // rather than per dispatch.
+        Map<String, Object> data = execute("{ filmKeySummaries { label film { filmRef title } } }");
+        assertThat(data).extractingByKey("filmKeySummaries", as(list(Map.class)))
+            .extracting(row -> (String) ((Map<?, ?>) row.get("film")).get("filmRef"))
+            .containsExactly(
+                no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1),
+                no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2),
+                no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1));
+    }
+
+    @Test
     void classBackedRecordParent_serviceChild_readsTheKeyOffTheHeldRecord() {
         // The held-record arm: FilmDetailsCarrier's backing class IS a FilmRecord, so the same
         // Set<FilmRecord> service the @table-parent Film.titleTitlecase child uses works here with no

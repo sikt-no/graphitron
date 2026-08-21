@@ -302,7 +302,7 @@ public final class FetcherEmitter {
         CodeBlock subject = envDependent ? ENV_SOURCE : CodeBlock.of("source");
         CodeBlock body = CodeBlock.builder()
             .add("if (!($L instanceof $T<?> success)) return null;\n", subject, successClass(outputPackage))
-            .add("return $L;\n", inlineSuccessRead(field, resultType))
+            .add(inlineSuccessReturn(field, resultType))
             .build();
         return envDependent
             ? envDependent(field.name(), fetchersClass, body)
@@ -336,20 +336,28 @@ public final class FetcherEmitter {
      * a jOOQ-record column {@code get}, a class-backed accessor call, or the nesting source
      * passthrough. The parent {@code resultType} is consulted only for the cast target, per
      * arm, under the validate-time-checked arm/parent-shape compatibility.
+     *
+     * <p>{@code encode} is the leaf's encode compaction or {@code null}, and it changes the
+     * by-name read's shape for the same reason it does in {@link #recordReadBinding}: an untyped
+     * {@code get} yields {@code Object}, which no {@code encode<TypeName>} signature takes. The
+     * wrapping itself is the caller's, through {@link #encodedReadReturn}.
      */
-    private static CodeBlock inlineSuccessRead(GraphitronField field, GraphitronType.ResultType resultType) {
+    private static CodeBlock inlineSuccessReturn(GraphitronField field, GraphitronType.ResultType resultType) {
         if (field instanceof ChildField.NestingField) {
-            return CodeBlock.of("success.value()");
+            return CodeBlock.of("return success.value();\n");
         }
         var rrf = (ChildField.RecordReadField) field;
-        return switch (rrf.locator()) {
+        var encode = rrf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys e ? e : null;
+        CodeBlock read = switch (rrf.locator()) {
             case ValueLocator.TypedColumn tc -> {
                 var table = ((GraphitronType.JooqTableRecordType) resultType).table();
                 yield CodeBlock.of("(($T) success.value()).get($T.$L.$L)",
                     RECORD, table.constantsClass(), table.javaFieldName(), tc.column().javaName());
             }
-            case ValueLocator.ByName bn ->
-                CodeBlock.of("(($T) success.value()).get($T.field($S))", RECORD, DSL, bn.sqlName());
+            case ValueLocator.ByName bn -> encode == null
+                ? CodeBlock.of("(($T) success.value()).get($T.field($S))", RECORD, DSL, bn.sqlName())
+                : CodeBlock.of("(($T) success.value()).get($T.field($S, $T.class))",
+                    RECORD, DSL, bn.sqlName(), encodeKeyType(encode));
             case ValueLocator.JavaAccessor ja -> {
                 String javaBackingFqcn =
                     resultType instanceof GraphitronType.JavaRecordType jrt ? jrt.fqClassName()
@@ -364,6 +372,7 @@ public final class FetcherEmitter {
                 "inline success-projection arm-switch: DefaultRead locator on "
                 + field.qualifiedName() + " has no inline read");
         };
+        return encodedReadReturn(read, encode);
     }
 
     private static ClassName successClass(String outputPackage) {
@@ -729,40 +738,103 @@ public final class FetcherEmitter {
      * {@link #recordBackedAccessorRead} (the same helper the arm-switch path uses), so the
      * accessor switch lives in one place. Each arm's parent-shape cast is guaranteed by the
      * validator's record-read gating rule, not construction-site coincidence.
+     *
+     * <p>An encode compaction wraps whichever value the arm read, through
+     * {@link #encodedReadReturn}. Two arms change shape to feed it rather than being wrapped
+     * as-is: the by-name read asks for the key column's type instead of returning {@code Object},
+     * and the default read has to run graphql-java's property machinery itself rather than handing
+     * the registration a bare {@code PropertyDataFetcher}, there being nowhere else to apply the
+     * encode.
      */
     private static FetcherBinding recordReadBinding(
             ChildField.RecordReadField field, GraphitronType.ResultType resultType,
             ClassName fetchersClass, String outputPackage) {
+        var encode = field.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys e ? e : null;
         return switch (field.locator()) {
             case ValueLocator.TypedColumn tc -> {
                 var table = ((GraphitronType.JooqTableRecordType) resultType).table();
+                var read = CodeBlock.of("(($T) source).get($T.$L.$L)",
+                    RECORD, table.constantsClass(), table.javaFieldName(), tc.column().javaName());
                 yield sourceOnly(field.name(), fetchersClass, outputPackage,
-                    CodeBlock.of("return (($T) source).get($T.$L.$L);\n",
-                        RECORD, table.constantsClass(), table.javaFieldName(), tc.column().javaName()));
+                    encodedReadReturn(read, encode));
             }
-            case ValueLocator.ByName bn ->
-                sourceOnly(field.name(), fetchersClass, outputPackage,
-                    CodeBlock.of("return (($T) source).get($T.field($S));\n", RECORD, DSL, bn.sqlName()));
+            case ValueLocator.ByName bn -> {
+                var read = encode == null
+                    ? CodeBlock.of("(($T) source).get($T.field($S))", RECORD, DSL, bn.sqlName())
+                    : CodeBlock.of("(($T) source).get($T.field($S, $T.class))",
+                        RECORD, DSL, bn.sqlName(), encodeKeyType(encode));
+                yield sourceOnly(field.name(), fetchersClass, outputPackage,
+                    encodedReadReturn(read, encode));
+            }
             case ValueLocator.JavaAccessor ja -> {
                 String fqClassName = (resultType instanceof GraphitronType.JavaRecordType jrt)
                     ? jrt.fqClassName()
                     : ((GraphitronType.PojoResultType.Backed) resultType).fqClassName();
                 var backingClass = ClassName.bestGuess(fqClassName);
                 if (isEnvDependentAccessorRead(field)) {
-                    yield envDependent(field.name(), fetchersClass,
-                        CodeBlock.of("return $L;\n", recordBackedAccessorRead(backingClass, ja.accessor(), ENV_SOURCE)));
+                    yield envDependent(field.name(), fetchersClass, encodedReadReturn(
+                        recordBackedAccessorRead(backingClass, ja.accessor(), ENV_SOURCE), encode));
                 }
-                yield sourceOnly(field.name(), fetchersClass, outputPackage,
-                    CodeBlock.of("return $L;\n", recordBackedAccessorRead(backingClass, ja.accessor(), CodeBlock.of("source"))));
+                yield sourceOnly(field.name(), fetchersClass, outputPackage, encodedReadReturn(
+                    recordBackedAccessorRead(backingClass, ja.accessor(), CodeBlock.of("source")), encode));
             }
             // Graphitron located nothing: register graphql-java's default property machinery
             // explicitly, keyed on the located name (mirrors the ErrorsField PayloadAccessor arm).
             case ValueLocator.DefaultRead dr -> {
                 var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
-                yield new FetcherBinding.Inline(
-                    CodeBlock.of("$T.fetching($S)", propertyDataFetcher, dr.name()));
+                if (encode == null) {
+                    yield new FetcherBinding.Inline(
+                        CodeBlock.of("$T.fetching($S)", propertyDataFetcher, dr.name()));
+                }
+                yield throwingEnvDependent(field.name(), fetchersClass, encodedReadReturn(
+                    CodeBlock.of("($T) $T.fetching($S).get(env)",
+                        encodeKeyType(encode), propertyDataFetcher, dr.name()),
+                    encode));
             }
         };
+    }
+
+    /**
+     * The {@code return} statement for a record read, encoded or not. The encoded form binds the
+     * read to a local of the key column's own declared type, which is what makes the four arms
+     * feed one {@code encode<TypeName>} signature: a boxing or widening conversion applies at the
+     * assignment, and a read that genuinely cannot feed the encode is a javac error naming both
+     * types at the one line that names them. The null test is on the value rather than the id: a
+     * read yielding nothing is an absent field, never an id encoding the absence.
+     */
+    private static CodeBlock encodedReadReturn(CodeBlock read, CallSiteCompaction.NodeIdEncodeKeys encode) {
+        if (encode == null) {
+            return CodeBlock.of("return $L;\n", read);
+        }
+        return CodeBlock.builder()
+            .add("$T key = $L;\n", encodeKeyType(encode), read)
+            .add("return key == null ? null : $T.$L(key);\n",
+                encode.encodeMethod().encoderClass(), encode.encodeMethod().methodName())
+            .build();
+    }
+
+    /**
+     * The sole key column's type on a read-side encode. Single-key by the carrier's constructor
+     * invariant, a read yielding one value.
+     */
+    private static no.sikt.graphitron.javapoet.TypeName encodeKeyType(CallSiteCompaction.NodeIdEncodeKeys encode) {
+        return encode.encodeMethod().paramSignature().get(0).columnType();
+    }
+
+    /**
+     * An env-dependent reified binding whose body may throw: the default-read encode calls
+     * {@code PropertyDataFetcher.get}, which declares {@code Exception}, and {@code DataFetcher.get}
+     * declares it too, so the method reference is still a {@code DataFetcher}.
+     */
+    private static FetcherBinding throwingEnvDependent(String name, ClassName fetchersClass, CodeBlock body) {
+        var method = MethodSpec.methodBuilder(name)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(DATA_FETCHING_ENV, "env")
+            .addException(Exception.class)
+            .addCode(body)
+            .build();
+        return new FetcherBinding.Reified(method, CodeBlock.of("$T::$L", fetchersClass, name));
     }
 
     /**

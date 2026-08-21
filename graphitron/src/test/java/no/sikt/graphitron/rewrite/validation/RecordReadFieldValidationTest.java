@@ -48,7 +48,8 @@ class RecordReadFieldValidationTest {
     }
 
     private static RecordReadField field(ValueLocator locator) {
-        return new RecordReadField("Film", "title", null, SCALAR_SINGLE, locator);
+        return new RecordReadField("Film", "title", null, SCALAR_SINGLE, locator,
+            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
     }
 
     private static List<ValidationError> validateUnder(GraphitronType parent, ValueLocator locator) {

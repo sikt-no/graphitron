@@ -7,11 +7,13 @@ package no.sikt.graphitron.rewrite.model;
  * typed Java value at the call site; compaction writes a typed Java value back into a wire value
  * at the projection site. Both classify exhaustively at the parse boundary.
  *
- * <p>Carried by the column-backed output carriers ({@link ChildField.ColumnBackedField},
- * {@link ChildField.ColumnBackedReferenceField}). Both arms genuinely occur at arity 1; a
- * multi-column carrier is narrowed to {@link NodeIdEncodeKeys} by the carriers' constructor
- * invariant, since there is no plain composite-column projection. The projection emitter
- * switches on the slot's sealed arm to decide how to wrap the carrier's column(s).
+ * <p>Carried by every output carrier that produces the field's value itself, which is two
+ * families rather than one. The column-backed carriers ({@link ChildField.ColumnBackedField},
+ * {@link ChildField.ColumnBackedReferenceField}) have the whole key tuple in scope and wrap it at
+ * the SELECT-side projection. {@link ChildField.RecordReadField} is not column-backed at all: its
+ * value arrives through one read, so an encode there applies to what the read yielded and the
+ * carrier is admissible only for a node type whose key is a single column. That arity demand is a
+ * fact about the read and is stated where the resolution is, not here.
  *
  * <ul>
  *   <li>{@link Direct} — plain SELECT-term projection. The column's value is the field's value;
