@@ -20,7 +20,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R772` | The dev loop holds a live fact store no developer can query | Spec | 2026-08-21 | [plan](dev-loop-store-sql-console.md) |
 | `R763` | Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path | Spec | 2026-08-20 | [plan](sakila-example-tests-run-one-at-a-time.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
-| `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
+| `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | Spec | 2026-08-21 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
 | `R705` | A condition-join hop in a reference filter path is rejected, though the emitter it needs already ships | Spec | 2026-08-20 <sub>created 2026-08-18</sub> | [plan](condition-join-hops-in-reference-filter-paths.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |

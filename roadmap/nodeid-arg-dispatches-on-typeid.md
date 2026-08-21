@@ -7,7 +7,7 @@ priority: 3
 theme: nodeid
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-19
+last-updated: 2026-08-21
 ---
 
 # A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId
@@ -28,13 +28,17 @@ The generated fetcher lets each participant branch match only its own ids, and a
 
 The mismatch policy resolves per the Backlog analysis: `ThrowOnMismatch`'s justification (a mismatch means the caller made a mistake) holds at field granularity, not branch granularity, once expected types diverge across branches. Dispatch keeps the throw at the granularity where the justification is true: exactly-one-branch-matches is the success path, no-branch-matches throws. The silent-null alternative (what the `Query.node` dispatcher's `NullOnMismatch` does) is rejected: every other argument-typed `@nodeId` on this surface treats a wrong id as a client error, and this field should too, just with a set of candidate types instead of one.
 
+The reporter confirmed this reading on 2026-08-21: dispatch with each branch matching its own typeIds, and a clear error naming the candidate types on a miss, is what they expected. So the fallback ask (reject at generate time instead) is settled rather than merely chosen, and D5 is the only place it still ships.
+
 ## Why it happens
 
 `FieldBuilder.buildNodeIdArgPlan` takes a single `TableRef`. On the multitable arms it is called once per participant from `FieldBuilder.lowerParticipantFilters`, each call handed that participant's own table, and `NodeIdLeafResolver.inferTypeName` then answers with the node type backing that table (`ctx.nodes.forTable(...)`). Each branch therefore carries its own expected typeId as a generation-time constant, and every `@nodeId` argument filter resolves to `CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch` (the seal's only arm), so the first branch's generated decode-or-throw helper throws on any id belonging to a different participant, before any branch can match.
 
 Two facts pin the blast radius:
 
-- Divergent expected types arise only from a bare `@nodeId`. An explicit `@nodeId(typeName:)` short-circuits inference and pins one type for every branch, and bare inference resolves the participant's own table. Bare inference does not by itself imply the same-table arm: `NodeIdLeafResolver.resolve` takes the `Resolved.SameTable` short-circuit only when no `@reference` is present, and deliberately treats a same-table `@nodeId @reference` as a self-FK instead. What closes the FK-target case is that `@reference(path:)` is one shared literal while the inferred target differs per participant, and `resolveFkJoinPath` requires the path to terminate on *that participant's* target: a path naming a `customer` constraint cannot terminate on `staff`. So a bare `@nodeId @reference` over divergent participants fails classification on every branch but one rather than reaching the loop, and divergence that does reach the loop implies same-table filter semantics on every branch. The FK-target resolutions (`DirectFk`/`TranslatedFk`) cannot diverge.
+- Divergent expected types arise only from a bare `@nodeId`. An explicit `@nodeId(typeName:)` short-circuits inference and pins one type for every branch, and bare inference resolves the participant's own table. Bare inference does not by itself imply the same-table arm: `NodeIdLeafResolver.resolve` takes the `Resolved.SameTable` short-circuit only when no `@reference` is present, and deliberately treats a same-table `@nodeId @reference` as a self-FK instead. What closes the FK-target case is that `@reference(path:)` is one shared literal while both ends of its resolution are per-participant: `resolveFkJoinPath` receives that participant's `containingTable` and that participant's inferred target, and its explicit-path arm hands both to `BuildContext.parsePath`, whose terminal-target verdict compares jOOQ table-class identity rather than the `@table` echo. A path naming a `customer` constraint neither parses from `staff` nor terminates on it. So a bare `@nodeId @reference` over divergent participants fails classification on every branch but one rather than reaching the loop, and divergence that does reach the loop implies same-table filter semantics on every branch. The FK-target resolutions (`DirectFk`/`TranslatedFk`) cannot diverge.
+
+  This cut rests on the terminal-target verdict and not on the lift, which is worth stating because R728 stage 3 stops `validateLift` rejecting: an absent lift becomes absent local columns and the chain binds remotely instead of failing. Checked against that, the conclusion survives. Relaxing the lift admits more multi-hop paths per participant, but it cannot admit two participants on one literal: a path that parses from two containing tables still terminates on one table, and one table is one shared target rather than a divergence. Stage 3 widens what classifies and leaves this scope cut where it is.
 - A participant table with zero node types already rejects at build ("cannot infer node type"), and one with several rejects as ambiguous. The dispatch case therefore always sees exactly one node type per participant, pairwise distinct.
 
 ## Scope
@@ -45,14 +49,35 @@ Out of scope, each with its reason:
 
 - The single-base-table arms (`QueryField.QueryTableInterfaceField`, `ChildField.TableInterfaceField`/`BatchedTableInterfaceField`): no silent runtime misbinding is reachable there. Bare `@nodeId` over a table carrying more than one node type rejects at build as ambiguous in `NodeIdLeafResolver.inferTypeName`; with exactly one node type there is a single id space and the existing throw semantics are correct. This cut currently rests on the ambiguity arm alone, so it gets an enforcer: a pipeline-tier assertion that the single-base-table arm rejects the ambiguous bare `@nodeId`, and a javadoc `{@link}` from the scope-cut site to `inferTypeName` so the reference gate pins the dependency.
 - The child multitable arm (`ChildField.InterfaceField`): takes no `@nodeId` arguments at all (it correlates by FK, not by author-supplied argument).
+- A polymorphic-returning field on a class-backed parent, which is what a mutation payload's field is: same reason, no `@nodeId` argument. Its producer is `FieldBuilder.classifyRecordParentPolymorphicChild`, and it is a separate axis rather than a later phase here.
 - SQL-level pruning of non-matching union arms (emitting one branch's query instead of N-1 `falseCondition` arms): an optimization, not a correctness fix; a `falseCondition` arm is constant-folded at plan time.
 - Dispatch for nested-input bare-`@nodeId` leaves: replaced day one by a build-time rejection (D5), lifted to dispatch later only if a consumer needs it.
+
+The reporter asked on 2026-08-21 whether the child multitable arm and the class-backed-parent bullet above are later phases of this effort or separate filings, naming two downstream cases in their own priority order. Separate filings, and the reason is one line: this item's defect is that a `@nodeId` **argument**'s expected node type is baked per branch as a generation-time constant, and neither case carries a `@nodeId` argument. Branch selection in both is driven by the correlation, not by a decoded id, so nothing in the implementation below changes either one whichever way this item lands. (Their reading that the plan already listed payload fields out of scope was of a plan that did not mention them; the bullet above now does.)
+
+Their first case is a mutation payload field returning the interface, worked around today by three typed lists that every consumer stitches back together. Nothing on the roadmap covers it, and it is not obviously an absent capability either: a polymorphic-returning field on a class-backed parent is a classified shape, and a payload type is class-backed, so this may be reaching `classifyRecordParentPolymorphicChild` and misbehaving rather than falling through to a single-implementation binding. On the mutation side proper, `MutationField`'s only interface arm is `MutationServiceTableInterfaceField`, a root service-returning discriminated table interface, so no mutation-rooted variant dispatches multitable by itself. Bug or capability is what a repro decides, and that decides which kind of item to file.
+
+Their second case is a single-valued child field for a polymorphic audit reference, the parent holding an FK toward the application leg. That capability ships: single-cardinality multi-table polymorphic child fields classify on both the table-backed parent (`classifyObjectReturnChildField`) and the record-backed parent, a per-participant join path that auto-discovery cannot derive is authorable with `@referenceFor(type:, path:)`, which is what a hop from a supertype table out to each subtype table wants, and the parent-holds-FK parent-projection crash is fixed at single cardinality. The one known gap is the batched form of that correlation, which rejects at build time and is R487. So a single-valued field of this shape should already dispatch per participant; if it does not, that is a child-field classifier bug with its own issue, not a phase here.
+
+## Where the facts live while this ships
+
+The `@nodeId` instruction population and its encode/decode resolution became store relations on 2026-08-20, and R728 is mid-flight on the rest of that move (stage 2c on trunk as of 2026-08-21). Three consequences for this item, all checked against the tree rather than read off that plan.
+
+**This coordinate has no instruction row, and this item does not need one.** `intent_node_id_instruction`'s two bare-inference arms reach the slot's table through `intent_argument_scope_table`, which demands an unambiguous binding; a multitable return type has none, and the name-carried arm joins the return type to `intent_node_type`, which a multitable interface is not. So the reported repro produces no row on any arm. Widening the population with a participant-keyed arm is the remedy the sweep names, wanted by R676 and R726 as well, and it is nobody's committed work today: R728's plan carries no participant dimension at any grain. This item therefore does not read the store, and says so on purpose rather than by omission. D2 states which side computes the divergence, and it is this side.
+
+**Nothing in `graphitron` has moved yet.** `NodeIdLeafResolver` still owns resolution, `CallSiteExtraction.NodeIdDecodeKeys` still reads `permits ThrowOnMismatch` and nothing else, `PruneOnMismatch` is zero hits, and `buildNodeIdArgPlan`, `lowerParticipantFilters` and `inferTypeName` are all where the sections above put them. Verified on trunk at the time of this pass. So "Why it happens" describes the live mechanism, not a remembered one.
+
+**The order this lands in relative to R728 stage 2 does not change the design.** D2's producer takes the field definition and the classified table-bound participant set and returns a sealed verdict. If stage 2's reader conversion lands first, the *inputs* to that producer change habitat while its signature and its verdict do not, and the participant-keyed arm becomes the thing the producer reads instead of the thing it computes: one call site to repoint, which is what a single producer buys. If this item lands first, R728 inherits a consumer that already names the grain its population lacks.
+
+Detail: `roadmap/audits/2026-08-20-nodeid-relation-impact-sweep.md`, Finding 1 for the population gap and Finding 5 for the javadoc overlap D7 settles.
 
 ## Implementation
 
 **D1: second `NodeIdDecodeKeys` arm, named for pruning.** Add `record PruneOnMismatch(HelperRef.Decode decodeMethod) implements NodeIdDecodeKeys` beside `ThrowOnMismatch` in `CallSiteExtraction`. The arm carries the same single component as its sibling; what earns it a seat is that the failure mode must ride the carrier the condition glue renderer sees, because the extraction rides into the condition command row and the renderer cannot reach a field-level dispatch fact. It does not "skip" (the retired silent-drop sibling's semantics, which hid client mistakes); it prunes a branch that structurally cannot match, while D4 keeps the client error alive at field granularity. `ConditionGlueRenderer.decodeCall`'s mode-selection ternary (`instanceof ThrowOnMismatch ? THROW : SKIP`) becomes an exhaustive switch on the sealed arm in the same change, so a third arm cannot silently map to a mode. `CompositeDecodeHelperRegistry` already builds the SKIP-mode helper bodies, and `decodeCall`'s else-branch is their only main-source caller, so under a one-arm seal nothing reaches them today. That is what lets D3 restate the prune-mode list helper's contract without touching a shipped consumer surface.
 
 **D2: one divergence producer, sealed outcome.** The cross-participant question gets a producer on the axis it lives on: one call taking the field definition plus the table-bound participant set, returning per `@nodeId` argument a sealed verdict, `SharedTarget(HelperRef.Decode)` (every participant decodes the same node type; the shipped `occupantsByAddress` shape) or `PerParticipant(Map<String, HelperRef.Decode>)` keyed by participant type name (divergent node types). The loop's per-participant plans, the branch extractions, and the field-level guard all read this one verdict instead of diffing each other's outputs; `SharedTarget` keeps `ThrowOnMismatch` exactly as today, `PerParticipant` lowers each branch with `PruneOnMismatch` and hands the field its dispatch fact. The nested-leaf rejection (D5) falls out of the same computation, not a separate predicate over the same inputs.
+
+**Which side computes it.** This side, in `FieldBuilder`, over the classified participant set, for as long as the resolver resolves. The alternative is to read a participant-keyed row out of the instruction population, and that row does not exist: the coordinate is silent, and the widening that would make it speak is unowned work wanted by two other items. Blocking a runtime-wrong bug behind it is the wrong trade, and the producer is itself the seam that makes the choice cheap to revisit. What this item owes the store side is a notification and a fixture rather than a read, both named under Tests.
 
 Shared-ness is a property of the decode target, not of the whole `Resolved`, so neither arm carries a `Resolved`. `occupantsByAddress` (`@nodeId(typeName: "Address")` over `Customer | Staff`) resolves one node type on every participant while each participant's `Resolved.FkTarget.DirectFk` carries its own `joinPath` and `liftedSourceColumns` (`customer_address_id_fkey` vs `staff_address_id_fkey`): no single `Resolved` describes that field, and picking one participant's would be a copy the branches contradict. The per-participant `Resolved`s stay where `lowerParticipantFilters` already produces them; the verdict answers only the divergence question, and `PerParticipant`'s map *is* the dispatch fact rather than a second shape derived from it.
 
@@ -76,6 +101,8 @@ Two root fetchers, not one: `emitRootConnectionMethods` is reachable for the sam
 
 **D6: documentation edits.** `NodeIdLeafResolver`'s class javadoc asserts "Failure mode is fixed at `ThrowOnMismatch`" and `CallSiteExtraction`'s `NodeIdDecodeKeys` javadoc documents the sealed-to-one-arm state; both become false and are rewritten with the arm's pruning semantics. The user manual's global-id chapter states the throw-vs-`NullOnMismatch` asymmetry in terms of a single asserted type; it gains the multitable arm, where the assertion is a set of candidate types.
 
+**D7: sequencing D6 against R728.** Both items rewrite `NodeIdLeafResolver`'s class javadoc and neither named the other. R728's retirement list rewrites the one-conjunct discriminator statement, the `FkTarget` seal's arm list, `TranslatedFk`'s record javadoc and its `@param joinPath`, plus `resolveFkJoinPath`'s identity-carrying-lift paragraph, all of them sentences D6 does not touch. So this is a rebase rather than a conflict of substance: whichever lands second rewrites its own sentences as they then read. R728 is In Progress while this item is in Spec, so the second one is this one and the obligation sits here.
+
 ## Tests
 
 Fixtures (sakila example): give `Staff` a bare `@node`, which also means `implements Node` and the `id: ID!` field the interface requires (`TypeBuilder` rejects `@node` without the Relay interface), making `AddressOccupant = Customer | Staff` a fully node-backed union. The bare-inference question this raises is already answered: `StoreManager` shares the `staff` table but carries no `@node`, so `NodeIdLeafResolver.inferTypeName` sees the staff table go from zero node types to one and its ambiguity arm stays quiet. Confirm with a full `mvn install -Plocal-db`. Add to `Query`:
@@ -92,43 +119,12 @@ Pipeline tier (`MultiTableFilterLoweringTest`): divergent targets lower to `Prun
 
 Execution tier (`MultiTableFilterExecutionTest`): the primary D3 pin is the list-shaped exact-set assertion (mixed Customer and Staff ids return exactly the named rows with correct `__typename`, nothing from unpruned branches) plus the nullable-argument absent case (unfiltered) and present-mismatched case, since the single-cardinality arm can mask an unpruned branch as an order-dependent `__typename`. Also: a Customer id returns the Customer row, a Staff id the Staff row (the reported repro), a Film id fails with the client error naming Customer and Staff, a malformed id fails with the malformed-branch message, the `@asConnection` sibling gives the same client error rather than an empty page (D4's second fetcher), and the existing `nodeIdFilter_wrongTypeId_surfacesClientError` on `occupantsByAddress` stays untouched and green (all branches share one expected type there, so the branch-level throw remains correct).
 
-## The relation move lands under this item (2026-08-20)
-
-Read before the next Spec pass. The `@nodeId` instruction population and its encode/decode
-resolution became store relations on 2026-08-20, and this item's mechanism sites are the ones
-that move. Every claim above still checks out against the tree: `NodeIdDecodeKeys` does read
-`permits ThrowOnMismatch` and nothing else, `PruneOnMismatch` is absent, and `inferTypeName`,
-`buildNodeIdArgPlan` and `lowerParticipantFilters` are all where this plan says they are. Three
-things change anyway.
-
-**The reported repro has no instruction row.** `applikasjon(id: ID! @nodeId): Applikasjon` is a
-bare `@nodeId` argument on a multitable-returning field, and `intent_node_id_instruction`'s two
-bare-inference arms both reach the slot's table through `intent_argument_scope_table`, which
-demands an unambiguous binding. A multitable return type has none, so the coordinate produces no
-row; the name-carried arm misses too, joining the return type to `intent_node_type`. Once the
-resolver becomes a reader of those rows, the per-participant re-run this plan's "Why it happens"
-section rests on has nothing to read. The remedy is a participant-keyed arm on the population,
-shared with R676 and R726, and it is the relation-move item's own gap as much as this one's; see
-Finding 1 of the sweep below. D2's divergence verdict is the consumer that wants it, so this item
-should state which side computes the divergence rather than inheriting the question.
-
-**`NodeIdLeafResolver`'s javadoc has a second author.** D6 rewrites its "Failure mode is fixed at
-`ThrowOnMismatch`" sentence. The relation-move item's retirement list rewrites three other
-statements in the same javadoc (the one-conjunct discriminator, in the `FkTarget` seal's arm list,
-in `TranslatedFk`'s record javadoc and in its `@param joinPath`) plus `resolveFkJoinPath`'s
-identity-carrying-lift paragraph. Neither item is wrong and neither names the other; whichever
-reaches Ready second wants a sequencing sentence.
-
-**The lift gate stops being a rejection.** D2's closing argument that a bare `@nodeId @reference`
-over divergent participants "fails classification on every branch but one rather than reaching the
-loop" leans on `resolveFkJoinPath` rejecting a path that does not terminate on the participant's
-own target. The terminal-target requirement survives; what the relation move removes is the
-per-hop lift rejection, so a chain that fails the lift binds remotely instead of rejecting. Check
-the blast-radius argument against that before relying on it, since it is what bounds this item's
-scope to the same-table arm.
-
-Detail: `roadmap/audits/2026-08-20-nodeid-relation-impact-sweep.md`, Findings 1 and 5.
+The fixtures also leave the store side something it lacks, without this item testing it. `NodeIdInstructionTest` carries no interface or union case at all, so the silence at this coordinate is pinned in neither direction. Adding that pin here would freeze a consequence of `intent_argument_scope_table`'s certainty demand as though it were a decision somebody made, and R728's own rule is that no test asserts a relation agrees with the classified model. So the fixtures above are the shape that store-tier case wants once R728's implementer settles the population question, and telling that author is the obligation, not a test written here.
 
 ## Roadmap entries
 
 None beyond this item. Nested-leaf dispatch and union-arm pruning are named out of scope above; file follow-ups only if a consumer asks.
+
+Two filings do come out of the 2026-08-21 comment, and neither is a phase of this item: the payload shape, once its repro says whether it is a bug or an absent capability, and the child field only if its repro still misbinds on a current build. Ask the reporter for both repros before filing either.
+
+Notifications, and a dependency in neither direction. R728's implementer gains a named consumer for the participant-keyed instruction arm and the first interface or union fixture its store-tier suite lacks. R676 and R726 want that same arm and should know a third item is asking for it. The javadoc sequencing in D7 is this item's to carry, being the one still in Spec.
