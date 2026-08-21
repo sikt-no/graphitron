@@ -1,7 +1,7 @@
 ---
 id: R771
 title: "A skill for authoring nested jOOQ at one grain, driven from the right relation"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 3
 theme: tooling
