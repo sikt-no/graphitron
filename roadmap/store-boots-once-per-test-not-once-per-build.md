@@ -117,8 +117,15 @@ For ordering against the alternatives, all measured on the same tree and hardwar
   once in a mode that does so, and settle whether that assertion costs enough to be opt-in. The
   `TRUNCATE` list must also derive from `INFORMATION_SCHEMA` rather than a hand-maintained list, or the
   next table added to the schema silently stops being cleared.
-* **Whether `MaterializeDependencies.populate` belongs in a reset**, per the section above. This
-  decides whether a reset is 0.85 ms or 9.3 ms, which is a 10x difference on the item's whole premise.
+* ~~**Whether `MaterializeDependencies.populate` belongs in a reset.**~~ **Settled: it does not**, so a
+  reset is 0.85 ms rather than 9.3 ms and the ratio against a boot is about 160x rather than 15x.
+  `populate` derives its edges from `Materializations.registrations` and from the stored view
+  definitions it reads out of `INFORMATION_SCHEMA`, and reads no fact relation, so no row a test
+  writes can invalidate `meta_materialize_dependency` and clearing rows cannot either. Established by
+  reading `populate` and by observing the relation byte-identical across a clear. Note the other
+  derivation is a different thing and already per-case: `Materializations.refreshAll` does depend on
+  fact rows, and every seeded case already calls it. Every saving figure in this item was computed on
+  the conservative reading and is therefore a floor rather than a projection.
 * **Whether `StoreRefresh` is the seam or a new one is.** The row-clearing vocabulary partly exists;
   the item should extend it rather than stand a parallel mechanism beside it, and if `StoreRefresh`'s
   contract is per-graph rather than per-store, say which one a fixture reset wants.
@@ -126,6 +133,11 @@ For ordering against the alternatives, all measured on the same tree and hardwar
   `SeededStore.withSeededStore` in `graphitron-model` is one funnel for 420 boots; if `graphitron`'s
   382 test classes reach the store through a comparable helper, the change is small, and if they each
   call `open()` directly it is not. That count decides whether this is one item or a staged one.
+  **Answered for `graphitron-model` and it is staged: R769 takes that module**, where 161 call sites
+  across 30 classes funnel through the one helper and four classes boot directly because the boot is
+  their subject. It is 420 boots and 133.0 s, about 33 s of build, and no test class changes. This item
+  keeps the other three modules, 631 boots and 262.8 s, and should adopt whatever shape R769's leak
+  guard and per-thread confinement settle on rather than re-deciding them.
 
 ## How to re-measure
 

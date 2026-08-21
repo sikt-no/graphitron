@@ -14,6 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
+| `R769` | withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms | Spec | 2026-08-21 <sub>created 2026-08-20</sub> | [plan](seeded-store-boots-per-thread.md) |
 | `R763` | Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path | Spec | 2026-08-20 | [plan](sakila-example-tests-run-one-at-a-time.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
@@ -581,6 +582,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
 - `R768` [**The build boots the fact schema 1051 times, and a reset costs a fraction of a boot**](store-boots-once-per-test-not-once-per-build.md) — Backlog, dx
+- `R769` [**withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms**](seeded-store-boots-per-thread.md) — Spec, dx
 - `R763` [**Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path**](sakila-example-tests-run-one-at-a-time.md) — Spec, dx
 - `R764` [**graphitron-model ships its junit-platform.properties to three consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
 - `R766` [**Five generate executions run one after another on the last node of the critical path**](sakila-example-generate-executions-serialize.md) — Backlog, dx
