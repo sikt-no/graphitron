@@ -67,7 +67,8 @@ Valid transitions (see `roadmap/workflow.adoc`):
 | From          | To           | Guard                                                       |
 |---------------|--------------|-------------------------------------------------------------|
 | Backlog       | Spec         | none — author picks up an item and starts a plan body       |
-| Spec          | Spec         | revise; reviewer ≠ last committer of the file               |
+| Spec          | Spec         | review; findings appended; reviewer ≠ last committer            |
+| Spec          | Spec         | revise; author addresses the findings; no guard                 |
 | Spec          | Ready        | sign-off; reviewer ≠ last committer                         |
 | Ready         | Spec         | reopen for re-review (spec needs substantive redesign)      |
 | Ready         | In Progress  | none                                                        |

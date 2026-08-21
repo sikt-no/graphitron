@@ -82,6 +82,8 @@ Scope is stated as a permission, not an invitation. The reviewer may report a no
 
 The templates do not prescribe a reading order, an assessment rubric, or a per-finding output format: rubrics get completed rather than thought about, and the fresh-context reviewer exists to apply independent judgment. Four questions across two gates are close to the shape that rots into a form to fill in, so each is phrased as a decision the reviewer owns. When editing the templates, prefer deleting instructions over adding them; do not re-accrete checklists, and keep process mechanics to at most a third of each body (they were near half before the reorder, which is what produced the nits).
 
+One instruction resists that deletion pressure by design: the Spec-stage Verdict bullet hands the reviewer a `## Reviewer findings` section rather than an invitation to edit the plan, because a reviewer's edit to the plan body is design prose that no session reviews as a draft, so the next pass inherits it labelled settled and finds the defect in it a round later. Shorten its wording if you can, but do not collapse it back into an option to commit the revisions yourself; that option is what the split exists to remove.
+
 ## Spec-stage template
 
 Emit this as a fenced ```text``` block, replacing the `{{...}}` tokens.
@@ -147,10 +149,16 @@ and symbol the spec names must exist as named. Use FQN-aware grep
 End with one of two, unambiguously:
 
 - Sign off. Flip Spec → Ready with the `roadmap` skill, then `publish`.
-- Request revisions, naming which question failed and what would satisfy it.
-  Either commit spec revisions yourself on a fresh feature branch (status stays
-  Spec, and you become the last committer, so the next pass needs a different
-  session), or leave the notes for the author.
+- Request revisions. Append one round to the `## Reviewer findings` at the bottom of
+  the spec file, naming which question failed and what would satisfy it, and
+  commit that alone on a fresh feature branch; status stays Spec. Do not edit
+  the plan body: settling an open fork yourself puts design prose into the spec
+  that nobody reviews as a draft, which is what the split exists to stop. A stale
+  count, a symbol that does not exist under the name the spec gives it, a broken
+  link or a typo you may correct in the same commit; anything that changes what
+  the implementer will build is the author's. Keep the round to the findings and
+  the verdict. What you verified along the way goes in the commit message.
+  The author revises, and you take the next pass with the context you built.
 
 A clean spec is a valid outcome. Say so plainly rather than inventing findings.
 
@@ -249,8 +257,8 @@ End with one of two, unambiguously:
   the landing SHAs. Regenerate the README with the `roadmap` skill, commit on a
   fresh feature branch, then `publish`.
 - Request rework, naming which question failed and what would satisfy it. Flip
-  In Review → Ready with the `roadmap` skill and capture the finding in the spec
-  body for the next pass.
+  In Review → Ready with the `roadmap` skill and capture the finding in the
+  spec's `## Reviewer findings` for the next pass.
 
 A clean delivery is a valid outcome. Say so plainly rather than inventing
 findings.

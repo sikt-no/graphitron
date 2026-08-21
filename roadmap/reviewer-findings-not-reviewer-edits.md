@@ -1,7 +1,7 @@
 ---
 id: R775
 title: "The Spec gate reviewer lands findings, not fixes: half of R769's spec was written by its reviewers"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 1
 theme: tooling
@@ -155,6 +155,29 @@ attached rather than becoming a transcript.
 
 Three files, all prose. The replacement text is given here rather than described, because the
 words are the whole change and reviewing a description of them is not reviewing them.
+
+**Shipped.** All nine edits below landed in one commit. The replacement blocks are kept rather than
+collapsed to a one-line note, because here the specified words *are* the contract: the Done gate
+compares the delivered prose against them, and a collapsed section would leave that gate nothing to
+compare. Three of the nine edits were specified as a description rather than as verbatim text, so
+the wording in the tree is the implementer's and is the thing to read at the gate: the srp
+"Template design intent" sentence, the srp rework bullet's phrase swap, and the canonical-path
+preamble. On the preamble, the spec asked the typical-path sentence to gain "that a revision round
+is two commits rather than one"; the sentence carried the colon that introduces the four-step list,
+so it split into two sentences with a short `The path:` lead-in to keep the list attached.
+
+**One deviation from a verbatim block,** landed rather than queried because it is a dangling
+referent and not a design choice. The srp Verdict bullet's specified text reads "which is what the
+log exists to stop". Nothing in the delivered convention is called a log: the section is
+`## Reviewer findings`, and an earlier draft's "the whole log dies with the file at Done" had
+already become "the whole section dies" in the conventions bullet. The bullet ships as "which is
+what the split exists to stop". Nothing else in any block was altered.
+
+Verification: `mvnd -pl docs install` renders clean, and the roadmap-tool check steps pass,
+including `check-adoc-tables` and `verify-roadmap-readme`. No Java changed, so no test tier is in
+play; `roadmap/workflow.adoc` is not rendered into the docs site (only item `.md` bodies are, under
+`roadmap/plans/`), and its `++##++` escapes serve GitHub's AsciiDoc renderer, which is why they
+match line 79's existing usage rather than being dropped.
 
 ### `roadmap/workflow.adoc`
 
