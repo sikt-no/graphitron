@@ -38,7 +38,7 @@ against a booted in-memory store over 20 warm rounds.
 | per boot, measured alone | 138 ms |
 | module wall clock | 46.8 s |
 | module test-class time | 182.3 s |
-| **`TRUNCATE` across the 143 clearable tables** | **0.85 ms** |
+| **`TRUNCATE` across the clearable tables** (144 on 2026-08-21) | **0.85 ms** |
 
 So boots are **73% of this module's test-class time**, and the replacement is **160 times cheaper**
 than the thing it replaces. The module is the reactor's clearest case: `graphitron` spends more
@@ -53,8 +53,14 @@ total, because that is what disappears.
 
 `SeededStore.withSeededStore(Consumer<DSLContext>)` opens `FactStores.inMemory()`, which is
 `GraphitronModelStore.open()`, in a try-with-resources that closes it when the body returns. Its
-graph-anchoring overload delegates to it. **161 call sites across 30 test classes** reach it, and 420
-runtime boots come out, because parameterized cases multiply a call site into executions.
+graph-anchoring overload delegates to it. **158 call sites across 29 test classes** reach it on
+2026-08-21, and 420 runtime boots come out.
+
+Why so many more boots than call sites, since the module declares no `@ParameterizedTest` at all:
+most classes wrap the call in a private per-class helper and every `@Test` goes through it. The
+extreme is `NodeIdInstructionTest`, whose 19 cases reach one `withSeededStore` site through
+`withCatalog`. The module holds 423 `@Test` methods, so the boot count is very nearly "one per
+case", which is the figure to re-derive at pickup rather than the site count.
 
 Four classes in the module boot directly instead, at seven sites, and every one of them has the boot or
 the schema's shape as its subject rather than as setup: `StoreReaderTest` (which also takes the
@@ -66,9 +72,13 @@ would delete the coverage they exist for.
 ## What a reset has to do, and what it does not
 
 A booted store holds rows in exactly two places outside the fact relations: the `meta_` family, whose
-authored rows the DDL seeds with an `INSERT`, and `store_stamp`. A reset clears the other **143** base
-tables and leaves those two alone. On a fresh boot every one of the 143 is empty, which is what makes
-`TRUNCATE` over the whole list the right shape rather than a curated one.
+authored rows the DDL seeds with an `INSERT`, and `store_stamp`. A reset clears every other base
+table (144 of them on 2026-08-21) and leaves those two alone. On a fresh boot every one of those is
+empty, which is what makes `TRUNCATE` over the whole list the right shape rather than a curated one.
+`meta_materialize` is the only relation the DDL inserts into, so "empty apart from the two" is a
+property of the schema rather than a list to maintain. The count is derived from
+`INFORMATION_SCHEMA` at run time and the DDL is edited most days; treat any number written here as
+a sighting, never as a value to assert against.
 
 **Re-deriving the dependency materialization is not part of a reset, and establishing that is what
 makes this slice cheap.** R768 left this open as a 10x swing on its own premise, so it is settled here.
@@ -92,43 +102,90 @@ closed when the body returns, which is the whole change: an in-memory H2 dies wi
 leaks beyond the fork. Under the module's four-thread class-level parallelism that is four boots per
 surefire JVM.
 
-**The reset lives beside the store rather than in the fixture.** It needs the table list from
-`INFORMATION_SCHEMA` (base tables in `PUBLIC`, excluding `META\_%` and `STORE_STAMP`), `SET
-REFERENTIAL_INTEGRITY FALSE` around the truncates, and the list computed once per store rather than per
-reset. Whether this is a new method on `GraphitronModelStore`, an addition to `StoreRefresh`, or a
-test-only helper in `FactStores` is the one design fork worth stating: `StoreRefresh` already owns
-row-clearing vocabulary, and extending it beats standing a second mechanism beside it, but its contract
-may be per-graph where this wants per-store. Settle that before writing the method, and do not
-duplicate the truncate loop into the fixture if `StoreRefresh` can carry it.
+**The reset is a new mechanism, and there is no existing one to extend.** It needs the table list
+from `INFORMATION_SCHEMA` (base tables in `PUBLIC`, excluding `META\_%` and `STORE_STAMP`), `SET
+REFERENTIAL_INTEGRITY FALSE` around the truncates, and the list computed once per store rather than
+per reset.
+
+`StoreRefresh` is the class that looks like the shape to extend and is not reachable. It is
+`no.sikt.graphitron.rewrite.capture.StoreRefresh`, package-private in **`graphitron`**, which
+depends on `graphitron-model` and on its test-jar; a call from this module's fixture would invert
+the module dependency. Its clear is also a different thing than this one wants: `StoreRefresh.prepare`
+takes a `FactSink`, a `ClasspathSources` and a class census, and deletes what one capture run owns,
+scoped by `graph_name` and by crawled source. Nothing there is a per-store clear. So this item
+stands a second row-clearing mechanism beside that one deliberately, the two being unrelated:
+`StoreRefresh` answers "what does this run own", and this answers "make this store look freshly
+booted".
+
+That leaves one real fork, and it is where the truncate lives. Put it in **test sources**, as a
+package-private helper next to `withSeededStore` in `no.sikt.graphitron.model.test`, rather than as
+a method on `GraphitronModelStore`. `GraphitronModelStore` is the store's production bootstrap and a
+`reset()` on it would be a production surface with no production caller, which is the drift smell
+the principles name. `FactStores` is the wrong home for the other reason its own javadoc gives: it
+owns no lifetime and puts no rows in the store, and 45 call sites in three downstream modules reach
+`FactStores.inMemory()` directly. Whatever this change touches, `FactStores.inMemory()` keeps
+opening and closing a fresh store, because those 45 sites depend on it doing exactly that. No
+downstream module calls `withSeededStore`, which is what confines this change to one module.
+
+**A re-entrant call has to fail loudly.** Today a nested `withSeededStore` would open a second
+store; after this change it would reset the outer body's rows out from under it and hand back the
+same store, which the leak guard cannot see because the rows are already gone. Nothing in the module
+nests today. Keep it that way with an in-use flag on the thread's holder that throws on re-entry,
+rather than relying on nobody trying. Mind the one legitimate case that looks like re-entry:
+`withSeededStore(String graphName, ...)` reaches the store through the one-argument form, so the flag
+has to sit below that delegation or the whole graph-anchored half of the suite trips it.
 
 **Nothing else in the fixture changes.** `withSeededStore(String graphName, ...)` keeps delegating; the
 seed helpers, `SEED_SOURCE`, and `derive` are untouched. No test class changes, which is the property
-that makes this slice worth doing first: 161 call sites and 30 classes adopt it by not changing.
+that makes this slice worth doing first: every call site and every class adopts it by not changing.
 
 ## Tests
 
 **A leak guard, and it is the only part of this that can fail silently.** A case passing because a
 previous case's row survived the reset is worse than a slow suite, and it would not announce itself.
-The guard has to be positive: after each reset, assert every clearable table is empty. Two decisions
-for the reviewer. Whether it runs always, which prices 143 `COUNT(*)` queries into every one of 420
-cases and may cost more than the boots did, or only under a system property that CI sets on a nightly
-run. And whether the table list is re-derived per assertion or once, since a table added to the schema
-must not silently stop being cleared *or* checked.
+The guard has to be positive: after each reset, assert every clearable table is empty.
+
+Both decisions this section left to the reviewer are settled, and both the cheap way.
+
+*Always on, not property-gated.* The arithmetic answers the cost worry the draft raised: the whole
+144-statement truncate is 0.85 ms, about 6 µs a statement, so a same-shape existence probe per table
+is single-digit milliseconds a reset and a couple of seconds across the suite, against 133 s saved. A
+nightly-only guard is also a weaker enforcer than this module's own standard asks for: an invariant
+exists only while something fails when it breaks, and one that breaks for a working day before
+anything notices has already let the bad case land. If the measured always-on price turns out to
+exceed a few seconds, narrow the probe (`SELECT 1 ... LIMIT 1` per table, or one `UNION ALL` round
+trip) before reaching for the property.
+
+*One list per store, shared by the clear and the guard.* Derive it once when the thread boots its
+store and hand the same list to both. Then a table added to the schema cannot start being checked
+without being cleared, or the reverse, which is the divergence the draft worried about; it is not
+two lists that must agree but one. Safe here because no test in the funnel executes DDL: the only
+classes that create or drop relations are the four that boot their own stores.
 
 **A boot-count pin.** The mechanism's whole claim is a number, so a test should assert it: after the
 suite, boots per JVM are bounded by the thread count plus the four direct-boot classes' own opens. That
 turns the counter from a throwaway instrument into a standing invariant, and it is what catches a
 future helper that opens a store per case again. It needs the counter to become a real, if internal,
-observable rather than the env-guarded patch R768 used.
+observable rather than the env-guarded patch the reactor-wide measurement used.
 
-**The existing suite is the correctness acceptance.** Thirty classes and 420 cases pass unchanged, and
-they pass with the classes shuffled: sequential-order dependence is exactly the defect a shared store
-can introduce, and JUnit's random class-order option is the cheapest way to hunt it. Run it three
-times, not once.
+Pin the invariant, not the literal four. `fixed.parallelism=4` sizes a `ForkJoinPool`, and that pool
+is allowed to add compensation threads when a task blocks, so the count of threads that ever run a
+class is not guaranteed to be exactly four and a `boots == 4` assertion can flake on a machine that
+never reproduces it. What is exactly true is one boot per thread that booted: count the distinct
+thread identities alongside the boots and assert the two are equal, plus a generous ceiling well
+under the case count. That fails just as loudly on a helper that boots per case, and cannot fail on a
+pool that grew.
+
+**The existing suite is the correctness acceptance.** All 29 funnel classes and the module's 423
+cases pass unchanged, and they pass with the classes shuffled: sequential-order dependence is exactly
+the defect a shared store can introduce, and JUnit's random class-order option is the cheapest way to
+hunt it. Run it three times, not once.
 
 Verification of the win is `mvn test -pl :graphitron-model -Plocal-db` before and after, alternated,
-plus the boot counter reporting four rather than 420. Expect the module near 14 s against 46.8 s.
-Absolute seconds differ per machine; the boot count does not.
+plus the boot counter reporting one per thread rather than 420. Expect the module near 14 s against
+46.8 s. Absolute seconds differ per machine; one boot per thread does not. The 33 s is off the
+build's *sequential* total; under `-T 1C` this module may not be on the critical path, so measure the
+module rather than reading a build-wide number off it.
 
 ## Roadmap entries
 
