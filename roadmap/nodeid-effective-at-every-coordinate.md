@@ -510,17 +510,97 @@ type backing and no member relation, and costs **0.28 s**. It is also the more c
 a bean-backed input type that carries no `@table` has no backing this schema resolves while its root
 argument is plainly a parameter.
 
-**Two destinations ship here and two do not, and the split is per precondition rather than per
-convenience.** `OWN_TABLE_COLUMNS` and `TARGET_TABLE_COLUMNS` are the reduction, total over the
-endpoint population once Java-slot coordinates are excluded from it. `JOOQ_RECORD` needs the slot's
-record class to be the record of the node type's own table, which is a refusal the tree ships today
-and a fact this relation does not yet read; and the record standing for an enclosing input type
-receives the tuple on its own table's columns rather than on the argument's scope table, so its lift
-departs a table the endpoint relation does not resolve. Each arrives with the fact that decides it.
-The exclusion is what makes this honest rather than a gap: a coordinate whose value reaches Java draws
-no destination row at all, so nothing is defaulted into a table predicate that has nothing to bind,
-and the stated hole is one shape, an `argMapping` path that descends into an argument and binds a
-single input field below it while its siblings still bind predicates.
+**The two table destinations shipped first and the two slot destinations followed, per precondition
+rather than per convenience.** `OWN_TABLE_COLUMNS` and `TARGET_TABLE_COLUMNS` are the reduction,
+total over the endpoint population once Java-slot coordinates are excluded from it. The exclusion is
+what made that honest rather than a gap: a coordinate whose value reaches Java drew no destination row
+at all, so nothing was defaulted into a table predicate that has nothing to bind.
+
+The slot pair then landed as a second arm over the slot relation, and the fact each needed turned out
+to be one relation rather than two. `intent_resolved_node_key_shape` reduces a node type's key to what
+a slot has to agree with: the arity, the generated record of the type's own table, and at arity one
+that column's name and its jOOQ binding type. `JOOQ_RECORD` is the slot's declared type equalling that
+record class, tested first and winning, because a record holds a tuple whatever the arity and reading
+a single-column key into its own table's record as a bare column value is the mistake the precedence
+exists to prevent. `SINGLE_KEY_COLUMN` is arity one with the type gate standing aside on either
+operand being unknown, which is `intent_resolved_node_key_projection`'s discipline for the same two
+operands and is what lets an untypeable parameter be carried out on arity alone with javac as the
+backstop.
+
+Two arms rather than one query, and that is not the per-destination decomposition the derivation-depth
+rule forbids. They drive off different relations for different facts: the table arm reduces the
+key-column child's lift, the slot arm reads a parameter and a key's shape, and neither re-joins the
+other's operands. H2 evaluates the arms independently, so the cost is additive rather than
+multiplicative, which the measurement below confirms.
+
+**What is still owed is a slot the value lands *inside*, and it is one walk rather than a
+destination.** A parameter typed as a consumer bean, or as some other table's record standing for the
+enclosing input type, receives the whole argument and the decoded value goes to a member of it. Which
+member that is needs a walk into the class, which is exactly the walk the slot relation was rewritten
+to avoid, so such a slot draws no destination row today. That is deliberately not a fall-through to
+`SINGLE_KEY_COLUMN`: binding one decoded value into a row type is worse than resolving nothing. The
+other stated hole is unchanged, an `argMapping` path that descends into an argument and binds a single
+input field below it while its siblings still bind predicates.
+
+**One gap in the partition claim, found by writing the arm and named rather than absorbed.** An
+overloaded `@service` resolves several candidate slots, and the slot arm requires one candidate rather
+than picking a type, so such an instruction has no row in either population. The invariant stage 5
+states is that every instruction either resolves or is refused, and this one does neither. It is a gap
+in the census rather than an author error the two verdicts cover, which is precisely what the
+invariant was stated to surface. Stage 5 owes it either a third verdict naming the ambiguous
+reference or a reading that the ambiguity is already refused upstream; what it must not do is let the
+arm pick.
+
+That gap also corrected the slot relation itself. Its named-parameter arm shipped demanding one
+producer candidate, which every other reader of `intent_field_producer_method` does, and here that was
+wrong in a way its own comment already contradicted: dropping the rows makes the use site look like
+one binding a table predicate, so an author whose `@service` names two overloads would have got the
+wire format bound into SQL on the strength of an ambiguity nobody resolved. The demand moved to the
+destination arm, where declining to pick means resolving nothing rather than resolving a predicate.
+
+**The slot arm's cost, and the one figure this section will not compute.** Two runs of the same probe
+against one sakila capture, milliseconds and rows:
+
+[cols="3,1,1,1",options="header"]
+|===
+| relation | rows | run 1 | run 2
+
+| `intent_node_id_instruction` | 69 | 79 | 100
+| `intent_node_id_decode_endpoint` | 40 | 656 | 677
+| `intent_node_id_decode_hop` | 16 | 1251 | 824
+| `intent_node_id_decode_hop_column` (table) | 20 | 1 | 1
+| `intent_node_id_decode_column` | 54 | 2406 | 2038
+| `intent_resolved_node_key_shape` | 12 | 237 | 241
+| `intent_node_id_decode_slot` | 0 | 127 | 138
+| `intent_node_id_decode` | 40 | 6630 | 6370
+| `intent_node_id_encode` | 15 | 760 | 719
+|===
+
+Two samples that agree to within a few per cent, which is the skill's claim about per-relation
+timings holding. What this table deliberately does not do is subtract the 10.7 s recorded for the
+destination relation a few paragraphs up. That figure was taken on an older base, trunk has moved a
+great deal since, and this item's whole measurement history is the record of what happens when a
+difference is read off two numbers taken under different conditions. The slot arm's own cost is
+readable without any subtraction: the relation it drives off is 0.13 s, the shape relation is 0.24 s,
+and the two arms are independent, so the arm adds a fraction of a second to a relation costing six.
+
+**Inline multiplicity ranked this relation first and the cost did not follow, which is the report
+telling the truth about what it measures.** With both arms in place `intent_node_id_decode` expands to
+1597 relation instantiations per read, the highest in the schema, its slot relation named twice
+(once by the arm, once by the table arm's exclusion). Breadth is not cost, the report says so, and
+here it is not: the relation costs what its expensive operand costs. Deduplicating the slot naming, by
+registering that relation or by restructuring the exclusion, would move the 1597 and would be a
+registration with no reader to justify it, so it waits for the stage that adds one.
+
+**The zero in that table is a fixture artefact, and finding out why is what verified the fork.** The
+probe captures the sakila schema against its jOOQ catalog and passes no classpath census, so the
+`jvm_` families are empty and no parameter resolves. Read carelessly, no slot rows on the real schema
+would have said the fork was inert, and the sakila schema does carry the shapes: an input type bound
+directly as a `FilmRecord` `@service` parameter with a `@nodeId` field on it is a fixture already in
+the tree. What settles it is a capture with a hand-built census, which is the test named in the Tests
+section below: three coordinates naming one node type and one key resolve a table predicate, the
+key's single column, and the film record respectively, off a real capture rather than seeded rows.
+That test is the one that would have caught an inert fork, and no store-tier case could have.
 
 **A captured fact is the lever neither of those is, and it is the one this family should have reached
 for first.** A registration trades a refresh for avoided re-evaluations and has to win that trade; a
@@ -929,10 +1009,10 @@ them.
 
 **Stage 2 is being taken in sub-increments, and one of its exits has moved.** The population and the
 two children shipped first, then the measurement work the section above records, then the destination
-relation. The two table destinations ship with the destination relation; the two slot destinations
-(`JOOQ_RECORD` and `SINGLE_KEY_COLUMN`, and with the latter the inferred arm and the `BARE_NODE_ID`
-edit) ship after it, each with the precondition that decides it, for the reason stated at the end of
-that section. Nothing generates from any of these rows until `NodeIdLeafResolver` becomes a reader, so
+relation with its two table destinations, then the two slot destinations with the key-shape relation
+that decides both. All four are now stated. What still travels separately is the `BARE_NODE_ID` edit
+and the inferred arm's consumer-side half, which belong with the verdict text rather than with the
+relation. Nothing generates from any of these rows until `NodeIdLeafResolver` becomes a reader, so
 the ordering inside stage 2 changes what is checkable per commit and not what stage 2 exits on: every
 `@nodeId` shape that generates today still has to have a row naming what it uses before stage 3 starts.
 The Java-slot fork itself ships with the table destinations rather than after them, because the two
@@ -984,8 +1064,20 @@ of as more of the same.
   well with the fork seeing nothing, and a decode routed to a table predicate when its value goes to a
   parameter is exactly the bug that shape hides. So each case states both, and the fork's rows render
   the root coordinate they were answered at, that being the whole of what makes an input-field row
-  correct. The sakila schema exercises neither fork arm, every `@nodeId` there binding a predicate, so
-  without these cases the fork would ship on no evidence at all.
+  correct. This is where the algebra is stated finely: each destination, each precondition, and each
+  way of arriving at no destination, including the type disagreement and the composite key that the
+  defect view will later name.
+* **Capture tier**, one coarse case, for the thing the store tier structurally cannot say. The fork
+  spans three families that only a capture fills together, the directive applications, the
+  input-occurrence paths and the classpath census, so a fork correct over seeded rows and finding
+  nothing on a captured schema would be inert with every store-tier case green.
+  `NodeIdDecodeSlotCaptureTest` captures one schema with a hand-built census and reads three
+  coordinates naming one node type and one key: the table predicate, the key's single column, and the
+  node type's own generated record. Deliberately coarse, and deliberately asserted as one list rather
+  than three cases, because the claim is the difference between them. An earlier draft of this item
+  asserted here that the sakila schema exercises no fork arm; that was read off a probe that passed
+  no census, and the schema does carry the shape, an input type bound directly as a record `@service`
+  parameter with a `@nodeId` field on it.
 * **Unit tier.** `NodeIdLeafResolverTest` gains the junction-chain case, and
   `multiHopLiftTranslationRejected` is *rewritten* from a rejection assertion to a remote-binding
   assertion rather than deleted, so the fixture that proved the old gate proves the new routing. A

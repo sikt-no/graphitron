@@ -27,6 +27,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethod;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethodParameter;
 import static no.sikt.graphitron.model.test.SeededStore.seedNode;
+import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumnRef;
 import static no.sikt.graphitron.model.test.SeededStore.seedOccurrencePath;
 import static no.sikt.graphitron.model.test.SeededStore.seedPrimaryKey;
 import static no.sikt.graphitron.model.test.SeededStore.seedService;
@@ -46,8 +47,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>The two relations are pinned together, because one is defined as the population the other does
  * not claim. A case that asserted only the destination would pass just as well if the slot relation
  * saw nothing, and a decode routed to a table predicate when its value goes to a Java parameter is
- * exactly the bug that shape would hide. So every case states both sides: which parameter the value
- * descends into, or that none does, and the destination that follows.
+ * exactly the bug that shape would hide. So every case about the fork states both sides: which parameter
+ * the value descends into, or that none does, and the destination that follows. The cases whose
+ * subject is which slot destination answers state the destination alone, the fork already being
+ * settled by the section above them.
  *
  * <p>The slot cases are keyed at the root of the use site rather than at the coordinate the author
  * annotated, and that is the claim most worth pinning: an input field two steps inside an argument
@@ -151,8 +154,9 @@ class NodeIdDecodeDestinationTest {
     /**
      * The coordinate the reporter met: a plain argument on a field a Java method produces, matched to
      * a parameter by its own name with no {@code argMapping} written at all. The value descends into
-     * that parameter, so no table predicate is this decode's destination, and the parameter's type is
-     * stated so a later refusal has both operands.
+     * that parameter rather than into a table predicate, the key is one column, and that column's
+     * type is the parameter's, so the destination is the single column and the consumer receives a
+     * decoded value where today it receives the base64.
      */
     @Test
     void anArgumentMatchedToAParameterByNameDescendsIntoIt() {
@@ -165,7 +169,8 @@ class NodeIdDecodeDestinationTest {
             assertThat(slots(dsl)).containsExactly(
                 "Query.films(ids) NAMED_PARAMETER ids java.lang.String"
                     + " root Query.films(ids) candidates 1");
-            assertThat(destinations(dsl)).isEmpty();
+            assertThat(destinations(dsl))
+                .containsExactly("Query.films(ids) Film SINGLE_KEY_COLUMN 1");
         });
     }
 
@@ -181,14 +186,15 @@ class NodeIdDecodeDestinationTest {
             seedNodeType(dsl, "Film", "film");
             seedField(dsl, GRAPH, "Query", "films", "Film", true);
             seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
-            seedProducer(dsl, "Query", "films", "filmId", "java.lang.Long");
+            seedProducer(dsl, "Query", "films", "filmId", "java.lang.String");
             seedServiceArgMappingPair(dsl, GRAPH, "Query", "films", 0, "filmId", "ids");
             seedArgumentPathSegments(dsl, GRAPH, "Query", "films", "ids");
 
             assertThat(slots(dsl)).containsExactly(
-                "Query.films(ids) MAPPED_PARAMETER filmId java.lang.Long"
+                "Query.films(ids) MAPPED_PARAMETER filmId java.lang.String"
                     + " root Query.films(ids) candidates 1");
-            assertThat(destinations(dsl)).isEmpty();
+            assertThat(destinations(dsl))
+                .containsExactly("Query.films(ids) Film SINGLE_KEY_COLUMN 1");
         });
     }
 
@@ -216,10 +222,12 @@ class NodeIdDecodeDestinationTest {
     }
 
     /**
-     * A parameter the census cannot type is still a slot. The row stands with a null type, because
-     * absence here would mean the decode binds a predicate and would hand the consumer the wire
-     * format at the one coordinate this whole reading exists to close; the type is what a refusal
-     * needs, not what carrying the decode out needs.
+     * A parameter the census cannot type is still a slot, and the decode is still carried out. The
+     * row stands with a null type, because absence here would mean the decode binds a predicate and
+     * would hand the consumer the wire format at the one coordinate this whole reading exists to
+     * close; the destination then follows from the arity alone and the type gate stands aside, with
+     * javac as the backstop. Refusing on an operand nobody could read is what would reinstate the
+     * bug at exactly the coordinate least able to report it.
      */
     @Test
     void anUntypeableParameterIsStillTheSlot() {
@@ -237,6 +245,142 @@ class NodeIdDecodeDestinationTest {
             assertThat(slots(dsl)).containsExactly(
                 "Query.films(ids) NAMED_PARAMETER ids (untyped)"
                     + " root Query.films(ids) candidates 1");
+            assertThat(destinations(dsl))
+                .containsExactly("Query.films(ids) Film SINGLE_KEY_COLUMN 1");
+        });
+    }
+
+    // ===== Which slot destination, and where neither answers =====
+
+    /**
+     * A parameter typed as the generated record of the node type's own table receives the whole
+     * decoded tuple, whatever the key's arity. Stated at arity two because that is where the record
+     * destination is doing something the single-column one cannot: two values into one row type.
+     */
+    @Test
+    void aRecordOfTheNodeTypesOwnTableTakesTheWholeTuple() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "FilmCategory", "film_category");
+            seedField(dsl, GRAPH, "Query", "pairings", "FilmCategory", true);
+            seedArgumentNodeId(dsl, GRAPH, "Query", "pairings", "ids", "FilmCategory");
+            seedProducer(dsl, "Query", "pairings", "ids", recordClass("film_category"));
+
+            assertThat(destinations(dsl))
+                .containsExactly("Query.pairings(ids) FilmCategory JOOQ_RECORD 2");
+        });
+    }
+
+    /**
+     * At arity one both slot destinations could read the row, so the precedence is pinned: a record
+     * is a record. Read the other way round a single-column key reaching its own table's record would
+     * bind one column value into a row type, which is the reading this ordering exists to prevent.
+     */
+    @Test
+    void aRecordWinsOverTheSingleColumnAtArityOne() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "Film", "film");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
+            seedProducer(dsl, "Query", "films", "ids", recordClass("film"));
+
+            assertThat(destinations(dsl))
+                .containsExactly("Query.films(ids) Film JOOQ_RECORD 1");
+        });
+    }
+
+    /**
+     * A record of some other table is not this node type's tuple, and it is deliberately no
+     * destination rather than falling through to the single-column one. Falling through is the
+     * failure worth a case of its own: it would bind one decoded value into a row type, and the
+     * record standing for an enclosing input type is exactly the shape that would reach it.
+     */
+    @Test
+    void aRecordOfSomeOtherTableIsNoDestinationHere() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "Film", "film");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
+            seedProducer(dsl, "Query", "films", "ids", recordClass("actor"));
+
+            assertThat(slots(dsl)).containsExactly(
+                "Query.films(ids) NAMED_PARAMETER ids " + recordClass("actor")
+                    + " root Query.films(ids) candidates 1");
+            assertThat(destinations(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * Both types known and disagreeing is no destination, which is what makes the gate a gate. The
+     * refusal naming both types is the defect view's, and its population is exactly this absence.
+     */
+    @Test
+    void aTypeDisagreementAtASingleColumnIsNoDestination() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "Film", "film");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
+            seedProducer(dsl, "Query", "films", "ids", "java.lang.Long");
+
+            assertThat(destinations(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * A key column the catalog cannot type stands aside exactly as an untypeable parameter does. A
+     * pinned key column resolves without a table having to have it, so the type is missing on the
+     * column's side here, and the decode is still carried out on the arity.
+     */
+    @Test
+    void aKeyColumnTheCatalogCannotTypeStandsAside() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "Film", "film");
+            seedNodeKeyColumnRef(dsl, GRAPH, "Film", 0, "not_a_column");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
+            seedProducer(dsl, "Query", "films", "ids", "java.lang.Long");
+
+            assertThat(destinations(dsl))
+                .containsExactly("Query.films(ids) Film SINGLE_KEY_COLUMN 1");
+        });
+    }
+
+    /**
+     * A composite key into a slot that is not a record is no destination. The count is what refuses
+     * it and the defect view quotes that count, so the case states the absence at the arity rather
+     * than at a type: the parameter's own type agrees with the first key column's here, and it is
+     * still not somewhere two values fit.
+     */
+    @Test
+    void aCompositeKeyIntoASingleValuedSlotIsNoDestination() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "FilmCategory", "film_category");
+            seedField(dsl, GRAPH, "Query", "pairings", "FilmCategory", true);
+            seedArgumentNodeId(dsl, GRAPH, "Query", "pairings", "ids", "FilmCategory");
+            seedProducer(dsl, "Query", "pairings", "ids", "java.lang.String");
+
+            assertThat(destinations(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * An overloaded {@code @service} resolves candidate slots and no destination, and the two halves
+     * of that are one claim. The slot rows have to survive the ambiguity, because a use site with no
+     * slot row reads as binding a table predicate, and an author whose service names two overloads
+     * would then get the wire format bound into SQL. The destination then declines to pick, so the
+     * instruction is carried out nowhere rather than carried out wrongly.
+     */
+    @Test
+    void anOverloadedProducerResolvesCandidateSlotsAndNoDestination() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "Film", "film");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
+            seedProducer(dsl, "Query", "films", "ids", "java.lang.String");
+            seedMethod(dsl, CLASSES, SVC, "get", "(I)V");
+            seedMethodParameter(dsl, CLASSES, SVC, "get", "(I)V", 0, "ids",
+                Map.of("", "java.lang.String"));
+
+            assertThat(slots(dsl)).hasSize(2);
             assertThat(destinations(dsl)).isEmpty();
         });
     }
@@ -248,6 +392,14 @@ class NodeIdDecodeDestinationTest {
      * argument, and nothing about that field or its type says whether its value reaches Java; what
      * says so is that the argument its occurrence path descends from is fed to a parameter. Asked at
      * the annotated coordinate the fork would find nothing and route the decode to a predicate.
+     *
+     * <p>No destination resolves, and that is this case's second statement rather than an oversight.
+     * The parameter takes a consumer bean, so what receives the decoded value is a member of that
+     * bean and not the parameter itself, and which member that is needs a walk into the class that
+     * the slot relation deliberately does not perform. The value reaching Java is settled here; where
+     * inside Java it lands is the piece still owed. What matters is that the fork already keeps this
+     * coordinate out of the table population, so nothing binds a predicate against a value bound for
+     * a bean.
      */
     @Test
     void anInputFieldReachesJavaBecauseItsRootArgumentDoes() {
@@ -339,6 +491,11 @@ class NodeIdDecodeDestinationTest {
             seedType(dsl, GRAPH, "ID", "SCALAR");
             body.accept(dsl);
         });
+    }
+
+    /** The generated record class the catalog fixture names for a table. */
+    private static String recordClass(String tableName) {
+        return PKG + ".tables.records." + tableName + "Record";
     }
 
     private static void seedNodeType(DSLContext dsl, String typeName, String tableRef) {
