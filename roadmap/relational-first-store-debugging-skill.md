@@ -214,8 +214,8 @@ argument that put the evaluation-model rules on the page applies unchanged: the 
 with a gate, the rungs name `meta_materialize`, and a backticked relation name in a rule there
 cannot rot silently. It sits naturally against the materialized-view ruling's existing refresh-cost
 note ("a snapshot only pays off where a relation is read many times between writes"), which is half
-of the trade already. The cost is that a fourth item now writes to that page, which the Roadmap
-entries section already handles for three.
+of the trade already. The cost is one more claim on a page other items also write to, which the
+Roadmap entries section handles.
 
 The two alternatives are named here because each was considered and each fails on this item's own
 logic. Leaving the levers to the skill alone would put one durable rule in the surface nothing
@@ -349,15 +349,19 @@ the item does get is two existing gates and one named acceptance:
   test into a `psql` prompt against the live dev-loop store. It is the right first arm of the
   measure step once it ships. This item does not wait for it: the guarded-print recipe works today,
   and the skill's step 3 is written so that adding the console arm is an edit to one paragraph.
-* **R771** (`nested-jooq-grain-and-anchor-skill`, Ready) is the authoring-time sibling and already
-  names this item as the cost half of the same instinct problem. Two skills, not one: the trigger
-  moments differ (writing a query against being ambushed by a slow one), and a document that fires
-  on both would be reached for at neither. Its Spec settled the same split this one does, doctrine
-  into `fact-model.adoc` first and the skill curating after, and it leaves the H2 evaluation-model
-  inventory to this item by name. So three items now write to that page: R758's registry narrative,
-  R771's grain-and-drive-from section, and this item's evaluation-model rules. All three are
-  separate paragraphs with no shared sentence, so any order works and whoever lands second rebases.
-  If the page's rules run outgrows one page under the three of them, the split to reach for is a
+* **R771** (`nested-jooq-grain-and-anchor-skill`, In Review) is the authoring-time sibling and
+  already names this item as the cost half of the same instinct problem. Two skills, not one: the
+  trigger moments differ (writing a query against being ambushed by a slow one), and a document that
+  fires on both would be reached for at neither. It settled the same split this one does, doctrine
+  into `fact-model.adoc` first and the skill curating after, and it left the H2 evaluation-model
+  inventory to this item by name. Its half has landed: one grain-and-drive-from paragraph on the
+  page and `.claude/skills/nested-jooq/SKILL.md` beside it, which is the shape this item's own two
+  deliverables should read as. The paragraph sits under "One base, many views", well clear of the
+  insertion point above, and it forward-references the correlated-view rule rather than restating
+  any of the four rules this item writes, so nothing here needs re-scoping against it. That leaves
+  two items still to write to that page, R758's registry narrative and this item's rules, on
+  separate paragraphs with no shared sentence, so either order works and whoever lands second
+  rebases. If the page's rules run outgrows one page under all three, the split to reach for is a
   `how-to/` page on authoring store reads, which is the same fallback R771 named, and not a page
   per item.
 * **R728** (`nodeid-effective-at-every-coordinate`, In Progress) is the source of the retracted
