@@ -1,7 +1,7 @@
 ---
 id: R793
 title: "The diagnostics drain overruns its 30 s session budget on a real workspace"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: lsp
