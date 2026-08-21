@@ -68,6 +68,9 @@ A set of **tools** the agent calls to answer questions:
 | `status`
 | Whether the dev-loop tools are answering, plus how the facts behind them stand: whether anything has captured this module yet, and whether the newest read of your schema refused a file. When it did, the other tools go on answering from the last clean read rather than falling silent, and this is where you see that they are.
 
+| `store.console`
+| The connection coordinates of this session's read-only SQL console onto its own fact store, for a question none of the tools above asks. Fields, not prose, plus a ready-to-run command. Always present: without a console it answers `disabled` and names the command that starts one. See xref:#store-console[Query the fact store from an agent] below.
+
 | `execute`
 | Runs a GraphQL query or mutation against your generated resolvers in-process, on the dev database you configure, and returns exactly what the query returns. Mutations always roll back. Appears only when a dev database is configured; see xref:#execute-tool[Run a query without an app server] below.
 |===
@@ -103,6 +106,15 @@ Or via environment variables, which override the POM so credentials stay out of 
 **No database configured?** The `execute` tool simply does not appear; every other dev tool (schema, catalog, diagnostics, docs) works with no database at all.
 
 Three current limits: federation subgraphs are not yet supported by `execute` (every other tool works on them); writes cannot be persisted (rollback is unconditional by design); and the rollback guarantee covers mutation-field transactions, so a *query*-path `@service` or `@routine` that writes runs outside it, exactly as it runs outside graphitron's transaction demarcation in production.
+
+[#store-console]
+== Query the fact store from an agent
+
+The tools above are the questions somebody wrote in advance. When an agent has one they do not cover, the fact store behind them holds a couple of hundred relations that do, and `store.console` is the door: with the console enabled it returns the connection as fields (`host`, `port`, `user`, `password`, `database`) plus a ready `connectCommand`. Read the fields; there is nothing to parse.
+
+The tool is always present. Without a console it answers `{"status": "disabled"}` and names the command that starts one, so an agent can tell you what to restart with rather than guessing why `psql` refuses. The port is fresh per session, so re-read the coordinates after a restart instead of caching them.
+
+The client is `psql`: the server speaks the PostgreSQL wire protocol, but a JDBC driver cannot connect to it, and the backslash commands are unimplemented, so introspect through `information_schema` (its identifiers are upper-case). Writes to the store's relations are refused. Turning the console on, and what it does and does not guarantee, is in xref:dev-loop.adoc#store-console[Query the fact store while the session runs].
 
 [#setup]
 == Connect your agent

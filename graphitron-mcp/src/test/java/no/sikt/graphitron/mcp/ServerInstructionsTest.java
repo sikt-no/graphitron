@@ -187,6 +187,7 @@ class ServerInstructionsTest {
         new Advertised(TOOL, "diagnostics.aggregate"),
         new Advertised(TOOL, "code"),
         new Advertised(TOOL, "docs.search"),
+        new Advertised(TOOL, "store.console"),
         new Advertised(TOOL, "execute"),
         new Advertised(RESOURCE, "directives"),
         new Advertised(PROMPT, "about"));

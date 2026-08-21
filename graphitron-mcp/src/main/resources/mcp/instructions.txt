@@ -11,6 +11,7 @@ Ask these tools before grepping the schema or reading generated sources. They an
 - What is broken right now: `diagnostics`.
 - What is broken in proportion, when there is more than a page of it: `diagnostics.aggregate`. Its group keys feed back into `diagnostics` to read one cluster's entries.
 - Which consumer Java the schema binds to: `code`, called with `kind=service`, `kind=condition` or `kind=record`. One class per entry, carrying its methods and its record components, so a class that is more than one of those answers once with all of it.
+- Anything these cannot ask, in SQL: `store.console`.
 - Is the dev session live, and is its answer current: `status`.
 
 Three things hold across these tools:

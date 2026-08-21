@@ -10,6 +10,7 @@ import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.boot.ReadBudget;
+import no.sikt.graphitron.model.boot.StoreConsole;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
@@ -165,6 +166,16 @@ public class DevMojo extends AbstractRewriteMojo {
     @Parameter
     DevDatabaseBinding devDatabase;
 
+    /**
+     * The read-only SQL console onto this session's own fact store, so a developer can query the
+     * rows the session is answering from. Optional and off by default: with no {@code <storeConsole>}
+     * block (and no {@code GRAPHITRON_DEV_STORE_CONSOLE} env override) no port is bound and the
+     * session is unchanged, and the log says how to turn it on. See {@link StoreConsoleBinding} for
+     * the block shape and the env-wins override set.
+     */
+    @Parameter
+    StoreConsoleBinding storeConsole;
+
     // The environment the <devDatabase> reconciler reads its overrides from. Production is
     // System.getenv(); package-private so DevMojoTest can inject a map without mutating the JVM's
     // real environment.
@@ -212,6 +223,11 @@ public class DevMojo extends AbstractRewriteMojo {
     // needs a transaction of its own rather than a savepoint inside the writer's. Minted and closed
     // beside lspStore; null for the bare mojos, exactly as that one is.
     StoreReader mcpStore;
+    // The session's fact-store SQL console, or null when it is off (the default) or could not open.
+    // A debug affordance, so it degrades: a console that will not open costs the developer a tool
+    // and never the session. Closed ahead of the store in cleanup(), the link connection it holds
+    // pointing at the store. Package-private for the same reason sessionStore is.
+    StoreConsole storeConsoleHandle;
     // The javac_ family's writer over sessionStore, or null before the store opens (bare mojos in
     // the unit tier); reportCompile writes through it beside the console sink.
     CompileFacts compileFacts;
@@ -241,6 +257,16 @@ public class DevMojo extends AbstractRewriteMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
+        // Before anything opens a store, because this is the earliest point the goal can reach and
+        // H2 reads the property once, when its first class initialises. It confines every H2 server
+        // this JVM starts (the fact-store console below is the only one) to loopback.
+        //
+        // LOAD-BEARING, and deliberately not sufficient on its own: this goal can run in a JVM that
+        // already loaded H2 (ModelCodegenDriver opens a store during an ordinary build), and there
+        // the property has no effect at all. StoreConsole therefore verifies the bind after starting
+        // the listener and refuses to keep it up when it cannot be confined. Do not read this line as
+        // covering the requirement and drop that check.
+        System.setProperty("h2.bindAddress", LOOPBACK_HOST);
         // Initial codegen and LSP catalog build both reflect on consumer classes, so they share
         // one URLClassLoader scope. Watchers that follow only resolve paths (no reflection); they
         // capture the ctx returned here, whose loader is *closed* by the time setup proceeds.
@@ -275,6 +301,9 @@ public class DevMojo extends AbstractRewriteMojo {
         // serve the language server and MCP stale rows. Idempotent, and a no-op with no
         // registrations.
         Materializations.refreshAll(sessionStore.dsl());
+        // After the refresh, so the linked relations include the refreshed materializations, and
+        // before the watchers, so the console is up before the first round lands.
+        this.storeConsoleHandle = startStoreConsole();
         this.compileFacts = new CompileFacts(sessionStore.dsl(),
             new FactCapture.GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
         this.rejectionFacts = new RejectionFacts(sessionStore.dsl(),
@@ -315,9 +344,22 @@ public class DevMojo extends AbstractRewriteMojo {
         this.schemaDebounce = new DebounceExecutor(debounceMs);
         Consumer<String> saveListener = buildSaveListener(
             initialCtx.schemaFileExtensions(), schemaDebounce, () -> regenerate(workspace));
-        bindServer(workspace, saveListener, new RagConfig(resolveRagCacheDirectory(initialCtx.basedir())),
-            buildExecuteToolConfig(initialCtx),
-            new StoreHandle(sessionStore.dsl(), initialCtx.graphName()), mcpStore);
+        try {
+            bindServer(workspace, saveListener,
+                new RagConfig(resolveRagCacheDirectory(initialCtx.basedir())),
+                buildExecuteToolConfig(initialCtx),
+                new StoreHandle(sessionStore.dsl(), initialCtx.graphName()), mcpStore,
+                coordinatesOf(storeConsoleHandle));
+        } catch (MojoExecutionException e) {
+            // A bind failure is the one path out of this method that never reaches cleanup(), so the
+            // console it opened above has to be given back here or its port stays held for the rest
+            // of the Maven run. Same reason bindServer unwinds the warms itself: this returns into a
+            // still-live JVM rather than an exiting one.
+            if (storeConsoleHandle != null) {
+                storeConsoleHandle.close();
+            }
+            throw e;
+        }
         // Seed the source facts so goto-definition / hover work before the first .java edit; the
         // source watcher refreshes them on the source cadence thereafter. Path-only read on
         // initialCtx (no loader).
@@ -383,7 +425,8 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     private void bindServer(Workspace workspace, Consumer<String> saveListener, RagConfig ragConfig,
-        ExecuteTool.Config executeConfig, StoreHandle storeHandle, StoreReader storeReader)
+        ExecuteTool.Config executeConfig, StoreHandle storeHandle, StoreReader storeReader,
+        StoreConsole.Coordinates consoleCoordinates)
         throws MojoExecutionException {
         try {
             this.server = new DevServer(new InetSocketAddress(LOOPBACK_HOST, port), workspace, saveListener);
@@ -421,7 +464,7 @@ public class DevMojo extends AbstractRewriteMojo {
         try {
             this.mcpServer = new GraphitronMcpServer(
                 new InetSocketAddress(LOOPBACK_HOST, mcpPort), embedderWarm, docsWarm, ragConfig,
-                executeConfig, storeHandle, storeReader);
+                executeConfig, storeHandle, storeReader, consoleCoordinates);
         } catch (IOException e) {
             // The partial-startup unwind must reach the warms too, not just the LSP socket: warm
             // cleanup otherwise lives only in cleanup() (the normal Ctrl+C stop), which this exception
@@ -434,6 +477,91 @@ public class DevMojo extends AbstractRewriteMojo {
                 "graphitron:dev: MCP port " + mcpPort + " is already in use (or could not be bound). "
                     + "Stop the other graphitron:dev session occupying it, then retry.", e);
         }
+    }
+
+    /**
+     * Opens the session's fact-store console, or says in the log how to open one.
+     *
+     * <p>Both arms print a whole command, which is the point rather than a nicety. The port is
+     * ephemeral by default, so a line carrying a placeholder would be useless: the log is the only
+     * place that value exists. And the disabled arm is the default, so its line is the one most
+     * developers will actually meet, which is why it names the command that starts a console rather
+     * than leaving that to the manual.
+     *
+     * <p>The console is a debug affordance, so a failure to open degrades: it warns with the reason
+     * and the session continues without one, which is {@code openAt}'s posture that trouble in a
+     * convenience costs the convenience and never correctness.
+     */
+    StoreConsole startStoreConsole() throws MojoExecutionException {
+        Integer port = resolveStoreConsole();
+        if (port == null) {
+            getLog().info("graphitron:dev: no fact-store console (<storeConsole> or "
+                + "GRAPHITRON_DEV_STORE_CONSOLE). To query");
+            getLog().info("graphitron:dev: this session's facts with psql, restart with:");
+            // The same string the MCP store.console tool hands an agent, so the line a developer
+            // reads and the line an agent quotes cannot drift into two spellings.
+            getLog().info("graphitron:dev:   " + GraphitronMcpServer.ENABLE_STORE_CONSOLE);
+            return null;
+        }
+        try {
+            StoreConsole console = sessionStore.console(port);
+            getLog().info("graphitron:dev: fact-store console up, read-only, "
+                + console.relationCount() + " relations linked, " + LOOPBACK_HOST + " only.");
+            getLog().info("graphitron:dev:   " + console.connectCommand());
+            return console;
+        } catch (RuntimeException e) {
+            getLog().warn("graphitron:dev: no fact-store console, the session continues without "
+                + "one: " + e.getMessage());
+            // The remedy for the one failure this goal cannot prevent. H2 reads h2.bindAddress when
+            // its first class initialises, which in a JVM that already opened a store is before this
+            // goal ran at all; putting it on the Maven command line is what gets it there in time.
+            getLog().warn("graphitron:dev:   if the listener could not be confined, restart with "
+                + "MAVEN_OPTS=-Dh2.bindAddress=" + LOOPBACK_HOST + " so H2 reads it before it loads.");
+            return null;
+        }
+    }
+
+    /**
+     * Reconciles the {@code <storeConsole>} block with its environment overrides, env winning per
+     * field: the port to bind ({@code 0} for an ephemeral one, which is the default and the
+     * encouraged shape), or {@code null} where no console was asked for.
+     *
+     * <p>{@code null} rather than a disabled-carrying record because absence is the whole answer at
+     * this level: no console, no port bound, nothing else configured. A port that will not parse
+     * fails the goal loudly rather than falling back to ephemeral, on the same grounds as an
+     * unsupported dev-database dialect: a value the developer typed and this goal ignored is worse
+     * than a stop.
+     */
+    Integer resolveStoreConsole() throws MojoExecutionException {
+        String enabled = environment.get("GRAPHITRON_DEV_STORE_CONSOLE");
+        boolean on = enabled != null && !enabled.isBlank()
+            ? Boolean.parseBoolean(enabled.strip())
+            : storeConsole != null && Boolean.TRUE.equals(storeConsole.enabled);
+        if (!on) {
+            return null;
+        }
+        String port = firstNonBlank(environment.get("GRAPHITRON_DEV_STORE_CONSOLE_PORT"),
+            storeConsole == null || storeConsole.port == null ? null : storeConsole.port.toString());
+        if (port == null) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(port.strip());
+        } catch (NumberFormatException e) {
+            throw new MojoExecutionException(
+                "graphitron:dev: '" + port + "' is not a port number. Set <storeConsole><port> or "
+                    + "GRAPHITRON_DEV_STORE_CONSOLE_PORT to an integer, or leave it unset for an "
+                    + "ephemeral port, which is the encouraged shape.", e);
+        }
+    }
+
+    /**
+     * The console's coordinates, or {@code null} where there is no console. Null-safe here rather
+     * than at each site that threads them on, an agent-facing tool that answers {@code disabled}
+     * being exactly what the absent case means.
+     */
+    static StoreConsole.Coordinates coordinatesOf(StoreConsole console) {
+        return console == null ? null : console.coordinates();
     }
 
     /**
@@ -843,7 +971,10 @@ public class DevMojo extends AbstractRewriteMojo {
         }
     }
 
-    private void cleanup() {
+    // Package-private so DevMojoTest can assert that a session's own listeners and handles are
+    // released rather than left in the JVM; every member it touches is null-guarded, so a mojo
+    // holding only some of them tears down cleanly.
+    void cleanup() {
         if (incrementalCompiler != null) incrementalCompiler.close();
         if (schemaWatcher != null) schemaWatcher.close();
         if (classpathWatcher != null) classpathWatcher.close();
@@ -858,6 +989,11 @@ public class DevMojo extends AbstractRewriteMojo {
         // warm threads die with the JVM regardless.
         if (docsWarm != null && docsWarm.state() instanceof WarmState.Ready<DocsIndex> ready) {
             ready.handle().close();
+        }
+        // Before the store, and before the readers: the console holds a link connection pointing at
+        // the store, so it is the first of the store's dependants to go.
+        if (storeConsoleHandle != null) {
+            storeConsoleHandle.close();
         }
         // Before the store itself, since both read through a connection the store minted.
         if (lspStore != null) {

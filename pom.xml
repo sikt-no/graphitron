@@ -267,6 +267,21 @@
                              of the reactor console. Keeps a passing run quiet; the full output stays on
                              disk and the failure report points at the file for any class that fails. -->
                         <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                        <systemPropertyVariables>
+                            <!-- Confines every H2 server a test fork starts to loopback. Reactor-wide
+                                 rather than per module because the property has to arrive with the JVM:
+                                 H2 reads it once, when its first class initialises, so a test setting it
+                                 itself is too late in any fork where an earlier test already opened a
+                                 store, and which fork that is depends on test ordering. Nothing here
+                                 starts an H2 server except the fact store's SQL console, so this costs
+                                 the other modules nothing.
+
+                                 It does not stand in for the production path: graphitron:dev sets the
+                                 same property as early as a Mojo can reach, and because that can still
+                                 be too late, StoreConsole verifies the bind at runtime and refuses to
+                                 stay up when it cannot be confined. -->
+                            <h2.bindAddress>127.0.0.1</h2.bindAddress>
+                        </systemPropertyVariables>
                     </configuration>
                 </plugin>
                 <plugin>

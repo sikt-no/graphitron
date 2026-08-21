@@ -168,6 +168,67 @@ class GraphitronMcpServerTest {
         }
     }
 
+    // ---- store.console ----
+
+    /**
+     * The whole point of this tool is that an agent reads values rather than parsing them, so each
+     * coordinate is asserted as its own field. The connect command rides along for an agent that
+     * shells out, and is the console's own string rather than one reassembled here, which is what
+     * keeps the human's line and the agent's line from becoming two spellings.
+     *
+     * <p>The coordinates are hand-built. That they describe a live console is
+     * {@code StoreConsoleTest}'s claim; this tier's subject is the wire shape.
+     */
+    @Test
+    void storeConsoleReturnsEveryCoordinateAsItsOwnField() throws Exception {
+        var coordinates = new no.sikt.graphitron.model.boot.StoreConsole.Coordinates(
+            "127.0.0.1", 32973, "graphitron", "graphitron", "store", 219,
+            "PGPASSWORD=graphitron psql -h 127.0.0.1 -p 32973 -U graphitron -d store");
+        try (var server = new GraphitronMcpServer(loopback(0), null, null, null, null, null, null,
+                 coordinates);
+             var client = connect(server.port())) {
+            client.initialize();
+            assertThat(client.listTools().tools()).extracting(McpSchema.Tool::name)
+                .contains("store.console");
+
+            var structured = structured(
+                client.callTool(McpSchema.CallToolRequest.builder("store.console").build()));
+            assertThat(structured)
+                .containsEntry("status", "up")
+                .containsEntry("host", "127.0.0.1")
+                .containsEntry("port", 32973)
+                .containsEntry("user", "graphitron")
+                .containsEntry("password", "graphitron")
+                .containsEntry("database", "store")
+                .containsEntry("relations", 219)
+                .containsEntry("connectCommand", coordinates.connectCommand())
+                .doesNotContainKey("enableWith");
+        }
+    }
+
+    /**
+     * The disabled arm, which is the default one: the tool is present and says what to do rather
+     * than absent and teaching an agent nothing. No connection field appears at all, so an agent
+     * cannot read a placeholder as a port.
+     */
+    @Test
+    void storeConsoleAnswersDisabledWithTheCommandThatEnablesIt() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0));
+             var client = connect(server.port())) {
+            client.initialize();
+            assertThat(client.listTools().tools()).extracting(McpSchema.Tool::name)
+                .contains("store.console");
+
+            var structured = structured(
+                client.callTool(McpSchema.CallToolRequest.builder("store.console").build()));
+            assertThat(structured)
+                .containsEntry("status", "disabled")
+                .containsEntry("enableWith", GraphitronMcpServer.ENABLE_STORE_CONSOLE)
+                .doesNotContainKeys("host", "port", "user", "password", "database",
+                    "connectCommand");
+        }
+    }
+
     private static ExecuteTool.Config executeConfig() {
         return new ExecuteTool.Config(
             new DevQueryExecutor.Wiring("com.example", java.nio.file.Path.of("target/graphitron-classes"),

@@ -240,6 +240,41 @@ public final class GraphitronModelStore implements AutoCloseable {
     }
 
     /**
+     * Mints a read-only SQL console onto this store, served over the PostgreSQL wire protocol on a
+     * loopback port, so a developer can query the rows a live session is answering from. The store
+     * mints it for the reason it mints {@link #reader(ReadBudget)}, and one more: the console's link
+     * statements need this store's URL, which is private, and a console assembled outside this class
+     * would have to reconstruct a stamped path or a {@link UUID} name and would fail exactly the way
+     * that method describes.
+     *
+     * <p>{@code console(0)} is the ordinary call: the ephemeral port is the encouraged shape, since
+     * several dev sessions in one workspace is the ordinary case and a pinned port makes the second
+     * one fail to open. Nothing here treats {@code 0} as a sentinel;
+     * {@link StoreConsole#port()} reports the port bound either way.
+     *
+     * <p>What the console <em>is</em>, and the three measured constraints that shaped it (PostgreSQL
+     * mode being a creation-time property, pgjdbc being unable to speak to H2's PostgreSQL server,
+     * and H2's {@code allowOthers=false} being a peer check rather than a bind restriction) are
+     * {@link StoreConsole}'s subject. Nothing about this store changes: its own mode, its
+     * connection, and the way every generator query reads it are untouched, which is the whole
+     * reason the console is a second database that reads through to this one.
+     *
+     * @param port the port to bind, or {@code 0} for an ephemeral one
+     * @throws IllegalStateException if the console cannot be opened or its listener cannot be shown
+     *         to be confined to loopback. A debug affordance failing must not fail a session, so a
+     *         caller is expected to warn and continue without one, which is
+     *         {@link #openAt}'s posture that trouble here costs a convenience and never correctness.
+     */
+    public StoreConsole console(int port) {
+        return console(port, StoreConsole::verifyLoopbackOnly);
+    }
+
+    /** {@link #console(int)} with the bind check as a seam, for the test that forces it to fail. */
+    StoreConsole console(int port, StoreConsole.BindCheck bindCheck) {
+        return StoreConsole.open(connection, url, port, bindCheck);
+    }
+
+    /**
      * Whether this store opened onto rows a previous run wrote. False for every in-memory store
      * and for a persisted one created fresh by this open, so a caller can treat it as "the schema
      * is empty" without asking the database.

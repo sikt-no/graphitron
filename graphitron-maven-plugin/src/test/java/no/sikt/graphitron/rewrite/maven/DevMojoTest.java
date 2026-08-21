@@ -88,6 +88,8 @@ class DevMojoTest {
             int takenMcpPort = mcpBlocker.port();
 
             var mojo = mojoFor(basedir, 0, takenMcpPort);
+            // A console opened before the bind, so the unwind's reach over it can be asserted below.
+            mojo.environment = Map.of("GRAPHITRON_DEV_STORE_CONSOLE", "true");
             // Inject ONNX-free warms the unwind can be observed against: the embedder loader returns
             // nothing (no real BgeEmbedder ONNX load, which would SIGSEGV the fork), and the docs warm
             // wraps a store whose close() the bind-failure unwind must call. Started during bind, these
@@ -121,6 +123,15 @@ class DevMojoTest {
             assertThat(spyStore.closed)
                 .as("the bind-failure unwind closed the warmed docs store")
                 .isTrue();
+            // The fact-store console opened before the bind, and this path never reaches cleanup(),
+            // so it is the unwind's to give back. It matters more than it looks under mvnd, whose
+            // daemon JVM outlives the failed build and would keep the port held.
+            assertThat(mojo.storeConsoleHandle)
+                .as("the console opened before the MCP bind was attempted")
+                .isNotNull();
+            assertThat(mojo.storeConsoleHandle.running())
+                .as("the bind-failure unwind stopped the console's listener too")
+                .isFalse();
         }
     }
 
@@ -384,6 +395,191 @@ class DevMojoTest {
             .hasMessageContaining("POSTGRES and ORACLE");
     }
 
+    // ---- <storeConsole> reconciliation and the two log lines ----
+
+    /**
+     * The port the pinned-port case binds, and it is below the operating system's ephemeral range on
+     * purpose. A port reserved by opening and closing a socket goes straight back to the range every
+     * other listener in a parallel build is drawing from, and the second or two before the console
+     * binds it is enough for something else to take it; a port the operating system never hands out
+     * cannot be taken that way. Distinct from the ones graphitron-model's own console cases pin,
+     * those forks running beside this one.
+     */
+    private static final int PINNED_CONSOLE_PORT = 18481;
+
+    /**
+     * The disabled path is the default, so its log line is as much a shipped surface as the enabled
+     * one: a developer who never reads the manual gets from "I wish I could see the rows" to a psql
+     * prompt on what the session told them. The command it names is the one the MCP tool hands an
+     * agent, from the same constant.
+     */
+    @Test
+    void storeConsole_absent_bindsNoPortAndSaysHowToStartOne() throws Exception {
+        var mojo = new DevMojo();
+        var log = new CapturingLog();
+        mojo.setLog(log);
+        mojo.environment = Map.of();
+
+        assertThat(mojo.resolveStoreConsole()).isNull();
+        assertThat(mojo.startStoreConsole()).isNull();
+        assertThat(log.infos)
+            .anySatisfy(line -> assertThat(line).contains("no fact-store console"))
+            .anySatisfy(line -> assertThat(line).contains("psql"))
+            .anySatisfy(line -> assertThat(line).endsWith(GraphitronMcpServer.ENABLE_STORE_CONSOLE));
+        assertThat(DevMojo.coordinatesOf(null))
+            .as("and the MCP server is handed no coordinates, which is what its disabled arm means")
+            .isNull();
+    }
+
+    @Test
+    void storeConsole_enabledWithNoPort_opensOnAnEphemeralPortAndLogsTheWholeCommand() throws Exception {
+        try (var store = FactStores.inMemory()) {
+            var mojo = new DevMojo();
+            var log = new CapturingLog();
+            mojo.setLog(log);
+            mojo.environment = Map.of("GRAPHITRON_DEV_STORE_CONSOLE", "true");
+            mojo.sessionStore = store;
+
+            assertThat(mojo.resolveStoreConsole())
+                .as("an unset port means ephemeral, the encouraged shape")
+                .isZero();
+            var console = mojo.startStoreConsole();
+            try {
+                assertThat(console).isNotNull();
+                assertThat(console.port()).as("the bound port, never the 0 asked for").isPositive();
+                // Exactly the handle's own string: with an ephemeral port the log is the only place
+                // that number exists, so a line reassembled at the log site could be wrong and pass.
+                assertThat(log.infos)
+                    .contains("graphitron:dev:   " + console.connectCommand());
+                assertThat(DevMojo.coordinatesOf(console))
+                    .isEqualTo(console.coordinates());
+            } finally {
+                if (console != null) {
+                    console.close();
+                }
+            }
+        }
+    }
+
+    @Test
+    void storeConsole_pinnedPort_bindsExactlyThatPortAndTheCommandNamesIt() throws Exception {
+        int pinned = PINNED_CONSOLE_PORT;
+        try (var store = FactStores.inMemory()) {
+            var mojo = new DevMojo();
+            var log = new CapturingLog();
+            mojo.setLog(log);
+            mojo.environment = Map.of();
+            var binding = new StoreConsoleBinding();
+            binding.enabled = true;
+            binding.port = pinned;
+            mojo.storeConsole = binding;
+            mojo.sessionStore = store;
+
+            assertThat(mojo.resolveStoreConsole()).isEqualTo(pinned);
+            var console = mojo.startStoreConsole();
+            try {
+                assertThat(console).isNotNull();
+                assertThat(console.port()).isEqualTo(pinned);
+                assertThat(log.infos).anySatisfy(line ->
+                    assertThat(line).contains("-p " + pinned));
+            } finally {
+                if (console != null) {
+                    console.close();
+                }
+            }
+        }
+    }
+
+    @Test
+    void storeConsole_envOverridesThePomOnBothFields() throws Exception {
+        var mojo = new DevMojo();
+        var binding = new StoreConsoleBinding();
+        binding.enabled = true;
+        binding.port = 54321;
+        mojo.storeConsole = binding;
+        mojo.environment = Map.of("GRAPHITRON_DEV_STORE_CONSOLE_PORT", "12345");
+        assertThat(mojo.resolveStoreConsole()).isEqualTo(12345);
+
+        mojo.environment = Map.of("GRAPHITRON_DEV_STORE_CONSOLE", "false");
+        assertThat(mojo.resolveStoreConsole())
+            .as("the env wins per field, including the field that turns it off")
+            .isNull();
+    }
+
+    @Test
+    void storeConsole_unparseablePort_failsLoudRatherThanFallingBackToEphemeral() {
+        // A value the developer typed and this goal quietly ignored is worse than a stop: they would
+        // read the ephemeral port off the log and conclude the pin works.
+        var mojo = new DevMojo();
+        mojo.environment = Map.of(
+            "GRAPHITRON_DEV_STORE_CONSOLE", "true",
+            "GRAPHITRON_DEV_STORE_CONSOLE_PORT", "eight-thousand");
+        assertThatThrownBy(mojo::resolveStoreConsole)
+            .isInstanceOf(MojoExecutionException.class)
+            .hasMessageContaining("eight-thousand")
+            .hasMessageContaining("ephemeral");
+    }
+
+    /**
+     * A console that will not open costs the developer a debug tool and never the session, which is
+     * the store's own posture that trouble in a convenience is warned about and continued past.
+     * Driven by pointing the goal at a port something else holds.
+     */
+    @Test
+    void storeConsole_thatCannotOpen_warnsWithTheReasonAndTheSessionContinues() throws Exception {
+        try (var store = FactStores.inMemory();
+             var taken = new java.net.ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            var mojo = new DevMojo();
+            var log = new CapturingLog();
+            mojo.setLog(log);
+            mojo.environment = Map.of(
+                "GRAPHITRON_DEV_STORE_CONSOLE", "true",
+                "GRAPHITRON_DEV_STORE_CONSOLE_PORT", Integer.toString(taken.getLocalPort()));
+            mojo.sessionStore = store;
+
+            assertThat(mojo.startStoreConsole())
+                .as("no console, and no exception out of the goal")
+                .isNull();
+            assertThat(log.warnings)
+                .anySatisfy(line -> assertThat(line).contains("no fact-store console"))
+                .anySatisfy(line -> assertThat(line).contains("h2.bindAddress"));
+        }
+    }
+
+    /**
+     * The console is a listener and a live handle, so the session has to give both back. Asserted as
+     * "the port is free and the store is closed afterwards", which is what a leak actually looks
+     * like: a console never closed keeps a port bound for the rest of the JVM.
+     *
+     * <p>That the console goes <em>before</em> the store, its link connection pointing there, is
+     * stated at the teardown site rather than pinned here: with the store closed first the console's
+     * own shutdown still succeeds, so the ordering leaves no observable trace to assert on.
+     *
+     * <p>Release is read off H2's own server state rather than by probing the port for silence: a
+     * port nobody holds belongs to nobody, so in a parallel build something else listening there a
+     * moment later would read as a leak.
+     */
+    @Test
+    void cleanup_releasesTheConsoleAlongWithTheStore() throws Exception {
+        var store = FactStores.inMemory();
+        var mojo = new DevMojo();
+        mojo.setLog(new CapturingLog());
+        mojo.environment = Map.of("GRAPHITRON_DEV_STORE_CONSOLE", "true");
+        mojo.sessionStore = store;
+        mojo.storeConsoleHandle = mojo.startStoreConsole();
+        assertThat(mojo.storeConsoleHandle).isNotNull();
+        assertThat(mojo.storeConsoleHandle.running()).isTrue();
+
+        mojo.cleanup();
+
+        assertThat(mojo.storeConsoleHandle.running())
+            .as("the console's listener is gone once the session tears down")
+            .isFalse();
+        assertThat(store.connection().isClosed())
+            .as("and so is the store the console read through")
+            .isTrue();
+    }
+
     private static DevDatabaseBinding binding(String url, String user, String password,
             String dialect, String claims, Boolean allowClaimsOverride) {
         var binding = new DevDatabaseBinding();
@@ -411,6 +607,18 @@ class DevMojoTest {
     private static final class CapturingLog extends SystemStreamLog {
         final List<String> errors = new ArrayList<>();
         final List<Throwable> errorThrowables = new ArrayList<>();
+        final List<String> warnings = new ArrayList<>();
+        final List<String> infos = new ArrayList<>();
+
+        @Override
+        public void warn(CharSequence content) {
+            warnings.add(String.valueOf(content));
+        }
+
+        @Override
+        public void info(CharSequence content) {
+            infos.add(String.valueOf(content));
+        }
 
         @Override
         public void error(CharSequence content) {

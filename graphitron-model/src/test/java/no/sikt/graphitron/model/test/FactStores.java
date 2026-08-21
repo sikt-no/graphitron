@@ -1,6 +1,9 @@
 package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import org.junit.jupiter.api.extension.AfterAllCallback;
+import org.junit.jupiter.api.extension.BeforeAllCallback;
+import org.junit.jupiter.api.extension.ExtensionContext;
 
 import java.nio.file.Path;
 
@@ -50,5 +53,67 @@ public final class FactStores {
      */
     public static GraphitronModelStore fileBacked(Path home) {
         return GraphitronModelStore.openAt(home);
+    }
+
+    /**
+     * One in-memory store for a whole test class, as a JUnit extension.
+     *
+     * <p>The third lifetime, beside the two above, and it is a lifetime rather than a convenience:
+     * a class whose cases each open their own store pays the fact schema's two thousand statements
+     * per case, which is what makes a case-per-claim test class expensive enough that an author
+     * starts merging claims to keep it fast. Declared as an extension rather than as a
+     * {@code @BeforeAll} field so no test spells the store type, and so the close cannot be
+     * forgotten:
+     *
+     * <pre>{@code
+     * @RegisterExtension
+     * static final FactStores.ClassStore STORE = FactStores.perClass();
+     *
+     * @Test void aClaim() {
+     *     var store = STORE.handle();
+     *     ...
+     * }
+     * }</pre>
+     *
+     * <p>Only for a class whose cases do not interfere. The store arrives empty and stays whatever
+     * the cases leave it, so a class that seeds rows and counts them wants a store per case, from
+     * {@link #inMemory()}.
+     */
+    public static ClassStore perClass() {
+        return new ClassStore();
+    }
+
+    /**
+     * The handle behind {@link #perClass()}. Owns the store's lifetime, opening it before the
+     * class's first case and closing it after the last, so a case borrows the handle and never
+     * closes it.
+     */
+    public static final class ClassStore implements BeforeAllCallback, AfterAllCallback {
+
+        private GraphitronModelStore store;
+
+        private ClassStore() {}
+
+        /** The store, open for the duration of the class. Never closed by a caller. */
+        public GraphitronModelStore handle() {
+            if (store == null) {
+                throw new IllegalStateException(
+                    "the class store is not open; declare it @RegisterExtension on a static field");
+            }
+            return store;
+        }
+
+        @Override
+        public void beforeAll(ExtensionContext context) {
+            store = inMemory();
+        }
+
+        @Override
+        public void afterAll(ExtensionContext context) {
+            if (store != null) {
+                store.close();
+                store = null;
+            }
+        }
     }
 }

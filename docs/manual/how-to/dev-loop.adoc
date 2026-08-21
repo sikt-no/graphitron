@@ -167,6 +167,35 @@ Unlike the LSP port, the MCP port is fixed at `8488` and not overridable, so a c
 
 The full setup, the complete tool list, and the `.mcp.json` for zero-config sharing are in xref:mcp-agent-context.adoc[Agent context over MCP].
 
+[#store-console]
+== Query the fact store while the session runs
+
+The dev session keeps one fact store open for its whole run, and every answer it gives comes out of that store: the classifier's verdicts, the catalog census, the diagnostics, the `@service` bindings. When an answer looks wrong, the fastest way to find out why is usually to query the rows behind it. The console is that door: a read-only SQL prompt on the session's own store, live as rounds land.
+
+A session without a console tells you how to start one, and a session with a console tells you how to connect to it. You never have to compose either command yourself:
+
+[source,bash]
+----
+$ mvn graphitron:dev
+graphitron:dev: no fact-store console (<storeConsole> or GRAPHITRON_DEV_STORE_CONSOLE). To query
+graphitron:dev: this session's facts with psql, restart with:
+graphitron:dev:   GRAPHITRON_DEV_STORE_CONSOLE=true mvn graphitron:dev
+
+$ GRAPHITRON_DEV_STORE_CONSOLE=true mvn graphitron:dev
+graphitron:dev: fact-store console up, read-only, 219 relations linked, 127.0.0.1 only.
+graphitron:dev:   PGPASSWORD=graphitron psql -h 127.0.0.1 -p 32973 -U graphitron -d store
+----
+
+Paste the second line into another terminal and you are in. The port is a fresh free one each start, so two dev sessions never collide; copy it from the log. Pin `<port>` in the POM if you would rather have a stable port, and note that a pinned port collides when you run two sessions.
+
+The listener is on `127.0.0.1` and the console refuses to start if it cannot confirm that, so it is not reachable from anywhere else.
+
+What you get is the session's live rows, read-only: a query after a save sees that round's facts. "Read-only" means writes to the store's relations are refused, which stops a mistyped `UPDATE` while you are poking around. It is not a sandbox, so nothing you type at this prompt should be load-bearing.
+
+Two things about the prompt itself. `psql`'s backslash commands (`\dt`, `\d <table>`) do not work, because the server implements only part of PostgreSQL's system catalog; find your way around with `information_schema.tables` and `information_schema.columns` instead, and note that its identifiers are upper-case (`WHERE table_schema = 'PUBLIC'`). And `psql` is the client: the server speaks the PostgreSQL wire protocol, but JDBC-based tools (DBeaver, IntelliJ's PostgreSQL driver) cannot connect to it.
+
+An agent on the session's MCP server reads the same coordinates as structured fields, so it connects without scraping them out of this log. See xref:mcp-agent-context.adoc#store-console[Query the fact store from an agent].
+
 == See also
 
 * xref:mcp-agent-context.adoc[Agent context over MCP]: connect an MCP-aware agent to the same dev server.

@@ -13,6 +13,7 @@ import no.sikt.graphitron.mcp.rag.RagConfig;
 import no.sikt.graphitron.mcp.rag.WarmState;
 import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
 import no.sikt.graphitron.model.boot.StoreAnswer;
+import no.sikt.graphitron.model.boot.StoreConsole;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
@@ -76,6 +77,14 @@ public final class GraphitronMcpServer implements AutoCloseable {
 
     /** Server key advertised in the handshake; matches the client-config server name {@code graphitron}. */
     static final String SERVER_NAME = "graphitron";
+
+    /**
+     * The command that starts a dev session with a fact-store SQL console. Named here because two
+     * surfaces quote it, the {@code store.console} tool's disabled answer and the dev goal's own log
+     * line, and two spellings of one command is exactly the drift a developer would meet as "the
+     * agent told me to run something that does not work".
+     */
+    public static final String ENABLE_STORE_CONSOLE = "GRAPHITRON_DEV_STORE_CONSOLE=true mvn graphitron:dev";
 
     private final McpSyncServer mcpServer;
     private final Server httpServer;
@@ -169,6 +178,26 @@ public final class GraphitronMcpServer implements AutoCloseable {
         AsyncWarm<Embedder> embedderWarm, AsyncWarm<DocsIndex> docsWarm, RagConfig ragConfig,
         ExecuteTool.Config executeConfig, StoreHandle storeHandle, StoreReader storeReader
     ) throws IOException {
+        this(address, embedderWarm, docsWarm, ragConfig, executeConfig, storeHandle, storeReader, null);
+    }
+
+    /**
+     * The full production form, with the fact-store SQL console's connection coordinates. Nullable,
+     * and {@code null} is the ordinary case: the console is off by default, and
+     * {@code store.console} then answers {@code disabled} with the command that starts one rather
+     * than being absent. The growable-parameter convention {@code RagConfig} set, with the overload
+     * above defaulting it, so a caller that wires no console needs no change.
+     *
+     * <p>Coordinates rather than the console handle itself: this server hands them on and never
+     * connects, so what it needs is a value it can put on the wire, and the handle's lifetime stays
+     * entirely the caller's.
+     */
+    public GraphitronMcpServer(
+        InetSocketAddress address,
+        AsyncWarm<Embedder> embedderWarm, AsyncWarm<DocsIndex> docsWarm, RagConfig ragConfig,
+        ExecuteTool.Config executeConfig, StoreHandle storeHandle, StoreReader storeReader,
+        StoreConsole.Coordinates consoleCoordinates
+    ) throws IOException {
         this.docsSearchTool = new DocsSearchTool(embedderWarm, docsWarm);
         // The index reads the census itself, through the reader the host minted: the store is where a
         // capture lands, so reading it per observation is what makes the ranking current. The reader
@@ -206,7 +235,8 @@ public final class GraphitronMcpServer implements AutoCloseable {
             codeTool(storeHandle, storeReader),
             schemaTool(storeHandle, storeReader), diagnosticsTool(storeHandle),
             diagnosticsAggregateTool(storeHandle),
-            docsSearchTool.specification(), catalogSearchTool(storeHandle, storeReader)));
+            docsSearchTool.specification(), catalogSearchTool(storeHandle, storeReader),
+            storeConsoleTool(consoleCoordinates)));
         if (executeConfig != null) {
             tools.add(new ExecuteTool(executeConfig).specification());
         }
@@ -1036,6 +1066,79 @@ public final class GraphitronMcpServer implements AutoCloseable {
         return McpSchema.CallToolResult.builder()
             .addTextContent(summary)
             .structuredContent(fields)
+            .build();
+    }
+
+    // ---- store.console (SQL against the fact store, over the wire) ----
+
+    /**
+     * {@code store.console}: the connection coordinates of the dev session's read-only SQL console
+     * onto its own fact store, as fields. The fixed tools answer the questions somebody wrote in
+     * advance; this one is the door to the questions nobody did, over the same rows every other tool
+     * reads.
+     *
+     * <p>Advertised on every boot, in {@code catalog.search}'s shape rather than {@code execute}'s.
+     * An absent tool teaches an agent nothing; a tool that answers {@code disabled} with the command
+     * that enables it lets the agent tell its human what to restart with.
+     *
+     * <p>Deliberately not folded into {@code status}. That tool reports the graph's fact
+     * availability and freshness, and connection coordinates for a different protocol are an
+     * unrelated answer that would widen a routinely-called tool for no reason.
+     */
+    private static McpServerFeatures.SyncToolSpecification storeConsoleTool(
+        StoreConsole.Coordinates coordinates
+    ) {
+        var tool = McpSchema.Tool.builder("store.console",
+                Map.of("type", "object", "properties", Map.of()))
+            .title("Fact-store SQL console")
+            .description("Returns the connection coordinates of this dev session's read-only SQL "
+                + "console onto its own fact store, as fields (host, port, user, password, database) "
+                + "plus a ready-to-run connectCommand, so there is nothing to parse. Run SQL there "
+                + "for a question the other tools do not answer, or for a result larger than a tool "
+                + "response should carry; it is the same facts they read, live. The client is psql: "
+                + "the server speaks the PostgreSQL wire protocol but JDBC drivers cannot connect to "
+                + "it, and psql's backslash commands are unimplemented, so introspect through "
+                + "information_schema (its identifiers are upper-case). Writes to the store's "
+                + "relations are refused. The console is off unless the developer turned it on, in "
+                + "which case this answers status=disabled and names the command that starts one. "
+                + "The port is fresh per session, so re-read these coordinates after a restart "
+                + "rather than caching them. Takes no arguments.")
+            .build();
+        return McpServerFeatures.SyncToolSpecification.builder()
+            .tool(tool)
+            .callHandler((exchange, request) -> storeConsoleResult(coordinates))
+            .build();
+    }
+
+    /**
+     * The two arms. No coordinates is not a refusal in the store-backed tools' sense: nothing is
+     * missing that should be there, the console is simply off, and the useful answer is the command
+     * that turns it on.
+     */
+    static McpSchema.CallToolResult storeConsoleResult(StoreConsole.Coordinates coordinates) {
+        if (coordinates == null) {
+            return McpSchema.CallToolResult.builder()
+                .addTextContent("store.console: this dev session has no fact-store console. It is "
+                    + "off by default; ask the developer to restart the session with: "
+                    + ENABLE_STORE_CONSOLE)
+                .structuredContent(Map.of("status", "disabled", "enableWith", ENABLE_STORE_CONSOLE))
+                .build();
+        }
+        var fields = new LinkedHashMap<String, Object>();
+        fields.put("status", "up");
+        fields.put("host", coordinates.host());
+        fields.put("port", coordinates.port());
+        fields.put("user", coordinates.user());
+        fields.put("password", coordinates.password());
+        fields.put("database", coordinates.database());
+        fields.put("relations", coordinates.relations());
+        // The same string the session printed for its developer, carried rather than reassembled, so
+        // an agent that shells out runs exactly the line that was measured to work.
+        fields.put("connectCommand", coordinates.connectCommand());
+        return McpSchema.CallToolResult.builder()
+            .addTextContent("store.console: read-only console up on " + coordinates.host() + ":"
+                + coordinates.port() + " over " + coordinates.relations() + " relations.")
+            .structuredContent(Map.copyOf(fields))
             .build();
     }
 
