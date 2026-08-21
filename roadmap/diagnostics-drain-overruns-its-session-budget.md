@@ -130,3 +130,110 @@ the drain asynchronous, which is `roadmap/diagnostics-drain-leaves-the-triggerin
 worth doing whatever this item finds. Splitting the drain's read per file, which would trade away the
 one-snapshot consistency the batch exists to give and multiply the statement count.
 
+## What the diagnosis found, and what was done
+
+Steps 1 to 4 ran against a capture of the sakila example's schema through the LSP module's
+`StoreFixture.ofCatalog`, on a machine whose one bare evaluation of `intent_field_column_table` cost
+131 s against the 151 s the inlining item recorded, so the boxes are comparable. The statement was
+taken verbatim off the real drain: `Diagnostics.Batch.judgeAll` run over the whole schema file with a
+listener capturing the rendered SQL, then each of the statement's 22 select-list arms executed and
+timed alone, with the walk's real question values inlined. One correction to this spec's own premise
+fell out first: the 31310 ms the latency item recorded is the time until the budget aborted the
+statement, not the statement's cost. Run to completion, the statement's expensive arms alone exceed
+seven minutes on this box, so the budget was hiding most of the defect it reported.
+
+**Attribution, before any change.**
+
+[cols="3,2,2",options="header"]
+|===
+| Arm | Reads | Alone
+
+| override arm
+| `intent_field_column_table`
+| 142 s
+
+| redirect arm
+| `intent_type_backing` joined to the census
+| over 300 s, timed out
+
+| backing arm, either population
+| `intent_type_backing` / `intent_type_backing_seed`
+| 1.9 s / 15 ms
+
+| slot arm
+| `intent_class_member_slot` joined to the backing
+| 1.8 s
+
+| every other arm, each alone
+| censuses, spellings, base tables
+| 0 to 33 ms
+|===
+
+**Two hypotheses died, and both refutations changed the plan.** The static multiplicity ranking
+predicted nothing, as the plan expected: `intent_type_backing_seed`, the arm this session first
+suspected from a mislabelled probe read, measures 15 ms. And the leading hypothesis named the right
+mechanism on the wrong lever: the redirect arm's census-driven join is real and is the worst term,
+but the driving-side rewrite the navigation item measured for `DeclarationFacts` turned out
+unnecessary here, because the term that makes every driving order ruinous is one relation further
+down. `intent_resolved_type_binding` carries a `COUNT(*) OVER`, so no outer predicate prunes it: the
+backing arm filtered to one type costs 22 ms, the same arm filtered to a whole document's types is
+re-evaluated once per filter element and costs 1.9 s, and the census-driven join re-evaluates it per
+driving row and never finishes. That is `intent_spelled_table`'s registration case verbatim, on a
+relation named fifteen times across thirteen view bodies whose one evaluation is 25 ms for 61 rows.
+
+**The levers pulled are two `meta_materialize` registrations, and no Java changed.**
+
+[cols="3,1,1",options="header"]
+|===
+| Read, on the same capture | Before | After
+
+| redirect arm alone
+| over 300 s
+| 6 ms
+
+| backing and slot arms, each
+| 1.9 s
+| 5 ms
+
+| one evaluation of `intent_field_column_scope`
+| 1.6 s
+| 5 ms as a table; its refresh evaluates the rule once at about 170 ms
+
+| one evaluation of `intent_field_column_table`
+| 131 s
+| 144 ms
+
+| override arm alone
+| 142 s
+| 139 ms
+
+| **the drain's whole statement**
+| **aborted at 30 s; over seven minutes to completion**
+| **191 ms**
+|===
+
+`intent_resolved_type_binding` fell first and removed everything but the override arm: the scan
+attribution of the residual 9.5 s put 63758 of its scans on `sql_constraint_column` under the
+reference-step machinery, re-entered per row by the correlated `NOT EXISTS` that
+`intent_field_column_table`'s unresolved-path arm runs against `intent_field_column_scope`. So the
+scope was the second registration, priced at one 170 ms evaluation per capture per graph against the
+per-row re-evaluations it ends. Both `reason` rows carry the arithmetic. The refresh cost the plan
+said to price lands at about 175 ms per capture for the pair, and the registration of the 131-second
+view itself was rejected on exactly the refresh-cost ground the plan reserved for it.
+
+**The pin.** `DiagnosticsStatementCountTest.theDrainsStatementStaysCollapsed` captures the drain's
+own statement off the production read, `EXPLAIN ANALYZE`s it against the fixed fixture, and asserts
+a total scan-count ceiling: measured 658, ceiling 20000, against hundreds of thousands for the
+collapsed shape's return. That is the enforcer currency the coordination section agreed with
+`roadmap/lsp-surface-latency-budgets.md`, landed first here; that item extends it across the six
+surfaces rather than introducing a second currency.
+
+**Hand-back to the latency item.** Its step 2 prescribes a correlated-lookup rewrite of
+`DeclarationFacts`'s redirects arm, measured against the binding as a view. The registration
+landed here removes the term that rewrite works around, and this statement's identical arm fell from
+timeout to 6 ms with no Java change, so that item should re-measure its arm against the registered
+binding before writing anything, per the boundary both items already state.
+
+The acceptance criterion holds with more headroom than it asked for: 191 ms against the 3 s
+interactive budget, on a box slower than the one that filed the report, and the scan counts say why.
+

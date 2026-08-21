@@ -19,6 +19,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -221,6 +223,47 @@ class DiagnosticsStatementCountTest {
         assertThat(byUri).hasSize(1);
         assertThat(byUri.get("file:///a.graphqls")).isEmpty();
         assertThat(counted.get()).isZero();
+    }
+
+    /**
+     * Ceiling on the total {@code scanCount} H2 reports for the drain's one statement against
+     * {@link #GRAPH_SDL}. The number is a shape pin, not a benchmark: the same statement in the
+     * shape this guards against, with the registered relations under it evaluated once per naming
+     * and per driving row instead of read as tables, measures in the hundreds of thousands of scans
+     * on this fixture, so the ceiling separates the two shapes by orders of magnitude while leaving
+     * room for the fixture to grow. Chosen from a measured total in the mid hundreds.
+     */
+    private static final long DRAIN_SCAN_CEILING = 20_000;
+
+    @Test
+    void theDrainsStatementStaysCollapsed() {
+        // A statement count cannot see what one statement expands to: the drain was one statement
+        // while a single read of it re-evaluated an unprunable view per driving row and overran the
+        // session budget. The scan total is the deterministic, clock-free residue of that shape, so
+        // it is what this tier can pin. Asserted against the plan of the same statement the drain
+        // issues, captured rather than restated, so the pin cannot drift from the production read.
+        var capturedSql = new AtomicReference<String>();
+        var configuration = store.handle().dsl().configuration()
+            .derive(new DefaultExecuteListenerProvider(new ExecuteListener() {
+                @Override
+                public void executeStart(ExecuteContext ctx) {
+                    if (ctx.query() != null) {
+                        capturedSql.set(DSL.using(ctx.configuration()).renderInlined(ctx.query()));
+                    }
+                }
+            }));
+        diagnose(new StoreHandle(DSL.using(configuration), StoreFixture.GRAPH), GRAPH_SDL);
+        assertThat(capturedSql.get()).isNotNull();
+
+        String plan = store.handle().dsl()
+            .resultQuery("EXPLAIN ANALYZE " + capturedSql.get())
+            .fetchOne(0, String.class);
+        long total = Pattern.compile("scanCount: (\\d+)").matcher(plan).results()
+            .mapToLong(m -> Long.parseLong(m.group(1)))
+            .sum();
+        assertThat(total)
+            .as("total scanCount of the drain's statement plan")
+            .isLessThanOrEqualTo(DRAIN_SCAN_CEILING);
     }
 
     // ===== Helpers =====

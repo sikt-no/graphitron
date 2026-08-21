@@ -68,3 +68,20 @@ measurement, and the statement also carries the census-side join shape that
 `roadmap/lsp-surface-latency-budgets.md` measured at about 1.1 s per evaluation on this store.
 Attribution across that statement's roughly twenty subqueries belongs to the drain's own item; what
 belongs here is that the reader now exists and the cost has somewhere to land.
+
+## The drain item has since done the attribution, and most of this item's premise moved
+
+Added by the session that implemented `roadmap/diagnostics-drain-overruns-its-session-budget.md`,
+whose write-up carries the measurements. Confirmed here: the drain's read of this relation paid the
+full unfiltered evaluation, 131 s on a comparable box, because the filters never prune past the
+ROW_NUMBER. The 4148-style repeated scans this item said to explain first were attributed:
+`sql_constraint_column` under the reference-step machinery, re-entered once per naming and once per
+row of the unresolved-path arm's correlated NOT EXISTS against `intent_field_column_scope`, on top
+of `intent_resolved_type_binding` being re-evaluated per naming through its own COUNT(*) OVER.
+
+Two registrations landed there rather than here, because the drain was the live reader: 
+`intent_resolved_type_binding` and `intent_field_column_scope` are now `meta_materialize` rows whose
+`reason` columns carry the arithmetic. One evaluation of this relation is now about 144 ms on the
+same capture, from 131 s. What remains for this item is the smaller question of whether that
+residual, and this view's remaining static breadth, still earn work of their own, and the answer
+should start from fresh numbers rather than from the 151 s in the title.
