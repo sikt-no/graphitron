@@ -1,7 +1,7 @@
 ---
 id: R673
 title: "A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: nodeid
