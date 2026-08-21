@@ -87,6 +87,20 @@ view", "debug this query", and encodes:
    taken first.
 6. **The lever hierarchy.** Captured fact, then `meta_materialize` registration, then rewrite,
    with the refresh-against-reads-avoided trade stated.
+7. **Choose what to materialize, and push it down.** A registration is a shared investment, not a
+   local patch: materialize the relation the cost multiplies *through*, low enough in the
+   derivation tree that every reader above it benefits, not the relation that happened to look
+   slow from where you stood. R728 measured both sides of this. Materializing
+   `intent_node_id_decode_endpoint`, which three relations read, took each of them from 7.5 s to
+   2.4 s at one 5.4 s refresh, because each had been paying for the whole shared subtree; the
+   scope table's registration pays because four view bodies name it and its refresh is seventy
+   milliseconds. The counter-case is the same discipline: the hop column relation had exactly one
+   reader that no build-time consumer exercised yet, so every refresh bought nothing, and its
+   registration moved to the stage that adds the consumer. R742's precedent is the same shape:
+   the 24.5 s defect view was fixed by materializing two relations *underneath* it, not itself.
+   The test the skill should state: count the readers of the candidate (the `meta_materialize`
+   doctrine and `report-inline-multiplicity` both help), price its refresh, and prefer the
+   deepest relation whose materialization removes re-evaluation for more readers than you.
 
 ## Fork to settle at Spec
 
