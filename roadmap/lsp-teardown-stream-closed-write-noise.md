@@ -1,7 +1,7 @@
 ---
 id: R794
 title: "LSP connection teardown logs SEVERE stack traces for stream-closed writes"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 3
 theme: lsp
@@ -67,21 +67,119 @@ writes synchronously and throws `JsonRpcException` straight into whichever threa
 fired the recalculation, which in the dev loop is a Maven thread rather than an lsp4j
 one.
 
-Whether this is the same item or a split is a Spec question. They share a cause
-(teardown leaves per-connection state reachable) and the first fix makes the second
-harmless, but only the second one makes it correct.
+Both defects are in scope here, as two ordered deliverables. They share one cause,
+teardown leaving per-connection state reachable, and splitting them would leave the
+item claiming a console is quiet while a known-wrong reference is still live: the
+wrapper makes the stale listener harmless, and only clearing the slot makes it correct.
 
-## Sketch of a fix
+## What "fixed" means
 
-lsp4j takes a message-consumer wrapper, `Launcher.Builder.wrapMessages`, and applies
-it to both the outgoing and incoming consumer, so one wrapper per launcher covers
-every write. Have that wrapper swallow a `consume` failure exactly when
-`JsonRpcException.indicatesStreamClosed` says the stream is gone, log it at debug, and
-rethrow anything else. That is lsp4j's own predicate for this condition rather than a
-hand-rolled message match, and it puts the judgement at the one seam every outbound
-message passes through: the response path, the `publishDiagnostics` push, and the
-synchronous error responses all get it at once. Both launcher sites want it.
+A developer detaching an editor from `graphitron:dev` and reattaching sees nothing in
+the console. A write that fails for any reason other than the peer being gone is still
+loud, and no other behaviour changes: every message that can be delivered still is.
 
-Coverage: `DevServerTest` already drives a real socket against a real launcher, so the
-regression pin is a request left in flight across a client disconnect, asserting no
-`SEVERE` record reaches the handler.
+## Deliverable 1: the write side asks the question lsp4j already answers
+
+The seam is `Launcher.Builder.wrapMessages`. It is applied to the outgoing
+`StreamMessageConsumer` (inside `createRemoteEndpoint`) and to the incoming consumer
+(inside `create`), so one wrapper per launcher covers every message in both
+directions. Verified against the 0.24.0 bytecode rather than assumed, because a
+wrapper applied to only one of the two would fix the visible symptom and leave the
+`publishDiagnostics` push still throwing.
+
+The wrapper catches a `consume` failure, consults
+`JsonRpcException.indicatesStreamClosed`, and on a true verdict logs at debug and
+returns; anything else rethrows unchanged. lsp4j's own predicate is the whole point:
+it already enumerates the conditions that mean "the peer is gone" (`Socket closed`,
+`Connection reset`, `Broken pipe`, `Stream closed`, `Pipe closed`,
+`ClosedChannelException`, `InterruptedIOException`) and recurses through
+`JsonRpcException` causes itself, and `ConcurrentMessageProcessor` already trusts it on
+the read side. Matching on messages by hand here would be a second, worse copy of a
+predicate that ships in the dependency.
+
+One judgement to get right, and the main thing a reviewer should push on: the wrapper
+must not widen into a general write-error swallow. The boundary is exactly the
+predicate, and the rethrow branch is what keeps a genuine framing or serialisation
+failure visible.
+
+Both launcher sites need this, so the policy should not be a line either site can
+forget. Introduce one factory in `graphitron-lsp` that builds a configured
+`Launcher<LanguageClient>` from a server plus an input and output stream, and have both
+`no.sikt.graphitron.lsp.server.Launcher` (stdio) and
+`no.sikt.graphitron.rewrite.maven.dev.DevServer.serve` (socket) call it. That also
+collapses the builder setup those two currently duplicate, and it means a third
+transport added later gets the policy by construction. `graphitron-lsp` is already a
+dependency of `graphitron-maven-plugin` and already has `slf4j-api`, so the factory has
+both the reach and the logger it needs. Note the asymmetry worth a comment: the noise
+being removed is lsp4j's, logged through `java.util.logging`, while the debug line
+replacing it goes through slf4j like the rest of our code.
+
+## Deliverable 2: teardown stops leaving a dead connection reachable
+
+`Workspace.setRecalculateListener` is a single-slot setter with a no-op default, so the
+minimal correct fix is a compare-and-clear: teardown clears the slot only if the
+listener still installed is the one this connection put there. Plain unconditional
+clearing is wrong, because a reconnect can install its listener before the old
+connection's teardown runs, and an unconditional clear would then silently stop
+diagnostics for the live editor. Getting that ordering backwards would turn a cosmetic
+bug into a functional one, which is why it is spelled out here rather than left to the
+implementation.
+
+The clear belongs where the connection ends rather than in `exit()`. `exit()` is a
+client-driven notification that a disconnecting editor may never send, so the `finally`
+in `DevServer.serve` is the only place guaranteed to run. `GraphitronLanguageServer`
+needs to expose the teardown; its `exit()` comment ("lsp4j drives process lifetime;
+nothing to clean up") is true for stdio and false for the shared-workspace server, and
+should stop saying so.
+
+## Coverage
+
+Three pins, deliberately split by what each can prove:
+
+1. **The predicate boundary**, in `graphitron-lsp`, with no sockets: hand the wrapper a
+   `MessageConsumer` that throws `JsonRpcException(SocketException("Socket closed"))`
+   and assert the wrapper returns; hand it one that throws a `JsonRpcException` wrapping
+   an unrelated `IOException` and assert it propagates. This is the pin that fails if
+   someone later widens the catch.
+2. **The end-to-end suppression**, deterministic rather than racy. A test-owned
+   launcher pair over a real socket, with a local service method that blocks on a latch:
+   the client sends the request, the test closes the socket, the test releases the latch,
+   the handler completes, and lsp4j attempts the write into a socket that is already
+   gone. Assert no `SEVERE` record reaches a `java.util.logging.Handler` attached to the
+   `org.eclipse.lsp4j.jsonrpc.RemoteEndpoint` logger. The latch is what makes this worth
+   writing: "send a request and close fast" would pass vacuously whenever the response
+   happened to win the race, and a test that can silently prove nothing is worse here
+   than no test.
+3. **The listener slot**, in `graphitron-lsp` against a `Workspace` directly: a
+   registration cleared by its own owner clears, and a registration cleared after a
+   second owner has taken the slot does not.
+
+`DevServerTest.multipleClientsShareWorkspaceState` already closes a connection and
+reconnects against a shared workspace, so it is the natural place to assert the console
+stayed quiet across that sequence. It should gain the `RemoteEndpoint` log assertion,
+but it is not the deterministic pin, since nothing in it guarantees a request is still
+in flight at close time.
+
+## Alternatives considered
+
+**`Launcher.Builder.setExceptionHandler`.** Also suppresses the four traces, and is a
+smaller diff. Rejected: it only covers the request/response path, so a
+`publishDiagnostics` push to a dead client still throws into the caller's thread, and
+the throwable arriving there is a `CompletionException` wrapping the `JsonRpcException`,
+which `indicatesStreamClosed` does not unwrap. That would mean hand-rolled unwrapping to
+get a narrower fix.
+
+**A multi-listener registry on `Workspace`.** The honest shape if several editors ever
+attach at once, since a single slot already means last-connection-wins. Rejected as out
+of scope: `graphitron:dev` serves one developer's editor, the single slot is not wrong
+today, and widening the workspace's contract is a larger design change than this item
+should carry. Worth filing separately if multi-editor attachment becomes real.
+
+**Leave it and let the console be noisy.** Rejected on the grounds in the problem
+statement: the cost is not the noise itself but that it trains a developer to ignore
+`SEVERE` in the one console where a real dev-loop failure would appear.
+
+## Retired vocabulary
+
+None. No symbol or mechanism is removed; `GraphitronLanguageServer.exit` keeps its
+signature and loses only a comment that is no longer true.
