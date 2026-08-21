@@ -104,6 +104,11 @@ public final class Main {
             if (rc != 0) System.exit(rc);
             return;
         }
+        if ("check-native-load-isolation".equals(mode)) {
+            int rc = NativeLoadIsolationCheck.run(sliceArgs(args, 1));
+            if (rc != 0) System.exit(rc);
+            return;
+        }
         if ("check-adoc-tables".equals(mode)) {
             int rc = AdocMarkdownTableCheck.run(sliceArgs(args, 1));
             if (rc != 0) System.exit(rc);
@@ -177,6 +182,7 @@ public final class Main {
         System.err.println("  check-adoc-tables <root-dir>...");
         System.err.println("  check-adoc-xrefs <staging-dir>");
         System.err.println("  check-coverage-agent-wiring <repo-root>");
+        System.err.println("  check-native-load-isolation <repo-root>");
         System.err.println("  check-transient-citations <repo-root>");
         System.err.println("  check-module-enumeration <repo-root>");
         System.err.println("  render-schema-reference <output-dir>");

@@ -35,6 +35,16 @@ is byte-for-byte the same work as today (634 chunks at dimension 384 over the 79
 pages), the stamp gate still skips the embed when the manual is unchanged, and the runtime that reads
 the bundle is untouched.
 
+## Fast-track note
+
+The `Spec → Ready` sign-off was waived by the user, explicitly and in those terms, because the
+failure was already hitting developers. Recorded here rather than left to be inferred from the
+commit trailers: this plan reached implementation without an independent session reading it, so the
+usual "a reviewer agreed the design fits" cannot be assumed of it. `In Review → Done` still needs a
+session other than the implementer's, and that reviewer is reading the design for the first time.
+The fix shipped to trunk ahead of the guard, in its own commit, so that the unblocking change was
+available to pull while the guard was still being written.
+
 ## What the reproduction established
 
 Four runs, this container, one module, all of them driving the same generator over the same 79 pages
@@ -123,14 +133,18 @@ root pom plus the modules its `<modules>` block declares (`ModuleEnumerationChec
 
 State the invariant generally rather than naming this one execution, so the next native dependency
 inherits the protection: *a module whose dependencies include the ONNX/tokenizer stack must not bind
-an in-process `exec:java` execution.* The marker is a `<dependency>` on
-`langchain4j-embeddings-bge-small-en-v15-q` (the artifact that pulls ONNX Runtime JNI transitively,
-and the one the dependency quarantine deliberately confines to `graphitron-mcp`); in such a module,
-any `exec-maven-plugin` execution binding `<goal>java</goal>` is a violation. Comment-stripping
-first, as the existing check does, so commented-out XML never trips it. The failure message names the
-module, the execution id, and the consequence in the terms the developer will meet it
-("a second build in a reused JVM fails with `already loaded in another classloader`"), the same way
-the argLine violation names its false-0% consequence.
+an in-process `exec:java` execution.* A pom is marked when it names an artifact starting
+`langchain4j-embeddings` (the module the dependency quarantine confines to `graphitron-mcp`, which
+pulls ONNX Runtime JNI and the DJL tokenizer transitively) or `onnxruntime`, the second listed so a
+future direct dependency on the runtime is covered without editing the check. Dependency management
+counts as naming it, because an execution the root pom binds is inherited by the marked module, so
+the declaring pom is where the fix belongs. In a marked pom, every `exec-maven-plugin` execution
+binding `<goal>java</goal>` is a violation; a configuration-only block binds nothing and is not one,
+the way the existing check treats a configuration-only failsafe. Comment-stripping first, so
+commented-out XML never trips it. The failure message names the module, the execution id, and the
+consequence in the terms the developer will meet it ("the second build in a reused JVM fails with
+`already loaded in another classloader`"), the same way the argLine violation names its false-0%
+consequence.
 
 `NativeLoadIsolationCheckTest` mirrors `CoverageAgentWiringCheckTest`: a forked execution in a
 marked module passes; an `exec:java` execution in a marked module fails naming module, id and
@@ -161,8 +175,9 @@ pom comment next to the wiring it explains.
 - `mvnd -pl graphitron-mcp process-classes -Plocal-db` runs the step in phase, not just as a
   standalone goal invocation.
 - Full `mvn install -Plocal-db` green, and the new check green inside it (it runs at `verify`).
-- The guard fails when the execution is reverted to `exec:java`: assert it in the unit test rather
-  than by hand-editing the pom, since `run_againstThisRepository_isClean` covers the real pom.
+- The guard fails when the execution is reverted to `exec:java`. Verified by flipping the real pom
+  back and watching `run_againstThisRepository_isClean` error, then restoring it, so the assertion is
+  known to bite rather than merely known to pass.
 
 ## Not in scope
 

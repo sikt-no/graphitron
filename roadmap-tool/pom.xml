@@ -213,6 +213,22 @@
                             <commandlineArgs>check-coverage-agent-wiring ${project.basedir}/..</commandlineArgs>
                         </configuration>
                     </execution>
+                    <execution>
+                        <!-- Fail the build if a module carrying the ONNX/tokenizer stack binds an
+                             in-process exec:java execution. Such an execution loads a native library
+                             behind a class loader the plugin rebuilds per execution, and the JVM
+                             keeps a loaded library bound to one loader for the life of the process,
+                             so the second build in a reused JVM (an mvnd daemon) cannot load it. No
+                             single build reproduces that, and CI never does either, since each job
+                             is a fresh JVM however many modules run in parallel; only the developer
+                             meets it. Rules and rationale: NativeLoadIsolationCheck. -->
+                        <id>check-native-load-isolation</id>
+                        <phase>verify</phase>
+                        <goals><goal>java</goal></goals>
+                        <configuration>
+                            <commandlineArgs>check-native-load-isolation ${project.basedir}/..</commandlineArgs>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
         </plugins>
