@@ -66,12 +66,13 @@ several deprecated aliases plus one live field is fine; so is a transitional sta
 every writer of a column is deprecated.
 
 Deprecation means the native `@deprecated` directive on the SDL leaf
-(`GraphQLInputObjectField.isDeprecated()`, already consumed by `InputTypeGenerator`). The
-docstring convention that `DeprecationRecognizer.inputFieldDeprecation` additionally
-recognises is deliberately not honoured here: that recognizer serves the lint surface for
-schemas predating input-field `@deprecated` support, and a docstring does not alter the
-published contract the carve-out keys on. This asymmetry is stated so the two spellings do
-not silently drift into meaning different things.
+(`GraphQLInputObjectField.isDeprecated()`, already consumed by `InputTypeGenerator`). On this
+surface that is the only spelling, so the rule needs no disambiguation between two markers.
+`DeprecationRecognizer` is a different surface and is not consulted: it backs the
+`no-deprecated-directive-usage` lint, where `inputFieldDeprecation` reads native
+`@deprecated` off the input types of graphitron's own directives, and its docstring
+convention (`directiveDeprecation`) covers whole directive definitions, which native
+`@deprecated` cannot carry.
 
 ### One writer with ordered read paths, not two writers on one column
 
