@@ -85,9 +85,11 @@ class MutationDmlNodeIdClassificationTest {
     @Test
     void twoPlainFieldsOnOneColumn_rejected() {
         // Two plain @field leaves resolving to one column is a pure schema fact, so it rejects at
-        // validate time (the mutation-path mirror of the @service reject) instead of crashing in
-        // Postgres with "column specified more than once". An overlap involving a @nodeId decode
-        // is admitted instead.
+        // validate time instead of crashing in Postgres with "column specified more than once". The
+        // ground is this path's own mechanism: the INSERT's SET map holds one value per column. An
+        // overlap involving a @nodeId decode is admitted instead. (Not a general "one column takes one
+        // field" rule: the @service jOOQ-record path admits a @deprecated-declared alias group, whose
+        // runtime is a presence-guarded per-column load rather than a SET map.)
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node(typeId: "Bar", keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
@@ -103,17 +105,17 @@ class MutationDmlNodeIdClassificationTest {
 
         var f = (UnclassifiedField) schema.field("Mutation", "createBar");
         assertThat(f.reason())
-            .contains("two fields cannot populate one column")
+            .contains("the INSERT's SET map holds one value per column")
             .contains("column 'name'")
             .contains("'alias'");
     }
 
     @Test
     void twoPlainFieldsOnOneUpdateSetColumn_rejected() {
-        // The UPDATE mirror of the INSERT-path reject: two plain @field's on one SET column would
-        // silently last-write-win in the single-row map (and crash the bulk VALUES-join), so the
-        // UpdateRowsWalker rejects. id_1/id_2 cover the PK (the WHERE); name/alias are the
-        // colliding SET writers.
+        // The UPDATE path rejects on its own two mechanisms: two plain @field's on one SET column would
+        // silently clobber in the single-row map, and the bulk VALUES-join cannot name one derived
+        // column twice, which is what makes the @service path's @deprecated-alias relaxation unsound
+        // here. id_1/id_2 cover the PK (the WHERE); name/alias are the colliding SET writers.
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node(typeId: "Bar", keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
@@ -131,7 +133,8 @@ class MutationDmlNodeIdClassificationTest {
 
         var f = (UnclassifiedField) schema.field("Mutation", "updateBar");
         assertThat(f.reason())
-            .contains("two fields cannot populate one column")
+            .contains("the single-row SET map holds one value per column")
+            .contains("VALUES join cannot name one derived column twice")
             .contains("column 'name'")
             .contains("'alias'");
     }

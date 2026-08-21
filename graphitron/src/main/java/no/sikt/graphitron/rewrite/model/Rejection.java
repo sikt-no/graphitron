@@ -34,7 +34,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * carry typed structural data (a name-lookup attempt with candidates, conflict
      * sites, ...) so downstream tooling reads it off the arm.
      */
-    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement, AuthorError.SortEnumMissingOrder, AuthorError.TenantColumnTypeDisagreement, AuthorError.NoTenantBinding, ServiceMethodCallError, ReflectionError, UpdateRowsError, DeleteRowsError, MutationTableArgError, ErrorChannelWalkerError, WireCoercionError, ServiceCarrierShapeError, PivotError {
+    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement, AuthorError.SortEnumMissingOrder, AuthorError.TenantColumnTypeDisagreement, AuthorError.NoTenantBinding, ServiceMethodCallError, ReflectionError, UpdateRowsError, DeleteRowsError, MutationTableArgError, ErrorChannelWalkerError, WireCoercionError, ServiceCarrierShapeError, PivotError, JooqRecordInputError {
 
         /**
          * The classifier resolved a name (column, table, FK, service method,

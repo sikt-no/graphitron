@@ -11,8 +11,10 @@ import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.ColumnOverlap;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.JooqRecordInputError;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.Rejection;
@@ -22,6 +24,7 @@ import no.sikt.graphitron.rewrite.model.WireCoercionError;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -220,10 +223,15 @@ final class InputBeanResolver {
      * carrying the full access path from the record's own {@code Map} down to the leaf (so
      * {@code details.title} carries {@code ["details", "title"]}).
      *
-     * <p>Unusable shapes reject structurally, surfacing at validate time as
-     * {@code UnclassifiedField}: uncataloged record type, unresolvable {@code @nodeId}, a field
-     * matching no column, a cyclic, list-shaped, or {@code @table}-carrying nested input, or two
-     * plain fields on one column. The rejection messages here and in
+     * <p>Several plain leaves may name one column, which is the rename-deprecation pattern: they
+     * merge into one {@link CallSiteExtraction.ColumnBinding} with ordered read paths when all but at
+     * most one carry {@code @deprecated} (see {@link #foldColumnBindings}). Two live leaves on one
+     * column stay an author error.
+     *
+     * <p>Unusable shapes reject, surfacing at validate time as {@code UnclassifiedField}: uncataloged
+     * record type, unresolvable {@code @nodeId}, a field matching no column, a cyclic, list-shaped, or
+     * {@code @table}-carrying nested input, or two live plain fields on one column (the typed
+     * {@link JooqRecordInputError.LiveColumnCollision}). The rejection messages here and in
      * {@link #collectJooqBindings} name each case.
      */
     private JooqBuilt buildJooqRecord(GraphitronType.JooqTableRecordInputType jtr,
@@ -237,42 +245,144 @@ final class InputBeanResolver {
                 + ": param record type '" + jtr.fqClassName() + "' is not in the jOOQ catalog —"
                 + " the backing class comes from a catalog not loaded at build time"));
         }
-        var columnBindings = new ArrayList<CallSiteExtraction.ColumnBinding>();
+        var plainLeaves = new ArrayList<PlainLeaf>();
         var keyDecodes = new ArrayList<CallSiteExtraction.RecordKeyDecode>();
         // Seed the cycle guard with the param record's own input type name, so an immediate
         // self-reference (a nested field typed as the outer input) is named at the first hop.
         // Cycle detection is on SDL nested-input type names (ClassifyContext's "expanding" set),
         // a different axis than buildInputBean's Set<Class<?>> visited.
         Rejection rejection = collectJooqBindings(iot, table, where, List.of(),
-            ClassifyContext.root().expanding(iot.getName()), columnBindings, keyDecodes);
+            ClassifyContext.root().expanding(iot.getName()), plainLeaves, keyDecodes);
         if (rejection != null) {
             return new JooqBuilt.Fail(rejection);
         }
-        // Two plain @field leaves (in any nested group) resolving to one column would
-        // last-write-wins silently; reject, mirroring the member-axis binding-key collision
-        // reject. Decode-vs-decode / decode-vs-column overlaps are intentionally NOT checked here;
-        // those stay with the runtime value-agreement deferral.
-        var byColumn = new LinkedHashMap<String, List<String>>();
-        for (var cb : columnBindings) {
-            List<String> prior = byColumn.putIfAbsent(cb.column().sqlName(), cb.path());
-            if (prior != null) {
-                return new JooqBuilt.Fail(Rejection.structural(where
-                    + ": input fields '" + dottedPath(prior) + "' and '" + dottedPath(cb.path())
-                    + "' both resolve to column '" + cb.column().sqlName() + "' on table '"
-                    + table.tableName() + "' — two fields cannot populate one column; remove one, or"
-                    + " point its @field(name:) at a different column"));
-            }
+        var folded = foldColumnBindings(plainLeaves, keyDecodes, paramName, methodName, className,
+            slotName, table);
+        if (folded instanceof ColumnFold.Fail cf) {
+            return new JooqBuilt.Fail(cf.rejection());
         }
         return new JooqBuilt.Ok(new CallSiteExtraction.JooqRecord(
-            table, columnBindings, List.copyOf(keyDecodes)));
+            table, ((ColumnFold.Ok) folded).columnBindings(), List.copyOf(keyDecodes)));
     }
 
     /**
-     * Recursively walks the SDL fields of {@code iot}, appending column-axis carriers to
-     * {@code columnBindings} / {@code keyDecodes}. Each carrier's {@code path} is
-     * {@code pathPrefix} (the ordered enclosing nested-input field names, empty at depth 1) plus
-     * the leaf field name. Returns the first {@link Rejection} encountered, or {@code null} on
-     * success.
+     * One plain ({@code @field}) leaf gathered by {@link #collectJooqBindings}, before the per-column
+     * fold decides how many bindings the leaves become. Carries the leaf's resolved column and its
+     * native {@code @deprecated} status alongside the access path; the deprecation flag exists only
+     * to answer the alias-admission question in {@link #foldColumnBindings} and dies here rather than
+     * riding into {@link CallSiteExtraction.ColumnBinding}, whose ordered read paths already encode
+     * the answer.
+     */
+    private record PlainLeaf(List<String> path, ColumnRef column, boolean deprecated) {}
+
+    /** Outcome of {@link #foldColumnBindings}: the folded bindings or a typed collision reject. */
+    private sealed interface ColumnFold {
+        record Ok(List<CallSiteExtraction.ColumnBinding> columnBindings) implements ColumnFold {}
+        record Fail(Rejection rejection) implements ColumnFold {}
+    }
+
+    /**
+     * Folds the gathered plain leaves into one {@link CallSiteExtraction.ColumnBinding} per written
+     * column, through the {@link ColumnOverlap#groupByColumn} the mutation write paths and
+     * {@code JooqRecordInstantiationEmitter} already read, so the classifier's admission decision and
+     * the emitter's overlap dispatch consume one grouping by construction.
+     *
+     * <p>Per column: a single plain leaf passes through as a single-read-path binding. Several plain
+     * leaves are a declared alias group when all but at most one carry {@code @deprecated} (the
+     * rename-deprecation pattern: the author said "one column, several names"), and merge into one
+     * binding whose ordered read paths are the live path first, then the deprecated paths in reverse
+     * declaration order. Two or more <em>live</em> leaves reject as
+     * {@link JooqRecordInputError.LiveColumnCollision}. Deprecation is the native {@code @deprecated}
+     * directive on the SDL leaf, the only spelling this surface has.
+     *
+     * <p>The key decodes join the fold so its grouping is the emitter's, but a decode among a column's
+     * writers changes nothing about the plain-subset decision: the plain leaves are admitted or
+     * rejected on their own count, and a decode-vs-plain overlap keeps its existing deferral to the
+     * runtime value-agreement check. The consequence is the invariant the emitter relies on: at most
+     * one plain writer per column ever reaches it, so every overlap it sees involves a decode.
+     */
+    private static ColumnFold foldColumnBindings(List<PlainLeaf> plainLeaves,
+            List<CallSiteExtraction.RecordKeyDecode> keyDecodes, String paramName, String methodName,
+            String className, String slotName, TableRef table) {
+        var writers = new ArrayList<ColumnOverlap.ColumnWriter>(plainLeaves.size() + keyDecodes.size());
+        // Plain leaves first, so a column written by any of them is keyed in plain-declaration order
+        // and the emitted binding list keeps the SDL order it had before the fold.
+        plainLeaves.forEach(leaf -> writers.add(new PlainLeafWriter(leaf)));
+        keyDecodes.forEach(kd -> writers.add(new KeyDecodeWriter(kd)));
+
+        var columnBindings = new ArrayList<CallSiteExtraction.ColumnBinding>();
+        for (var oc : ColumnOverlap.groupByColumn(writers)) {
+            var group = oc.contributors().stream()
+                .map(ColumnOverlap.Contributor::writer)
+                .filter(PlainLeafWriter.class::isInstance)
+                .map(w -> ((PlainLeafWriter) w).leaf())
+                .toList();
+            if (group.isEmpty()) {
+                continue; // a column only a @nodeId decode writes carries no plain binding
+            }
+            if (group.size() == 1) {
+                var only = group.get(0);
+                columnBindings.add(CallSiteExtraction.ColumnBinding.of(only.path(), only.column()));
+                continue;
+            }
+            long live = group.stream().filter(leaf -> !leaf.deprecated()).count();
+            if (live >= 2) {
+                return new ColumnFold.Fail(new JooqRecordInputError.LiveColumnCollision(
+                    paramName, methodName, className, slotName,
+                    group.stream()
+                        .map(leaf -> new JooqRecordInputError.CollidingField(
+                            dottedPath(leaf.path()), leaf.deprecated()))
+                        .toList(),
+                    group.get(0).column().sqlName(), table.tableName()));
+            }
+            columnBindings.add(new CallSiteExtraction.ColumnBinding(
+                aliasReadPaths(group), group.get(0).column()));
+        }
+        return new ColumnFold.Ok(List.copyOf(columnBindings));
+    }
+
+    /**
+     * The read paths of an admitted alias group, in precedence order: the live path first (a group has
+     * at most one, or none while every alias in a rename chain is still awaiting its removal date),
+     * then the deprecated paths in reverse declaration order so the latest-declared alias outranks the
+     * one it superseded. Declaration order alone is not the rule, because a reformat or a field
+     * reorder would silently change which value a client sees.
+     */
+    private static List<List<String>> aliasReadPaths(List<PlainLeaf> group) {
+        var ordered = new ArrayList<List<String>>(group.size());
+        group.stream().filter(leaf -> !leaf.deprecated()).map(PlainLeaf::path).forEach(ordered::add);
+        var deprecated = group.stream().filter(PlainLeaf::deprecated).map(PlainLeaf::path)
+            .collect(Collectors.toCollection(ArrayList::new));
+        Collections.reverse(deprecated);
+        ordered.addAll(deprecated);
+        return ordered;
+    }
+
+    /** Adapts a gathered {@link PlainLeaf} into the shared per-column grouping view: one column, no
+     *  decode, the dotted access path as the label. The fold downcasts back to reach the leaf. */
+    private record PlainLeafWriter(PlainLeaf leaf) implements ColumnOverlap.ColumnWriter {
+        @Override public List<ColumnRef> targetColumns() { return List.of(leaf.column()); }
+        @Override public boolean decode() { return false; }
+        @Override public String label() { return dottedPath(leaf.path()); }
+    }
+
+    /** Adapts a {@link CallSiteExtraction.RecordKeyDecode} into the shared per-column grouping view:
+     *  its resolved target columns in decode-record slot order, flagged as a decode. */
+    private record KeyDecodeWriter(CallSiteExtraction.RecordKeyDecode keyDecode)
+            implements ColumnOverlap.ColumnWriter {
+        @Override public List<ColumnRef> targetColumns() { return keyDecode.targetColumns(); }
+        @Override public boolean decode() { return true; }
+        @Override public String label() { return dottedPath(keyDecode.path()); }
+    }
+
+    /**
+     * Recursively walks the SDL fields of {@code iot}, appending gathered {@link PlainLeaf}s to
+     * {@code plainLeaves} and column-axis decode carriers to {@code keyDecodes}. Each leaf / carrier
+     * path is {@code pathPrefix} (the ordered enclosing nested-input field names, empty at depth 1)
+     * plus the leaf field name. Returns the first {@link Rejection} encountered, or {@code null} on
+     * success. The plain leaves are per-leaf gathering state, one per SDL field: the per-column fold
+     * in {@link #foldColumnBindings} turns them into the record's {@code ColumnBinding}s, which is
+     * where several leaves naming one column collapse or reject.
      *
      * <p>Deliberately parallel to the member-axis recursion ({@code bindField} /
      * {@code buildInputBean}) rather than routing through {@code BuildContext.classifyInputField}:
@@ -281,7 +391,7 @@ final class InputBeanResolver {
      */
     private Rejection collectJooqBindings(graphql.schema.GraphQLInputObjectType iot, TableRef table,
             String where, List<String> pathPrefix, ClassifyContext classifyCtx,
-            List<CallSiteExtraction.ColumnBinding> columnBindings,
+            List<PlainLeaf> plainLeaves,
             List<CallSiteExtraction.RecordKeyDecode> keyDecodes) {
         for (var f : iot.getFieldDefinitions()) {
             List<String> path = append(pathPrefix, f.getName());
@@ -315,7 +425,7 @@ final class InputBeanResolver {
                         + " flatten onto a single record (the column-axis analogue of a recursive bean)");
                 }
                 Rejection nested = collectJooqBindings(nestedIot, table, where, path,
-                    classifyCtx.expanding(nestedIot.getName()), columnBindings, keyDecodes);
+                    classifyCtx.expanding(nestedIot.getName()), plainLeaves, keyDecodes);
                 if (nested != null) {
                     return nested;
                 }
@@ -330,8 +440,11 @@ final class InputBeanResolver {
                         + BuildContext.candidateHint(key, ctx.catalog.columnSqlNamesOf(table.tableName())));
                 }
                 var ce = col.get();
-                columnBindings.add(new CallSiteExtraction.ColumnBinding(
-                    path, new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.columnType())));
+                // f.isDeprecated() is the native @deprecated directive on the SDL leaf, the same read
+                // InputTypeGenerator makes when it re-emits the marker onto the generated input type.
+                plainLeaves.add(new PlainLeaf(path,
+                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.columnType()),
+                    f.isDeprecated()));
             }
         }
         return null;

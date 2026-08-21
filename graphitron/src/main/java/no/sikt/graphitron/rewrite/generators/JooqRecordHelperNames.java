@@ -178,14 +178,17 @@ final class JooqRecordHelperNames {
      * class's contended shapes (the record's own {@code hashCode} is not stable across runs). Never
      * the identity (that is the carrier's structural {@code equals}), so it need only be injective
      * enough to give a stable total order over the body-affecting components: the record class, each
-     * column binding's path + resolved column, and each key decode's path + type id + encoder + target
-     * columns + nullability.
+     * column binding's read paths + resolved column, and each key decode's path + type id + encoder +
+     * target columns + nullability. Every read path is rendered, not just the primary: a merged
+     * {@code @deprecated}-alias group emits one presence-guarded read per path in precedence order, so
+     * two shapes differing only in their aliases have different bodies and must sort apart.
      */
     private static String canonicalRender(CallSiteExtraction.JooqRecord jr) {
         var sb = new StringBuilder(jr.table().recordClass().toString());
         sb.append("|cols:");
         for (var cb : jr.columnBindings()) {
-            sb.append(String.join(".", cb.path())).append('=').append(cb.column().javaName()).append(';');
+            sb.append(cb.paths().stream().map(p -> String.join(".", p)).collect(Collectors.joining("/")))
+              .append('=').append(cb.column().javaName()).append(';');
         }
         sb.append("|keys:");
         for (var kd : jr.keyDecodes()) {

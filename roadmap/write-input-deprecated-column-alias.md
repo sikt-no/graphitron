@@ -245,6 +245,26 @@ body text), with execution proving the end-to-end behaviour.
 - Warning on alias overlaps on read/output types (already accepted silently; not this item's
   concern).
 
+## Retired vocabulary
+
+Terms and framings this item makes false. Sweep prose surfaces for them at the Done gate.
+
+- **"two fields cannot populate one column"** - the shared reject prose, in all three of its
+  homes. It was never a mechanism, and on the `@service` jOOQ-record path it is now simply
+  untrue. Each surviving reject states its own mechanism instead (the INSERT SET map, the
+  single-row SET map plus the bulk VALUES-join duplicate derived column).
+- **"the mutation-path mirror of the `@service` reject"** and **"the UPDATE mirror of the
+  INSERT-path / `@service` reject"** - the mirror framing tied the two surviving rejects to a
+  third that no longer rejects the same shape. Each now names its own ground.
+- **"an all-plain overlap is a build-time reject"** - the blanket claim in `ColumnOverlap`'s
+  class javadoc, its `ColumnWriter.decode()` javadoc, and `OverlapColumn`'s javadoc. What an
+  all-plain overlap means is now the consuming site's call.
+- **`CallSiteExtraction.ColumnBinding`'s single `path` record component** - replaced by the
+  ordered `paths` list. `path()` survives as the derived primary-path accessor, so the *name*
+  is live and only the "a binding has one path" reading is retired.
+- **The untyped `Rejection.structural` spelling of the `@service` column-collision reject** -
+  replaced by the typed `JooqRecordInputError.LiveColumnCollision` arm.
+
 ## Reviewer decisions
 
 The three forks the draft left open, resolved at the Spec review. The design they resolve is

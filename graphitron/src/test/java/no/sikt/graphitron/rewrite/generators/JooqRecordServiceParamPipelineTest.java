@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
+import no.sikt.graphitron.rewrite.model.JooqRecordInputError;
 import no.sikt.graphitron.rewrite.model.MappingEntry;
 import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.ServiceField;
@@ -842,9 +843,10 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void plainColumnCollisionAcrossNesting_rejects() {
-        // Two plain @field leaves — one top-level, one in a nested group — resolving to the same column
-        // would last-write-wins silently. Reject, naming both dotted paths and the column. (Decode-vs-decode
-        // / decode-vs-column overlaps stay with the value-agreement deferral, not checked here.)
+        // Two LIVE plain @field leaves, one top-level and one in a nested group, resolving to the same
+        // column: neither carries @deprecated, so nothing in the schema says which one the author meant
+        // to win. Rejects as the typed arm, naming both dotted paths, the column, and the table.
+        // (Decode-vs-decode / decode-vs-column overlaps stay with the value-agreement deferral.)
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! title: String }
             input NestedCollisionInput {
@@ -860,10 +862,292 @@ class JooqRecordServiceParamPipelineTest {
             """;
         var field = TestSchemaHelper.buildSchema(sdl).field("Query", "modifyCollision");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) field).reason())
+        var rejection = ((UnclassifiedField) field).rejection();
+        assertThat(rejection).isInstanceOf(JooqRecordInputError.LiveColumnCollision.class);
+        var arm = (JooqRecordInputError.LiveColumnCollision) rejection;
+        assertThat(arm.fields())
+            .as("every colliding plain leaf, with its deprecation status, in declaration order")
+            .containsExactly(
+                new JooqRecordInputError.CollidingField("title", false),
+                new JooqRecordInputError.CollidingField("details.aka", false));
+        assertThat(arm.column()).isEqualTo("title");
+        assertThat(arm.table()).isEqualTo("film");
+        assertThat(arm.lspCode()).isEqualTo("graphitron.jooq-record-input.live-column-collision");
+        assertThat(arm.message())
             .contains("both resolve to column 'title'")
-            .contains("two fields cannot populate one column")
-            .contains("details.aka");
+            .contains("on table 'film'")
+            .contains("details.aka")
+            .as("the message teaches the alias carve-out as a third remedy")
+            .contains("mark the superseded field @deprecated");
+    }
+
+    @Test
+    void deprecatedAliasPlusLive_mergesToOneBinding_liveReadPathFirst() {
+        // The rename-deprecation pattern: `title` is the live name, `aka` the @deprecated one it
+        // replaced, both on film.title. Admitted, and the model says what the author declared: ONE
+        // column binding with two ordered read paths, not two writers racing, with the live path first,
+        // so a client sending both names gets the live value.
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input AliasFilmInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                title: String @field(name: "title")
+                aka: String @field(name: "title") @deprecated(reason: "renamed to title")
+            }
+            type Query {
+                modifyAlias(in: AliasFilmInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var jr = carrier(sdl, "modifyAlias", false);
+        assertThat(jr.columnBindings())
+            .as("one binding for the one column, however many names read it")
+            .hasSize(1);
+        assertThat(jr.columnBindings().get(0).column().sqlName()).isEqualTo("title");
+        assertThat(readPaths(jr.columnBindings().get(0)))
+            .as("live path first, then the deprecated alias")
+            .containsExactly("title", "aka");
+        assertThat(jr.columnBindings().get(0).path())
+            .as("the primary path is the live one, so generated locals name the live field")
+            .containsExactly("title");
+    }
+
+    @Test
+    void deprecatedAliasDeclaredBeforeLive_stillOrdersLiveFirst() {
+        // Precedence is stated, not positional: the deprecated alias is declared FIRST here and the live
+        // field second, and the live path still wins. Declaration order in SDL is an editing accident (a
+        // reformat or a field reorder changes it), so it cannot be what decides the resolved value.
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input AliasFirstInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                aka: String @field(name: "title") @deprecated(reason: "renamed to title")
+                title: String @field(name: "title")
+            }
+            type Query {
+                modifyAliasFirst(in: AliasFirstInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var jr = carrier(sdl, "modifyAliasFirst", false);
+        assertThat(jr.columnBindings()).hasSize(1);
+        assertThat(readPaths(jr.columnBindings().get(0))).containsExactly("title", "aka");
+    }
+
+    @Test
+    void twoDeprecatedAliasesPlusLive_ordersLiveThenReverseDeclaration() {
+        // A rename chain that renamed twice: `oldest` → `older` → `title`. Live first, then the
+        // deprecated aliases in REVERSE declaration order, so the most recently declared alias outranks
+        // the one it superseded, which is the only order that stays stable when a further alias is
+        // appended later.
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input ChainAliasInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                oldest: String @field(name: "title") @deprecated(reason: "renamed to older")
+                older: String @field(name: "title") @deprecated(reason: "renamed to title")
+                title: String @field(name: "title")
+            }
+            type Query {
+                modifyChain(in: ChainAliasInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var jr = carrier(sdl, "modifyChain", false);
+        assertThat(jr.columnBindings()).hasSize(1);
+        assertThat(readPaths(jr.columnBindings().get(0))).containsExactly("title", "older", "oldest");
+    }
+
+    @Test
+    void allDeprecatedGroup_ordersByReverseDeclaration_noWarning() {
+        // Every writer of the column is deprecated: the legitimate state a rename chain passes through
+        // on its way to removal, when even the newest name has a removal date. With no live path, the
+        // rule that remains is later-declared-wins. It classifies and raises no warning: the author has
+        // no remedy while the removal dates are in the future, so a warning would be noise on a correct
+        // schema.
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input AllDeprecatedInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                older: String @field(name: "title") @deprecated(reason: "use newer")
+                newer: String @field(name: "title") @deprecated(reason: "the whole field goes away")
+            }
+            type Query {
+                modifyAllDeprecated(in: AllDeprecatedInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var schema = TestSchemaHelper.buildSchema(sdl);
+        var jr = carrier(schema.field("Query", "modifyAllDeprecated"), false);
+        assertThat(jr.columnBindings()).hasSize(1);
+        assertThat(readPaths(jr.columnBindings().get(0))).containsExactly("newer", "older");
+        assertThat(schema.warnings())
+            .as("an all-deprecated group is a correct schema; nothing to warn about")
+            .noneMatch(w -> w.message().contains("AllDeprecatedInput"));
+    }
+
+    @Test
+    void twoLivePlusOneDeprecated_stillRejects() {
+        // The acceptance rule counts LIVE writers, not deprecated ones: one alias does not license two
+        // live fields on the column. The arm reports the whole group, marking which member is deprecated.
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input TwoLiveInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                title: String @field(name: "title")
+                name: String @field(name: "title")
+                aka: String @field(name: "title") @deprecated(reason: "renamed")
+            }
+            type Query {
+                modifyTwoLive(in: TwoLiveInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "modifyTwoLive");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        var arm = (JooqRecordInputError.LiveColumnCollision) ((UnclassifiedField) field).rejection();
+        assertThat(arm.fields()).containsExactly(
+            new JooqRecordInputError.CollidingField("title", false),
+            new JooqRecordInputError.CollidingField("name", false),
+            new JooqRecordInputError.CollidingField("aka", true));
+        assertThat(arm.message())
+            .contains("all resolve to column 'title'")
+            .contains("'aka' (@deprecated)");
+    }
+
+    @Test
+    void aliasPairSplitAcrossNesting_mergesWithFullAccessPaths() {
+        // The alias pair need not sit side by side: the live name is top-level and the deprecated one
+        // lives in a nested grouping input. The merge keeps each read path's full access path, so the
+        // emitted load descends into the group for the alias and reads `raw` directly for the live name.
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input SplitAliasInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                title: String @field(name: "title")
+                legacy: LegacyAliasInput!
+            }
+            input LegacyAliasInput {
+                aka: String @field(name: "title") @deprecated(reason: "renamed to title")
+            }
+            type Query {
+                modifySplit(in: SplitAliasInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var jr = carrier(sdl, "modifySplit", false);
+        assertThat(jr.columnBindings()).hasSize(1);
+        assertThat(readPaths(jr.columnBindings().get(0))).containsExactly("title", "legacy.aka");
+    }
+
+    @Test
+    void aliasPairSharingColumnWithDecode_mergesAndKeepsAgreementDeferral() {
+        // An alias pair on film_id, sharing the column with a @nodeId identity decode. The plain leaves
+        // still merge into ONE multi-read-path binding (the merge is not waived because a decode is
+        // present), and the decode-vs-plain overlap keeps its existing deferral to the runtime
+        // value-agreement check: the carrier carries both writers, so the emitter still sees an overlap.
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input AliasWithDecodeInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                rawFilmId: Int @field(name: "film_id")
+                legacyFilmId: Int @field(name: "film_id") @deprecated(reason: "renamed to rawFilmId")
+            }
+            type Query {
+                modifyAliasDecode(in: AliasWithDecodeInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var jr = carrier(sdl, "modifyAliasDecode", false);
+        assertThat(jr.columnBindings()).hasSize(1);
+        assertThat(readPaths(jr.columnBindings().get(0)))
+            .containsExactly("rawFilmId", "legacyFilmId");
+        assertThat(jr.keyDecodes())
+            .as("the decode is untouched and still lands on the same column")
+            .extracting(kd -> kd.leaf() + "->" + kd.targetColumns().get(0).sqlName())
+            .containsExactly("filmId->film_id");
+    }
+
+    @Test
+    void decodePlusTwoLivePlainFieldsOnOneColumn_stillRejects() {
+        // A decode sharing the column does not license two live plain writers: the plain subset is
+        // judged on its own, so the existing plain-vs-plain guard survives an overlapping decode.
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input DecodePlusTwoLiveInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                rawFilmId: Int @field(name: "film_id")
+                otherFilmId: Int @field(name: "film_id")
+            }
+            type Query {
+                modifyDecodeTwoLive(in: DecodePlusTwoLiveInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "modifyDecodeTwoLive");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        var arm = (JooqRecordInputError.LiveColumnCollision) ((UnclassifiedField) field).rejection();
+        assertThat(arm.column()).isEqualTo("film_id");
+        assertThat(arm.fields()).containsExactly(
+            new JooqRecordInputError.CollidingField("rawFilmId", false),
+            new JooqRecordInputError.CollidingField("otherFilmId", false));
+    }
+
+    /**
+     * Two shapes on one record class differing <em>only</em> by an alias. Both bind exactly the same
+     * column set (a merged alias group is still one binding on {@code title}), so nothing but the read
+     * paths tells them apart: the helper identity and the contention ordering have to read them.
+     */
+    private static final String ALIAS_CONTENDED_SDL = """
+        type Film implements Node @table(name: "film") @node { id: ID! title: String }
+        input AliasedShapeInput {
+            filmId: ID! @nodeId(typeName: "Film")
+            title: String @field(name: "title")
+            aka: String @field(name: "title") @deprecated(reason: "renamed to title")
+        }
+        input PlainShapeInput {
+            filmId: ID! @nodeId(typeName: "Film")
+            title: String @field(name: "title")
+        }
+        type Query {
+            aliasedFilm(in: AliasedShapeInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            plainFilm(in: PlainShapeInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+        }
+        """;
+
+    @Test
+    void aliasOnlyDifference_isBodyAffecting_soTheShapesContendAndOrderStably() {
+        // The read-path list is body-affecting: the alias group emits a second presence-guarded read
+        // that the plain shape does not. These two shapes bind the identical column set, so if the
+        // helper identity or the contention ordering read only the primary path they would collapse
+        // into one helper (dropping the alias read) or sort unstably between runs.
+        assertThat(carrier(ALIAS_CONTENDED_SDL, "aliasedFilm", false))
+            .as("an alias group is a distinct binding shape, not the same shape as its live field alone")
+            .isNotEqualTo(carrier(ALIAS_CONTENDED_SDL, "plainFilm", false));
+
+        var fetchers = findSpec("QueryFetchers", ALIAS_CONTENDED_SDL);
+        assertThat(singularHelperNames(fetchers))
+            .as("two contending shapes, so two ordinal-suffixed helpers")
+            .containsExactlyInAnyOrder("createFilmRecord1", "createFilmRecord2");
+        assertThat(singularHelperBodies(fetchers).stream().filter(body -> body.contains("\"aka\"")).count())
+            .as("exactly one of the two helpers reads the deprecated alias key")
+            .isEqualTo(1L);
+        var rerun = findSpec("QueryFetchers", ALIAS_CONTENDED_SDL);
+        assertThat(aliasReadingHelperName(rerun))
+            .as("the ordinal-to-shape mapping is stable across generator runs")
+            .isEqualTo(aliasReadingHelperName(fetchers));
+    }
+
+    /** The name of the singular {@code create<Record>} helper whose body reads the {@code aka} alias key. */
+    private static String aliasReadingHelperName(TypeSpec fetchers) {
+        return fetchers.methodSpecs().stream()
+            .filter(m -> m.name().startsWith("createFilmRecord") && !m.name().endsWith("List"))
+            .filter(m -> m.code().toString().contains("\"aka\""))
+            .map(MethodSpec::name)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no singular helper reads the 'aka' alias key"));
     }
 
     @Test
@@ -1131,6 +1415,11 @@ class JooqRecordServiceParamPipelineTest {
             ? (ValueShape.JooqRecordInput) ((ValueShape.ListOf) shape).elementShape()
             : (ValueShape.JooqRecordInput) shape;
         return jr.carrier();
+    }
+
+    /** A binding's read paths as dotted strings, in the binding's precedence order. */
+    private static List<String> readPaths(CallSiteExtraction.ColumnBinding cb) {
+        return cb.paths().stream().map(p -> String.join(".", p)).toList();
     }
 
     private static ValueShape fromArgShape(ServiceField field) {

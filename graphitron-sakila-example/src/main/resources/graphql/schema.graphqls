@@ -2645,6 +2645,22 @@ input CustomerDetailsGroup {
     lastName: String @field(name: "last_name")
 }
 
+# One write column reached through two names, on a jOOQ StaffRecord @service param: the standard
+# GraphQL rename-deprecation shape. `firstName` is the live name, `givenName` the @deprecated one it
+# replaced, and both bind first_name. The classifier admits the overlap because all but one of the
+# colliding fields carry @deprecated, and merges them into ONE column binding with ordered read paths
+# (live first), so the generated helper emits one presence-guarded assignment that takes the first
+# present path. lastName is a control column no alias touches. No @nodeId here, so no trailing key
+# decode can reset the touched flag of a null-valued column, which keeps the explicit-null case
+# observable. StaffRecord because no other fixture binds it as a @service param, so the alias
+# behaviour is read off an uncontended create<Record> helper.
+input StaffAliasInput {
+    firstName: String @field(name: "first_name")
+    givenName: String @field(name: "first_name")
+        @deprecated(reason: "renamed to firstName; removed no earlier than 2028-03-31")
+    lastName: String @field(name: "last_name")
+}
+
 # R311 composite-key: a jOOQ FilmActorRecord param (composite PK actor_id, film_id) whose @nodeId
 # identity decodes both key columns in one fromArray call.
 input ModifyFilmActorRecordInput {
@@ -4045,6 +4061,19 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.CustomerRecordService",
             method: "describeCustomerUpsert"
+        })
+
+    # Deprecated-alias write column execution pin: StaffAliasInput declares first_name twice, once
+    # under the live `firstName` and once under the @deprecated `givenName`. describeStaffAlias reports
+    # the constructed record's changed-flags and values without writing, so one helper answers the
+    # whole precedence matrix by varying the wire input: the deprecated name alone writes, the live
+    # name alone writes, both present resolves to the live one, neither leaves first_name
+    # changed=false, and an explicit null on the live name writes NULL rather than falling through to
+    # the alias's value (presence is containsKey, not non-null).
+    staffAliasUpsert(in: StaffAliasInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.StaffAliasRecordService",
+            method: "describeStaffAlias"
         })
 }
 

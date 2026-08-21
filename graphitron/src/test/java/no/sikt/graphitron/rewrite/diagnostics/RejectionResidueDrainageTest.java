@@ -45,7 +45,7 @@ class RejectionResidueDrainageTest {
         "Rejection.AuthorError.MultiProducerDomainTypeDisagreement",
         "Rejection.AuthorError.SortEnumMissingOrder",
         "Rejection.AuthorError.TenantColumnTypeDisagreement", "Rejection.AuthorError.NoTenantBinding",
-        // the nine lspCode()-bearing sub-seals' leaves, by sub-seal:
+        // the ten lspCode()-bearing sub-seals' leaves, by sub-seal:
         "ServiceMethodCallError.MultipleDslContextSlots", "ServiceMethodCallError.ParameterUnbindable",
         "ServiceMethodCallError.InstanceHolderUnconstructible",
         "ServiceMethodCallError.ArgumentParameterMismatch", "ServiceMethodCallError.DtoSourcesUnsupported",
@@ -74,6 +74,7 @@ class RejectionResidueDrainageTest {
         "PivotError.ValueTypeMismatch", "PivotError.ListReturn",
         "PivotError.UnsupportedReferencePath", "PivotError.RecordBackedParent",
         "PivotError.InvalidProjectionType",
+        "JooqRecordInputError.LiveColumnCollision",
         "Rejection.InvalidSchema.DirectiveConflict", "Rejection.InvalidSchema.CaseFoldCollision",
         "Rejection.InvalidSchema.Structural", "Rejection.Deferred");
 

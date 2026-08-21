@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.model.DeleteRowsError;
 import no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError;
+import no.sikt.graphitron.rewrite.model.JooqRecordInputError;
 import no.sikt.graphitron.rewrite.model.MutationTableArgError;
 import no.sikt.graphitron.rewrite.model.PivotError;
 import no.sikt.graphitron.rewrite.model.ReflectionError;
@@ -167,6 +168,7 @@ public final class RejectionFacts {
             case WireCoercionError e -> coded(e.lspCode());
             case ServiceCarrierShapeError e -> coded(e.lspCode());
             case PivotError e -> coded(e.lspCode());
+            case JooqRecordInputError e -> coded(e.lspCode());
             case Rejection.InvalidSchema.DirectiveConflict d ->
                 new TypedColumns(null, null, null, null, d.directives());
             case Rejection.InvalidSchema.CaseFoldCollision ignored -> NONE;

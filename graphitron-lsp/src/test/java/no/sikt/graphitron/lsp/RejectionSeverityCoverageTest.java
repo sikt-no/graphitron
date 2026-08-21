@@ -517,6 +517,17 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.rewrite.model.PivotError.InvalidProjectionType(
                 "Film.titleTranslations", "Language", "is not a plain output type");
         }
+        // JooqRecordInputError sub-seal of AuthorError, minted by InputBeanResolver's per-column fold
+        // over a @service jOOQ-record parameter. Two live writers is the rejecting shape; a group whose
+        // superseded fields carry @deprecated is admitted and never reaches a rejection at all.
+        if (permit == no.sikt.graphitron.rewrite.model.JooqRecordInputError.LiveColumnCollision.class) {
+            return new no.sikt.graphitron.rewrite.model.JooqRecordInputError.LiveColumnCollision(
+                "in", "modifyFilm", "com.example.FilmService", "in",
+                List.of(
+                    new no.sikt.graphitron.rewrite.model.JooqRecordInputError.CollidingField("title", false),
+                    new no.sikt.graphitron.rewrite.model.JooqRecordInputError.CollidingField("details.aka", false)),
+                "title", "film");
+        }
         return null;
     }
 }

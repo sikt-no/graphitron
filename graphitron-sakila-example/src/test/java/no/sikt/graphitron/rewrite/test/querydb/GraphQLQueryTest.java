@@ -6259,6 +6259,79 @@ class GraphQLQueryTest {
             .as("the mutation does not succeed with a wrong-type NodeId").isNull();
     }
 
+    // ===== One write column reached through two names (@deprecated alias on a jOOQ-record param) =====
+    // StaffAliasInput declares first_name twice: `firstName` live, `givenName` @deprecated. The
+    // classifier merges the pair into one column binding with ordered read paths (live first), so the
+    // helper emits ONE presence-guarded assignment that takes the first present path. Only the
+    // execution tier can read the resolved value and the per-column changed flag back out.
+
+    @Test
+    void staffAlias_deprecatedNameOnly_writesTheColumn() {
+        // The whole point of the pattern: a client still on the old name keeps working. `givenName` is
+        // the only path present, so it wins by being the only present one.
+        Map<String, Object> data = execute(
+            "mutation { staffAliasUpsert(in: {givenName: \"Ada\"}) }");
+        assertThat(data).extractingByKey("staffAliasUpsert")
+            .isEqualTo("first[changed=true,val=Ada] last[changed=false,val=null]");
+    }
+
+    @Test
+    void staffAlias_liveNameOnly_writesTheColumn() {
+        // A client migrated to the new name writes the same column through the live path.
+        Map<String, Object> data = execute(
+            "mutation { staffAliasUpsert(in: {firstName: \"Grace\"}) }");
+        assertThat(data).extractingByKey("staffAliasUpsert")
+            .isEqualTo("first[changed=true,val=Grace] last[changed=false,val=null]");
+    }
+
+    @Test
+    void staffAlias_bothNamesSent_liveWins() {
+        // Both paths present: precedence decides, and it is live-first, NOT last-write-wins over the
+        // wire order and not an agreement error about the two disagreeing. A client mid-migration
+        // sending both gets the value it sent under the current name.
+        Map<String, Object> data = execute(
+            "mutation { staffAliasUpsert(in: {givenName: \"Ada\", firstName: \"Grace\"}) }");
+        assertThat(data).extractingByKey("staffAliasUpsert")
+            .isEqualTo("first[changed=true,val=Grace] last[changed=false,val=null]");
+    }
+
+    @Test
+    void staffAlias_bothNamesSent_liveWinsRegardlessOfWireOrder() {
+        // The same input with the live name FIRST on the wire. Precedence is a property of the schema,
+        // not of the order the client happened to serialise the fields in.
+        Map<String, Object> data = execute(
+            "mutation { staffAliasUpsert(in: {firstName: \"Grace\", givenName: \"Ada\"}) }");
+        assertThat(data).extractingByKey("staffAliasUpsert")
+            .isEqualTo("first[changed=true,val=Grace] last[changed=false,val=null]");
+    }
+
+    @Test
+    void staffAlias_neitherNameSent_columnUntouched() {
+        // Neither path present: the column stays changed=false, so the @service's own INSERT/UPDATE
+        // excludes it. The jOOQ changed-flag contract holds per COLUMN, not per alias: two aliases do
+        // not make one omitted column look touched.
+        Map<String, Object> data = execute(
+            "mutation { staffAliasUpsert(in: {lastName: \"Lovelace\"}) }");
+        assertThat(data).extractingByKey("staffAliasUpsert")
+            .isEqualTo("first[changed=false,val=null] last[changed=true,val=Lovelace]");
+    }
+
+    @Test
+    void staffAlias_explicitNullOnLiveName_writesNullNotTheAliasValue() {
+        // Presence is containsKey, not non-null. The live name carries an explicit null and the
+        // deprecated alias carries a value: the live path is still present, so it wins and the column is
+        // written NULL. Falling through to the alias would silently resurrect a value the client
+        // explicitly cleared.
+        var in = new java.util.HashMap<String, Object>();
+        in.put("firstName", null);
+        in.put("givenName", "Ada");
+        Map<String, Object> data = execute(
+            "mutation($in: StaffAliasInput!) { staffAliasUpsert(in: $in) }",
+            java.util.Map.of("in", in));
+        assertThat(data).extractingByKey("staffAliasUpsert")
+            .isEqualTo("first[changed=true,val=null] last[changed=false,val=null]");
+    }
+
     // ===== missing-vs-null on single-row INSERT (containsKey-gated DEFAULT) =====
 
     @Test

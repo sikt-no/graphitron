@@ -122,9 +122,21 @@ final class JooqRecordInstantiationEmitter {
      * <p>For a non-null ({@code !}) field the {@code containsKey} guard is vacuously true (graphql-java
      * enforces presence at the boundary), so no nullability split is needed here, unlike
      * {@link #emitKeyDecode}.
+     *
+     * <p>A binding carrying several read paths (a declared {@code @deprecated}-alias group the
+     * classifier merged) routes through {@link #emitMultiPathRead} + {@link #emitPlainLoad} instead:
+     * the paths are tried in the binding's precedence order and the first present one wins. A
+     * single-path binding, the common case, keeps the inline form above so its generated output is
+     * unchanged.
      */
     private static void emitColumnBinding(MethodSpec.Builder b, CallSiteExtraction.ColumnBinding cb,
             ClassName tablesClass, String tableField) {
+        if (cb.paths().size() > 1) {
+            String base = localBase(cb.path());
+            emitMultiPathRead(b, base, cb.paths());
+            emitPlainLoad(b, base, cb.column(), tablesClass, tableField);
+            return;
+        }
         String parentMap = openDescent(b, cb.path());
         String leaf = cb.leaf();
         String valVar = localBase(cb.path()) + "Value";
@@ -138,6 +150,55 @@ final class JooqRecordInstantiationEmitter {
         b.endControlFlow();
         b.endControlFlow();
         closeDescent(b, cb.path());
+    }
+
+    /**
+     * Reads a plain writer's wire value into {@code <base>Present} / {@code <base>Value}, trying
+     * {@code paths} in precedence order and taking the first <em>present</em> one, where present is the
+     * enclosing {@code Map}'s {@code containsKey}. Each path after the first is guarded on
+     * {@code !<base>Present}, so a higher-precedence path that carried an explicit {@code null} keeps
+     * the win and the column is written {@code NULL} rather than falling through to a lower-precedence
+     * alias. Every path gets its own {@link #openDescent}, so aliases declared at different nesting
+     * depths read independently. A one-element {@code paths} emits exactly the single-path form the
+     * agreement prepare phase emitted before read paths became a list.
+     */
+    private static void emitMultiPathRead(MethodSpec.Builder b, String base, List<List<String>> paths) {
+        b.addStatement("boolean $LPresent = false", base);
+        b.addStatement("$T $LValue = null", Object.class, base);
+        for (int i = 0; i < paths.size(); i++) {
+            List<String> path = paths.get(i);
+            if (i > 0) {
+                b.beginControlFlow("if (!$LPresent)", base);
+            }
+            String parentMap = openDescent(b, path);
+            b.beginControlFlow("if ($L.containsKey($S))", parentMap, path.get(path.size() - 1));
+            b.addStatement("$LPresent = true", base);
+            b.addStatement("$LValue = $L.get($S)", base, parentMap, path.get(path.size() - 1));
+            b.endControlFlow();
+            closeDescent(b, path);
+            if (i > 0) {
+                b.endControlFlow();
+            }
+        }
+    }
+
+    /**
+     * Writes a plain writer's resolved locals onto the record: an explicit null through
+     * {@code set(col, null)} (reliable changed-flag), a present value through {@code fromArray}
+     * (DataType coercion), nothing at all when no read path was present (the column stays
+     * {@code changed=false}). Shared by the overlap-free multi-read-path emission and the
+     * agreement-checked load phase, so both write a column the same way.
+     */
+    private static void emitPlainLoad(MethodSpec.Builder b, String base, ColumnRef column,
+            ClassName tablesClass, String tableField) {
+        b.beginControlFlow("if ($LPresent)", base);
+        b.beginControlFlow("if ($LValue == null)", base);
+        b.addStatement("rec.set($T.$L.$L, null)", tablesClass, tableField, column.javaName());
+        b.nextControlFlow("else");
+        b.addStatement("rec.fromArray(new $T[]{ $LValue }, $T.$L.$L)",
+            Object.class, base, tablesClass, tableField, column.javaName());
+        b.endControlFlow();
+        b.endControlFlow();
     }
 
     /**
@@ -209,6 +270,12 @@ final class JooqRecordInstantiationEmitter {
      * {@code @nodeId} {@link CallSiteExtraction.RecordKeyDecode}, paired with a collision-free local
      * name {@code base} (e.g. {@code "cb0"} / {@code "kd1"}) the prepare / agreement / load phases all
      * derive their locals from ({@code <base>Present}, {@code <base>Value} / {@code <base>Keys}).
+     *
+     * <p>{@link #path()} is the writer's <em>primary</em> path: a decode has exactly one, and a plain
+     * binding may carry several read paths (a merged alias group), of which
+     * {@link CallSiteExtraction.ColumnBinding#path()} names the highest-precedence one. Every read
+     * path is honored by {@link #emitPrepare}; the primary is what names the writer in generated
+     * output and in author-facing messages.
      */
     private record Writer(CallSiteExtraction.ColumnBinding plain,
                           CallSiteExtraction.RecordKeyDecode decode, String base) {
@@ -219,8 +286,10 @@ final class JooqRecordInstantiationEmitter {
     /** Adapts a {@link Writer} into the shared {@link ColumnOverlap.ColumnWriter} view so the
      *  per-column overlap grouping is the {@link ColumnOverlap#groupByColumn} the DML write-path
      *  sites share. A plain field's single column or a decode's target columns (already in decode-record
-     *  slot order); the label is the dotted access path. The emission downcasts {@code Contributor.writer()}
-     *  back to this view to reach the wrapped {@link Writer} (its base local and decode shape). */
+     *  slot order); the label is the dotted <em>primary</em> access path, so a merged alias group names
+     *  its live field in the agreement message rather than listing every alias. The emission downcasts
+     *  {@code Contributor.writer()} back to this view to reach the wrapped {@link Writer} (its base
+     *  local and decode shape). */
     private record WriterView(Writer w) implements ColumnOverlap.ColumnWriter {
         @Override public List<ColumnRef> targetColumns() {
             return w.isDecode() ? w.decode().targetColumns() : List.of(w.plain().column());
@@ -275,20 +344,17 @@ final class JooqRecordInstantiationEmitter {
      * {@link #emitColumnBinding} / {@link #emitKeyDecode} read semantics exactly (the same nesting descent,
      * the same null / arity throw on a malformed id, the same nullable three-way), but stores the result in
      * locals instead of loading the record, so the values are available for the agreement check.
+     *
+     * <p>A plain writer reads every one of its binding's read paths, first-present wins
+     * ({@link #emitMultiPathRead}), so the value a merged alias group contributes to the agreement
+     * check is the same first-present value it would write on its own.
      */
     private static void emitPrepare(MethodSpec.Builder b, Writer w, ClassName tablesClass, String tableField) {
         String base = w.base();
         List<String> path = w.path();
         String leaf = path.get(path.size() - 1);
         if (!w.isDecode()) {
-            b.addStatement("boolean $LPresent = false", base);
-            b.addStatement("$T $LValue = null", Object.class, base);
-            String parentMap = openDescent(b, path);
-            b.beginControlFlow("if ($L.containsKey($S))", parentMap, leaf);
-            b.addStatement("$LPresent = true", base);
-            b.addStatement("$LValue = $L.get($S)", base, parentMap, leaf);
-            b.endControlFlow();
-            closeDescent(b, path);
+            emitMultiPathRead(b, base, w.plain().paths());
             return;
         }
         var kd = w.decode();
@@ -350,15 +416,7 @@ final class JooqRecordInstantiationEmitter {
     private static void emitLoadPrepared(MethodSpec.Builder b, Writer w, ClassName tablesClass, String tableField) {
         String base = w.base();
         if (!w.isDecode()) {
-            var col = w.plain().column();
-            b.beginControlFlow("if ($LPresent)", base);
-            b.beginControlFlow("if ($LValue == null)", base);
-            b.addStatement("rec.set($T.$L.$L, null)", tablesClass, tableField, col.javaName());
-            b.nextControlFlow("else");
-            b.addStatement("rec.fromArray(new $T[]{ $LValue }, $T.$L.$L)",
-                Object.class, base, tablesClass, tableField, col.javaName());
-            b.endControlFlow();
-            b.endControlFlow();
+            emitPlainLoad(b, base, w.plain().column(), tablesClass, tableField);
             return;
         }
         var kd = w.decode();
@@ -391,8 +449,11 @@ final class JooqRecordInstantiationEmitter {
             .map(c -> "'" + c.writer().label() + "'")
             .distinct()
             .collect(Collectors.joining(", "));
-        // An overlap reaching the agreement check always has at least one decode (the all-plain overlap
-        // is the build-time reject), so a NodeIdEncoder class is always available for the call.
+        // An overlap reaching the agreement check always has at least one decode, so a NodeIdEncoder
+        // class is always available for the call. Not because an all-plain overlap rejects (a declared
+        // @deprecated-alias group is admitted): the classifier folds every plain writer of a column
+        // into one ColumnBinding, so at most one plain writer per column reaches this emitter and a
+        // shared column must have gained its second writer from a decode.
         ClassName encoderClass = oc.contributors().stream()
             .map(c -> ((WriterView) c.writer()).w())
             .filter(Writer::isDecode)

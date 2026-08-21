@@ -113,6 +113,47 @@ A nested input field whose name *does* match a member of the backing class keeps
 
 Rejected shapes, each named at build time: a grouping input that reaches itself; a list-shaped grouping input (there is nothing for a list of groups to flatten onto); two fields that bind to the same member, whether or not a group is involved; and a nested input field carrying `@field(name:)` or `@nodeId` whose named member does not exist, which is reported as the missing member rather than silently flattened.
 
+[#jooq-record-parameter]
+=== A jOOQ record as the parameter: binding on the column axis
+
+When the service method's parameter is a jOOQ-generated `TableRecord` rather than a hand-written class, the input binds on the *column* axis instead of the Java-member axis: each plain input field names a column with `@field(name:)`, and a `@nodeId` field decodes an identity into the record's key columns. The framework builds the record for you and hands it to the method already populated.
+
+[source,graphql]
+----
+input FilmUpdateInput {
+    filmId:      ID!    @nodeId(typeName: "Film")
+    title:       String @field(name: "title")
+    releaseYear: Int    @field(name: "release_year")
+}
+----
+
+[source,java]
+----
+public static String updateFilm(DSLContext dsl, FilmRecord in) { ... }
+----
+
+Each field loads independently and only when the client actually sent it, so jOOQ's per-column `changed` flag stays honest: an omitted field leaves its column untouched (and out of the `INSERT` / `UPDATE` your service runs), an explicitly-sent `null` writes SQL `NULL`.
+
+==== Renaming a field: two names, one column
+
+Renaming a published field follows the usual deprecation pattern, and it works here without touching the database: add the new field, keep the old one marked `@deprecated` until its removal date, and point both at the same column.
+
+[source,graphql]
+----
+input FilmUpdateInput {
+    filmId:      ID!    @nodeId(typeName: "Film")
+    releaseYear: Int    @field(name: "release_year")
+    year:        Int    @field(name: "release_year")
+        @deprecated(reason: "renamed to releaseYear; removed no earlier than 2028-03-31")
+}
+----
+
+The two names resolve to one write, in a stated precedence order: the live (non-deprecated) field wins, and where every name on a column is deprecated (a rename chain part-way to removal) the latest-declared one wins. So a client sending only `year` still writes; a client sending both gets `releaseYear`; a client sending neither leaves the column untouched. Reordering the fields in the schema does not change the outcome.
+
+*Two live fields on one column are still an error*, named at build time: without a `@deprecated` marker there is nothing saying which of them the author meant to win. The fix is to remove one, point its `@field(name:)` at a different column, or mark the superseded one `@deprecated` to declare it an alias.
+
+NOTE: This applies to a jOOQ record `@service` parameter. Graphitron-owned `@mutation` inputs (`INSERT` / `UPDATE`) still reject two plain fields on one column: their write goes through a SET map that holds one value per column, and the bulk `UPDATE` path cannot name one derived column twice.
+
 === `contextArguments`: pulling from request state
 
 `contextArguments:` is for values that aren't GraphQL arguments but live on the per-request `GraphQLContext`: tenant IDs, authenticated principals, feature-flag snapshots. Declaring `contextArguments: ["tenantId"]` in the directive means the framework looks up `env.getGraphQlContext().get("tenantId")` and threads the result as an additional Java parameter named `tenantId`:

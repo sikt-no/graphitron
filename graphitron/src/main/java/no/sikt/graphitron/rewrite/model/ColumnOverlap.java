@@ -8,10 +8,14 @@ import java.util.List;
  * The shared per-column overlap analysis for the DML mutation write paths.
  *
  * <p>"Group the writers of a record / SET clause by backing column; a column with two or more
- * writers is an overlap; an all-plain overlap is a build-time reject and a decode-involving one
- * needs a runtime value-agreement check" was hand-rolled in six places, accreted one per write
- * surface as the agreement gap was closed across the write surfaces. This is the one
- * grouping those six now read. The grouping is a pure structural fold over already-resolved
+ * writers is an overlap; a decode-involving overlap needs a runtime value-agreement check, and what
+ * an all-plain overlap means is the consuming site's call" was hand-rolled in six places, accreted
+ * one per write surface as the agreement gap was closed across the write surfaces. This is the one
+ * grouping those six now read. All-plain is a build-time reject on the DML SET-map paths, whose
+ * runtime keeps one value per column; on the {@code @service} jOOQ-record path a declared
+ * {@code @deprecated}-alias group is instead merged into one writer with ordered read paths, so an
+ * all-plain overlap never survives the classifier to reach that site's emitter. The grouping is a
+ * pure structural fold over already-resolved
  * {@link ColumnRef#sqlName()} values, so it is a shared <em>function</em> invoked at each site, not
  * a fact stored on a carrier: the {@code @mutation} validator runs at resolution time, before the
  * emit carriers exist, so a per-carrier stored fact would force the validator to keep its own walk.
@@ -47,8 +51,9 @@ public final class ColumnOverlap {
         List<ColumnRef> targetColumns();
 
         /** Whether this writer involves a {@code @nodeId} decode (a composite / reference carrier, or a
-         *  {@code ColumnField} whose extraction is {@code NodeIdDecodeKeys}). An all-plain overlap is a
-         *  build-time reject; a decode-involving one needs the runtime value-agreement check. */
+         *  {@code ColumnField} whose extraction is {@code NodeIdDecodeKeys}). A decode-involving overlap
+         *  needs the runtime value-agreement check; what an all-plain overlap means is per-site (see the
+         *  class javadoc). */
         boolean decode();
 
         /** A dotted SDL access-path reference (e.g. {@code details.title}) for the agreement / reject
@@ -68,8 +73,9 @@ public final class ColumnOverlap {
     /**
      * One backing column with its ordered contributing writers. {@code shared()} when two or more
      * writers land on it (the dedup + agreement case); {@code allPlain()} when no contributor is a
-     * decode (the validator's build-time reject when also shared). Generalizes {@code InsertCol} and
-     * its near-identical clone {@code SetCol}.
+     * decode, which the DML validators reject when also shared and the {@code @service} jOOQ-record
+     * classifier instead admits as a merged alias group (see the class javadoc). Generalizes
+     * {@code InsertCol} and its near-identical clone {@code SetCol}.
      */
     public record OverlapColumn(ColumnRef column, List<Contributor> contributors) {
         public boolean shared() { return contributors.size() >= 2; }

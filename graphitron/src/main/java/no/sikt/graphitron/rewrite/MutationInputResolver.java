@@ -518,11 +518,18 @@ final class MutationInputResolver {
     /**
      * Rejects a column written by two or more plain {@code @field} writers (no {@code @nodeId}
      * decode among them), recursing into nested grouping inputs. Such an overlap is a pure schema
-     * fact, so it is an author error caught at build time, the mutation-path mirror of the
-     * {@code @service} reject. An overlap involving at least one decode is admitted here and left
-     * to the runtime value-agreement check (FK topology can legitimately force a column to be
-     * written by two references). Returns the first offending column's rejection, or {@code null}.
-     * Called from {@code FieldBuilder.resolveInsertWriteTarget}.
+     * fact, so it is an author error caught at build time. The ground is this path's own mechanism:
+     * the INSERT routes its writes through a SET map that holds one value per column, so a second
+     * {@code put} silently clobbers the first. An overlap involving at least one decode is admitted
+     * here and left to the runtime value-agreement check (FK topology can legitimately force a column
+     * to be written by two references). Returns the first offending column's rejection, or
+     * {@code null}. Called from {@code FieldBuilder.resolveInsertWriteTarget}.
+     *
+     * <p>Not a general "one column takes one field" rule: on the {@code @service} jOOQ-record
+     * parameter path, whose runtime is a presence-guarded per-column load rather than a SET map,
+     * {@code InputBeanResolver} admits a shared write column when the superseded fields carry
+     * {@code @deprecated}. Relaxing this path the same way needs its own analysis of the SET map's
+     * semantics and is not what this guard defers.
      */
     static Rejection rejectPlainColumnCollision(List<InputField> fields, String typeName) {
         var writers = new ArrayList<ColumnOverlap.ColumnWriter>();
@@ -532,8 +539,11 @@ final class MutationInputResolver {
                 return Rejection.structural(
                     "@mutation input '" + typeName + "' fields '" + oc.contributors().get(0).writer().label()
                     + "' and '" + oc.contributors().get(1).writer().label()
-                    + "' both resolve to column '" + oc.column().sqlName() + "' — two fields cannot populate one"
-                    + " column; remove one, or point its @field(name:) at a different column");
+                    + "' both resolve to column '" + oc.column().sqlName() + "'; the INSERT's SET map holds"
+                    + " one value per column, so the second write would silently clobber the first. Remove"
+                    + " one, or point its @field(name:) at a different column. (Declaring a shared write"
+                    + " column through a @deprecated alias is supported on @service jOOQ-record parameters,"
+                    + " not on this path.)");
             }
         }
         return null;

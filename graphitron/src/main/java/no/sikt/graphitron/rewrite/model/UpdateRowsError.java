@@ -147,10 +147,16 @@ public sealed interface UpdateRowsError extends Rejection.AuthorError permits
 
     /**
      * Two or more plain {@code @field} writers (no {@code @nodeId} decode among them) resolve
-     * to one SET column. On single-row UPDATE the second {@code Map.put} silently last-write-wins; reject
-     * at validate time, the UPDATE mirror of the INSERT-path / {@code @service} reject. An overlap
-     * involving a decode is admitted and reconciled by the runtime value-agreement check, so it does
-     * not reach this arm.
+     * to one SET column. Rejected on this path's own two mechanisms: the single-row UPDATE's SET map
+     * holds one value per column, so the second {@code Map.put} silently clobbers the first, and the
+     * bulk path's VALUES join crashes outright on a duplicate derived column. An overlap involving a
+     * decode is admitted and reconciled by the runtime value-agreement check, so it does not reach
+     * this arm.
+     *
+     * <p>Not a general "one column takes one field" rule: on the {@code @service} jOOQ-record
+     * parameter path, whose runtime is a presence-guarded per-column load, a shared write column is
+     * admitted when the superseded fields carry {@code @deprecated}. The bulk VALUES-join crash is
+     * what makes the same relaxation unsound here.
      */
     record PlainColumnCollision(
         String fieldA,
@@ -159,8 +165,11 @@ public sealed interface UpdateRowsError extends Rejection.AuthorError permits
     ) implements UpdateRowsError {
         @Override public String message() {
             return "@mutation(typeName: UPDATE) input fields '" + fieldA + "' and '" + fieldB
-                + "' both resolve to column '" + column + "' — two fields cannot populate one column;"
-                + " remove one, or point its @field(name:) at a different column.";
+                + "' both resolve to column '" + column + "'; the single-row SET map holds one value per"
+                + " column, so the second write would silently clobber the first, and the bulk path's"
+                + " VALUES join cannot name one derived column twice. Remove one, or point its"
+                + " @field(name:) at a different column. (Declaring a shared write column through a"
+                + " @deprecated alias is supported on @service jOOQ-record parameters, not on this path.)";
         }
         @Override public String lspCode() { return "graphitron.update-rows.plain-column-collision"; }
     }

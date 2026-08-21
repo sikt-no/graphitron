@@ -26,6 +26,7 @@ import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.JooqRecordInputError;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
 import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
@@ -273,6 +274,7 @@ class HierarchyKindRegistryTest {
         Map.entry(Rejection.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(DeleteRowsError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(ErrorChannelWalkerError.class, HierarchyKind.ERROR_CHANNEL),
+        Map.entry(JooqRecordInputError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(MutationTableArgError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(PivotError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(ReflectionError.class, HierarchyKind.ERROR_CHANNEL),
