@@ -25,8 +25,8 @@ decide what the implementer will build.
 
 ## The evidence, from R769
 
-R769 is at four review rounds. The first bounce was on the author's own defect and the gate
-worked. The second and third were on prose a reviewer had written minutes earlier.
+R769 has bounced three times. The first was on the author's own defect and the gate worked. The
+second and third were on prose a reviewer had written minutes earlier.
 
 Three commits inside 37 minutes grew the body 166 → 223 → 273 lines. `git blame` on
 `roadmap/seeded-store-boots-per-thread.md` splits as 139 lines from the author, 73 from the
@@ -251,7 +251,7 @@ and the blame fraction in this item's own review log as the items land.
 
 ## Roadmap entries
 
-* R769 is the worked example and is mid-flight at four rounds. It should adopt the review log for
+* R769 is the worked example and is mid-flight at three bounces. It should adopt the review log for
   its next pass rather than waiting on this item, since the convention costs nothing to follow
   early and R769's outstanding finding is exactly the kind that wants an author's answer.
 
@@ -261,7 +261,7 @@ and the blame fraction in this item's own review log as the items land.
 committer` by session ID. Making "the same reviewer returns" a requirement would need session
 liveness the process cannot promise, and a guard nobody can satisfy gets bypassed.
 
-**It does not touch the four gate questions,** which are working: every one of R769's four rounds
+**It does not touch the four gate questions,** which are working: all three of R769's bounces
 found a real defect. The gate is not too strict; the loop is fed by who repairs what it finds.
 
 **It does not add a build gate,** for the reason the Tests section gives.
