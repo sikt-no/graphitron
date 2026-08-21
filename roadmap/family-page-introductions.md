@@ -1,7 +1,7 @@
 ---
 id: R800
 title: "Family pages open with an introduction, main grains and bridge roster"
-status: Backlog
+status: Spec
 bucket: docs
 depends-on: []
 created: 2026-08-21
@@ -25,160 +25,221 @@ spelling-normalization rule that `intent_spelled_table` owns, and nothing today 
 view is the *only* place that rule lives: a new view can re-derive its own normalization with
 function calls in a join predicate, produce plausible rows, and quietly fork the mapping. The
 family relationships should therefore live in the store as registered rows the reference renders,
-not as prose an author writes about the store, so that the sanctioned paths are at least named in
-one queryable place now and mechanically closable later.
+not as prose an author writes about the store, and the register has to close against what the
+views actually do, in the exemption polarity the schema gates use throughout: a new cross-family
+view fails the gate until an authored row argues it in.
 
 ## Scope
 
-This is the first delivery, aimed at the documentation. In scope: an authored introduction per
-family, an authored main-grains roster per family, an authored bridge roster for the sanctioned
-cross-family normalization crossings, the derived cross-family foreign-key edges, and the renderer
-sections that put all of it on the family pages. The definition of done is that the result is
-browsable on the public site.
+First delivery, aimed at the documentation; the definition of done is that the result is
+browsable on the public site. In scope: an authored introduction per family, an authored headline
+roster per family, the authored bridge roster with its relation-grain closure (a machine-written
+view-read census plus the crossing gate), a derived foreign-key reference view, the renderer
+sections that put all of it on the family pages, and the drift-check extension that keeps the new
+prose honest.
 
-Explicitly deferred to a follow-up item: the mechanical closure of the bridge roster. That means
-generalizing the `MaterializeDependencies` AST walk into a machine-written census of every view's
-read set, and a predicate-level gate that rejects function application over cross-family columns
-outside a registered bridge. Until that lands, the bridge roster is resolve-gated but not
-crossing-closed, and review covers the gap; the roster existing first is what gives the follow-up
-gate something to close against.
+Deferred to the follow-up item (`view-read-census-and-bridge-closure`, retitled at its own Spec
+to match): the predicate-level analysis only, that is, walking join and filter conditions to
+reject function application over cross-family columns outside a registered bridge. The
+relation-grain closure below is coarser (it sees which relations a view reads, not how it
+compares them), which is exactly the gap the follow-up closes.
 
-## The three authored artifacts
+An earlier draft of this spec deferred the whole closure and gated the bridge roster
+resolve-only. Withdrawn on principles consult: every sibling `meta_` roster closes against the
+observed schema in exemption polarity, and a bridge roster without its closing census has
+inclusion polarity, a section that renders as the complete set of sanctioned crossings while
+being silently partial. The closure at relation grain is cheap enough to belong here because the
+hard half already exists in `MaterializeDependencies.relationsReadBy`.
 
-All three live in `graphitron-model`'s DDL (`graphitron-model.sql`), following the standing rule
-the renderer stamps on every page: the DDL is the only authored source, so nothing here is a
+## The authored artifacts
+
+All live in `graphitron-model`'s DDL (`graphitron-model.sql`), following the standing rule the
+renderer stamps on every page: the DDL is the only authored source, so nothing here is a
 committed AsciiDoc fragment.
 
 **1. `meta_family.introduction`, a new column on the roster view.** Friendly prose that presents
 the family to a first-time reader: what its rows transcribe or derive, in plain language, one
 short paragraph. It complements the charter rather than replacing it: the introduction presents,
-the charter defends the name. Both render (layout below). Like the other meta prose it is a SQL
-string literal in the VALUES view, authored in the accepted inline AsciiDoc subset.
+the charter defends the name. The column comment carries the discriminator and is load-bearing
+the way `meta_materialize.reason`'s comment is: an introduction says what the family is for and
+deliberately names no relation and no other family, because the headline roster and the meeting
+section carry those and are gated, while prose naming them would go stale with nothing failing.
+No gate can read intent, so the comment is the enforcement.
 
-**2. `meta_family_grain`, a new authored roster view: `(prefix, relation_name, ordinal)`.** One
-row per headline relation of a family, curation by judgment: the relations a reader should meet
-first, typically the family's central grain plus the one or two derivations that make it useful.
-Which relations are headline cannot be derived, so the membership is authored; what each one *is*
-already exists as that relation's own `COMMENT ON` text, so no second blurb column that could
-drift. `ordinal` orders the list within a family.
+**2. `meta_family_headline`, a new authored roster view: `(relation_name, ordinal)`.** One row
+per headline relation of a family: the relations a reader should meet first, typically the
+family's central grain plus the derivations that make it useful. Curation is judgment, so
+membership is authored; everything else is derived. The family comes from the
+`meta_relation_family` census by join, never stored beside the name (a stored copy of a derivable
+fact, and its agreement gate, would both be the smell the fact model names). What each headline
+*is* comes from the relation's own `COMMENT ON` text (extraction below), so there is no second
+authored blurb to drift. Not `meta_family_grain`: *grain* is one of the store glossary's two
+load-bearing words and this roster does not mean it; a reader of the reference must never have to
+disambiguate.
 
-**3. `meta_family_bridge`, a new authored roster view: `(relation_name, from_prefix, to_prefix,
-rule)`.** One row per sanctioned cross-family normalization crossing: a place where two families'
-vocabularies meet through a rule rather than through plain equality on a shared key. The row
-names the relation that owns the rule and states the rule in one sentence. Direction matters and
-the columns say so: `from_prefix` is the family whose spelling is being resolved, `to_prefix` the
-family it resolves against. The flagship row is `intent_spelled_table` from `graphitron_` to
-`sql_` ("a written table name meets the catalog by spelling normalization"). Implementation
-enumerates the rest by sweeping the `intent_` views for resolutions keyed on a written name (the
-family charter already names that layer); each found crossing becomes a row.
+**3. `meta_family_bridge`, the sanctioned normalization crossings:
+`(relation_name, spelled_prefix, census_prefix, rule)`.** One row says: this relation owns the
+rule by which a name written in `spelled_prefix`'s vocabulary is matched against
+`census_prefix`'s census. The columns are named for their roles, not `from`/`to`: a
+normalization always has a spelled side and a census side, so the role names are always true,
+where a direction pair would assert something the population only usually carries and would be
+ambiguous against the bridge's own residence family (`intent_spelled_table` lives in `intent_`
+and bridges `graphitron_` spellings to the `sql_` census). The `rule` column states the rule in
+one sentence. The flagship row is `intent_spelled_table`; implementation enumerates the rest by
+sweeping the `intent_` views for resolutions keyed on a written name (the family charter already
+names that layer).
 
-Crossings by plain column equality on a shared natural key deliberately get no roster. A foreign
-key is already a declared, engine-checked join path, and a coordinate-equality join between
-capture families is the ordinary case the whole `intent_` stratum exists for. The bridge roster is
-only for the rule-mediated meetings, because those are the ones a new view can silently fork.
+**4. `meta_keyed_crossing`, the exemption side of the closure:
+`(relation_name, reason)`.** One row says: this view's direct read set spans more than one
+family, and every cross-family meeting in it is plain equality on shared keys or a read through
+a registered bridge; the reason says which. This is the roster that gives the crossing gate its
+exemption polarity: the ordinary multi-family readers (the `intent_` stratum combining readings
+by coordinate, `diagnostic` unioning arms) get their rows once, and a new cross-family view
+fails the gate until it argues itself into exactly one of the two registers. The register is
+gate material and does not render in this item.
 
-## The derived edges
+Crossings by plain column equality on a shared natural key get no bridge row by design. A
+foreign key is already a declared, engine-checked join path, and a coordinate-equality join
+between families is the ordinary case the whole `intent_` stratum exists for. The bridge roster
+is only for the rule-mediated meetings, because those are the ones a new view can silently fork.
 
-The cross-family foreign-key relationships render from a new derived view,
-`meta_family_fk_edge (from_prefix, to_prefix, fk_count)` or equivalent, defined over
-`INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS` joined through `meta_relation_family` on both ends
-and filtered to rows whose two families differ. A store view rather than renderer-side
-aggregation, on the `meta_relation_family` precedent: the census view exists so that consumers of
-different fidelity can never answer the same question differently, and "which families reference
-which" is exactly such a question (the reference renders it today; the follow-up gate and any
-future MCP/LSP surface will want the same answer). `StoreCatalog` reads it like the other meta
-relations.
+## The derived artifacts
+
+**`meta_view_read`, the machine-written read census.** One row says: this view's stored
+definition directly reads this relation. Written by a boot-time routine in the
+`meta_materialize_dependency` one-writer pattern (a hand edit is a bug), reusing the walk
+`MaterializeDependencies.relationsReadBy` already implements: jOOQ's parser over the stored
+`VIEW_DEFINITION`, collecting the table parts whose qualified name is `PUBLIC` plus one segment,
+so aliases and CTE names cannot mint rows. Generalized from the materialize registrations to
+every view in the census; whether `MaterializeDependencies` then re-derives its edges from this
+relation instead of re-parsing is an optional simplification, not a requirement.
+
+**`meta_relation_reference`, the declared key edges as a view.** One row per declared foreign
+key: child relation, child family, parent relation, parent family, defined over
+`INFORMATION_SCHEMA` (`REFERENTIAL_CONSTRAINTS` resolved through `KEY_COLUMN_USAGE` the way
+`StoreCatalog.foreignKeysByRelation` already does) joined through `meta_relation_family` on both
+ends. At constraint grain, deliberately: cross-family is a predicate a reader applies, not a
+population filter baked into the relation, and the name says what a row is rather than where it
+renders. A store view rather than renderer-side aggregation because `StoreCatalog`'s contract is
+that family assignment is never re-derived outside the census, and because the crossing gate and
+the MCP schema surface are second readers of the same answer.
+
+## The crossing gate
+
+In the store's gate suite beside the existing family-roster gates: every view whose
+`meta_view_read` rows span two or more families appears in exactly one of `meta_family_bridge`
+or `meta_keyed_crossing`; every row of either register resolves to an observed view that
+actually spans families; and a bridge row's two named families both appear among the families of
+its view's read set. Both directions closed, so the registers can neither miss a crossing nor
+carry a stale row. The gate is coarse on purpose: it cannot see how a view compares the columns
+it reads, only that it reads across families, which is why the keyed-crossing register exists
+and why the predicate-level refinement is the follow-up item.
 
 ## Renderer and reader changes
 
-`StoreCatalog`: `Family` gains `introduction`; new records `Grain(prefix, relationName, ordinal)`,
-`Bridge(relationName, fromPrefix, toPrefix, rule)` and `FamilyFkEdge(fromPrefix, toPrefix,
-count)`, each read from its view in the fixed-order style the reader already uses.
+`StoreCatalog`: `Family` gains `introduction`; new records for headline, bridge and reference
+rows, each read from its view in the fixed-order style the reader already uses, data verbatim.
+
+The grain-sentence extraction lives in `graphitron-model` beside the catalog reader, not in the
+renderer: "the first sentence of a relation comment is its grain statement" is a store
+convention, and the renderer's charter is presentation vocabulary only. `StoreCatalog`'s records
+stay verbatim-from-engine, so the extractor is a sibling helper the renderer calls. Its
+acceptance line is pinned in both directions in its own test, the way the renderability gate
+pins its subset: accepted shapes plus the corpus's real hazards as handled cases (dotted
+coordinates like `Type.field`, package-qualified class names, version strings), and a sweep
+asserting every censused relation yields a plausible first sentence: non-blank, strictly shorter
+than the comment, terminated. A naive period-and-whitespace split with only a blank-result floor
+is rejected: the blank case cannot happen, the mis-split case will.
 
 `SchemaReferencePages`, family page layout, in order:
 
 1. Title, prefix line (unchanged).
 2. The introduction.
-3. "Main grains": a labeled list from the grain roster, each entry the relation name linked to
-   its same-page anchor, followed by the first sentence of that relation's own comment. First
-   sentence means the text up to the first period followed by whitespace or end-of-text; the
-   comments are gated renderable prose, and a blank extraction is a `BuildFailure` like the other
-   renderer floors.
-4. "How this family meets the others": the bridge rows where the family participates in either
-   direction (each rendered as the rule sentence with the owning relation cross-linked to its
-   page), then the derived foreign-key edges as one compact line per direction ("rows here
-   reference `sql_` through 2 foreign keys; referenced by `intent_`"). Families with no bridges
-   and no cross-family keys render an honest one-liner saying so rather than an empty heading.
-5. "Why the name is right": the charter, under its own heading now that it no longer serves as
-   the page's opening.
+3. "Where to start": the headline roster, each entry the relation name linked to its same-page
+   anchor plus its extracted grain sentence.
+4. "How this family meets the others", two labeled parts so the provenance the relations keep is
+   not flattened at the render: the authored bridge rows where the family participates on either
+   side (the rule sentence, the owning relation cross-linked), then the declared key edges
+   aggregated from `meta_relation_reference` ("rows here reference `sql_` through 2 foreign
+   keys; referenced by `intent_`"). Families with neither render an honest one-liner saying so
+   rather than an empty heading.
+5. "Why the name is right": the charter, under its own heading now that it no longer opens the
+   page.
 6. The relations (unchanged).
 
 The index page's per-family blurb switches from the charter to the introduction; the charter
-stays on the family page only. The index's own preamble needs no change.
+stays on the family page only. Renderer floors extend to the new sections: a family with a blank
+introduction or no headline rows fails the render loudly.
 
-## Gates
+## Gates and checks
 
-All in the store's own gate suite beside the existing family-roster gates (`FactSchemaGateTest`
-holds the roster well-formedness, home-resolution and exemption-resolution gates today;
-`CommentRenderabilityGateTest` holds the prose subset):
-
-- `meta_family.introduction` is non-blank for every family, and every new prose value
-  (introductions, bridge rules) passes the renderability subset. The renderability gate already
-  scans "every meta prose value"; verify the new columns fall inside its sweep and extend it if
-  its column enumeration is explicit.
-- Every `meta_family_grain` row resolves: its prefix is in the roster, its relation is observed,
-  and the relation's census family (`meta_relation_family`) equals the stated prefix, so a grain
-  is always a resident of the family that claims it. Ordinals are unique within a prefix. Every
-  family has at least one grain row, so no page can render an empty promise.
-- Every `meta_family_bridge` row resolves: the relation is observed, both prefixes are in the
-  roster, `from_prefix` differs from `to_prefix`, and the rule is non-blank. Resolve-only by
-  design in this item; the crossing-closure gate is the follow-up's.
-- The new relations themselves carry full `COMMENT ON` coverage and registration, which the
-  existing comment-coverage and capture-agreement gates enforce without new code.
-
-The renderer keeps its own floors: blank introduction, empty grain list, or blank first-sentence
-extraction fail the docs build loudly rather than rendering a hollow page.
+- Roster gates in the store's suite: `introduction` non-blank for every family; every headline
+  row resolves to an observed relation with a census family, ordinals dense from zero within
+  each family (density is the schema-gate convention, uniqueness alone hides gaps), and every
+  family has at least one headline row; bridge and keyed-crossing rows resolve as the crossing
+  gate above requires, `spelled_prefix` and `census_prefix` rostered and distinct, `rule` and
+  `reason` non-blank.
+- The renderability subset needs no new work and none is planned: the meta-prose sweep is
+  already total over every character-typed value of every `meta_` relation, so the new columns
+  join it by existing.
+- Comment coverage and registration of the new relations are enforced by the existing
+  comment-coverage and capture-agreement gates without new code.
+- `SchemaIdentifierDriftCheck` gains the store's own prose as a second corpus: the new columns
+  exist to cite relation names (`rule` inherently, introductions and reasons naturally despite
+  the discriminator), and today the check scans only `docs/architecture`, so a rename would
+  leave gated name columns correct and the prose beside them silently wrong. The check already
+  boots the store and resolves spans; the store corpus reuses both. If the sweep surfaces
+  pre-existing rot in old comments, fixing those citations is in scope.
 
 ## Authoring work
 
-Thirteen families each need an introduction and a grain roster; the bridge roster needs the
-`intent_` sweep. This is the bulk of the item's effort and it is writing, not code. The
-introductions are authored in the friendly register the explanation pages use (simple language,
-no zealotry), one paragraph each; the grain rosters should stay short (two to four rows per
-family) or they stop being curation.
+Thirteen families each need an introduction and a headline roster; the bridge roster needs the
+`intent_` sweep; the keyed-crossing register needs a row per existing multi-family view, which
+the crossing gate itself enumerates on first run. This is the bulk of the item's effort and most
+of it is writing. The introductions are authored in the friendly register the explanation pages
+use, one paragraph each; headline rosters stay short (two to four rows) or they stop being
+curation; keyed-crossing reasons are one sentence each.
 
 ## Deliverables
 
-1. DDL: the `introduction` column, the two authored rosters populated for all families, the
-   derived FK-edge view, comments on everything new.
-2. Reader: `StoreCatalog` extensions with test coverage in its existing test.
-3. Gates: the new assertions in the store's gate suite as listed above.
-4. Renderer: the new sections in `SchemaReferencePages`, covered by `SchemaReferencePagesTest`.
-5. jOOQ regeneration fallout in `graphitron-model` as the build produces it.
+1. DDL: the `introduction` column, `meta_family_headline`, `meta_family_bridge`,
+   `meta_keyed_crossing`, `meta_view_read`, `meta_relation_reference`, comments on everything
+   new, rosters populated for all families.
+2. Boot: the `meta_view_read` writer reusing the existing parse walk.
+3. Reader: `StoreCatalog` extensions and the grain-sentence extractor with its pinned
+   acceptance-line test.
+4. Gates: the roster and crossing gates above; the drift-check corpus extension.
+5. Renderer: the new sections in `SchemaReferencePages`, covered by `SchemaReferencePagesTest`.
+6. jOOQ regeneration fallout in `graphitron-model` as the build produces it.
 
 ## Risks
 
-- The introductions and the naming-the-row explanation page overlap in register; the mitigation
-  is length (one paragraph) and subject (one family) so the page-level prose never restates the
-  doctrine, it presents the residents.
-- First-sentence extraction assumes relation comments open with a self-contained sentence. They
-  are authored under exactly that discipline ("one row per X ..."), and the renderer floor turns
-  any counterexample into a loud build failure at the moment it is authored, not a silent bad
-  render.
-- The bridge roster lands without mechanical closure, so a rogue normalization view is still
-  possible until the follow-up gate. Disclosed above; the roster is still strictly better than
-  today, where the sanctioned path is not stated anywhere queryable.
-- Thirteen authored introductions invite register drift between families. Single-session
-  authoring and review of the DDL diff as one piece is the mitigation.
+- The keyed-crossing register's size is unknown until the census runs; if the `intent_` stratum
+  yields dozens of rows, the one-sentence reasons are still bounded work, but the Spec reviewer
+  should weigh whether a stratum-level exemption (one row arguing a family's whole derivation
+  layer) is a better shape before authoring begins. The per-view register is the default because
+  it matches the gate's grain.
+- The introductions and the naming-the-row explanation page overlap in register; mitigation is
+  length (one paragraph) and subject (one family), and the discriminator comment keeps rosters
+  out of the prose.
+- The bridge roster still cannot see predicates; a view could read through a bridge and add its
+  own sloppy comparison beside it. Disclosed; the follow-up item owns it, and until then that
+  narrower gap is review's.
+- Sixteen or more authored prose pieces invite register drift; single-session authoring and
+  review of the DDL diff as one piece is the mitigation.
+- Store boot gains a parse walk over every view at creation; the walk is per-created-store like
+  the dependency walk today, and the store-performance rubric applies if it shows up in build
+  wall-clock.
 
 ## Done criteria
 
-- `mvn install -Plocal-db` is green, gates included.
+- `mvn install -Plocal-db` is green, gates included, the crossing gate closing both directions
+  with zero grandfathered views.
 - The rendered reference under `docs/target/staging/architecture/reference/schema/` shows every
-  family page opening with introduction, main grains and family-relationships sections, and the
-  index blurbs read as introductions.
-- After the trunk push, the same pages are live on the public site under
-  `graphitron.sikt.no/architecture/reference/schema/`, browsable and readable there; that page
-  set is the definition of done the item exists for.
-- The follow-up item (view-read census plus predicate-level bridge closure) is filed as a Backlog
-  stub so the deferral has an address.
+  family page opening with introduction, "Where to start" and "How this family meets the
+  others", the charter under its own heading, and index blurbs reading as introductions.
+- After the trunk push, the same pages are live and readable under
+  `graphitron.sikt.no/architecture/reference/schema/`; that browsable page set is the definition
+  of done the item exists for.
+- The follow-up item's stub reflects the narrowed remit (predicate-level analysis over a census
+  that now exists).
