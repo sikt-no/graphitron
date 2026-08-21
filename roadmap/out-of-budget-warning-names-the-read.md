@@ -1,7 +1,7 @@
 ---
 id: R792
 title: "The out-of-budget warning names the read, and the statement drops to DEBUG"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 4
 theme: lsp
