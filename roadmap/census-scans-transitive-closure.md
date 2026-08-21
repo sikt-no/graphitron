@@ -1,7 +1,7 @@
 ---
 id: R685
 title: "The class census scans the transitive dependency closure"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 3
 theme: dev-loop
@@ -654,6 +654,74 @@ rewrite the item asks for should describe the census's scope rather than any one
 *Author response.* Noted and left as guidance for the implementer rather than a plan edit: the
 `ClasspathClasses` javadoc rewrite the item already asks for is the place it lands, and it is one
 sentence about scope rather than a third surface to change.
+
+### In Review → Done gate, first pass: rework, status back to Ready (session_019XrhmZGmYuihYNLWVBdTxL, 2026-08-21)
+
+`mvn install -Plocal-db` is green on the delivered tree rebased onto trunk, the new
+`transitive-not-nameable` invoker IT included.
+
+The implementation is the change this spec approved, and I am not reopening any of it. The
+classified list replaced `List<Path>` at one producer; `ClasspathScanner` skips a `TRANSITIVE`
+entry before opening it; `ClasspathNameability` is the resource probe the revision specified,
+not the `CodeSource` route the first gate suggested, with all four `Origin` arms plus the
+platform-loader and empty-list cases each pinned by a unit case and the nested case written
+first; `CodegenClassForNameGuardTest` closes the site enumeration in both directions; the
+`jvm_class` and `meta_family` comments, the two `Diagnostics` arms, the `ClasspathClasses`
+javadoc and the `ClasspathSources` silence note all landed as drafted; and the re-measurement
+section records the write side at 28% rather than repeating the predicted half, with its
+caveats, which is what that section asked for. Question 1 passes.
+
+**What blocks the gate is question 2, on the user-facing half, and it is the Retirement sweep
+rather than a scope gap.** The `Retired vocabulary` section above declares "has to be on the
+*plugin's* classpath, not the consumer module's compile classpath" a claim that becomes false.
+The first-client check attributed that claim to `docs/manual/how-to/external-code.adoc` and to
+the Constraints bullet in the same file, and both were fixed well: the `make-the-class-nameable`
+section states the one rule, replaces the XML block with a module-level `<dependency>`, and names
+the plugin-block setup so a reader recognises their own. But the claim is not confined to that
+file. It survives in five more manual pages, nine sites, and the sweep's remit is all prose
+surfaces including the user manual:
+
+- `how-to/add-custom-conditions.adoc:41` and `how-to/computed-fields.adoc:39` are numbered recipe
+  steps reading "Add the carrying artifact to the rewrite plugin's `<dependencies>` block, not
+  your consumer module's compile classpath". A reader following either verbatim now gets the
+  build failure this item's own enforcer emits, at `@condition` and `@externalField`, both gated
+  sites.
+- `how-to/computed-fields.adoc:158` carries the retired sentence near-verbatim;
+  `how-to/add-custom-conditions.adoc:173` paraphrases it ("The class must be on the rewrite
+  plugin's classpath, not the consumer module's").
+- `reference/directives/service.adoc:28`, `reference/directives/externalField.adoc:92` and
+  `reference/directives/enum.adoc:36` are the per-directive reference entries for three of the
+  four directives `external-code.adoc`'s own opening sentence enumerates as sharing these
+  mechanics. Each still requires the plugin classpath, two of them naming the `<plugin>` block
+  explicitly.
+- `reference/mojo-configuration.adoc:368` is already right that the module classpath works, but
+  its closing sentence keeps `<plugin><dependencies>` as "the rare legitimate case" for version
+  pinning, which the withdrawal removes for any author-written name.
+- Four `xref` lead-ins (`add-custom-conditions.adoc:7`, `:186`, `computed-fields.adoc:7`, `:164`,
+  and `enum.adoc:50`) send the reader to `external-code.adoc` for "the plugin-classpath setup",
+  which is no longer what that page teaches.
+
+So the manual now states the rule and its opposite, and the pages carrying the opposite are the
+step-by-step recipes and the per-directive reference entries a consumer is most likely to reach.
+That is not a phrasing preference: it is the documented contract contradicting the build outcome
+at three gated directives, on an item whose stated goal is that the rule "read simply" to a
+consumer. `how-to/custom-scalars.adoc:28` is the counter-example worth copying, already correct
+and consistent without this item touching it.
+
+**What would satisfy the gate.** Bring those nine sites onto the one rule, pointing at
+`external-code.adoc#make-the-class-nameable` rather than restating it, and re-run the sweep over
+the manual. Nothing else is outstanding; no code change is implied.
+
+Two non-blocking notes, neither bearing on either question. `classifyElement` adds a fifth arm
+the plan does not enumerate, a path no artifact and no reactor project accounts for classified
+`DECLARED` with no coordinate; it fails open, is argued in the javadoc and is pinned by
+`ClasspathClassificationDecodeTest.anUnattributablePathStaysInTheCensus`, so it reads as the
+right call rather than a silent substitution. And the plan said `RecordBindingResolver`'s
+author-written `className` sites are checked, where the delivery marks them exempt because
+`ServiceCatalog` has already gated the same `@service` / `@externalField` names before that
+observation pass runs; that is the better placement, and the two sites the plan had missed
+(`@error` in `TypeBuilder.validateExceptionClass`, `@sourceRow` in `SourceRowDirectiveResolver`)
+are gated instead.
 
 ### Author handoff (2026-08-21)
 
