@@ -36,6 +36,8 @@ import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -43,6 +45,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -69,6 +72,8 @@ import java.util.function.Consumer;
  * is what it was when it ran inline.
  */
 public class GraphitronTextDocumentService implements TextDocumentService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(GraphitronTextDocumentService.class);
 
     private final Workspace workspace;
     private final Consumer<String> onSchemaSaved;
@@ -166,11 +171,27 @@ public class GraphitronTextDocumentService implements TextDocumentService {
      * harnesses), and a submit that lands while a drain is pending or
      * running collapses into the one already wanted; the caller pays a
      * flag-and-submit, never the drain.
+     *
+     * <p>A rejected submit is absorbed here, never rethrown. The window is
+     * real: the workspace outlives connections and its listener slot is not
+     * cleared on teardown, so between an editor detaching (which shuts this
+     * connection's executor down) and the next connection's {@link #setClient}
+     * a build swap still reaches this service. Inline, that window was quiet,
+     * lsp4j's {@code RemoteEndpoint.notify} catching its own write failure;
+     * a mutator (the dev goal's watcher thread among them) must not gain a
+     * throw the inline path never had. The flag is reset so it does not
+     * record a drain that will never run, leaving every later mutation free
+     * to submit again rather than collapsing into a phantom.
      */
     private void publishDiagnosticsForRecalculate() {
         if (client == null) return;
         if (drainWanted.compareAndSet(false, true)) {
-            drainExecutor.execute(this::drainAndPublish);
+            try {
+                drainExecutor.execute(this::drainAndPublish);
+            } catch (RejectedExecutionException e) {
+                drainWanted.set(false);
+                LOGGER.debug("diagnostics drain not scheduled, executor is shut down: {}", e.getMessage());
+            }
         }
     }
 

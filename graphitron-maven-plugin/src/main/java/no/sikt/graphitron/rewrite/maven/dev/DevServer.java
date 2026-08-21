@@ -123,8 +123,13 @@ public final class DevServer implements AutoCloseable {
         } finally {
             // This finally is the per-connection teardown seam: exit() is a client-driven
             // notification a disconnecting editor may never send, so this is the only place
-            // guaranteed to run. The interrupting shutdown is what stops a drain in flight from
-            // publishing into the closing client; the daemon flag already keeps JVM exit correct.
+            // guaranteed to run. The interrupting shutdown drops any queued drain and interrupts
+            // one in flight, best-effort: a store read already inside the database runs to its
+            // budget, and a publish that still lands on the closed client is lsp4j's own quiet
+            // stream-closed path. The daemon flag keeps JVM exit correct regardless. The workspace
+            // outlives this connection with its listener slot uncleared, so a build swap can still
+            // submit to this executor after the shutdown; the document service absorbs that
+            // rejection quietly rather than throwing into the mutator.
             drainExecutor.shutdownNow();
             try {
                 client.close();

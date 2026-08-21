@@ -216,12 +216,17 @@ Three things to read off a trace:
 | `thread=` repeated across a request and a notification
 | Both ran on the same lsp4j thread. While a notification's phases run, the
   server is not reading the connection, so client requests queue and can time
-  out rather than merely being slow.
+  out rather than merely being slow. The diagnostics drain is exempt by
+  construction: it runs on its own `graphitron-lsp-diagnostics-drain` thread,
+  so its spans never carry the connection thread and its cost never blocks the
+  reader.
 
-| `workspace.notify` much larger than the `workspace.mutate` before it
-| The mutation's real cost is the diagnostic recalculation it triggers, not the
-  edit. Check `queued=` on the `mutate` line and `files=` on
-  `publishDiagnostics.drain`.
+| `workspace.notify` visibly above zero
+| The recalculate listener has stopped being a flag-and-submit. It hands the
+  drain to the connection's drain executor and returns, so `notify` should be
+  trivially small; the drain's real cost is the `publishDiagnostics.drain`
+  span on the `graphitron-lsp-diagnostics-drain` thread. Check `queued=` on
+  the `mutate` line and `files=` on that drain span.
 
 | `workspace.snapshot` far above zero
 | A read request waited on the mutator lock, so something else is holding it.

@@ -18,16 +18,20 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * The diagnostics drain runs on the injected executor rather than the thread that triggered it,
- * and the three properties that asynchrony rests on hold: a mutator returns while a drain is in
- * flight, submits during one drain collapse into at most one follow-up, and a file closed between
- * the drain's walk and its publish is never published for after its {@code didClose} clear.
+ * and the properties that asynchrony rests on hold: a mutator returns while a drain is in
+ * flight, submits during one drain collapse into at most one follow-up, a file closed between
+ * the drain's walk and its publish is never published for after its {@code didClose} clear, and
+ * a submit rejected by a shut-down executor is absorbed rather than thrown into the mutator.
  *
  * <p>Every assertion here is ordering, never a duration. The drain is held on a latch inside the
  * client's publish, which sits downstream of the store read on the same drain thread, so "held
@@ -141,6 +145,42 @@ class DiagnosticsDrainThreadingTest {
             .as("the file still open is published for as usual")
             .hasSize(1);
         assertThat(tasks).as("a close enqueues nothing, so no follow-up drain").isEmpty();
+    }
+
+    /**
+     * The teardown window: the workspace outlives connections and its listener slot is not cleared,
+     * so after an editor detaches (shutting its connection's executor down) a build swap still
+     * reaches the dead connection's service. Inline this window was quiet, so the mutator must not
+     * gain a throw: the rejection is absorbed, and the collapse flag does not record a drain that
+     * never ran, leaving a later accepted submit free to drain as usual.
+     */
+    @Test
+    void rejectedSubmitIsAbsorbedAndDoesNotWedgeTheFlag() {
+        var workspace = new Workspace();
+        var rejecting = new AtomicBoolean(true);
+        // The gated URI is never published, so this client only records.
+        var client = new GatedClient("file:///never-published.graphqls");
+        var service = new GraphitronTextDocumentService(workspace, ignored -> {}, task -> {
+            if (rejecting.get()) {
+                throw new RejectedExecutionException("Task rejected from shut-down executor");
+            }
+            task.run();
+        });
+        service.setClient(client);
+
+        assertThatCode(() -> {
+            workspace.didOpen(URI_A, 1, SDL);
+            workspace.markAllForRecalculation();
+        }).as("a mutator never sees the dead executor").doesNotThrowAnyException();
+        assertThat(client.published).isEmpty();
+
+        // The flag was reset on each rejection, so the first accepted submit drains what queued up.
+        rejecting.set(false);
+        workspace.markAllForRecalculation();
+        assertThat(client.published)
+            .as("the drain the rejection lost is rewanted by the next mutation, not wedged")
+            .hasSize(1);
+        assertThat(client.published.getFirst().getUri()).isEqualTo(URI_A);
     }
 
     private static Thread daemon(Runnable r, String name) {
