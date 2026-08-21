@@ -1,5 +1,6 @@
 package no.sikt.graphitron.render;
 
+import no.sikt.graphitron.command.CallWrap;
 import no.sikt.graphitron.command.Contribution;
 import no.sikt.graphitron.command.ProjectionCommand;
 import no.sikt.graphitron.command.SelectTerm;
@@ -110,6 +111,33 @@ class ProjectionUnitRendererTest {
             AliasOwner.shared())));
         var body = projectMethod(render(row)).code().toString();
         assertThat(body).contains("table.ORIGINAL_ID.as(\"__rk_\" + entry.getKey())");
+    }
+
+    @Test
+    void qualifiedAliasOwner_interposesTheOwnerBeforeTheRuntimeResultKey() {
+        // The whole fix at this tier: the term's alias carries the name that owns the projection
+        // decision, so two participants' same-named terms are two aliases rather than one.
+        var row = filmRow(List.of(new Contribution.Project("original", List.of(
+            new SelectTerm.Column(col("original_id", "ORIGINAL_ID", "java.lang.Integer"),
+                TermAlias.BY_RESULT_KEY)),
+            AliasOwner.qualifiedBy("FanAlpha"))));
+        var body = projectMethod(render(row)).code().toString();
+        assertThat(body).contains("table.ORIGINAL_ID.as(\"__rk_FanAlpha$\" + entry.getKey())");
+    }
+
+    @Test
+    void splicedNestingArm_carriesNoAliasAtAll() {
+        // A spliced nesting unit's terms are declared on the nested type, which owns its own
+        // namespace verdict, so the splice arm passes the occurrences on and aliases nothing. The
+        // unit-scope split is pinned here rather than only argued: an anchor-dependent alias on
+        // these arms would have no single read to agree with, since one nesting type may sit under
+        // several anchors and graphql-java registers one fetcher per coordinate.
+        var row = filmRow(List.of(new Contribution.Call("details",
+            UNITS.nestingUnit("Film", "FilmDetails"), new CallWrap.Splice(),
+            AliasOwner.qualifiedBy("FanAlpha"))));
+        var body = projectMethod(render(row)).code().toString();
+        assertThat(body).contains("case \"details\" -> fields.addAll(");
+        assertThat(body).doesNotContain("__rk_");
     }
 
     @Test

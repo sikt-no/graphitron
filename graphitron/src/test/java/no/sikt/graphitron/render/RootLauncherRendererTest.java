@@ -188,10 +188,66 @@ class RootLauncherRendererTest {
     }
 
     private static LaunchSource.DiscriminatedTable.Branch.SingleTable filmContentBranch() {
+        return singleTableBranch("FilmContent", "FILM");
+    }
+
+    private static LaunchSource.DiscriminatedTable.Branch.SingleTable singleTableBranch(
+            String typeName, String discriminatorValue) {
         return new LaunchSource.DiscriminatedTable.Branch.SingleTable(
-            new no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound("FilmContent",
-                filmTable(List.of()), "FILM"),
-            UNITS.typeClass("FilmContent"), List.of());
+            new no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound(typeName,
+                filmTable(List.of()), discriminatorValue),
+            UNITS.typeClass(typeName), List.of());
+    }
+
+    /**
+     * A two-branch discriminated row with a non-empty selection restriction: the shape the fold's
+     * silent first-wins drop needs, which no other case here builds (every other discriminated
+     * fixture has exactly one branch, which is why the drop was never pinned at this tier).
+     */
+    private static LauncherCommand restrictedTwoBranchRow(List<String> perTypeFieldNames) {
+        return new LauncherCommand(
+            UNITS.launcherMethod("Query", "allContent"),
+            FieldCoordinates.coordinates("Query", "allContent"),
+            new LaunchSource.DiscriminatedTable(
+                filmTable(List.of(col("film_id", "FILM_ID", "java.lang.Integer"))),
+                discriminatorCol("film_type"), List.of("FILM", "SHORT"), List.of(),
+                List.of(singleTableBranch("FilmContent", "FILM"),
+                    singleTableBranch("ShortContent", "SHORT")),
+                new LaunchSource.DiscriminatedTable.SelectionRestriction(
+                    UNITS.singleton(GeneratedUnits.SUB_UTIL, "PolymorphicSelectionSet"),
+                    perTypeFieldNames)),
+            null, new Invocation.Direct(), new TenantStrategy.Single(), list(null));
+    }
+
+    @Test
+    void discriminatedSource_restrictedFold_scopesEachBranchToItsOwnParticipant() {
+        var body = body(restrictedTwoBranchRow(List.of("target")));
+        assertThat(body)
+            .as("the per-type field names are hoisted once per fold, not once per branch: they "
+                + "are the interface's fact, and the hoist drops a per-request allocation per arm")
+            .containsOnlyOnce("java.util.Set<java.lang.String> perTypeFields = "
+                + "java.util.Set.of(\"target\")");
+        assertThat(body)
+            .as("each branch's $project receives the selection restricted to its own participant, "
+                + "through the same generated view the multi-table stage-2 SELECT feeds")
+            .contains(DEFAULT_OUTPUT_PACKAGE + ".util.PolymorphicSelectionSet.restrictTo("
+                + "env.getSelectionSet(), \"FilmContent\", perTypeFields)")
+            .contains(DEFAULT_OUTPUT_PACKAGE + ".util.PolymorphicSelectionSet.restrictTo("
+                + "env.getSelectionSet(), \"ShortContent\", perTypeFields)");
+    }
+
+    @Test
+    void discriminatedSource_emptyRestriction_foldStaysUnrestricted() {
+        // Every schema with no participant-local result-key-aliased field lands here, so the
+        // no-op case has to emit the body it always did rather than a degenerate restriction.
+        var body = body(restrictedTwoBranchRow(List.of()));
+        assertThat(body).doesNotContain("PolymorphicSelectionSet");
+        assertThat(body).doesNotContain("perTypeFields");
+        assertThat(body)
+            .contains(DEFAULT_OUTPUT_PACKAGE + ".types.FilmContent.$project("
+                + "env.getSelectionSet().getFieldsGroupedByResultKey()")
+            .contains(DEFAULT_OUTPUT_PACKAGE + ".types.ShortContent.$project("
+                + "env.getSelectionSet().getFieldsGroupedByResultKey()");
     }
 
     @Test

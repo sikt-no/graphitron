@@ -32,6 +32,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * relocated to {@code no.sikt.graphitron.render.DiscriminatedTableFragments}, outside
  * this scan's folder.) A folder-wide count would couple the pin to those unrelated
  * correct sites; a single-file scope pins exactly the Stage-2 invariant.
+ *
+ * <p>The Stage-2 SELECT is no longer {@code restrictTo}'s only consumer: the single-table
+ * discriminated fold in {@code DiscriminatedTableFragments} calls it too, at the selective arity
+ * that restricts only the field names whose alias the participant type qualifies. That emit site
+ * is in {@code render}, outside this non-recursive scan, so this pin's count still speaks only for
+ * the generators package, which is the scope its assertion message states.
  */
 @UnitTier
 class PolymorphicProjectionFilterPinTest {
@@ -54,6 +60,7 @@ class PolymorphicProjectionFilterPinTest {
             Pattern.compile("\\$T\\.restrictTo\\(env\\.getSelectionSet\\(\\)"));
         assertThat(restrictToCalls)
             .as("Every PolymorphicSelectionSet.restrictTo emit site in the generators package "
+                + "(the discriminated fold's own site is in render/, outside this scan) "
                 + "is the one Stage-2 site in MultiTablePolymorphicEmitter.buildPerTypenameSelect. "
                 + "A handcrafted regression that reverts that site to the unfiltered shape removes "
                 + "the call; a new Stage-2 dispatcher that bypasses buildPerTypenameSelect would "

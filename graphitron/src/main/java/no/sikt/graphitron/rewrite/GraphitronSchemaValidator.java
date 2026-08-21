@@ -49,6 +49,7 @@ public class GraphitronSchemaValidator {
         validateTenantBindings(schema, errors);
         validateConditionEmitImplemented(schema, errors);
         validateProjectionUnitAddresses(schema, errors);
+        validateSiblingProjectionAgreement(schema, errors);
         validateLauncherMethodNames(schema, errors);
         validateJoinedTableReprojection(schema, errors);
         drainBuildDiagnostics(schema, errors);
@@ -132,6 +133,40 @@ public class GraphitronSchemaValidator {
                 origins.get(0).location() == null
                     ? SourceLocation.EMPTY
                     : origins.get(0).location()));
+        }
+    }
+
+    /**
+     * Validator mirror of the projection producer's shared-alias agreement census
+     * ({@code ProjectionCommands.siblingProjectionConflicts}). A single-table discriminated
+     * interface's query folds every participant's select terms into one set that dedupes aliased
+     * terms by their alias alone, so two participants contributing different SQL under the same
+     * alias silently lose one of the two projections. The alias qualifier this generator stamps
+     * closes that for a name the participant type declares itself; what it cannot close is a name
+     * the interface declares (every arm mints the interface-qualified alias, which is exactly what
+     * makes the agreeing case collapse to one term) or a name a spliced nesting unit contributes
+     * (no anchor-dependent alias exists that the nesting type's one registered fetcher could
+     * read). Those two are what this census rejects, so no shape covered by the
+     * correct-or-build-error promise resolves to a silent drop.
+     *
+     * <p>Deferred, not an author error: the divergent schema is legal and meaningful, and
+     * qualifying every arm per participant would emit it. The rejection says the generator does
+     * not do that yet.
+     */
+    private void validateSiblingProjectionAgreement(GraphitronSchema schema, List<ValidationError> errors) {
+        for (var conflict : no.sikt.graphitron.plan.ProjectionCommands.siblingProjectionConflicts(schema)) {
+            errors.add(new ValidationError(
+                conflict.secondTypeName() + "." + conflict.fieldName(),
+                Rejection.deferred(
+                    "'" + conflict.secondTypeName() + "." + conflict.fieldName() + "' and '"
+                    + conflict.firstTypeName() + "." + conflict.fieldName() + "' are participants of"
+                    + " the single-table discriminated interface '" + conflict.interfaceName()
+                    + "' whose projections of '" + conflict.fieldName() + "' (" + conflict.origin()
+                    + ") resolve differently. Both project under the same SELECT alias, so the"
+                    + " interface's one query can carry only one of them and the other type's rows"
+                    + " would read this one's value. Make the two declarations agree, or move the"
+                    + " diverging field off the interface onto each participant under its own name"),
+                conflict.secondLocation() == null ? SourceLocation.EMPTY : conflict.secondLocation()));
         }
     }
 

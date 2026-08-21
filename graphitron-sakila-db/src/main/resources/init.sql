@@ -486,15 +486,30 @@ CREATE TABLE fan_owner (
 );
 INSERT INTO fan_owner (owner_name) VALUES ('Owner A'), ('Owner B');
 
-CREATE TABLE fan_base (
-    fan_base_id  serial      PRIMARY KEY,
-    fan_kind     varchar(10) NOT NULL,
-    fan_owner_id integer     REFERENCES fan_owner(fan_owner_id),
-    label        varchar(50) NOT NULL
+-- fan_target plus the two FK columns below carry the same-named-participant-field shape: each
+-- participant of the fan_base interface resolves its own 'target' over its own FK, so the two
+-- projections must reach the statement as two distinct terms. Seeded so a lost projection is
+-- visible rather than merely suspicious: an ALPHA row's beta FK is NULL and a BETA row's alpha FK
+-- is NULL, so a participant reading the other's column resolves null, and the two surviving target
+-- rows carry different labels, so a participant reading the other's non-null column resolves
+-- visibly wrong data.
+CREATE TABLE fan_target (
+    fan_target_id serial      PRIMARY KEY,
+    target_label  varchar(50) NOT NULL
 );
-INSERT INTO fan_base (fan_kind, fan_owner_id, label) VALUES
-    ('ALPHA', 1, 'Alpha one'), ('BETA', 1, 'Beta one'),
-    ('ALPHA', 1, 'Alpha two'), ('BETA', 2, 'Beta two');
+INSERT INTO fan_target (target_label) VALUES ('Alpha target'), ('Beta target');
+
+CREATE TABLE fan_base (
+    fan_base_id     serial      PRIMARY KEY,
+    fan_kind        varchar(10) NOT NULL,
+    fan_owner_id    integer     REFERENCES fan_owner(fan_owner_id),
+    alpha_target_id integer     REFERENCES fan_target(fan_target_id),
+    beta_target_id  integer     REFERENCES fan_target(fan_target_id),
+    label           varchar(50) NOT NULL
+);
+INSERT INTO fan_base (fan_kind, fan_owner_id, alpha_target_id, beta_target_id, label) VALUES
+    ('ALPHA', 1, 1, NULL, 'Alpha one'), ('BETA', 1, NULL, 2, 'Beta one'),
+    ('ALPHA', 1, 1, NULL, 'Alpha two'), ('BETA', 2, NULL, 2, 'Beta two');
 
 CREATE TABLE fan_detail (
     fan_detail_id serial      PRIMARY KEY,

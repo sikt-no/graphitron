@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.command.LaunchSource.DiscriminatedTable.BaseSliceTerm;
 import no.sikt.graphitron.command.LaunchSource.DiscriminatedTable.DetailField;
+import no.sikt.graphitron.rewrite.model.AliasOwner;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -37,8 +38,11 @@ import java.util.Map;
  *
  * <p>{@link #deferrals} carries the shapes that classify but have no reprojection emission: a
  * non-{@link CallSiteCompaction.Direct} (e.g. {@code @nodeId}-encoded) column carrier on a
- * joined-table participant, which the retired assembly silently truncated to its first column.
- * The validator drains these as deferred errors, so the truncation is unreachable.
+ * joined-table participant, which the retired assembly silently truncated to its first column;
+ * and an inherited reference whose stamped {@link AliasOwner} is qualified, whose bare base-slice
+ * write no registered fetcher's qualified read can address (see
+ * {@link #mixedParticipationDeferral}). The validator drains these as deferred errors, so neither
+ * shape is reachable.
  */
 public record JoinedTableReprojection(
     List<BaseSliceTerm> baseSlice,
@@ -87,6 +91,8 @@ public record JoinedTableReprojection(
                 if (f instanceof ChildField.ColumnBackedReferenceField crf) {
                     if (!(crf.compaction() instanceof CallSiteCompaction.Direct)) {
                         deferrals.add(deferral(jtb.typeName(), crf.name()));
+                    } else if (crf.aliasOwner() instanceof AliasOwner.QualifiedBy qualified) {
+                        deferrals.add(mixedParticipationDeferral(jtb.typeName(), crf.name(), qualified));
                     } else if (seenAliases.add(crf.name())) {
                         baseSlice.add(new BaseSliceTerm.InheritedRef(crf.name(), crf.columns().get(0)));
                     }
@@ -111,6 +117,33 @@ public record JoinedTableReprojection(
             }
         }
         return new JoinedTableReprojection(baseSlice, detailFields, deferrals);
+    }
+
+    /**
+     * The mixed-participation deferral: the base slice writes an inherited reference under the
+     * <em>bare</em> result-key prefix, but this coordinate's stamped {@link AliasOwner} is
+     * qualified, so the one data fetcher graphql-java registers for it reads a qualified alias
+     * this route never mints. The coordinate is legal and meaningful, and it arises only from a
+     * type that is a single-table participant of one discriminated interface and a joined-table
+     * participant of another (the fork is per interface, and nothing rejects the double
+     * membership), so the rejection is a deferral: emitting it needs the joined route to mint
+     * owners of its own.
+     *
+     * <p>Keyed on the disagreement, never on the participation topology: a doubly-participating
+     * type carrying no result-key-aliased coordinate on the joined route emits correctly and stays
+     * accepted, where a type-grain rejection would defer it on a claim that is false for that
+     * schema.
+     */
+    private static Deferral mixedParticipationDeferral(String typeName, String fieldName,
+            AliasOwner.QualifiedBy owner) {
+        return new Deferral(typeName, fieldName,
+            "Field '" + typeName + "." + fieldName + "': the joined-table re-projection projects"
+            + " this inherited reference under the unqualified result-key alias, while the field's"
+            + " own projection alias is qualified by '" + owner.owner() + "' (the type is also a"
+            + " single-table participant of a discriminated interface, whose merged select list"
+            + " needs the qualifier). The one registered data fetcher reads the qualified alias, so"
+            + " the joined route's rows would resolve nothing. Split the type so it participates in"
+            + " one discriminated interface, or move the reference off the participant");
     }
 
     private static Deferral deferral(String typeName, String fieldName) {

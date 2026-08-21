@@ -579,4 +579,153 @@ public final class ProjectionCommands {
 
     /** One origin of a colliding address: what minted it, and where it was authored. */
     public record AddressOrigin(String description, SourceLocation location) {}
+
+    // ------------------------------------------------------------------------------------------
+    // Sibling projection census
+    // ------------------------------------------------------------------------------------------
+
+    /**
+     * The shared-alias agreement census: every result-key alias two single-table participants of
+     * one discriminated interface can contribute to the same fold, where the alias is the
+     * <em>same</em> string in both arms, must resolve to one projection. The fold accumulates the
+     * participants' select terms into a set that dedupes aliased terms by their alias alone, so
+     * two identical aliases over different SQL collapse to whichever landed first and the losing
+     * participant's rows read the winner's column.
+     *
+     * <p>Two populations reach that shape, and the alias qualifier closes neither of them:
+     * <ul>
+     *   <li>a name the interface declares, whose alias every arm qualifies by the interface
+     *       precisely so the agreeing case collapses to one term (an interface field resolved over
+     *       divergent paths per participant is the disagreeing case);</li>
+     *   <li>a name a <em>spliced</em> nesting unit contributes, which keeps the bare alias because
+     *       the nesting type is not a participant: graphql-java registers one fetcher per
+     *       coordinate and one nesting type may sit under several anchors, so an anchor-dependent
+     *       alias would have no single read to agree with.</li>
+     * </ul>
+     * Participant-local names need no entry here: their alias carries the declaring participant's
+     * own type name, so two of them are distinct terms by construction.
+     *
+     * <p>The verdict is a deferral, not an author error. Two participants resolving one name over
+     * divergent paths is a legal, meaningful schema that per-participant qualification of every
+     * arm would support; the rejection says the generator does not emit it yet, and retires
+     * cleanly if that route is ever built.
+     */
+    public static List<SiblingProjectionConflict> siblingProjectionConflicts(GraphitronSchema schema) {
+        var conflicts = new ArrayList<SiblingProjectionConflict>();
+        for (var typeName : schema.types().keySet().stream().sorted().toList()) {
+            if (!(schema.type(typeName) instanceof GraphitronType.TableInterfaceType iface)) {
+                continue;
+            }
+            // One map per alias namespace: an interface-qualified alias and a bare spliced alias
+            // are different strings, so a name in both populations is not a collision.
+            var interfaceOwned = new LinkedHashMap<String, ProjectionClaim>();
+            var spliced = new LinkedHashMap<String, ProjectionClaim>();
+            for (var participant : iface.participants()) {
+                if (!(participant instanceof no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound tb)) {
+                    continue;
+                }
+                for (var field : schema.fieldsOf(tb.typeName())) {
+                    if (!(field instanceof ChildField cf)) {
+                        continue;
+                    }
+                    if (cf instanceof ResultKeyAliasedField rk
+                            && rk.aliasOwner() instanceof AliasOwner.QualifiedBy owner
+                            && owner.owner().equals(iface.name())) {
+                        claim(conflicts, interfaceOwned, iface.name(), cf, tb.typeName(),
+                            "declared on interface '" + iface.name() + "'");
+                    }
+                    if (cf instanceof ChildField.NestingField nf) {
+                        collectSplicedClaims(conflicts, spliced, iface.name(), tb.typeName(), nf);
+                    }
+                }
+            }
+        }
+        return List.copyOf(conflicts);
+    }
+
+    /**
+     * Walks one spliced nesting subtree, claiming every result-key alias its units contribute.
+     * Recurses through further nesting fields, because a splice chain lands every level's terms in
+     * the same enclosing field set and therefore in the fold's one namespace.
+     */
+    private static void collectSplicedClaims(List<SiblingProjectionConflict> conflicts,
+            LinkedHashMap<String, ProjectionClaim> claims, String interfaceName,
+            String participantTypeName, ChildField.NestingField nesting) {
+        for (var nested : nesting.nestedFields()) {
+            if (!(nested instanceof ChildField cf)) {
+                continue;
+            }
+            if (cf instanceof ResultKeyAliasedField) {
+                claim(conflicts, claims, interfaceName, cf, participantTypeName,
+                    "reached through nesting type '" + nesting.returnType().returnTypeName() + "'");
+            }
+            if (cf instanceof ChildField.NestingField deeper) {
+                collectSplicedClaims(conflicts, claims, interfaceName, participantTypeName, deeper);
+            }
+        }
+    }
+
+    /**
+     * Records one participant's claim on an alias key, reporting a conflict when a sibling already
+     * claimed it with a different projection. First claim wins the report's first slot, matching
+     * the fold's own first-wins collapse, so the message names the surviving projection first.
+     */
+    private static void claim(List<SiblingProjectionConflict> conflicts,
+            LinkedHashMap<String, ProjectionClaim> claims, String interfaceName,
+            ChildField field, String participantTypeName, String origin) {
+        var incoming = new ProjectionClaim(participantTypeName, origin,
+            projectionIdentity(field), field.location());
+        var existing = claims.putIfAbsent(field.name(), incoming);
+        if (existing == null || existing.typeName().equals(participantTypeName)) {
+            return;
+        }
+        if (existing.identity().equals(incoming.identity())) {
+            return;
+        }
+        conflicts.add(new SiblingProjectionConflict(interfaceName, field.name(), origin,
+            existing.typeName(), existing.location(), participantTypeName, incoming.location()));
+    }
+
+    /**
+     * What makes two same-named projections the same projection: the terms that decide the emitted
+     * SQL, per alias-minting family. Deliberately not record equality, which would compare the
+     * declaring type name and always disagree; deliberately not a reflective component walk, which
+     * would make the identity implicit. The {@code default} arm is the membership guard the
+     * {@link ResultKeyAliasedField} marker's other consumers carry: a new alias-minting family
+     * fails loudly here until it declares what agreement means for it.
+     *
+     * <p>{@code Arrays.asList} rather than {@code List.of}: the optional slots (a coordinate with
+     * no pagination window, a hop-less carrier's absent parent correlation) are legitimately null.
+     */
+    private static List<Object> projectionIdentity(ChildField field) {
+        return switch (field) {
+            case ChildField.ColumnBackedReferenceField crf -> java.util.Arrays.asList(
+                crf.columns(), crf.joinPath(), crf.compaction(), crf.parentCorrelation());
+            case ChildField.TableField tf -> java.util.Arrays.asList(
+                tf.returnType(), tf.joinPath(), tf.filters(), tf.orderBy(), tf.pagination(),
+                tf.lookup(), tf.parentCorrelation());
+            case ChildField.ComputedField cmp -> java.util.Arrays.asList(
+                cmp.returnType(), cmp.joinPath(), cmp.method());
+            case ChildField.PivotField pf -> java.util.Arrays.asList(pf.pivot(), pf.spec());
+            default -> throw new IllegalStateException(
+                "ResultKeyAliasedField '" + field.qualifiedName() + "' ("
+                + field.getClass().getSimpleName() + ") has no projection identity; declare what "
+                + "two same-named instances agreeing means for it, or drop the "
+                + "ResultKeyAliasedField marker");
+        };
+    }
+
+    /** One participant's claim on an alias key: who claimed it, over what, and from where. */
+    private record ProjectionClaim(String typeName, String origin, List<Object> identity,
+            SourceLocation location) {}
+
+    /**
+     * Two single-table participants of one discriminated interface contributing different
+     * projections under the same result-key alias. {@code origin} says which population the alias
+     * came from (the interface's own declaration, or a spliced nesting type), which is what tells
+     * the author where to look.
+     */
+    public record SiblingProjectionConflict(String interfaceName, String fieldName, String origin,
+            String firstTypeName, SourceLocation firstLocation,
+            String secondTypeName, SourceLocation secondLocation) {}
 }

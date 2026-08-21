@@ -4583,6 +4583,186 @@ class GraphQLQueryTest {
             .orElseThrow(() -> new AssertionError("no allFanItems row for fan_base_id " + fanBaseId));
     }
 
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> allFanItems(Map<String, Object> data) {
+        return (List<Map<String, Object>>) data.get("allFanItems");
+    }
+
+    // ===== same-named participant fields over different join paths =====
+    //
+    // FanAlpha.target and FanBeta.target are two fields with one name, each resolving its own FK
+    // out of fan_base. Both projections have to reach the interface's one statement, so each is
+    // aliased by the type that declares it; a shared alias would let the fold's select-list set
+    // drop one of the two (an aliased jOOQ field compares equal on its alias alone) and the losing
+    // type's rows would read the winner's column. Only this tier can see whose value each type
+    // resolved, so this is where the property is pinned.
+
+    @Test
+    void fanItems_sameNamedParticipantFields_eachResolvesItsOwnPath() {
+        Map<String, Object> data = execute("""
+            { allFanItems {
+                __typename
+                fanBaseId
+                ... on FanAlpha { target { fanTargetId targetLabel } }
+                ... on FanBeta  { target { fanTargetId targetLabel } }
+            } }
+            """);
+        var items = allFanItems(data);
+        assertThat(items).hasSize(4);
+        assertThat(target(items, 1))
+            .as("the ALPHA row resolves its own alpha_target_id, not the beta FK (which is NULL)")
+            .containsEntry("fanTargetId", 1)
+            .containsEntry("targetLabel", "Alpha target");
+        assertThat(target(items, 2))
+            .as("the BETA row resolves its own beta_target_id; under one shared alias its "
+                + "projection would be the dropped one and this would be null")
+            .containsEntry("fanTargetId", 2)
+            .containsEntry("targetLabel", "Beta target");
+        assertThat(target(items, 3)).containsEntry("targetLabel", "Alpha target");
+        assertThat(target(items, 4)).containsEntry("targetLabel", "Beta target");
+    }
+
+    @Test
+    void fanItems_sameNamedParticipantFields_divergingSubSelectionsResolvePerType() {
+        // Each arm sees only its own occurrences of a participant-local key, so the two types'
+        // sub-selections do not have to agree. Merged, one of them would select columns the other
+        // type's row type does not carry.
+        Map<String, Object> data = execute("""
+            { allFanItems {
+                fanBaseId
+                ... on FanAlpha { target { fanTargetId } }
+                ... on FanBeta  { target { targetLabel } }
+            } }
+            """);
+        var items = allFanItems(data);
+        assertThat(target(items, 1)).containsOnlyKeys("fanTargetId").containsEntry("fanTargetId", 1);
+        assertThat(target(items, 2)).containsOnlyKeys("targetLabel")
+            .containsEntry("targetLabel", "Beta target");
+    }
+
+    @Test
+    void fanItems_sameNamedParticipantFields_divergingArgumentsDoNotRaiseTheConsistencyError() {
+        // The occurrence guard exists because one arm serves the canonical occurrence's arguments
+        // to every occurrence in its bucket. With the bucket scoped per participant there is
+        // nothing to serve across types, so per-type argument divergence on a participant-local
+        // key is no longer a client error.
+        Map<String, Object> data = execute("""
+            { allFanItems {
+                fanBaseId
+                ... on FanAlpha { details(first: 1) { note } }
+                ... on FanBeta  { target { targetLabel } }
+            } }
+            """);
+        assertThat(allFanItems(data)).hasSize(4);
+    }
+
+    @Test
+    void fanItems_aliasedDuplicatesInOneFragment_stayDistinct() {
+        // The owner qualifier is a prefix on the result-key namespace, not a replacement for it:
+        // two client aliases of one participant field still read their own terms.
+        Map<String, Object> data = execute("""
+            { allFanItems {
+                fanBaseId
+                ... on FanBeta { a: target { fanTargetId } b: target { targetLabel } }
+            } }
+            """);
+        var beta = byFanBaseId(allFanItems(data), 2);
+        assertThat(asMap(beta.get("a"))).containsOnlyKeys("fanTargetId").containsEntry("fanTargetId", 2);
+        assertThat(asMap(beta.get("b"))).containsOnlyKeys("targetLabel")
+            .containsEntry("targetLabel", "Beta target");
+    }
+
+    @Test
+    void fanItems_clientAliasSpellingAnOwnerQualifier_cannotReachAnotherTypesTerm() {
+        // GraphQL names admit no '$', so a client alias cannot spell an owner qualifier and the
+        // qualified namespace stays injective. The adversarial spelling is the closest a client
+        // can get: a result key that reads like another participant's qualifier.
+        Map<String, Object> data = execute("""
+            { allFanItems {
+                fanBaseId
+                ... on FanBeta { FanAlpha_target: target { targetLabel } }
+            } }
+            """);
+        assertThat(asMap(byFanBaseId(allFanItems(data), 2).get("FanAlpha_target")))
+            .as("the alias lands in FanBeta's own qualified namespace, so it resolves the beta FK")
+            .containsEntry("targetLabel", "Beta target");
+    }
+
+    @Test
+    void fanItems_splitQueryOnSameNamedParticipantFields_staysGreen() {
+        // The DataLoader route keys off the parent's FK column projected by base name rather than
+        // a shared result-key alias, which is why it was already correct and is the consumer
+        // workaround for the inline shape. It must stay correct under the qualified namespace.
+        Map<String, Object> data = execute("""
+            { allFanItems {
+                fanBaseId
+                ... on FanAlpha { targetLoaded { targetLabel } }
+                ... on FanBeta  { targetLoaded { targetLabel } }
+            } }
+            """);
+        var items = allFanItems(data);
+        assertThat(asMap(byFanBaseId(items, 1).get("targetLoaded")))
+            .containsEntry("targetLabel", "Alpha target");
+        assertThat(asMap(byFanBaseId(items, 2).get("targetLoaded")))
+            .containsEntry("targetLabel", "Beta target");
+    }
+
+    @Test
+    void fanItems_interfaceDeclaredKey_divergingSubSelectionsReturnTheMergedUnion() {
+        // The contrasting half. 'details' is declared on FanItem, so every participant's arm
+        // mints the one interface-qualified alias and the fold carries a single term. A shared
+        // alias requires a shared occurrence set, so the restriction leaves this key whole in
+        // every arm and the surviving term selects the union of both types' sub-selections.
+        Map<String, Object> data = execute("""
+            { allFanItems {
+                fanBaseId
+                ... on FanAlpha { details { note } }
+                ... on FanBeta  { details { fanDetailId } }
+            } }
+            """);
+        var items = allFanItems(data);
+        assertThat(details(items, 1))
+            .as("the ALPHA row's own sub-selection resolves off the union term")
+            .allSatisfy(d -> assertThat(d).containsKey("note"));
+        assertThat(details(items, 2))
+            .as("and so does the BETA row's, from the same term")
+            .allSatisfy(d -> assertThat(d).containsKey("fanDetailId"));
+    }
+
+    @Test
+    void fanItems_interfaceDeclaredKey_divergingArgumentsStillRaiseTheConsistencyError() {
+        // The argument relaxation above is participant-local-only, and this is the boundary: on an
+        // interface-declared key every arm merges every occurrence, so the arm would have to serve
+        // one occurrence's arguments to the other type's rows. That stays a loud client error.
+        var result = executeRaw("""
+            { allFanItems {
+                fanBaseId
+                ... on FanAlpha { details(first: 1) { note } }
+                ... on FanBeta  { details(first: 2) { note } }
+            } }
+            """);
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .contains("Field 'details'")
+            .contains("conflicting arguments across selection paths merged into one projection");
+    }
+
+    /** The {@code target} payload of the {@code allFanItems} row with this base PK. */
+    private static Map<String, Object> target(List<Map<String, Object>> items, int fanBaseId) {
+        return asMap(byFanBaseId(items, fanBaseId).get("target"));
+    }
+
+    /** The {@code details} payload of the {@code allFanItems} row with this base PK. */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> details(List<Map<String, Object>> items, int fanBaseId) {
+        return (List<Map<String, Object>>) byFanBaseId(items, fanBaseId).get("details");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> asMap(Object value) {
+        return (Map<String, Object>) value;
+    }
+
     // ===== the discriminated interface child, paginated =====
     //
     // The batched discriminated re-projection cut into per-parent pages: one windowed batch

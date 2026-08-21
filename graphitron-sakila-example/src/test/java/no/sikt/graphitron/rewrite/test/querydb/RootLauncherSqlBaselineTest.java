@@ -389,6 +389,58 @@ class RootLauncherSqlBaselineTest {
                     + "using (\"language_id\")");
     }
 
+    @Test
+    void discriminatedRoot_sameNamedParticipantFields_bothCorrelationsUnderDistinctAliases() {
+        execute("{ allFanItems { fanBaseId ... on FanAlpha { target { fanTargetId } } "
+            + "... on FanBeta { target { fanTargetId } } } }");
+        assertThat(SQL_LOG)
+            .as("two participants declaring one field name over two FKs: both terms reach the one "
+                + "statement, each correlated on its own FK column, under an alias qualified by "
+                + "the declaring type. One shared alias would carry only the first")
+            .containsExactly(
+                "select \"fan_base\".\"fan_kind\" as \"__discriminator__\", "
+                    + FAN_TARGET_MULTISET + "\"public\".\"fan_base\".\"alpha_target_id\" "
+                    + FAN_TARGET_MULTISET_TAIL + "\"__rk_fanalpha$target\", "
+                    + "\"public\".\"fan_base\".\"fan_base_id\", "
+                    + FAN_TARGET_MULTISET + "\"public\".\"fan_base\".\"beta_target_id\" "
+                    + FAN_TARGET_MULTISET_TAIL + "\"__rk_fanbeta$target\" "
+                    + "from \"public\".\"fan_base\" "
+                    + "where \"fan_base\".\"fan_kind\" in (?, ?) "
+                    + "order by \"public\".\"fan_base\".\"fan_base_id\" asc");
+    }
+
+    @Test
+    void discriminatedRoot_oneFragmentSelected_carriesOnlyThatParticipantsTerm() {
+        execute("{ allFanItems { fanBaseId ... on FanBeta { target { fanTargetId } } } }");
+        assertThat(SQL_LOG)
+            .as("the fold scopes each participant's selection for the keys whose alias that "
+                + "participant qualifies, so the unselected participant contributes no 'target' "
+                + "term at all. Before the scoping both arms fired on the bare field name and the "
+                + "statement carried a correlation for a fragment the query never wrote")
+            .containsExactly(
+                "select \"fan_base\".\"fan_kind\" as \"__discriminator__\", "
+                    + "\"public\".\"fan_base\".\"fan_base_id\", "
+                    + FAN_TARGET_MULTISET + "\"public\".\"fan_base\".\"beta_target_id\" "
+                    + FAN_TARGET_MULTISET_TAIL + "\"__rk_fanbeta$target\" "
+                    + "from \"public\".\"fan_base\" "
+                    + "where \"fan_base\".\"fan_kind\" in (?, ?) "
+                    + "order by \"public\".\"fan_base\".\"fan_base_id\" asc");
+    }
+
+    /**
+     * The invariant part of a {@code FanItem} participant's {@code target} multiset, up to the
+     * parent FK column the correlation compares against: the whole point of the two pins above is
+     * that the two terms differ in that column and in the alias, so the shared prose is factored
+     * out and the differing halves stay spelled at each site.
+     */
+    private static final String FAN_TARGET_MULTISET =
+        "(select coalesce(jsonb_agg(jsonb_build_array(t.\"v0\")), jsonb_build_array()) "
+            + "from (select \"fan_base_f0\".\"fan_target_id\" as \"v0\" "
+            + "from \"public\".\"fan_target\" as \"fan_base_f0\" "
+            + "where \"fan_base_f0\".\"fan_target_id\" = ";
+
+    private static final String FAN_TARGET_MULTISET_TAIL = "fetch next ? rows only) as t) as ";
+
     private Map<String, Object> execute(String query) {
         var input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build();
         var result = graphql.execute(input);

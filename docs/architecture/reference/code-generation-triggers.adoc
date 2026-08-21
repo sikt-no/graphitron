@@ -455,6 +455,46 @@ type Individual implements Party @table(name: "party_individual") @discriminator
 
 Asserted by the `paginated-joined-table-interface` corpus example.
 
+==== Where a participant's projection alias comes from
+
+A single-table discriminated interface runs *one* statement, and every participant's projection folds
+into its one select list. Two participants can therefore project two different values under one name,
+which makes the SELECT alias load-bearing: the fold collects terms into a set that treats two aliased
+terms with the same alias as the same term, so a name minting one alias in both arms can carry only one
+of the two projections. The alias namespace answers that by naming an owner.
+
+* A field a participant *declares itself* is owned by that participant type. Two participants declaring
+  the same field name over different `@reference` paths are two distinct terms, and each type's data
+  fetcher reads its own.
+* A field the *interface* declares is owned by the interface, so every participant's arm mints the
+  identical alias. That is deliberate: the agreeing case is one shared term for every implementer,
+  exactly as before.
+
+The split shows up in the author-facing promise, and where the field is declared decides which half
+applies:
+
+[cols="1,1"]
+|===
+| Divergence | What happens
+
+| Two participants *declare* an interface field differently (different resolved path, condition or
+  arguments)
+| Build error, a deferred rejection naming both declarations. One shared alias cannot carry two
+  projections, and the generator does not qualify interface-declared names per participant yet.
+
+| A *query* selects an interface-declared field with different arguments per type
+| Runtime client error. Every arm merges every occurrence of a shared name, so one arm would have to
+  serve one selection's arguments to the other type's rows.
+
+| A *query* selects a participant-declared field with different arguments or sub-selections per type
+| Resolved per type. Each arm sees only its own occurrences, so nothing is merged across types and
+  there is nothing to disagree about.
+|===
+
+A participant that also participates in a *joined-table* interface is the one shape left out: its
+inherited references are projected off the base under the unqualified alias, which its qualified read
+cannot address, so that coordinate is a deferred rejection rather than a silent miss.
+
 === Reading the generator-output column
 
 The "`*Fetchers` Generates" column in the tables below names which of four emission paths a variant

@@ -229,8 +229,18 @@ class CommandSeamRatchetTest {
      * "which types are {@code @error} types" is a model question with two askers (this producer
      * and the {@code ErrorMappings} emitter's per-type dispatch-table mint), so it became one fold
      * on {@code GraphitronSchema} and neither asker names the leaf any more.
+     * Raised 138 to 147 when the shared-alias agreement census landed on the projection producer:
+     * nine references, and each earns its place. Four are the census's projection-identity switch,
+     * one arm per result-key-aliasing family, which is what makes "these two same-named
+     * projections are the same projection" an explicit per-family statement rather than an
+     * implicit record comparison, and what makes a new alias-minting family fail loudly instead of
+     * being censused by a formula nobody wrote for it. Two narrow the schema's field view to a
+     * child field, two find the participants' spliced nesting subtrees (a nesting field is the
+     * only splice, and a splice is how a non-participant type's bare alias reaches the fold), and
+     * one selects the discriminated interfaces the census runs over, the same narrowing the
+     * joined-table reprojection drain already makes.
      */
-    private static final int PLAN_LEAF_REFERENCES = 138;
+    private static final int PLAN_LEAF_REFERENCES = 147;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

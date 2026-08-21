@@ -611,6 +611,57 @@ File-by-file, from the survey:
   item (R752) rather than riding this one's Done gate. Until that item ships, the joined route
   is explicitly *not* covered by this item's correct-or-build-error promise.
 
+## Implementation notes
+
+Four places where the shipped code departs from the plan above, each with the reason, so the
+reviewer reads them as decisions rather than drift.
+
+**1. The restriction's polarity is inverted: the fold carries the per-type names, not the shared
+ones.** Part 1's settlement transmits a *shared* field-name set (kept whole in every arm) with the
+existing two-arg `restrictTo` delegating through `Set.of()`. The shipped `restrictTo(source,
+typeName, perTypeFieldNames)` transmits the complement: it restricts only the names whose alias the
+participant type qualifies, and passes every other entry through whole. The reason is a third
+population the shared set misses. A key a *spliced* nesting unit contributes keeps the bare alias in
+every arm (part 2's own spliced-units bullet), so under the spec's polarity it would be restricted
+while still sharing an alias, which is the settlement's own finding recreated one level down: two
+arms rendering different SQL under one alias, the second dropped. Worse, it would convert a case
+that is loud today into silent wrong data, because merging every occurrence is what lets
+`requireConsistentArguments` see cross-type argument divergence inside a spliced subtree. The
+complement restricts exactly the names whose alias is per-participant, so "a shared alias requires a
+shared occurrence set" holds by construction over all three populations, and an unavailable fact
+(the schema-free assemblies, whose participants' fields the caller may not hold) degrades to
+"restrict nothing", which is the pre-existing behaviour rather than a guess. The cost, taken
+knowingly: the stage-2 two-arg form is no longer a degenerate call of the selective one, so it stays
+its own arity over one private filter whose null sentinel means "restrict every entry". The
+settlement's substance survives, its transmitted set is the complement of what it named.
+
+**2. The third census arm has no reachable population, and is kept as a backstop.** It ships where
+the terms are minted (`JoinedTableReprojection.of`, drained by the existing
+`validateJoinedTableReprojection`), so it is one derivation rather than a second population read off
+that fold. It cannot fire today: for a type that is `TableBound` in one discriminated interface,
+`TypeBuilder.extractCrossTableFields` claims every single-hop `@reference` terminating off that
+interface's base, so the coordinate classifies as `ParticipantColumnReferenceField`, which is not a
+result-key-aliased family member at all (it projects under the fixed `<TypeName>_<fieldName>` alias)
+and mints no base-slice inherited reference. The arm stays because it is cheap and keyed on the
+disagreement rather than on the participation topology, so it costs nothing while empty; the
+pipeline test pins where the mixed shape is actually routed instead, so a change that moves the
+coordinate back into the result-key family surfaces there rather than as a read of an alias nothing
+wrote.
+
+**3. The owner is stamped in `FieldBuilder`, off a fixed-point index built in `TypeBuilder`.**
+`FieldBuilder` is the sole construction site of the four families, so it is the only stamping site;
+`TypeBuilder` contributes `BuildContext.aliasOwnerByParticipant`, built in the same
+discriminated-interface scan that already builds `crossTableFieldsByParticipant`. That reuses the
+real participant classification rather than re-deriving the `TableBound` / `JoinedTableBound` fork
+from the SDL, which is the drift the plan's single-derivation rule is about.
+
+**4. The fold's restriction rides a nested record carrying the helper's `UnitRef`.** The plan puts a
+bare field-name set on `LaunchSource.DiscriminatedTable`. The renderer also needs the generated
+helper's class, and no render-tier caller of the assembly holds an `outputPackage` (six call sites,
+none of them threading it), so the arm carries `SelectionRestriction(helper, perTypeFieldNames)`,
+following the `ResultShape.Connection` precedent of carrying a generated helper as a `UnitRef` on
+the command.
+
 ## Acceptance
 
 * The Backlog body's repro schema returns both types' `soknad` populated from their own FK
