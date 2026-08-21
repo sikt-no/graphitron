@@ -573,5 +573,25 @@ DDL is out of bounds for a funnel case because the partition is derived once.
 after), with the class order verified to actually differ between runs. Full reactor `mvn install
 -Plocal-db` green, including the Javadoc reference gate and the docs render.
 
-Not done here, and left for the plan's own "Roadmap entries" section to be acted on separately: R768
-still records the re-materialization question as open.
+**Trunk moved during the work, and one of the moves touches this plan's reasoning.** `FactStores`
+gained a third lifetime, `perClass()`, an extension that opens one store for a whole test class and
+closes it after the last case, used by the two new store-console classes. Two things follow. The
+plan rejected `FactStores` as the truncate's home partly on that class's own javadoc saying it owns
+no lifetime, and that sentence is no longer true of it; the conclusion still stands on the other leg
+the plan gives, that it is reached directly from four modules and every one of those sites depends
+on getting a store it opens and closes. And the two new classes boot once each, so the module's
+count is about 33 rather than 31, still well inside the budget. Their sentence about owning no
+lifetime is theirs to reconcile, not something to fix inside a rebase.
+
+The same landing moves the module's absolute numbers: the console classes add about 13 s of
+test-class time, so the figures above are the change measured against the tree it was written for
+rather than a reading of the module today.
+
+**The plan's "Roadmap entries" section is acted on.** R768's body said the re-materialization
+question was "open and the largest single unknown in this item" in the same document whose
+open-questions list already records it as settled, so the earlier passage now states the settlement
+and points at the argument. It also records that this slice has landed and what it measured, since a
+reader scoping the second module wants to know the mechanism is proved rather than proposed, and
+that `FactStores` counts boots while holding no module to a budget, which is what lets the three
+deferred modules keep booting per case. R759 needed nothing: this item already states that its alias
+removal is inside the per-boot figures rather than additive to them.
