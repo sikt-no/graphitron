@@ -1,7 +1,7 @@
 ---
 id: R772
 title: "The dev loop holds a live fact store no developer can query"
-status: In Progress
+status: In Review
 bucket: dx
 priority: 2
 theme: tooling
