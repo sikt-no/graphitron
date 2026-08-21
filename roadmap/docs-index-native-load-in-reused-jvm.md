@@ -1,7 +1,7 @@
 ---
 id: R785
 title: "Docs-index generator dies on a second stale-stamp run in a reused Maven JVM"
-status: In Progress
+status: In Review
 bucket: tooling
 priority: 2
 theme: tooling
@@ -175,6 +175,10 @@ pom comment next to the wiring it explains.
 - `mvnd -pl graphitron-mcp process-classes -Plocal-db` runs the step in phase, not just as a
   standalone goal invocation.
 - Full `mvn install -Plocal-db` green, and the new check green inside it (it runs at `verify`).
+  Observed at `646bef5` with the stamp cleared first, so the run exercised the forked embed in phase
+  rather than the skip path: 634 chunks at dimension 384 through `exec:3.5.0:exec`, both wiring gates
+  reporting clean, no failing suites. An earlier green run straddled a rebase and was re-run rather
+  than trusted.
 - The guard fails when the execution is reverted to `exec:java`. Verified by flipping the real pom
   back and watching `run_againstThisRepository_isClean` error, then restoring it, so the assertion is
   known to bite rather than merely known to pass.
