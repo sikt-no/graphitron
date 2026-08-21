@@ -162,9 +162,16 @@ is slow", "the build got slower after my view", "debug this query", and encoding
    reader that no build-time consumer exercised yet, so every refresh bought nothing, and its
    registration moved to the stage that adds the consumer. R742's precedent is the same shape:
    the 24.5 s defect view was fixed by materializing two relations *underneath* it, not itself.
-   The test the skill should state: count the readers of the candidate (the `meta_materialize`
-   doctrine and `report-inline-multiplicity` both help), price its refresh, and prefer the
-   deepest relation whose materialization removes re-evaluation for more readers than you.
+   The split is step 6's exactly: the rule is written onto `fact-model.adoc` beside the lever
+   hierarchy, and the skill's step is the pointer and the test. It has to go there for the
+   reason the rungs do and for one more that is specific to it. Every other rule in this
+   inventory has a per-registration habitat a pointer can reach, and this one does not:
+   `intent_node_id_decode_endpoint` is a plain view, not one of the registry's four rows, so no
+   `meta_materialize.reason` row carries its arithmetic and R728's body is the only place that
+   does. The test the skill should state, which names no relation: count the readers of the
+   candidate (the `meta_materialize` doctrine and `report-inline-multiplicity` both help), price
+   its refresh, and prefer the deepest relation whose materialization removes re-evaluation for
+   more readers than you.
 
 ## The fork, settled
 
@@ -193,7 +200,7 @@ which is the skill; the rules are a contributor-facing explanation of the store,
 `explanation/fact-model.adoc`. A third document holding half of each is the parallel mechanism this
 project's principles reject, and it would be the surface nobody reads.
 
-## The lever hierarchy lands on the page too
+## Which lever, and which relation, land on the page too
 
 The inventory above found the top rung ("a captured fact beats a materialization, having no refresh
 to pay for") stated only in R765's and R728's bodies, both of which are deleted at Done. That makes
@@ -205,11 +212,10 @@ levers to R758 would defer them to nobody.
 So the hierarchy is written onto `fact-model.adoc` here, and the R758 note stays narrow. The same
 argument that put the evaluation-model rules on the page applies unchanged: the page is the surface
 with a gate, the rungs name `meta_materialize`, and a backticked relation name in a rule there
-cannot rot silently. It is one paragraph next to the four this item already adds, and it sits
-naturally against the materialized-view ruling's existing refresh-cost note ("a snapshot only pays
-off where a relation is read many times between writes"), which is half of the trade already. The
-cost is that a fourth item now writes to that page, which the Roadmap entries section already
-handles for three.
+cannot rot silently. It sits naturally against the materialized-view ruling's existing refresh-cost
+note ("a snapshot only pays off where a relation is read many times between writes"), which is half
+of the trade already. The cost is that a fourth item now writes to that page, which the Roadmap
+entries section already handles for three.
 
 The two alternatives are named here because each was considered and each fails on this item's own
 logic. Leaving the levers to the skill alone would put one durable rule in the surface nothing
@@ -217,8 +223,21 @@ checks, which is the arrangement "The fork, settled" rejects. Widening R758 to c
 is coherent but makes this item's step 6 point at nothing until R758 lands, and R758 is Backlog with
 no one on it.
 
-The numbers behind the rung (the 1:23 against 2:33 pair) travel with it, on the same terms as R765's
-expression-key figures in the Roadmap entries section.
+Step 7's rule, which relation in a derivation tree to register, goes onto the page beside it and
+fails both of those alternatives for the same reasons. It is the closest of this item's rules to
+being procedure rather than doctrine, which is why an earlier draft left it in the skill alone, and
+that placement does not survive the pointer test the rest of the inventory passes. The page's
+refresh-cost note is a precondition for materializing at all and says nothing about which of several
+candidates to pick; `Materializations`'s javadoc states why a registration exists, not which
+relation earns one; and the two `meta_materialize.reason` rows that do argue about readers argue
+about their own relation, which is the habitat problem this item exists to fix rather than an answer
+to it. Above all, the measured case is the one fact in this inventory with no live habitat at all,
+per point 7. So the page carries the rule and the arithmetic, and the skill carries the counting
+test, which is the same division every other step lands on.
+
+The numbers behind the rung (the 1:23 against 2:33 pair) travel with it, and so does the endpoint
+arithmetic behind step 7's rule, on the same terms as R765's expression-key figures in the Roadmap
+entries section.
 
 ## Implementation
 
@@ -265,9 +284,9 @@ prohibition is already the answer a reader reaches for after meeting these:
   view something reads many times, not how the reader spells the read. This is the sentence that
   would have saved two of R728's rewrites, and it is nowhere today.
 
-And one paragraph on the lever hierarchy, placed against the materialized-view ruling's refresh-cost
-note rather than in the rules run above, since it is about which lever to reach for and not about
-how H2 evaluates a relation:
+And two paragraphs on which lever to reach for and which relation to reach for it with, placed
+against the materialized-view ruling's refresh-cost note rather than in the rules run above, since
+neither is about how H2 evaluates a relation:
 
 * **Captured fact, then registration, then rewrite.** A captured fact beats a materialization
   because it has no refresh to pay for at all, with the measured pair of one registration worth 1:23
@@ -276,6 +295,18 @@ how H2 evaluates a relation:
   `meta_materialize.reason`'s column comment already draws. A rewrite is the last resort because it
   usually changes nothing the planner cares about, which is the closing rule above seen from the
   other side. Today the top rung is stated only in item bodies that are deleted at Done.
+* **Materialize where the cost multiplies through, as deep as the sharing goes.** Having reached for
+  the registration lever, the relation to register is the one every expensive reader has in common,
+  low enough in the derivation tree that materializing it stops the re-evaluation for all of them,
+  not the relation that looked slow from where the reader stood. Snapshotting
+  `intent_node_id_decode_endpoint` is the measured case, one 5.4 s refresh taking each of the three
+  relations that read it from 7.5 s to 2.4 s, because each had been paying for the whole shared
+  subtree. The counter-case is the same test read the other way: a candidate with one reader nothing
+  exercises yet has every refresh buying nothing, which is what `meta_materialize`'s hop-column
+  registration says about itself. So the test is to count the candidate's readers, price its
+  refresh, and prefer the deepest relation whose materialization removes re-evaluation for more
+  readers than the one you started from. Today this is stated per-registration or in an item body,
+  and the endpoint arithmetic is in a body only.
 
 The registry *narrative* is R758's and is not written here; the rungs name `meta_materialize` in
 passing, which is what the drift gate wants and is not the same as explaining how to register a
@@ -305,10 +336,10 @@ the item does get is two existing gates and one named acceptance:
 * **R758** (`fact-model-page-learns-the-registry`, Backlog) edits the same page, for the registry
   narrative and the widened doctrine sentence. The two are separate paragraphs and either order
   works; whoever lands second rebases. The registry narrative is R758's and is not written here.
-  The lever hierarchy is *this* item's paragraph, per the section above: R758's body does not claim
-  it, so if this item does not write it, nobody has. Note also that `Materializations`'s javadoc already forwards a
-  reader to this page for the registration rationale, so the pointer R758 exists to make land is
-  live and currently dangling.
+  The lever hierarchy and the push-down rule are *this* item's paragraphs, per the section above:
+  R758's body does not claim either, so if this item does not write them, nobody has. Note also
+  that `Materializations`'s javadoc already forwards a reader to this page for the registration
+  rationale, so the pointer R758 exists to make land is live and currently dangling.
 * **R765** (`expression-keyed-joins-into-derived-relations`, Backlog) holds the expression-key
   measurement and its three controls. This item lifts the rule and the numbers onto the page, which
   is what stops them dying with R765's file at Done. Neither item blocks the other, and if R765
@@ -331,8 +362,11 @@ the item does get is two existing gates and one named acceptance:
   per item.
 * **R728** (`nodeid-effective-at-every-coordinate`, In Progress) is the source of the retracted
   conclusions and of the endpoint arithmetic under point 7. Its body is deleted at Done, so the
-  facts this item quotes must be lifted before that happens. If R728 reaches Done first, harvest
-  from its final commit's diff rather than trusting this body's paraphrase.
+  facts this item quotes must be lifted before that happens, and each of the two has a stated
+  destination: the retractions into the skill's posture section without naming the item, the
+  endpoint arithmetic into the page's push-down paragraph, which is the only habitat it has since
+  the endpoint is a view and not one of the registry's four rows. If R728 reaches Done first,
+  harvest from its final commit's diff rather than trusting this body's paraphrase.
 
 ## What this item deliberately does not do
 
