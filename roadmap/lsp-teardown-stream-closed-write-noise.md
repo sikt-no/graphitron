@@ -183,3 +183,43 @@ statement: the cost is not the noise itself but that it trains a developer to ig
 
 None. No symbol or mechanism is removed; `GraphitronLanguageServer.exit` keeps its
 signature and loses only a comment that is no longer true.
+
+## Reviewer findings
+
+### Round 1: Spec -> Ready, revisions requested (2026-08-21, session_01GggHMPBDXW1uqbku9ASeej)
+
+**Question 1 fails on one checkable claim: the notification write path does not
+throw.** In lsp4j 0.24.0, `RemoteEndpoint.notify` wraps its `out.consume(...)` in a
+catch of `Exception`, consults `JsonRpcException.indicatesStreamClosed` itself, logs
+"Failed to send notification message." at INFO on a stream-closed verdict (WARNING
+otherwise), and returns. Nothing propagates to the caller. Three places in the plan
+rest on the opposite claim:
+
+1. The "Stream-closed write" definition: "The write side never asks." The *response*
+   path never asks; the notification path already does.
+2. Deliverable 2's motivation: a stale `publishDiagnosticsForRecalculate` does not
+   throw "straight into whichever thread fired the recalculation". The Maven thread
+   never sees the failure. What actually happens between disconnect and reconnect is
+   one INFO log record per failed publish, carrying the throwable, so under a default
+   `java.util.logging` console handler it is still a console stack trace, just not an
+   exception crossing threads.
+3. The `setExceptionHandler` rejection in Alternatives: "a `publishDiagnostics` push
+   to a dead client still throws into the caller's thread, and the throwable arriving
+   there is a `CompletionException` wrapping the `JsonRpcException`". No throwable
+   arrives in the caller's thread, so that unwrap argument is moot for this path.
+   (The narrower claim that `indicatesStreamClosed` does not unwrap
+   `CompletionException` is itself true; verified in the bytecode.)
+
+The design conclusions look like they survive re-grounding: if the notify INFO record
+does print a stack trace in the dev console, wrapping both directions is still what
+delivers "sees nothing in the console", and the compare-and-clear is still right as
+teardown hygiene. But the corrected story is the author's to write: restate the
+notification-path cost in terms of what actually happens (log noise, wasted drains,
+dead per-connection state held live), re-derive the two-deliverable coupling and the
+`setExceptionHandler` rejection from that, and confirm the observable, since
+"What fixed means" is defined in console-visibility terms.
+
+**Non-blocking.** The read-side consult of `indicatesStreamClosed` lives in
+`StreamMessageProducer`, not `ConcurrentMessageProcessor` (which hosts the loop that
+runs it). One-word fix while revising. Everything else checked out against the tree
+and the 0.24.0 bytecode; the verification narrative is in this round's commit message.
