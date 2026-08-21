@@ -1097,6 +1097,16 @@ argument and becomes a count, and only an execution against a real database sett
 there rather than by tier keeps the first increment's exit honest, since a stated message is
 falsifiable at the pipeline tier and a row count is not.
 
+**The junction fixture this item named is the wrong one, and the seed data is why.** The Tests section
+picked `film_category` as the natural junction, correctly as a *shape*: it pairs two tables and is
+already in the schema. What it cannot do is carry the assertion, because the seed gives every film
+exactly one category, so no requested pair of categories can produce the parent that matches twice
+and the count would have passed against a predicate that multiplies. `film_actor` is the fixture that
+does carry it: PENELOPE is cast in films 1 and 2, so asking for both is the multiplying case, and the
+seed already says so. Reading a junction as a shape rather than as a shape plus a population is what
+picked the wrong one, and the correction cost no DDL: the pipeline and unit tiers keep
+`film_category`, where only the shape is being asked about.
+
 **The arity rule landed at the `argMapping` site, and it landed by adding a population rather than by
 removing a rejection.** The plan above says stage 2 edits `BARE_NODE_ID`'s text down to the arity
 fact, and reading that as a text edit is what would have shipped a hole: lifting the rejection at
@@ -1248,16 +1258,23 @@ that renames nothing and still binds remotely.
   assertion rather than deleted, so the fixture that proved the old gate proves the new routing. A
   sibling case pins that an identity-carrying chain still binds locally with its lifted tuple, which
   is the regression this change could plausibly cause and the spike shows it does not.
-* **Compilation tier.** Rides `graphitron-sakila-example`. `film_category` already exists in the
-  sakila schema and is the natural junction fixture, so this may cost SDL only rather than `init.sql`
-  changes.
+* **Compilation tier.** Rides `graphitron-sakila-example`. The hope that a junction is already in the
+  schema held, so this cost SDL only and no `init.sql` change: three coordinates, the chain on the
+  argument and input-field surfaces and the single reverse hop, each carrying its `@reference` because
+  a reverse or multi-hop path is never auto-discovered.
 * **Execution tier**, carrying the row-semantics claim. R57's argument for `EXISTS` is that a
   non-unique path multiplies no rows and a NULL foreign key fails the correlation instead of
   duplicating or dropping. A junction table is the shape where that claim is load-bearing and only
   PostgreSQL can check it, so the shipped assertion is a row count through a junction fixture with a
   parent matching two children appearing exactly once, not the generated SQL text. Site 4a's reverse
   filter gets the same pin, which is the verification the Backlog notes flagged as outstanding before
-  calling that shape shipped.
+  calling that shape shipped. Both shipped, on `film_actor` rather than `film_category` for the reason
+  the note above gives, and joining `TranslatedFkTargetFilterExecutionTest` rather than starting a
+  second class: it is already the execution tier for this binding, and the pairing is the point, the
+  `xlat` shapes reaching the binding through a foreign key aimed at the wrong unique key and these two
+  reaching it through a reach that is non-unique. The reverse hop is `address` filtered by `Customer`,
+  where two customers share address 1. Both also pin the correlation's other half, a parent with no
+  matching row being dropped rather than returned with nulls, address 4 having no occupant.
 
 The spike's rendered SQL was the right evidence for a spike and is the wrong assertion to ship:
 code-string matching on generated bodies is banned at every tier. Where an emission claim genuinely has

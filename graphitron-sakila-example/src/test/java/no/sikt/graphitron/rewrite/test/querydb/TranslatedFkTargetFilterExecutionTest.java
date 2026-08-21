@@ -42,6 +42,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code C1}, {@code C2}; {@code P2} ({@code AK-2}) has {@code C3}; {@code P3} has none. The
  * composite pair mirrors it: {@code (A1,B1)} has {@code CC1}, {@code CC2}; {@code (A2,B2)} has
  * {@code CC3}.
+ *
+ * <p>The class also carries the two shapes that reach the same binding without any translation: a
+ * junction chain through {@code film_actor} and a single hop traversed against its foreign key's
+ * direction. Those are where the reach is non-unique, which the {@code xlat} pairs are not, so they
+ * are what turns the no-row-multiplication claim into a count. Their cases sit at the bottom with
+ * their own seed-data note.
  */
 @ExecutionTier
 class TranslatedFkTargetFilterExecutionTest {
@@ -219,6 +225,105 @@ class TranslatedFkTargetFilterExecutionTest {
 
         assertThat(childIds(data, "xlatCompChildrenByParentIds"))
             .containsExactlyInAnyOrder("CC1", "CC2", "CC3");
+    }
+
+    // ===== The junction chain and the single reverse hop =====
+    //
+    // Same remote binding, reached because a key column lands on no column of the row's own table
+    // rather than because a foreign key points at the wrong unique key. These two shapes are where
+    // the reach is non-unique, so they are where "the EXISTS multiplies nothing" stops being an
+    // argument about SQL and becomes a row count only PostgreSQL can settle.
+    //
+    // Seed data (init.sql): film_actor casts film 1 as (PENELOPE, NICK), film 2 as (PENELOPE, ED),
+    // film 3 as (PENELOPE), film 4 as (NICK), film 5 as (ED). Customers 1 and 4 share address 1,
+    // customers 2 and 5 share address 2, customer 3 has address 3, and address 4 has no occupant.
+
+    @SuppressWarnings("unchecked")
+    private List<Integer> ints(Map<String, Object> data, String field, String key) {
+        return ((List<Map<String, Object>>) data.get(field)).stream()
+            .map(r -> (Integer) r.get(key))
+            .toList();
+    }
+
+    @Test
+    void junctionChain_actorCastInTwoRequestedFilms_comesBackOnce() {
+        // The claim the tier exists for. PENELOPE (actor 1) is cast in both requested films, so a
+        // predicate that joined the junction instead of asking whether a junction row exists would
+        // return her twice. containsExactlyInAnyOrder is multiset equality, so a duplicate fails it.
+        Map<String, Object> data = execute("""
+            { actorsByFilmIds(filmIds: ["%s", "%s"]) { actorId firstName } }
+            """.formatted(
+                NodeIdEncoder.encode("Film", 1),
+                NodeIdEncoder.encode("Film", 2)));
+
+        assertThat(ints(data, "actorsByFilmIds", "actorId"))
+            .as("actor 1 is cast in both films and must appear exactly once")
+            .containsExactlyInAnyOrder(1, 2, 3);
+        assertThat(SQL_LOG)
+            .as("the chain lowers to a correlated EXISTS reaching film through film_actor")
+            .anyMatch(s -> s.contains("exists") && s.contains("film_actor") && s.contains("film_id"));
+    }
+
+    @Test
+    void junctionChain_narrowsToOneFilmsCast() {
+        Map<String, Object> data = execute("""
+            { actorsByFilmIds(filmIds: ["%s"]) { actorId } }
+            """.formatted(NodeIdEncoder.encode("Film", 4)));
+
+        assertThat(ints(data, "actorsByFilmIds", "actorId"))
+            .as("only film 4's cast; the other two actors are cast in other films")
+            .containsExactly(2);
+    }
+
+    @Test
+    void junctionChain_inputFieldForm_returnsTheSameRows() {
+        Map<String, Object> data = execute("""
+            { actorsByFilmFilter(filter: { filmIds: ["%s", "%s"] }) { actorId } }
+            """.formatted(
+                NodeIdEncoder.encode("Film", 1),
+                NodeIdEncoder.encode("Film", 2)));
+
+        assertThat(ints(data, "actorsByFilmFilter", "actorId"))
+            .containsExactlyInAnyOrder(1, 2, 3);
+    }
+
+    @Test
+    void junctionChain_emptyList_contributesNoConjunct() {
+        Map<String, Object> data = execute("{ actorsByFilmIds(filmIds: []) { actorId } }");
+
+        assertThat(ints(data, "actorsByFilmIds", "actorId"))
+            .as("an empty id list narrows by nothing")
+            .containsExactlyInAnyOrder(1, 2, 3);
+    }
+
+    @Test
+    void reverseHop_addressSharedByTwoCustomers_comesBackOnce() {
+        // One hop, traversed against the foreign key's direction: address holds no customer_id, so
+        // the decoded key binds customer.customer_id inside the EXISTS. Customers 1 and 4 share
+        // address 1, which is the same non-uniqueness the junction has with one fewer hop.
+        Map<String, Object> data = execute("""
+            { addressesByCustomerIds(customerIds: ["%s", "%s"]) { addressId district } }
+            """.formatted(
+                NodeIdEncoder.encode("Customer", 1),
+                NodeIdEncoder.encode("Customer", 4)));
+
+        assertThat(ints(data, "addressesByCustomerIds", "addressId"))
+            .as("both customers live at address 1, which must appear exactly once")
+            .containsExactly(1);
+        assertThat(SQL_LOG)
+            .anyMatch(s -> s.contains("exists") && s.contains("customer"));
+    }
+
+    @Test
+    void reverseHop_narrowsToOneCustomersAddress_andLeavesTheUnoccupiedOne() {
+        // Address 4 has no occupant, so nothing satisfies the correlation for it. That absence is
+        // the other half of the EXISTS claim: a parent with no matching row is dropped rather than
+        // returned with nulls.
+        Map<String, Object> data = execute("""
+            { addressesByCustomerIds(customerIds: ["%s"]) { addressId } }
+            """.formatted(NodeIdEncoder.encode("Customer", 3)));
+
+        assertThat(ints(data, "addressesByCustomerIds", "addressId")).containsExactly(3);
     }
 
     @Test

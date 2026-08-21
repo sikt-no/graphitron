@@ -497,6 +497,25 @@ type Query {
     xlatChildByParentId(parentId: ID @nodeId(typeName: "XlatParent")): [XlatChild!]!
     xlatChildrenByFilter(filter: XlatChildFilter): [XlatChild!]!
     xlatCompChildrenByParentIds(parentIds: [ID!] @nodeId(typeName: "XlatCompParent")): [XlatCompChild!]!
+    # Junction chains: the parent reaches the node type through a table that pairs them, so the
+    # first hop is traversed against its foreign key's direction and no parent column holds the
+    # node's key. Nothing in the chain renames a column and the terminal hop arrives on the node
+    # key itself, which is why the binding follows from where each key column lands and not from
+    # the terminal hop. film_actor pairs actor and film, so filtering actors by Film node ids is
+    # the many-to-many case: an actor cast in two of the requested films must come back once, and
+    # only the EXISTS keeps that from multiplying the actor.
+    actorsByFilmIds(filmIds: [ID!] @nodeId(typeName: "Film") @reference(path: [
+        {key: "film_actor_actor_id_fkey"},
+        {key: "film_actor_film_id_fkey"}
+    ])): [Actor!]!
+    actorsByFilmFilter(filter: ActorByFilmFilter): [Actor!]!
+    # A single reverse hop: the foreign key sits on the node type's own table, so reaching Customer
+    # from address traverses it backwards and address holds no customer_id. Same remote binding as
+    # the junction, one hop instead of two, and non-unique the same way, two customers being able
+    # to share an address.
+    addressesByCustomerIds(customerIds: [ID!] @nodeId(typeName: "Customer") @reference(path: [
+        {key: "customer_address_id_fkey"}
+    ])): [Address!]!
     filmsWithImplicitInput(filter: FilmImplicitInput): [Film!]!
     # implicit-input-conditions plan: outer @condition(override: true) on a field whose
     # filter input has no explicit @condition on its fields. The enclosingOverride flag
@@ -2380,6 +2399,16 @@ type XlatCompChild @table(name: "xlat_comp_child") {
 # the same correlated EXISTS.
 input XlatChildFilter {
     parentIds: [ID!] @nodeId(typeName: "XlatParent")
+}
+
+# The input-field form of the junction chain (paired with `actorsByFilmFilter`). The carrier reaches
+# the classifier through BuildContext's input-field walk rather than FieldBuilder's argument walk,
+# and both must lower to the same two-hop correlated EXISTS.
+input ActorByFilmFilter {
+    filmIds: [ID!] @nodeId(typeName: "Film") @reference(path: [
+        {key: "film_actor_actor_id_fkey"},
+        {key: "film_actor_film_id_fkey"}
+    ])
 }
 
 # R79 fixture (paired with `filmActorsByCompositeNodeIds`). The implicit-condition path
