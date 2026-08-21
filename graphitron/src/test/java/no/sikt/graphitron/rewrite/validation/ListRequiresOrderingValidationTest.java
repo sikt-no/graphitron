@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.model.AliasOwner;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.LookupResolution;
 import no.sikt.graphitron.rewrite.model.RoutineResolution;
@@ -67,14 +68,14 @@ class ListRequiresOrderingValidationTest {
             new TableField("Parent", "films", null,
                 filmReturn(new FieldWrapper.List(true, true)),
                 List.of(), List.of(), new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
-                /* parentCorrelation */ null),
+                /* parentCorrelation */ null, AliasOwner.shared()),
             List.of("Field 'Parent.films': " + LIST_ORDERING_ERROR)),
 
         CHILD_LIST_WITH_DEFAULT_ORDER("Child-position list TableField with Fixed ordering — admit",
             new TableField("Parent", "films", null,
                 filmReturn(new FieldWrapper.List(true, true)),
                 List.of(), List.of(), PK_ORDER, null, LookupResolution.None.INSTANCE,
-                /* parentCorrelation */ null),
+                /* parentCorrelation */ null, AliasOwner.shared()),
             List.of());
 
         private final String description;

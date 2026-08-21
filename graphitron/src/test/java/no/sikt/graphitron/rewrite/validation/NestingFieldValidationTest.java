@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.model.AliasOwner;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField;
@@ -64,7 +65,7 @@ class NestingFieldValidationTest {
             List.of(new ColumnRef("NAME", "", "")),
             path,
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
-            TestFixtures.pcFor(path, TestFixtures.filmTable()));
+            TestFixtures.pcFor(path, TestFixtures.filmTable()), AliasOwner.shared());
     }
 
     private static final ParameterizedTypeName BOOLEAN_FIELD =
@@ -80,7 +81,7 @@ class NestingFieldValidationTest {
         return new ComputedField(parentTypeName, "isEnglish", null,
             new ReturnTypeRef.ScalarReturnType("Boolean", new FieldWrapper.Single(true)),
             List.of(),
-            IS_ENGLISH);
+            IS_ENGLISH, AliasOwner.shared());
     }
 
     /**
@@ -96,7 +97,7 @@ class NestingFieldValidationTest {
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(
                 new HelperRef.Encode(ClassName.bestGuess("com.example.NodeIds"), "encodeLanguage",
                     List.of(new ColumnRef("ID_1", "java.lang.Integer", ""), new ColumnRef("ID_2", "java.lang.Integer", "")))),
-            TestFixtures.pcFor(path, TestFixtures.filmTable()));
+            TestFixtures.pcFor(path, TestFixtures.filmTable()), AliasOwner.shared());
     }
 
     enum Case implements ValidatorCase {
@@ -176,7 +177,7 @@ class NestingFieldValidationTest {
                             ClassName.get("org.jooq", "Condition"), List.of()),
                         TestFixtures.filmTable(),
                         "")),
-                    IS_ENGLISH))),
+                    IS_ENGLISH, AliasOwner.shared()))),
             List.of("Field 'FilmDetails.isEnglish': @externalField with a @reference path "
                 + "(condition-join lift form) is not yet supported")),
 
@@ -332,7 +333,7 @@ class NestingFieldValidationTest {
             List.of(new ColumnRef("name", "NAME", columnClass)),
             path,
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
-            TestFixtures.pcFor(path, anchor));
+            TestFixtures.pcFor(path, anchor), AliasOwner.shared());
     }
 
     /** An {@code @externalField} expression leaf, with the helper's return type as the variable. */
@@ -341,7 +342,8 @@ class NestingFieldValidationTest {
             new ReturnTypeRef.ScalarReturnType(scalar, new FieldWrapper.Single(true)),
             List.of(),
             TestFixtures.staticServiceMethodRef("com.example.FilmExtensions", "flag", helperReturn,
-                List.of(new MethodRef.Param.Typed("table", "org.jooq.Table", new ParamSource.Table()))));
+                List.of(new MethodRef.Param.Typed("table", "org.jooq.Table", new ParamSource.Table()))),
+            AliasOwner.shared());
     }
 
     @Test
@@ -449,7 +451,7 @@ class NestingFieldValidationTest {
                 TestFixtures.joinTarget("address"), new FieldWrapper.Single(true)),
             List.of(), filters, new OrderBySpec.None(), null,
             no.sikt.graphitron.rewrite.model.LookupResolution.None.INSTANCE,
-            /* parentCorrelation */ null);
+            /* parentCorrelation */ null, AliasOwner.shared());
     }
 
     @Test

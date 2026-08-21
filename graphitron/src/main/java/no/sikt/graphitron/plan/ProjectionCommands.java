@@ -11,6 +11,7 @@ import no.sikt.graphitron.command.TermAlias;
 import no.sikt.graphitron.command.UnitMethodRef;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.AliasOwner;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -163,7 +164,8 @@ public final class ProjectionCommands {
             case ChildField.ColumnBackedField cf -> Optional.of(new Contribution.Project(cf.name(),
                 cf.columns().stream()
                     .map(col -> (SelectTerm) new SelectTerm.Column(col, TermAlias.BY_COLUMN_IDENTITY))
-                    .toList()));
+                    .toList(),
+                aliasOwnerOf(cf)));
             case ChildField.ColumnBackedReferenceField crf -> {
                 if (crf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys) {
                     throw new IllegalStateException(
@@ -178,7 +180,8 @@ public final class ProjectionCommands {
                     crf.joinPath().isEmpty()
                         ? new SelectTerm.Column(crf.columns().get(0), TermAlias.BY_RESULT_KEY)
                         : new SelectTerm.ScalarSubselect(
-                            crf.joinPath(), crf.parentCorrelation(), crf.columns().get(0)))));
+                            crf.joinPath(), crf.parentCorrelation(), crf.columns().get(0))),
+                    aliasOwnerOf(crf)));
             }
             // The table-target family's one arm: the delivery fork and the
             // Multiset-vs-LookupMultiset fork are member and delivery reads, never leaf
@@ -187,14 +190,16 @@ public final class ProjectionCommands {
                 tableTargetContribution(schema, ttf, owner, units, glueEnvByMethod, nested);
             case ChildField.NestingField nf -> {
                 var nested2 = mintNestedUnit(schema, nf, anchorTypeName, units, glueEnvByMethod, census);
-                yield Optional.of(new Contribution.Call(nf.name(), nested2, new CallWrap.Splice()));
+                yield Optional.of(new Contribution.Call(nf.name(), nested2, new CallWrap.Splice(),
+                    aliasOwnerOf(nf)));
             }
             case ChildField.ComputedField cmp -> Optional.of(new Contribution.Project(cmp.name(),
-                List.of(new SelectTerm.HelperCall(cmp.method()))));
+                List.of(new SelectTerm.HelperCall(cmp.method())), aliasOwnerOf(cmp)));
             case ChildField.PivotField pf -> {
                 var pivotUnit = mintPivotUnit(pf, units, census);
                 yield Optional.of(new Contribution.Call(pf.name(), pivotUnit,
-                    new CallWrap.PivotMultiset(pf.pivot().table(), pf.spec().pairs())));
+                    new CallWrap.PivotMultiset(pf.pivot().table(), pf.spec().pairs()),
+                    aliasOwnerOf(pf)));
             }
             // The batched pivot delivers through the DataLoader seam (the projection itself is
             // still this coordinate's pivot unit, which the batched rows method consumes), so
@@ -280,7 +285,8 @@ public final class ProjectionCommands {
                     ttf.returnType().table(),
                     mapping,
                     units.inputRowsMethod(owner, ttf.name()),
-                    glueFor(ttf.parentTypeName(), ttf.name(), ttf.filters(), units, glueEnvByMethod))));
+                    glueFor(ttf.parentTypeName(), ttf.name(), ttf.filters(), units, glueEnvByMethod)),
+                aliasOwnerOf(ttf)));
         }
         return Optional.of(new Contribution.Call(ttf.name(),
             units.typeClass(ttf.returnType().returnTypeName()),
@@ -293,7 +299,19 @@ public final class ProjectionCommands {
                 !(ttf.returnType().wrapper() instanceof FieldWrapper.Single)
                     && ttf.pagination() != null && ttf.pagination().first() != null,
                 glueFor(ttf.parentTypeName(), ttf.name(), ttf.filters(), units, glueEnvByMethod),
-                readsSelectedFieldArguments(ttf))));
+                readsSelectedFieldArguments(ttf)),
+            aliasOwnerOf(ttf)));
+    }
+
+    /**
+     * The field's stamped result-key namespace verdict, read off the model leaf: the
+     * {@link ResultKeyAliasedField} members carry one, everything else projects under a name
+     * this axis does not touch and answers {@link AliasOwner#shared()}. Read, never re-derived:
+     * the predicate behind the value lives at capture, and the fetcher's read of the same field
+     * gets the same answer by construction.
+     */
+    private static AliasOwner aliasOwnerOf(ChildField field) {
+        return field instanceof ResultKeyAliasedField rk ? rk.aliasOwner() : AliasOwner.shared();
     }
 
     /**
@@ -334,9 +352,12 @@ public final class ProjectionCommands {
         var unit = units.pivotUnit(field.parentTypeName(), field.name());
         var pivot = field.pivot();
         var contributions = field.spec().slots().stream()
+            // A slot's aggregate projects under its own fixed read name, not a result-key
+            // alias, so the namespace axis does not reach it.
             .map(slot -> (Contribution) new Contribution.Project(slot.name(), List.of(
                 new SelectTerm.Aggregate(pivot.value(), pivot.discriminator(),
-                    pivot.tokenBySlot().get(slot.name()), slot.readName()))))
+                    pivot.tokenBySlot().get(slot.name()), slot.readName())),
+                AliasOwner.shared()))
             .toList();
         census.add(new ProjectionCommand.PivotUnit(unit, pivot.table(), contributions),
             "@pivot coordinate '" + field.parentTypeName() + "." + field.name() + "'");
@@ -447,10 +468,13 @@ public final class ProjectionCommands {
         if (columns.isEmpty()) {
             return Optional.empty();
         }
+        // Correlation keys project under their base column name, an axis the result-key
+        // namespace does not touch, whatever the field's own stamped verdict says.
         return Optional.of(new Contribution.Project(field.name(),
             columns.stream().distinct()
                 .map(col -> (SelectTerm) new SelectTerm.Column(col, TermAlias.BY_COLUMN_IDENTITY))
-                .toList()));
+                .toList(),
+            AliasOwner.shared()));
     }
 
     // ------------------------------------------------------------------------------------------

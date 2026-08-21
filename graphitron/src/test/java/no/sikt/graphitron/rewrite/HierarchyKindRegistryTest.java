@@ -199,6 +199,11 @@ class HierarchyKindRegistryTest {
         Map.entry(ParentCorrelation.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(ParticipantCorrelation.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(ParticipantRef.class, HierarchyKind.RESOLVED_VIEW),
+        // Which name owns a result-key-aliased field's alias namespace: a pure function over the
+        // walked implements edges and the participants' field census, with no walk of its own.
+        // Carried on the alias-minting leaves like LookupResolution is carried on the table
+        // targets, and labelled by the capability's provenance rather than by its holder's.
+        Map.entry(no.sikt.graphitron.rewrite.model.AliasOwner.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(MethodRef.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(AccessorResolution.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(KeyAlternative.class, HierarchyKind.RESOLVED_VIEW),

@@ -80,6 +80,7 @@ public final class DiscriminatedTableFragments {
     private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
     private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
     private static final ClassName LIST = ClassName.get("java.util", "List");
+    private static final ClassName SET = ClassName.get("java.util", "Set");
     private static final ClassName SELECTED_FIELD = ClassName.get("graphql.schema", "SelectedField");
 
     /**
@@ -99,6 +100,14 @@ public final class DiscriminatedTableFragments {
      * load-bearing.
      */
     private static final String CROSS_TABLE_LOCAL_PREFIX = "ct_";
+
+    /**
+     * The local holding the fold's per-type field names, declared once by {@link #fieldsList} and
+     * read by every single-table branch's {@code restrictTo} call. Only declared when the
+     * restriction is non-empty, so a schema with no participant-local result-key-aliased field
+     * emits the same body it always has.
+     */
+    private static final String PER_TYPE_FIELDS_LOCAL = "perTypeFields";
 
     /**
      * The whole assembly, ending with {@code step} joined and ready for the caller's terminal:
@@ -246,10 +255,27 @@ public final class DiscriminatedTableFragments {
         // carries a routing token the TypeResolver reads back as String, not a comparison operand.
         b.addStatement("fields.add($L.as($S))",
             discriminatorRef(tableLocal, source.discriminatorColumn()), ReservedAliases.DISCRIMINATOR);
+        var restriction = source.selectionRestriction();
+        if (!restriction.isEmpty()) {
+            // One list per fold, not one per arm: the names are the interface's fact, so hoisting
+            // the literal out of the branch loop drops a per-request allocation per participant.
+            // Explicit type, never `var`: emitted sources are lint-gated against it.
+            b.addStatement("$T<$T> $L = $T.of($L)", SET, ClassName.get(String.class),
+                PER_TYPE_FIELDS_LOCAL, SET,
+                restriction.perTypeFieldNames().stream()
+                    .map(name -> CodeBlock.of("$S", name))
+                    .collect(CodeBlock.joining(", ")));
+        }
         for (var branch : source.branches()) {
             if (branch instanceof LaunchSource.DiscriminatedTable.Branch.SingleTable single) {
                 b.addStatement("fields.addAll($L)",
-                    ProjectionCall.fromEnvSelection(className(single.projection()), tableLocal));
+                    restriction.isEmpty()
+                        ? ProjectionCall.fromEnvSelection(className(single.projection()), tableLocal)
+                        : ProjectionCall.fromSelectionSet(className(single.projection()),
+                            CodeBlock.of("$T.restrictTo(env.getSelectionSet(), $S, $L)",
+                                className(restriction.helper()), single.participant().typeName(),
+                                PER_TYPE_FIELDS_LOCAL),
+                            CodeBlock.of("$L", tableLocal)));
             }
         }
         for (var term : source.baseSlice()) {

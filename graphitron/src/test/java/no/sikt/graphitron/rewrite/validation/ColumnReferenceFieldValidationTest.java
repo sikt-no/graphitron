@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.model.AliasOwner;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -44,21 +45,21 @@ class ColumnReferenceFieldValidationTest {
             new ColumnBackedReferenceField("Film", "languageName", null, List.of(new ColumnRef("NAME", "", "")),
                 FK_PATH,
                 new CallSiteCompaction.Direct(),
-                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
+                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable()), AliasOwner.shared()),
             List.of()),
 
         RESOLVED_EXPLICIT("@field(name:) overrides the column name; Direct + FK-only path",
             new ColumnBackedReferenceField("Film", "languageName", null, List.of(new ColumnRef("NAME", "", "")),
                 FK_PATH,
                 new CallSiteCompaction.Direct(),
-                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
+                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable()), AliasOwner.shared()),
             List.of()),
 
         CONDITION_METHOD("path resolved via condition method instead of a FK — classifies and emits a scalar subquery (R232)",
             new ColumnBackedReferenceField("Film", "languageName", null, List.of(new ColumnRef("NAME", "", "")),
                 CONDITION_PATH,
                 new CallSiteCompaction.Direct(),
-                TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
+                TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable()), AliasOwner.shared()),
             List.of()),
 
         RESOLVED_NODEID_ENCODE("NodeIdEncodeKeys compaction on a FK-only path — deferred to JOIN-with-projection slug",
@@ -67,13 +68,13 @@ class ColumnReferenceFieldValidationTest {
                 new CallSiteCompaction.NodeIdEncodeKeys(
                     new HelperRef.Encode(ClassName.bestGuess("com.example.NodeIds"), "encodeLanguage",
                         List.of(new ColumnRef("ID", "java.lang.Integer", "")))),
-                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
+                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable()), AliasOwner.shared()),
             List.of(DEFERRED_NODEID_ENCODE)),
 
         MISSING_PATH("no @reference directive — path is empty",
             new ColumnBackedReferenceField("Film", "languageName", null, List.of(new ColumnRef("NAME", "", "")), List.of(),
                 new CallSiteCompaction.Direct(),
-                /* parentCorrelation */ null),
+                /* parentCorrelation */ null, AliasOwner.shared()),
             List.of("Field 'Film.languageName': @reference path is required"));
 
         private final String description;

@@ -19,6 +19,7 @@ import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.lint.LintFix;
 import no.sikt.graphitron.rewrite.lint.LintRule;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
+import no.sikt.graphitron.rewrite.model.AliasOwner;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField;
@@ -994,7 +995,7 @@ class FieldBuilder {
             return new TableField(parentTypeName, name, location,
                 returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
                 tfc.lookup(),
-                tbtParentCorrelation);
+                tbtParentCorrelation, aliasOwnerOf(parentTypeName, name));
         }
 
         if (tableBacked instanceof TableInterfaceType tableInterfaceType) {
@@ -1400,7 +1401,8 @@ class FieldBuilder {
             return new ChildField.BatchedPivotField(parentTypeName, name, location, pivot, spec,
                 split.sourceKey(), split.lift(), split.loaderRegistration(), correlation);
         }
-        return new ChildField.PivotField(parentTypeName, name, location, pivot, spec);
+        return new ChildField.PivotField(parentTypeName, name, location, pivot, spec,
+            aliasOwnerOf(parentTypeName, name));
     }
 
     /**
@@ -3054,7 +3056,7 @@ class FieldBuilder {
                 }
                 yield new TableField(parentTypeName, name, location, walk.tb().returnType(),
                     walk.steps(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                    LookupResolution.None.INSTANCE, pc);
+                    LookupResolution.None.INSTANCE, pc, aliasOwnerOf(parentTypeName, name));
             }
         };
     }
@@ -7665,7 +7667,8 @@ class FieldBuilder {
                 case ExternalFieldDirectiveResolver.Resolved.Rejected r ->
                     new UnclassifiedField(parentTypeName, name, location, r.rejection());
                 case ExternalFieldDirectiveResolver.Resolved.Success s ->
-                    new ComputedField(parentTypeName, name, location, s.returnType(), externalPath.elements(), s.method());
+                    new ComputedField(parentTypeName, name, location, s.returnType(), externalPath.elements(),
+                        s.method(), aliasOwnerOf(parentTypeName, name));
             };
         }
 
@@ -7784,7 +7787,7 @@ class FieldBuilder {
             var crfParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) crfPcResolution).correlation();
             return new ColumnBackedReferenceField(parentTypeName, name, location, List.of(column.get()), refPath.elements(),
                 new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
-                crfParentCorrelation);
+                crfParentCorrelation, aliasOwnerOf(parentTypeName, name));
         }
 
         boolean isScalarId = !(GraphQLTypeUtil.unwrapNonNull(fieldDef.getType()) instanceof GraphQLList)
@@ -7907,7 +7910,7 @@ class FieldBuilder {
         var nodeRefPcResolution = ctx.buildParentCorrelation(joinPath, parentTable);
         var nodeRefParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) nodeRefPcResolution).correlation();
         return new ColumnBackedReferenceField(parentTypeName, name, location, keys, joinPath, compaction,
-            nodeRefParentCorrelation);
+            nodeRefParentCorrelation, aliasOwnerOf(parentTypeName, name));
     }
 
     /**
@@ -8339,6 +8342,20 @@ class FieldBuilder {
         return ctx.crossTableFieldsByParticipant
             .getOrDefault(parentTypeName, Map.of())
             .get(fieldName);
+    }
+
+    /**
+     * The coordinate's result-key alias namespace, stamped onto every
+     * {@link no.sikt.graphitron.rewrite.model.ResultKeyAliasedField} this builder mints: a lookup
+     * on the alias-owner fixed point ({@link BuildContext#aliasOwnerByParticipant}), which the
+     * discriminated-interface scan populated from the same classification that forks single-table
+     * from joined-table participants. An absent entry is the answer for every coordinate outside a
+     * single-table discriminated interface's own participant projection, where nothing merges with
+     * a sibling's select list: {@link AliasOwner#shared()}, today's bare prefix.
+     */
+    private AliasOwner aliasOwnerOf(String parentTypeName, String fieldName) {
+        var owner = ctx.aliasOwnerByParticipant.getOrDefault(parentTypeName, Map.of()).get(fieldName);
+        return owner != null ? owner : AliasOwner.shared();
     }
 
     /**

@@ -1280,7 +1280,11 @@ public class TypeFetcherGenerator {
         var source = new no.sikt.graphitron.command.LaunchSource.DiscriminatedTable(
             tableRef, discriminatorColumn, knownDiscriminatorValues, reprojection.baseSlice(),
             no.sikt.graphitron.plan.LauncherCommands.discriminatedBranches(
-                participants, discriminatorColumn, reprojection, units));
+                participants, discriminatorColumn, reprojection, units),
+            no.sikt.graphitron.plan.LauncherCommands.selectionRestriction(
+                participants,
+                schema == null ? typeName -> java.util.List.of() : schema::fieldsOf,
+                units));
         return no.sikt.graphitron.render.DiscriminatedTableFragments.assembly(
             source, alwaysProject, tableLocal);
     }

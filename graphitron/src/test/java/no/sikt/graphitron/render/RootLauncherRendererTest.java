@@ -38,6 +38,14 @@ class RootLauncherRendererTest {
 
     private static final GeneratedUnits UNITS = new GeneratedUnits(DEFAULT_OUTPUT_PACKAGE);
 
+    /**
+     * The unrestricted fold: no participant-local result-key-aliased field, so every branch reads
+     * the whole selection, which is what every schema without such a field emits.
+     */
+    private static final LaunchSource.DiscriminatedTable.SelectionRestriction NO_RESTRICTION =
+        new LaunchSource.DiscriminatedTable.SelectionRestriction(
+            UNITS.singleton(GeneratedUnits.SUB_UTIL, "PolymorphicSelectionSet"), List.of());
+
     private static LauncherCommand filmsRow(GlueCall where, ResultShape result) {
         return filmsRow(where, new TenantStrategy.Single(), result);
     }
@@ -174,7 +182,8 @@ class RootLauncherRendererTest {
             FieldCoordinates.coordinates("Query", "allContent"),
             new LaunchSource.DiscriminatedTable(
                 filmTable(List.of(col("film_id", "FILM_ID", "java.lang.Integer"))),
-                discriminatorCol("film_type"), List.of("FILM", "SHORT"), baseSlice, branches),
+                discriminatorCol("film_type"), List.of("FILM", "SHORT"), baseSlice, branches,
+                NO_RESTRICTION),
             where, new Invocation.Direct(), new TenantStrategy.Single(), result);
     }
 
@@ -305,7 +314,8 @@ class RootLauncherRendererTest {
                     UNITS.launcherMethod("Query", "allContent"),
                     FieldCoordinates.coordinates("Query", "allContent"),
                     new LaunchSource.DiscriminatedTable(
-                        filmTable(List.of()), discriminatorCol("film_type"), List.of(), List.of(), List.of()),
+                        filmTable(List.of()), discriminatorCol("film_type"), List.of(), List.of(), List.of(),
+                        NO_RESTRICTION),
                     null, new Invocation.Direct(), new TenantStrategy.Fanned(UNITS.tenantConnections()), list(null)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("runs single-tenant");

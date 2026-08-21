@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.model.AliasOwner;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.LookupResolution;
 import no.sikt.graphitron.rewrite.model.CallParam;
@@ -40,7 +41,7 @@ class ArgumentValidationTest {
 
     private static TableField tableField(List<WhereFilter> filters) {
         return new TableField("Film", "actors", null, FILM_RETURN, List.of(), filters, new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
-            /* parentCorrelation */ null);
+            /* parentCorrelation */ null, AliasOwner.shared());
     }
 
     enum Case implements ValidatorCase {

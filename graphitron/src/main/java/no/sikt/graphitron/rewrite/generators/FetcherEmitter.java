@@ -26,7 +26,6 @@ import java.util.List;
 import javax.lang.model.element.Modifier;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
-import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RESERVED_RK_ALIAS_PREFIX;
 
 /**
  * Binds a single classified field to its {@code DataFetcher}: the registration value the
@@ -489,14 +488,14 @@ public final class FetcherEmitter {
                 // the Result read by the runtime result key (aliased duplicates each read their own).
                 CodeBlock body = CodeBlock.builder()
                     .add("Object raw = (($T) env.getSource()).get($S + env.getField().getResultKey(), $T.class);\n",
-                        RECORD, RESERVED_RK_ALIAS_PREFIX, resultClass)
+                        RECORD, GeneratorUtils.resultKeyPrefix(tf.aliasOwner()), resultClass)
                     .add("return raw instanceof $T r && !r.isEmpty() ? r.get(0) : null;\n", resultWildcard)
                     .build();
                 return envDependent(field.name(), fetchersClass, body);
             }
-            return columnByAlias(field.name(), fetchersClass);
+            return columnByAlias(field.name(), fetchersClass, tf.aliasOwner());
         }
-        if (field instanceof ChildField.PivotField) {
+        if (field instanceof ChildField.PivotField pvf) {
             // Inline @pivot: the projection is a single-row multiset aliased __rk_<resultKey>
             // (the pivot multiset arm); unwrap it as the single-cardinality TableField read does.
             // The row always exists (a correlated aggregate over an empty set still yields one
@@ -505,7 +504,7 @@ public final class FetcherEmitter {
             var resultWildcard = ParameterizedTypeName.get(resultClass, WildcardTypeName.subtypeOf(Object.class));
             CodeBlock body = CodeBlock.builder()
                 .add("Object raw = (($T) env.getSource()).get($S + env.getField().getResultKey(), $T.class);\n",
-                    RECORD, RESERVED_RK_ALIAS_PREFIX, resultClass)
+                    RECORD, GeneratorUtils.resultKeyPrefix(pvf.aliasOwner()), resultClass)
                 .add("return raw instanceof $T r && !r.isEmpty() ? r.get(0) : null;\n", resultWildcard)
                 .build();
             return envDependent(field.name(), fetchersClass, body);
@@ -519,10 +518,10 @@ public final class FetcherEmitter {
                 CodeBlock.of("return (($T) source).get($T.field($T.name($S)));\n",
                     RECORD, DSL, DSL, slot.readName()));
         }
-        if (field instanceof ChildField.ComputedField) {
+        if (field instanceof ChildField.ComputedField cmp) {
             // Wired by name: the type's $project unit inlines the developer's method call
             // aliased to the result key; the read picks the result Record up by that alias.
-            return columnByAlias(field.name(), fetchersClass);
+            return columnByAlias(field.name(), fetchersClass, cmp.aliasOwner());
         }
         if (field instanceof ChildField.ParticipantColumnReferenceField pcrf) {
             // Cross-table participant field on a TableInterfaceType participant: the interface
@@ -542,7 +541,7 @@ public final class FetcherEmitter {
             // NodeIdEncodeKeys instance never reaches emission: the validator rejects it as
             // deferred, and one leaking through falls to the ResultKeyAliasedField guard below
             // and fails loudly.
-            return columnByAlias(field.name(), fetchersClass);
+            return columnByAlias(field.name(), fetchersClass, crf.aliasOwner());
         }
         // A ResultKeyAliasedField reaching here would fall through to a plain method-backed
         // reference and never read its __rk_ alias, silently mis-resolving aliased duplicates.
@@ -561,16 +560,25 @@ public final class FetcherEmitter {
 
     /**
      * Env-dependent read of an aliased projection off the parent record, keyed by the runtime
-     * result key. The projection is aliased {@code __rk_<resultKey>} on the write side
-     * ({@code GeneratorUtils.RESERVED_RK_ALIAS_PREFIX}), so two aliases of the same reference
+     * result key. The projection is aliased {@code <prefix><resultKey>} on the write side, with
+     * the prefix composed from the field's own stamped
+     * {@link no.sikt.graphitron.rewrite.model.AliasOwner} through the one mint
+     * ({@link GeneratorUtils#resultKeyPrefix}), so two aliases of the same reference
      * ({@code a: ref b: ref}) each read their own SELECT term via {@code env.getField().getResultKey()}
-     * rather than colliding on a field-named alias. This is the read half of
-     * {@link ResultKeyAliasedField}; it must move in lockstep with the write arms.
+     * rather than colliding on a field-named alias, and two participants of one discriminated
+     * interface declaring a same-named field read their own qualified term rather than each
+     * other's. This is the read half of {@link ResultKeyAliasedField}; it must move in lockstep
+     * with the write arms.
+     *
+     * <p>The lookup is name-based ({@code DSL.field(DSL.name(...))}), not the plain-SQL
+     * {@code DSL.field(String)} form: an owner qualifier puts a {@code $} in the alias, and a
+     * quoted-name reference addresses the projected alias whatever characters it carries.
      */
-    private static FetcherBinding columnByAlias(String name, ClassName fetchersClass) {
+    private static FetcherBinding columnByAlias(String name, ClassName fetchersClass,
+            no.sikt.graphitron.rewrite.model.AliasOwner aliasOwner) {
         return envDependent(name, fetchersClass,
-            CodeBlock.of("return (($T) env.getSource()).get($T.field($S + env.getField().getResultKey()));\n",
-                RECORD, DSL, RESERVED_RK_ALIAS_PREFIX));
+            CodeBlock.of("return (($T) env.getSource()).get($T.field($T.name($S + env.getField().getResultKey())));\n",
+                RECORD, DSL, DSL, GeneratorUtils.resultKeyPrefix(aliasOwner)));
     }
 
     /**

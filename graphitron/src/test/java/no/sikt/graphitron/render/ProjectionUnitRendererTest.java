@@ -7,6 +7,7 @@ import no.sikt.graphitron.command.TermAlias;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.GeneratedUnits;
+import no.sikt.graphitron.rewrite.model.AliasOwner;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -91,7 +92,8 @@ class ProjectionUnitRendererTest {
     void compositeColumnProject_rendersOneArmAddingEveryKeyColumn() {
         var row = filmRow(List.of(new Contribution.Project("id", List.of(
             new SelectTerm.Column(col("id_1", "ID_1", "java.lang.Integer"), TermAlias.BY_COLUMN_IDENTITY),
-            new SelectTerm.Column(col("id_2", "ID_2", "java.lang.Integer"), TermAlias.BY_COLUMN_IDENTITY)))));
+            new SelectTerm.Column(col("id_2", "ID_2", "java.lang.Integer"), TermAlias.BY_COLUMN_IDENTITY)),
+            AliasOwner.shared())));
         var body = projectMethod(render(row)).code().toString();
         assertThat(body).contains("case \"id\" ->");
         assertThat(body).contains("fields.add(table.ID_1)");
@@ -104,7 +106,8 @@ class ProjectionUnitRendererTest {
         // standalone reference projects the unit's own column aliased by result key.
         var row = filmRow(List.of(new Contribution.Project("original", List.of(
             new SelectTerm.Column(col("original_id", "ORIGINAL_ID", "java.lang.Integer"),
-                TermAlias.BY_RESULT_KEY)))));
+                TermAlias.BY_RESULT_KEY)),
+            AliasOwner.shared())));
         var body = projectMethod(render(row)).code().toString();
         assertThat(body).contains("table.ORIGINAL_ID.as(\"__rk_\" + entry.getKey())");
     }
@@ -118,7 +121,8 @@ class ProjectionUnitRendererTest {
             filmTable(List.of(col("id", "ID", "java.lang.Integer"))),
             List.of(new Contribution.Project("title", List.of(
                 new SelectTerm.Column(col("title", "TITLE", "java.lang.String"),
-                    TermAlias.BY_COLUMN_IDENTITY)))));
+                    TermAlias.BY_COLUMN_IDENTITY)),
+                AliasOwner.shared())));
         var spec = render(row);
         assertThat(spec.name()).isEqualTo("FilmFilmDetails");
         assertThat(projectMethod(spec).parameters()).extracting(p -> p.type().toString())
@@ -134,7 +138,8 @@ class ProjectionUnitRendererTest {
                 new SelectTerm.Aggregate(
                     col("title_txt", "TITLE_TXT", "java.lang.String"),
                     col("lang_code", "LANG_CODE", "java.lang.String"),
-                    "nn", "nn")))));
+                    "nn", "nn")),
+                AliasOwner.shared())));
         var spec = render(row);
         assertThat(spec.name()).isEqualTo("FilmTitleTexts");
         var body = projectMethod(spec).code().toString();

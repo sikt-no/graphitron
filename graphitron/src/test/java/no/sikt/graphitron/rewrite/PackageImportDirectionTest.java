@@ -112,7 +112,14 @@ class PackageImportDirectionTest {
         // On.ColumnPairs; naming it here admits the direct import the carrier arm's captured
         // pairs carry.
         "no.sikt.graphitron.rewrite.model.RoutineChain",
-        "no.sikt.graphitron.rewrite.model.JoinSlot"
+        "no.sikt.graphitron.rewrite.model.JoinSlot",
+        // The result-key alias namespace verdict, stamped at capture on the alias-minting leaves.
+        // Borrowed rather than restated as a command-tier enum because both halves of an aliased
+        // term have to spell the same value: the projection contribution carries it to the
+        // renderer, the reserved-alias holder composes the emitted prefix from it, and the
+        // fetcher's read composes the same prefix off the same stamped field. A command-tier copy
+        // would be a second derivation with nothing enforcing agreement.
+        "no.sikt.graphitron.rewrite.model.AliasOwner"
     );
 
     /**
@@ -126,6 +133,7 @@ class PackageImportDirectionTest {
      */
     private static final Set<String> BORROWED_COMPONENT_CLOSURE = Set.of(
         "no.sikt.graphitron.rewrite.PathExpr",
+        "no.sikt.graphitron.rewrite.model.AliasOwner",
         "no.sikt.graphitron.rewrite.model.CallParam",
         "no.sikt.graphitron.rewrite.model.CallSiteExtraction",
         "no.sikt.graphitron.rewrite.model.ColumnRef",

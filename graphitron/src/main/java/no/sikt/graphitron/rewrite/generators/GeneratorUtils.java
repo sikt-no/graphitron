@@ -79,6 +79,17 @@ class GeneratorUtils {
         no.sikt.graphitron.command.ReservedAliases.RESULT_KEY_PREFIX;
 
     /**
+     * The owner-aware prefix mint, the legacy tree's read of
+     * {@link no.sikt.graphitron.command.ReservedAliases#resultKeyPrefix}. A read whose field
+     * carries a qualified {@link no.sikt.graphitron.rewrite.model.AliasOwner} must spell the same
+     * prefix the projection wrote, so both halves route through the one mint rather than
+     * concatenating the qualifier themselves.
+     */
+    static String resultKeyPrefix(no.sikt.graphitron.rewrite.model.AliasOwner owner) {
+        return no.sikt.graphitron.command.ReservedAliases.resultKeyPrefix(owner);
+    }
+
+    /**
      * The default source binding for a record-parent key extraction: the fetcher reads its backing
      * object straight off {@code env.getSource()}. The arm-switch substitutes
      * {@code success.value()} here once it has narrowed the {@code Outcome} source to

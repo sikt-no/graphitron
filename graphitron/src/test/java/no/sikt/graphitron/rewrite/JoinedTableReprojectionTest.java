@@ -71,7 +71,8 @@ class JoinedTableReprojectionTest {
             detail, List.of(PARTY_ID), base, List.of(PARTY_ID), null, name + "_0");
         return new ChildField.ColumnBackedReferenceField("Individual", name, LOC, List.of(baseColumn),
             List.of(hop), new CallSiteCompaction.Direct(),
-            new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots(hop));
+            new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots(hop),
+            no.sikt.graphitron.rewrite.model.AliasOwner.shared());
     }
 
     @Test

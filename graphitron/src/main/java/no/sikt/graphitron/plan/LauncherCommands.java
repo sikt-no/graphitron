@@ -228,6 +228,7 @@ public final class LauncherCommands {
             }
             case QueryField.QueryTableInterfaceField qtif -> interfaceRow(qtif,
                 schema.joinedTableReprojectionOf(qtif.returnType().returnTypeName()),
+                schema::fieldsOf,
                 whereOf(qtif.parentTypeName(), qtif.name(), conditions), units);
             default -> throw new IllegalStateException(
                 "Graphitron generator bug (launcher production): coordinate '"
@@ -257,6 +258,7 @@ public final class LauncherCommands {
             case ChildField.BatchedPivotField bpf -> batchedPivotRow(bpf, units);
             case ChildField.BatchedTableInterfaceField btif -> batchedInterfaceChildRow(btif,
                 schema.joinedTableReprojectionOf(btif.returnType().returnTypeName()),
+                schema::fieldsOf,
                 whereOf(btif.parentTypeName(), btif.name(), conditions), units);
             default -> throw new IllegalStateException(
                 "Graphitron generator bug (launcher production): coordinate '"
@@ -387,7 +389,8 @@ public final class LauncherCommands {
             new LaunchSource.DiscriminatedTable(correlation.targetTable(),
                 discriminatorColumn, knownDiscriminatorValues,
                 reprojection.baseSlice(),
-                discriminatedBranches(participants, discriminatorColumn, reprojection, units)),
+                discriminatedBranches(participants, discriminatorColumn, reprojection, units),
+                selectionRestriction(participants, schema::fieldsOf, units)),
             correlation);
     }
 
@@ -414,6 +417,18 @@ public final class LauncherCommands {
             String outputPackage) {
         var units = new GeneratedUnits(outputPackage);
         var rows = new ArrayList<LauncherCommand>();
+        // The schema view's stand-in for the alias-owner projection: a schema-free assembly's own
+        // field list, grouped by declaring type. A participant whose fields the assembly never
+        // handed us contributes no per-type name, so the fold restricts nothing for it, which is
+        // this path's pre-existing behaviour rather than a claim about its participants.
+        var fieldsByParentType = new java.util.LinkedHashMap<String, List<GraphitronField>>();
+        for (var field : fields) {
+            fieldsByParentType
+                .computeIfAbsent(field.parentTypeName(), key -> new ArrayList<>())
+                .add(field);
+        }
+        java.util.function.Function<String, List<? extends GraphitronField>> fieldsOfType =
+            typeName -> fieldsByParentType.getOrDefault(typeName, List.of());
         for (var field : fields) {
             if (!(field instanceof OutputField out)) {
                 continue;
@@ -437,7 +452,7 @@ public final class LauncherCommands {
                 // fallback the retired inline assembly took on a null schema.
                 case QueryField.QueryTableInterfaceField qtif ->
                     interfaceRow(qtif, no.sikt.graphitron.rewrite.JoinedTableReprojection.EMPTY,
-                        glueFromInterfaceFilters(qtif, units), units);
+                        fieldsOfType, glueFromInterfaceFilters(qtif, units), units);
                 case ChildField.BatchedTableField btf -> {
                     var mapping = keyedLookupOf(OperationMembers.membersOf(btf));
                     var glue = glueFromFilters(btf.parentTypeName(), btf.name(), btf.filters(), units);
@@ -450,6 +465,7 @@ public final class LauncherCommands {
                 // fallback: no base slice, no detail fields.
                 case ChildField.BatchedTableInterfaceField btif -> batchedInterfaceChildRow(btif,
                     no.sikt.graphitron.rewrite.JoinedTableReprojection.EMPTY,
+                    fieldsOfType,
                     glueFromFilters(btif.parentTypeName(), btif.name(), btif.filters(), units),
                     units);
                 case ChildField.ServiceTableField stf -> serviceTableRow(stf, units);
@@ -577,6 +593,7 @@ public final class LauncherCommands {
      */
     private static LauncherCommand interfaceRow(QueryField.QueryTableInterfaceField qtif,
             no.sikt.graphitron.rewrite.JoinedTableReprojection reprojection,
+            java.util.function.Function<String, List<? extends GraphitronField>> fieldsOfType,
             GlueCall where, GeneratedUnits units) {
         var ordering = orderingOf(qtif.orderBy(), qtif.parentTypeName(), qtif.name(), units);
         return new LauncherCommand(
@@ -586,7 +603,8 @@ public final class LauncherCommands {
                 qtif.discriminatorColumn(), qtif.knownDiscriminatorValues(),
                 reprojection.baseSlice(),
                 discriminatedBranches(qtif.participants(), qtif.discriminatorColumn(),
-                    reprojection, units)),
+                    reprojection, units),
+                selectionRestriction(qtif.participants(), fieldsOfType, units)),
             where,
             new Invocation.Direct(),
             new TenantStrategy.Single(),
@@ -603,6 +621,53 @@ public final class LauncherCommands {
             ? new ResultShape.RecordList(ordering)
             : new ResultShape.SingleRecord();
     }
+
+    /**
+     * The fold's selection restriction, as a projection over the participants' stamped
+     * {@link no.sikt.graphitron.rewrite.model.AliasOwner} facts: the field names whose alias the
+     * declaring participant type qualifies, which are exactly the names whose occurrences must be
+     * scoped per participant for the alias to stay honest (see
+     * {@link LaunchSource.DiscriminatedTable.SelectionRestriction}). Read off the stamped verdict
+     * rather than re-derived from the interface declarations, so the restriction's granularity and
+     * the alias's granularity cannot drift apart; a second derivation would agree today and
+     * silently diverge the day a new alias-minting family missed one of them.
+     *
+     * <p>{@code fieldsOfType} is how the caller reaches a participant's classified fields: the
+     * schema's own field view where a schema exists, and the assembly's own field list where it
+     * does not. A lookup answering nothing yields no names, so the fold restricts nothing, which
+     * is the pre-existing behaviour rather than a guess.
+     *
+     * <p>Sorted and deduplicated: the set is emitted as a literal, so its order is part of the
+     * generated source and has to be a function of the schema alone.
+     */
+    public static LaunchSource.DiscriminatedTable.SelectionRestriction selectionRestriction(
+            List<no.sikt.graphitron.rewrite.model.ParticipantRef> participants,
+            java.util.function.Function<String, List<? extends GraphitronField>> fieldsOfType,
+            GeneratedUnits units) {
+        var perType = new java.util.TreeSet<String>();
+        for (var participant : participants) {
+            if (!(participant instanceof no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound tb)) {
+                continue;
+            }
+            for (var field : fieldsOfType.apply(tb.typeName())) {
+                if (field instanceof no.sikt.graphitron.rewrite.model.ResultKeyAliasedField rk
+                        && rk.aliasOwner() instanceof no.sikt.graphitron.rewrite.model.AliasOwner.QualifiedBy q
+                        && q.owner().equals(tb.typeName())) {
+                    perType.add(field.name());
+                }
+            }
+        }
+        return new LaunchSource.DiscriminatedTable.SelectionRestriction(
+            units.singleton(GeneratedUnits.SUB_UTIL, POLYMORPHIC_SELECTION_SET_CLASS),
+            List.copyOf(perType));
+    }
+
+    /**
+     * The generated per-participant selection view's class name. Spelled here rather than read off
+     * {@code PolymorphicSelectionSetClassGenerator}: the plan tier does not depend on the
+     * generators tier, and {@code EmitPlan} spells the same name for the same reason.
+     */
+    private static final String POLYMORPHIC_SELECTION_SET_CLASS = "PolymorphicSelectionSet";
 
     /**
      * The per-participant branch assembly, shared with the legacy interface-reprojection call
@@ -733,6 +798,7 @@ public final class LauncherCommands {
     private static LauncherCommand batchedInterfaceChildRow(
             no.sikt.graphitron.rewrite.model.ChildField.BatchedTableInterfaceField btif,
             no.sikt.graphitron.rewrite.JoinedTableReprojection reprojection,
+            java.util.function.Function<String, List<? extends GraphitronField>> fieldsOfType,
             GlueCall where, GeneratedUnits units) {
         return new LauncherCommand(
             units.rowsMethod(btif.parentTypeName(), btif.name()),
@@ -742,7 +808,8 @@ public final class LauncherCommands {
                     btif.discriminatorColumn(), btif.knownDiscriminatorValues(),
                     reprojection.baseSlice(),
                     discriminatedBranches(btif.participants(), btif.discriminatorColumn(),
-                        reprojection, units)),
+                        reprojection, units),
+                    selectionRestriction(btif.participants(), fieldsOfType, units)),
                 btif.joinPath(), btif.parentCorrelation()),
             where,
             new Invocation.Batched(btif.sourceKey(), btif.loaderRegistration()),

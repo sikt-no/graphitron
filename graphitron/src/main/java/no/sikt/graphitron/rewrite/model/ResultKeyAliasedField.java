@@ -20,11 +20,20 @@ package no.sikt.graphitron.rewrite.model;
  * <p>This marker single-homes that membership so the agreement is enforced rather than reviewed:
  * both the write-side {@code default} arm and the read-side method-backed fall-through throw when a
  * {@code ResultKeyAliasedField} reaches them unhandled, so a new alias-projecting variant fails
- * loudly at build time on whichever side forgot it. The marker carries no method: the alias basis
- * is entirely runtime-keyed (the result key), with no per-variant model value to expose. The scalar
+ * loudly at build time on whichever side forgot it. The scalar
  * {@link ChildField.ColumnBackedField} arm is deliberately <em>not</em> a member: it adds raw
  * {@code table.COL} instances (alias-independent, deduped by jOOQ {@code Field} identity) and
  * reads back through typed column constants.
+ *
+ * <p>The runtime result key is not the whole alias basis. A single-table discriminated interface's
+ * query folds every participant's {@code $project} into one {@code LinkedHashSet<Field<?>>}, and
+ * an aliased jOOQ field compares equal on its alias alone, so two participants declaring a
+ * same-named field over different join paths would mint one alias and silently drop the second
+ * term. {@link #aliasOwner()} is the per-instance verdict that closes that: which name qualifies
+ * the alias, decided once at capture off {@code (declaring type, field name)}. Homing the accessor
+ * on this marker is what makes the namespace decision enforced rather than reviewed, on the same
+ * discipline as the membership guards above: the marker is exactly the membership of the
+ * alias-minting families, so a new family fails compilation until it declares its verdict.
  *
  * <p>Standalone (does not extend {@link GraphitronField}) so it applies as an orthogonal
  * capability without being restricted by the sealed hierarchy, mirroring
@@ -39,4 +48,11 @@ package no.sikt.graphitron.rewrite.model;
  * instance is single-column.
  */
 public interface ResultKeyAliasedField {
+
+    /**
+     * Which name owns this field's result-key alias namespace. Both halves of the alias read this
+     * one stamped value: the projection renderer composes the emitted prefix from it, and the
+     * fetcher's read composes the same prefix from the same value off the same field instance.
+     */
+    AliasOwner aliasOwner();
 }

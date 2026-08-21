@@ -286,9 +286,11 @@ public sealed interface ChildField extends OutputField
         List<ColumnRef> columns,
         List<JoinStep> joinPath,
         CallSiteCompaction compaction,
-        ParentCorrelation parentCorrelation
+        ParentCorrelation parentCorrelation,
+        AliasOwner aliasOwner
     ) implements ChildField, ResultKeyAliasedField {
         public ColumnBackedReferenceField {
+            java.util.Objects.requireNonNull(aliasOwner, "aliasOwner");
             columns = List.copyOf(columns);
             if (columns.isEmpty()) {
                 throw new IllegalArgumentException("ColumnBackedReferenceField requires at least one column");
@@ -400,10 +402,12 @@ public sealed interface ChildField extends OutputField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         LookupResolution lookup,
-        ParentCorrelation parentCorrelation
+        ParentCorrelation parentCorrelation,
+        AliasOwner aliasOwner
     ) implements TableTargetField, ResultKeyAliasedField {
         public TableField {
             java.util.Objects.requireNonNull(lookup, "lookup");
+            java.util.Objects.requireNonNull(aliasOwner, "aliasOwner");
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "TableField");
             // No validator gate re-checks TableField's shape, so the emittable routine-chain
             // set is pinned mechanically here: the check below admits exactly the shape the
@@ -994,9 +998,11 @@ public sealed interface ChildField extends OutputField
         String name,
         SourceLocation location,
         OperationMember.Pivot pivot,
-        PivotSpec spec
+        PivotSpec spec,
+        AliasOwner aliasOwner
     ) implements PivotSpecField, ResultKeyAliasedField {
         public PivotField {
+            java.util.Objects.requireNonNull(aliasOwner, "aliasOwner");
             PivotSpec.checkMemberAgreement(pivot, spec, "PivotField");
         }
         /**
@@ -1415,8 +1421,12 @@ public sealed interface ChildField extends OutputField
         SourceLocation location,
         ReturnTypeRef returnType,
         List<JoinStep> joinPath,
-        MethodRef method
+        MethodRef method,
+        AliasOwner aliasOwner
     ) implements ChildField, MethodBackedField, ResultKeyAliasedField {
+        public ComputedField {
+            java.util.Objects.requireNonNull(aliasOwner, "aliasOwner");
+        }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(OutputField.peelToClassName(method.returnType()));
         }

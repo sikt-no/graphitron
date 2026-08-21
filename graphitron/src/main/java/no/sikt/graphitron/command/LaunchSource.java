@@ -316,13 +316,52 @@ public sealed interface LaunchSource {
      * rejected at the parse boundary, so the two arms are total over the population).
      */
     record DiscriminatedTable(TableRef table, ColumnRef discriminatorColumn, List<String> knownValues,
-            List<BaseSliceTerm> baseSlice, List<Branch> branches) implements LaunchSource {
+            List<BaseSliceTerm> baseSlice, List<Branch> branches,
+            SelectionRestriction selectionRestriction) implements LaunchSource {
         public DiscriminatedTable {
             Objects.requireNonNull(table, "table");
             Objects.requireNonNull(discriminatorColumn, "discriminatorColumn");
+            Objects.requireNonNull(selectionRestriction, "selectionRestriction");
             knownValues = List.copyOf(knownValues);
             baseSlice = List.copyOf(baseSlice);
             branches = List.copyOf(branches);
+        }
+
+        /**
+         * How the fold scopes each participant's {@code $project} input, as one whole-query fact.
+         *
+         * <p>The fold hands every branch the <em>same</em> grouped selection, so a participant's
+         * arm fires for a result key another participant's fragment selected. That is harmless
+         * while every arm mints the same alias over the same occurrence set, and wrong data the
+         * moment either half diverges: an aliased jOOQ field compares equal on its alias alone, so
+         * two arms rendering different SQL under one alias collapse to whichever landed first.
+         *
+         * <p>Hence the invariant this slot exists to make structural: <em>a shared alias requires
+         * a shared occurrence set.</em> {@link #perTypeFieldNames} is exactly the field names whose
+         * alias the participant type qualifies (their stamped
+         * {@link no.sikt.graphitron.rewrite.model.AliasOwner} is the participant's own type name),
+         * so those and only those get their occurrences filtered to the declaring participant. A
+         * name every arm aliases identically, whether an interface-declared key qualified by the
+         * interface or a bare key a spliced nesting unit contributes, keeps every occurrence in
+         * every arm, which is what it has always done. An empty set means the fold restricts
+         * nothing, the pre-existing behaviour, and every schema with no participant-local
+         * result-key-aliased field lands there.
+         *
+         * <p>{@link #helper} is the generated {@code PolymorphicSelectionSet} view the restriction
+         * runs through; a bare filtered map would not survive the {@code $project} contract, which
+         * recurses through {@code SelectedField.getSelectionSet()}. It is the same view, and the
+         * same call, the multi-table stage-2 per-typename SELECT already feeds that contract.
+         */
+        public record SelectionRestriction(UnitRef helper, List<String> perTypeFieldNames) {
+            public SelectionRestriction {
+                Objects.requireNonNull(helper, "helper");
+                perTypeFieldNames = List.copyOf(perTypeFieldNames);
+            }
+
+            /** {@code true} when the fold hands every branch the unrestricted selection. */
+            public boolean isEmpty() {
+                return perTypeFieldNames.isEmpty();
+            }
         }
 
         /**

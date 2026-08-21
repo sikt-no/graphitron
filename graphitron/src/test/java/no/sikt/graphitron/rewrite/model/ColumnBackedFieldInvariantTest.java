@@ -87,9 +87,9 @@ class ColumnBackedFieldInvariantTest {
         var path = fkPath();
         var pc = TestFixtures.pcFor(path, TestFixtures.filmTable());
         var single = new ChildField.ColumnBackedReferenceField(
-            "Child", "parentId", LOC, List.of(ID_1), path, ENCODE, pc);
+            "Child", "parentId", LOC, List.of(ID_1), path, ENCODE, pc, AliasOwner.shared());
         var composite = new ChildField.ColumnBackedReferenceField(
-            "Child", "parentId", LOC, List.of(ID_1, ID_2), path, ENCODE, pc);
+            "Child", "parentId", LOC, List.of(ID_1, ID_2), path, ENCODE, pc, AliasOwner.shared());
         assertThat(single.isComposite()).isFalse();
         assertThat(composite.isComposite()).isTrue();
     }
@@ -99,7 +99,7 @@ class ColumnBackedFieldInvariantTest {
         var path = fkPath();
         assertThatThrownBy(() -> new ChildField.ColumnBackedReferenceField(
                 "Child", "parentId", LOC, List.of(), path, ENCODE,
-                TestFixtures.pcFor(path, TestFixtures.filmTable())))
+                TestFixtures.pcFor(path, TestFixtures.filmTable()), AliasOwner.shared()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("at least one column");
     }
@@ -110,7 +110,7 @@ class ColumnBackedFieldInvariantTest {
         assertThatThrownBy(() -> new ChildField.ColumnBackedReferenceField(
                 "Child", "parentId", LOC, List.of(ID_1, ID_2), path,
                 new CallSiteCompaction.Direct(),
-                TestFixtures.pcFor(path, TestFixtures.filmTable())))
+                TestFixtures.pcFor(path, TestFixtures.filmTable()), AliasOwner.shared()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("NodeIdEncodeKeys");
     }
@@ -121,7 +121,7 @@ class ColumnBackedFieldInvariantTest {
         // ParentCorrelation.checkCarrierInvariant for every arity, composite included —
         // the merged construction site derives the correlation arity-independently.
         assertThatThrownBy(() -> new ChildField.ColumnBackedReferenceField(
-                "Child", "parentId", LOC, List.of(ID_1, ID_2), fkPath(), ENCODE, null))
+                "Child", "parentId", LOC, List.of(ID_1, ID_2), fkPath(), ENCODE, null, AliasOwner.shared()))
             .isInstanceOf(NullPointerException.class)
             .hasMessageContaining("parentCorrelation must not be null");
     }

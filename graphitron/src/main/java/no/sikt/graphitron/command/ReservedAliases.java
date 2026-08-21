@@ -1,5 +1,7 @@
 package no.sikt.graphitron.command;
 
+import no.sikt.graphitron.rewrite.model.AliasOwner;
+
 /**
  * The reserved SELECT-alias namespace the generated queries and their readers share: synthetic
  * aliases a writer mints so a reader can address a projected value the catalog does not name.
@@ -12,16 +14,52 @@ package no.sikt.graphitron.command;
  * the client's alias space by construction; an adversarial {@code __rk_foo} client alias mints
  * {@code __rk___rk_foo}, still distinct), and {@link #DISCRIMINATOR} is aliased precisely so the
  * routing read cannot collide with a real catalog column of the same name.
+ *
+ * <p>The result-key namespace has a second axis, the alias <em>owner</em>
+ * ({@link AliasOwner}), and it is disjoint from the first on the
+ * delimiter. {@link #resultKeyPrefix} composes {@code __rk_<owner>$}; GraphQL names admit no
+ * {@code $} (the spec's name grammar is {@code /[_A-Za-z][_0-9A-Za-z]*&#47;}), so a client-minted
+ * result key can never spell an owner qualifier, and every qualified alias is distinct from every
+ * bare one and from every other owner's. That is why the delimiter is {@code $} and not the
+ * {@code _} the sibling {@code <TypeName>_<fieldName>} participant-scalar alias uses: that scheme
+ * composes two build-time-visible SDL names, so a collision there is censusable, while this one
+ * composes a client-minted result key no build-time check can enumerate. PostgreSQL's 63-byte
+ * identifier limit bounds both, and the qualifier consumes more of that budget without changing
+ * the exposure in kind.
  */
 public final class ReservedAliases {
 
+    /**
+     * The owner qualifier's delimiter. JavaPoet reads {@code $} as its own format placeholder, so
+     * this string only ever reaches a {@code CodeBlock} as an {@code $S} argument, never inside a
+     * format string.
+     */
+    private static final String OWNER_DELIMITER = "$";
+
     private ReservedAliases() {}
+
+    /**
+     * The emitted alias prefix for one {@link AliasOwner}: the
+     * constant a writer concatenates the runtime result key onto, and the same constant the
+     * matching read spells. Both halves call this rather than composing the string themselves, so
+     * the delimiter and the concatenation order are one decision.
+     */
+    public static String resultKeyPrefix(AliasOwner owner) {
+        return switch (owner) {
+            case AliasOwner.Shared ignored -> RESULT_KEY_PREFIX;
+            case AliasOwner.QualifiedBy q -> RESULT_KEY_PREFIX + q.owner() + OWNER_DELIMITER;
+        };
+    }
 
     /**
      * The result-key alias prefix: a projection that must be read back per GraphQL result key
      * (aliased duplicates: {@code a: displayName b: displayName}) is emitted as
      * {@code .as("__rk_" + <resultKey>)} and read back as
      * {@code DSL.field("__rk_" + env.getField().getResultKey())}. See {@link TermAlias#BY_RESULT_KEY}.
+     *
+     * <p>The bare form is the {@link AliasOwner.Shared} arm of
+     * {@link #resultKeyPrefix}; an owner-qualified projection composes its prefix there instead of
+     * reading this constant directly.
      */
     public static final String RESULT_KEY_PREFIX = "__rk_";
 

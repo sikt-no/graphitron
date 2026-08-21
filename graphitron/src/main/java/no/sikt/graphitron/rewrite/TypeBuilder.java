@@ -642,6 +642,10 @@ class TypeBuilder {
         ctx.errors = new ErrorIndex(byErrorName);
 
         var byParticipant = new LinkedHashMap<String, Map<String, ParticipantRef.TableBound.CrossTableField>>();
+        // Per single-table participant, which discriminated interface declares each of its field
+        // names: the representative is the lexicographically first declaring interface, so a type
+        // participating in several agrees with every sibling on one owner per field name.
+        var declaringInterfaceByParticipant = new LinkedHashMap<String, java.util.TreeMap<String, String>>();
         for (var named : ctx.schema.getAllTypesAsList()) {
             if (named.getName().startsWith("__")) continue;
             if (!(named instanceof GraphQLInterfaceType iface)) continue;
@@ -654,11 +658,18 @@ class TypeBuilder {
                     // First-wins across interfaces.
                     fields.putIfAbsent(ctf.fieldName(), ctf);
                 }
+                var declaring = declaringInterfaceByParticipant.computeIfAbsent(
+                    tb.typeName(), k -> new java.util.TreeMap<>());
+                for (var fieldDef : iface.getFieldDefinitions()) {
+                    declaring.merge(fieldDef.getName(), iface.getName(),
+                        (existing, candidate) -> existing.compareTo(candidate) <= 0 ? existing : candidate);
+                }
             }
         }
         var participantIndex = new LinkedHashMap<String, Map<String, ParticipantRef.TableBound.CrossTableField>>();
         byParticipant.forEach((k, v) -> participantIndex.put(k, Map.copyOf(v)));
         ctx.crossTableFieldsByParticipant = Map.copyOf(participantIndex);
+        ctx.aliasOwnerByParticipant = aliasOwnerIndex(declaringInterfaceByParticipant);
 
         // The scalar fixed point: SDL scalar name -> classifyScalarType's verdict, the axis the
         // wire-coercion predicate (WireCoercionResolver.checkScalar) and the service slot-type
@@ -675,6 +686,38 @@ class TypeBuilder {
             }
         }
         ctx.scalarVerdicts = java.util.Collections.unmodifiableMap(scalarVerdicts);
+    }
+
+    /**
+     * The alias-owner fixed point ({@link BuildContext#aliasOwnerByParticipant}) from the
+     * declaring-interface map the discriminated-interface scan accumulated: one entry per
+     * {@link ParticipantRef.TableBound} participant, keyed by the participant's <em>own</em>
+     * declared field names, so a field's namespace verdict is a lookup rather than a read-time
+     * fallback. A name a discriminated interface declares is owned by that interface, which makes
+     * every participant's arm mint the identical alias, so the query's field set collapses the
+     * agreeing terms exactly as it does today; a name only the participant declares is owned by
+     * the participant type, which is what keeps two participants' same-named fields from sharing
+     * one alias and silently dropping the second projection.
+     *
+     * <p>The participant's own field list is the key set, not the interface's: SDL forces every
+     * interface field onto every implementer, so the object type's field definitions are the union
+     * of both halves and every {@code (type, field)} pair a fetcher can bind appears here.
+     */
+    private Map<String, Map<String, no.sikt.graphitron.rewrite.model.AliasOwner>> aliasOwnerIndex(
+            Map<String, java.util.TreeMap<String, String>> declaringInterfaceByParticipant) {
+        var index = new LinkedHashMap<String, Map<String, no.sikt.graphitron.rewrite.model.AliasOwner>>();
+        declaringInterfaceByParticipant.forEach((typeName, declaring) -> {
+            var participantObj = ctx.schema.getObjectType(typeName);
+            if (participantObj == null) return;
+            var owners = new LinkedHashMap<String, no.sikt.graphitron.rewrite.model.AliasOwner>();
+            for (var fieldDef : participantObj.getFieldDefinitions()) {
+                var declaringInterface = declaring.get(fieldDef.getName());
+                owners.put(fieldDef.getName(), no.sikt.graphitron.rewrite.model.AliasOwner.qualifiedBy(
+                    declaringInterface != null ? declaringInterface : typeName));
+            }
+            index.put(typeName, Map.copyOf(owners));
+        });
+        return Map.copyOf(index);
     }
 
     /**

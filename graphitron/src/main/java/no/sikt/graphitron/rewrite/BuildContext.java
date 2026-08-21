@@ -218,6 +218,23 @@ class BuildContext {
      */
     Map<String, Map<String, ParticipantRef.TableBound.CrossTableField>> crossTableFieldsByParticipant = Map.of();
     /**
+     * Fixed-point index, single-table-participant type name &rarr; (its own declared field name
+     * &rarr; that coordinate's {@link no.sikt.graphitron.rewrite.model.AliasOwner}). Populated
+     * once by {@link TypeBuilder#buildClassificationIndices} off the same
+     * {@code @table}+{@code @discriminate} interface scan as
+     * {@link #crossTableFieldsByParticipant}, so the alias-namespace verdict and the
+     * {@link ParticipantRef.TableBound} / {@link ParticipantRef.JoinedTableBound} fork are one
+     * classification rather than two. Only {@link ParticipantRef.TableBound} participants appear:
+     * a joined-table participant's own select list never merges with a sibling's, so it keeps the
+     * bare namespace. A field the interface declares is owned by the interface (the
+     * lexicographically first declaring one when the type participates in several), a field only
+     * the participant declares by the participant type. Absent entry means
+     * {@link no.sikt.graphitron.rewrite.model.AliasOwner#shared()};
+     * {@code FieldBuilder.aliasOwnerOf} is the read path. Empty for tests that build a registry
+     * without running the classification walk.
+     */
+    Map<String, Map<String, no.sikt.graphitron.rewrite.model.AliasOwner>> aliasOwnerByParticipant = Map.of();
+    /**
      * Fixed-point scalar verdicts, SDL scalar name &rarr; {@code classifyScalarType}'s verdict
      * (a {@link GraphitronType.ScalarType}, or an {@link GraphitronType.UnclassifiedType} for a
      * rejected declaration). Populated once by {@link TypeBuilder#buildClassificationIndices} over
