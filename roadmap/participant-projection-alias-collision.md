@@ -170,9 +170,10 @@ paths at build time, so the collision is detectable before emission.
 
 The survey the Backlog body asked for is done; its facts are inlined where they bind. The fix is
 three coordinated parts: the discriminated fold hands each participant a selection map restricted
-to that type (reusing an existing generated helper), every `__rk_` alias minted inside a
+to that type (reusing an existing generated helper; interface-declared names stay exempt so a
+shared alias always covers a shared occurrence set), every `__rk_` alias minted inside a
 `TableBound` participant's own projection unit carries the coordinate that owns the projection
-decision, and a validator census turns the residual silent shape into a build error. Vocabulary
+decision, and a validator census turns the residual silent shapes into build errors. Vocabulary
 used below: a *participant* is a type that appears as `ParticipantRef.TableBound` in some
 single-table discriminated interface's `GraphitronType.TableInterfaceType.participants()`; the
 scope is that membership, not the `TableBound` variant alone. A `TableBound` implementer of a
@@ -184,9 +185,11 @@ type participates in declares it, and *interface-declared* when one does (SDL fo
 fields onto every implementer, so every participant field name is exactly one of the two). The
 scope is per declaring type, which makes it exactly the participant's own anchor projection unit;
 fields that reach that unit from a *spliced* nesting unit are declared on a non-participant type
-and stay bare, for the read-side reason part 2's spliced-units bullet gives. This spec revision
-incorporates a principles consultation; the joined-table route's sibling defect it surfaced is
-split out (see Out of scope).
+and stay bare, for the read-side reason part 2's spliced-units bullet gives. The spec incorporates
+two principles consultations: the first surfaced the joined-table route's sibling defect, split
+out (see Out of scope); the second shaped the gate settlements below (the shared set as a
+projection over the stamped owner, and the third census arm keyed on the disagreement rather than
+the participation topology).
 
 Where the mechanism lives, from the survey: the participant fold (`fields.addAll(...)` into a
 `LinkedHashSet<Field<?>>`, one `$project` call per branch with the shared grouped map) is one
@@ -210,10 +213,22 @@ owner decides the read, and the `TableBound` / `JoinedTableBound` fork is per in
 base). So a type that is `TableBound` in one discriminated interface and `JoinedTableBound` in
 another carries qualified fields and a bare base-slice write for the same coordinate, and its one
 registered fetcher then reads an alias that route never mints. Nothing rejects that double
-participation, the same fact part 2's representative rule rests on. Settle it here: show the shape
-unreachable, reject it as deferred, or carry the stamped owner onto `BaseSliceTerm.InheritedRef`,
-which `JoinedTableReprojection.of` mints with the field in hand. No in-tree fixture reaches it, so
-an unstated verdict ships silently.
+participation, the same fact part 2's representative rule rests on. Settled: the shape defers,
+and the arm is keyed on the disagreement, not the participation topology. Part 3 gains a third
+census arm that is the validate-time mirror of part 2's own enforcer (write alias equals read
+alias, per coordinate): a coordinate whose stamped owner is `QualifiedBy` and that the joined
+route serves through the bare `BaseSliceTerm.InheritedRef` write is a write the registered
+fetcher's qualified read can never find, and defers. The population is read off
+`JoinedTableReprojection.of`, which mints those terms with the field in hand. Keying on the
+coordinate keeps the rejection true: a doubly-participating type carrying no `__rk_`-family
+coordinate on the joined route emits correctly today and after this item, and stays accepted,
+where a type-grain rejection would defer it on a claim ("the generator does not emit this yet")
+that is false for that schema. The other two options are rejected: not shown unreachable, because
+nothing rejects double participation and a proof would pin `buildParticipantList` internals the
+model does not promise; not fixed by carrying the stamped owner onto `BaseSliceTerm.InheritedRef`,
+because that extends qualification into the joined route this item scopes out to R752, whose fold
+carries its own first-wins defect and whose read side would need the same census that item owes.
+The deferral retires by itself if that item's fix mints owners on the joined route.
 
 ### 1. The fold hands each participant a type-scoped selection map
 
@@ -234,11 +249,15 @@ Check the helper's `EmitPlan` gating: it must be emitted whenever a discriminate
 exists, not only when the multi-table route does (as of this revision `EmitPlan` emits it
 unconditionally, so the check should resolve trivially).
 
-What this buys beyond hygiene: a participant no longer projects a field nothing selected on it
-(the second observed property in the Backlog body).
+What this buys beyond hygiene, scoped honestly by the settlement below: for participant-local
+keys, a participant no longer projects a field nothing selected on it (the second observed
+property in the Backlog body). Interface-declared keys stay exempt from the restriction, so
+over-projection survives on exactly those keys; that residue is R708's territory, not this
+item's.
 
-**Unresolved fork, raised at the Spec to Ready gate: restriction granularity has to match alias
-granularity.** Two further wins this part claimed, diverging per-type sub-selections
+**Settled at the Spec to Ready gate: restriction granularity matches alias granularity.** The
+finding that forced the settlement: two further wins this part claims, diverging per-type
+sub-selections
 (`... on DokumentMelding { soknad { soknadId } } ... on MangelMelding { soknad { tittel } }`)
 reaching each arm already scoped to its own occurrences, and a per-type
 `requireConsistentArguments` that stops raising a `GraphitronClientException` on
@@ -255,19 +274,43 @@ divergent argument silently reads the winner's rows, trading a loud client error
 Part 3's census cannot catch it: the declarations agree, and the divergence is a client fact no
 build-time check can enumerate.
 
-However the fork is settled, the invariant to state and enforce is that a shared alias requires a
-shared occurrence set. Three routes, the author's call:
+The invariant, stated in the assembly's javadoc and made structural: a shared alias requires a
+shared occurrence set. The settlement restricts only the keys whose alias is per-type.
 
-* Restrict only the keys whose alias is per-type: extend the generated helper to
-  `restrictTo(source, concreteTypeName, sharedKeys)`, keeping every occurrence for the
-  interface-declared names (all known at build time) and filtering the rest. Keeps both of part
-  1's wins where they are sound, keeps today's cross-type `requireConsistentArguments` error
-  exactly where the alias is shared, and makes the invariant structural instead of reviewed.
-* Qualify interface-declared keys per participant as well (the uniform rule rejected below). Its
-  cost analysis was written against the unrestricted fold and would need redoing against a
-  restricted one, where an arm only projects what its own type selected.
-* Keep the shared alias and exempt interface-declared keys from the restriction some other way,
-  naming where that decision lives.
+The generated helper gains an arity, `restrictTo(source, concreteTypeName, sharedFieldNames)`: an
+occurrence is kept in every arm when its *field name* is in the set, and filtered to the concrete
+type otherwise. The filter runs on `sf.getName()`, never on the map key, because the map key is a
+client-minted result key and `x: interfaceField` must stay exempt; the parameter name and the
+generated javadoc both say field names for exactly this reason. The existing two-arg form becomes
+`return restrictTo(source, typeName, Set.of())`, so the emitted artifact carries one filter rule
+with a degenerate call and the stage-2 consumer's no-exemption behaviour is spelled rather than
+reviewed.
+
+The set itself is not recomputed from the interface declaration: "is this name interface-declared"
+is the very verdict part 2 stamps as `AliasOwner`, and a second derivation would agree today and
+drift silently the day a new `__rk_`-minting family misses it, with no enforcer. Instead the set
+is a projection over the stamped fact, the field names of the fold's participants whose
+`aliasOwner()` is `QualifiedBy` with this interface as owner, carried onto
+`LaunchSource.DiscriminatedTable` at its mint sites (each already holds the participants), and
+rendered by `fieldsList` into the `restrictTo` call. In the emitted body the set is hoisted to one
+`private static final Set<String>` per interface rather than a per-arm literal: it is the
+interface's fact, not the participant's, and the hoist drops a per-request allocation per arm.
+
+Consequences, per ownership rather than claimed uniformly. Participant-local keys get both wins:
+each arm sees only its own occurrences, so diverging per-type sub-selections resolve per type, and
+per-type argument divergence stops raising the consistent-arguments client error, because nothing
+merges across types any more. Interface-declared keys keep today's behaviour exactly: every arm
+merges every occurrence, the one surviving shared-alias term selects the union, both types read it
+correctly, and cross-type argument divergence still raises `requireConsistentArguments`'s
+`GraphitronClientException`. That split is the correct-or-build-error promise's own split, and
+author-visible: *declaration*-time divergence on an interface-declared name is a build error (part
+3), *query*-time divergence on one stays a runtime client error, and where the field is declared
+decides which half applies. The `code-generation-triggers.adoc` edit in the Implementation section
+states it in those terms. The rejected routes: uniform per-participant qualification of
+interface-declared keys is rejected in part 2 (its redundancy cost stands under restriction, since
+graphql-java puts interface-level selections on every implementer, so every arm still projects the
+key); exempting shared keys anywhere outside the helper would make the invariant reviewed rather
+than structural.
 
 Two statements this part owns. First, `restrictTo` becomes *the* type-scoping mechanism for
 `$project` calls in the discriminated assembly; the cross-table and joined-detail terms keep
@@ -301,8 +344,9 @@ Why the two owner cases compose: same-named participant-local fields on two part
 two type names, so the fold's set keeps both terms (the defect's fix). Interface-declared fields
 key on the one interface name in every participant's arm, and backstop 3 forces those arms to
 agree on projection identity, so the identical terms collapse to one exactly as today. That
-collapse also assumes every arm sees the same occurrences of the key, which part 1's restriction
-breaks; see part 1's unresolved fork. A type
+collapse also assumes every arm sees the same occurrences of the key, which part 1's settlement
+guarantees structurally: interface-declared names are in the restriction's shared set, so every
+arm keeps every occurrence. A type
 participating in more than one discriminated interface is the case that made a plain
 qualify-or-not rule ill-defined (`ParticipantRef.TableBound` participation is not unique, and
 nothing rejects double participation): under this rule a field declared by several of the type's
@@ -354,7 +398,13 @@ redundancy on the same axis.
   stamps a type-qualified alias: `TypeBuilder`'s participant walk mints
   `ParticipantRef.TableBound.CrossTableField.aliasName` as
   `participantTypeName + "_" + fieldName`, and both the writer (`LauncherCommands`) and the
-  reader (`FetcherEmitter`) consume the stamped string rather than recomputing it.
+  reader (`FetcherEmitter`) consume the stamped string rather than recomputing it. Naming the
+  boundary, since the docs use *capture* for `FactCapture`'s transcription: this fact is minted
+  on the transitional walk's model in `TypeBuilder`, not as a store relation, because
+  `FetcherRegistrationsEmitter`'s `bind` path carries no `ProjectionRelation` and the emit window
+  does not read the store (the next bullet's drift argument); when the projection consumers
+  migrate to store-sourced facts, the owner becomes a relation derived from the implements edges
+  and the field census, which is what this derivation already is.
 * **Downstream carriers copy, never re-derive.** `TermAlias` stays the two-value addressing enum
   (its own javadoc says the subselect-shaped terms carry no alias slot, so it cannot host a
   value); the plan copies the stamped `AliasOwner` onto `Contribution`, which every arm already
@@ -423,12 +473,23 @@ censuses the keys they contribute the same way. Two participants embedding *diff
 types that declare the same key over divergent paths is the shape this arm rejects; embedding the
 same nesting type agrees trivially and stays silent.
 
+The census's third arm is the settled mixed-participation finding, stated in part 2's enforcer
+terms (write alias equals read alias, per coordinate): a coordinate whose stamped owner is
+`QualifiedBy` and that the joined route serves through the bare `BaseSliceTerm.InheritedRef`
+write defers, because the registered fetcher's qualified read can never find that write. The
+population is read off `JoinedTableReprojection.of`, which mints the terms; the arm fires exactly
+where a disagreement exists, so a type `TableBound` in one discriminated interface and
+`JoinedTableBound` in another with no `__rk_`-family coordinate on the joined route stays
+accepted and keeps emitting correctly.
+
 The rejection kind is `Rejection.Deferred` (`RejectionKind.DEFERRED`), not an author error, and
 not the unrelated `Severity` enum, whose values are `Error` / `Warning` / `Information` / `Hint`.
 Two participants resolving one interface field over divergent paths is a legal, meaningful schema
 that uniform qualification would support, so the
 rejection means "the generator does not emit this yet" and retires cleanly if that route is ever
-built, rather than pinning the schema as illegal and later retracting. The rejection text states
+built, rather than pinning the schema as illegal and later retracting. The third arm's deferral is
+true on the same terms: the coordinate is legal, and emitting it needs the joined route to mint
+owners, which is R752's fix to make. The rejection text states
 the fact standalone (which declarations disagree and on what), no roadmap citation. Shape: follow
 the in-tree write/validate pair precedent, one derivation read by a producer-side backstop and
 the validator mirror (`ProjectionCommands.AddressCensus` plus
@@ -450,12 +511,17 @@ File-by-file, from the survey:
   the agreement census behind backstop 3 lives beside it with a producer-side backstop throw.
 * `render/ProjectionUnitRenderer.java`: emit the carried owner in the `BY_RESULT_KEY` column
   arm and the multiset, lookup-multiset, pivot-multiset, helper-call, and scalar-subselect arms.
-* `render/DiscriminatedTableFragments.java`: `restrictTo` at the fold's one per-branch call site
-  in `fieldsList`, which every emitted body routes through, including the
+* `command/LaunchSource.java` and the four `DiscriminatedTable` mint sites (three in
+  `plan/LauncherCommands.java`, one in `TypeFetcherGenerator.buildTableInterfaceReprojection`):
+  the record gains the shared field-name set, populated at mint as a projection over the
+  participants' stamped `aliasOwner()` facts, copied, never re-derived.
+* `render/DiscriminatedTableFragments.java`: the three-arg `restrictTo` at the fold's one
+  per-branch call site in `fieldsList`, which every emitted body routes through, including the
   `TypeFetcherGenerator.buildTableInterfaceReprojection` delegate and its
-  `MultiTablePolymorphicEmitter` caller (neither needs an edit of its own); assembly javadoc
-  stating the two type-scoping mechanisms' ownership and the shared-alias-implies-shared-occurrences
-  invariant part 1's fork settles.
+  `MultiTablePolymorphicEmitter` caller (their only edit is the mint-site component above); the
+  hoisted per-interface shared-set constant; assembly javadoc stating the two type-scoping
+  mechanisms' ownership and the shared-alias-implies-shared-occurrences invariant part 1's
+  settlement states.
 * `rewrite/generators/FetcherEmitter.java`: owner-keyed reads in the single-record unwrap, the
   pivot unwrap, and `columnByAlias` (moved to a by-name lookup), reading `aliasOwner()` off the
   field. `bind`'s other call site, `rewrite/generators/schema/FetcherRegistrationsEmitter.java`,
@@ -463,9 +529,13 @@ File-by-file, from the survey:
 * `command/ReservedAliases.java` plus the `GeneratorUtils` re-read: the one mint function for
   the composed prefix, the extended namespace-disjointness javadoc, the JavaPoet `$` rider.
 * `rewrite/GraphitronSchemaValidator.java`: the validator mirror of backstop 3, draining the
-  plan-side census.
-* `rewrite/generators/util/PolymorphicSelectionSetClassGenerator.java`: consumer list in the
-  class javadoc; verify its `EmitPlan` gating covers discriminated-interface-only schemas.
+  plan-side census, all three arms; the third arm's population comes from
+  `JoinedTableReprojection.of`.
+* `rewrite/generators/util/PolymorphicSelectionSetClassGenerator.java`: the
+  `restrictTo(source, typeName, sharedFieldNames)` arity, filtering on `sf.getName()`, with the
+  two-arg form delegating through `Set.of()` and the generated javadoc saying field names, not
+  result keys; consumer list in the class javadoc; verify its `EmitPlan` gating covers
+  discriminated-interface-only schemas.
 * `PolymorphicProjectionFilterPinTest` (test source): its javadoc and assertion message state
   that the one stage-2 site is every `restrictTo` emit site. Part 1 makes that false without
   making the test fail, because the fold's emit site lands in `render/`, outside the pin's
@@ -473,7 +543,9 @@ File-by-file, from the survey:
   generator's class javadoc; the assertion itself still holds at 1.
 * `docs/architecture/reference/code-generation-triggers.adoc`: the discriminated-interface
   section gains a statement of the per-participant alias namespace (it currently describes the
-  fold's projection with none).
+  fold's projection with none), and of the promise split part 1's settlement creates:
+  declaration-time divergence on an interface-declared name is a build error, query-time
+  divergence on one is a runtime client error, and where the field is declared decides which.
 
 ## Tests
 
@@ -490,11 +562,12 @@ File-by-file, from the survey:
   payload, corrected); per-type sub-selection divergence; aliased duplicates inside one
   fragment (`a: target b: target`); per-type argument divergence not raising the
   consistent-arguments client error; the `@splitQuery` variant staying green; an adversarial
-  client alias against the qualified namespace. Add the fork's oracle, which the fan fixture as
-  drafted cannot see because `target` is participant-local: an *interface-declared* `__rk_` field
-  selected with divergent per-type sub-selections, and with divergent per-type arguments. Whichever
-  route part 1 takes, each type must read its own selection, or fail loud; a shared alias over
-  per-type occurrence sets must not be reachable silently.
+  client alias against the qualified namespace. Add the settlement's oracle, which the fan
+  fixture as drafted cannot see because `target` is participant-local: an *interface-declared*
+  `__rk_` field selected with divergent per-type sub-selections returns the merged union on every
+  type, and with divergent per-type arguments still raises the consistent-arguments client error
+  (the argument relaxation earlier in this list is participant-local-only). Both pins hold
+  because the shared set keeps interface-declared occurrences whole in every arm.
 * **SQL baseline** (`RootLauncherSqlBaselineTest`): both qualified terms present, each
   correlated on its own FK; and the over-projection pin: a query selecting the field on only
   one fragment carries only that participant's term. Implementer heads-up on that second
@@ -511,8 +584,10 @@ File-by-file, from the survey:
   representative, a `TableBound` implementer of a multi-table interface or union staying
   `Shared`, and a field declared on a nesting type spliced under a participant anchor staying
   `Shared`, the two verdicts that pin the vocabulary's scope on each axis; plus the mixed
-  participation verdict, a type `TableBound` in one discriminated interface and `JoinedTableBound`
-  in another, asserting whatever rule the second gate finding settles on); the write/read
+  participation verdicts: a type `TableBound` in one discriminated interface and
+  `JoinedTableBound` in another whose joined route re-projects a `__rk_`-family reference,
+  asserting the third census arm's deferral, and the same mixed shape carrying no such
+  coordinate, asserting it stays accepted); the write/read
   enforcer (both emitted halves spell the stamped owner, per coordinate); backstop 3's two
   deferrals (a divergent interface-declared redeclaration, and two participants embedding
   different nesting types that collide on one key) each with an agreeing control (an agreeing
@@ -545,8 +620,14 @@ File-by-file, from the survey:
   naming the disagreeing declarations.
 * Two participants that collide on one `__rk_` key through *spliced* nesting units fail the build
   the same way, so no shape covered by this item's promise resolves to a silent drop.
-* An interface-declared key selected with divergent per-type sub-selections or arguments resolves
-  correctly on both types, or fails loud; no shared alias covers per-type occurrence sets.
+* An interface-declared key selected with divergent per-type sub-selections returns the merged
+  union on every type, and divergent per-type arguments on one raise the existing client error;
+  the shared set makes a shared alias over per-type occurrence sets unrepresentable by
+  construction.
+* A coordinate the joined route serves bare while its stamped owner is qualified (a type
+  `TableBound` in one discriminated interface, `JoinedTableBound` in another, with a
+  `__rk_`-family reference the joined route re-projects) fails the build as a deferred rejection;
+  the same mixed shape without such a coordinate builds and executes as today.
 * The owner fact is asserted as model data at the pipeline tier, and the write/read enforcer
   holds: both emitted halves spell the one stamped owner.
 * Full `mvn install -Plocal-db` green.
