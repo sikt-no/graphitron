@@ -172,7 +172,7 @@ pins, read off the test on trunk `7f2ff35`:
 | emitters: the same for `case` patterns
 
 | `PLAN_LEAF_REFERENCES`
-| 138
+| 147
 | planners: leaf references in `plan/`, the pin that legitimately rose before it falls
 |===
 
@@ -585,15 +585,15 @@ and they sit at opposite ends of the work:
   its facts are captured (the three that are not are slice one's opening deliverables), which is
   what makes this family slice one rather than an exception to the order. See "Slice one" below.
 
-The six in between. Line and site counts read off trunk `7f2ff35`, the sites counted under
-`CommandSeamRatchetTest`'s own rule so they sum to `PLAN_LEAF_REFERENCES` (3 + 29 + 17 + 48 + 29 + 1,
-plus routine writes' 11, is 138). This is an inventory of the work, **not** a conversion order; what
+The six in between. Sites counted under `CommandSeamRatchetTest`'s own rule so they sum to
+`PLAN_LEAF_REFERENCES` (3 + 38 + 17 + 48 + 29 + 1, plus routine writes' 11, is 147). This is an
+inventory of the work, **not** a conversion order; what
 actually constrains the order is the section after it, and the two are different:
 
 1. **Conditions** (`ConditionCommands`, 403 lines, 3 dispatch sites). The smallest surface, and the
    one every other relation references by glue row. That reference is why an earlier draft put it
    first; the next section explains why it does not have to be.
-2. **Projections** (`ProjectionCommands`, 558 lines, 29 sites).
+2. **Projections** (`ProjectionCommands`, 731 lines, 38 sites).
 3. **Launchers** (`LauncherCommands`, 1,114 lines, 17 sites). The largest producer, and the one whose
    rows the fetcher generator reads to decide between the launcher emission and the legacy builder.
 4. **Fetcher edges** (`FetcherEdgeCommands`, 280 lines, 48 sites). The densest dispatch in the
@@ -786,7 +786,7 @@ deliverable) applies three times over. In order:
   the agreement anchor and the naming check. The emitters' positive dial still gets its dry run on
   one file before it is asked to cover a package.
 
-**Four things pickup settled that the inventory above states too lightly.** Recorded here rather
+**Five things pickup settled that the inventory above states too lightly.** Recorded here rather
 than left to the implementer's session, because each one shapes work the rest of the programme
 inherits.
 
@@ -852,7 +852,8 @@ inherits.
   which is how the defect view became the heaviest relation in the schema. None of that is this
   item's to fix, and the registration above happens to take 40 per cent off it as a side effect of
   work slice one wanted regardless. Two things in the neighbourhood are this item's to not make
-  worse. The chain terminus is one of two places still joining a type binding on a stripped type
+  worse (a third, generator-side, is the bullet below). The chain terminus is one of two places
+  still joining a type binding on a stripped type
   expression instead of on a column, named in a sibling relation's comment as a hazard that is
   survivable only because the terminus drives orders of magnitude fewer rows than the argument
   population does; the rewrite keeps the terminus at its current grain, so that stays true, and the
@@ -860,6 +861,36 @@ inherits.
   sits upstream of that same heaviest relation at a leverage of 24, so a seat verdict that widened
   it would pay 24 times over. Neither is a reason to change the plan. Both are reasons to state the
   number when each relation lands, which the bullet above already requires.
+* **The generator half of the same landing moved the plan-side pin the wrong way, and the nine
+  references it added are a walk inside a planner.** `PLAN_LEAF_REFERENCES` went from 138 to 147,
+  deliberately and with a justification recorded on the pin itself, all nine in the projection
+  producer, which grew from 558 lines to 731. So the census above is restated: projections at 38
+  sites, not 29, and the plan side sums to 147. Slice one's own arithmetic is unaffected, the
+  routine-write producer being untouched at 11 sites and 134 lines, but it now lands the pin at 136
+  rather than 127, and the reflection's "how far did one vertical move the number" is read against
+  the new base. What the nine references actually are matters more than the count. The producer now
+  narrows a type to the table-interface leaf, filters its fields to the child-field leaf, and
+  recurses through nesting splices to find the participants' spliced subtrees: a tree walk
+  performed by a planner, over the schema, which is the one shape this item says a planner must not
+  have. Each reference earns its place under the reasoning that put it there, and that reasoning is
+  about making a per-family statement explicit rather than implicit, which is a real improvement to
+  the code that exists. It is still a census, and a census is a relation. Add it to the projection
+  producer's conversion as a named sub-deliverable rather than discovering at that increment that
+  the surface grew by a third; nothing about it changes slice one.
+* **Two obligations the landing hands this item that the inventory never listed.** A new sealed
+  value type carries the result-key alias namespace verdict, and its own javadoc states that the
+  value is minted at capture and stamped onto the alias-minting leaves, with the write side and the
+  read side both spelling the stamped value rather than re-deriving it. The discipline is exactly
+  right and the home is the walk, so the mint needs re-homing when the walk goes, on the same terms
+  and for the same reason as this slice's error-mappings constant. Second, that type is now on the
+  command tier's borrowed-import allow-list beside the two entries slice one removes, so the
+  entries are a live scoreboard rather than a static list and slice one's commit takes off its own
+  two without disturbing it. Third and smallest, minted names now have two homes: the generated-unit
+  holder this item names as the one home for a minted identifier, and a new reserved-alias holder in
+  the command tier for the SELECT-alias namespace. Both are defensible and neither is wrong; what is
+  wrong is this item's sentence asserting one home without qualification. The boundary to state, at
+  the increment that first touches either, is that generated *type and member* names belong to the
+  first and the *alias* namespace to the second, or that one folds into the other.
 
 **Then stop.** Slice one ends at a written reflection, not at the next producer, and the reflection
 is a deliverable with the same weight as the code. It answers, with numbers from the slice rather
@@ -1153,8 +1184,8 @@ derivation lives.
 
 ## Risks
 
-* **This is the largest item on the roadmap by surface.** The planner half alone is 6,135 lines of
-  plan and command code and 138 dispatch sites, over a taxonomy of 72 leaves across the seven
+* **This is the largest item on the roadmap by surface.** The planner half alone is 6,468 lines of
+  plan and command code and 147 dispatch sites, over a taxonomy of 72 leaves across the seven
   hierarchies (`getPermittedSubclasses()` closure, trunk `7f2ff35`); the emitter half adds the
   generators' package on top; the validator half is another 2,000 lines of checks plus the
   `Rejection` hierarchy's vocabulary; and the terminal deletion removes a walk whose footprint is on
