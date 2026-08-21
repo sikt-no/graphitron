@@ -22,6 +22,8 @@ The fix is an ordering change, not a new mechanism: pick up upstream changes *be
 
 Documentation and skill edits only; no code changes. All four steps shipped in one commit; per-step notes below.
 
+Revision during In Review, from the first live run of the new flow: the shipped wording made a post-build rebase invalidate the verification build unconditionally, which forced a full rebuild even when the mid-build trunk movement was another item's roadmap metadata that plainly could not interact with the change being pushed. That absolutism was not the intent. The rule is now a coverage judgment, stated once in CLAUDE.md "Building and testing": every commit already on trunk passed its own verification build, so a rebase that brings in only plainly non-interacting changes (disjoint files, no shared build surface) carries the existing green build forward, with a cheap targeted check where one exists (a roadmap README regenerate after concurrent roadmap edits); incoming code, build configuration, or anything the change reads, or any doubt, still means a full rebuild. The Git Workflow exception path and the publish skill's step 2 recovery reference that judgment instead of demanding an unconditional rebuild.
+
 One deviation from the plan text, flagged at the Ready sign-off: the "prefer it over targeted `-pl` builds" sentence lived at the end of "Common commands", not in "Building and testing". The definition landed at the top of "Building and testing" as planned (folded into the existing full-pipeline sentence, absorbing the `-pl` preference and the never-push-uncovered rule), and the "Common commands" sentence now points at that definition instead of restating it.
 
 1. **CLAUDE.md, "Git Workflow" section.** Shipped, with all four consult findings honored: the flow reads `sync → work + commit → rebase on trunk → verification build → push own branch → fast-forward trunk` and says it names a build step the old flow left implicit; the rule is stated positively and references the definition instead of restating it; the exception path (trunk moves during the build: rebase again, re-verify, never push a tree the build did not cover) replaces the old escape hatch; the fallback command block encodes fetch + rebase, then the build, then the two pushes; the publish-skill sentence frames the divergence pre-check as the mid-build-race backstop; the `.claude/web-environment.md` pointer sits beside the rebase step.
@@ -40,7 +42,8 @@ One deviation from the plan text, flagged at the Ready sign-off: the "prefer it 
 
 ## Acceptance criteria
 
-- CLAUDE.md's session flow shows the rebase before the verification build and states that a post-build rebase requires re-verification before push.
+- CLAUDE.md's session flow shows the rebase before the verification build and routes a post-build rebase through the coverage judgment (full rebuild by default, carried-forward coverage only for plainly non-interacting incoming changes) before push.
+- The coverage judgment is defined once, in "Building and testing", and both the session-flow exception path and the publish skill reference it.
 - "Verification build" is defined once, in CLAUDE.md's "Building and testing" section; the session flow and the publish skill reference the definition instead of restating it.
 - CLAUDE.md's fallback command block encodes the new order (fetch + rebase, build, pushes), and the sentence describing the publish skill frames its divergence check as the mid-build-race backstop.
 - The rebase step in the flow points at `.claude/web-environment.md` for the web-sandbox `init.sql` cascade.

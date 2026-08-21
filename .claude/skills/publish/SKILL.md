@@ -26,7 +26,7 @@ Caller expectation: you rebased onto trunk *before* running your verification bu
    - If the current branch is `claude/graphitron-rewrite`, stop. This skill never pushes from trunk directly; the user is on the wrong branch.
    - Read the most recent commit subject (`git log -1 --pretty=%s`). If it starts with one of the skip prefixes above, follow the "When to skip" rules.
 
-2. **Sync trunk first.** `git fetch origin claude/graphitron-rewrite`. If `origin/claude/graphitron-rewrite` has commits not reachable from `HEAD`, trunk moved after your rebase, so your verification build no longer covers the tree you would push and the fast-forward would fail anyway. Tell the user, then recover: `git rebase origin/claude/graphitron-rewrite`, re-run the verification build, re-invoke this skill. Stop here; do not push unverified.
+2. **Sync trunk first.** `git fetch origin claude/graphitron-rewrite`. If `origin/claude/graphitron-rewrite` has commits not reachable from `HEAD`, trunk moved after your rebase, so your verification build no longer covers the tree you would push and the fast-forward would fail anyway. Tell the user, then recover: `git rebase origin/claude/graphitron-rewrite`, re-establish verification coverage (see CLAUDE.md "Building and testing": full rebuild by default; a rebase that brought in only plainly non-interacting changes carries your green build forward), re-invoke this skill. Stop here; do not push a tree no verification covers.
 
 3. **Push the feature branch.** `git push -u origin <branch>`. On network failure (not on rejection), retry up to 4 times with 2s, 4s, 8s, 16s back-off. On non-network failure (rejection, hook failure), stop and report.
 
