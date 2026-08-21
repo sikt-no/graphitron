@@ -13,9 +13,11 @@ last-updated: 2026-08-21
 # withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms
 
 When this lands, `graphitron-model`'s test suite stops executing the fact schema's 1894 DDL statements
-420 times and executes them **four times**, once per test thread, resetting rows between cases
-instead. The module's test-class time falls from about 182 seconds to about 49, its wall clock from
-46.8 to roughly 14, and the full build loses about **33 seconds**. It is the first slice of R768, which
+once per case and executes them **four times in the funnel**, once per test thread, resetting rows
+between cases instead. Four classes stay out of scope and keep booting per case, which is 19 boots
+the change deliberately leaves alone, so the module goes from about 420 boots to about 23. Its
+test-class time falls from about 182 seconds to about 55, its wall clock from 46.8 to roughly 14,
+and the full build loses about **33 seconds**. It is the first slice of R768, which
 measured the same waste across four modules at 1051 boots and 395.8 seconds; this one takes the module
 where the waste is the highest share of the work and where it flows through a single helper, so the
 mechanism is proved once and cheaply before the other three modules adopt it.
@@ -38,7 +40,7 @@ against a booted in-memory store over 20 warm rounds.
 | per boot, measured alone | 138 ms |
 | module wall clock | 46.8 s |
 | module test-class time | 182.3 s |
-| **`TRUNCATE` across the clearable tables** (144 on 2026-08-21) | **0.85 ms** |
+| **`TRUNCATE` across the clearable tables** (144 when timed; 145 a day later) | **0.85 ms** |
 
 So boots are **73% of this module's test-class time**, and the replacement is **160 times cheaper**
 than the thing it replaces. The module is the reactor's clearest case: `graphitron` spends more
@@ -46,20 +48,29 @@ absolute time booting (146.5 s) but over a much larger suite, and its boots do n
 helper.
 
 Why the per-boot figures differ: 317 ms is a boot under four-way contention, which is the cost as
-actually paid; 138 ms is a boot with the box to itself. The saving projection below uses the in-situ
+actually paid; 138 ms is a boot with the box to itself. The saving projection uses the in-situ
 total, because that is what disappears.
+
+**Net of the out-of-scope classes, stated as arithmetic rather than as a claim.** Not all 133.0 s
+goes: the 19 boots the four direct-boot classes keep are 19 × 317 ms, about 6 s, and they stay. So
+the test-class figure is 182.3 − 133.0 + 6.0, about 55 s, not the 49 s a gross subtraction gives.
+The wall-clock and build figures are unaffected, because those 19 boots parallelise across the same
+four threads as everything else: 55.3 / 4 is still about 14 s against 46.8, and the build still
+loses about 33 s. This is the same fact as the two-part boot-count pin below, stated once in seconds
+and once as an assertion, and an earlier draft of this item got both wrong in the same direction by
+treating the out-of-scope boots as though they disappeared.
 
 ## The funnel, and it is one helper
 
 `SeededStore.withSeededStore(Consumer<DSLContext>)` opens `FactStores.inMemory()`, which is
 `GraphitronModelStore.open()`, in a try-with-resources that closes it when the body returns. Its
-graph-anchoring overload delegates to it. **158 call sites across 29 test classes** reach it on
+graph-anchoring overload delegates to it. **159 call sites across 30 test classes** reach it on
 2026-08-21, and 420 runtime boots come out.
 
 Why so many more boots than call sites, since the module declares no `@ParameterizedTest` at all:
 most classes wrap the call in a private per-class helper and every `@Test` goes through it. The
 extreme is `NodeIdInstructionTest`, whose 19 cases reach one `withSeededStore` site through
-`withCatalog`. The module holds 423 `@Test` methods, so the boot count is very nearly "one per
+`withCatalog`. The module holds 445 `@Test` methods, so the boot count is very nearly "one per
 case", which is the figure to re-derive at pickup rather than the site count.
 
 Four classes in the module boot directly instead, at seven sites, and every one of them has the boot or
@@ -73,8 +84,9 @@ would delete the coverage they exist for.
 
 A booted store holds rows in exactly two places outside the fact relations: the `meta_` family, whose
 authored rows the DDL seeds with an `INSERT`, and `store_stamp`. A reset clears every other base
-table (144 of them on 2026-08-21) and leaves those two alone. On a fresh boot every one of those is
-empty, which is what makes `TRUNCATE` over the whole list the right shape rather than a curated one.
+table (145 of them at the time of writing, 144 a day earlier) and leaves those two alone. On a fresh
+boot every one of those is empty, which is what makes `TRUNCATE` over the whole list the right shape
+rather than a curated one.
 `meta_materialize` is the only relation the DDL inserts into, so "empty apart from the two" is a
 property of the schema rather than a list to maintain. The count is derived from
 `INFORMATION_SCHEMA` at run time and the DDL is edited most days; treat any number written here as
@@ -110,7 +122,7 @@ per reset.
 `SET REFERENTIAL_INTEGRITY FALSE` is doing more here than waving off constraint checks, and an
 implementer will meet a comment that reads as though this plan cannot work. `Materializations`'
 javadoc says refreshes are `DELETE` rather than `TRUNCATE` because "H2 refuses to truncate a table
-any foreign key references", which is true of every one of these 144 tables. The refusal is
+any foreign key references", which is true of every one of these tables. The refusal is
 conditional on the flag: H2 asks whether referential integrity is on before it declines, so
 turning it off is what makes the truncate legal rather than merely unchecked. That is why the
 measured 0.85 ms is a real number and not a projection. Restore the flag afterwards. Leaving it
@@ -133,12 +145,14 @@ booted".
 That leaves one real fork, and it is where the truncate lives. Put it in **test sources**, as a
 package-private helper next to `withSeededStore` in `no.sikt.graphitron.model.test`, rather than as
 a method on `GraphitronModelStore`. `GraphitronModelStore` is the store's production bootstrap and a
-`reset()` on it would be a production surface with no production caller, which is the drift smell
-the principles name. `FactStores` is the wrong home for the other reason its own javadoc gives: it
-owns no lifetime and puts no rows in the store, and it is reached directly from four modules
-downstream of this one (40 sites on 2026-08-21: `graphitron` 30, `graphitron-mcp` 6,
-`graphitron-lsp` 2, `graphitron-maven-plugin` 2, the last of which is not one of the three this
-item defers). Another sighting rather than a value, but the direction of it is the point: whatever
+`reset()` on it would be a production surface with no production caller: a method the shipped API
+carries, that only tests reach, whose contract nothing in production holds it to. `FactStores` is
+the wrong home for the other reason its own javadoc gives: it owns no lifetime and puts no rows in
+the store, and it is reached directly from four modules downstream of this one (45 sites on
+2026-08-21: `graphitron` 35, `graphitron-mcp` 6, `graphitron-lsp` 2, `graphitron-maven-plugin` 2,
+the last of which is not one of the three this item defers). Another sighting rather than a value,
+and it has already drifted once inside this item's own review; the direction of it is the point:
+whatever
 this change touches, `FactStores.inMemory()` keeps opening and closing a fresh store, because
 every one of those sites depends on it doing exactly that. No downstream module calls
 `withSeededStore`, which is what confines this change to one module.
@@ -151,9 +165,20 @@ rather than relying on nobody trying. Mind the one legitimate case that looks li
 `withSeededStore(String graphName, ...)` reaches the store through the one-argument form, so the flag
 has to sit below that delegation or the whole graph-anchored half of the suite trips it.
 
-**Nothing else in the fixture changes.** `withSeededStore(String graphName, ...)` keeps delegating; the
-seed helpers, `SEED_SOURCE`, and `derive` are untouched. No test class changes, which is the property
-that makes this slice worth doing first: every call site and every class adopts it by not changing.
+**No test class changes**, which is the property that makes this slice worth doing first: every call
+site and every class adopts it by not changing. `withSeededStore(String graphName, ...)` keeps
+delegating; the seed helpers, `SEED_SOURCE`, and `derive` are untouched.
+
+**One fixture file does change, and it is not a Java source.**
+`graphitron-model/src/test/resources/junit-platform.properties` argues the module's concurrency
+safety on exactly the property this change removes: "the store mints a UUID-named H2 database per
+call, so two classes share no rows". After this change two classes on one thread do share a store,
+and what keeps them apart is the reset plus the leak guard rather than the absence of sharing. That
+file is where a contributor goes to find out why the module is safe to run classes concurrently, so
+leaving it stating the old reason is leaving the wrong answer in the one place someone will look.
+Rewrite the paragraph to the new reason; the four `junit.jupiter.*` settings themselves do not
+change. Its boot-count sighting ("152 of them") is stale already and should go rather than be
+updated, since the counter this item adds is where that number now lives.
 
 ## Tests
 
@@ -166,9 +191,10 @@ three it does not.
 Both decisions this section left to the reviewer are settled. Both stay cheap, and the second is
 settled against the cheaper of the two readings for a reason the section gives.
 
-*Always on, not property-gated.* The arithmetic answers the cost worry the draft raised: the whole
-144-statement truncate is 0.85 ms, about 6 µs a statement, so a same-shape existence probe per table
-is single-digit milliseconds a reset and a couple of seconds across the suite, against 133 s saved. A
+*Always on, not property-gated.* The arithmetic answers the cost worry the draft raised: the
+whole-list truncate is 0.85 ms over 144 statements, about 6 µs each, so a same-shape existence
+probe per table is single-digit milliseconds a reset and a couple of seconds across the suite,
+against 133 s saved. A
 nightly-only guard is also a weaker enforcer than this module's own standard asks for: an invariant
 exists only while something fails when it breaks, and one that breaks for a working day before
 anything notices has already let the bad case land. If the measured always-on price turns out to
@@ -177,7 +203,7 @@ trip) before reaching for the property.
 
 *One derivation per store, and the guard covers every base table rather than only the cleared
 ones.* Derive the whole base-table set once when the thread boots its store, and with it the
-partition the clear turns on: the 144 it truncates, and the three the boot fills and it leaves
+partition the clear turns on: the ones it truncates, and the three the boot fills and it leaves
 alone. The clear takes its half of the partition; the guard takes the whole set. For a cleared
 table the guard asserts empty, and for one of the three it asserts the row count that table held
 at boot.
@@ -198,44 +224,64 @@ agreement with the first.
 Safe here because no test in the funnel executes DDL, so the set derived at boot stays the set:
 the only class in the module that creates or drops relations is `MaterializationOrderTest`, which
 boots its own stores. The price over the shared-list version is three row counts a reset on top of
-the 144 existence probes.
+the existence probes.
 
-**A boot-count pin.** The mechanism's whole claim is a number, so a test should assert it: after the
-suite, boots per JVM are bounded by the thread count plus the four direct-boot classes' own opens. That
-turns the counter from a throwaway instrument into a standing invariant, and it is what catches a
-future helper that opens a store per case again. It needs the counter to become a real, if internal,
-observable rather than the env-guarded patch the reactor-wide measurement used.
+**A boot-count pin, over a two-part counter.** The mechanism's whole claim is a number, so a test
+should assert it, and the assertion that has teeth is an equality rather than a ceiling. That needs
+the instrument to separate the two populations of boot, because they are governed by different
+invariants and one number cannot state both.
 
-The counter belongs in test sources for the same reason the truncate does, and specifically on
-`FactStores`: a count only a test reads is as much a production surface with no production caller
-as a `reset()` on `GraphitronModelStore` would be. `FactStores` being the wrong home for the
-truncate does not make it the wrong home for this. The objection there was that it owns no
-lifetime and puts no rows in a store, and a counter does neither of those things; what it needs is
-to sit where every boot passes, which is what `FactStores` is. Every boot in the module does pass
-there: the funnel through `inMemory()`, and all seven direct-boot sites in the four out-of-scope
-classes through `inMemory()` or `fileBacked`.
+*The funnel half.* A counter incremented where the thread-confined holder boots its store, plus the
+distinct thread identities that booted. **Assert those two are equal.** This is the invariant the
+item exists to protect: exactly one boot per thread that booted, and it fails loudly the moment a
+future helper opens a store per case again.
 
-The pin is per surefire JVM and per module, which is also what lets the other three modules read
-their own count off the same instrument when they adopt this.
+Pin that equality rather than the literal four. `fixed.parallelism=4` sizes a `ForkJoinPool`, and
+that pool may add compensation threads when a task blocks, so the number of threads that ever run a
+class is not guaranteed to be four; `boots == 4` can flake on a machine nobody reproduces it on,
+where one-boot-per-booting-thread cannot.
 
-Pin the invariant, not the literal four. `fixed.parallelism=4` sizes a `ForkJoinPool`, and that pool
-is allowed to add compensation threads when a task blocks, so the count of threads that ever run a
-class is not guaranteed to be exactly four and a `boots == 4` assertion can flake on a machine that
-never reproduces it. What is exactly true is one boot per thread that booted: count the distinct
-thread identities alongside the boots and assert the two are equal, plus a generous ceiling well
-under the case count. That fails just as loudly on a helper that boots per case, and cannot fail on a
-pool that grew.
+*The total half.* A counter on `FactStores`, incremented by every boot in the module: the funnel's,
+and the four out-of-scope classes' through `inMemory()` or `fileBacked`. Assert a ceiling on it,
+generous and well under the case count. Its job is to catch a *new* store-opening path appearing
+outside the funnel, which the funnel counter by construction cannot see.
 
-**The existing suite is the correctness acceptance.** All 29 funnel classes and the module's 423
-cases pass unchanged, and they pass with the classes shuffled: sequential-order dependence is exactly
+The out-of-scope classes boot per case, not per class, which is what makes the partition necessary
+rather than tidy: `MaterializationOrderTest` 8, `MaterializeRegistryGateTest` 6, `StoreReaderTest` 3,
+`CommentRenderabilityGateTest` 2, so **19 boots survive this change by design**. A single counter
+therefore reads about 23 against at most 4 booting threads, and any equality over it is false on the
+first run. A single *ceiling* over the same 23 is stable but goes quiet about the thing the pin
+exists for: it cannot tell "the funnel regressed to a boot per case" from "an out-of-scope class
+grew four more cases", so it decays into a number somebody periodically raises, which is the shape
+of an invariant that has stopped failing when it breaks.
+
+*What the partition costs, stated rather than hidden.* It weakens the argument for `FactStores` as
+the single home: the total lives there because every boot passes there, but the equality lives on
+the holder because only the holder knows which boots are the funnel's. Two counters, each owned by
+the thing it counts, is defensible on its own terms and is what this plan picks; a reader who
+expected one instrument should know it became two and why. For the three modules that adopt this
+later, the split is closer to a feature than a tax: `FactStores`' total is the portable half and
+works there unchanged, while a funnel equality is meaningful only once a module has a funnel to
+assert it over.
+
+Both counters are test-source observables for the same reason the truncate is: a count only a test
+reads would be a production surface with no production caller if it sat on `GraphitronModelStore`.
+`FactStores` is the right home for the total even though it was the wrong home for the truncate,
+and the two objections do not transfer: the truncate objection was lifetime and rows, and a counter
+owns neither.
+
+The pin is per surefire JVM and per module.
+
+**The existing suite is the correctness acceptance.** Every funnel class and every case in the
+module passes unchanged, and they pass with the classes shuffled: sequential-order dependence is exactly
 the defect a shared store can introduce, and JUnit's random class-order option is the cheapest way to
 hunt it. Run it three times, not once.
 
 Verification of the win is `mvn test -pl :graphitron-model -Plocal-db` before and after, alternated,
-plus the boot counter reporting one per thread rather than 420. Expect the module near 14 s against
-46.8 s. Absolute seconds differ per machine; one boot per thread does not. The 33 s is off the
-build's *sequential* total; under `-T 1C` this module may not be on the critical path, so measure the
-module rather than reading a build-wide number off it.
+plus the funnel counter reporting one boot per booting thread rather than one per case. Expect the
+module near 14 s against 46.8 s. Absolute seconds differ per machine; one boot per booting thread
+does not. The 33 s is off the build's *sequential* total; under `-T 1C` this module may not be on
+the critical path, so measure the module rather than reading a build-wide number off it.
 
 ## Roadmap entries
 
@@ -334,6 +380,33 @@ elsewhere that the saving is computed net of the out-of-scope classes; it is not
 inside its own "about", so this is not separately blocking, but the corrected pin and the corrected
 projection are the same fact stated twice.
 
+> *Author, session_013HS6GmX25Ne6MM27xoruJ6:* addressed, taking the **two-part counter** arm. The
+> pin section is rewritten around it: a funnel counter on the thread-confined holder carrying the
+> equality (one boot per booting thread), and a total on `FactStores` carrying a ceiling. Your
+> framing of the choice decided it. A ceiling that cannot separate "the funnel regressed to a boot
+> per case" from "an out-of-scope class grew four more cases" is a number somebody periodically
+> raises, and this module's own standard is that an invariant exists only while something fails
+> when it breaks. The equality is the half with teeth, so it gets the population it is true over.
+>
+> The cost you named is now in the body rather than left implicit: the split does weaken
+> `FactStores` as *the* single home, and the section says so in those words. One thing I think cuts
+> the other way and the plan now argues it: for the three modules adopting this later, the total on
+> `FactStores` is the portable half and works unchanged, while a funnel equality is only meaningful
+> once a module has a funnel. So they inherit one instrument plus an optional second, not a
+> two-part tax.
+>
+> Your 19 reproduces exactly, and I recounted rather than trusting it: `MaterializationOrderTest` 8
+> cases through one `withStore`, `MaterializeRegistryGateTest` 6 through one, `StoreReaderTest` 3
+> across 3 `FactStores` sites, `CommentRenderabilityGateTest` 2 sites over 3 cases. The number is in
+> the plan body now, with the per-class breakdown, so the next reader does not have to re-derive it.
+>
+> The projection is corrected in the same pass, since you are right that it is one fact: 19 × 317 ms
+> is about 6 s that stays, so the test-class figure is 182.3 − 133.0 + 6.0, about 55 s rather than
+> 49. The headline and a new paragraph under the measurement table both carry it, and the paragraph
+> shows the arithmetic so the claim and the number cannot drift apart again. Wall clock and the 33 s
+> build saving are unchanged, because those 19 boots parallelise over the same four threads: 55.3/4
+> is still about 14 s. "The saving is computed net of them" is now true rather than aspirational.
+
 ### Non-blocking
 
 * `graphitron-model/src/test/resources/junit-platform.properties` argues the module's concurrency
@@ -352,3 +425,37 @@ projection are the same fact stated twice.
   across 30 classes rather than 158 across 29, 433 `@Test` methods rather than 423, and 45
   `FactStores` sites downstream rather than 40. The seven direct-boot sites and the four class names
   are exact.
+
+> *Author, session_013HS6GmX25Ne6MM27xoruJ6:* all three landed, none of them left as "non-blocking
+> so skipped".
+>
+> The `junit-platform.properties` point I think is the strongest of the three and it is now a plan
+> section of its own rather than a clause. "Nothing else in the fixture changes" was the wrong
+> heading, because that file is precisely where a contributor goes to ask why the module is safe to
+> run classes concurrently, and after this change its stated reason ("the store mints a UUID-named
+> H2 database per call, so two classes share no rows") is the old one. The heading is now "No test
+> class changes", with a following paragraph naming the file, quoting the sentence that stops being
+> true, and saying what replaces it: sharing confined to a thread, kept safe by the reset and the
+> leak guard. The four `junit.jupiter.*` settings do not change. I also flagged its stale "152 of
+> them" boot sighting for deletion rather than update, since the counter this item adds is where
+> that number now lives.
+>
+> The drift-smell citation is gone. You are right that the principles define it as a copy that can
+> diverge from its source, which is not what a test-only method on a production class is. The
+> sentence now says the thing directly, that it would be a method the shipped API carries, only
+> tests reach, and nothing in production holds to its contract, which needed no citation to stand
+> up. The two-lists argument in `## Tests` keeps its use of the term, which is the correct one.
+>
+> Sightings refreshed, and one correction back to you: the call-site count is **159 across 30
+> classes**, not 189. `grep -rn withSeededStore` returns 189 because it also matches the 30 static
+> imports, one per funnel class; filtering to actual calls gives 159. The class count of 30 is
+> right and was 29. The others reproduce: 145 clearable tables (the DDL gained a table during this
+> review, 148 `CREATE TABLE` now against 147), 445 `@Test` methods rather than your 433, which has
+> moved again since you counted, and 45 downstream `FactStores` sites. I have updated the body to
+> current values where the number is load-bearing and removed the pinned count where it is not, so
+> "144 existence probes" is now "the existence probes" and similar. The one place I deliberately
+> left a stale number is the title and the measurement table, which record a dated measurement
+> rather than a sighting and should not be rewritten as the tree moves.
+>
+> Back to you for the next pass. Nothing above the `++##++ Reviewer findings` heading was written by
+> a reviewer, so the delta is this commit's plan-body diff alone.
