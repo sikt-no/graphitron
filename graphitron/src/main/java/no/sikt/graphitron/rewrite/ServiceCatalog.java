@@ -5,6 +5,7 @@ import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInputType;
 import graphql.schema.GraphQLInputValueDefinition;
 import graphql.schema.GraphQLList;
+import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLType;
@@ -1133,11 +1134,18 @@ class ServiceCatalog {
     }
 
     /**
-     * The decode a {@code @nodeId} slot receives, or {@code null} when this binding is not one: the
-     * leaf carries no {@code @nodeId}, or it carries one naming no node type. A {@code null} return
-     * sends the caller to {@link #argExtraction}, which is what every binding did before this arm
-     * existed. The caller has already established the carrier, so the path here is the name match's
-     * own single segment and the declaration is the argument itself.
+     * The decode a {@code @nodeId} slot receives, or {@code null} when this binding is not one,
+     * which now means one thing only: the leaf carries no {@code @nodeId} at all. A {@code null}
+     * return sends the caller to {@link #argExtraction}, which is what every binding did before this
+     * arm existed. The caller has already established the carrier, so the path here is the name
+     * match's own single segment and the declaration is the argument itself.
+     *
+     * <p>Both authored forms resolve here, and that is the point of the split below rather than an
+     * incidental convenience: {@code @nodeId(typeName: T)} names its target and a bare
+     * {@code @nodeId} inherits one through {@link #inferNodeTypeAtSlot}. A bare directive falling
+     * through to {@link #argExtraction} would meet the wire-coercion gate, which admits the
+     * signature that receives the base64 and refuses the one that receives the key with a message
+     * prescribing the decode the schema had already written, so an author had no signature left.
      *
      * <p>Two destinations, and which one is the same question the fact model's
      * {@code intent_node_id_decode} asks: a slot typed as the generated record of the node type's own
@@ -1160,11 +1168,18 @@ class ServiceCatalog {
         if (declaration == null || !declaration.hasAppliedDirective(BuildContext.DIR_NODE_ID)) {
             return null;
         }
-        var typeName = BuildContext.argString(declaration, BuildContext.DIR_NODE_ID, BuildContext.ARG_TYPE_NAME);
-        if (typeName.isEmpty()) {
-            return null; // a bare @nodeId names no target here; the argMapping family judges it
+        var written = BuildContext.argString(declaration, BuildContext.DIR_NODE_ID, BuildContext.ARG_TYPE_NAME);
+        String nodeTypeName;
+        if (written.isPresent()) {
+            nodeTypeName = written.get();
+        } else {
+            var inferred = inferNodeTypeAtSlot(fieldDef);
+            if (inferred.error() != null) {
+                return new ArgExtraction.Rejected(Rejection.structural(site + ": " + inferred.error()));
+            }
+            nodeTypeName = inferred.typeName();
         }
-        var recordDecode = ctx.resolveNodeIdRecordDecode(typeName.get());
+        var recordDecode = ctx.resolveNodeIdRecordDecode(nodeTypeName);
         if (recordDecode instanceof BuildContext.NodeIdRecordDecode.Rejected rejected) {
             return new ArgExtraction.Rejected(Rejection.structural(site + ": " + rejected.message()));
         }
@@ -1174,12 +1189,37 @@ class ServiceCatalog {
                 resolved.encoderClass(), resolved.typeId(), resolved.keyColumns(), resolved.table(),
                 GraphQLTypeUtil.isNonNull(declaration.getType())));
         }
-        return ctx.resolveDecodeHelperForType(typeName.get())
+        String named = nodeTypeName;
+        return ctx.resolveDecodeHelperForType(named)
             .<ArgExtraction>map(decode ->
                 new ArgExtraction.Resolved(new CallSiteExtraction.ThrowOnMismatch(decode)))
             .orElseGet(() -> new ArgExtraction.Rejected(Rejection.structural(site
-                + ": @nodeId(typeName: \"" + typeName.get() + "\") names no @node type, so no decode"
+                + ": @nodeId(typeName: \"" + named + "\") names no @node type, so no decode"
                 + " helper exists to turn the wire id into a key value")));
+    }
+
+    /**
+     * The node type a bare {@code @nodeId} names at this carrier, inferred the way the fact model's
+     * {@code TARGET_TABLE_NODE_TYPE} basis infers it: from the table the consuming field's own
+     * return type binds, then the one node type over that table. The consuming field is the slot's
+     * scope here, an argument's predicate binding on the table its field returns, so the two arrive
+     * at the same table from the two directions and the walk and the store spell one rule.
+     *
+     * <p>A return type binding no table is the third absence, and it is a refusal rather than a
+     * fall-through. The directive is written, so the author asked for a decode; there is no table to
+     * infer the target from, and the answer an author needs is that {@code typeName:} settles it.
+     * Falling through instead would land on the wire-coercion gate, whose message prescribes the
+     * {@code @nodeId} decode the schema already wrote.
+     */
+    private BuildContext.InferredNodeType inferNodeTypeAtSlot(GraphQLFieldDefinition fieldDef) {
+        var returnType = fieldDef == null ? null : GraphQLTypeUtil.unwrapAll(fieldDef.getType());
+        String returnTypeName = returnType instanceof GraphQLNamedType named ? named.getName() : null;
+        return ctx.tableNameForTypeName(returnTypeName)
+            .map(ctx::inferNodeTypeOverTable)
+            .orElseGet(() -> new BuildContext.InferredNodeType(null,
+                "@nodeId without typeName: cannot infer node type, the field's return type"
+                + (returnTypeName == null ? "" : " '" + returnTypeName + "'")
+                + " binds no table to inherit a target from. Add typeName: explicitly."));
     }
 
     /**

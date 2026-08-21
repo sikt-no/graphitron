@@ -1291,13 +1291,62 @@ class BuildContext {
      * subtype must match the parent's expected record class.
      */
     Optional<Class<?>> recordClassForTypeName(String typeName) {
+        return tableNameForTypeName(typeName).flatMap(catalog::findRecordClass);
+    }
+
+    /**
+     * The SQL table name a GraphQL type binds through its {@code @table} directive, defaulting to
+     * the lower-cased type name where the directive names none. Empty when the type is not in the
+     * schema, is not an object type, or carries no {@code @table} at all.
+     *
+     * <p>The name only, deliberately: callers that want the resolved {@link TableRef} route it
+     * through {@link #resolveTable}, and callers that want the node types over it route it through
+     * {@link #inferNodeTypeOverTable}, neither of which needs the catalog to have answered first.
+     */
+    Optional<String> tableNameForTypeName(String typeName) {
         if (typeName == null) return Optional.empty();
         var raw = schema.getType(typeName);
         if (!(raw instanceof GraphQLObjectType obj) || !obj.hasAppliedDirective(DIR_TABLE)) {
             return Optional.empty();
         }
-        String tableName = argString(obj, DIR_TABLE, ARG_NAME).orElse(typeName.toLowerCase());
-        return catalog.findRecordClass(tableName);
+        return Optional.of(argString(obj, DIR_TABLE, ARG_NAME).orElse(typeName.toLowerCase()));
+    }
+
+    /** Either the node type a bare {@code @nodeId} inferred, or why the inference could not pick one. */
+    record InferredNodeType(String typeName, String error) {}
+
+    /**
+     * The node type a bare {@code @nodeId} names, inferred from the table the slot resolves
+     * against. Resolved over node types rather than over every {@code @table}-annotated object
+     * type: bare {@code @nodeId} means "node id, target inherited", so the question is "which
+     * <em>node</em> backs this table", and answering the wider question lets a nesting-projection
+     * type sharing the same rows count as a candidate.
+     *
+     * <p>One rule with two absences, both permanent rather than a shim's: no node over the table
+     * and several over it are each a message naming {@code typeName:} as the fix. The rule is the
+     * fact model's {@code TARGET_TABLE_NODE_TYPE} basis, and the callers differ only in how they
+     * arrive at the table, which is what keeps the walk and the store one rule rather than two:
+     * {@link NodeIdLeafResolver} arrives from the leaf's containing table and
+     * {@link ServiceCatalog} from the consuming field's own return table.
+     */
+    InferredNodeType inferNodeTypeOverTable(String tableName) {
+        var candidates = nodes.forTable(tableName).stream()
+            .map(NodeType::name)
+            .sorted()
+            .toList();
+        if (candidates.isEmpty()) {
+            return new InferredNodeType(null,
+                "@nodeId without typeName: cannot infer node type — no node type"
+                + " maps to table '" + tableName + "'."
+                + " Add typeName: explicitly.");
+        }
+        if (candidates.size() > 1) {
+            return new InferredNodeType(null,
+                "@nodeId without typeName: is ambiguous — multiple node types map to table '"
+                + tableName + "': " + String.join(", ", candidates)
+                + ". Specify typeName: explicitly.");
+        }
+        return new InferredNodeType(candidates.getFirst(), null);
     }
 
     /**

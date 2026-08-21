@@ -26,6 +26,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * which is the invariant this directive exists to keep: a consumer neither receives nor supplies the
  * wire format.
  *
+ * <p>Both authored spellings are here, and the bare one for the reason the explicit one is: it used
+ * to fall through to the same gate, so the author who wrote {@code @nodeId} with no
+ * {@code typeName:} was left with the signature that receives the base64 and a refusal prescribing
+ * the decode already written. The bare form inherits its target from the table the consuming field's
+ * own return type binds, which is the rule the fact model states for it, so the two spellings resolve
+ * to one decode and the inference's two absences are refusals naming {@code typeName:}.
+ *
  * <p>What the store still owns is unchanged and not re-asserted here: whether the key column's type
  * and the parameter's agree, and whether the key's arity fits a slot holding one value, both being
  * facts the walk cannot read before capture. Those live in
@@ -85,6 +92,94 @@ class NodeIdProducerSlotDecodePipelineTest {
     void aParameterNoCensusCanTypeStillReceivesTheDecode() {
         assertThat(slotTransform(schema("Film", "getFilmsByPrimitiveKey")))
             .isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
+    }
+
+    /**
+     * The bare spelling of the same directive resolves the same way. There is no {@code typeName:} to
+     * read, so the target is inherited from the table the consuming field's own return type binds,
+     * which is the rule the fact model states as its {@code TARGET_TABLE_NODE_TYPE} basis. Both
+     * spellings therefore reach the decode, which is what "one rule, two spellings" has to mean here:
+     * a bare directive used to fall through to the wire-coercion gate, whose admitted signature took
+     * the base64 and whose refused one drew a message prescribing the decode already written.
+     */
+    @Test
+    void aBareDirectiveInheritsItsTargetFromTheFieldsOwnReturnTable() {
+        var leaf = slotTransform("""
+            interface Node { id: ID! }
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+                title: String
+            }
+            type Query {
+                film: Film
+                films(key: ID! @nodeId): [Film!]!
+                    @service(service: {className: "%s", method: "getFilmsByIntegerKey"})
+            }
+            """.formatted(STUB));
+
+        assertThat(leaf).isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
+        var decode = ((CallSiteExtraction.NodeIdDecodeKeys) leaf).decodeMethod();
+        assertThat(decode.methodName()).isEqualTo("decodeFilm");
+        assertThat(decode.outputColumnShape()).extracting(ColumnRef::sqlName)
+            .containsExactly("film_id");
+    }
+
+    /**
+     * The inference's ambiguity, at this coordinate. Two node types over the return type's table are
+     * two different key tuples, so the answer is the one the author has to give rather than a pick,
+     * and the message names {@code typeName:} as the way to give it.
+     */
+    @Test
+    void aBareDirectiveOverATableTwoNodeTypesShareNamesTypeNameAsTheFix() {
+        var field = TestSchemaHelper.buildSchema("""
+            interface Node { id: ID! }
+            type FilmA implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+                title: String
+            }
+            type FilmB implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+            }
+            type Query {
+                filmB: FilmB
+                films(key: ID! @nodeId): [FilmA!]!
+                    @service(service: {className: "%s", method: "getFilmsByIntegerKey"})
+            }
+            """.formatted(STUB)).field("Query", "films");
+
+        assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        assertThat(((GraphitronField.UnclassifiedField) field).rejection().message())
+            .contains("is ambiguous")
+            .contains("FilmA, FilmB")
+            .contains("Specify typeName: explicitly");
+    }
+
+    /**
+     * The third absence, and the one that is this coordinate's own rather than the inference's: the
+     * consuming field returns a scalar, so there is no table to inherit a target from. A refusal
+     * rather than a fall-through, because the directive is written and the gate below would answer it
+     * by prescribing the decode the schema already asked for.
+     */
+    @Test
+    void aBareDirectiveOnAFieldReturningNoTableIsRefusedRatherThanHandedTheOpaqueId() {
+        var field = TestSchemaHelper.buildSchema("""
+            interface Node { id: ID! }
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+                title: String
+            }
+            type Query {
+                film: Film
+                title(key: ID! @nodeId): String
+                    @service(service: {className: "%s", method: "getTitleByStringKey"})
+            }
+            """.formatted(STUB)).field("Query", "title");
+
+        assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        assertThat(((GraphitronField.UnclassifiedField) field).rejection().message())
+            .contains("cannot infer node type")
+            .contains("binds no table to inherit a target from")
+            .contains("Add typeName: explicitly");
     }
 
     /**

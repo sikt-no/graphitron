@@ -347,38 +347,17 @@ final class NodeIdLeafResolver {
 
     /**
      * Resolves the {@code typeName:} for a {@code @nodeId} directive on a leaf, either by reading
-     * the explicit argument or, when absent, by looking up the {@code @table}-annotated object
-     * type that backs {@code containingTable}. Disambiguation rules apply only to the inference
-     * path: zero or multiple matching object types both yield a friendly diagnostic.
+     * the explicit argument or, when absent, by inferring it from {@code containingTable} through
+     * {@link BuildContext#inferNodeTypeOverTable}, which is where the inference rule and its two
+     * diagnostics live so that this coordinate and the producer-parameter one spell one rule.
      */
     private TypeNameResult inferTypeName(GraphQLDirectiveContainer leaf, TableRef containingTable) {
         Optional<String> explicit = argString(leaf, DIR_NODE_ID, ARG_TYPE_NAME);
         if (explicit.isPresent()) {
             return new TypeNameResult(explicit.get(), null);
         }
-        // Resolved over node types, not over every @table-annotated object type. Bare @nodeId means
-        // "node id, target inherited", so the question it asks is "which *node* backs this table",
-        // and answering the wider question let a nesting-projection @table type sharing the same
-        // rows count as a candidate. Both arms below are this inference's permanent absence and
-        // ambiguity rejections rather than a shim's, so their messages name the domain they now
-        // resolve over.
-        var candidates = ctx.nodes.forTable(containingTable.tableName()).stream()
-            .map(no.sikt.graphitron.rewrite.model.GraphitronType.NodeType::name)
-            .sorted()
-            .toList();
-        if (candidates.isEmpty()) {
-            return new TypeNameResult(null,
-                "@nodeId without typeName: cannot infer node type — no node type"
-                + " maps to table '" + containingTable.tableName() + "'."
-                + " Add typeName: explicitly.");
-        }
-        if (candidates.size() > 1) {
-            return new TypeNameResult(null,
-                "@nodeId without typeName: is ambiguous — multiple node types map to table '"
-                + containingTable.tableName() + "': " + String.join(", ", candidates)
-                + ". Specify typeName: explicitly.");
-        }
-        return new TypeNameResult(candidates.get(0), null);
+        var inferred = ctx.inferNodeTypeOverTable(containingTable.tableName());
+        return new TypeNameResult(inferred.typeName(), inferred.error());
     }
 
     /**

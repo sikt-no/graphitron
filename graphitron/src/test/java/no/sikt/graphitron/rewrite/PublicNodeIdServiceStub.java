@@ -8,7 +8,7 @@ import org.jooq.Result;
  * Service methods whose parameter is named for a {@code @nodeId} argument, for the fixtures whose
  * subject is the parameter a decoded node id lands in. Four spellings of one signature, differing
  * only in the parameter's type, so a fixture picks the one whose type either agrees with the node
- * key or does not.
+ * key or does not, and one whose return type binds no table at all.
  *
  * <p>Public and separate from {@link TestServiceStub}, and both halves of that are load-bearing. The
  * classpath census takes public top-level classes only, so a package-private stub is invisible to it
@@ -47,6 +47,14 @@ public class PublicNodeIdServiceStub {
 
     /** The parameter typed as a primitive, which the census reads no class at. */
     public static Result<FilmRecord> getFilmsByPrimitiveKey(int key) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * A producer whose own return type binds no table, so a bare {@code @nodeId} at its argument has
+     * no table to inherit a target from and the inference has to say so.
+     */
+    public static String getTitleByStringKey(String key) {
         throw new UnsupportedOperationException();
     }
 }

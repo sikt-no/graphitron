@@ -1,7 +1,7 @@
 ---
 id: R728
 title: "@nodeId encode and decode become store relations, and an instruction the generator drops fails the build"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 3
 theme: nodeid
@@ -1443,6 +1443,20 @@ has both an emitter (the projected-binding path) and two refusals (`BARE_NODE_ID
 `KEY_COLUMN_TYPE_MISMATCH`); minting either here would be a second copy with a precedence between them,
 which is how one family ends up with two answers that agree until one changes.
 
+**The second rework increment: the bare spelling resolves by the same rule.** The first increment
+gated the new arm on a written `typeName:`, so a bare `@nodeId` at the same carrier still fell through
+to the type gate and still had no signature an author could write. Both authored forms now resolve
+here. A bare directive inherits its target from the table the consuming field's own return type binds,
+then the one node type over that table, which is the store's `TARGET_TABLE_NODE_TYPE` basis arrived at
+from the other direction: the argument's predicate binds on the table its field returns, so
+`intent_argument_scope_table` and the walk reach the same table and the two spell one rule. The rule
+itself moves to `BuildContext.inferNodeTypeOverTable`, which `NodeIdLeafResolver` now reads instead of
+carrying its own copy, so "which node backs this table" and the two absences that answer it have one
+wording. A third absence is this coordinate's own: a return type binding no table has nothing to
+inherit, and that is refused naming the type and `typeName:`, where the store is silent for want of a
+scope table. Refusing a written directive the walk cannot resolve is the direction the population
+section argues for, an instruction the population misses being a coordinate that stays silent.
+
 ## Tests
 
 Behaviour, at the tier that can observe it. No test asserts that a relation agrees with the classified
@@ -1584,13 +1598,19 @@ on the wire.
   seventh class, `NodeIdProducerSlotDecodePipelineTest`, and its cases are shaped by what the review
   found: each asserts the schema *builds* and reads the slot's own transform, because a case asserting
   only that some family reported nothing passes equally well against a red build, which is exactly how
-  the named-parameter carrier stayed broken behind two green remedy cases. Six cases: the two remedies
+  the named-parameter carrier stayed broken behind two green remedy cases. Nine cases, six of them from
+the first rework round and three from the second, which found the same defect in the bare spelling of
+the directive that the six all wrote explicitly. The six: the two remedies
   the refusals prescribe, now resolving to the decode their shapes ask for; the parameter typed as the
   wire format, which classifies to the decode and fails on the store's type verdict rather than
   passing base64 through; the parameter no census can type, which still gets its decode on arity
   alone; an argument carrying no `@nodeId`, which keeps its wire-coercion-checked `Direct` read, since
   the stand-aside is keyed on the directive and not on the site; and the bean member, whose deferral
-  names both remedies an author has.
+  names both remedies an author has. The three: a bare `@nodeId` inheriting its target from the
+  consuming field's own return table and reaching the same decode the explicit spelling reaches; the
+  ambiguity over a table two node types share, refused naming both; and a consuming field returning a
+  scalar, refused naming the absent table, that being the one absence this coordinate owns rather than
+  the shared inference.
 * **Store tier**, for the two relations whose whole content is a fork. The destination and the
   Java-slot fork are pinned together in one class over the seeded store, because each is defined as
   the population the other does not claim: a case asserting only the destination would pass equally
@@ -2096,7 +2116,8 @@ the fact model's own operand. The emitters follow at both coordinates, the root'
 invariant throws. The paragraph that excused the deferral is corrected rather than deleted: its
 argument was sound for the mapped carrier it was reasoning about and does not carry to this one, and
 saying which is what stops the same excuse being reached for again. `NodeIdProducerSlotDecodePipelineTest`
-carries the build-completes cases, six of them, and the finding's point about the two remedy cases is
+carries the build-completes cases, six from this round and three more once the second round found the
+same fall-through under the bare spelling, and the finding's point about the two remedy cases is
 recorded in the Tests section as the reason that class asserts what it asserts. The rework increment
 paragraph under Stages states the whole of what shipped.
 
@@ -2231,3 +2252,44 @@ already does, so the two spell one rule; or, if bare at this carrier is meant to
 refusal that says so, in place of a message prescribing the decode the schema already wrote. Either
 way one case in `NodeIdProducerSlotDecodePipelineTest`, whose six cases all name `typeName:`
 explicitly, which is why nothing there could have caught this.
+
+**Author's response.** Taken as reported, and taken the first way: the walk now resolves the bare
+form's target as the store does, so the two spell one rule rather than two. `nodeIdSlotExtraction`
+no longer returns `null` on a directive naming no `typeName:`; it infers, from the table the
+consuming field's own return type binds, then the one node type over that table. That is the store's
+`TARGET_TABLE_NODE_TYPE` basis arrived at from the other direction, an argument's predicate binding
+on the table its field returns being what makes `intent_argument_scope_table` answer with that same
+table, so the agreement is by construction and not by comment.
+
+The inference rule now lives in one place rather than two. `BuildContext.inferNodeTypeOverTable` is
+where "which node backs this table" is answered and where the two absences that answer it are
+worded, and `NodeIdLeafResolver.inferTypeName` reads it rather than carrying its own copy. Both
+callers differ only in how they arrive at the table, which is what one rule two coordinates share
+has to look like if it is not to drift.
+
+A third absence belongs to this coordinate rather than to the inference, and it is the reviewer's
+second remedy applied where the first cannot reach: a consuming field whose return type binds no
+table has nothing to inherit from, and that is refused, naming the return type and `typeName:` as
+the fix. Falling through there is exactly what the finding objected to, the gate below answering a
+written directive with a message prescribing the decode already written. The store is silent at that
+shape, having no scope table and so no instruction row, so the walk is the stricter of the two by
+one case; strictness in the direction of a written directive not being dropped is the direction the
+population section argues for.
+
+The fall-through comment is gone with the fall-through. What stands in its place says why both
+spellings resolve here, which is the fact a reader needs at that line.
+
+Three cases in `NodeIdProducerSlotDecodePipelineTest`, and the class javadoc now says the bare form
+is a subject rather than leaving nine cases to imply it: the bare directive inheriting `Film` from
+the return table and reaching `decodeFilm` on `film_id`; the ambiguity over a table two node types
+share, refused naming both and `typeName:`; and the scalar-returning field, refused naming the
+absent table. `PublicNodeIdServiceStub` grew the one signature the third needs, a producer whose own
+return type binds nothing.
+
+Verified at the tier the finding was measured at, plus the reactor: `NodeIdProducerSlotDecodePipelineTest`
+9 cases, `NodeIdPipelineTest` 82, `NodeIdLeafResolverTest` 12, `ServiceCatalogTest` 49 and
+`NodeIdDecodeDefectsTest` 7 all green, and `mvn install -Plocal-db` green across all 14 modules,
+6,288 tests with no failures, the compilation and execution tiers and the docs render included.
+The manual's producer-parameter section carries the bare spelling with its example and its two
+refusals, inference rule (b) in the argument table now names this coordinate, and the
+`typeName:`-is-required constraint says what "neither rule fires" means here.
