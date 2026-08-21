@@ -59,6 +59,11 @@ reasoned about. The first four findings framed the fork; the last five settled i
   `org.h2.table.TableLinkConnection`.
 - **`READONLY` is enforced at the console.** An `INSERT` through psql fails with `The database is
   read only`, so the debug door cannot corrupt the rows the session is reasoning from.
+- **An ephemeral port is fully supported and self-reporting.** `-pgPort 0` binds a free port, and
+  `getPort()`, `getURL()` and `getStatus()` all report the port actually bound (measured: 32973), so
+  the session can name it in a log line without pre-binding a socket to guess a free number. H2's own
+  status string reads `PG server running at pg://localhost:<port> (only local connections)`, which
+  independently confirms that omitting `-pgAllowOthers` binds loopback.
 - **pgjdbc cannot connect at all.** The driver's startup queries include `SET extra_float_digits = 2`,
   which H2 rejects as a syntax error, and no combination of `assumeMinServerVersion`,
   `preferQueryMode=simple` or `options=-c ...` gets past it. psql (libpq) works; JDBC clients that go
@@ -111,6 +116,10 @@ cache trouble costs warmth and never correctness.
      that is the whole access control this door gets.
   5. Any failure closes what it opened and throws `IllegalStateException` naming the port and the
      reason.
+- `console(0)` is the ordinary call, not a special case: `StoreConsole.port()` reports
+  `Server.getPort()` (the port bound, never the port asked for), so a caller that passed 0 learns the
+  real port from the handle and a caller that pinned one gets the same number back. Nothing in the
+  class treats 0 as a sentinel.
 - Javadoc on both members carries the two measured constraints a future reader will otherwise
   rediscover: PG mode is a creation-time property (hence a second database rather than a flag on this
   one), and pgjdbc cannot speak to H2's PG server (hence psql, not a driver).
@@ -119,16 +128,26 @@ cache trouble costs warmth and never correctness.
 
 - New `StoreConsoleBinding` for a `<storeConsole>` POM block, in the shape of `DevDatabaseBinding`:
   `<enabled>`, `<port>`, with `GRAPHITRON_DEV_STORE_CONSOLE` and `GRAPHITRON_DEV_STORE_CONSOLE_PORT`
-  overriding the POM on each field. Default port 5435, clear of a real local PostgreSQL on 5432.
+  overriding the POM on each field.
+- **The port defaults to ephemeral, and that is the shape to encourage.** An unset `<port>` means 0,
+  the session binds whatever is free, and the log line carries the port H2 reports back. This is the
+  right default rather than a convenience: several dev sessions in one workspace is the ordinary case
+  in this reactor (one per module under test), a fixed default would make the second session's console
+  fail to open on a port the first one holds, and a well-known port on a developer machine is exactly
+  the kind of listener that gets found by something other than its owner. A pinned `<port>` stays
+  available for a developer who wants a stable connect line, and it is a deliberate choice rather than
+  what they get by not thinking about it.
 - `DevMojo`: a `@Parameter StoreConsoleBinding storeConsole` field, a package-private
   `resolveStoreConsole()` reconciler mirroring `resolveDevDatabase()` (env wins per field, absent
   means off, no console and no port bound), and a `StoreConsole storeConsoleHandle` field left
   package-private for the same reason `sessionStore` is.
 - Start it in `execute()` immediately after `Materializations.refreshAll(sessionStore.dsl())` and
   before the watchers, so the linked relations include the refreshed materializations and the console
-  is up before the first round lands. Log the paste-ready line, for example
-  `graphitron:dev: fact-store console on 127.0.0.1:5435 (216 relations, read-only). psql -h localhost
-  -p 5435 -U <user> -d <db>`.
+  is up before the first round lands. Log the paste-ready line off `StoreConsole.port()`, so an
+  ephemeral port is as usable as a pinned one, for example
+  `graphitron:dev: fact-store console on 127.0.0.1:32973 (216 relations, read-only). psql -h localhost
+  -p 32973 -U <user> -d <db>`. The port is in the log rather than only in the handle because with the
+  ephemeral default the log line is the only place a developer can read it.
 - Close it in `cleanup()` **before** `lspStore`, `mcpStore` and `sessionStore`: the link connection
   points at the store, so the console goes first.
 
@@ -137,19 +156,27 @@ cache trouble costs warmth and never correctness.
 `docs/manual/reference/mojo-configuration.adoc`, a new row beside `devDatabase`:
 
 > `storeConsole` / `StoreConsoleBinding` / (none): Read-only SQL console onto the dev session's own
-> fact store (`dev` goal only). `<enabled>` opens it, `<port>` moves it off the default 5435;
-> `GRAPHITRON_DEV_STORE_CONSOLE` and `GRAPHITRON_DEV_STORE_CONSOLE_PORT` override the POM. The
-> console binds `127.0.0.1` only, serves reads, and refuses writes. Absent or disabled, no port is
-> bound and the session is unchanged.
+> fact store (`dev` goal only). `<enabled>` opens it. The port is ephemeral unless you pin one with
+> `<port>`, and the session logs the port it bound together with the `psql` command for it; pin a port
+> only if you want a stable connect line, and expect a pinned port to collide when you run more than
+> one dev session. `GRAPHITRON_DEV_STORE_CONSOLE` and `GRAPHITRON_DEV_STORE_CONSOLE_PORT` override the
+> POM. The console binds `127.0.0.1` only, serves reads, and refuses writes. Absent or disabled, no
+> port is bound and the session is unchanged.
 
 `docs/manual/how-to/dev-loop.adoc`, a new section "Query the fact store while the session runs":
 
-> Turn the console on, and `graphitron:dev` prints a connect line at start-up:
+> Turn the console on, and `graphitron:dev` prints a connect line at start-up, naming the port it
+> picked:
 >
 > ```bash
 > GRAPHITRON_DEV_STORE_CONSOLE=true mvn graphitron:dev
-> psql -h localhost -p 5435 -U <user> -d <db>
+> # graphitron:dev: fact-store console on 127.0.0.1:32973 (216 relations, read-only).
+> #                psql -h localhost -p 32973 -U <user> -d <db>
+> psql -h localhost -p 32973 -U <user> -d <db>
 > ```
+>
+> The port is a fresh free one each start, so two dev sessions never fight over it; copy it from the
+> log. Pin `<port>` in the POM if you would rather retype the same command every time.
 >
 > What you get is the session's live rows, read-only: a query after a save sees that round's facts.
 > Use `information_schema.tables` and `information_schema.columns` to find your way around rather than
@@ -173,17 +200,24 @@ If either draft does not read simply at implementation time, the design is wrong
   relation name at implementation time).
 - `close()` shuts the console database down and frees the port: a second console opens on the same
   port afterwards.
+- `console(0)` binds a free port and `port()` reports the bound one, never 0. Two consoles opened at
+  0 against one store get different ports and both answer, which is the multi-session case the default
+  exists for.
 
 `graphitron-model`, `StoreConsolePsqlTest`, the protocol pin, guarded by an assumption on the `psql`
 binary so a contributor without it skips and CI (which already uses `psql` in `rewrite-build.yml`)
-runs it: shell `psql -c "select ..."` at an ephemeral port and assert the returned row text. Its
+runs it: open the console at port 0, shell `psql -p <port()> -c "select ..."`, and assert the returned
+row text. The ephemeral port is what makes this test safe to run in a parallel reactor at all, since a
+pinned test port would collide with a developer's own session. Its
 javadoc records that pgjdbc cannot replace the shell-out, with the `SET extra_float_digits` reason, so
 nobody swaps it for a driver connection and concludes the console is broken.
 
 `graphitron-maven-plugin`, `DevMojoTest`, which already injects an in-memory store:
 
 - Default: no console, no port bound, no log line.
-- Enabled: the console opens against the injected store and the log line carries the psql command.
+- Enabled with no `<port>`: the console opens against the injected store on an ephemeral port, and the
+  log line carries that port in the psql command rather than a placeholder or a 0.
+- Enabled with a pinned `<port>`: the console binds exactly that port.
 - `cleanup()` closes the console, and closes it before the store.
 - A console that fails to open degrades to a warning naming the reason, and the session continues.
 
@@ -200,5 +234,5 @@ nobody swaps it for a driver connection and concludes the console is broken.
 
 ## Open questions
 
-- Should `<port>` accept `0` for an ephemeral port named in the log line? It removes the collision
-  question for developers running several sessions, at the cost of a port that changes each start.
+None outstanding. The port question is settled above: ephemeral is the default and the encouraged
+shape, a pinned port is available for a developer who wants a stable connect line.
