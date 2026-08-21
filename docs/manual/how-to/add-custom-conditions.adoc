@@ -4,7 +4,7 @@
 
 The xref:../reference/directives/condition.adoc[`@condition`] directive hands one piece of a generated `WHERE` clause off to a developer-supplied static method. Use it when the predicate isn't a plain `column = ?` (range filters, regex, date arithmetic, vendor-specific operators, multi-column boolean shapes) or when the column you want to filter on isn't reachable through `@field`. This recipe walks through writing the Java method, attaching the directive at each of the three SDL sites (argument, field, input field), and rebinding parameter names when GraphQL and Java conventions diverge. For the override cascade rules (stacking, suppression, the legacy-divergence trap), read xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] after this recipe.
 
-The recipe assumes you've read xref:external-code.adoc[How-to: Wire external Java code] for the plugin-classpath and FQCN mechanics shared across all directives that point at Java code.
+The recipe assumes you've read xref:external-code.adoc[How-to: Wire external Java code] for the class-nameability and FQCN mechanics shared across all directives that point at Java code.
 
 == Write the Java method
 
@@ -38,7 +38,7 @@ Three things matter:
 * *The remaining parameters bind by name.* The Java parameter named `filmId` receives the GraphQL argument named `filmId`. Names must agree; the rewrite reads them through reflection. Compile the Java module with `-parameters` so the parameter names survive into the bytecode (the example fixtures' `pom.xml` carries `<parameters>true</parameters>` for this reason).
 * *Return `DSL.noCondition()` to opt out.* When the GraphQL argument is null or absent, return the no-op so the predicate is structurally present but contributes nothing to the `WHERE` clause. This is the contract that lets optional filter inputs degrade cleanly to "unconstrained".
 
-Add the carrying artifact to the rewrite plugin's `<dependencies>` block, not your consumer module's compile classpath; the plugin reflects on the class via `Class.forName(...)` at code-generation time. xref:external-code.adoc[How-to: Wire external Java code] covers the plugin-classpath setup in full.
+Declare the carrying artifact in your consumer module's own `<dependencies>`; the generated resolvers call the class directly, and the generator rejects a schema naming a class the module does not declare. xref:external-code.adoc#make-the-class-nameable[Make the class nameable] covers the rule in full, including the migration off the withdrawn `<plugin><dependencies>` route.
 
 == Attach the directive at one of three sites
 
@@ -170,7 +170,7 @@ Two consequences worth pinning:
 
 == Constraints
 
-* `condition.className:` and `condition.method:` are both required for a meaningful directive. A `@condition` whose reference resolves to no method surfaces with the diagnostic `field '<name>' @condition: ...` or `argument '<name>' @condition: ...`. The class must be on the rewrite plugin's classpath, not the consumer module's.
+* `condition.className:` and `condition.method:` are both required for a meaningful directive. A `@condition` whose reference resolves to no method surfaces with the diagnostic `field '<name>' @condition: ...` or `argument '<name>' @condition: ...`. The class must be nameable per xref:external-code.adoc#make-the-class-nameable[Make the class nameable]: this module, a reactor sibling once declared, or a dependency this module declares itself.
 * The first Java parameter is always the surrounding `Table<?>`. Resolve column references through `table.field(...)` rather than the static jOOQ-table handle, the alias-bearing accessor keeps the predicate anchored to the calling fetcher's `FROM` clause.
 * Parameter names bind GraphQL argument names. Compile the carrying module with `<parameters>true</parameters>` so the names survive reflection. Diverging names are reconciled by `argMapping:`, not by reordering the method.
 * `DSL.noCondition()` is the explicit no-op; return it for null or absent inputs. Returning `null` is undefined and currently throws at the predicate-folding site.
@@ -183,7 +183,7 @@ Two consequences worth pinning:
 
 * xref:../reference/directives/condition.adoc[`@condition`] is the directive's reference page; the parameter list, the `ExternalCodeReference` shape, and the per-site rejection messages live there.
 * xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the override flag, the implicit-vs-explicit cascade, the input-carrier rules for nested inputs, and the regression-fenced divergence from the legacy generator's "outer owns everything" semantics.
-* xref:external-code.adoc[How-to: Wire external Java code] covers the rewrite-plugin classpath, the FQCN requirement, and the `argMapping:` syntax that `@condition` shares with `@service`.
+* xref:external-code.adoc[How-to: Wire external Java code] covers class nameability, the FQCN requirement, and the `argMapping:` syntax that `@condition` shares with `@service`.
 * xref:../reference/directives/field.adoc[`@field(name: ...)`] supplies the implicit equality predicate that `@condition` either stacks with or replaces.
 * xref:handle-services.adoc[How-to: Handle services] covers the alternative when the *whole* fetcher is custom code, `@condition` is for adjusting a single predicate inside an otherwise generated query.
 * A xref:../reference/directives/lookupKey.adoc[`@lookupKey`] *argument* is exempt from the implicit-predicate path; `@condition` on a lookup-key arg runs alongside the `VALUES + JOIN` lookup but does not interact with it. The exemption is the key argument's, not the coordinate's: non-key arguments on a lookup field take the implicit predicate as usual, and it composes in the `WHERE` beside the lookup join.

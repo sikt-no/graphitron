@@ -4,7 +4,7 @@
 
 The xref:../reference/directives/externalField.adoc[`@externalField`] directive hands one slot of a generated `SELECT` clause off to a developer-supplied static method that returns a jOOQ `Field<T>`. Reach for it when the value isn't a plain column and isn't reachable through `@field` or `@reference`: computed booleans, derived strings, vendor-specific SQL expressions, or `Field.convert(...)` lifts that fabricate a typed record from a single column. The method is invoked at code-generation time; its returned `Field<T>` is inlined under an alias into the parent table's generated `$project()` projection, and a `ColumnFetcher` reads the alias from the result `Record` at request time.
 
-This recipe walks through writing the Java method, attaching the directive, and the three return shapes the rewrite recognises (scalar `Field<T>`, lifted `Field<TableRecord<?>>`, lifted `Field<CustomJavaRecord>`). For the plugin-classpath and FQCN mechanics shared with `@service`, `@condition`, and the other external-code directives, read xref:external-code.adoc[How-to: Wire external Java code] first.
+This recipe walks through writing the Java method, attaching the directive, and the three return shapes the rewrite recognises (scalar `Field<T>`, lifted `Field<TableRecord<?>>`, lifted `Field<CustomJavaRecord>`). For the class-nameability and FQCN mechanics shared with `@service`, `@condition`, and the other external-code directives, read xref:external-code.adoc[How-to: Wire external Java code] first.
 
 == Write the Java method
 
@@ -36,7 +36,7 @@ The parameter is checked against the parent at build time, so *one helper cannot
 * *The return type's `T` matches the GraphQL scalar.* The rewrite trusts the declared return type at the reflection site; the GraphQL field's runtime type must be readable from the projected `T`. A `Field<Boolean>` for a `Boolean` field, a `Field<String>` for a `String`, and so on, with the lift forms below for class-backed (record-typed) fields.
 * *The method runs at code-generation time, not at request time.* The `Field<T>` you return is inlined into the SQL once and reused for every fetcher invocation. Don't capture per-request state in the method; reach for xref:handle-services.adoc[`@service`] when the value depends on the request.
 
-Add the carrying artifact to the rewrite plugin's `<dependencies>` block, not your consumer module's compile classpath; the plugin reflects on the class via `Class.forName(...)` at code-generation time. xref:external-code.adoc[How-to: Wire external Java code] covers the plugin-classpath setup in full.
+Declare the carrying artifact in your consumer module's own `<dependencies>`; the generated resolvers call the class directly, and the generator rejects a schema naming a class the module does not declare. xref:external-code.adoc#make-the-class-nameable[Make the class nameable] covers the rule in full, including the migration off the withdrawn `<plugin><dependencies>` route.
 
 == Attach the directive
 
@@ -155,13 +155,13 @@ The wrapper types in the two lift forms above are class-backed: the `@externalFi
 * `method:` is optional. When omitted, the rewrite uses the GraphQL field name as the static-method name. Set `method:` only when the two diverge.
 * `argMapping:` on the reference is structurally inert and is rejected at parse time. `@externalField` consumes no GraphQL-argument-bound parameters, the method's only formal parameter is the parent table.
 * The static method must return `Field<T>` where `T` matches the GraphQL scalar, or one of the lift forms (`Field<TableRecord<?>>`, `Field<CustomJavaRecord>`) when the field's GraphQL type is class-backed (the method's `Field<...>` return type supplies the binding).
-* The carrying class must be on the rewrite Maven plugin's classpath, not the consumer module's compile classpath. Reflection failures surface as `external field reference could not be resolved -- <reflection error>`. xref:external-code.adoc[How-to: Wire external Java code] covers the plugin-classpath setup.
+* The carrying class must be nameable: this module, a reactor sibling once declared, or a dependency this module declares itself; see xref:external-code.adoc#make-the-class-nameable[Make the class nameable]. Resolution failures surface as `external field reference could not be resolved -- <reason>`, the reason naming the coordinate to declare when the class sits in an undeclared dependency.
 * Combining `@externalField` with a `@reference` path (the condition-join lift form) is not yet supported; the build rejects this with a deferred-validation error.
 
 == See also
 
 * xref:../reference/directives/externalField.adoc[`@externalField`] is the directive's reference page; the parameter list, the `ExternalCodeReference` shape, and the per-site rejection messages live there.
-* xref:external-code.adoc[How-to: Wire external Java code] covers the rewrite plugin's classpath setup, the FQCN requirement, and the method-name default.
+* xref:external-code.adoc[How-to: Wire external Java code] covers class nameability, the FQCN requirement, and the method-name default.
 * xref:result-types.adoc[How-to: Result-type variants] covers the class-backed parent decision tree, including the canonical-accessor inference that auto-derives batch keys for `Field<CustomJavaRecord>` lifts.
 * xref:../reference/directives/reference.adoc[`@reference`] is the FK-driven counterpart; choose it when the value comes from a chain of catalog joins, choose `@externalField` when the value is a custom expression or a typed lift.
 * xref:handle-services.adoc[How-to: Handle services] covers the alternative when the field's value depends on the request rather than on a column expression.

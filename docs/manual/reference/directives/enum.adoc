@@ -33,7 +33,7 @@ enum Mood @enum(enumReference: {className: "no.sikt.graphitron.codereferences.du
 
 Each member of the GraphQL `Mood` enum is paired with the same-named constant on `MoodEnum` at code-generation time. At read time the converter produces a `MoodEnum` instance from the column's stored representation; at write time the Java constant is converted back. Mismatches between the GraphQL enum members and the Java enum's constants surface as a build-time validation error.
 
-`className:` must be a fully-qualified class name; the carrying artifact must be on the rewrite Maven plugin's classpath (`<dependencies>` of the `<plugin>` block).
+`className:` must be a fully-qualified class name; the carrying artifact must be a dependency the module declares itself, per xref:../../how-to/external-code.adoc#make-the-class-nameable[Make the class nameable] (a `<plugin><dependencies>` block does not make a class nameable).
 
 == Constraints
 
@@ -47,6 +47,6 @@ Each member of the GraphQL `Mood` enum is paired with the same-named constant on
 
 * xref:field.adoc[`@field`] on `ENUM_VALUE` is the alternative axis: a per-member literal binding (`@field(name: "DB_VALUE")`) without a converter.
 * `ExternalCodeReference` is the shared shape across xref:service.adoc[`@service`], `@externalField`, and `@enum`. Only `className`/`method` carry meaning here.
-* xref:../../how-to/external-code.adoc[How-to: Wiring external Java code] covers the rewrite plugin's classpath setup and the FQCN requirement.
+* xref:../../how-to/external-code.adoc[How-to: Wiring external Java code] covers class nameability and the FQCN requirement.
 
 xref:../index.adoc[← Reference index]

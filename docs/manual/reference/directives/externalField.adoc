@@ -89,7 +89,7 @@ type FilmCardWrapper {
 * `method:` is optional. When omitted, the rewrite uses the GraphQL field name as the static-method name. Set `method:` only when the two diverge.
 * `argMapping:` on the `reference` is structurally inert and rejected at parse time. `@externalField` consumes no GraphQL-argument-bound parameters.
 * The static method must return `Field<T>` where `T` matches the GraphQL scalar, or one of the lift forms (`Field<TableRecord<?>>`, `Field<CustomJavaRecord>`) when the field's GraphQL type is class-backed.
-* `className:` must be a fully-qualified class name reachable on the rewrite Maven plugin's classpath (declare the carrying artifact under `<dependencies>` of the plugin's `<plugin>` block). Reflection failures surface as `external field reference could not be resolved — <reflection error>`.
+* `className:` must be a fully-qualified class name the module may name: its own classes, a reactor sibling once declared, or a dependency it declares itself (see xref:../../how-to/external-code.adoc#make-the-class-nameable[Make the class nameable]; a `<plugin><dependencies>` block does not make a class nameable). Resolution failures surface as `external field reference could not be resolved — <reason>`.
 * Combining `@externalField` with a `@reference` path (the condition-join lift form) is not yet supported; the build rejects this with a deferred-validation error.
 
 == See also
@@ -98,6 +98,6 @@ type FilmCardWrapper {
 * A class-backed type is the natural target for the `Field<TableRecord<?>>` and `Field<CustomJavaRecord>` lift forms; the lift's element type supplies the backing class. See xref:record.adoc[`@record`] for why the directive that used to declare it is now ignored.
 * xref:field.adoc[`@field(name: ...)`] disambiguates the GraphQL-field-vs-SQL-column alias when names collide.
 * xref:../../how-to/computed-fields.adoc[How-to: Computed fields with `@externalField`] is the operational recipe; it walks the `(ParentTable) -> Field<T>` signature, the three return shapes (scalar, `Field<TableRecord<?>>`, `Field<CustomJavaRecord>`), and the canonical fixtures.
-* xref:../../how-to/external-code.adoc[How-to: Wire external Java code] covers the rewrite plugin's classpath setup, the FQCN requirement, and the method-name default shared with `@service`, `@condition`, and the other external-code directives.
+* xref:../../how-to/external-code.adoc[How-to: Wire external Java code] covers class nameability, the FQCN requirement, and the method-name default shared with `@service`, `@condition`, and the other external-code directives.
 
 xref:../index.adoc[← Reference index]
