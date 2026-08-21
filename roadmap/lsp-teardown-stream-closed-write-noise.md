@@ -28,8 +28,11 @@ keystroke, so at any given moment several are part-answered.
 
 **Stream-closed write.** An attempt to write a JSON-RPC message onto a connection
 whose socket is already gone. lsp4j has a name for this condition,
-`JsonRpcException.indicatesStreamClosed`, and consults it on the *read* side to exit
-its reader loop quietly. The write side never asks.
+`JsonRpcException.indicatesStreamClosed`, and already consults it in two of the three
+places it could. `StreamMessageProducer` consults it to end its read loop quietly.
+`RemoteEndpoint.notify` consults it to pick a log level for a failed *notification*,
+INFO rather than WARNING. The response path is the one that never asks, and that is
+where the `SEVERE` traces come from.
 
 ## What actually happens
 
@@ -62,15 +65,24 @@ a connection ends: `GraphitronLanguageServer.exit` says "lsp4j drives process
 lifetime; nothing to clean up", which is true for stdio and false for `DevServer`,
 where the process and the shared `Workspace` both outlive any one connection. Between
 a disconnect and the next reconnect, the workspace still holds the dead connection's
-`publishDiagnosticsForRecalculate`. `publishDiagnostics` is a notification, so it
-writes synchronously and throws `JsonRpcException` straight into whichever thread
-fired the recalculation, which in the dev loop is a Maven thread rather than an lsp4j
-one.
+`publishDiagnosticsForRecalculate`, and any mutation in that window runs it.
 
-Both defects are in scope here, as two ordered deliverables. They share one cause,
-teardown leaving per-connection state reachable, and splitting them would leave the
-item claiming a console is quiet while a known-wrong reference is still live: the
-wrapper makes the stale listener harmless, and only clearing the slot makes it correct.
+Nothing crashes. `publishDiagnostics` is a notification, and `RemoteEndpoint.notify`
+catches its own write failure, so the recalculating thread never sees one. The cost is
+three smaller things instead. Every failed publish logs one record carrying the
+throwable, which prints as a console stack trace for the reason given under "What
+'fixed' means" below. The drain that produced those diagnostics did real work first,
+walking each queued file and running a store read, for an answer with no recipient. And
+a dead connection's service stays reachable from live shared state, which is the kind of
+thing that is merely untidy until the day something else starts depending on the slot.
+
+Both defects are in scope here, as two ordered deliverables, but they are two distinct
+costs rather than one problem and its mitigation. Deliverable 1 silences the console,
+including the notification records, since a wrapper that swallows the failure inside
+`consume` means `notify` never catches anything to log. It does nothing about the wasted
+drain or the stale reference. Deliverable 2 addresses those and would not, on its own,
+quiet a single `SEVERE` trace. Shipping only the first would leave the item quiet and
+still wrong; shipping only the second would leave it correct and still noisy.
 
 ## What "fixed" means
 
@@ -78,14 +90,26 @@ A developer detaching an editor from `graphitron:dev` and reattaching sees nothi
 the console. A write that fails for any reason other than the peer being gone is still
 loud, and no other behaviour changes: every message that can be delivered still is.
 
+That observable is worth grounding, because it is the whole target and it depends on how
+lsp4j's records reach the console. lsp4j logs through `java.util.logging`, and the tree
+has no `jul-to-slf4j` bridge, no `SLF4JBridgeHandler` install and no
+`logging.properties` anywhere, so those records go to JUL's default console handler,
+which is enabled at INFO and whose `SimpleFormatter` appends the stack trace of any
+record carrying a throwable. That is why the response path's `SEVERE` records print as
+traces, and it is also why the notification path's INFO records do: same handler, same
+formatter, quieter label. Both were confirmed by emitting a record of each level with a
+throwable under a default JUL setup rather than reasoned about from the levels alone.
+The practical consequence for this item is that "quiet the console" cannot be satisfied
+by attending only to `SEVERE`.
+
 ## Deliverable 1: the write side asks the question lsp4j already answers
 
 The seam is `Launcher.Builder.wrapMessages`. It is applied to the outgoing
 `StreamMessageConsumer` (inside `createRemoteEndpoint`) and to the incoming consumer
 (inside `create`), so one wrapper per launcher covers every message in both
 directions. Verified against the 0.24.0 bytecode rather than assumed, because a
-wrapper applied to only one of the two would fix the visible symptom and leave the
-`publishDiagnostics` push still throwing.
+wrapper applied to only one of the two would quiet the `SEVERE` traces and leave the
+`publishDiagnostics` push logging a trace of its own at INFO.
 
 The wrapper catches a `consume` failure, consults
 `JsonRpcException.indicatesStreamClosed`, and on a true verdict logs at debug and
@@ -93,9 +117,11 @@ returns; anything else rethrows unchanged. lsp4j's own predicate is the whole po
 it already enumerates the conditions that mean "the peer is gone" (`Socket closed`,
 `Connection reset`, `Broken pipe`, `Stream closed`, `Pipe closed`,
 `ClosedChannelException`, `InterruptedIOException`) and recurses through
-`JsonRpcException` causes itself, and `ConcurrentMessageProcessor` already trusts it on
-the read side. Matching on messages by hand here would be a second, worse copy of a
-predicate that ships in the dependency.
+`JsonRpcException` causes itself, and lsp4j already trusts it in `StreamMessageProducer`
+and in `RemoteEndpoint.notify`. Matching on messages by hand here would be a second,
+worse copy of a predicate that ships in the dependency. Note what this makes the change:
+not teaching lsp4j a new judgement, but applying the one it already makes in two places
+out of three to the third.
 
 One judgement to get right, and the main thing a reviewer should push on: the wrapper
 must not widen into a general write-error swallow. The boundary is exactly the
@@ -115,6 +141,11 @@ being removed is lsp4j's, logged through `java.util.logging`, while the debug li
 replacing it goes through slf4j like the rest of our code.
 
 ## Deliverable 2: teardown stops leaving a dead connection reachable
+
+This one is hygiene and wasted work, not crash prevention, and is worth doing on those
+terms rather than inflated ones. It buys back the drain's walk and store read in the
+disconnect window, and it stops a dead connection's service being reachable from the
+shared workspace.
 
 `Workspace.setRecalculateListener` is a single-slot setter with a no-op default, so the
 minimal correct fix is a compare-and-clear: teardown clears the slot only if the
@@ -145,11 +176,17 @@ Three pins, deliberately split by what each can prove:
    launcher pair over a real socket, with a local service method that blocks on a latch:
    the client sends the request, the test closes the socket, the test releases the latch,
    the handler completes, and lsp4j attempts the write into a socket that is already
-   gone. Assert no `SEVERE` record reaches a `java.util.logging.Handler` attached to the
-   `org.eclipse.lsp4j.jsonrpc.RemoteEndpoint` logger. The latch is what makes this worth
-   writing: "send a request and close fast" would pass vacuously whenever the response
-   happened to win the race, and a test that can silently prove nothing is worse here
-   than no test.
+   gone. Attach a `java.util.logging.Handler` to the
+   `org.eclipse.lsp4j.jsonrpc.RemoteEndpoint` logger and assert no record arrives
+   carrying a throwable, at any level. Asserting on `SEVERE` alone would be the wrong
+   pin: a record's level is what labels it, not what makes it print a trace, so a
+   `SEVERE`-only assertion would pass while the notification path still filled the
+   console at INFO. Add a companion case that drives a notification write (a
+   `publishDiagnostics` push after the socket is gone) rather than a response, since that
+   is the path an exception-handler-shaped fix would have missed entirely.
+   The latch is what makes this worth writing: "send a request and close fast" would pass
+   vacuously whenever the response happened to win the race, and a test that can silently
+   prove nothing is worse here than no test.
 3. **The listener slot**, in `graphitron-lsp` against a `Workspace` directly: a
    registration cleared by its own owner clears, and a registration cleared after a
    second owner has taken the slot does not.
@@ -162,12 +199,16 @@ in flight at close time.
 
 ## Alternatives considered
 
-**`Launcher.Builder.setExceptionHandler`.** Also suppresses the four traces, and is a
-smaller diff. Rejected: it only covers the request/response path, so a
-`publishDiagnostics` push to a dead client still throws into the caller's thread, and
-the throwable arriving there is a `CompletionException` wrapping the `JsonRpcException`,
-which `indicatesStreamClosed` does not unwrap. That would mean hand-rolled unwrapping to
-get a narrower fix.
+**`Launcher.Builder.setExceptionHandler`.** Also suppresses the four `SEVERE` traces,
+and is a smaller diff. Rejected because it is scoped to the request/response path: a
+`publishDiagnostics` push to a dead client is a notification, handled by
+`RemoteEndpoint.notify` before any exception handler is consulted, so it keeps logging
+its own stack trace at INFO and "sees nothing in the console" is not met. There is a
+second, smaller reason to prefer the consumer seam even for the path this does cover:
+the throwable reaching an exception handler is a `CompletionException` wrapping the
+`JsonRpcException`, and `indicatesStreamClosed` recurses only through `JsonRpcException`
+causes, so this route needs hand-rolled unwrapping where `wrapMessages` sees the
+exception raw.
 
 **A multi-listener registry on `Workspace`.** The honest shape if several editors ever
 attach at once, since a single slot already means last-connection-wins. Rejected as out
@@ -223,3 +264,18 @@ dead per-connection state held live), re-derive the two-deliverable coupling and
 `StreamMessageProducer`, not `ConcurrentMessageProcessor` (which hosts the loop that
 runs it). One-word fix while revising. Everything else checked out against the tree
 and the 0.24.0 bytecode; the verification narrative is in this round's commit message.
+
+**Addressed (author, round 1).** Both findings confirmed independently before revising:
+`RemoteEndpoint.notify`'s catch of `Exception` around `out.consume` reads exactly as
+described in the bytecode, and the read-side consult greps to `StreamMessageProducer`
+alone. The notification-path cost is restated in terms of what actually happens (a
+logged record per failed publish, a drain's walk and store read spent on an answer with
+no recipient, a dead service reachable from shared state), the two-deliverable coupling
+is re-derived as two distinct costs rather than a defect and its mitigation, and the
+`setExceptionHandler` rejection now rests on the notification path lying outside its
+scope, keeping the `CompletionException` point only as the secondary reason it is. The
+observable in "What 'fixed' means" is grounded rather than asserted: the tree has no JUL
+bridge or `logging.properties`, and a record carrying a throwable prints a stack trace
+under the default handler at INFO as well as `SEVERE`, which was confirmed by emitting
+one. Coverage pin 2 changed as a result, from a `SEVERE`-only assertion to any record
+carrying a throwable, plus a notification-path case.
