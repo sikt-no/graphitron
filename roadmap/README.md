@@ -32,7 +32,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R728` | @nodeId encode and decode become store relations, and an instruction the generator drops fails the build | In Progress | 2026-08-20 <sub>created 2026-08-19</sub> | [plan](nodeid-effective-at-every-coordinate.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-20 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
-| `R744` | TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion | In Review | 2026-08-20 | [plan](scatter-test-syncs-on-mid-pin-connect-event.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
@@ -630,7 +629,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R550` [**Pin around the Quarkus ArC unused-bean removal flake**](quarkus-arc-removal-flake.md) — Backlog, bug
 - `R554` [**Retire the generated-body string-scan helpers in TypeSpecAssertions**](generated-body-string-assertion-helpers.md) — Backlog, test-quality
 - `R669` [**RootLauncherRendererTest asserts on generated body strings**](renderer-test-code-string-sweep.md) — Backlog, tech-debt
-- `R744` [**TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion**](scatter-test-syncs-on-mid-pin-connect-event.md) — In Review, bug
 - `R774` [**The discriminator typed-bind render-tier code-string pins duplicate what the SQL baselines already pin**](discriminator-bind-render-tier-code-string-pins.md) — Backlog, tech-debt
 - `R136` [**Execution-tier coverage for FK-target/NodeType-keyColumns permutation**](nodeid-fk-permutation-execution-tier.md) — Backlog, validation
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation
