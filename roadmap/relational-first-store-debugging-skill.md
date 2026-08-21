@@ -1,7 +1,7 @@
 ---
 id: R770
 title: "A skill that makes store slowness a database question first, not a Java one"
-status: Ready
+status: In Review
 bucket: dx
 priority: 3
 theme: tooling
@@ -330,6 +330,69 @@ the item does get is two existing gates and one named acceptance:
   cold session without reading anything it does not point at, it is not finished. This is the same
   standard the item applies to R728's findings: a methodology that has not been run once is a
   claim, not a procedure.
+
+## Implementation notes: three departures from the plan above
+
+**The lever hierarchy's numbers are not written, and the plan was wrong to ask for them.** The
+implementation bullet above asks for "the measured pair of one registration worth 1:23 against
+another costing 2:33" on the page. Both halves of that pair are deltas computed against a single
+reactor run of 7:37 that R728 discarded, and R728's body says so in terms: three repeats put that
+module at 2:39, 2:43 and 2:48, five runs across code differing by at most one registration spanned
+1:10 to 2:48, and "reading a registration's cost off a reactor pair has now been wrong four times".
+R765's body quotes the pair without carrying that retraction. Writing it onto a gated durable page
+would have made this item's own posture section, which exists to say that a reactor total is not
+evidence, contradict the page it points at. The rung is written on its mechanism instead, that a
+captured fact has no refresh to pay for at all, which needs no reactor pair and is the half of the
+argument that was never in question. The endpoint arithmetic under the push-down rule is unaffected:
+those are per-relation isolation timings, which is the measurement the posture section endorses.
+
+**The two extraction rules are written in the opposite order to the bullet list.** The plan lists
+the inlined-`WITH` rule before the expression-key rule and asks for them adjacent. They are adjacent,
+with the mechanism rule first and the two extraction cases distinguished immediately after it, because
+the `WITH` control only means anything once the reader knows what the join key does. The requirement
+the plan actually stated, that the page not read as two rules contradicting each other, is met by the
+paragraph that names the distinction outright.
+
+**The `EXPLAIN ANALYZE` recipe is corrected rather than copied.** The recipe in
+`roadmap/build-wall-clock-guardrail.md` renders the result with `.fetch()`, and the dry run below
+found that this prints a formatted table which truncates the plan column to about fifty characters:
+the scan counts, which are the entire point, are invisible, and it reads as an empty plan rather than
+as a truncation. The skill takes the plan as a string and filters it. That correction belongs in the
+guardrail item's paragraph too if it outlives this one.
+
+## Acceptance dry run
+
+Run before this item moved to In Review, on the terms the Tests section states: one relation the
+registry does not cover, followed from step 1, against a real capture of the sakila example's own
+4111-line schema against the sakila jOOQ catalog through `CapturedStore.ofCatalog`. The probe was a
+throwaway test method and is not committed.
+
+The first subject was chosen the way step 3 says to choose one, off `report-inline-multiplicity`'s
+ranking, and it refuted itself: `intent_argmapping_projection_defect`, second-heaviest in the schema
+at 765 static instantiations, answers in 1.2 s with no rows. That is the metric's stated standing
+arriving as a measurement rather than as a claim, and the honest verdict is that it is not a suspect.
+
+The second subject is a live finding. `intent_field_column_table`, fifth in the ranking at 533,
+takes **151 seconds to return 116 rows** on that population. Nine of its children timed in
+isolation: `intent_argmapping_key_column_candidate` 0.75 s, `intent_argmapping_binding_leaf` and
+`intent_field_accessor_hop` about 27 ms, and the remaining six between 0 and 7 ms, four of them
+empty. So the control that matters here refuted the hypothesis anyone would start from: no child is
+the term, and there is nothing underneath it worth registering. The plan says what the term is
+instead. It carries 807 scan nodes and 1.37 MB of text, and its scan counts are not one large number
+but the same middling number repeated, 5700 twice and then 4148 a dozen times over. That is the
+inlining rule in a plan: one relation expanded once per naming down the tree, which is what a static
+multiplicity of 533 predicts and what the page's closing rule says makes a relation expensive.
+
+Verdict: a diagnosis, not a fix. The lever indicated is a registration of the subject itself rather
+than of anything below it, and whether it earns one is step 7's reader count, which is a question
+about the relation and not about this skill. Filed as its own Backlog item
+(`field-column-table-inlining-cost`) rather than widened into this one.
+
+What the dry run says about the skill, which is what it was for: it was followable end to end without
+reading anything the skill does not point at, it produced one refutation and one finding, and it
+turned up two corrections to the skill's own text, both applied above. The recipe defect is in the
+notes section; the second is step 5, which gained "time every child in isolation" as a control,
+because that is the control that did the work here and the plan's list did not name it.
 
 ## Roadmap entries
 
