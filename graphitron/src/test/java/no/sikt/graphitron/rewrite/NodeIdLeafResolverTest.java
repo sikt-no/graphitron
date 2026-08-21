@@ -497,7 +497,8 @@ class NodeIdLeafResolverTest {
         var direct = (NodeIdLeafResolver.Resolved.FkTarget.DirectFk)
             resolver.resolve(arg, "parentIds", childTable);
 
-        // Classifier-path reconciliation: permutationToKeyColumns puts the lifted columns in node-key (decode) order.
+        // Classifier-path reconciliation: the lifted columns arrive in node-key (decode) order,
+        // each key position carrying whichever column landed on it.
         assertThat(direct.liftedSourceColumns()).extracting(c -> c.sqlName())
             .containsExactly("fk_a", "fk_b", "fk_c");
 

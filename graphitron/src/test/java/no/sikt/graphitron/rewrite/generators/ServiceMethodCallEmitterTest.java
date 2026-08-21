@@ -86,7 +86,7 @@ class ServiceMethodCallEmitterTest {
 
         var stmts = ServiceMethodCallEmitter.emit(call, handleType, FetchersHelperNames.bare(),
             no.sikt.graphitron.javapoet.CodeBlock.of("graphitronContext(env).getDslContext(env)"),
-            OUTPUT_PACKAGE, "Query.sessionPrincipal");
+            OUTPUT_PACKAGE, "Query.sessionPrincipal", null);
 
         assertThat(stmts.get(0).toString())
             .as("a $session binding forces the dsl local; the handle read is scoped per pinned connection")

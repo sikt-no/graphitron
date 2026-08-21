@@ -940,6 +940,9 @@ final class InputBeanResolver {
                     return new FieldResult.Fail(rf.rejection());
                 }
                 leaf = ((RecordLeaf.Ok) recordLeaf).leaf();
+            } else if (sdlField.hasAppliedDirective(DIR_NODE_ID)) {
+                return new FieldResult.Fail(singleValuedMemberDeferral(fieldPath, paramName,
+                    methodName, className));
             } else {
                 // A scalar SDL field bound to a consumer-declared Java type lands on Direct only
                 // once the wire-coercion predicate confirms graphql-java's coercion output for the
@@ -961,6 +964,30 @@ final class InputBeanResolver {
         }
         return new FieldResult.Ok(new CallSiteExtraction.FieldBinding(
             accessPath, member.javaName(), leaf, listShape, javaElementTypeName));
+    }
+
+    /**
+     * The refusal for {@code @nodeId} on a bean member the decoded value cannot be loaded into yet:
+     * a member that is not a jOOQ record, so the tuple would have to be projected onto a single
+     * value. Deferred rather than structural because the schema is one graphitron means to carry
+     * out. At a one-column key the projection is well defined and is the same one a producer
+     * parameter already receives; what is missing is the emitter, on this side of the bean boundary,
+     * and not the author's understanding.
+     *
+     * <p>Refusing rather than resolving is the point. The arm this replaces let the member reach
+     * {@code CallSiteExtraction.Direct}, which handed the bean the opaque id and the consumer a
+     * value it never asked for, with nothing in the build saying so. Both remedies below keep the
+     * invariant that a consumer never receives the wire format, and the deferral names them rather
+     * than leaving an author to find one.
+     */
+    private static Rejection singleValuedMemberDeferral(String fieldPath, String paramName,
+            String methodName, String className) {
+        return Rejection.deferred("field '" + fieldPath + "' on the bean for parameter '" + paramName
+            + "' of method '" + methodName + "' in class '" + className + "' carries @nodeId, and"
+            + " decoding into a member that is not a jOOQ record does not emit yet; until it does,"
+            + " declare the member as the generated record of that node type's own table, which"
+            + " takes the whole decoded key, or take the id at the producer's own parameter, where"
+            + " one key column's value is what the parameter receives");
     }
 
     // ===== jOOQ-record member (@nodeId decode) =====

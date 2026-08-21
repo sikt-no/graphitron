@@ -110,6 +110,97 @@ argMapping: "pOrganisasjonskode: input.organisasjonId.organisasjonskode"
 type. `typeName:` is required at such a position: there is no containing table to infer the target
 from. See xref:routine.adoc#node-id-key-projection[Binding a parameter to a node id's key column].
 
+[[named-parameter-decode]]
+=== Decoding into a producer parameter named for the argument
+
+An `@nodeId` argument on a xref:service.adoc[`@service`] field reaches the producer method through the
+ordinary name match: a parameter called what the argument is called receives that argument's value.
+What it receives is the *decoded* key and never the opaque id, so the method signature is written in
+the key column's own terms:
+
+[source,graphql]
+----
+type Query {
+    # film's node key is one column (film_id, an integer), so the parameter takes an Integer
+    films(key: ID! @nodeId(typeName: "Film")): [Film!]!
+        @service(service: {className: "com.example.FilmService", method: "byKey"})
+
+    # inventory's node key is two columns, so a single value has nowhere to put the second;
+    # the parameter takes the node type's own generated record instead
+    stock(key: ID! @nodeId(typeName: "Inventory")): [Film!]!
+        @service(service: {className: "com.example.FilmService", method: "inStock"})
+}
+----
+
+[source,java]
+----
+public static Result<FilmRecord> byKey(Integer key) { ... }      // one key column
+public static Result<FilmRecord> inStock(InventoryRecord key) { ... }  // the whole tuple
+----
+
+Two ways to get this wrong, and the build names both:
+
+* *A parameter of the wrong type at a one-column key.* Declaring `String key` is the shape that used
+  to receive the base64 string. The build names the key column, the type jOOQ binds it as, and the
+  type the parameter takes, and asks for the column's own type.
+* *A single-valued parameter at a composite key.* One parameter holds one value and the key has
+  several, so the build names the count and the columns, and offers both remedies: the node type's
+  own generated record takes the whole tuple, or an xref:service.adoc[`@service`] `argMapping` entry
+  names the one key column you want.
+
+A parameter whose type the classpath scan cannot read (a primitive, or a consumer compiled without
+`-parameters`) is not refused: the decode is emitted on the key's arity alone and `javac` is the
+backstop, because a refusal naming a type nobody could read would be inventing one of its operands.
+
+== Where the ID resolves
+
+One invariant governs every coordinate: **a consumer neither receives nor supplies the wire format.**
+An SDL slot carrying `@nodeId` is encoded on the way out and decoded on the way in, so a producer
+method, a bean feeding one, and a SQL predicate alike see the key columns and never the opaque id.
+The tables below say where each direction gets its value and where it puts it.
+
+Encoding, on an output field:
+
+[cols="1,2,2",options="header"]
+|===
+| Where the value comes from | What the coordinate looks like | What graphitron emits
+| Projected columns
+| The key columns are selectable at the field's own site: a xref:table.adoc[`@table`] parent, or a
+  xref:reference.adoc[`@reference`] path that lands every key position on the parent's own row.
+| The encode wraps the columns in the projection, so the id is built in the same read.
+| A read value
+| The field's value arrives through a read rather than a projection: an accessor on a
+  xref:record.adoc[`@record`] parent, a member of a xref:service.adoc[`@service`] payload, or a
+  by-name property read.
+| The encode applies to whatever the read yielded. The node key must be one column, a single value
+  having nothing to encode a tuple from.
+|===
+
+Decoding, on an argument or input field:
+
+[cols="1,2,2",options="header"]
+|===
+| Where the value goes | What the coordinate looks like | What graphitron emits
+| The row's own columns
+| Every key position lands on a column of the queried row itself, which is the same-table case and
+  the FK-mirror case.
+| A predicate on the field's own table, with no JOIN.
+| The target table's columns
+| At least one key position does not land there, which is the junction and multi-hop case.
+| A predicate on the node type's own key columns inside a correlated `EXISTS`. See
+  xref:../../how-to/multi-hop-nodeid-filter.adoc[the multi-hop how-to].
+| A jOOQ record slot
+| The value reaches Java at a slot typed as the generated record of the node type's own table: a
+  producer parameter, or a record-typed member of a consumer bean.
+| The whole decoded tuple is loaded onto that record's key columns. Any key arity.
+| A single-valued slot
+| The value reaches Java at any other slot, and the node key is one column.
+| That column's own value, decoded.
+|===
+
+Where a coordinate satisfies none of these the build says so rather than falling back: the decode
+either resolves or is refused by name, and no arm hands the wire format on.
+
 == Constraints
 
 * The named or inferred type must be a node type: either it carries xref:node.adoc[`@node`], or it declares `implements Node` over a table whose jOOQ class publishes node metadata. The build fails when `typeName:` resolves to a non-node type.
@@ -122,6 +213,13 @@ from. See xref:routine.adoc#node-id-key-projection[Binding a parameter to a node
 * On an argument of a field returning a multi-table interface or union, a bare `@nodeId` (no `typeName:`) means "an ID of any implementation": each branch of the generated query matches only the IDs it can decode, and the request fails only when no implementation accepts the ID, naming them all. Write `typeName:` to pin one type instead. The same shape on a *nested input field* of such a field is a build error asking for `typeName:`. See xref:../../how-to/global-id.adoc#polymorphic-nodeid-argument[the how-to section].
 * `@nodeId` is a binding directive, not a projection. The slot's GraphQL type must be `ID!`, `ID`, `[ID!]`, or `[ID!]!` (lists are valid for batch decode).
 * In an `argMapping` path, a `@nodeId` leaf must name `typeName:` explicitly; opening a list of node ids is reported as deferred, that shape naming the list of a key column across the decoded ids and parameter binding not emitting it yet. Whether you have to open the leaf with a key column depends on the node type's key: with one key column you may leave it closed and that column is what the parameter receives, and with more than one the build asks you to name which, one binding carrying one value. Either way the parameter receives a key column's own value and never the encoded id. See xref:routine.adoc#node-id-key-projection[Binding a parameter to a node id's key column].
+
+* A single-valued Java slot carries two preconditions, and the build states whichever one fails. The
+  node key must be *one column*, because one slot holds one value; and the slot's declared type must
+  be the type jOOQ binds that column as, compared without widening, because the value arriving is the
+  column's own. Both are the author's to fix in their own signature. A slot typed as the node type's
+  generated record escapes both, taking the whole tuple at any arity. See
+  <<named-parameter-decode,the producer-parameter section>>.
 
 == Editor support
 

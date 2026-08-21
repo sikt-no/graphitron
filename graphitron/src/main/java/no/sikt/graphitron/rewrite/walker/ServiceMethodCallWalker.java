@@ -255,11 +255,19 @@ public final class ServiceMethodCallWalker {
         return inner;
     }
 
+    /**
+     * Whether an extraction turns one wire value into one Java value, which is what a
+     * {@link ValueShape.Scalar} carries. {@link CallSiteExtraction.NodeIdDecodeRecord} qualifies at a
+     * parameter even though its result is a record: one opaque id arrives and one record leaves, and
+     * the per-field bindings a composite shape would carry are exactly what a decoded key tuple does
+     * not have.
+     */
     private static boolean isLeaf(CallSiteExtraction extraction) {
         return extraction instanceof CallSiteExtraction.Direct
             || extraction instanceof CallSiteExtraction.EnumValueOf
             || extraction instanceof CallSiteExtraction.JooqConvert
-            || extraction instanceof CallSiteExtraction.NodeIdDecodeKeys;
+            || extraction instanceof CallSiteExtraction.NodeIdDecodeKeys
+            || extraction instanceof CallSiteExtraction.NodeIdDecodeRecord;
     }
 
     private static boolean isListType(TypeName javaType, ClassName elementClass) {

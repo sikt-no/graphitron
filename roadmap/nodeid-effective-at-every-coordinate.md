@@ -988,7 +988,21 @@ record-typed bean member and rejects a missing `typeName:` there; `collectJooqBi
 `buildRecordKeyDecode` do the same on the record-param axis; and neither has an arm for the
 single-valued member.
 
-**That arm is the whole of what this item adds here, and the gate it stands behind already exists.**
+**The two coordinates part company at the bean boundary, and only one of them ends this item with an
+emitter.** Site 1's value arrives at a parameter and the decode is emitted there. Site 2's arrives one
+step inside a value handed to a parameter, and the decode does not emit at a bean member yet, so the
+coordinate is *refused as deferred* rather than resolved. That is not the arm this section set out to
+write, and it is the whole of what site 2 needed: what the reporter found there was silence, an `ID`
+member reaching `CallSiteExtraction.Direct` and handing the bean the opaque id with nothing in the
+build saying so. A deferral closes the silence, names both remedies an author has (declare the member
+as the node type's own generated record, which takes the whole tuple today; or take the id at the
+producer's own parameter, which now decodes), and says out loud that the emitter is owed. The store
+reached the same conclusion from the other side before this: `intent_node_id_decode_defect` excludes
+the input-field site from its population and its comment calls that shape "owed an emitter rather than
+a verdict", because comparing a container's type against a key column's would be refusing a parameter
+the author was right to declare. A deferral is how the walk says "owed an emitter" out loud.
+
+**That arm is the whole of what this item adds at site 1, and the gate it stands behind already exists.**
 Passing the base64 through is the bug; refusing the coordinate outright is also wrong, because the
 instruction is carriable whenever the node type has one key column, the decode yielding exactly one
 value that a single-valued slot takes. R668 shipped both halves of deciding that, one directive over,
@@ -1001,8 +1015,8 @@ and this item reads them rather than restating them:
   `intent_resolved_node_key_projection` already makes the agreement a *join predicate* rather than a
   check after the fact, at **equality of the erased Java type with no widening admitted**. A
   `SMALLINT` key column against an `Integer` slot is a disagreement, and softening that is what would
-  let a narrowing through. So this item supplies the slot's own type at two new coordinates, the
-  `@service` parameter's and the bean member's, and the existing predicate decides.
+  let a narrowing through. So this item supplies the slot's own type at one new coordinate, the
+  `@service` parameter's, and the existing predicate decides there.
 
 **One property of that gate is easy to lose in the reuse, and it is load-bearing: it fires only where
 both operands are known.** The catalog cannot always type the key column (a pinned key column on an
@@ -1217,7 +1231,7 @@ replacement.
    `intent_field_reference_step_target` have at field site and argument site lacks. Exit: an authored
    argument-site `@reference` path's hops and terminal target are readable from the store, agreeing
    with the field-site views' answers on the same path shape. R723 named this as its own prerequisite
-   and gains it.
+   and gains it. Shipped at `4548c98f`.
 2. **The instruction population and the two resolution relations.** The population first, all three
    forms of the instruction including the name-carried one that has no captured row; then both
    relations, the use-site grain over `intent_input_occurrence_path`, the four decode destinations and
@@ -1232,12 +1246,18 @@ replacement.
    `@nodeId` behaviour suite stays green apart from the four `BARE_NODE_ID` cases the arity rule
    deliberately retargets, which the Tests section names so a fifth red is a finding. Each relation added here states its
    own inline multiplicity, computed statically from the DDL, and none of them introduces a
-   per-verdict or per-destination `UNION ALL` arm that re-joins the driving relations.
+   per-verdict or per-destination `UNION ALL` arm that re-joins the driving relations. Shipped across
+   `705f96b6` (the population), `e1ad3ae3`..`375943a9` (the two children and the encode relation),
+   `e578ef47`..`e9dc149f` (the evaluability work the section above records), `417298d3` and
+   `cb502a21` (the four destinations), `9c801d16` (the inferred arm and the `BARE_NODE_ID` edit) and
+   `12dabb11` (the resolver's reduction). The named-parameter half of the exit did not land with the
+   relations and is the rework round's own increment, below.
 3. **The junction chain.** With the relation in place this is the absence of a rejection rather than
    an addition: `validateLift` stops rejecting and its absent lift becomes absent local columns, so
    the chain binds remotely and reaches the hop-general `EXISTS`. Exit: a junction chain returns each
    parent once against PostgreSQL; the identity-carrying chain still binds locally; a condition hop
-   still rejects with its own message; each of the four write rails has a stated message.
+   still rejects with its own message; each of the four write rails has a stated message. Shipped at
+   `2e46090a` (the classifier and the diagnostics) and `d0f6358c` (the row count).
 4. **The read-family encode.** The `CallSiteCompaction` slot on `RecordReadField`, the classification
    arm at each construction site, the `ErrorType` per-field unification with its registration swap,
    and both preconditions stated in the relation. Exit: an `@error` field carrying
@@ -1252,7 +1272,7 @@ replacement.
    is an algorithm rather than a fact the store holds. The relation states arity, its `READ_VALUE`
    rows over-claim by exactly the coordinates the walk refuses on type, and its comment now says so.
    A stated absence beats a precondition that resolves or refuses by which arm answered without being
-   able to name the arm.
+   able to name the arm. Shipped at `6d70b6a4` (the read arms) and `8b819323` (the `@error` type).
 5. **The defect view and its projector.** The two verdicts over the instruction population, read by a
    projector into located `ValidationError`s as a further component on `StoreDetections` beside the two
    detection families already there (`AuthoredClaimConflicts` and `ArgmappingProjectionDefects`;
@@ -1280,7 +1300,8 @@ replacement.
    placement gate covering three arms rather than the two the gap named. That closed the silence and
    left the encode relation's population alone, for the reason the design section gives: a resolution
    relation's row was never an emitter's existence, and the tree had a deferred `@nodeId` shape with a
-   claiming row before this item started.
+   claiming row before this item started. Shipped at `270cc6a3` (the relation), `2d7223b4` (the
+   projector) and `7287451e` (the producer-backed placement gate).
 6. **Site 4a, the message and the page.** The auto-discovery rejection separates its two causes; the
    manual page's single-hop claim is corrected; the reverse filter gets the execution-tier row-count
    pin it has never had. Independent of every other stage and the smallest thing in the item.
@@ -1288,17 +1309,14 @@ replacement.
    chain's, both reaching one execution class because they are two ways of reaching one binding. So
    this stage is the refusal's three arms and the page, and the page needed one section more than the
    list asked for, the reverse hop having been authorable all along with nothing telling an author
-   so.
+   so. Shipped at `5335f0ec`.
 
 Stage 6 is independent throughout. Stages 1 and 2 are the spine and nothing after them lands without
 them.
 
-**Stage 2 is being taken in sub-increments, and one of its exits has moved.** The population and the
-two children shipped first, then the measurement work the section above records, then the destination
-relation with its two table destinations, then the two slot destinations with the key-shape relation
-that decides both. All four are now stated. Then the `BARE_NODE_ID` edit with the inferred arm's
-consumer-side half, which is the increment recorded below. Last, `NodeIdLeafResolver` converging on the
-decode relation's own reduction, which is where the exit moved: it was written as the resolver becoming
+**Stage 2 was taken in sub-increments, and one of its exits moved.** The order is the SHA list
+above. The exit moved at the last of them, `NodeIdLeafResolver` converging on the decode relation's
+own reduction: it was written as the resolver becoming
 a reader of these rows, and the resolver runs before the rows exist. "The resolver cannot be the
 reader" carries that argument; stage 2 exits on the relations being total and on the resolver spelling
 their rule rather than a second one, and R682 owns the read. The Java-slot fork itself ships with the
@@ -1389,13 +1407,41 @@ fails. This is the same division `intent_argmapping_projection_defect`'s comment
 other segment rules, applied to a gate that predates them.
 
 Two consequences to carry forward. The same stand-aside is owed at every other site whose walk gates a
-leaf type against a declared Java type, `@service` through `ServiceCatalog.argExtraction` being the
-next one; it is not owed yet, because a resolved projection at an unwired site draws the deferral
-`ArgmappingProjectionDefects` mints from `EMITTING_SITES`, so those sites fail the build either way
-and the gate's extra error changes no verdict. And the stand-aside is what makes arity 1 emittable at
-`@routine` today, which is why this increment carries a pipeline case asserting the build *completes*
-rather than only that the detection is silent: silence at the detection and a red build are
-indistinguishable at every tier below that one.
+leaf type against a declared Java type, and `@service` through `ServiceCatalog.argExtraction` is the
+next one. It was deferred here on an argument that turned out not to reach it: a resolved projection at
+an unwired `@service` site draws the deferral `ArgmappingProjectionDefects` mints from
+`EMITTING_SITES`, so at *that* carrier the gate's extra error changes no verdict. The named-parameter
+carrier is a different coordinate, and there the gate's error is the only verdict at the remedy, which
+turns an author's outcome from "builds" into "cannot". The rework increment below pays that debt. And
+the stand-aside is what makes arity 1 emittable at `@routine` today, which is why this increment
+carries a pipeline case asserting the build *completes* rather than only that the detection is silent:
+silence at the detection and a red build are indistinguishable at every tier below that one.
+
+**The rework increment: the named-parameter carrier gets its stand-aside and its emitter, and the bean
+member gets a deferral.** Stage 2's exit named a `@service` method whose parameter type matches a
+single-column node key receiving the decoded value; the relations landed and that sentence did not.
+Three spellings of one coordinate all failed, and the two that failed are the two the new refusals
+themselves prescribe: `Integer key` (the type remedy) and `InventoryRecord key` (the arity remedy) both
+drew `WireCoercionError.Assignability`, whose own message asks the author to route the value "through a
+converting scalar / `@nodeId` decode" on a schema that had already written the decode. The third,
+`String key`, classified with the wire format still reaching the parameter.
+
+What ships: `ServiceCatalog.bindServiceMethod` reads the same `pathLeafDeclaresNodeId` the
+`@routine` gate reads and mints the decode in place of the type check, at the named-parameter carrier
+only. Which decode is the same question the fact model asks, decided on the same operand: a slot typed
+as the node type's own generated record takes the whole tuple (`NodeIdDecodeRecord`), and every other
+slot takes one value (`NodeIdDecodeKeys.ThrowOnMismatch`, whose helper projects a one-column key to
+that column's own value). Both emitters follow, at the root coordinate through
+`ServiceMethodCallEmitter` and at the child coordinate through `ArgCallEmitter`, where the decode arms
+threw an invariant before. `ArgBindingMap` gains an `authoredTargets` component, because the carrier is
+"no `argMapping` pair names this parameter" and the map's identity entries had made that unanswerable:
+`byJavaName` holds an entry for every unclaimed slot, so membership there says nothing about what the
+author wrote. The store's named-parameter arm draws the same line with the same `NOT EXISTS`.
+
+The mapped carrier is deliberately untouched. An `argMapping` pair binding the root argument already
+has both an emitter (the projected-binding path) and two refusals (`BARE_NODE_ID` and
+`KEY_COLUMN_TYPE_MISMATCH`); minting either here would be a second copy with a precedence between them,
+which is how one family ends up with two answers that agree until one changes.
 
 ## Tests
 
@@ -1517,11 +1563,12 @@ on the wire.
   the type refusal naming both types. The authored-`argMapping` and inferred spellings of the
   matching case draw the *same* resolution rather than different ones, which is the claim that the
   two forms are one destination. The partition against R668 is then over arity rather than over
-  spelling, and is pinned as such. The bean-member half of that matrix is unreachable and the
-  sentence is left as written because the way it is wrong is worth keeping: it was drafted before
-  stage 2c found that a slot the value lands *inside* wants a walk into the class, and a bean member
-  therefore neither resolves nor refuses. So the matrix is the `@service` parameter's, and the bean
-  member's row is a stated gap rather than an assertion waiting to be written. Shipped as
+  spelling, and is pinned as such. The bean-member half of that matrix is not a row of it, and the
+  sentence is left as drafted because the way it is wrong is worth keeping: it was written before
+  stage 2c found that a slot the value lands *inside* wants a walk into the class, so the store
+  neither resolves nor refuses there. The matrix is therefore the `@service` parameter's. The bean
+  member is pinned instead as what it is, a deferral in the walk, in the rework increment's own class
+  below. Shipped as
   `NodeIdDecodeDefectsTest`, and the matrix grew one axis in the writing: each precondition's refusal,
   each precondition's *remedy* drawing no refusal, both readings of a parameter the census cannot
   type, and the domain gate. The remedy cases are the half that keeps this family honest about adding
@@ -1533,7 +1580,17 @@ on the wire.
   things the gate must leave alone, which are a producer-backed field carrying no `@nodeId`, a
   coordinate that encodes today, and a coordinate whose own rejection is the more specific one. The
   last of those is the case that would go red if the gate ever ran ahead of a classifier's own
-  reflection failure and replaced a precise cause with a vague one.
+  reflection failure and replaced a precise cause with a vague one. The rework increment adds a
+  seventh class, `NodeIdProducerSlotDecodePipelineTest`, and its cases are shaped by what the review
+  found: each asserts the schema *builds* and reads the slot's own transform, because a case asserting
+  only that some family reported nothing passes equally well against a red build, which is exactly how
+  the named-parameter carrier stayed broken behind two green remedy cases. Six cases: the two remedies
+  the refusals prescribe, now resolving to the decode their shapes ask for; the parameter typed as the
+  wire format, which classifies to the decode and fails on the store's type verdict rather than
+  passing base64 through; the parameter no census can type, which still gets its decode on arity
+  alone; an argument carrying no `@nodeId`, which keeps its wire-coercion-checked `Direct` read, since
+  the stand-aside is keyed on the directive and not on the site; and the bean member, whose deferral
+  names both remedies an author has.
 * **Store tier**, for the two relations whose whole content is a fork. The destination and the
   Java-slot fork are pinned together in one class over the seeded store, because each is defined as
   the population the other does not claim: a case asserting only the destination would pass equally
@@ -1690,7 +1747,14 @@ a null payload and no committed row.
   invariant the table serves, that a consumer neither receives nor supplies the wire format. Its
   Constraints list gains the two preconditions at a single-valued slot, and its `argMapping` bullet
   loses the claim that binding a `@nodeId` leaf without opening it "sends the encoded id to the
-  database verbatim", which the arity rule makes false for a single-key node type.
+  database verbatim", which the arity rule makes false for a single-key node type. The `argMapping`
+  bullet landed with the `BARE_NODE_ID` edit; the table, the invariant and the preconditions landed in
+  the rework increment, and they needed one section the list did not ask for. The named-parameter
+  carrier had no page at all: an author whose producer parameter is named for a `@nodeId` argument had
+  nowhere to read what type to declare, and the two build failures they can meet were documented
+  nowhere. So the page now carries that coordinate as a worked example with both signatures, both
+  failures stated as what the build says and what it asks for, and the untypeable-parameter case, which
+  is the one place the build stays silent on purpose.
 * `docs/manual/reference/directives/routine.adoc` states that same requirement twice and is the page
   `nodeId.adoc` cross-references as documenting the rule in full, so both statements move with it.
   The `[[node-id-key-projection]]` section's first build error reads "Binding a `@nodeId` without
@@ -2023,6 +2087,19 @@ are indistinguishable at every tier below that one. `NodeIdDecodeDefectsTest`'s 
 assert only that this family is silent, so they pass against a red build and could not have caught
 this.
 
+**Author's response.** All three, and the finding was right about the cause. The stand-aside now sits
+in `ServiceCatalog.bindServiceMethod`, reading the same `pathLeafDeclaresNodeId` the `@routine` gate
+reads, and it mints the decode rather than merely declining to reject: a record-typed slot gets
+`NodeIdDecodeRecord` and every other slot gets `ThrowOnMismatch`, which is the fact model's own fork on
+the fact model's own operand. The emitters follow at both coordinates, the root's through
+`ServiceMethodCallEmitter` and the child's through `ArgCallEmitter`, where the decode arms had been
+invariant throws. The paragraph that excused the deferral is corrected rather than deleted: its
+argument was sound for the mapped carrier it was reasoning about and does not carry to this one, and
+saying which is what stops the same excuse being reached for again. `NodeIdProducerSlotDecodePipelineTest`
+carries the build-completes cases, six of them, and the finding's point about the two remedy cases is
+recorded in the Tests section as the reason that class asserts what it asserts. The rework increment
+paragraph under Stages states the whole of what shipped.
+
 ### 2. Site 2 is undelivered and silent, and the body states both readings
 
 `title: ID @nodeId(typeName: "Film")` on an input type backing
@@ -2047,6 +2124,17 @@ why "a verdict there would have quietly turned an owed capability into an author
 settle the question: a deferral is not an author error. Either way one of the two readings above
 has to leave the body.
 
+**Author's response.** A refusal, and the body keeps one reading. The bean member is now a
+`Rejection.deferred` at `InputBeanResolver.bindField`'s scalar branch, naming both remedies an author
+has: declare the member as the node type's own generated record, which takes the whole tuple today, or
+take the id at the producer's own parameter, which the same increment made work. Picking the deferral
+over the arm was not only effort: the store had already reached it from the other side, its
+input-field exclusion calling this shape "owed an emitter rather than a verdict", and a deferral is how
+the walk says that out loud. The "Sites 1 and 2" sentence now claims one new coordinate rather than
+two, a new paragraph beside it says where the two coordinates part company and why only one ends this
+item with an emitter, and the Tests sentence says the bean member is pinned as a deferral rather than
+as a gap. The silence the finding names is gone either way, which was the part that mattered.
+
 ### 3. `nodeId.adoc`'s coordinate table was not written, and the new behaviour is undocumented
 
 The first User-documentation bullet is the page this item is about gaining "the coordinate table
@@ -2066,6 +2154,16 @@ the silent case has "the changelog entry" as its whole mitigation. An author who
 of the sibling family either, so that surface is consistent with the house convention and is not
 part of this finding.)
 
+**Author's response.** Written. `nodeId.adoc` gains a `Where the ID resolves` section stating the
+invariant in one sentence and then two tables, encode and decode, whose spines are the source and
+destination vocabularies. The Constraints list gains the two preconditions at a single-valued slot as
+one bullet, since the build states whichever one fails and an author meets them as one question about
+their own signature. The finding's second half turned out to be the larger gap: the named-parameter
+carrier had no page at all, so the page now carries it as a worked example with both signatures, both
+build failures in the terms the build states them, and the untypeable-parameter case where the build
+stays silent on purpose. The missing "Done in stage N" note is the User-documentation bullet's own
+correction.
+
 ### Non-blocking
 
 * `NodeIdLeafResolverTest:500` still comments on `permutationToKeyColumns`, retired in stage 2e. The
@@ -2074,3 +2172,8 @@ part of this finding.)
 * The Stages section is not collapsed to one-line `shipped at <sha>` notes and no SHA appears
   anywhere in the body; stages 1 and 2 carry no shipped note at all. Worth doing on the next pass
   regardless of the findings above, since it is what makes remaining work readable.
+
+**Author's response.** Both done. The comment at `NodeIdLeafResolverTest:500` now states the ordering
+without naming the retired step. Every stage carries a one-line shipped-at note with its SHAs, and
+stage 2's sub-increment paragraph now points at that list rather than re-narrating the order; the
+bolded paragraphs below the list stay, being findings rather than stage narration.

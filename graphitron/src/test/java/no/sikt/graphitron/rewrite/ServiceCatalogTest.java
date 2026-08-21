@@ -85,15 +85,18 @@ class ServiceCatalogTest {
             return new ServiceCatalog.ServiceReflectionResult(null, decoded.rejection());
         }
         var claims = catalog.reduceClaims(decoded.signature(), argBindings, ctxKeys, slotTypes);
+        // No field definition: these fixtures bind signatures against slot types directly, so no
+        // argument's own directives exist to read. The @nodeId slot arm is exercised where a real
+        // coordinate carries the directive, at the pipeline tier.
         return catalog.bindServiceMethod(decoded.signature(), claims, argBindings, ctxKeys,
-            batchKeyColumns, slotTypes);
+            batchKeyColumns, slotTypes, null);
     }
 
     /** Test-side shorthand: wrap a raw Java-target → GraphQL-arg map as an {@link ArgBindingMap}. */
     private static ArgBindingMap bindings(Map<String, String> map) {
         var byJavaName = new java.util.LinkedHashMap<String, PathExpr>();
         map.forEach((k, v) -> byJavaName.put(k, PathExpr.head(v)));
-        return new ArgBindingMap(byJavaName);
+        return new ArgBindingMap(byJavaName, java.util.Set.copyOf(map.keySet()));
     }
 
     @Test

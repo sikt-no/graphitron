@@ -3,11 +3,14 @@ package no.sikt.graphitron.rewrite;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInputType;
+import graphql.schema.GraphQLInputValueDefinition;
 import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLType;
+import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -358,10 +361,15 @@ class ServiceCatalog {
      * <p>An explicit override entry ({@code key != value}) whose target is not among the resolved
      * method's parameter names fails with a typo-guard message naming the directive site, the
      * override target, and the available parameter names.
+     *
+     * <p>{@code fieldDef} is the coordinate the {@code @service} sits on, and it is here for one
+     * question: a single-segment path binds the argument itself, whose directives live on the
+     * argument and not on the type {@code slotTypes} carries for it. Reading them is what lets an
+     * argument's {@code @nodeId} reach {@link #nodeIdSlotExtraction} rather than the type gate.
      */
     ServiceReflectionResult bindServiceMethod(ServiceSignature sig, ClaimedParams claims,
             ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> batchKeyColumns,
-            Map<String, GraphQLInputType> slotTypes) {
+            Map<String, GraphQLInputType> slotTypes, GraphQLFieldDefinition fieldDef) {
         if (sig.unconstructible() != null) {
             return new ServiceReflectionResult(null, sig.unconstructible());
         }
@@ -385,10 +393,20 @@ class ServiceCatalog {
                     params.add(new MethodRef.Param.Typed(p.displayName(), p.typeName(), p.javaType(),
                         new ParamSource.SessionHandle()));
                 case ParamRole.ArgBound bound -> {
-                    ArgExtraction ext = argExtraction(p.typeName(),
-                        resolvePathLeafType(bound.path(), slotTypes),
-                        "parameter '" + p.displayName() + "' of method '" + sig.methodName()
-                            + "' in class '" + sig.className() + "'");
+                    String where = "parameter '" + p.displayName() + "' of method '" + sig.methodName()
+                        + "' in class '" + sig.className() + "'";
+                    // The named-parameter carrier only: a parameter no argMapping pair claims, whose
+                    // name matched an argument of its own. A pair binding the same argument is the
+                    // mapped carrier, whose decode the projected-binding path already emits and
+                    // whose two refusals the argMapping defect family already mints; minting either
+                    // here would be a second copy with a precedence between them.
+                    ArgExtraction ext = argBindings.authoredTargets().contains(p.name())
+                        ? null
+                        : nodeIdSlotExtraction(bound.path(), fieldDef, slotTypes, p.javaType(), where);
+                    if (ext == null) {
+                        ext = argExtraction(p.typeName(),
+                            resolvePathLeafType(bound.path(), slotTypes), where);
+                    }
                     if (ext instanceof ArgExtraction.Rejected rej) {
                         return new ServiceReflectionResult(null, rej.rejection());
                     }
@@ -1114,6 +1132,74 @@ class ServiceCatalog {
         };
     }
 
+    /**
+     * The decode a {@code @nodeId} slot receives, or {@code null} when this binding is not one: the
+     * leaf carries no {@code @nodeId}, or it carries one naming no node type. A {@code null} return
+     * sends the caller to {@link #argExtraction}, which is what every binding did before this arm
+     * existed. The caller has already established the carrier, so the path here is the name match's
+     * own single segment and the declaration is the argument itself.
+     *
+     * <p>Two destinations, and which one is the same question the fact model's
+     * {@code intent_node_id_decode} asks: a slot typed as the generated record of the node type's own
+     * table takes the whole decoded tuple, and every other slot takes one value. So a record slot
+     * gets {@link CallSiteExtraction.NodeIdDecodeRecord} and anything else gets
+     * {@link CallSiteExtraction.ThrowOnMismatch}, whose helper projects a one-column key to that
+     * column's own value. The classifier and the relation agree by construction rather than by
+     * comment, both deciding it on the record class.
+     *
+     * <p>Arity is deliberately not consulted. A composite key at a slot holding one value has
+     * nowhere to put the second value, and the store refuses it by name; consulting the width here
+     * would either duplicate that refusal or fabricate one from a key list the walk cannot read
+     * before capture. What the walk owes is that the consumer never receives base64, which the
+     * decode delivers at whatever arity, so an unreadable operand costs a compiler error at worst
+     * and never a silent pass-through.
+     */
+    private ArgExtraction nodeIdSlotExtraction(PathExpr path, GraphQLFieldDefinition fieldDef,
+            Map<String, GraphQLInputType> slotTypes, TypeName slotType, String site) {
+        var declaration = pathLeafDeclaration(path, fieldDef, slotTypes);
+        if (declaration == null || !declaration.hasAppliedDirective(BuildContext.DIR_NODE_ID)) {
+            return null;
+        }
+        var typeName = BuildContext.argString(declaration, BuildContext.DIR_NODE_ID, BuildContext.ARG_TYPE_NAME);
+        if (typeName.isEmpty()) {
+            return null; // a bare @nodeId names no target here; the argMapping family judges it
+        }
+        var recordDecode = ctx.resolveNodeIdRecordDecode(typeName.get());
+        if (recordDecode instanceof BuildContext.NodeIdRecordDecode.Rejected rejected) {
+            return new ArgExtraction.Rejected(Rejection.structural(site + ": " + rejected.message()));
+        }
+        var resolved = (BuildContext.NodeIdRecordDecode.Resolved) recordDecode;
+        if (takesTheNodeTablesRecord(slotType, resolved.table().recordClass())) {
+            return new ArgExtraction.Resolved(new CallSiteExtraction.NodeIdDecodeRecord(
+                resolved.encoderClass(), resolved.typeId(), resolved.keyColumns(), resolved.table(),
+                GraphQLTypeUtil.isNonNull(declaration.getType())));
+        }
+        return ctx.resolveDecodeHelperForType(typeName.get())
+            .<ArgExtraction>map(decode ->
+                new ArgExtraction.Resolved(new CallSiteExtraction.ThrowOnMismatch(decode)))
+            .orElseGet(() -> new ArgExtraction.Rejected(Rejection.structural(site
+                + ": @nodeId(typeName: \"" + typeName.get() + "\") names no @node type, so no decode"
+                + " helper exists to turn the wire id into a key value")));
+    }
+
+    /**
+     * Whether a slot takes the node table's own generated record, looking past one {@code List<…>}
+     * wrap: a list-shaped {@code @nodeId} argument hands one decoded tuple to each element of the
+     * parameter, so the element type is what has to be the record for the tuple to have somewhere to
+     * go. Comparing the declared type as written would read {@code List<XRecord>} as a single-valued
+     * slot and route it to the one-column projection, which is a compiler error at the consumer
+     * instead of the destination the author asked for.
+     */
+    private static boolean takesTheNodeTablesRecord(TypeName slotType, ClassName recordClass) {
+        TypeName element = slotType;
+        if (element instanceof ParameterizedTypeName ptn
+                && ptn.rawType().equals(ClassName.get(java.util.List.class))
+                && ptn.typeArguments().size() == 1) {
+            element = ptn.typeArguments().getFirst();
+        }
+        return element.equals(recordClass);
+    }
+
     /** Unwraps one NonNull, one optional List, one inner NonNull to the named SDL leaf type, or null. */
     private static GraphQLType namedSdlType(GraphQLInputType type) {
         if (type == null) return null;
@@ -1151,41 +1237,57 @@ class ServiceCatalog {
     }
 
     /**
-     * Whether the SDL declaration a {@link PathExpr} binds to carries {@code @nodeId}: the argument
-     * itself on a single-segment path, otherwise the input-object field the last segment names. The
-     * same walk as {@link #resolvePathLeafType}, asking after the declaration rather than its type,
-     * which is why the single-segment case needs {@code fieldDef}: a head slot's type is in
-     * {@code slotTypes} but its directives are only on the argument.
+     * The SDL declaration a {@link PathExpr} binds to: the argument itself on a single-segment path,
+     * otherwise the input-object field the last segment names. The same walk as
+     * {@link #resolvePathLeafType}, returning the declaration rather than its type, which is why the
+     * single-segment case needs {@code fieldDef}: a head slot's type is in {@code slotTypes} but its
+     * directives are only on the argument. {@code null} when the head slot is absent or the path
+     * descends through a non-input-object intermediate.
      *
-     * <p>A type gate reads this and stands aside on {@code true}. Not a laxity: a {@code @nodeId}
-     * leaf is a wire value that is decoded before anything consumes it, so the parameter receives a
-     * key column's own value and never the {@code ID}'s coercion output. A gate comparing the SDL
-     * leaf's coercion output against the declared Java type is therefore comparing two things that
-     * never meet, and it rejects exactly the binding the decode exists to make work. Whether the
-     * decode then resolves, and whether the key column's type is one the parameter can take, are
-     * both the store's to answer, with an arm for each: the walk runs before capture and has neither
-     * the key list nor the catalog to answer them with.
+     * <p>The declaration rather than one fact off it, because the {@code @nodeId} slot arm asks three
+     * questions of the same leaf and re-walking for each would let them disagree: whether the
+     * directive is there, which node type it names, and whether the slot is nullable.
      */
-    static boolean pathLeafDeclaresNodeId(PathExpr path, GraphQLFieldDefinition fieldDef,
-                                          Map<String, GraphQLInputType> slotTypes) {
-        if (path == null || slotTypes == null) return false;
+    static GraphQLInputValueDefinition pathLeafDeclaration(PathExpr path, GraphQLFieldDefinition fieldDef,
+                                                          Map<String, GraphQLInputType> slotTypes) {
+        if (path == null || slotTypes == null) return null;
         var segments = path.segments();
         if (segments.size() == 1) {
-            var argument = fieldDef == null ? null : fieldDef.getArgument(path.headName());
-            return argument != null && argument.hasAppliedDirective(BuildContext.DIR_NODE_ID);
+            return fieldDef == null ? null : fieldDef.getArgument(path.headName());
         }
         GraphQLInputType current = slotTypes.get(path.headName());
         for (int i = 1; i < segments.size() && current != null; i++) {
             var iot = asInputObject(current);
-            if (iot == null) return false;
+            if (iot == null) return null;
             var field = iot.getField(segments.get(i).name());
-            if (field == null) return false;
+            if (field == null) return null;
             if (i == segments.size() - 1) {
-                return field.hasAppliedDirective(BuildContext.DIR_NODE_ID);
+                return field;
             }
             current = field.getType();
         }
-        return false;
+        return null;
+    }
+
+    /**
+     * Whether the SDL declaration a {@link PathExpr} binds to carries {@code @nodeId}.
+     *
+     * <p>Every type gate over a bound leaf reads this and stands aside on {@code true}: the
+     * {@code @routine} parameter gate, and the {@code @service} parameter gate in
+     * {@link #bindServiceMethod}, where standing aside means minting the decode
+     * ({@link #nodeIdSlotExtraction}) instead of running {@link #argExtraction}. Not a laxity: a
+     * {@code @nodeId} leaf is a wire value that is decoded before anything consumes it, so the
+     * parameter receives a key column's own value and never the {@code ID}'s coercion output. A gate
+     * comparing the SDL leaf's coercion output against the declared Java type is therefore comparing
+     * two things that never meet, and it rejects exactly the binding the decode exists to make work.
+     * Whether the key column's type is one the parameter can take is still the store's to answer,
+     * and so is whether the key's arity fits a slot holding one value: the walk runs before capture
+     * and has neither the key list's width nor the catalog's binding type to answer them with.
+     */
+    static boolean pathLeafDeclaresNodeId(PathExpr path, GraphQLFieldDefinition fieldDef,
+                                          Map<String, GraphQLInputType> slotTypes) {
+        var declaration = pathLeafDeclaration(path, fieldDef, slotTypes);
+        return declaration != null && declaration.hasAppliedDirective(BuildContext.DIR_NODE_ID);
     }
 
     /** One path step's input object, past a non-null and one list wrapper, or {@code null}. */

@@ -261,7 +261,7 @@ final class ServiceDirectiveResolver {
             : null;
 
         var result = svc.bindServiceMethod(signature, claims, argBindings, ctxKeys,
-            keySource == null ? List.<ColumnRef>of() : keySource.keyColumns(), slotTypes);
+            keySource == null ? List.<ColumnRef>of() : keySource.keyColumns(), slotTypes, fieldDef);
         if (result.failed()) {
             return new Resolved.Rejected(result.rejection().prefixedWith("service method could not be resolved — "));
         }

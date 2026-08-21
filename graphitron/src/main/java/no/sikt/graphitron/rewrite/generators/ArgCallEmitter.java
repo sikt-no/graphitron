@@ -173,9 +173,11 @@ public final class ArgCallEmitter {
     /**
      * The environment-rooted extraction expression for one service-call argument. Every read is
      * {@code env}-based (a service call has no {@code SelectedField} and no table alias in
-     * scope), which is why the column-coercing and decode arms throw: those extraction kinds are
-     * condition-binding concepts that render inside the condition glue, never a {@code @service}
-     * parameter binding.
+     * scope), which is why the column-coercing arm throws: coercing through a column's
+     * {@code DataType} needs an alias in scope and is a condition-binding concept that renders
+     * inside the condition glue, never a {@code @service} parameter binding. The node-id decode
+     * arms do render here: they read only the wire value and a per-class helper, and a producer
+     * parameter named for a {@code @nodeId} argument receives the decoded key.
      */
     private static CodeBlock buildArgExtraction(TypeFetcherEmissionContext ctx, CallParam param) {
         return switch (param.extraction()) {
@@ -203,16 +205,28 @@ public final class ArgCallEmitter {
                     "CallSiteExtraction.JooqConvert reached the service-call argument emitter for"
                     + " param '" + param.name() + "'; column coercion is a condition-binding"
                     + " concept rendered inside the condition glue");
-            case CallSiteExtraction.NodeIdDecodeKeys ignored ->
-                throw new IllegalStateException(
-                    "CallSiteExtraction.NodeIdDecodeKeys reached the service-call argument emitter"
-                    + " for param '" + param.name() + "'; NodeId decodes are condition-binding"
-                    + " concepts rendered inside the condition glue");
-            case CallSiteExtraction.NodeIdDecodeRecord ignored ->
-                throw new IllegalStateException(
-                    "NodeIdDecodeRecord is an input-bean field leaf only (decoded into a jOOQ record"
-                    + " inside the create<Bean> helper); it must not reach the service-call"
-                    + " argument emitter for param '" + param.name() + "'");
+            // The @nodeId slot arms, at the child coordinate. A decoding argument is not only a
+            // condition-binding concept: where a producer parameter is named for a @nodeId
+            // argument, the value that parameter receives is the decoded key and never the wire id,
+            // so both arms render the decode here exactly as the root coordinate does.
+            case CallSiteExtraction.NodeIdDecodeKeys nid -> {
+                var decodes = ctx.nodeIdDecodeHelpers();
+                if (decodes == null) {
+                    throw new IllegalStateException(
+                        "a @nodeId argument reached the service-call argument emitter without the"
+                        + " enclosing class's decode-helper collector, so the decode call would name"
+                        + " a helper nothing drains: param '" + param.name() + "'");
+                }
+                yield CodeBlock.of("$L(env.getArgument($S))",
+                    decodes.register(nid.decodeMethod(),
+                        ServiceMethodCallEmitter.throwMode(nid), isListShaped(param)),
+                    param.name());
+            }
+            case CallSiteExtraction.NodeIdDecodeRecord rec -> CodeBlock.of("$L(env.getArgument($S))",
+                isListShaped(param)
+                    ? ctx.fetchersHelperNames().decodeList(rec.table().recordClass())
+                    : ctx.fetchersHelperNames().decodeSingular(rec.table().recordClass()),
+                param.name());
         };
     }
 

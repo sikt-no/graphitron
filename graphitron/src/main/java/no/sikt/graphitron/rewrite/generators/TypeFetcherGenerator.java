@@ -523,6 +523,11 @@ public class TypeFetcherGenerator {
         // class hosts one body under one name however many sites call it. Registered before the
         // resolver is built, so the decode* namespace is sized over the union.
         collectProjectionDecoders(keyProjections, typeName, outputPackage, scalarDecoders);
+        // A producer parameter typed as a node type's own record takes the whole decoded tuple, and
+        // the body that materialises it is the same decode<Record> an input-bean member's @nodeId
+        // needs. Registered alongside those so one class hosts one body under one name, whichever
+        // coordinate calls it.
+        collectParamRecordDecoders(fields, scalarDecoders, listDecoders);
         var fetchersHelperNames = FetchersHelperNames.of(
             jooqCarriers, beanHelpers.keySet(), scalarDecoders.keySet());
         ctx.setFetchersHelperNames(fetchersHelperNames);
@@ -533,6 +538,9 @@ public class TypeFetcherGenerator {
         // helper can never be silently dropped.
         boolean[] lookupScatterNeeded = new boolean[1];
         CompositeDecodeHelperRegistry.collectInto(builder, outputPackage, registry -> {
+        // The same collector the service slot emitter reads, so a @nodeId argument's decode and a
+        // filter's decode of the same node type share one lifted body.
+        ctx.setNodeIdDecodeHelpers(registry);
         for (var field : fields) {
             switch (field) {
                 case ChildField.ColumnBackedField cf -> {
@@ -1537,7 +1545,7 @@ public class TypeFetcherGenerator {
         ctx.graphitronContextCall();
         ServiceMethodCallEmitter.emit(carrier, valueType, ctx.fetchersHelperNames(),
                 TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage),
-                outputPackage, parentTypeName + "." + fieldName)
+                outputPackage, parentTypeName + "." + fieldName, ctx.nodeIdDecodeHelpers())
             .forEach(builder::addStatement);
         if (wrap) {
             builder.addCode(returnSyncSuccessWrapped(payloadType, outputPackage, "result"));
@@ -1800,6 +1808,74 @@ public class TypeFetcherGenerator {
             }
         }
         return beanHelpers;
+    }
+
+    /**
+     * Collect every {@link CallSiteExtraction.NodeIdDecodeRecord} sitting directly on a producer
+     * parameter of this {@code <Type>Fetchers} class, across both coordinates: the child / root
+     * permit's {@link MethodBackedField#method() callParams}, and the root
+     * {@link no.sikt.graphitron.rewrite.model.ServiceField} carrier's scalar leaves. Sibling to
+     * {@link InputBeanInstantiationEmitter#collectRecordDecoders}, which collects the same leaf one
+     * level in, on a bean's member; both feed the same two dedup maps so a record type reached both
+     * ways emits one helper.
+     *
+     * <p>List-ness is read off the slot's declared Java type rather than off the leaf, exactly as
+     * the bean walk reads it off the enclosing binding: the leaf is arity- and shape-agnostic and a
+     * {@code List<XRecord>} parameter is what asks for the plural variant.
+     */
+    private static void collectParamRecordDecoders(List<GraphitronField> fields,
+            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.NodeIdDecodeRecord> scalarOut,
+            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.NodeIdDecodeRecord> listOut) {
+        for (var field : fields) {
+            if (field instanceof MethodBackedField mbf) {
+                for (var p : mbf.method().callParams()) {
+                    if (p.extraction() instanceof CallSiteExtraction.NodeIdDecodeRecord rec) {
+                        record0(rec, p.list(), scalarOut, listOut);
+                    }
+                }
+            }
+            if (field instanceof no.sikt.graphitron.rewrite.model.ServiceField sf) {
+                for (var e : allServiceEntries(sf.serviceMethodCall())) {
+                    if (e instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromArg fromArg
+                            && fromArg.shape() instanceof no.sikt.graphitron.rewrite.model.ValueShape.Scalar s
+                            && s.leafTransform() instanceof CallSiteExtraction.NodeIdDecodeRecord rec) {
+                        record0(rec, isListTypeName(s.javaType(), rec.table().recordClass()),
+                            scalarOut, listOut);
+                    }
+                }
+            }
+        }
+    }
+
+    /** One decode-record registration: the scalar body always, the plural variant on a list slot. */
+    private static void record0(CallSiteExtraction.NodeIdDecodeRecord rec, boolean list,
+            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.NodeIdDecodeRecord> scalarOut,
+            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.NodeIdDecodeRecord> listOut) {
+        var key = rec.table().recordClass();
+        scalarOut.putIfAbsent(key, rec);
+        if (list) {
+            listOut.putIfAbsent(key, rec);
+        }
+    }
+
+    /** Whether a slot's declared Java type is {@code List<elementClass>}. */
+    private static boolean isListTypeName(no.sikt.graphitron.javapoet.TypeName javaType,
+            no.sikt.graphitron.javapoet.ClassName elementClass) {
+        return javaType instanceof no.sikt.graphitron.javapoet.ParameterizedTypeName ptn
+            && ptn.rawType().equals(no.sikt.graphitron.javapoet.ClassName.get(List.class))
+            && ptn.typeArguments().size() == 1
+            && ptn.typeArguments().getFirst().equals(elementClass);
+    }
+
+    /** A service carrier's constructor and method entries in one list, in emission order. */
+    private static List<no.sikt.graphitron.rewrite.model.MappingEntry> allServiceEntries(
+            ServiceMethodCall carrier) {
+        var all = new java.util.ArrayList<no.sikt.graphitron.rewrite.model.MappingEntry>();
+        if (carrier instanceof ServiceMethodCall.Instance inst) {
+            all.addAll(inst.ctorArgs());
+        }
+        all.addAll(carrier.methodArgs());
+        return all;
     }
 
     /**

@@ -45,6 +45,13 @@ final class TypeFetcherEmissionContext {
     private final no.sikt.graphitron.render.ArgPathHelperRegistry argPathHelpers =
         new no.sikt.graphitron.render.ArgPathHelperRegistry();
 
+    // This class's node-id decode-helper collector, installed by TypeFetcherGenerator from the same
+    // collectInto bracket the filter sites register through. Held here rather than threaded so a
+    // @nodeId argument's slot and a filter decoding the same node type land on one helper body; null
+    // in contexts that never opened the bracket, which the slot emitter turns into a throw rather
+    // than a call to a helper nothing drains.
+    private no.sikt.graphitron.render.CompositeDecodeHelperRegistry nodeIdDecodeHelpers;
+
     // The graph's projected argMapping bindings, for the renderers that emit a decode-and-project
     // read. Empty by default so out-of-band and unit contexts behave as they did; TypeFetcherGenerator
     // installs the plan's relation up front, alongside the helper-name resolver the host allocates
@@ -152,6 +159,24 @@ final class TypeFetcherEmissionContext {
      */
     FetchersHelperNames fetchersHelperNames() {
         return fetchersHelperNames;
+    }
+
+    /**
+     * This class's node-id decode-helper collector, or {@code null} in a context that never opened
+     * the collect-and-drain bracket (unit-tier and out-of-band emission). Read by the
+     * {@code @service} slot emitter, which needs the same collector the filter sites use so one
+     * decode body serves both.
+     */
+    no.sikt.graphitron.render.CompositeDecodeHelperRegistry nodeIdDecodeHelpers() {
+        return nodeIdDecodeHelpers;
+    }
+
+    /**
+     * Install the collector for this class, called by {@link TypeFetcherGenerator} at the top of the
+     * bracket that drains it.
+     */
+    void setNodeIdDecodeHelpers(no.sikt.graphitron.render.CompositeDecodeHelperRegistry registry) {
+        this.nodeIdDecodeHelpers = registry;
     }
 
     /**

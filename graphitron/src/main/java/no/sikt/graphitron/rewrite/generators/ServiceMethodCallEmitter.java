@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.rewrite.model.ArgPath;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.MappingEntry;
@@ -81,7 +82,7 @@ public final class ServiceMethodCallEmitter {
     public static List<CodeBlock> emit(ServiceMethodCall call, String outputPackage, TypeName resultLocalType,
             FetchersHelperNames helperNames) {
         return emit(call, resultLocalType, helperNames,
-            CodeBlock.of("graphitronContext(env).getDslContext(env)"), outputPackage, null);
+            CodeBlock.of("graphitronContext(env).getDslContext(env)"), outputPackage, null, null);
     }
 
     /**
@@ -91,10 +92,16 @@ public final class ServiceMethodCallEmitter {
      * every other overload defaults to), plus the emitting field's coordinate
      * ({@code Type.field}), which the {@code $session} guard bakes into its failure message; a
      * call without a {@code $session} binding may pass {@code null}.
+     *
+     * <p>{@code nodeIdDecodes} is the enclosing class's decode-helper collector, which a
+     * {@code @nodeId} argument's slot needs: the wire id is decoded and projected by a per-class
+     * private helper rather than inline, so several arguments decoding the same node type share one
+     * body. A caller with no such argument may pass {@code null}; a decode arm reached with a
+     * {@code null} collector throws rather than emitting a call to a helper nothing will drain.
      */
     public static List<CodeBlock> emit(ServiceMethodCall call, TypeName resultLocalType,
             FetchersHelperNames helperNames, CodeBlock dslExpression, String outputPackage,
-            String fieldCoordinate) {
+            String fieldCoordinate, CompositeDecodeHelperRegistry nodeIdDecodes) {
         List<CodeBlock> out = new ArrayList<>();
 
         boolean needsDsl = needsDslLocal(allEntries(call));
@@ -104,11 +111,11 @@ public final class ServiceMethodCallEmitter {
 
         if (call instanceof ServiceMethodCall.Instance inst) {
             for (MappingEntry e : inst.ctorArgs()) {
-                addVarDecl(out, e, helperNames, outputPackage, fieldCoordinate);
+                addVarDecl(out, e, helperNames, outputPackage, fieldCoordinate, nodeIdDecodes);
             }
         }
         for (MappingEntry e : call.methodArgs()) {
-            addVarDecl(out, e, helperNames, outputPackage, fieldCoordinate);
+            addVarDecl(out, e, helperNames, outputPackage, fieldCoordinate, nodeIdDecodes);
         }
 
         out.add(finalAssignment(call, resultLocalType));
@@ -148,7 +155,8 @@ public final class ServiceMethodCallEmitter {
     }
 
     private static void addVarDecl(List<CodeBlock> out, MappingEntry entry,
-            FetchersHelperNames helperNames, String outputPackage, String fieldCoordinate) {
+            FetchersHelperNames helperNames, String outputPackage, String fieldCoordinate,
+            CompositeDecodeHelperRegistry nodeIdDecodes) {
         switch (entry) {
             case MappingEntry.FromDsl ignored -> { /* shares the prelude's dsl local */ }
             case MappingEntry.FromContext ctx ->
@@ -172,7 +180,7 @@ public final class ServiceMethodCallEmitter {
                     TenantDslEmitter.tenantConnectionsClass(outputPackage), fieldCoordinate));
             }
             case MappingEntry.FromArg arg -> {
-                CodeBlock expr = valueShapeExpression(arg.shape(), helperNames);
+                CodeBlock expr = valueShapeExpression(arg.shape(), helperNames, nodeIdDecodes);
                 // A nested-input arg of generic type extracts as `(List<X>) map.get(key)`, where the
                 // map value is statically Object, so the cast is inherently unchecked (top-level args
                 // ride `<T> T env.getArgument` inference and need no cast). Suppress at the narrowest
@@ -197,9 +205,10 @@ public final class ServiceMethodCallEmitter {
      * {@link TypeFetcherGenerator} is driven from the call sites that produce
      * {@link CallSiteExtraction.InputBean} arms.
      */
-    static CodeBlock valueShapeExpression(ValueShape shape, FetchersHelperNames helperNames) {
+    static CodeBlock valueShapeExpression(ValueShape shape, FetchersHelperNames helperNames,
+            CompositeDecodeHelperRegistry nodeIdDecodes) {
         return switch (shape) {
-            case ValueShape.Scalar s -> scalarExpression(s);
+            case ValueShape.Scalar s -> scalarExpression(s, helperNames, nodeIdDecodes);
             case ValueShape.ListOf list -> listExpression(list, helperNames);
             case ValueShape.RecordInput rec -> compositeHelperCall(rec.javaClass(), rec.fields(), helperNames);
             case ValueShape.JavaBeanInput bean -> compositeHelperCall(bean.javaClass(), bean.fields(), helperNames);
@@ -233,33 +242,89 @@ public final class ServiceMethodCallEmitter {
             && s.javaType() instanceof ParameterizedTypeName;
     }
 
-    private static CodeBlock scalarExpression(ValueShape.Scalar scalar) {
+    private static CodeBlock scalarExpression(ValueShape.Scalar scalar, FetchersHelperNames helperNames,
+            CompositeDecodeHelperRegistry nodeIdDecodes) {
         ArgPath path = scalar.sdlPath();
         if (path.deeperSegments().isEmpty()) {
             CodeBlock rawValue = CodeBlock.of("env.getArgument($S)", path.outerArgName());
             // Top-level arg off the <T> T env.getArgument: the typed local declared at the call
             // site (addVarDecl) drives inference, so no cast is needed and a cast to a generic
-            // type (e.g. List<Integer>) would be an unchecked cast. EnumValueOf is the exception:
-            // graphql-java delivers the enum as a String, so it still needs its valueOf coercion.
-            return scalar.leafTransform() instanceof CallSiteExtraction.EnumValueOf
-                ? scalarLeaf(scalar.leafTransform(), scalar.javaType(), rawValue)
+            // type (e.g. List<Integer>) would be an unchecked cast. The transforms below are the
+            // exceptions, each because the wire value is not the value the slot takes:
+            // graphql-java delivers an enum as a String, and a @nodeId leaf as the opaque id.
+            return transformsTheWireValue(scalar.leafTransform())
+                ? scalarLeaf(scalar.leafTransform(), scalar.javaType(), rawValue, helperNames, nodeIdDecodes)
                 : rawValue;
         }
         // Multi-segment path: null-safe traversal from the outer-arg Map through nested keys.
-        return mapTraversal(scalar.leafTransform(), scalar.javaType(), path);
+        return mapTraversal(scalar.leafTransform(), scalar.javaType(), path, helperNames, nodeIdDecodes);
     }
 
-    private static CodeBlock scalarLeaf(CallSiteExtraction leaf, TypeName javaType, CodeBlock rawValue) {
+    /**
+     * Whether a leaf transform makes the slot's value something other than the wire value, which is
+     * what decides whether a top-level argument needs the transform applied at all. A {@code Direct}
+     * or {@code JooqConvert} leaf at a top-level argument reads through
+     * {@code <T> T env.getArgument} inference and wants no cast; the three below each turn the wire
+     * value into a different one, so skipping them would hand the slot the wire format.
+     */
+    private static boolean transformsTheWireValue(CallSiteExtraction leaf) {
+        return leaf instanceof CallSiteExtraction.EnumValueOf
+            || leaf instanceof CallSiteExtraction.NodeIdDecodeKeys
+            || leaf instanceof CallSiteExtraction.NodeIdDecodeRecord;
+    }
+
+    private static CodeBlock scalarLeaf(CallSiteExtraction leaf, TypeName javaType, CodeBlock rawValue,
+            FetchersHelperNames helperNames, CompositeDecodeHelperRegistry nodeIdDecodes) {
         return switch (leaf) {
             case CallSiteExtraction.Direct ignored -> CodeBlock.of("($T) $L", javaType, rawValue);
             case CallSiteExtraction.EnumValueOf ev -> CodeBlock.of(
                 "$L == null ? null : $T.valueOf(($T) $L)",
                 rawValue, ClassName.bestGuess(ev.enumClassName()), ClassName.get(String.class), rawValue);
             case CallSiteExtraction.JooqConvert jc -> CodeBlock.of("($T) $L", javaType, rawValue);
-            case CallSiteExtraction.NodeIdDecodeKeys nid -> CodeBlock.of("($T) $L", javaType, rawValue);
+            // The @nodeId slot arms. Both hand the wire id to a per-class helper: the key arm to the
+            // decode-and-project helper the collector lifts, whose arity-1 form returns the sole key
+            // column's own value, and the record arm to the decode<Record> helper the same class
+            // hosts for an input-bean member decoding the same node type.
+            case CallSiteExtraction.NodeIdDecodeKeys nid -> {
+                if (nodeIdDecodes == null) {
+                    throw new IllegalStateException(
+                        "a @nodeId argument reached ServiceMethodCallEmitter without the enclosing"
+                        + " class's decode-helper collector, so the decode call would name a helper"
+                        + " nothing drains: " + nid.decodeMethod().methodName());
+                }
+                yield CodeBlock.of("$L($L)",
+                    nodeIdDecodes.register(nid.decodeMethod(), throwMode(nid), isListType(javaType)),
+                    rawValue);
+            }
+            case CallSiteExtraction.NodeIdDecodeRecord rec -> CodeBlock.of("$L($L)",
+                isListType(javaType)
+                    ? helperNames.decodeList(rec.table().recordClass())
+                    : helperNames.decodeSingular(rec.table().recordClass()),
+                rawValue);
             // Unreachable for well-formed Scalar leaves; defensive fallback.
             default -> CodeBlock.of("($T) $L", javaType, rawValue);
         };
+    }
+
+    /**
+     * The decode helper's failure mode for a {@code @nodeId} slot. Exhaustive over the seal rather
+     * than defaulting, so a third mode has to state itself here: a slot is consumer code and a
+     * pruning decode has no branch to prune at one, which is why the prune arm is an invariant
+     * throw rather than a mode this call site can pass on.
+     */
+    static CompositeDecodeHelperRegistry.Mode throwMode(CallSiteExtraction.NodeIdDecodeKeys nid) {
+        return switch (nid) {
+            case CallSiteExtraction.ThrowOnMismatch ignored -> CompositeDecodeHelperRegistry.Mode.THROW;
+            case CallSiteExtraction.PruneOnMismatch ignored -> throw new IllegalStateException(
+                "PruneOnMismatch is a polymorphic-branch filter mode and never a @service slot's:"
+                + " a parameter has no sibling branch for a mismatched id to belong to");
+        };
+    }
+
+    /** Whether a slot's declared Java type is {@code List<…>}, which the decode helpers mirror. */
+    private static boolean isListType(TypeName javaType) {
+        return javaType instanceof ParameterizedTypeName ptn
+            && ptn.rawType().equals(ClassName.get(java.util.List.class));
     }
 
     /**
@@ -278,14 +343,16 @@ public final class ServiceMethodCallEmitter {
      * leaf). Mirrors {@code ArgCallEmitter#buildListAwarePathExtraction}, the sibling site
      * serving the condition / externalField call sites.
      */
-    private static CodeBlock mapTraversal(CallSiteExtraction leaf, TypeName javaType, ArgPath path) {
+    private static CodeBlock mapTraversal(CallSiteExtraction leaf, TypeName javaType, ArgPath path,
+            FetchersHelperNames helperNames, CompositeDecodeHelperRegistry nodeIdDecodes) {
         int liftCount = 0;
         for (ArgPath.Segment s : path.deeperSegments()) {
             if (s.liftsList()) liftCount++;
         }
         TypeName innerElementType = stripListWraps(javaType, liftCount);
         CodeBlock root = CodeBlock.of("env.getArgument($S)", path.outerArgName());
-        return walkSegments(root, path.deeperSegments(), 0, leaf, innerElementType, new int[]{0});
+        return walkSegments(root, path.deeperSegments(), 0, leaf, innerElementType, new int[]{0},
+            helperNames, nodeIdDecodes);
     }
 
     /**
@@ -320,7 +387,9 @@ public final class ServiceMethodCallEmitter {
      */
     private static CodeBlock walkSegments(CodeBlock currentExpr, List<ArgPath.Segment> segments,
                                           int depth, CallSiteExtraction leaf,
-                                          TypeName innerElementType, int[] counter) {
+                                          TypeName innerElementType, int[] counter,
+                                          FetchersHelperNames helperNames,
+                                          CompositeDecodeHelperRegistry nodeIdDecodes) {
         ArgPath.Segment seg = segments.get(depth);
         boolean isLast = depth == segments.size() - 1;
         ClassName mapClass = ClassName.get(java.util.Map.class);
@@ -333,7 +402,7 @@ public final class ServiceMethodCallEmitter {
                 ? ParameterizedTypeName.get(listClass, innerElementType)
                 : innerElementType;
             CodeBlock leafExpr = scalarLeaf(leaf, leafCastType,
-                CodeBlock.of("$L.get($S)", mBind, seg.name()));
+                CodeBlock.of("$L.get($S)", mBind, seg.name()), helperNames, nodeIdDecodes);
             return CodeBlock.of("$L instanceof $T<?, ?> $L ? $L : null",
                 currentExpr, mapClass, mBind, leafExpr);
         }
@@ -344,7 +413,7 @@ public final class ServiceMethodCallEmitter {
             int eNum = ++counter[0];
             String eBind = "elem" + eNum;
             CodeBlock recursed = walkSegments(CodeBlock.of("$L", eBind), segments, depth + 1,
-                leaf, innerElementType, counter);
+                leaf, innerElementType, counter, helperNames, nodeIdDecodes);
             return CodeBlock.of(
                 "$L instanceof $T<?, ?> $L ? ($L.get($S) instanceof $T<?> $L "
                 + "? $L.stream().map($L -> $L).toList() : null) : null",
@@ -353,7 +422,8 @@ public final class ServiceMethodCallEmitter {
         }
 
         CodeBlock next = CodeBlock.of("$L.get($S)", mBind, seg.name());
-        CodeBlock recursed = walkSegments(next, segments, depth + 1, leaf, innerElementType, counter);
+        CodeBlock recursed = walkSegments(next, segments, depth + 1, leaf, innerElementType, counter,
+            helperNames, nodeIdDecodes);
         return CodeBlock.of("$L instanceof $T<?, ?> $L ? ($L) : null",
             currentExpr, mapClass, mBind, recursed);
     }

@@ -30,8 +30,15 @@ import java.util.Set;
  * <p>The post-reflection typo guard inside {@link ServiceCatalog} only fires for explicit
  * override entries (where the Java target differs from the head-segment name); identity entries
  * fall through to the per-parameter mismatch error.
+ *
+ * <p>{@code authoredTargets} names the Java parameters an {@code argMapping} entry actually claims,
+ * which {@code byJavaName} alone cannot answer: identity entries fill it for every unclaimed slot,
+ * so a parameter appearing there says nothing about whether the author wrote a pair for it. The
+ * distinction decides which carrier a {@code @nodeId} slot is, and the fact store draws the same
+ * line on the same side, its named-parameter arm requiring that no {@code argMapping} pair name the
+ * parameter.
  */
-record ArgBindingMap(Map<String, PathExpr> byJavaName) {
+record ArgBindingMap(Map<String, PathExpr> byJavaName, java.util.Set<String> authoredTargets) {
 
     /**
      * Result of the {@link #of} factory: the one seam every directive's {@code argMapping}
@@ -88,7 +95,7 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
         record ParseError(String message) implements ParsedArgMapping {}
     }
 
-    private static final ArgBindingMap EMPTY = new ArgBindingMap(Map.of());
+    private static final ArgBindingMap EMPTY = new ArgBindingMap(Map.of(), java.util.Set.of());
 
     /** No bindings; used by path-step {@code @condition} resolution where the method takes no args. */
     static ArgBindingMap empty() {
@@ -194,7 +201,8 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
             }
         }
         byJavaName.putAll(resolvedOverrides);
-        return new Result.Ok(new ArgBindingMap(Collections.unmodifiableMap(byJavaName)));
+        return new Result.Ok(new ArgBindingMap(Collections.unmodifiableMap(byJavaName),
+            java.util.Set.copyOf(overrides.keySet())));
     }
 
     /**
