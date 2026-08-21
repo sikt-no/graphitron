@@ -1,7 +1,7 @@
 ---
 id: R728
 title: "@nodeId encode and decode become store relations, and an instruction the generator drops fails the build"
-status: In Review
+status: Ready
 bucket: feature
 priority: 3
 theme: nodeid
@@ -1967,3 +1967,110 @@ stage 3 expresses it there.
   fixtures R673 added (`Query.occupantById`, `occupantsByIds`, `occupantByOptionalId`,
   `occupantsByIdsConnection` over `AddressOccupant = Customer | Staff`, with `Staff` now
   `@node`-backed) are the shape that store-tier case wants once the population question is settled.
+
+## Reviewer findings
+
+In Review → Done, reviewed at `b709d02` rebased onto trunk. `mvn install -Plocal-db` is green
+(BUILD SUCCESS, zero test failures), no delivered test asserts a code string against a generated
+method body, and the retirement sweep is clean apart from one comment noted at the end. The
+relations are delivered, documented at unusual depth, and the measurement history is honest about
+what it took back. What sends this back is behaviour, not design: the relations were built to make
+one thing happen at a consumer, and at the two coordinates this item added it does not happen.
+
+Each finding names what would satisfy it. The probes below are reproducible against fixtures
+already in the tree.
+
+### 1. At the `NAMED_PARAMETER` carrier, no schema builds and no decode is emitted
+
+The carrier this item newly judges is a plain `@service` method parameter matched by name to a
+`@nodeId` argument. Three spellings of it, against `PublicNodeIdServiceStub` on the
+`films(key: ID! @nodeId(typeName: ...))` shape `NodeIdDecodeDefectsTest` already uses:
+
+* `getFilmsByIntegerKey(Integer key)`, which is the schema the type refusal tells the author to
+  write and which `aParameterOfTheKeyColumnsOwnTypeIsNoDefect` documents as "the schema an author
+  writes after reading either message above", does not build. It draws
+  `WireCoercionError.Assignability`, whose message asks for a `String` parameter or for the value
+  to be routed "through a converting scalar / `@nodeId` decode" on a schema that wrote the decode.
+* `getFilmsByInventoryKey(InventoryRecord key)` at the composite node type, which is the first
+  remedy the arity refusal offers ("declare 'key' as the generated record of that node type's own
+  table"), draws the same `Assignability` rejection.
+* `getFilmsByStringKey(String key)` classifies successfully, with
+  `leafTransform = CallSiteExtraction.Direct`. The wire string still reaches the parameter; only
+  the new store detection fails the build.
+
+So both remedies the two new messages prescribe are unbuildable, and the decode is emitted at none
+of the three. Stage 2's exit condition, "a `@service` method whose parameter type matches a
+single-column node key receives the decoded value and never the base64", is not met, and neither is
+the reporter's own remedy as this body states it, "one line of Java in their own signature and no
+SDL change at all".
+
+The cause is placement. The `@nodeId` stand-aside `ServiceCatalog.pathLeafDeclaresNodeId` states,
+in a javadoc that gets the argument exactly right ("it rejects exactly the binding the decode
+exists to make work"), is read from `RoutineDirectiveResolver` only. The `@service` argument gate,
+`ServiceCatalog.argExtraction` through `WireCoercionResolver.checkScalar`, has no equivalent. The
+paragraph under "The rejection this increment had to remove was not the one the plan named" excuses
+that deferral, but it reasons about a resolved projection at an unwired `@service` site drawing
+`ArgmappingProjectionDefects`' `EMITTING_SITES` deferral, which is the `MAPPED_PARAMETER` carrier.
+The `NAMED_PARAMETER` carrier did not exist when that paragraph was written and its conclusion does
+not carry to it: here the gate's extra error is the only verdict at the remedy, so it changes the
+author's outcome from "builds" to "cannot".
+
+What would satisfy it: the stand-aside at the `@service` argument gate, the emitted decode at the
+carrier, and a pipeline case asserting the build *completes* and the parameter receives the key
+column's own value. That last one is the case shape this item already added at `@routine`, for the
+reason it states there and which applies verbatim here: silence at the detection and a red build
+are indistinguishable at every tier below that one. `NodeIdDecodeDefectsTest`'s two remedy cases
+assert only that this family is silent, so they pass against a red build and could not have caught
+this.
+
+### 2. Site 2 is undelivered and silent, and the body states both readings
+
+`title: ID @nodeId(typeName: "Film")` on an input type backing
+`TestServiceStub.runWithInputBean(TestInputBean)` classifies to `CallSiteExtraction.Direct` with no
+rejection at any tier. `InputBeanResolver`'s scalar branch reaches `Direct` without consulting
+`@nodeId` at all, and `intent_node_id_decode_defect` restricts to `site = 'ARGUMENT'`, so neither
+the walk nor the store says anything. `TestInputBean.title` is `String` and `film_id` binds as
+`Integer`, so this is the disagreement the sibling coordinate refuses, passed through in silence.
+
+That is the field report's second coordinate, in the state the report found it, and it is what the
+title forbids: the instruction is dropped and the build says nothing. The body asserts both
+readings of it. "Sites 1 and 2" says "this item supplies the slot's own type at two new
+coordinates, the `@service` parameter's and the bean member's, and the existing predicate decides";
+the Tests section says "the bean member's row is a stated gap rather than an assertion waiting to
+be written". Both cannot stand.
+
+What would satisfy it: either the arm, or a refusal at the coordinate. A deferral is available and
+this item established the pattern for it one stage later: `FieldBuilder.producerBackedNodeIdDeferral`
+is an owed emitter stated as `Rejection.deferred` at a placement gate, on the argument that what is
+missing is an emitter and not the author's understanding. The same argument holds here, and it is
+why "a verdict there would have quietly turned an owed capability into an author error" does not
+settle the question: a deferral is not an author error. Either way one of the two readings above
+has to leave the body.
+
+### 3. `nodeId.adoc`'s coordinate table was not written, and the new behaviour is undocumented
+
+The first User-documentation bullet is the page this item is about gaining "the coordinate table
+this item is really about", with the destination and source vocabularies as its spine, the invariant
+stated, and the Constraints list gaining the two preconditions at a single-valued slot. The page has
+one table, the pre-existing Parameters one. It does not state the invariant. Its Constraints list
+carries the two preconditions for the `argMapping` carrier only, in the bullet that was correctly
+edited. Every other bullet in that section carries a "Done in stage N" note; this one carries none,
+which reads as an omission rather than a decision, this body being scrupulous elsewhere about
+recording what it took back.
+
+Nothing in the manual documents the `NAMED_PARAMETER` decode or the two new build failures. Both
+Risks entries turn on an author meeting them: the refusing case is called "a breaking change for
+every existing consumer who wrote the hand decode the report is about, which is most of them", and
+the silent case has "the changelog entry" as its whole mitigation. An author who meets
+`KEY_COLUMN_TYPE_DISAGREEMENT` has no page to land on. (The diagnostics glossary carries no verdict
+of the sibling family either, so that surface is consistent with the house convention and is not
+part of this finding.)
+
+### Non-blocking
+
+* `NodeIdLeafResolverTest:500` still comments on `permutationToKeyColumns`, retired in stage 2e. The
+  sweep is about the vocabulary and not the file it sits in, as this body says of two test names it
+  did catch.
+* The Stages section is not collapsed to one-line `shipped at <sha>` notes and no SHA appears
+  anywhere in the body; stages 1 and 2 carry no shipped note at all. Worth doing on the next pass
+  regardless of the findings above, since it is what makes remaining work readable.
