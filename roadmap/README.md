@@ -28,9 +28,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | Ready | 2026-08-21 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R773` | The LSP's store reads answer inside a time budget, or fail | Ready | 2026-08-21 | [plan](lsp-store-reads-inside-a-time-budget.md) |
 | `R728` | @nodeId encode and decode become store relations, and an instruction the generator drops fails the build | In Progress | 2026-08-20 <sub>created 2026-08-19</sub> | [plan](nodeid-effective-at-every-coordinate.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-20 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
+| `R773` | The LSP's store reads answer inside a time budget, or fail | In Progress | 2026-08-21 | [plan](lsp-store-reads-inside-a-time-budget.md) |
 | `R771` | A skill for authoring nested jOOQ at one grain, driven from the right relation | In Review | 2026-08-21 | [plan](nested-jooq-grain-and-anchor-skill.md) |
 | `R770` | A skill that makes store slowness a database question first, not a Java one | In Review | 2026-08-21 | [plan](relational-first-store-debugging-skill.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -501,7 +501,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R626` [**LSP argMapping completions and diagnostics at the @routine coordinate**](lsp-argmapping-routine-coordinate.md) — Backlog, architecture
 - `R430` [**LSP publishes graphitron:dev compile diagnostics against generated-file URIs**](lsp-compile-diagnostics-publish.md) — Backlog, feature
 - `R578` [**Raise the LSP unknown-input-field diagnostic to Error severity**](unknown-input-field-diagnostic-severity.md) — Backlog, cleanup
-- `R773` [**The LSP's store reads answer inside a time budget, or fail**](lsp-store-reads-inside-a-time-budget.md) — Ready, architecture
+- `R773` [**The LSP's store reads answer inside a time budget, or fail**](lsp-store-reads-inside-a-time-budget.md) — In Progress, architecture
 - `R381` [**LSP-guided @reference path authoring**](lsp-reference-path-authoring.md) — Spec, architecture
 - `R345` [**Surface schema parse failures as LSP red squiggles**](lsp-squiggle-schema-parse-failure.md) — Backlog, feature
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture

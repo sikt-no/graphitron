@@ -1,7 +1,7 @@
 ---
 id: R773
 title: "The LSP's store reads answer inside a time budget, or fail"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: lsp
