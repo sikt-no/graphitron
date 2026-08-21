@@ -155,10 +155,39 @@ class NodeIdProducerSlotDecodePipelineTest {
     }
 
     /**
-     * The third absence, and the one that is this coordinate's own rather than the inference's: the
-     * consuming field returns a scalar, so there is no table to inherit a target from. A refusal
-     * rather than a fall-through, because the directive is written and the gate below would answer it
-     * by prescribing the decode the schema already asked for.
+     * The scope's second rung. A delete surface returns a scalar, so the first rung answers nothing,
+     * and the table its arguments bind against is the one {@code @mutation(table:)} names. The fact
+     * model ranks the two rungs in this order and the walk reads both, so a bare directive resolves
+     * here rather than meeting a refusal quoting a {@code typeName:} the author never wrote.
+     */
+    @Test
+    void aBareDirectiveOnADeleteSurfaceInheritsTheTableTheMutationNames() {
+        var leaf = slotTransform("""
+            interface Node { id: ID! }
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+                title: String
+            }
+            type Query { film: Film }
+            type Mutation {
+                deleteFilm(key: ID! @nodeId): String
+                    @mutation(typeName: DELETE, table: "film")
+                    @service(service: {className: "%s", method: "deleteFilmByIntegerKey"})
+            }
+            """.formatted(STUB), "Mutation", "deleteFilm");
+
+        assertThat(leaf).isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
+        var decode = ((CallSiteExtraction.NodeIdDecodeKeys) leaf).decodeMethod();
+        assertThat(decode.methodName()).isEqualTo("decodeFilm");
+        assertThat(decode.outputColumnShape()).extracting(ColumnRef::sqlName)
+            .containsExactly("film_id");
+    }
+
+    /**
+     * The third absence, and the one that is this coordinate's own rather than the inference's:
+     * neither rung answers, the consuming field returning a scalar and naming no table of its own. A
+     * refusal rather than a fall-through, because the directive is written and the gate below would
+     * answer it by prescribing the decode the schema already asked for.
      */
     @Test
     void aBareDirectiveOnAFieldReturningNoTableIsRefusedRatherThanHandedTheOpaqueId() {
@@ -178,7 +207,7 @@ class NodeIdProducerSlotDecodePipelineTest {
         assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
         assertThat(((GraphitronField.UnclassifiedField) field).rejection().message())
             .contains("cannot infer node type")
-            .contains("binds no table to inherit a target from")
+            .contains("binds no table and the field names none with @mutation(table:)")
             .contains("Add typeName: explicitly");
     }
 
@@ -276,7 +305,12 @@ class NodeIdProducerSlotDecodePipelineTest {
      * the message rather than as a cast error further down.
      */
     private static CallSiteExtraction slotTransform(String sdl) {
-        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "films");
+        return slotTransform(sdl, "Query", "films");
+    }
+
+    /** The same, at a coordinate the delete surface's own case names for itself. */
+    private static CallSiteExtraction slotTransform(String sdl, String typeName, String fieldName) {
+        var field = TestSchemaHelper.buildSchema(sdl).field(typeName, fieldName);
         if (field instanceof GraphitronField.UnclassifiedField unclassified) {
             throw new AssertionError("the schema did not build: " + unclassified.rejection().message());
         }

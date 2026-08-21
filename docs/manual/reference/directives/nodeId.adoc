@@ -18,7 +18,7 @@ directive @nodeId(
 [cols="1,1,1,3",options="header"]
 |===
 | Name | Type | Default | Description
-| `typeName` | `String` | inferred | The xref:node.adoc[`@node`] type the ID belongs to. Case-sensitive. Required when the carrier site is ambiguous. Inferred when: (a) on a non-xref:reference.adoc[`@reference`] object field, the containing type is itself a `@node`; (b) on a xref:reference.adoc[`@reference`] field, a jOOQ-record input field, or an argument whose value a xref:service.adoc[`@service`] producer parameter receives by name, exactly one `@node` type binds to the same target table, which at that argument is the field's own return table. Inference rule (b) is the only place the backing table decides anything: an explicit `typeName:` takes the ID's `typeId` and key columns from the named type's own xref:node.adoc[`@node`], so xref:node.adoc#several-node-types-over-one-table[several node types over one table] never make a named leaf ambiguous.
+| `typeName` | `String` | inferred | The xref:node.adoc[`@node`] type the ID belongs to. Case-sensitive. Required when the carrier site is ambiguous. Inferred when: (a) on a non-xref:reference.adoc[`@reference`] object field, the containing type is itself a `@node`; (b) on a xref:reference.adoc[`@reference`] field, a jOOQ-record input field, or an argument whose value a xref:service.adoc[`@service`] producer parameter receives by name, exactly one `@node` type binds to the same target table. At that argument the target table is the field's own return table, or, where the return type binds none, the table xref:mutation.adoc[`@mutation`]`(table:)` names, which is what a delete surface returning a scalar binds against. Inference rule (b) is the only place the backing table decides anything: an explicit `typeName:` takes the ID's `typeId` and key columns from the named type's own xref:node.adoc[`@node`], so xref:node.adoc#several-node-types-over-one-table[several node types over one table] never make a named leaf ambiguous.
 |===
 
 == Canonical example
@@ -152,8 +152,9 @@ A parameter whose type the classpath scan cannot read (a primitive, or a consume
 `-parameters`) is not refused: the decode is emitted on the key's arity alone and `javac` is the
 backstop, because a refusal naming a type nobody could read would be inventing one of its operands.
 
-The bare spelling works here too, and inherits its target from the table the field's own return type
-binds:
+The bare spelling works here too, and inherits its target from the table the argument binds against:
+the field's own return table, or, where the return type binds none, the table
+xref:mutation.adoc[`@mutation`]`(table:)` names.
 
 [source,graphql]
 ----
@@ -163,11 +164,18 @@ type Query {
     films(key: ID! @nodeId): [Film!]!
         @service(service: {className: "com.example.FilmService", method: "byKey"})
 }
+
+type Mutation {
+    # a delete surface returns a scalar, so the table comes from @mutation(table:)
+    deleteFilm(key: ID! @nodeId): String
+        @mutation(typeName: DELETE, table: "film")
+        @service(service: {className: "com.example.FilmService", method: "delete"})
+}
 ----
 
-Two shapes leave nothing to inherit, and both are refused rather than passed along: a return type
-that binds no table at all, and a table more than one node type declares itself over, which is two
-different key tuples. Write `typeName:` at either.
+Two shapes leave nothing to inherit, and both are refused rather than passed along: a field that
+neither returns a table-bound type nor names a table with `@mutation(table:)`, and a table more than
+one node type declares itself over, which is two different key tuples. Write `typeName:` at either.
 
 == Where the ID resolves
 
@@ -221,7 +229,7 @@ either resolves or is refused by name, and no arm hands the wire format on.
 == Constraints
 
 * The named or inferred type must be a node type: either it carries xref:node.adoc[`@node`], or it declares `implements Node` over a table whose jOOQ class publishes node metadata. The build fails when `typeName:` resolves to a non-node type.
-* `typeName:` is required when neither inference rule fires: when the field's type is not the containing type and no `@reference` provides an unambiguous target table. At an argument feeding a producer parameter by name, that is a return type binding no table, or a table several node types declare themselves over; see <<named-parameter-decode,the producer-parameter section>>.
+* `typeName:` is required when neither inference rule fires: when the field's type is not the containing type and no `@reference` provides an unambiguous target table. At an argument feeding a producer parameter by name, that is a field that neither returns a table-bound type nor names a table with xref:mutation.adoc[`@mutation`]`(table:)`, or a table several node types declare themselves over; see <<named-parameter-decode,the producer-parameter section>>.
 * `@nodeId` does not stand alone on a non-node type as its identity. Use it on the `id: ID!` field of a node type, or on slots that *reference* a node from elsewhere. On a node's own `id:` field the directive is optional: that field is a node ID by construction, and `typeName:` is rejected there because the containing type has already answered which node it is.
 * The directive is likewise optional at an input field or argument *named for the target's own `id`*: `id` on an input consumed against a node-backed table, or on an argument of a field returning a node type, reads as that node's global ID. The name is what carries it, so a differently-named slot (`ids`, `customerId`) still needs the directive; graphitron does not guess at plurals or suffixes. Where the target table backs more than one node type the build fails and asks for `typeName:` rather than picking one.
 * A directive-less slot that collides with a real column of the same name is an error at every coordinate, output field, input field and argument alike: the encoded ID and the raw column are different values and the SDL has not said which is meant. Write `@nodeId` to select the node ID or xref:field.adoc[`@field`]`(name: "…")` to select the column. The message names both.

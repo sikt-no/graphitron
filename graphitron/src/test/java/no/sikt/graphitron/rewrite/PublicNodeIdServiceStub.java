@@ -57,4 +57,12 @@ public class PublicNodeIdServiceStub {
     public static String getTitleByStringKey(String key) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * A delete surface's producer: the return type binds no table either, and the table its
+     * arguments bind against is the one {@code @mutation(table:)} names.
+     */
+    public static String deleteFilmByIntegerKey(Integer key) {
+        throw new UnsupportedOperationException();
+    }
 }

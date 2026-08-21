@@ -1,7 +1,7 @@
 ---
 id: R728
 title: "@nodeId encode and decode become store relations, and an instruction the generator drops fails the build"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 3
 theme: nodeid
@@ -1452,10 +1452,17 @@ from the other direction: the argument's predicate binds on the table its field 
 `intent_argument_scope_table` and the walk reach the same table and the two spell one rule. The rule
 itself moves to `BuildContext.inferNodeTypeOverTable`, which `NodeIdLeafResolver` now reads instead of
 carrying its own copy, so "which node backs this table" and the two absences that answer it have one
-wording. A third absence is this coordinate's own: a return type binding no table has nothing to
-inherit, and that is refused naming the type and `typeName:`, where the store is silent for want of a
-scope table. Refusing a written directive the walk cannot resolve is the direction the population
-section argues for, an instruction the population misses being a coordinate that stays silent.
+wording. A third absence is this coordinate's own: a field whose scope resolves to no table at all has
+nothing to inherit, and that is refused naming `typeName:`. Refusing a written directive the walk
+cannot resolve is the direction the population section argues for, an instruction the population
+misses being a coordinate that stays silent.
+
+The slot's scope is two rungs rather than one, ranked as `intent_argument_scope_table` ranks them:
+the consuming field's own return table, and beneath it the table `@mutation(table:)` names, which is
+what a delete surface binds against, its return being a scalar or a status type. The walk reads both,
+one lookup each off the `fieldDef` already in hand. Reading only the first left the bare form refused
+at a coordinate whose explicit spelling classified and whose store rows resolved, with the defect
+view's own prose quoting a `typeName:` back at an author who had written none.
 
 ## Tests
 
@@ -1598,9 +1605,11 @@ on the wire.
   seventh class, `NodeIdProducerSlotDecodePipelineTest`, and its cases are shaped by what the review
   found: each asserts the schema *builds* and reads the slot's own transform, because a case asserting
   only that some family reported nothing passes equally well against a red build, which is exactly how
-  the named-parameter carrier stayed broken behind two green remedy cases. Nine cases, six of them from
-the first rework round and three from the second, which found the same defect in the bare spelling of
-the directive that the six all wrote explicitly. The six: the two remedies
+  the named-parameter carrier stayed broken behind two green remedy cases. Ten cases, six of them from
+the first rework round, three from the second, which found the same defect in the bare spelling of
+the directive that the six all wrote explicitly, and one from the third, which found the bare form
+still refused where the field's scope comes from `@mutation(table:)` rather than from its return.
+The six: the two remedies
   the refusals prescribe, now resolving to the decode their shapes ask for; the parameter typed as the
   wire format, which classifies to the decode and fails on the store's type verdict rather than
   passing base64 through; the parameter no census can type, which still gets its decode on arity
@@ -1610,7 +1619,8 @@ the directive that the six all wrote explicitly. The six: the two remedies
   consuming field's own return table and reaching the same decode the explicit spelling reaches; the
   ambiguity over a table two node types share, refused naming both; and a consuming field returning a
   scalar, refused naming the absent table, that being the one absence this coordinate owns rather than
-  the shared inference.
+  the shared inference. The tenth is the delete surface, whose scope is the table `@mutation(table:)`
+  names, the lower of the two rungs the slot's scope is resolved through.
 * **Store tier**, for the two relations whose whole content is a fork. The destination and the
   Java-slot fork are pinned together in one class over the seeded store, because each is defined as
   the population the other does not claim: a case asserting only the destination would pass equally
@@ -2276,6 +2286,11 @@ shape, having no scope table and so no instruction row, so the walk is the stric
 one case; strictness in the direction of a written directive not being dropped is the direction the
 population section argues for.
 
+*Corrected in round three, and left standing rather than rewritten so the correction has something to
+point at.* The store is not silent at that shape. Its scope relation has a second rung, and where a
+delete surface names its table the store resolves what this paragraph says it cannot see. The walk
+now reads both rungs; round three's response below has the whole of it.
+
 The fall-through comment is gone with the fall-through. What stands in its place says why both
 spellings resolve here, which is the fact a reader needs at that line.
 
@@ -2360,3 +2375,38 @@ For the record, one shape I checked and am not raising: a connection-returning f
 reads the authored element type through `graphitron_field_synthesis` and the walk would read the
 expanded wrapper. `@service` at the root refuses Connection return types outright, bare and explicit
 alike, so the two cannot disagree there.
+
+**Author's response.** Taken as reported, and taken the first way: the walk reads the second rung. It
+is the one lookup the finding said it was, `MutationInputResolver.parseMutationTableArg` off the
+`fieldDef` already in hand, and it sits beneath the return-table rung rather than beside it, which is
+the precedence `intent_argument_scope_table` ranks the two with. So a bare `@nodeId` on a
+service-backed delete now resolves `Film` from `@mutation(table: "film")` and reaches `decodeFilm` on
+`film_id`, where it met a refusal before.
+
+The false claim is corrected in all three places it stood, and the two in main sources are the ones
+that mattered: they outlive this document and would have told the next contributor there was no rung
+to look for. `BuildContext.inferNodeTypeOverTable`'s javadoc now says the walk arrives from the slot's
+own scope, naming both rungs; `inferNodeTypeAtSlot`'s lists them in the order the relation ranks them
+and says what each answers. The Stages paragraph that asserted the store's silence is rewritten. Round
+two's response paragraph is left standing with a correction marker on it rather than edited away: a
+response that quietly loses the sentence a reviewer measured false leaves the next reader unable to
+tell what was fixed.
+
+The third absence survives, narrowed to what it actually is: neither rung answering, rather than a
+return type binding no table. Its message says so, naming both the return type and
+`@mutation(table:)`, so an author who wrote a delete surface and misspelled the table is told which of
+the two ways in they missed rather than being pointed only at the one that does not apply to them.
+
+One case at the tier the finding was measured at, `aBareDirectiveOnADeleteSurfaceInheritsTheTableTheMutationNames`,
+reading the same coordinate the finding measured. `PublicNodeIdServiceStub` grew the delete surface's
+producer, and the absent-table case now asserts the widened message. The manual's inference rule (b)
+and its `typeName:`-is-required constraint both name the second rung, and the producer-parameter
+section carries the delete surface beside the query in its example, since as written they told an
+author the return table was the whole rule.
+
+The connection-returning shape the reviewer checked and did not raise is recorded here as checked:
+`@service` refusing Connection return types outright is what keeps the two from disagreeing, and it is
+a fact about the service gate rather than about this inference, so nothing here depends on it holding.
+
+Verified with `mvn install -Plocal-db`: green across all 14 modules, 6,289 tests with no failures, the
+compilation and execution tiers and the docs render included.

@@ -1200,26 +1200,43 @@ class ServiceCatalog {
 
     /**
      * The node type a bare {@code @nodeId} names at this carrier, inferred the way the fact model's
-     * {@code TARGET_TABLE_NODE_TYPE} basis infers it: from the table the consuming field's own
-     * return type binds, then the one node type over that table. The consuming field is the slot's
-     * scope here, an argument's predicate binding on the table its field returns, so the two arrive
-     * at the same table from the two directions and the walk and the store spell one rule.
+     * {@code TARGET_TABLE_NODE_TYPE} basis infers it: the table the slot's own scope resolves to,
+     * then the one node type over that table. Which table that is comes from the same two rungs
+     * {@code intent_argument_scope_table} ranks, in that order, so the walk and the store answer
+     * from one rule rather than two.
      *
-     * <p>A return type binding no table is the third absence, and it is a refusal rather than a
+     * <ul>
+     *   <li>The consuming field's own return table, the store's {@code NAMED_TYPE_TABLE}: an
+     *       argument's predicate binds on the table its field returns.</li>
+     *   <li>The table {@code @mutation(table:)} names, the store's {@code MUTATION_TABLE}: a delete
+     *       surface returns a scalar or a status type, so it has no return table and its arguments
+     *       still bind against the table the mutation names. Beneath the first rung rather than
+     *       beside it, which is the precedence the relation itself ranks them with.</li>
+     * </ul>
+     *
+     * <p>Neither rung answering is the third absence, and it is a refusal rather than a
      * fall-through. The directive is written, so the author asked for a decode; there is no table to
      * infer the target from, and the answer an author needs is that {@code typeName:} settles it.
      * Falling through instead would land on the wire-coercion gate, whose message prescribes the
      * {@code @nodeId} decode the schema already wrote.
      */
     private BuildContext.InferredNodeType inferNodeTypeAtSlot(GraphQLFieldDefinition fieldDef) {
-        var returnType = fieldDef == null ? null : GraphQLTypeUtil.unwrapAll(fieldDef.getType());
+        if (fieldDef == null) {
+            return new BuildContext.InferredNodeType(null,
+                "@nodeId without typeName: cannot infer node type, no consuming field is in scope to"
+                + " inherit a target from. Add typeName: explicitly.");
+        }
+        var returnType = GraphQLTypeUtil.unwrapAll(fieldDef.getType());
         String returnTypeName = returnType instanceof GraphQLNamedType named ? named.getName() : null;
-        return ctx.tableNameForTypeName(returnTypeName)
+        var scopeTable = ctx.tableNameForTypeName(returnTypeName)
+            .or(() -> MutationInputResolver.parseMutationTableArg(fieldDef));
+        return scopeTable
             .map(ctx::inferNodeTypeOverTable)
             .orElseGet(() -> new BuildContext.InferredNodeType(null,
                 "@nodeId without typeName: cannot infer node type, the field's return type"
                 + (returnTypeName == null ? "" : " '" + returnTypeName + "'")
-                + " binds no table to inherit a target from. Add typeName: explicitly."));
+                + " binds no table and the field names none with @mutation(table:), so there is"
+                + " nothing to inherit a target from. Add typeName: explicitly."));
     }
 
     /**

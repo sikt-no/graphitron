@@ -1325,9 +1325,9 @@ class BuildContext {
      * <p>One rule with two absences, both permanent rather than a shim's: no node over the table
      * and several over it are each a message naming {@code typeName:} as the fix. The rule is the
      * fact model's {@code TARGET_TABLE_NODE_TYPE} basis, and the callers differ only in how they
-     * arrive at the table, which is what keeps the walk and the store one rule rather than two:
-     * {@link NodeIdLeafResolver} arrives from the leaf's containing table and
-     * {@link ServiceCatalog} from the consuming field's own return table.
+     * arrive at the table: {@link NodeIdLeafResolver} from the leaf's containing table, and
+     * {@link ServiceCatalog} from the slot's own scope, which is the consuming field's return table
+     * or, where that binds nothing, the table {@code @mutation(table:)} names.
      */
     InferredNodeType inferNodeTypeOverTable(String tableName) {
         var candidates = nodes.forTable(tableName).stream()
