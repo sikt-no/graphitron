@@ -5,7 +5,7 @@ status: Backlog
 bucket: dx
 priority: 3
 theme: tooling
-depends-on: [reviewer-findings-not-reviewer-edits]
+depends-on: []
 created: 2026-08-21
 last-updated: 2026-08-21
 ---
