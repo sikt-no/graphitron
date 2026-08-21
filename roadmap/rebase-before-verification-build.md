@@ -1,7 +1,7 @@
 ---
 id: R787
 title: "Rebase on trunk before the verification build, not at publish time"
-status: Spec
+status: Ready
 bucket: workflow
 depends-on: []
 created: 2026-08-21
