@@ -35,9 +35,9 @@ that prompted this item, and read the line.
 
 If the client does not advertise it, this item buys that developer nothing and should be parked
 rather than built, because push remains their only channel. It is worth saying plainly that this item
-is not what fixes an editor freezing on a slow drain; that is
-`roadmap/diagnostics-drain-leaves-the-triggering-thread.md`, it is client-independent, and it should
-land first regardless of what stage 0 finds here.
+is not what fixes an editor freezing on a slow drain. The asynchronous-drain item beside it has since
+shipped: the drain now leaves the triggering thread, that fix was client-independent, and it landed
+without waiting on what stage 0 finds here.
 
 ## What changes, if stage 0 says yes
 
@@ -46,11 +46,25 @@ true, since a file's diagnostics are the graph's capture judging it and a siblin
 and `workspaceDiagnostics` true. Clients that advertise nothing keep exactly today's behaviour, so
 the push path stays rather than being replaced.
 
+**One place holds the answer to "is this session pulling?".** Naming it is part of this item, because
+the three objects involved do not talk today. `GraphitronLanguageServer.initialize` is where the
+client's capabilities arrive and it currently hands `textService` nothing. The push decision is taken
+in `GraphitronTextDocumentService`, which owns the client proxy and the drain. And
+`markAllForRecalculation` is on `Workspace`, which reaches a client only through the `Runnable`
+listener the document service installs, and which knows nothing about the protocol at all. The last
+of those is worth keeping: `Workspace` should stay protocol-free, its listener meaning no more than
+"something changed", and the document service should remain the only object that decides what goes on
+the wire. So the negotiated flag is read once from `InitializeParams` and handed to the document
+service, which then either pushes or sends a refresh. No `ServerCapabilities` state leaks into
+`Workspace`.
+
 **Two handlers over the batch that already exists.** `textDocument/diagnostic` answers one document
 and `workspace/diagnostic` answers the set, both built from `Diagnostics.Batch`, which is already
 shaped for this: it walks a set, resolves membership once, reads one statement per graph and judges
 per document. A single-document pull is the batch with one member, which is what the interactive
-`diagnostic` path in `Diagnostics` already does.
+`diagnostic` path in `Diagnostics` already does. Both are overloads of `diagnostic` on lsp4j's
+`TextDocumentService` in 0.24.0, despite one of the two protocol methods being workspace-scoped, so
+neither belongs on `GraphitronWorkspaceService`.
 
 **An overrun becomes an answer.** The `OutOfBudget` arm maps to a `ResponseError` with code
 `ServerCancelled` carrying `DiagnosticServerCancellationData` with `retriggerRequest` true. That is
@@ -78,10 +92,18 @@ about rather than the server guessing at the set.
 
 ## Verification
 
-The existing `RecordingClient` harnesses drive a server with a stated set of client capabilities, so
-both branches of the negotiation are testable in the tier the diagnostics tests already sit in: a
-client that advertises the capability is answered on request and never pushed to, and a client that
-does not is pushed to exactly as today. The overrun case belongs beside the existing one in
+No harness states a client capability today, so this needs saying rather than assuming. The two
+`RecordingClient` implementations are private nested classes in
+`BuildTriggerPublishesDiagnosticsTest` and `StoreOutOfBudgetTest`, and both construct a
+`GraphitronTextDocumentService` directly and never call `initialize`, which is why they see no
+capabilities: the handshake is not in their path. That is a consequence of the flag living on the
+document service rather than a problem with it. Handing the flag in at construction, as the section
+above has it, makes both branches of the negotiation two harnesses that differ in one argument, in
+the tier the diagnostics tests already sit in: a client that advertises the capability is answered on
+request and never pushed to, and a client that does not is pushed to exactly as today. Covering the
+handshake itself, that `initialize` reads `textDocument.diagnostic` and hands the right value on,
+belongs in `TextDocumentServiceTest`, which is the one harness that already drives a real launcher
+proxy through `initialize`. The overrun case belongs beside the existing one in
 `StoreOutOfBudgetTest`, which already provokes a real overrun through `RunawayRelation`: a pulling
 client receives a `ServerCancelled` error carrying `retriggerRequest`, where a pushing client receives
 nothing on the wire.
