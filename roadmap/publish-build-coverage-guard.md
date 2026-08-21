@@ -3,7 +3,7 @@ id: R788
 title: "Publish stops when the verification build did not cover HEAD"
 status: Backlog
 bucket: workflow
-depends-on: [rebase-before-verification-build]
+depends-on: []
 created: 2026-08-21
 last-updated: 2026-08-21
 ---
