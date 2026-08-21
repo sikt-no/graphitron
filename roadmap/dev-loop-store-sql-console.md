@@ -248,10 +248,32 @@ only what the session already told them.
   defaulting it to null, the growable-record convention `RagConfig` already set. Ordering already
   works: the console starts right after `Materializations.refreshAll` and `bindServer` runs later in
   `execute()`, so the coordinates exist by the time the server is built.
-- Ambient instructions gain `/mcp/instructions-store-console.txt`, appended exactly when the
-  coordinates are non-null, the same conditional composition `instructions-execute.txt` already uses so
-  a routing sentence never advertises an absent door. `ServerInstructionsTest` pins that agreement per
-  boot.
+- **The routing sentence goes in the base `/mcp/instructions.txt`, unconditionally, and not in a
+  conditional fragment beside `instructions-execute.txt`.** A fragment appended only when the
+  coordinates are non-null looks like the careful choice and the existing pin rejects it:
+  `ServerInstructionsTest.ambientInstructionsRouteToEveryAdvertisedNameAndViceVersa` asserts the
+  partition *per boot* in both directions, and `EXEMPT_FROM_AMBIENT_ROUTING` is empty on purpose,
+  its javadoc naming the empty slot as the point. A tool registered on every boot whose sentence
+  appears only on the console-up boot is advertised-and-unrouted on the default boot, which is
+  exactly what that assertion exists to catch. `execute` escapes it because registration and fragment
+  move together; `catalog.search` escapes it because registration and base prose are both
+  unconditional. In the tree those are the only two shapes, and this item registers unconditionally,
+  so its prose is unconditional too and has to carry the disabled arm itself: one bullet naming
+  `store.console`, what it hands back, and that it answers `disabled` with the command that enables
+  it.
+- **The ambient character ceiling is the binding constraint on that bullet, and it has to be paid
+  for.** `AMBIENT_CHARACTER_BUDGET` is 3,600 and the composed worst case (the base string plus the
+  `execute` fragment) measures 3,537, so the headroom is 63 characters: less than one routing bullet.
+  That test's javadoc says an append should displace something rather than accrete, and that raising
+  the ceiling is a decision to argue rather than a constant to bump. The argument here is that a newly
+  advertised tool is new surface rather than looser wording, so the ceiling moves to a round 3,700 and
+  the reason joins the javadoc beside the existing one. A bullet terse enough to fit the 63 characters
+  leaves the ceiling alone and is the better outcome; either way the budget is what to measure before
+  writing the sentence rather than after the test goes red.
+- A backticked lowercase token is a tool claim to that test (`TOOL_SHAPED` matches any dot-separated
+  lowercase identifier), so the bullet must not backtick `psql`, `host`, `port`, `user`, `password` or
+  `disabled`. Each would read as a tool the server does not advertise and fail the staleness
+  direction of the same partition.
 - Close it in `cleanup()` **before** `lspStore`, `mcpStore` and `sessionStore`: the link connection
   points at the store, so the console goes first.
 
@@ -308,6 +330,10 @@ only what the session already told them.
 > `{"status": "disabled"}` and names the command that starts one, so an agent can tell you what to
 > restart with rather than guessing why psql refuses. The port is fresh per session, so re-read the
 > coordinates after a restart instead of caching them.
+
+The tool table earlier in that same document gains a `store.console` row, like every other advertised
+name: it is the list `ServerInstructionsTest` reads for the direction that catches a row surviving a
+rename, and a tool documented only in prose is the one an agent's human will not find.
 
 If any draft does not read simply at implementation time, the design is wrong and changes first.
 
@@ -370,8 +396,13 @@ nobody swaps it for a driver connection and concludes the console is broken.
   returns the bound port, the user, the password, the relation count and a `connectCommand`, each as its
   own field; the disabled arm returns `status: disabled` plus the enabling command and no connection
   fields at all.
-- `ServerInstructionsTest`: the console routing fragment is present exactly when coordinates are, the
-  agreement that test already pins for the execute fragment.
+- `ServerInstructionsTest`: no new test method, three existing ones to satisfy. `store.console` is
+  routed by the base ambient string on **both** boots, since the partition is asserted per boot with
+  nothing exempted; it joins `EXPECTED_SURFACE` in `theAdvertisedSurfaceIsExactlyTheNamedSet`, which is
+  where adding a tool is meant to be a decision somebody writes down; and the composed string stays
+  inside the ceiling the design section settles. The manual pin is satisfied by the doc changes above,
+  the presence direction reading the whole document and the staleness direction the tool table's first
+  column.
 - `cleanup()` closes the console, and closes it before the store.
 - A console that fails to open degrades to a warning naming the reason, and the session continues.
 
