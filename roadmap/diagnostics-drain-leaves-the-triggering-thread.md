@@ -90,12 +90,17 @@ this one lands first, it puts the shutdown where that item's reasoning says the 
 two do not grow two teardown hooks with different rules. Neither blocks the other, and the reviewer of
 whichever comes second should check that one place owns per-connection teardown.
 
-One sentence of that item's problem statement changes when this one lands, and its author should know:
-it observes that a stale listener's `publishDiagnostics` "throws `JsonRpcException` straight into
-whichever thread fired the recalculation, which in the dev loop is a Maven thread rather than an lsp4j
-one". After this item that throw lands on the drain thread instead. Its deliverable 1 wrapper is
-unaffected, catching at the message consumer regardless of caller, and its deliverable 2 remains the
-correct fix: an executor does not make a dead listener right, it only moves where the failure surfaces.
+What that item's failure actually looks like matters here, and its round 1 review has just corrected
+it: `RemoteEndpoint.notify` in lsp4j 0.24.0 catches its own write failure, consults
+`indicatesStreamClosed`, and logs at INFO rather than propagating, so a stale listener's publish never
+throws into the thread that fired the recalculation. Which means this item's interaction with it is
+narrower than an exception crossing threads. What moves is where that log record originates, from a
+Maven thread today to the drain thread after this lands, and who wastes the work: a drain submitted for
+a connection that is gone runs in full and publishes into nothing.
+
+Neither changes that item's deliverables and neither is fixed by this one. An executor does not make a
+dead listener right; it relocates the symptom. The compare-and-clear is the fix, and this item's
+executor shutdown belongs beside it for the same reason.
 
 ## What does not change
 
