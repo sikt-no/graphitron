@@ -193,8 +193,18 @@
               (after this module's own classes compile, before package) so it runs against the freshly
               compiled BgeEmbedder + AdocChunker. The ONNX embed cost is gated by a content-hash stamp
               the generator writes beside the bundle: an unchanged manual skips the re-embed, so a plain
-              `mvn install` inner loop does not pay it twice. exec:java runs in-process; the embedder's
-              ONNX native load is granted native access by the same flag the surefire config carries.
+              `mvn install` inner loop does not pay it twice.
+
+              Forked, not in-process (exec:exec rather than exec:java), because the embed loads a
+              native library the JVM binds to one class loader for its lifetime: langchain4j's
+              tokenizer does System.load on a fixed cached path, and exec:java builds a fresh class
+              loader per execution inside the Maven JVM. In a reused JVM (an mvnd daemon, which the
+              docs recommend) the second stale-stamp build therefore failed the whole build with
+              "libtokenizers.so already loaded in another classloader" - editing any manual page and
+              rebuilding was enough to hit it. A fork gets a JVM whose class loader has not loaded
+              the library, so the step is idempotent across builds; it also owns its own flags, so
+              the native-access grant is declared on the fork's command line rather than inherited
+              from a surefire argLine that never applied to this execution.
             -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
@@ -204,11 +214,15 @@
                     <execution>
                         <id>build-docs-index</id>
                         <phase>process-classes</phase>
-                        <goals><goal>java</goal></goals>
+                        <goals><goal>exec</goal></goals>
                         <configuration>
-                            <mainClass>no.sikt.graphitron.mcp.rag.docs.DocsIndexBuilder</mainClass>
+                            <executable>${java.home}/bin/java</executable>
                             <classpathScope>compile</classpathScope>
                             <arguments>
+                                <argument>--enable-native-access=ALL-UNNAMED</argument>
+                                <argument>-classpath</argument>
+                                <classpath/>
+                                <argument>no.sikt.graphitron.mcp.rag.docs.DocsIndexBuilder</argument>
                                 <argument>${docs.source.dir}</argument>
                                 <argument>${project.build.outputDirectory}/mcp/docs-index</argument>
                             </arguments>

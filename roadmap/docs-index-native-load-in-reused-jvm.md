@@ -1,7 +1,7 @@
 ---
 id: R785
 title: "Docs-index generator dies on a second stale-stamp run in a reused Maven JVM"
-status: Spec
+status: In Progress
 bucket: tooling
 priority: 2
 theme: tooling
