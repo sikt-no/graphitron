@@ -559,6 +559,16 @@ invariant was stated to surface. Stage 5 owes it either a third verdict naming t
 reference or a reading that the ambiguity is already refused upstream; what it must not do is let the
 arm pick.
 
+**A second gap in the partition, found by stage 4 and named on the same terms.** The encode relation
+routes a field whose value a named producer returns to `READ_VALUE`, deliberately and for a stated
+reason. The Java classifier drops the directive at exactly those coordinates: the `@externalField` and
+`@service` arms of the table-parent classifier run ahead of its `@nodeId` arm, so `@nodeId` on such a
+field is inert the way it was at the four read arms. The relation says the instruction resolves and the
+generator does not carry it out, which is the one direction the accept-set guard cannot catch, since
+nothing was generating there to go red. Stage 4 did not widen to it, its exit naming the read arms, and
+stage 5 owes it either an emitter at those two coordinates or a refusal; what it must not do is let the
+relation keep claiming a resolution nobody performs.
+
 That gap also corrected the slot relation itself. Its named-parameter arm shipped demanding one
 producer candidate, which every other reader of `intent_field_producer_method` does, and here that was
 wrong in a way its own comment already contradicted: dropping the rows makes the use site look like
@@ -789,6 +799,17 @@ carries a `CallSiteCompaction`; only `ChildField.ColumnBackedField` and `ColumnB
 do. So `@nodeId` is equally inert at all four, and the reporter hit one of them. Same silence, same
 cause: a read has no wire direction.
 
+*Corrected in stage 4.* That census is one carrier short, and the missing one already covered a
+coordinate this paragraph counts as broken. `ChildField.SingleRecordIdField` and
+`SingleRecordIdFieldFromReturning` each carry a `NodeIdEncodeKeys` too, and the first claims every
+`ID` field on a producer *carrier* parent, a type a `@service` binds directly to a jOOQ table record,
+where it has encoded the whole key tuple straight off that record all along. So the population the
+read slot adds is narrower than "the whole read family": the class-backed accessor read, the untyped
+by-name read, a table record reached through a *parent accessor* rather than through a producer of its
+own, and the `@error` type. Reading the four locator arms as the population, rather than the
+coordinates the read leaf actually owns, is what hid the third carrier; the slot is still one slot and
+still lands at all four arms, which is why the correction changes the account and not the design.
+
 So the fix is one slot, not a per-`@error`-type carrier. `RecordReadField` gains a `CallSiteCompaction`
 beside its `ValueLocator`, and the encode then works at every read arm at once. That is the vocabulary
 `ColumnBackedField` already uses, and the `NodeIdEncodeKeys` arm carries only a `HelperRef.Encode`,
@@ -828,6 +849,18 @@ invariant: the arity is `COUNT(*)` over `intent_resolved_node_key_column`, and t
 comes off the accessor or column the `ValueLocator` names. The refusals name which precondition
 failed, the type and the count on one, both types on the other, and one place then says everything
 about that coordinate.
+
+*The type precondition turned out to be per locator arm, and one arm already had the comparison,
+pointed at the wrong operand.* Which type a read yields is not one fact: the typed-column arm has the
+column's binding type from the catalog, the accessor arm has the accessor's declared return, and the
+by-name and default arms type nothing. So the comparison is made where its operand lives rather than
+once. The accessor arm is the one worth recording, because `resolveRecordAccessor` was already
+comparing: it takes the SDL type's reflected form as the expected return, an `ID` field maps to
+`String`, and the accessor on a `@nodeId` read yields the key column's own type, so such a coordinate
+was already refused, by a message about the SDL type. Passing the key column as the expected return is
+therefore not a new gate but an existing one repointed at the operand the encode actually needs, which
+is why that arm's refusal reads as the resolver's own diagnostic wrapped in a sentence naming the key
+column. The arity precondition stayed one comparison and one message, as written.
 
 This is the same rule as sites 1 and 2 read in the other direction, and stating it once in both
 places is deliberate: a consumer neither receives nor supplies the wire format. A read yielding a
@@ -1107,6 +1140,25 @@ seed already says so. Reading a junction as a shape rather than as a shape plus 
 picked the wrong one, and the correction cost no DDL: the pipeline and unit tiers keep
 `film_category`, where only the shape is being asked about.
 
+**Stage 4 splits at the coordinate that has two spellings of one read.** The slot, the classification
+arm, the two refusals and the emitter are one increment: they are the whole of the encode at the
+coordinates where graphitron's own classification locates the value, and they are verifiable from the
+classified leaf plus one emitted body. The `@error` type is the second, because there the classified
+leaf is not what the runtime reads: the registration folds over a type-level override list instead, so
+the coordinate needs the two collapsed into one per-field read before a wire direction on the leaf
+means anything at all. Splitting there rather than by tier keeps the first increment's exit checkable
+without the unification, which is the part with a shape decision in it.
+
+**Where that per-field list can live is decided by an ordering, not by taste.** The plan says
+`ErrorType` carries it, and `ErrorType` cannot: `classifyType` runs for every type inside
+`buildClassificationIndices`, which is what *builds* `ctx.nodes`, so the lift that produces an
+`ErrorType` cannot resolve an encoder. It is also memoized, so a lift reading a half-built index would
+cache the answer. The list therefore hangs off the classified fields, which `FieldBuilder` produces
+with the node index in hand, and `GraphitronSchema` exposes it as the one per-field read the
+registration folds over. That satisfies what the plan was after, the classified leaf and the
+type-level override list stopping being two spellings of one read, and puts the list where the
+resolution is possible.
+
 **The arity rule landed at the `argMapping` site, and it landed by adding a population rather than by
 removing a rejection.** The plan above says stage 2 edits `BARE_NODE_ID`'s text down to the arity
 fact, and reading that as a text edit is what would have shipped a hole: lifting the rejection at
@@ -1221,11 +1273,30 @@ the terminal hop instead of the landing would bind it locally against a tuple th
 The junction case is the second half of that pair and says the same thing from the other side, a chain
 that renames nothing and still binds remotely.
 
+Stage 4's first increment drew no reds either, over the same 3762, and the one it *nearly* drew is the
+finding. `CommandSeamRatchetTest.leafDispatchSitesInGenerators` went 69 to 70, because reaching the
+leaf's compaction from `armSwitchedInlineDataFetcher` needed an `instanceof ChildField.RecordReadField`
+that the method next to it already performs. The pin is a deliberate-update pin rather than a
+prohibition, so raising it was available; not raising it was better. `inlineSuccessRead` became
+`inlineSuccessReturn` and returns the whole `return` statement rather than a value expression, so the
+one narrowing that method already made now also decides how the value reaches the wire. A pin doing
+what a pin is for.
+
+One test fixture is worth naming because finding it is what proved the arm. The typed-column read at
+an `ID` coordinate is unreachable through a `@service` returning a table record, that binding making
+the SDL type a producer carrier and the carrier leaf claiming the coordinate. The shape where the read
+arm owns it is a record reached through a *parent accessor*, which the tree already had in
+`FilmKeySummary`, a Java record holding a fully populated `FilmRecord`. So the compilation and
+execution tiers cost SDL only, on the same fixture whose batch-key contract they already pin.
+
 * **Pipeline tier**, carrying the primary behavioural weight. The junction chain lowering to a remote
   binding with a two-hop path, on both the argument and the input-field surfaces. Each of the four
   write rails refusing a remote-bound junction carrier, asserting the text that rail actually
   produces, as cases in `TranslatedFkTargetRailGatesPipelineTest`. The read-family encode at each of
-  the four read arms. And the behaviour the invariant is about, stated as a matrix over the two
+  the four read arms; shipped as `NodeIdReadEncodePipelineTest`, which asserts the three arms
+  graphitron's own classification locates as a set with the same negative control beside them, the
+  directive's absence leaving the same coordinate a plain read, plus each precondition where its
+  operand lives. And the behaviour the invariant is about, stated as a matrix over the two
   preconditions at a single-valued slot, on both a `@service` parameter and a bean member: a
   single-column key whose type matches, which receives the decoded value and never the base64; a
   composite key, which draws the arity refusal; and a matching-arity type disagreement, which draws
@@ -1261,7 +1332,11 @@ that renames nothing and still binds remotely.
 * **Compilation tier.** Rides `graphitron-sakila-example`. The hope that a junction is already in the
   schema held, so this cost SDL only and no `init.sql` change: three coordinates, the chain on the
   argument and input-field surfaces and the single reverse hop, each carrying its `@reference` because
-  a reverse or multi-hop path is never auto-discovered.
+  a reverse or multi-hop path is never auto-discovered. Stage 4 adds one more, and it is the tier that
+  matters most for the read encode: the emitted body is new (the read bound to a local of the key
+  column's declared type, the null test, the encode call), and javac is the stated backstop for a read
+  the model cannot type, so a coordinate that compiles is the claim. `FilmKeyRow.filmRef` off
+  `FilmKeySummary`'s held record renders as a five-line fetcher method and compiles at release 17.
 * **Execution tier**, carrying the row-semantics claim. R57's argument for `EXISTS` is that a
   non-unique path multiplies no rows and a NULL foreign key fails the correlation instead of
   duplicating or dropping. A junction table is the shape where that claim is load-bearing and only
@@ -1274,7 +1349,11 @@ that renames nothing and still binds remotely.
   `xlat` shapes reaching the binding through a foreign key aimed at the wrong unique key and these two
   reaching it through a reach that is non-unique. The reverse hop is `address` filtered by `Customer`,
   where two customers share address 1. Both also pin the correlation's other half, a parent with no
-  matching row being dropped rather than returned with nulls, address 4 having no occupant.
+  matching row being dropped rather than returned with nulls, address 4 having no occupant. Stage 4's
+  own execution case is a different kind of claim and needs the tier for a different reason: the
+  classified leaf carries an encode either way, and the raw key would have been a legal `Int` on the
+  wire, so only a running query says which value the consumer got. Three rows over two distinct films,
+  which also shows the encode is per row rather than per dispatch.
 
 The spike's rendered SQL was the right evidence for a spike and is the wrong assertion to ship:
 code-string matching on generated bodies is banned at every tier. Where an emission claim genuinely has
@@ -1427,6 +1506,15 @@ rejection that enforced it, not the word for the shape that still has that prope
 sweep found beyond the enumerated entries: the fixture generator's own comment on `lift_fail_a`
 described the fixture by the rejection it drew, and the page's "the runtime touches one table" was
 stated of multi-hop chains generally rather than of the identity-carrying ones.
+
+Stage 4's first increment discharged the `CallSiteCompaction` entry, and the replacement text says
+more than the entry asked for. The retired sentence named two carriers as the population; naming the
+third (the read carrier) would have restated a census the section above has now corrected twice. So
+the slot's javadoc states the two *families* instead, the column-backed carriers that have the whole
+tuple in scope and the read carrier that has one value, which is the distinction the arity demand
+actually follows from. The neighbouring arity sentence went with it, as the entry said, and the demand
+is now stated on the read carrier's own constructor as a backstop and in the encode relation as the
+membership condition, the author-facing refusal being the classifier's.
 
 `CONDITION_STEP_MARKER` is deliberately *not* retired here, and neither is the rejection it anchors;
 see the emitter argument under Design. The Done-gate sweep should read a surviving
