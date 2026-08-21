@@ -37,15 +37,19 @@ Against H2 2.4.240, on a store booted from the real fact schema.
   are required". The store's rows were unchanged after all of it.
 - **This enforcement is available here but not on the psql door.** H2's `PgServerThread` issues
   `SET DEFAULT_NULL_ORDERING HIGH` at connect, which requires admin, so the wire protocol refuses a
-  rights-limited user outright. A plain in-process JDBC connection has no such constraint. The agent
-  tool is therefore the surface that can be genuinely read-only, which is an argument for it existing
-  beside the console rather than instead of it.
+  rights-limited user outright. A plain in-process JDBC connection has no such constraint, which is why
+  the tool can hold its contract structurally while the console cannot.
 
 ## The design
 
 **A `store.query` MCP tool over a rights-limited connection onto the store itself.** No second
 database and no links: the tool holds a connection authenticated as a `SELECT`-only H2 user, so
 read-only is enforced by the engine on every statement rather than by anything this codebase parses.
+
+The point of the grant is not defence against an attacker, since this is a dev tool on a developer's
+machine with no listener of its own. It is that "read-only" becomes a property of the connection rather
+than a promise this codebase keeps by inspecting SQL: a model-generated `DELETE` is refused by H2
+instead of by a filter we would have to keep correct as the tool grows.
 
 The store mints that connection, as it mints `reader()` and the console, and for the same reason: the
 url is private. The shape to extend is `StoreReader`, which already answers exactly the way a query
@@ -54,10 +58,10 @@ multi-query answer cannot straddle two commits, and a rollback at the end so not
 the writer's rows). What this item adds to that shape is the rights-limited user and a statement
 surface that takes SQL from outside.
 
-**A single-statement guard on top, as defence in depth rather than as the mechanism.** The tool
-accepts one statement and rejects a payload carrying several, so a caller cannot smuggle a second
-statement past a reviewer reading the first. The grant is what makes writes impossible; the guard is
-what keeps the tool's contract legible.
+**One statement per call, as a response-shape rule rather than a guard.** A call returns one
+`columns`/`rows` pair, so a payload carrying several statements has no well-defined answer and is
+refused for that reason. Writes are already impossible by grant; this is about the tool having one
+contract.
 
 **Bounded answers.** A tool response is not a cursor: the tool caps rows (a `limit` argument with a
 default, plus a hard ceiling) and reports truncation explicitly in its structured content, so an agent
@@ -71,7 +75,8 @@ truncation message says so.
 
 - `GraphitronModelStore.queryReader()` (name to settle at implementation), minting a `StoreReader`-
   shaped handle on a connection authenticated as the read-only user, creating the user and issuing
-  `GRANT SELECT ON SCHEMA PUBLIC` on first use with a per-store random password. It is a distinct
+  `GRANT SELECT ON SCHEMA PUBLIC` on first use. The password is fixed and internal, never printed or
+  handed out: nothing outside the store opens this connection, and the tool holds no listener. It is a distinct
   member from `reader()` rather than a flag on it: the existing readers are the session's own
   machinery and must keep full read access to relations a grant might not cover, and a caller should
   not be able to get the constrained thing by accident or the unconstrained thing by typo.
@@ -95,7 +100,8 @@ truncation message says so.
 > **Ask the fact store a question nobody anticipated.** `store.query` takes one read-only SQL statement
 > and returns `columns` and `rows` as structured content, over the same facts every other tool answers
 > from. The connection is `SELECT`-only, enforced by the database rather than by a filter, so a
-> statement that writes is refused rather than rolled back. Answers are capped: pass `limit` to widen
+> statement that writes is refused rather than rolled back, so a generated `DELETE` cannot touch the
+> session's rows. Answers are capped: pass `limit` to widen
 > up to the ceiling, and check `truncated` before concluding an empty tail means no rows. For a result
 > too large to carry, or an interactive session, use the psql console instead.
 

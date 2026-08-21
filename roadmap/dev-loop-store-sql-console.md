@@ -60,28 +60,33 @@ reasoned about. The first four findings framed the fork; the last five settled i
   one shared link connection): H2 pools link connections per url and user through
   `org.h2.table.TableLinkConnection`.
 - **`READONLY` stops DML, and that is all it stops.** `INSERT`, `UPDATE` and `DELETE` through a linked
-  relation all fail with `The database is read only`. DDL on the console database does **not** fail: a
-  client can `DROP` a link, `CREATE TABLE`, or create a second link *without* `READONLY` and write to
-  the store through it (measured; the store's rows survived only because the probe did not follow
-  through). So the door is protection against an accidental `UPDATE`, not a sandbox.
-- **The psql user cannot be rights-limited, because H2's own wire protocol needs admin.**
-  `PgServerThread` issues `SET DEFAULT_NULL_ORDERING HIGH` on connect, which requires admin rights, so
-  a non-admin H2 user is refused at connect before it can run anything. H2 grants (which do close the
-  DDL hole, measured under a plain JDBC connection: `CREATE LINKED TABLE` refused with "Admin rights
-  are required", `CREATE TABLE` and `DROP` refused with "Not enough rights") are therefore unavailable
-  on this door specifically. That is a constraint of the protocol, not a choice, and it is why the
-  read-only claim in this item is scoped to accidents.
+  relation all fail with `The database is read only`, which is the accidental-`UPDATE` guard worth
+  having. DDL on the console database does not fail, and the connecting user has to be an H2 admin
+  anyway (`PgServerThread` issues `SET DEFAULT_NULL_ORDERING HIGH` at connect, which requires admin,
+  so a rights-limited user is refused before it runs anything), so a client that insists can write. For
+  a dev tool that is fine; the item just does not claim otherwise.
+- **H2's "only local connections" is a peer check, not a bind restriction.** With `-pgAllowOthers`
+  omitted, `getStatus()` reports "only local connections" and a psql session arriving on this host's
+  non-loopback address is dropped, but a plain TCP connect to that address is **accepted**: the
+  listener is on all interfaces and H2 rejects the session afterwards. The port is open to the network
+  even though no data is served through it.
+- **`h2.bindAddress` does restrict the bind, and only if it is set before H2 loads.** With
+  `h2.bindAddress=127.0.0.1` set before any H2 class initialises (or passed as `-D`), a TCP connect to
+  the non-loopback address is refused outright while loopback keeps working. Set *after* H2 has loaded
+  it has no effect at all and the listener stays on every interface: `SysProperties.BIND_ADDRESS` is
+  read once at class initialisation. This is the finding the design below is built around, because the
+  dev goal cannot assume it runs before H2 loads (`ModelCodegenDriver` opens a store during ordinary
+  builds in the same JVM).
 - **An ephemeral port is fully supported and self-reporting.** `-pgPort 0` binds a free port, and
   `getPort()`, `getURL()` and `getStatus()` all report the port actually bound (measured: 32973), so
-  the session can name it in a log line without pre-binding a socket to guess a free number. H2's own
+  the session can name it in a log line without pre-binding a socket to guess a free number. H2's
   status string reads `PG server running at pg://localhost:<port> (only local connections)`, which
-  independently confirms that omitting `-pgAllowOthers` binds loopback.
-- **A printed connect command runs verbatim.** A console database created with a minted user
-  (`graphitron`) and a random hex password serves psql on the ephemeral port, and the exact line the
-  session would print, `PGPASSWORD=<hex> psql -h localhost -p <port> -U graphitron -d store`, was
-  pasted back into a shell unchanged and returned rows. Hex keeps the line free of characters a shell
-  would need quoted. The secret is enforced rather than decorative: both a wrong password and a wrong
-  user are refused at connect.
+  reads like a bind claim and is not one: see the peer-check finding above.
+- **A printed connect command runs verbatim.** The exact line the session would print,
+  `PGPASSWORD=<password> psql -h localhost -p <port> -U graphitron -d store`, was pasted back into a
+  shell unchanged and returned rows, and a wrong password or user is refused at connect. An empty
+  password is not an option: libpq refuses to send one and prompts instead, which is why the console
+  carries a fixed non-empty password rather than none.
 - **pgjdbc cannot connect at all.** The driver's startup queries include `SET extra_float_digits = 2`,
   which H2 rejects as a syntax error, and no combination of `assumeMinServerVersion`,
   `preferQueryMode=simple` or `options=-c ...` gets past it. psql (libpq) works; JDBC clients that go
@@ -107,13 +112,26 @@ reconstruct a stamped path or a UUID name and would fail exactly the way `reader
 describes: opening a different database, looking fine, answering from nothing. `console()` is a
 sibling of `reader()` on `GraphitronModelStore`, and the url never leaves the class.
 
-**Read-only means accident-proof, not tamper-proof, and the docs say so.** The measurements above put
-a hard limit on what this door can promise: DML through the linked relations is refused by the engine,
-which is what stops a mistyped `UPDATE` in a debugging session, but the wire protocol forces the
-connecting user to be an H2 admin, so a client that insists can create a writable link and reach the
-store. Rather than implying a sandbox the mechanism cannot deliver, the item states the limit in the
-javadoc, in the user docs and in the log line's own wording. The threat this defends against is the
-developer's own slip, and the developer already owns the workspace by every other route.
+**This is a dev tool, and it has exactly one hard requirement: the listener is on `127.0.0.1` and
+nowhere else.** Everything else here is ergonomics. Credentials are fixed and printed (`graphitron` /
+`graphitron`), not minted secrets: an empty password is worse than a fixed one, since libpq refuses to
+send one and prompts instead, which breaks the paste-ready line for no gain. The `READONLY` links stay
+because they cost nothing and catch a mistyped `UPDATE`, and the docs say plainly that they are not a
+sandbox rather than implying a guarantee the mechanism cannot make.
+
+**The bind is checked, not assumed.** Because `h2.bindAddress` is only honoured when set before H2
+loads, and the dev goal can run in a JVM that already loaded H2, setting the property is necessary but
+not sufficient. So the console does both:
+
+1. Set `h2.bindAddress` to `127.0.0.1` as early as the goal can reach, at the top of `execute()`
+   before the session store opens, which is enough in an ordinary dev JVM.
+2. After the server starts, prove it: connect to each non-loopback IPv4 address of this host in turn
+   and require every one to refuse. If any accepts, the property was too late to take effect, so stop
+   the server, log that the console is refused because the bind could not be confined, and continue the
+   session without a console.
+
+A listener that cannot prove it is loopback-only does not stay up. That turns an unverifiable claim
+into a checked invariant, and the failure mode is a missing debug tool rather than an open port.
 
 **The console is a debug affordance, so it degrades rather than fails.** A store whose console cannot
 open (port taken, link rejected) must not fail the dev session: `console()` throws and `DevMojo`
@@ -132,12 +150,10 @@ cache trouble costs warmth and never correctness.
   stops the server and shuts the console database down (`SHUTDOWN`, the `dropOnClose` arm of
   `GraphitronModelStore.close`, since the console holds `DB_CLOSE_DELAY=-1`), and leaves the store
   untouched.
-- The console owns its own credentials rather than borrowing the store's: user `graphitron`, and a
-  password minted per console from `SecureRandom` as hex, so the printed line needs no shell quoting.
-  Loopback is not a boundary between local users, so a per-session secret is what keeps another
-  account on the same machine out of a door that exists for one developer. The password is printed,
-  which is the point (it is useless without the port, dies with the session, and a developer who
-  cannot read it cannot use the console at all), but it is one reason the console stays opt-in.
+- The console owns its own credentials rather than borrowing the store's, and they are fixed:
+  user `graphitron`, password `graphitron`. Fixed rather than minted because the listener is confined
+  to loopback and a dev tool gains nothing from a secret, and non-empty because libpq will not send an
+  empty password (it prompts instead), which would break the paste-ready line.
 - `GraphitronModelStore.console(int port)` mints it, beside `reader()`:
   1. Read the relation names off this store's own connection
      (`information_schema.tables` where `table_schema = 'PUBLIC'`), the same raw-JDBC shape
@@ -148,17 +164,20 @@ cache trouble costs warmth and never correctness.
   3. One `CREATE LINKED TABLE <relation>(NULL, '<this.url>', <user>, <password>, 'PUBLIC.<relation>')
      READONLY` per relation.
   4. `Server.createPgServer("-pgPort", <port>, "-key", <console name>, "mem:<console name>")`, with
-     neither `-pgAllowOthers` nor `-baseDir`: H2 binds loopback only when `allowOthers` is off, and
-     that is the whole access control this door gets.
-  5. Any failure closes what it opened and throws `IllegalStateException` naming the port and the
-     reason.
+     neither `-pgAllowOthers` nor `-baseDir`.
+  5. Verify the bind: every non-loopback IPv4 address of this host must refuse a TCP connect to the
+     port, and loopback must accept one. A host with no non-loopback address passes trivially.
+  6. Any failure, the bind check included, closes what it opened and throws `IllegalStateException`
+     naming the port and the reason.
 - `console(0)` is the ordinary call, not a special case: `StoreConsole.port()` reports
   `Server.getPort()` (the port bound, never the port asked for), so a caller that passed 0 learns the
   real port from the handle and a caller that pinned one gets the same number back. Nothing in the
   class treats 0 as a sentinel.
-- Javadoc on both members carries the two measured constraints a future reader will otherwise
+- Javadoc on both members carries the three measured constraints a future reader will otherwise
   rediscover: PG mode is a creation-time property (hence a second database rather than a flag on this
-  one), and pgjdbc cannot speak to H2's PG server (hence psql, not a driver).
+  one), pgjdbc cannot speak to H2's PG server (hence psql, not a driver), and H2's `allowOthers=false`
+  is a peer check rather than a bind restriction (hence `h2.bindAddress` plus the verification, and
+  hence never reading H2's "only local connections" status as proof).
 
 `graphitron-maven-plugin`, `no.sikt.graphitron.rewrite.maven`:
 
@@ -177,18 +196,22 @@ cache trouble costs warmth and never correctness.
   `resolveStoreConsole()` reconciler mirroring `resolveDevDatabase()` (env wins per field, absent
   means off, no console and no port bound), and a `StoreConsole storeConsoleHandle` field left
   package-private for the same reason `sessionStore` is.
-- Start it in `execute()` immediately after `Materializations.refreshAll(sessionStore.dsl())` and
-  before the watchers, so the linked relations include the refreshed materializations and the console
-  is up before the first round lands.
+- Set `h2.bindAddress` to `127.0.0.1` at the top of `execute()`, before the session store opens, since
+  the property is only honoured ahead of H2's class initialisation. A comment states that the console's
+  own bind check is what covers the case where this was already too late, so nobody later reads the
+  property as sufficient on its own and drops the check.
+- Start the console in `execute()` immediately after `Materializations.refreshAll(sessionStore.dsl())`
+  and before the watchers, so the linked relations include the refreshed materializations and the
+  console is up before the first round lands.
 
-**The session's output carries both commands, and each is complete.** With the port ephemeral and the
-password minted, a log line with a `<user>` or a `<port>` placeholder in it would be useless: the log
-is the only place either value exists. So the goal prints, on the enabled path, the command that
-connects, straight from `StoreConsole.connectCommand()` rather than reassembled at the log site:
+**The session's output carries both commands, and each is complete.** With the port ephemeral, a log
+line carrying a `<port>` placeholder would be useless: the log is the only place that value exists. So
+the goal prints, on the enabled path, the command that connects, straight from
+`StoreConsole.connectCommand()` rather than reassembled at the log site:
 
 ```
-graphitron:dev: fact-store console up, read-only, 216 relations linked.
-graphitron:dev:   PGPASSWORD=9f3c1a77b0e42d58 psql -h localhost -p 32973 -U graphitron -d store
+graphitron:dev: fact-store console up, read-only, 216 relations linked, 127.0.0.1 only.
+graphitron:dev:   PGPASSWORD=graphitron psql -h localhost -p 32973 -U graphitron -d store
 ```
 
 and on the disabled path, which is the default and therefore the line most developers will actually
@@ -217,8 +240,8 @@ only what the session already told them.
   nothing; a tool that answers `disabled` with the enabling command lets the agent tell its human what
   to restart with.
 - Deliberately not folded into the existing `status` tool. That one reports the graph's fact
-  availability and freshness and is called routinely; a per-session secret belongs behind a call an
-  agent makes on purpose, and the two answers have nothing to do with each other.
+  availability and freshness; connection coordinates for a different protocol are an unrelated answer,
+  and bundling them would widen a routinely-called tool for no reason.
 - Wiring: `StoreConsole.coordinates()` returns a record (`no.sikt.graphitron.model.boot`, beside the
   handle), null when no console is up. `DevMojo` threads it through `bindServer` next to
   `ExecuteTool.Config` and into the `GraphitronMcpServer` constructor, with a back-compat overload
@@ -241,10 +264,10 @@ only what the session already told them.
 > including the port it bound and the password it minted for this session. The port is ephemeral unless
 > you pin one with `<port>`; pin one only for a stable connect line, and expect a pinned port to
 > collide when you run more than one dev session. `GRAPHITRON_DEV_STORE_CONSOLE` and
-> `GRAPHITRON_DEV_STORE_CONSOLE_PORT` override the POM. The console binds `127.0.0.1` only and refuses
-> writes to the store's relations, which guards against a slip rather than sandboxing the client: the
-> wire protocol requires an administrative connection. Absent or disabled, no port is bound and the
-> session is unchanged, and the log says how to turn it on.
+> `GRAPHITRON_DEV_STORE_CONSOLE_PORT` override the POM. The listener is confined to `127.0.0.1`, and the
+> console refuses to start if it cannot verify that, so it is never reachable from another machine.
+> Writes to the store's relations are refused, which catches a slip rather than sandboxing the client.
+> Absent or disabled, no port is bound and the session is unchanged, and the log says how to turn it on.
 
 `docs/manual/how-to/dev-loop.adoc`, a new section "Query the fact store while the session runs":
 
@@ -258,20 +281,21 @@ only what the session already told them.
 > graphitron:dev:   GRAPHITRON_DEV_STORE_CONSOLE=true mvn graphitron:dev
 >
 > $ GRAPHITRON_DEV_STORE_CONSOLE=true mvn graphitron:dev
-> graphitron:dev: fact-store console up, read-only, 216 relations linked.
-> graphitron:dev:   PGPASSWORD=9f3c1a77b0e42d58 psql -h localhost -p 32973 -U graphitron -d store
+> graphitron:dev: fact-store console up, read-only, 216 relations linked, 127.0.0.1 only.
+> graphitron:dev:   PGPASSWORD=graphitron psql -h localhost -p 32973 -U graphitron -d store
 > ```
 >
-> Paste the second line into another terminal and you are in. The port and the password are fresh each
-> start, so two dev sessions never collide and yesterday's line never works today; take both from the
-> log you are looking at. Pin `<port>` in the POM if you would rather have a stable port, and note
-> that a pinned port collides when you run two sessions.
+> Paste the second line into another terminal and you are in. The port is a fresh free one each start,
+> so two dev sessions never collide; copy it from the log. Pin `<port>` in the POM if you would rather
+> have a stable port, and note that a pinned port collides when you run two sessions.
+>
+> The listener is on `127.0.0.1` and the console refuses to start if it cannot confirm that, so it is
+> not reachable from anywhere else.
 >
 > What you get is the session's live rows, read-only: a query after a save sees that round's facts.
-> "Read-only" here means writes to the store's relations are refused, which is there to stop a
-> mistyped `UPDATE` while you are poking around. It is not a sandbox: the connection is an
-> administrative one, because the protocol requires it, so a determined client can still find a way
-> through. Nothing you type at this prompt should be load-bearing.
+> "Read-only" means writes to the store's relations are refused, which stops a mistyped `UPDATE` while
+> you are poking around. It is not a sandbox, so nothing you type at this prompt should be
+> load-bearing.
 > Use `information_schema.tables` and `information_schema.columns` to find your way around rather than
 > psql's `\d` commands, which the server does not implement. Writes are refused by design; the
 > session owns those rows.
@@ -282,8 +306,8 @@ only what the session already told them.
 > connection as fields (`host`, `port`, `user`, `password`, `database`) plus a ready `connectCommand`.
 > Read the fields; there is nothing to parse. The tool is always present: without a console it answers
 > `{"status": "disabled"}` and names the command that starts one, so an agent can tell you what to
-> restart with rather than guessing why psql refuses. The port and password are fresh per session, so
-> re-read them after a restart instead of caching them.
+> restart with rather than guessing why psql refuses. The port is fresh per session, so re-read the
+> coordinates after a restart instead of caching them.
 
 If any draft does not read simply at implementation time, the design is wrong and changes first.
 
@@ -309,9 +333,15 @@ If any draft does not read simply at implementation time, the design is wrong an
 - `console(0)` binds a free port and `port()` reports the bound one, never 0. Two consoles opened at
   0 against one store get different ports and both answer, which is the multi-session case the default
   exists for.
-- `connectCommand()` names the bound port, the minted user and the minted password, and two consoles
-  mint different passwords. The point of the assertion is that the string is complete: no placeholder
-  token survives into it.
+- `connectCommand()` names the bound port and the console's user and password. The point of the
+  assertion is that the string is complete: no placeholder token survives into it.
+- **The bind is loopback-only**: with the console up, a TCP connect to each non-loopback IPv4 address
+  of the host is refused while loopback is accepted. This is the item's one hard requirement, so it is
+  asserted directly rather than inferred from H2's status string, which reports "only local
+  connections" even when the listener is on every interface. The test skips its non-loopback half on a
+  host that has no such address.
+- A console whose bind cannot be confined does not stay up: with the verification forced to fail, the
+  server is stopped and no port is left listening.
 
 `graphitron-model`, `StoreConsolePsqlTest`, the protocol pin, guarded by an assumption on the `psql`
 binary so a contributor without it skips and CI (which already uses `psql` in `rewrite-build.yml`)
@@ -337,9 +367,9 @@ nobody swaps it for a driver connection and concludes the console is broken.
 `graphitron-mcp`, MCP-handler tier, structured-content assertions only per this module's convention:
 
 - `GraphitronMcpServerTest`: `store.console` is advertised in `tools/list` on both arms; the up arm
-  returns the bound port, the minted user and password, the relation count and a `connectCommand`, each
-  as its own field; the disabled arm returns `status: disabled` plus the enabling command and no
-  credential fields at all.
+  returns the bound port, the user, the password, the relation count and a `connectCommand`, each as its
+  own field; the disabled arm returns `status: disabled` plus the enabling command and no connection
+  fields at all.
 - `ServerInstructionsTest`: the console routing fragment is present exactly when coordinates are, the
   agreement that test already pins for the execute fragment.
 - `cleanup()` closes the console, and closes it before the store.
@@ -348,14 +378,12 @@ nobody swaps it for a driver connection and concludes the console is broken.
 ## Out of scope
 
 - Putting the session's store in `MODE=PostgreSQL`. Rejected above with the measurement behind it.
-- A door for JDBC clients. pgjdbc cannot reach this console, so DBeaver and IntelliJ need a separate
-  H2 TCP server on the store itself, which is read-write and a different security posture. File it
-  separately if the demand shows up.
-- Write access, non-loopback binding, and any authentication beyond the per-console user and secret
-  described above.
-- Arbitrary SQL as an MCP tool. `store.console` hands out coordinates; it does not become a
-  `store.query` that runs SQL over the fact store and returns rows. See the open question below, which
-  is about whether that tool should exist rather than about how this one behaves.
+- A door for JDBC clients. pgjdbc cannot reach this console, so DBeaver and IntelliJ would need a
+  separate H2 TCP server on the store itself, which is a read-write door and its own bind question.
+  File it separately if the demand shows up.
+- Write access, and any binding other than `127.0.0.1`.
+- Arbitrary SQL as an MCP tool. `store.console` hands out coordinates; running SQL over the fact store
+  and returning rows is its own item.
 
 ## Open questions
 
