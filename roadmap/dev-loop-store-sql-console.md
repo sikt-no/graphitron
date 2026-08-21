@@ -59,8 +59,18 @@ reasoned about. The first four findings framed the fork; the last five settled i
   `information_schema.sessions` reports 2 after linking 216 relations (the store's own connection plus
   one shared link connection): H2 pools link connections per url and user through
   `org.h2.table.TableLinkConnection`.
-- **`READONLY` is enforced at the console.** An `INSERT` through psql fails with `The database is
-  read only`, so the debug door cannot corrupt the rows the session is reasoning from.
+- **`READONLY` stops DML, and that is all it stops.** `INSERT`, `UPDATE` and `DELETE` through a linked
+  relation all fail with `The database is read only`. DDL on the console database does **not** fail: a
+  client can `DROP` a link, `CREATE TABLE`, or create a second link *without* `READONLY` and write to
+  the store through it (measured; the store's rows survived only because the probe did not follow
+  through). So the door is protection against an accidental `UPDATE`, not a sandbox.
+- **The psql user cannot be rights-limited, because H2's own wire protocol needs admin.**
+  `PgServerThread` issues `SET DEFAULT_NULL_ORDERING HIGH` on connect, which requires admin rights, so
+  a non-admin H2 user is refused at connect before it can run anything. H2 grants (which do close the
+  DDL hole, measured under a plain JDBC connection: `CREATE LINKED TABLE` refused with "Admin rights
+  are required", `CREATE TABLE` and `DROP` refused with "Not enough rights") are therefore unavailable
+  on this door specifically. That is a constraint of the protocol, not a choice, and it is why the
+  read-only claim in this item is scoped to accidents.
 - **An ephemeral port is fully supported and self-reporting.** `-pgPort 0` binds a free port, and
   `getPort()`, `getURL()` and `getStatus()` all report the port actually bound (measured: 32973), so
   the session can name it in a log line without pre-binding a socket to guess a free number. H2's own
@@ -96,6 +106,14 @@ store's own url, which is private by design, so a console assembled outside the 
 reconstruct a stamped path or a UUID name and would fail exactly the way `reader()`'s javadoc
 describes: opening a different database, looking fine, answering from nothing. `console()` is a
 sibling of `reader()` on `GraphitronModelStore`, and the url never leaves the class.
+
+**Read-only means accident-proof, not tamper-proof, and the docs say so.** The measurements above put
+a hard limit on what this door can promise: DML through the linked relations is refused by the engine,
+which is what stops a mistyped `UPDATE` in a debugging session, but the wire protocol forces the
+connecting user to be an H2 admin, so a client that insists can create a writable link and reach the
+store. Rather than implying a sandbox the mechanism cannot deliver, the item states the limit in the
+javadoc, in the user docs and in the log line's own wording. The threat this defends against is the
+developer's own slip, and the developer already owns the workspace by every other route.
 
 **The console is a debug affordance, so it degrades rather than fails.** A store whose console cannot
 open (port taken, link rejected) must not fail the dev session: `console()` throws and `DevMojo`
@@ -223,9 +241,10 @@ only what the session already told them.
 > including the port it bound and the password it minted for this session. The port is ephemeral unless
 > you pin one with `<port>`; pin one only for a stable connect line, and expect a pinned port to
 > collide when you run more than one dev session. `GRAPHITRON_DEV_STORE_CONSOLE` and
-> `GRAPHITRON_DEV_STORE_CONSOLE_PORT` override the POM. The console binds `127.0.0.1` only, serves
-> reads, and refuses writes. Absent or disabled, no port is bound and the session is unchanged, and
-> the log says how to turn it on.
+> `GRAPHITRON_DEV_STORE_CONSOLE_PORT` override the POM. The console binds `127.0.0.1` only and refuses
+> writes to the store's relations, which guards against a slip rather than sandboxing the client: the
+> wire protocol requires an administrative connection. Absent or disabled, no port is bound and the
+> session is unchanged, and the log says how to turn it on.
 
 `docs/manual/how-to/dev-loop.adoc`, a new section "Query the fact store while the session runs":
 
@@ -249,6 +268,10 @@ only what the session already told them.
 > that a pinned port collides when you run two sessions.
 >
 > What you get is the session's live rows, read-only: a query after a save sees that round's facts.
+> "Read-only" here means writes to the store's relations are refused, which is there to stop a
+> mistyped `UPDATE` while you are poking around. It is not a sandbox: the connection is an
+> administrative one, because the protocol requires it, so a determined client can still find a way
+> through. Nothing you type at this prompt should be load-bearing.
 > Use `information_schema.tables` and `information_schema.columns` to find your way around rather than
 > psql's `\d` commands, which the server does not implement. Writes are refused by design; the
 > session owns those rows.
@@ -272,7 +295,11 @@ If any draft does not read simply at implementation time, the design is wrong an
   against the store's own `information_schema.tables`), and a view relation returns rows, since most
   of the fact schema is views.
 - Liveness: a row written to the store after the console opened is visible through the console.
-- Read-only: an `INSERT` through the console fails, and the store's row count is unchanged.
+- Read-only: `INSERT`, `UPDATE` and `DELETE` through the console fail, and the store's row count is
+  unchanged. The test's javadoc records what this does *not* cover (DDL on the console database, and an
+  admin client's writable link) so a later reader does not mistake the assertion for a sandbox claim.
+  It asserts the refusals rather than asserting the hole stays open, since H2 closing that hole would
+  be welcome rather than a regression.
 - Connection sharing: store-side `information_schema.sessions` stays at 2 after linking, the claim
   that N links cost one connection and the one that would regress silently.
 - The store's own mode is untouched (read `MODE` back off the store's settings; confirm the exact
@@ -335,14 +362,8 @@ nobody swaps it for a driver connection and concludes the console is broken.
 The port question is settled: ephemeral is the default and the encouraged shape, a pinned port is
 available for a developer who wants a stable connect line.
 
-One question the MCP surface raises and this item does not answer: **should an agent get a
-`store.query` tool instead of a psql door?** Handing an agent coordinates makes it drive a subprocess,
-parse psql's text table back into structure, and hold a credential it might echo into a transcript. A
-`store.query` tool taking read-only SQL and returning rows as structured content would skip all three,
-and the existing `StoreReader` (a second connection, one transaction per answer, rollback at the end)
-is already the right mechanism for it. The reasons to keep the coordinates anyway are that an agent
-with a shell can stream a large result set past what a tool response should carry, and that psql stays
-the human's door regardless, so the console is not work done only for agents. My read is that both
-belong, `store.query` as its own item once this one lands, but the call is worth making explicitly
-before implementation rather than after: if `store.query` is what agents should use, the MCP half of
-this item shrinks to nothing more than reporting whether a console exists.
+The `store.query` question is settled: both surfaces ship. `store.console` stays as specified here
+(coordinates as fields, for an agent that wants a real psql session or a result set larger than a tool
+response should carry), and arbitrary read-only SQL as an MCP tool is tracked as its own item, since it
+needs nothing from this one: it rides a rights-limited connection straight onto the store, with no
+console, no port and no linked database involved.
