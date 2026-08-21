@@ -1,7 +1,7 @@
 ---
 id: R775
 title: "The Spec gate reviewer lands findings, not fixes: half of R769's spec was written by its reviewers"
-status: Spec
+status: Ready
 bucket: dx
 priority: 1
 theme: tooling
