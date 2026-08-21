@@ -287,3 +287,84 @@ follow-up with a real request behind it and not a knob added on speculation.
 * **A reader per thread.** Minting per latency contract removes the drain-versus-keystroke coupling,
   which is the case we can name today. Whether concurrent interactive requests still contend enough
   to want a third reader is a question for a measurement, not for this item.
+
+## Reviewer findings (Spec → Ready gate, 2026-08-21)
+
+Independent reviewer session, status stays `Spec`. The first gate question passes without
+reservation, and it was checked rather than trusted: the four H2 claims in `## Measured, not assumed`
+were re-probed from scratch against `h2-2.4.240` and all four reproduce, exact down to the vendor
+code (unbounded under the real `LOCK_TIMEOUT=60000` URL shape, still running at 3000 ms;
+`SET QUERY_TIMEOUT 500` aborting with `org.h2.jdbc.JdbcSQLTimeoutException` at 501 ms, vendor 57014,
+state 57014, an instance of `SQLTimeoutException`; a second connection on the same database still
+running at 2000 ms while the first was bounded at 300 ms; two `setAutoCommit(false)` / `rollback`
+rounds aborting at 401 and 409 ms with the session usable for an ordinary read afterwards). The
+57014-against-50200 distinction the design leans on is real.
+
+What blocks is the second question, and it is confined to `## Implementation`. The design itself
+fits: the session command beside the existing `ISOLATION` statement, the sealed arm rather than an
+absence, the two-arm budget instead of a millis `long`, and both rejected alternatives rejected on
+mechanism. None of that would be redesigned by an implementer. But the plan makes two breaking
+changes to a shared API, `StoreReader.read`'s return type and `reader()`'s signature, and the
+implementation list does not follow either through its blast radius. Three places, each of which
+leaves the implementer designing rather than implementing:
+
+1. **`graphitron-mcp` has no heading at all, and its posture is undecided.** Four production sites
+   call `reader.read(...)`: `CatalogCorpus:45`, `CatalogQueries:238`, `SchemaQueries:369`,
+   `CodeQueries:164`, and `StoreReader` is threaded through about a dozen `GraphitronMcpServer`
+   signatures. Returning `StoreAnswer<T>` forces a posture at each of the four, and the only word on
+   MCP anywhere in the plan is that its mint gets a generous budget. The LSP postures do not
+   generalise to it: "keep the last good value" and "leave the previous publish standing" have no
+   meaning for a turn-based server with no prior state to keep. `## An expired budget is its own arm`
+   argues at length that this posture is a decision and must not be defaulted, so leaving it
+   unassigned in one of the two consuming modules is a hole by the plan's own standard. One sentence
+   naming it closes this.
+
+2. **`StoreAccess.readingSessionGraph` is never named, and it is the door the vocabulary uses.** The
+   `graphitron-lsp` bullet lists `answering` / `answeringAll` and "`Workspace`'s two doors of the
+   same name". The vocabulary loads at `Workspace:181` and `Workspace:286` both go through
+   `readingSessionGraph`, the third door. The vocabulary is the plan's most heavily argued
+   behavioural requirement, and the door that has to carry it is missing from the propagation list.
+
+3. **`## One reader per latency contract` has no plumbing bullet, and the grains are not separable at
+   that door as written.** Its only implementation line is in `DevMojo` ("the `lspStore` mint becomes
+   two readers"), but `StoreAccess` holds a single `StoreReader` whose lifetime it owns, `Workspace`
+   holds a single volatile `StoreAccess` with null checks in three methods, and
+   `StoreAccess.answering` is *implemented as* `answeringAll(List.of(sourceName), ...)` at line 62.
+   So the implementer has to choose between two `StoreAccess` instances in `Workspace` (touching
+   those null checks and the concurrency comment at `Workspace:44`) and one instance holding two
+   readers and routing by door (which means splitting that internal delegation). Those are different
+   shapes with different consequences, and the plan picks neither.
+
+Three smaller points, none blocking:
+
+- **A checkable claim that is false as stated.** `## Why a statement budget is enough to bound a
+  request` says the statement-count tier "already pins each feature at O(1) statements per
+  recalculation". Four such tests exist (`InlayHintStatementCountTest`,
+  `DeclarationDefinitionStatementCountTest`, `DeclarationHoverStatementCountTest`,
+  `DiagnosticsStatementCountTest`). `Completions` and `CodeActions` both read the store through
+  `workspace.answering` and are pinned by none of them, so the product-of-two-enforcers argument
+  holds for four of six store-reading surfaces rather than all. One honest clause fixes it, or those
+  two surfaces earn a named gap.
+- `StoreReader`'s class javadoc carries three `{@link GraphitronModelStore#reader()}` references that
+  the retirement breaks. The Javadoc reference gate catches this and the retirement sweep covers it,
+  so it is a heads-up rather than a finding.
+- The plan presents the drain as build-triggered. Per `Workspace`'s own javadoc the recalculation
+  queue fills from two events, a build and a file being opened, so `didOpen` reaches
+  `answeringAll` too and takes the drain budget. Probably the right outcome, but the grain
+  description reads as though the drain is build-only.
+
+The rest checks out against the tree. Every symbol the plan names exists as named, checked
+FQN-aware: `GraphitronModelStore.FILE_LOCK_MILLIS`, `FactCapture.ANCHOR_LOCK_MILLIS` and its
+`SET LOCK_TIMEOUT` bracket, `StoreReader`'s `ISOLATION` constant and its `synchronized read`, the
+five bare `supplyAsync` handlers, `CancelChecker` genuinely absent from the whole reactor,
+`publishDiagnosticsForRecalculate`, all five surface classes, `SourceGraph.Uncaptured`,
+`ClasspathClasses.Presence.NO_CENSUS`, `LspVocabulary.empty()`, `DiagnosticsStatementCountTest.counting`
+as an `ExecuteListener`-derived handle, and the four fixtures including the MCP sibling.
+`FactCapture.timedOutOnALock` does key on `SQLTimeoutException` with 50200 / `HYT00` while letting a
+deadlock keep its retry, so the misclassification argument holds; `graphitron-model`'s pom declares
+no `graphitron` dependency, so the dependency-direction argument holds independently, and
+`timedOutOnALock` is package-private besides. `intent_class_assignable` is gone from code, which is
+why the fixture instruction not to name either relation is right. Every quotation from
+`fact-model.adoc`, the statement-count tier, and `Workspace.answering`'s javadoc is verbatim.
+
+The reviewer session that landed this block is disqualified from approving the resulting revision.
