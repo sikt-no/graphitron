@@ -183,7 +183,7 @@ graphitron:dev:   GRAPHITRON_DEV_STORE_CONSOLE=true mvn graphitron:dev
 
 $ GRAPHITRON_DEV_STORE_CONSOLE=true mvn graphitron:dev
 graphitron:dev: fact-store console up, read-only, 219 relations linked, 127.0.0.1 only.
-graphitron:dev:   PGPASSWORD=graphitron psql -h 127.0.0.1 -p 32973 -U graphitron -d store
+graphitron:dev:   PGPASSWORD=graphitron psql -X -h 127.0.0.1 -p 32973 -U graphitron -d store
 ----
 
 Paste the second line into another terminal and you are in. The port is a fresh free one each start, so two dev sessions never collide; copy it from the log. Pin `<port>` in the POM if you would rather have a stable port, and note that a pinned port collides when you run two sessions.
@@ -192,7 +192,7 @@ The listener is on `127.0.0.1` and the console refuses to start if it cannot con
 
 What you get is the session's live rows, read-only: a query after a save sees that round's facts. "Read-only" means writes to the store's relations are refused, which stops a mistyped `UPDATE` while you are poking around. It is not a sandbox, so nothing you type at this prompt should be load-bearing.
 
-Two things about the prompt itself. `psql`'s backslash commands (`\dt`, `\d <table>`) do not work, because the server implements only part of PostgreSQL's system catalog; find your way around with `information_schema.tables` and `information_schema.columns` instead, and note that its identifiers are upper-case (`WHERE table_schema = 'PUBLIC'`). And `psql` is the client: the server speaks the PostgreSQL wire protocol, but JDBC-based tools (DBeaver, IntelliJ's PostgreSQL driver) cannot connect to it.
+Three things about the prompt itself. `psql`'s backslash commands (`\dt`, `\d <table>`) do not work, because the server implements only part of PostgreSQL's system catalog; find your way around with `information_schema.tables` and `information_schema.columns` instead, and note that its identifiers are upper-case (`WHERE table_schema = 'PUBLIC'`). `psql` is the client: the server speaks the PostgreSQL wire protocol, but JDBC-based tools (DBeaver, IntelliJ's PostgreSQL driver) cannot connect to it. And the printed command passes `-X`, so your `~/.psqlrc` is skipped: a startup file written for a real PostgreSQL server sets things this one does not have (`application_name`, `bytea_output`), and without `-X` those become syntax errors printed ahead of every answer. Drop the `-X` if you would rather have your own settings and can live with that.
 
 An agent on the session's MCP server reads the same coordinates as structured fields, so it connects without scraping them out of this log. See xref:mcp-agent-context.adoc#store-console[Query the fact store from an agent].
 

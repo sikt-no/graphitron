@@ -200,7 +200,7 @@ class StoreConsoleTest {
         try (var console = store.console(0)) {
             assertThat(console.connectCommand())
                 .as("the whole point is that a developer pastes this without editing it")
-                .isEqualTo("PGPASSWORD=graphitron psql -h 127.0.0.1 -p " + console.port()
+                .isEqualTo("PGPASSWORD=graphitron psql -X -h 127.0.0.1 -p " + console.port()
                     + " -U graphitron -d store")
                 .doesNotContain("<")
                 .contains(console.password(), console.user(), console.database());

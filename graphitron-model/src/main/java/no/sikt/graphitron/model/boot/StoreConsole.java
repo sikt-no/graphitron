@@ -224,9 +224,17 @@ public final class StoreConsole implements AutoCloseable {
      * The whole command that connects, assembled here rather than at each site that shows it: a
      * caller composing this line itself is a caller that can compose it wrong, and with an ephemeral
      * port the log is the only place the port exists at all.
+     *
+     * <p>{@code -X} is load-bearing rather than tidy. Without it psql runs the developer's
+     * {@code ~/.psqlrc}, and a file written for a real PostgreSQL server sets things this server
+     * does not have: {@code SET application_name}, {@code SET bytea_output} and their like are
+     * syntax errors to H2, so the prompt opens under a wall of red and every later statement carries
+     * the same errors ahead of its answer. A line handed out to be pasted has to work on a machine
+     * whose owner has configured psql, and the cost is that the session does not inherit their
+     * formatting preferences, which is the cheaper half of that trade.
      */
     public String connectCommand() {
-        return "PGPASSWORD=" + PASSWORD + " psql -h " + HOST + " -p " + port()
+        return "PGPASSWORD=" + PASSWORD + " psql -X -h " + HOST + " -p " + port()
             + " -U " + USER + " -d " + DATABASE;
     }
 

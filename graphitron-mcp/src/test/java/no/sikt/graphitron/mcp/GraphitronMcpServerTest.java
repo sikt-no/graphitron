@@ -183,7 +183,7 @@ class GraphitronMcpServerTest {
     void storeConsoleReturnsEveryCoordinateAsItsOwnField() throws Exception {
         var coordinates = new no.sikt.graphitron.model.boot.StoreConsole.Coordinates(
             "127.0.0.1", 32973, "graphitron", "graphitron", "store", 219,
-            "PGPASSWORD=graphitron psql -h 127.0.0.1 -p 32973 -U graphitron -d store");
+            "PGPASSWORD=graphitron psql -X -h 127.0.0.1 -p 32973 -U graphitron -d store");
         try (var server = new GraphitronMcpServer(loopback(0), null, null, null, null, null, null,
                  coordinates);
              var client = connect(server.port())) {
