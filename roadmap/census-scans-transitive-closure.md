@@ -175,16 +175,61 @@ found on the compile classpath" is false in that case. But the replacement must 
 diagnosing a cause either: after the cut, `ClasspathClasses.Presence.UNKNOWN` merges a typo with a
 real class in an undeclared jar, and the LSP holds no fact separating them, so "declare the
 dependency" would be wrong for the common case. The message states the census's *scope* and leaves
-the cause open.
+the cause open. The enforcer below can say more because it holds the classification, and the editor
+cannot borrow that: `lsp.server.Launcher` is a stdio process an editor spawns directly, so no
+`RewriteContext` reaches it. Store facts are all it has, and origin is deliberately not one of them.
 
 **The rule gets a build-side enforcer, in this item.** An invariant exists only while something
 fails when it breaks, and an editor squiggle over a build that generates happily is not that. The
-build is the one place both sets are in hand: `ServiceCatalog`'s `Class.forName(..., ctx.codegenLoader())`
-sites resolve against the whole classpath while the census is already computed in the same pass, so
-"resolves, but no census row" is decidable there with no second scan and no heuristic. That is also
-the only place the honest wording lives, because it is the only place the two populations are told
-apart. This is a breaking change for a consumer who today names a transitive class; the migration is
-one `<dependency>` block, and it is the change the rule exists to force.
+build is the one place the rule can be stated exactly, because it is the only place that holds the
+classification.
+
+**The enforcer reads the classification, not the census.** Census absence is a tempting predicate
+and it is the wrong one: `jvm_class`'s own table comment enumerates four filters (public,
+non-synthetic, top-level, outside the jOOQ package) and says that a resolution detection over the
+relation reads those filters as absence. An enforcer keyed on census absence is such a detection, so
+it would reject a nested class in the consumer's own module, which `InputBeanResolver.tryLoad`
+exists to resolve. It would also reject every JDK class, and every class the codegen loader's parent
+chain supplies. And it would stay silent on `SIBLING`, whose whole reason for being a separate arm
+is that the build has something to say about it.
+
+The exact question is whether the name is *carried by a non-`TRANSITIVE` entry*, and that is a
+resource probe against the classified list rather than a fact about the store:
+`name.replace('.', '/') + ".class"` present in an entry, mirroring `ClasspathScanner`'s own
+`isJar` / directory dispatch. The probe is exact where the census is filtered, needs no store handle
+and no second scan (listing a jar's entries is 13 ms across all 156 jars by the measurement above,
+and only the two dozen kept entries are probed), and is unaffected by delegation order, which
+matters because `buildCodegenLoader` parents on the plugin's own loader and is therefore parent-first
+for anything the plugin also carries. Asking where the loaded class *came from* would answer that
+question wrong: a properly declared `graphql-java` class loads from the plugin's realm.
+
+A verdict per arm, plus the two cases no entry accounts for:
+
+- `PROJECT` / `DECLARED`: nameable.
+- `SIBLING`: rejected, "declare a dependency on module X". The entry names the module, which is why
+  `ClasspathEntry` carries a coordinate.
+- Not carried by any kept entry, but the platform loader resolves it: nameable. JDK classes are on
+  every consumer's classpath by construction and are not a census question.
+- Not carried by any kept entry: rejected. To name the cause the enforcer probes the `TRANSITIVE`
+  entries too, and reports the coordinate that carries it. That is the one place a transitive jar
+  gets opened, it happens only after a name has already failed, and the build is failing anyway.
+- Empty classified list: inert. A unit-tier `RewriteContext` carries no classpath roots, and the
+  rule cannot be enforced against a classification nobody supplied.
+
+This is a breaking change for a consumer who today names a transitive class; the migration is one
+`<dependency>` block, and it is the change the rule exists to force.
+
+**The `<plugin><dependencies>` route goes with it, and that is the second breaking change.**
+`docs/manual/how-to/external-code.adoc` tells consumers to declare the carrying artifact under the
+plugin's own `<dependencies>`, twice, with a worked XML block. A class supplied only that way
+resolves through the codegen loader's parent chain, is carried by no classpath entry, and is
+rejected by the enforcer above. That is the right verdict and the route is withdrawn rather than
+preserved: generated code *references* these classes, a `@service` target being called from the
+generated resolver, so an artifact that is only on the plugin's classpath already fails the
+consumer's own javac at the first generated reference. The route never sufficed on its own for
+anything the generator emits a reference to. What changes is that the failure moves from the
+consumer's compile to the generate that caused it, and names the cause. The practical migration is
+the same one `<dependency>` block, and a consumer whose build works today already has it.
 
 ## Rejected: extract less per dependency class
 
@@ -236,7 +281,7 @@ broken". A second resolve method rebuilds exactly that topology.
 The narrowing does not need two lists. One producer emits one list whose elements carry the decision:
 
 ```java
-record ClasspathEntry(Path path, Origin origin) {}
+record ClasspathEntry(Path path, Origin origin, String coordinate) {}
 
 enum Origin {
     PROJECT,     // this module's own build output
@@ -245,6 +290,11 @@ enum Origin {
     TRANSITIVE   // on the compile classpath, coordinate not declared
 }
 ```
+
+`coordinate` is `groupId:artifactId` where one exists and null for `PROJECT`. It is there for the
+enforcer's messages: "declare a dependency on module X" and "the class is in org.foo:bar, which this
+module does not declare" are the two sentences the rule has to be able to say, and neither is
+derivable from a `target/classes` path.
 
 The loader, javac and the execution loader project every entry. The census projects
 `origin != TRANSITIVE`. Census ⊆ loader is then a derivation over one classified list rather than a
@@ -289,13 +339,38 @@ package-private decode taking the untyped Maven input and returning typed output
   that existing constant; two hand-written scope sets in one file that must agree is the shape to
   avoid.
 
-**`graphitron`: the enforcer.** The `Class.forName(..., codegenLoader)` sites in `ServiceCatalog`
-(seven at the time of writing, six of them through `ctx.codegenLoader()`) are where a class name
-becomes a resolved class. A class that resolves but carries
-no census row is rejected there, through the rejection channels those coordinates already use:
-`Rejection.structural` as `ServiceDirectiveResolver` routes an unresolvable `@service` through, and a
-new `ScalarResolution.Rejected` arm beside `ClassNotFound` for `@scalarType`. Reuse the existing
-channels rather than minting a parallel failure path; the reason string is what differs.
+**`graphitron`: the nameability check.** A small type beside `ClasspathEntry`, built once over the
+classified list and asked for a verdict per name, implementing the probe and the six cases in "What
+the census claims after the cut". It holds each kept entry's class-resource index, built lazily on
+first probe and reused, so a build pays one listing per entry however many names it checks. Nothing
+about it is census-shaped: it reads no store and calls no scanner.
+
+**`graphitron`: the enforcer's sites.** The criterion is *a class name an author wrote in the
+schema*, which is narrower than "a `Class.forName` against the codegen loader". Of the seven
+`forName` sites in `ServiceCatalog`, three take an author-written name and are the sites to check:
+`decodeServiceMethod` (`@service`), `reflectTableMethod` (`@condition`), and `reflectExternalField`
+(`@externalField`). The other four must stay exempt, and for reasons that generalise:
+`resolveTableByRecordClassName` resolves a jOOQ record class, which is a catalog concept the census
+excludes by design; `legacyArgExtraction` and `argExtraction` resolve a declared parameter type read
+off a reflected signature, not a name anyone wrote; `reflectSessionHook` resolves a
+`<sessionState>` `<mount>` / `<unmount>` target, which is plugin configuration rather than schema
+text and which the `ClasspathScanner` javadoc already records as needing no census row. Outside
+`ServiceCatalog`, the `@scalarType` constant path in `ScalarTypeResolver` is an author-written name
+and is checked; the author-written `className` sites in `RecordBindingResolver` and `TypeBuilder`
+are checked on the same criterion, and `InputBeanResolver.tryLoad`'s signature-derived names are
+not.
+
+Reject through the channels those coordinates already use: `Rejection.structural`, as
+`ServiceDirectiveResolver` routes an unresolvable `@service` through, and a new
+`ScalarResolution.Rejected` arm beside `ClassNotFound` for `@scalarType`. Reuse the existing channels
+rather than minting a parallel failure path; the reason string is what differs.
+
+**`graphitron`: a guard so the site list cannot rot.** Enumerating sites is how enforcement goes
+stale: the next `Class.forName(..., codegenLoader)` someone adds is silently unchecked, and no test
+fails. A source-scanning meta-test in the `RoadmapReferenceGuardTest` mould fails the build on a
+`forName`-against-the-codegen-loader site in `graphitron` main sources that neither routes through
+the nameability check nor carries an explicit exemption marker. That turns "did we cover every site"
+from a review question into a build gate, which is the only form in which the answer stays true.
 
 **`graphitron-lsp`: the message.** The `Finding.ClassName` and `Finding.ScalarClassName` arms of
 `Diagnostics.judge` keep their `DiagnosticFacts.Resolution.UNKNOWN` guard and change their wording to
@@ -339,7 +414,19 @@ left as an absence someone later reads as a bug.
   rewrites above are the implementer's responsibility rather than a gate's.
 - An LSP diagnostic pin on the new wording, in `DiagnosticsTest`.
 - The enforcer needs an execution-visible pin: a schema naming a transitive-only class fails the
-  build with the declared-dependency reason.
+  build with the declared-dependency reason, naming the coordinate that carries the class.
+- The nameability check's verdicts, unit tier, one case per arm of "What the census claims after the
+  cut". Four of the six are the ones that make it a rule rather than a census read, and each is a
+  build outcome rather than a message: a nested class in a kept entry is nameable, a JDK class is
+  nameable, a `SIBLING` class is rejected naming the module, and a class carried only by the plugin's
+  own classpath is rejected. The nested case is the one to write first, because it is where the
+  discarded census-absence predicate would have failed silently.
+- The enforcer is inert on an empty classified list. This is the pin that keeps the whole unit tier
+  alive: `ServiceCatalogTest`'s six-arg overload and every `RewriteContext` built without classpath
+  roots resolve real class names against a classification nobody supplied.
+- The site guard fails when a `Class.forName` against the codegen loader is added with neither a
+  check nor an exemption. A guard nobody has seen fail is a guard nobody should trust, so the test
+  pins both directions against a fixture source rather than only the clean tree.
 
 ## What to re-measure at implementation
 
@@ -362,10 +449,18 @@ store's size on disk before and after, which is the number a consumer notices.
 The rule is user-facing, so the doc draft is part of the design. `docs/manual/how-to/external-code.adoc`
 is its home: it already has a "Make the class reachable" section, and that section is currently wrong
 in a way this item has to fix anyway. It says the class "has to be on the *plugin's* classpath, not the
-consumer module's compile classpath", and repeats it in the section's closing bullet. `buildCodegenLoader`
-builds the codegen loader over the module's compile classpath parented on the plugin's loader, so the
-module's own classpath has worked for some time; the manual understates what is reachable while this
-item narrows it. Both statements are replaced by one rule:
+consumer module's compile classpath", repeats it in the Constraints bullet, and carries a worked
+`<plugin><dependencies>` XML block as the recipe. `buildCodegenLoader` builds the codegen loader over
+the module's compile classpath parented on the plugin's loader, so the module's own classpath has
+worked for some time; the manual understates what is reachable while this item narrows it.
+
+The XML block goes with the sentences, not just the wording around it. Per "The
+`<plugin><dependencies>` route goes with it" above, that route is withdrawn: it is not a second way
+to make a class reachable, and the same block moved to the module's own `<dependencies>` is the
+replacement recipe. Say plainly in the section that a plugin-block dependency does not make a class
+nameable, because a reader who did it that way needs to recognise their own setup, and the closing
+bullet becomes the same statement rather than its opposite. All three statements collapse into one
+rule:
 
 > A named class must live in this module, in another module of the same Maven project, or in a
 > dependency this module declares itself. A class that is only reachable through another
@@ -391,6 +486,9 @@ For the Done-gate retirement sweep. These claims are all currently true and all 
 - "The compile classpath census" (`meta_family`'s `jvm_` definition)
 - "has to be on the *plugin's* classpath, not the consumer module's compile classpath"
   (`docs/manual/how-to/external-code.adoc`)
+- "The carrying artifact must be on the *plugin's* classpath (the `<plugin>...<dependencies>` block),
+  not the module's outer `<dependencies>`" (the Constraints bullet in the same file, plus the
+  `<plugin><dependencies>` XML block the section walks through)
 
 ## Not in scope
 
@@ -465,6 +563,24 @@ null `CodeSource` means (a parent-loaded class, which is finding 2's subject) an
 the others are exempt. Whichever predicate the revision picks, name it in terms of the classification
 and say what happens at each of the four arms.
 
+*Author response.* Taken, and the predicate is replaced rather than patched. "What the census claims
+after the cut" now states the enforcer as a resource probe against the classified list, with a
+verdict for each of the four arms plus the two cases the probe does not cover (a platform-loader
+class is nameable, an empty classified list is inert). The `CodeSource` route the finding suggested
+is *not* what landed, and the finding's own second bullet is why: the codegen loader is parent-first,
+so a correctly declared `graphql-java` class loads from the plugin's realm and would be rejected by
+anything that asks where a loaded class came from. Probing the entries answers the question the rule
+actually asks, which is whether a *name* is carried, and it is exact where the census is filtered.
+`ClasspathEntry` gains a `coordinate` so the two rejection sentences can name a module and a jar.
+
+The site scoping was wrong too, in the direction the finding did not reach: "the seven `forName`
+sites in `ServiceCatalog`" is not the author-written set. Three of the seven are, and the four
+exemptions each have a reason that generalises (a jOOQ catalog class, two signature-derived types,
+one plugin-config hook), while author-written names outside `ServiceCatalog` in `ScalarTypeResolver`,
+`RecordBindingResolver` and `TypeBuilder` were missing from the set. The Implementation section now
+carries the criterion, the enumeration, and a source-scanning guard test so a later `forName` cannot
+join the tree unchecked, because an enumeration defended only by review is the thing that rots.
+
 **2. The item withdraws the `<plugin><dependencies>` route without declaring it.** The item reads
 `docs/manual/how-to/external-code.adoc`'s "has to be on the *plugin's* classpath" as an understatement
 to be corrected, and it is one. But that section is not only wrong about the module classpath, it also
@@ -481,6 +597,18 @@ the breaking change is discussed, say what the migration is (the artifact moves 
 reworded. If it stays supported, the rule statement has to admit it and the enforcer must not fire on
 a parent-loaded class, which is the same design fork finding 1 names.
 
+*Author response.* Position taken: the route is withdrawn, and the item now says so in its own
+section rather than leaving it inside a doc edit. The argument that decides it is one the item had
+not made: generated code *references* these classes, a `@service` target being called from the
+generated resolver, so an artifact sitting only on the plugin's classpath already fails the
+consumer's javac at the first generated reference. The plugin block never sufficed on its own for
+anything the generator emits a reference to, which makes this a correction of a wrong instruction
+rather than the removal of a working one, and it is why the practical migration is empty for any
+consumer whose build currently passes. What the enforcer changes is when they hear about it and what
+it says. The first-client check now replaces the XML block rather than rewording the prose around it,
+the section has to name the plugin-block setup so a reader recognises their own, and the Constraints
+bullet joins the retired vocabulary.
+
 **Corrected in this commit, not for the author.** The LSP section named
 `Diagnostics.validateScalarTypeClasspath` and `Diagnostics.validateClassName`, neither of which
 exists. The two message sites are the `Finding.ClassName` and `Finding.ScalarClassName` arms of
@@ -491,3 +619,16 @@ apart, and it is true of that enum. One note the item may want while it is in th
 `ClasspathClasses.presenceOf` has a third caller, `Definitions` at goto-definition, which returns
 nothing rather than a message and so needs no wording change, but it is the reason the class javadoc
 rewrite the item asks for should describe the census's scope rather than any one surface's message.
+
+*Author response.* Noted and left as guidance for the implementer rather than a plan edit: the
+`ClasspathClasses` javadoc rewrite the item already asks for is the place it lands, and it is one
+sentence about scope rather than a third surface to change.
+
+### Author handoff (2026-08-21)
+
+The item's original author is unavailable, so the reviewer session above took over the author role
+and landed the revision to findings 1 and 2 in the plan body. That disqualifies
+`session_015LoscQmkhUekgAkJHMqRCB` from signing this item off: the next `Spec → Ready` pass needs a
+session that has neither written nor reviewed this plan. Recorded here because the guard resolves the
+disqualified party from `git log` on this file, which now returns the reviewer as last committer and
+is correct but says nothing about why.
