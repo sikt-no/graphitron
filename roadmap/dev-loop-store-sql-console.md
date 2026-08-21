@@ -64,6 +64,12 @@ reasoned about. The first four findings framed the fork; the last five settled i
   the session can name it in a log line without pre-binding a socket to guess a free number. H2's own
   status string reads `PG server running at pg://localhost:<port> (only local connections)`, which
   independently confirms that omitting `-pgAllowOthers` binds loopback.
+- **A printed connect command runs verbatim.** A console database created with a minted user
+  (`graphitron`) and a random hex password serves psql on the ephemeral port, and the exact line the
+  session would print, `PGPASSWORD=<hex> psql -h localhost -p <port> -U graphitron -d store`, was
+  pasted back into a shell unchanged and returned rows. Hex keeps the line free of characters a shell
+  would need quoted. The secret is enforced rather than decorative: both a wrong password and a wrong
+  user are refused at connect.
 - **pgjdbc cannot connect at all.** The driver's startup queries include `SET extra_float_digits = 2`,
   which H2 rejects as a syntax error, and no combination of `assumeMinServerVersion`,
   `preferQueryMode=simple` or `options=-c ...` gets past it. psql (libpq) works; JDBC clients that go
@@ -99,16 +105,26 @@ cache trouble costs warmth and never correctness.
 `graphitron-model`, `no.sikt.graphitron.model.boot`:
 
 - New `StoreConsole`, `AutoCloseable`, the handle a caller holds: the H2 `Server`, the console
-  database's own connection, the port, and the relation count for the log line. `close()` stops the
-  server and shuts the console database down (`SHUTDOWN`, the `dropOnClose` arm of
+  database's own connection, and everything the connect line is made of, since a caller that had to
+  assemble that line itself is a caller that can assemble it wrong. `port()` (the port bound),
+  `user()`, `password()`, `database()`, `relationCount()`, and `connectCommand()`, which returns the
+  paste-ready `PGPASSWORD=<secret> psql -h localhost -p <port> -U <user> -d <database>`. `close()`
+  stops the server and shuts the console database down (`SHUTDOWN`, the `dropOnClose` arm of
   `GraphitronModelStore.close`, since the console holds `DB_CLOSE_DELAY=-1`), and leaves the store
   untouched.
+- The console owns its own credentials rather than borrowing the store's: user `graphitron`, and a
+  password minted per console from `SecureRandom` as hex, so the printed line needs no shell quoting.
+  Loopback is not a boundary between local users, so a per-session secret is what keeps another
+  account on the same machine out of a door that exists for one developer. The password is printed,
+  which is the point (it is useless without the port, dies with the session, and a developer who
+  cannot read it cannot use the console at all), but it is one reason the console stays opt-in.
 - `GraphitronModelStore.console(int port)` mints it, beside `reader()`:
   1. Read the relation names off this store's own connection
      (`information_schema.tables` where `table_schema = 'PUBLIC'`), the same raw-JDBC shape
      `stampMatches` uses rather than a jOOQ query, so the bootstrap keeps touching no generated class.
-  2. Open `jdbc:h2:mem:graphitron-console-<UUID>;DB_CLOSE_DELAY=-1;MODE=PostgreSQL`, the private-UUID
-     naming of `open()` for the same collision reason.
+  2. Open `jdbc:h2:mem:graphitron-console-<UUID>;DB_CLOSE_DELAY=-1;MODE=PostgreSQL` under the minted
+     credentials, the private-UUID naming of `open()` for the same collision reason. The name psql
+     passes as `-d` is the `-key` alias below, not this one, so the UUID stays out of the printed line.
   3. One `CREATE LINKED TABLE <relation>(NULL, '<this.url>', <user>, <password>, 'PUBLIC.<relation>')
      READONLY` per relation.
   4. `Server.createPgServer("-pgPort", <port>, "-key", <console name>, "mem:<console name>")`, with
@@ -143,11 +159,30 @@ cache trouble costs warmth and never correctness.
   package-private for the same reason `sessionStore` is.
 - Start it in `execute()` immediately after `Materializations.refreshAll(sessionStore.dsl())` and
   before the watchers, so the linked relations include the refreshed materializations and the console
-  is up before the first round lands. Log the paste-ready line off `StoreConsole.port()`, so an
-  ephemeral port is as usable as a pinned one, for example
-  `graphitron:dev: fact-store console on 127.0.0.1:32973 (216 relations, read-only). psql -h localhost
-  -p 32973 -U <user> -d <db>`. The port is in the log rather than only in the handle because with the
-  ephemeral default the log line is the only place a developer can read it.
+  is up before the first round lands.
+
+**The session's output carries both commands, and each is complete.** With the port ephemeral and the
+password minted, a log line with a `<user>` or a `<port>` placeholder in it would be useless: the log
+is the only place either value exists. So the goal prints, on the enabled path, the command that
+connects, straight from `StoreConsole.connectCommand()` rather than reassembled at the log site:
+
+```
+graphitron:dev: fact-store console up, read-only, 216 relations linked.
+graphitron:dev:   PGPASSWORD=9f3c1a77b0e42d58 psql -h localhost -p 32973 -U graphitron -d store
+```
+
+and on the disabled path, which is the default and therefore the line most developers will actually
+meet, the command that starts one. This mirrors `resolveDevDatabase()`, which already answers the
+"why is this tool missing" question in the log rather than leaving it to the docs:
+
+```
+graphitron:dev: no fact-store console (<storeConsole> or GRAPHITRON_DEV_STORE_CONSOLE). To query
+graphitron:dev: this session's facts with psql, restart with:
+graphitron:dev:   GRAPHITRON_DEV_STORE_CONSOLE=true mvn graphitron:dev
+```
+
+A developer who never reads the manual gets from "I wish I could see the rows" to a psql prompt using
+only what the session already told them.
 - Close it in `cleanup()` **before** `lspStore`, `mcpStore` and `sessionStore`: the link connection
   points at the store, so the console goes first.
 
@@ -156,27 +191,34 @@ cache trouble costs warmth and never correctness.
 `docs/manual/reference/mojo-configuration.adoc`, a new row beside `devDatabase`:
 
 > `storeConsole` / `StoreConsoleBinding` / (none): Read-only SQL console onto the dev session's own
-> fact store (`dev` goal only). `<enabled>` opens it. The port is ephemeral unless you pin one with
-> `<port>`, and the session logs the port it bound together with the `psql` command for it; pin a port
-> only if you want a stable connect line, and expect a pinned port to collide when you run more than
-> one dev session. `GRAPHITRON_DEV_STORE_CONSOLE` and `GRAPHITRON_DEV_STORE_CONSOLE_PORT` override the
-> POM. The console binds `127.0.0.1` only, serves reads, and refuses writes. Absent or disabled, no
-> port is bound and the session is unchanged.
+> fact store (`dev` goal only). `<enabled>` opens it, and the session logs the whole `psql` command,
+> including the port it bound and the password it minted for this session. The port is ephemeral unless
+> you pin one with `<port>`; pin one only for a stable connect line, and expect a pinned port to
+> collide when you run more than one dev session. `GRAPHITRON_DEV_STORE_CONSOLE` and
+> `GRAPHITRON_DEV_STORE_CONSOLE_PORT` override the POM. The console binds `127.0.0.1` only, serves
+> reads, and refuses writes. Absent or disabled, no port is bound and the session is unchanged, and
+> the log says how to turn it on.
 
 `docs/manual/how-to/dev-loop.adoc`, a new section "Query the fact store while the session runs":
 
-> Turn the console on, and `graphitron:dev` prints a connect line at start-up, naming the port it
-> picked:
+> A session without a console tells you how to start one, and a session with a console tells you how
+> to connect to it. You never have to compose either command yourself:
 >
 > ```bash
-> GRAPHITRON_DEV_STORE_CONSOLE=true mvn graphitron:dev
-> # graphitron:dev: fact-store console on 127.0.0.1:32973 (216 relations, read-only).
-> #                psql -h localhost -p 32973 -U <user> -d <db>
-> psql -h localhost -p 32973 -U <user> -d <db>
+> $ mvn graphitron:dev
+> graphitron:dev: no fact-store console (<storeConsole> or GRAPHITRON_DEV_STORE_CONSOLE). To query
+> graphitron:dev: this session's facts with psql, restart with:
+> graphitron:dev:   GRAPHITRON_DEV_STORE_CONSOLE=true mvn graphitron:dev
+>
+> $ GRAPHITRON_DEV_STORE_CONSOLE=true mvn graphitron:dev
+> graphitron:dev: fact-store console up, read-only, 216 relations linked.
+> graphitron:dev:   PGPASSWORD=9f3c1a77b0e42d58 psql -h localhost -p 32973 -U graphitron -d store
 > ```
 >
-> The port is a fresh free one each start, so two dev sessions never fight over it; copy it from the
-> log. Pin `<port>` in the POM if you would rather retype the same command every time.
+> Paste the second line into another terminal and you are in. The port and the password are fresh each
+> start, so two dev sessions never collide and yesterday's line never works today; take both from the
+> log you are looking at. Pin `<port>` in the POM if you would rather have a stable port, and note
+> that a pinned port collides when you run two sessions.
 >
 > What you get is the session's live rows, read-only: a query after a save sees that round's facts.
 > Use `information_schema.tables` and `information_schema.columns` to find your way around rather than
@@ -203,21 +245,29 @@ If either draft does not read simply at implementation time, the design is wrong
 - `console(0)` binds a free port and `port()` reports the bound one, never 0. Two consoles opened at
   0 against one store get different ports and both answer, which is the multi-session case the default
   exists for.
+- `connectCommand()` names the bound port, the minted user and the minted password, and two consoles
+  mint different passwords. The point of the assertion is that the string is complete: no placeholder
+  token survives into it.
 
 `graphitron-model`, `StoreConsolePsqlTest`, the protocol pin, guarded by an assumption on the `psql`
 binary so a contributor without it skips and CI (which already uses `psql` in `rewrite-build.yml`)
-runs it: open the console at port 0, shell `psql -p <port()> -c "select ..."`, and assert the returned
-row text. The ephemeral port is what makes this test safe to run in a parallel reactor at all, since a
+runs it: open the console at port 0 and execute **the command the session would print**, taking
+`connectCommand()` and appending `-c "select ..."`, then assert the returned row text. Pinning the
+printed line by running it is the whole value of this test: a reconstruction of the command in the test
+would pass while the line a developer copies is wrong. A wrong password is refused, so the secret is
+covered too. The ephemeral port is what makes this test safe under a parallel reactor at all, since a
 pinned test port would collide with a developer's own session. Its
 javadoc records that pgjdbc cannot replace the shell-out, with the `SET extra_float_digits` reason, so
 nobody swaps it for a driver connection and concludes the console is broken.
 
 `graphitron-maven-plugin`, `DevMojoTest`, which already injects an in-memory store:
 
-- Default: no console, no port bound, no log line.
+- Default: no console and no port bound, and the log names the command that would start one. The
+  disabled path is the default, so its line is as much a shipped surface as the enabled one.
 - Enabled with no `<port>`: the console opens against the injected store on an ephemeral port, and the
-  log line carries that port in the psql command rather than a placeholder or a 0.
-- Enabled with a pinned `<port>`: the console binds exactly that port.
+  logged line is exactly `StoreConsole.connectCommand()`, carrying the bound port rather than a
+  placeholder or a 0.
+- Enabled with a pinned `<port>`: the console binds exactly that port, and the logged command names it.
 - `cleanup()` closes the console, and closes it before the store.
 - A console that fails to open degrades to a warning naming the reason, and the session continues.
 
@@ -227,8 +277,8 @@ nobody swaps it for a driver connection and concludes the console is broken.
 - A door for JDBC clients. pgjdbc cannot reach this console, so DBeaver and IntelliJ need a separate
   H2 TCP server on the store itself, which is read-write and a different security posture. File it
   separately if the demand shows up.
-- Write access, non-loopback binding, and any authentication beyond the H2 user the store already
-  carries.
+- Write access, non-loopback binding, and any authentication beyond the per-console user and secret
+  described above.
 - Anything MCP-facing. The agent-side surface is the existing tools; this item is for a human at a
   terminal.
 
