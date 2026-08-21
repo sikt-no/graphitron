@@ -1,7 +1,7 @@
 ---
 id: R769
 title: "withSeededStore boots the schema 420 times in one module; a row reset costs 0.85ms against 138ms"
-status: Spec
+status: Ready
 bucket: dx
 priority: 1
 theme: tooling
@@ -459,3 +459,55 @@ projection are the same fact stated twice.
 >
 > Back to you for the next pass. Nothing above the `++##++ Reviewer findings` heading was written by
 > a reviewer, so the delta is this commit's plan-body diff alone.
+
+## Reviewer round 2 (Spec → Ready gate, 2026-08-21)
+
+Same reviewer session as the findings above, auditing the delta rather than re-deriving the item.
+**Signed off.** The blocking finding is addressed on its merits and all three non-blocking notes
+landed.
+
+The two-part counter is the right arm and the funnel equality is now true over the population it is
+asserted on. It also survives the test the previous round's leak guard failed: it can fail. Boots and
+distinct booting thread identities are recorded at the same point, so the equality is exactly "no
+thread booted twice through the holder", which is the thread-confinement invariant itself and breaks
+loudly if a holder is ever cleared or created per case. The total on `FactStores` covers the residue
+the funnel counter is blind to by construction, a new store-opening path outside the funnel, and the
+two halves compose to full coverage rather than overlapping. The cost of the split is on the page in
+the words it should be, and the observation that the total is the portable half for the three later
+modules is a better argument than the one it answers.
+
+The author's correction back to me is right and I was wrong: 189 counts the 30 static imports, one
+per funnel class, and the call-site count is 159. Re-derived independently. The rest reproduces on
+the current tree: 145 clearable tables, 148 `CREATE TABLE`, 445 `@Test`, 45 downstream `FactStores`
+sites, still exactly one `INSERT` target in the DDL, and still no identity column or sequence
+anywhere in it. The corrected projection is internally consistent, 182.3 − 133.0 + 6.0 ≈ 55 and
+55.3 / 4 ≈ 14 against the measured 46.8.
+
+### For the implementer at pickup, not blocking
+
+Trunk moved under this item while it was in review, and R773 landed 55 minutes before the revision.
+Two of the plan's factual sentences are stale as a result. Neither changes the design, and both are
+the kind of thing the plan already tells its implementer to re-derive, so they are recorded here
+rather than sent back for a fourth round.
+
+* **There is now a fifth direct-boot class**, `StoreBudgetTest`, with 4 `FactStores.inMemory()`
+  sites over 5 cases. So the module has five such classes at eleven sites, not four at seven, and
+  roughly 23 boots survive rather than 19, which puts the post-change total nearer 27 than 23. The
+  plan says naming these classes is load-bearing and it is right, but the criterion it states does
+  the work: `StoreBudgetTest`'s subject is the read budget on the boot path, which is the boot's own
+  shape rather than setup, so it belongs in the out-of-scope set by the rule already written. Fold it
+  in, refresh the breakdown, and re-derive the ceiling from the recount.
+* **`MaterializationOrderTest` is no longer the only class that executes DDL.** `StoreBudgetTest`
+  issues `CREATE TABLE`, and the new `RunawayRelation` fixture is a public helper in
+  `no.sikt.graphitron.model.test`, the very package the reset helper is going into, whose whole job
+  is `CREATE VIEW` plus an `ALTER TABLE ... RENAME TO` that turns a base table into a view and mints
+  a new base table beside it. The safety conclusion still holds, because all three are outside the
+  funnel and the boot-derived set is still stable for funnel stores, but the sentence's reason is now
+  false as written and the reason is the part a future contributor reads. Worth one clause: a funnel
+  case must not execute DDL, and `RunawayRelation` in particular is not usable inside
+  `withSeededStore`. Its javadoc leans on "a fixture's private store, which dies with the case",
+  which is exactly the property this item removes for funnel stores. This is a trap rather than a
+  hole because it is self-announcing: a renamed base table makes the boot-derived clear list try to
+  `TRUNCATE` a view, and the whole-set guard fails on the same reset, so the collision surfaces as a
+  loud error rather than a silent leak. That is the rescoped guard from round two doing the job it
+  was rescoped for.
