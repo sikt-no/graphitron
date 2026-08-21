@@ -61,7 +61,13 @@ class QuarkusTestLockEnforcementTest {
         assertThat(violations)
             .as("@QuarkusTest classes missing @ResourceLock(QuarkusTestLock.KEY), which makes them "
                 + "mutually exclusive: without it two of them run at once and QuarkusTestExtension's "
-                + "static bookkeeping slots cross. See QuarkusTestLock for why.\n"
+                + "static bookkeeping slots cross. See QuarkusTestLock for why.\n\n"
+                + "Before adding the key, check the class needs the container at all. Running GraphQL "
+                + "operations against the generated schema does not: 46 of the 47 classes in "
+                + "no.sikt.graphitron.rewrite.test.querydb build a DSLContext and a GraphQL directly, "
+                + "and the lock they do not take is why they overlap each other freely. A class whose "
+                + "subject is HTTP status, headers, routing, or CDI wiring belongs here and takes the "
+                + "key; one whose assertions are all on response shape belongs in querydb.\n"
                 + String.join("\n", violations))
             .isEmpty();
     }

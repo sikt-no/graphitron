@@ -2073,48 +2073,70 @@ class GraphQLQueryTest {
 
     @Test
     void filmsOrderedConnection_orderByTitle_paginatesAlphabetically() {
+        // Read off the seeded rows' relative positions in an untrimmed walk. A `first: 3` page is
+        // not the seed's page once another class inserts a film whose title sorts ahead of it, and
+        // any title starting 'A' followed by a space or a letter below 'C' is a short reach from
+        // ACADEMY DINOSAUR.
+        //
+        // Worth knowing what this case can and cannot separate: the seed's titles happen to be in
+        // the same order as its film_ids, so an authored TITLE order and the primary-key default
+        // produce the same sequence over the seeded rows. What is pinned here is that the authored
+        // `order:` argument resolves and runs, and that the rows come back alphabetically; telling
+        // title order apart from id order would need a seed whose two orders disagree.
         Map<String, Object> data = execute(
-            "{ filmsOrderedConnection(order: [{field: TITLE, direction: ASC}], first: 3) { nodes { title } } }");
-        // ACADEMY DINOSAUR < ACE GOLDFINGER < ADAPTATION HOLES alphabetically
-        assertThat(data).extractingByKey("filmsOrderedConnection", as(MAP))
-            .extractingByKey("nodes", as(list(Map.class)))
-            .hasSize(3)
-            .extracting(n -> n.get("title"))
-            .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER", "ADAPTATION HOLES");
+            "{ filmsOrderedConnection(order: [{field: TITLE, direction: ASC}]) { nodes { title } } }");
+        assertThat(seededTitlesInOrder(nodesOf(data, "filmsOrderedConnection")))
+            .containsExactlyElementsOf(SEEDED_FILM_TITLES);
     }
 
     @Test
     void filmsOrderedConnection_filterPlusOrderPlusPagination_combinesAllThree() {
         // Exercises buildFilters + buildOrderBySpec + buildPaginationSpec on one field.
-        // Seed data: two G-rated films — ACE GOLDFINGER, AFFAIR PREJUDICE.
+        // Seed data: two PG-rated films — ACADEMY DINOSAUR, AGENT TRUMAN.
+        //
+        // PG rather than G, for the reason its two siblings give: film.rating carries DEFAULT 'G',
+        // so a G filter bounds nothing against the films other classes insert, and a page trimmed
+        // to one row out of an unbounded set is not this query's row.
         Map<String, Object> data = execute(
-            "{ filmsOrderedConnection(rating: G, order: [{field: TITLE, direction: ASC}], first: 1) { " +
+            "{ filmsOrderedConnection(rating: PG, order: [{field: TITLE, direction: ASC}], first: 1) { " +
             "nodes { title } pageInfo { hasNextPage } } }");
         var conn = assertThat(data).extractingByKey("filmsOrderedConnection", as(MAP));
         conn.extractingByKey("nodes", as(list(Map.class)))
-            .extracting(n -> n.get("title")).containsExactly("ACE GOLDFINGER");
+            .extracting(n -> n.get("title")).containsExactly("ACADEMY DINOSAUR");
         conn.extractingByKey("pageInfo", as(MAP))
             .containsEntry("hasNextPage", true);
     }
 
     @Test
     void filmsOrderedConnection_orderByTitle_cursorNavigation() {
-        // Get page 1 ordered by title, then follow cursor
-        Map<String, Object> page1Data = execute(
-            "{ filmsOrderedConnection(order: [{field: TITLE, direction: ASC}], first: 2) { " +
-            "nodes { title } pageInfo { endCursor hasNextPage } } }");
-        var pageInfo1 = assertThat(page1Data).extractingByKey("filmsOrderedConnection", as(MAP))
-            .extractingByKey("pageInfo", as(MAP));
-        String endCursor = pageInfo1.extractingByKey("endCursor", as(STRING)).isNotNull().actual();
-        pageInfo1.containsEntry("hasNextPage", true);
+        // The whole walk in pages of two rather than a peek at page 2, because which titles fall on
+        // a given page is not this query's doing: a film another class inserts sorts wherever its
+        // title puts it, and shifts every page after that point. What the query decides is that the
+        // title-keyed seek composes across page boundaries, and the seeded rows arriving exactly
+        // once each and in order is what says so. A seek that dropped or repeated a row at a
+        // boundary fails this; two pages of it might not.
+        var titles = new java.util.ArrayList<Map<String, Object>>();
+        String after = null;
+        Map<String, Object> pageInfo;
+        int pages = 0;
+        do {
+            String args = "order: [{field: TITLE, direction: ASC}], first: 2"
+                + (after == null ? "" : ", after: \"" + after + "\"");
+            Map<String, Object> data = execute(
+                "{ filmsOrderedConnection(" + args + ") { nodes { title } "
+                + "pageInfo { endCursor hasNextPage } } }");
+            var conn = (Map<String, Object>) data.get("filmsOrderedConnection");
+            titles.addAll((List<Map<String, Object>>) conn.get("nodes"));
+            pageInfo = (Map<String, Object>) conn.get("pageInfo");
+            after = (String) pageInfo.get("endCursor");
+        } while (Boolean.TRUE.equals(pageInfo.get("hasNextPage")) && ++pages < 100);
 
-        Map<String, Object> page2Data = execute(
-            "{ filmsOrderedConnection(order: [{field: TITLE, direction: ASC}], first: 2, after: \"" +
-            endCursor + "\") { nodes { title } } }");
-        assertThat(page2Data).extractingByKey("filmsOrderedConnection", as(MAP))
-            .extractingByKey("nodes", as(list(Map.class)))
-            .extracting(n -> n.get("title"))
-            .containsExactly("ADAPTATION HOLES", "AFFAIR PREJUDICE");
+        assertThat(pages)
+            .as("the walk crossed at least one page boundary, which is what the seek is for")
+            .isGreaterThanOrEqualTo(1);
+        assertThat(seededTitlesInOrder(titles))
+            .as("every seeded row arrives exactly once, in title order, across the page boundaries")
+            .containsExactlyElementsOf(SEEDED_FILM_TITLES);
     }
 
     // ===== G5 inline TableField — single-hop FK =====

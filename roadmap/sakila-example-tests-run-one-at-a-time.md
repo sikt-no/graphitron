@@ -1,7 +1,7 @@
 ---
 id: R763
 title: "Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path"
-status: Ready
+status: In Review
 bucket: dx
 priority: 2
 theme: tooling
@@ -240,19 +240,31 @@ seconds will differ per machine; the module figure is the one to hold.
 The four changes landed as planned. The Spec reviewer's ruling on the second meta-test was to abandon
 it: "earns its container" is not a property of the assertion vocabulary, because a `@QuarkusTest`
 legitimately pins CDI wiring, an interceptor, config or a startup effect without asserting a status
-code, and this module already carries the fixtures such a test would use. Its intent went into the
-first meta-test's failure message instead. `QuarkusTestLockEnforcementTest` is the enforcer, and it
-was checked by deleting one annotation and watching it fail.
+code, and this module already carries the fixtures such a test would use. Its intent is in the first
+meta-test's failure message: `QuarkusTestLockEnforcementTest` now tells the author of a new
+`@QuarkusTest` class to check whether it needs the container before taking the key, and names the 46
+`querydb` classes that do not. The enforcer was checked by deleting one annotation and watching it
+fail.
 
-**Sixty assertion sites, not seven.** The seven the experiment surfaced were the ones a particular
-interleaving happened to hit. Fifty-nine methods in `GraphQLQueryTest` and one in
+**Sixty-three assertion sites, not seven.** The seven the experiment surfaced were the ones a
+particular interleaving happened to hit. Sixty-two methods in `GraphQLQueryTest` and one in
 `ProjectionSqlBaselineTest` assert something that only holds while `film` or `content` holds nothing
 but the seed. Finding them by interleaving would have taken many runs, so the sweep used a
-deterministic detector instead: insert three films and two content rows shaped like the ones the
-module's writers create (`rating` left to its `'G'` default, `length` and `release_year` null, the
-content attached to film 1), run the suite, and every case that asserts what the table holds fails
-on the spot. The suite is green with those rows present, which is the property the item wanted and a
-stronger statement than three green runs.
+deterministic detector instead: insert films and content rows shaped like the ones the module's
+writers create, run the suite, and every case that asserts what the table holds fails on the spot.
+The suite is green with those rows present, which is the property the item wanted and a stronger
+statement than three green runs.
+
+**A detector is only as good as the column shapes it varies, and the first one missed a shape.** Its
+rows carried `rating` at its `'G'` default, `length` and `release_year` null, and content attached to
+film 1, and that found sixty sites. It did not vary the *title*, so every row it inserted sorted
+after the seed and no title-ordered page ever moved. Three cases in the `filmsOrderedConnection`
+title cluster survived, which is what the In Review reviewer caught by adding a single row titled
+`A DETECTOR FILM`. The detector's row set now spans the shapes the module's writers actually
+produce, including a title that sorts ahead of the seed and one that sorts into the middle of it. The
+lesson generalises past this item: the detector's coverage is the cross product of the columns it
+varies against the orderings the tests use, and a column left at its seeded value is a blind spot
+rather than a safe default.
 
 Four shapes came up that the plan did not anticipate:
 
@@ -292,6 +304,10 @@ figure is smaller because the baseline here is slower than the box the item was 
 module's own total moved 105 s to 99 s, which is noisier than the surefire figure because
 `graphitron:generate` and `quarkus:build` dominate it. No
 `Discovered 2 'junit-platform.properties'` warning, confirmed by grep rather than assumed.
+
+After the rework round the suite is 839 tests and the three re-run readings are 48.5, 49.7 and
+48.0 s, against the same 59-61 s baseline. Trunk added tests between the two rounds, so the arms are
+no longer matched; the number to hold is the ratio, not either absolute.
 
 One case renamed: `filmsFaceted_noFilter_countsMatchPlainAggregates` is now
 `filmsFaceted_noFacetFilter_countsMatchPlainAggregates`, since it carries a non-facet filter.
