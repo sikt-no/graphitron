@@ -25,7 +25,9 @@ question with 215 relations behind it and no way to ask it.
 
 When this item lands, a developer sets one flag, and the dev session prints a `psql` line they can
 paste into another terminal. They get read-only SQL against the rows the running session is answering
-from, live as rounds land, with no change to how the session itself reads or writes the store.
+from, live as rounds land, with no change to how the session itself reads or writes the store. An agent
+on the session's MCP server reads the same coordinates as structured fields from a `store.console`
+tool, so it connects without scraping them out of log text.
 
 ## What was measured
 
@@ -183,6 +185,32 @@ graphitron:dev:   GRAPHITRON_DEV_STORE_CONSOLE=true mvn graphitron:dev
 
 A developer who never reads the manual gets from "I wish I could see the rows" to a psql prompt using
 only what the session already told them.
+
+`graphitron-mcp`, the agent-facing surface:
+
+- New tool `store.console`, taking no arguments and returning the coordinates as **fields**, so an
+  agent never scrapes them out of log text or out of the connect string. Up:
+  `{status: "up", host, port, user, password, database, relations, connectCommand}`. Disabled:
+  `{status: "disabled", enableWith: "GRAPHITRON_DEV_STORE_CONSOLE=true mvn graphitron:dev"}`.
+  `connectCommand` rides along for an agent that shells out, so the human's line and the agent's line
+  are the same string from the same place rather than two spellings that can drift.
+- Advertised on every boot, in the `catalog.search` shape (present but reporting why it cannot serve)
+  rather than the `execute` shape (registered only when configured). An absent tool teaches an agent
+  nothing; a tool that answers `disabled` with the enabling command lets the agent tell its human what
+  to restart with.
+- Deliberately not folded into the existing `status` tool. That one reports the graph's fact
+  availability and freshness and is called routinely; a per-session secret belongs behind a call an
+  agent makes on purpose, and the two answers have nothing to do with each other.
+- Wiring: `StoreConsole.coordinates()` returns a record (`no.sikt.graphitron.model.boot`, beside the
+  handle), null when no console is up. `DevMojo` threads it through `bindServer` next to
+  `ExecuteTool.Config` and into the `GraphitronMcpServer` constructor, with a back-compat overload
+  defaulting it to null, the growable-record convention `RagConfig` already set. Ordering already
+  works: the console starts right after `Materializations.refreshAll` and `bindServer` runs later in
+  `execute()`, so the coordinates exist by the time the server is built.
+- Ambient instructions gain `/mcp/instructions-store-console.txt`, appended exactly when the
+  coordinates are non-null, the same conditional composition `instructions-execute.txt` already uses so
+  a routing sentence never advertises an absent door. `ServerInstructionsTest` pins that agreement per
+  boot.
 - Close it in `cleanup()` **before** `lspStore`, `mcpStore` and `sessionStore`: the link connection
   points at the store, so the console goes first.
 
@@ -225,7 +253,16 @@ only what the session already told them.
 > psql's `\d` commands, which the server does not implement. Writes are refused by design; the
 > session owns those rows.
 
-If either draft does not read simply at implementation time, the design is wrong and changes first.
+`docs/manual/how-to/mcp-agent-context.adoc`, beside the execute-tool section:
+
+> **Query the fact store from an agent.** With the console enabled, `store.console` returns the
+> connection as fields (`host`, `port`, `user`, `password`, `database`) plus a ready `connectCommand`.
+> Read the fields; there is nothing to parse. The tool is always present: without a console it answers
+> `{"status": "disabled"}` and names the command that starts one, so an agent can tell you what to
+> restart with rather than guessing why psql refuses. The port and password are fresh per session, so
+> re-read them after a restart instead of caching them.
+
+If any draft does not read simply at implementation time, the design is wrong and changes first.
 
 ## Tests
 
@@ -268,6 +305,16 @@ nobody swaps it for a driver connection and concludes the console is broken.
   logged line is exactly `StoreConsole.connectCommand()`, carrying the bound port rather than a
   placeholder or a 0.
 - Enabled with a pinned `<port>`: the console binds exactly that port, and the logged command names it.
+- The coordinates reach `bindServer` when the console is up, and are null when it is off.
+
+`graphitron-mcp`, MCP-handler tier, structured-content assertions only per this module's convention:
+
+- `GraphitronMcpServerTest`: `store.console` is advertised in `tools/list` on both arms; the up arm
+  returns the bound port, the minted user and password, the relation count and a `connectCommand`, each
+  as its own field; the disabled arm returns `status: disabled` plus the enabling command and no
+  credential fields at all.
+- `ServerInstructionsTest`: the console routing fragment is present exactly when coordinates are, the
+  agreement that test already pins for the execute fragment.
 - `cleanup()` closes the console, and closes it before the store.
 - A console that fails to open degrades to a warning naming the reason, and the session continues.
 
@@ -279,10 +326,23 @@ nobody swaps it for a driver connection and concludes the console is broken.
   separately if the demand shows up.
 - Write access, non-loopback binding, and any authentication beyond the per-console user and secret
   described above.
-- Anything MCP-facing. The agent-side surface is the existing tools; this item is for a human at a
-  terminal.
+- Arbitrary SQL as an MCP tool. `store.console` hands out coordinates; it does not become a
+  `store.query` that runs SQL over the fact store and returns rows. See the open question below, which
+  is about whether that tool should exist rather than about how this one behaves.
 
 ## Open questions
 
-None outstanding. The port question is settled above: ephemeral is the default and the encouraged
-shape, a pinned port is available for a developer who wants a stable connect line.
+The port question is settled: ephemeral is the default and the encouraged shape, a pinned port is
+available for a developer who wants a stable connect line.
+
+One question the MCP surface raises and this item does not answer: **should an agent get a
+`store.query` tool instead of a psql door?** Handing an agent coordinates makes it drive a subprocess,
+parse psql's text table back into structure, and hold a credential it might echo into a transcript. A
+`store.query` tool taking read-only SQL and returning rows as structured content would skip all three,
+and the existing `StoreReader` (a second connection, one transaction per answer, rollback at the end)
+is already the right mechanism for it. The reasons to keep the coordinates anyway are that an agent
+with a shell can stream a large result set past what a tool response should carry, and that psql stays
+the human's door regardless, so the console is not work done only for agents. My read is that both
+belong, `store.query` as its own item once this one lands, but the call is worth making explicitly
+before implementation rather than after: if `store.query` is what agents should use, the MCP half of
+this item shrinks to nothing more than reporting whether a console exists.
