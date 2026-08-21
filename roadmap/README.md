@@ -23,12 +23,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
 | `R705` | A condition-join hop in a reference filter path is rejected, though the emitter it needs already ships | Spec | 2026-08-20 <sub>created 2026-08-18</sub> | [plan](condition-join-hops-in-reference-filter-paths.md) |
-| `R771` | A skill for authoring nested jOOQ at one grain, driven from the right relation | Spec | 2026-08-21 | [plan](nested-jooq-grain-and-anchor-skill.md) |
 | `R770` | A skill that makes store slowness a database question first, not a Java one | Spec | 2026-08-21 | [plan](relational-first-store-debugging-skill.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
+| `R771` | A skill for authoring nested jOOQ at one grain, driven from the right relation | Ready | 2026-08-21 | [plan](nested-jooq-grain-and-anchor-skill.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R773` | The LSP's store reads answer inside a time budget, or fail | Ready | 2026-08-21 | [plan](lsp-store-reads-inside-a-time-budget.md) |
 | `R728` | @nodeId encode and decode become store relations, and an instruction the generator drops fails the build | In Progress | 2026-08-20 <sub>created 2026-08-19</sub> | [plan](nodeid-effective-at-every-coordinate.md) |
@@ -591,7 +591,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R772` [**The dev loop holds a live fact store no developer can query**](dev-loop-store-sql-console.md) — Spec, dx
 - `R763` [**Two test defects hold graphitron-sakila-example to one thread, and it is 23s of the critical path**](sakila-example-tests-run-one-at-a-time.md) — Spec, dx
 - `R764` [**graphitron-model ships its junit-platform.properties to three consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
-- `R771` [**A skill for authoring nested jOOQ at one grain, driven from the right relation**](nested-jooq-grain-and-anchor-skill.md) — Spec, dx
+- `R771` [**A skill for authoring nested jOOQ at one grain, driven from the right relation**](nested-jooq-grain-and-anchor-skill.md) — Ready, dx
 - `R770` [**A skill that makes store slowness a database question first, not a Java one**](relational-first-store-debugging-skill.md) — Spec, dx
 - `R766` [**Five generate executions run one after another on the last node of the critical path**](sakila-example-generate-executions-serialize.md) — Backlog, dx
 - `R733` [**Hold the build wall clock with a budget, and take the derived-read slices R732 left unmeasured**](build-wall-clock-guardrail.md) — Backlog, dx
