@@ -275,3 +275,116 @@ knowing why the statement costs what it does.
 
 None. Nothing here retires a symbol; the budget constants keep their names and
 gain a sibling.
+
+## Reviewer findings
+
+### Round 1, Spec → Ready, revisions requested (session_01MtzM82PqeYAJ1tBFafctX8, 2026-08-21)
+
+Steps 1, 2 and 4 read as ready, and the diagnosis behind them is unusually well
+controlled: the arm isolation, the seven controls with three refutations
+recorded, and the refuted heavy-relation guess are exactly what the next person
+needs and would not have re-derived. Question 1 is answered. What lands for a
+consumer is legible without reading the phase list: putting the cursor on an SDL
+declaration name and asking to navigate stops stalling over a second, the
+declaration-name hover that shares those arms comes with it, and no surface can
+later regress into the same shape without an enforcer failing.
+
+Everything below is step 3.
+
+**Finding 1 (question 2). Step 3 proposes to make `INTERACTIVE_READ_BUDGET` a
+latency policy, which that constant's own javadoc refuses, and the spec does not
+engage with the refusal.** `DevMojo`'s javadoc on the constant says the low-seconds
+figure is "deliberately not a latency policy", that "the target is a query that
+would otherwise never return", that "a threshold tight enough to police slowness
+would start refusing correct answers on a loaded machine", and that
+`LspTrace`'s own slow-span threshold is where latency gets reported. That
+threshold is `graphitron.lsp.trace.slowMs`, default 100, which is inside the
+range step 3 wants to move the budget into. So the spec's criticism of the
+constant (one figure for surfaces with different contracts) is not the objection
+the constant already answers, and the objection it already answers is the one
+step 3 has to clear.
+
+This is not a preference about numbers. Step 4 rejects the budget-arm enforcer
+with the identical argument, "a slow enough machine flips it, which is the wall
+clock the tiers refuse", so the spec accepts that argument in one section and
+steps past it in the other. An implementer would open `DevMojo`, read the
+javadoc telling them not to do the thing step 3 asks for, and have to settle it
+themselves.
+
+What would satisfy it: state why the recorded decision was wrong, or why a
+navigation grain is the exception to it, and say what happens to the developer
+whose machine is loaded when the budget fires. A budget miss is not a slow
+answer, it is no answer, which is the same reading as the broken feature this
+item exists to remove. If the answer is that latency policy belongs in
+`LspTrace` and the budget stays a runaway guard, that is a coherent step 3 too,
+and a smaller one.
+
+**Finding 2 (question 2). The number rests on figures the spec itself calls
+floors.** The fixture's class census is empty, so every arm resolving a consumer
+class or method name does less work than in a real session, and the spec says
+so. Picking a production threshold whose failure mode is a dropped answer, from
+measurements the spec labels floors on a fixture it labels unrepresentative, is
+the part I would not hand over. This compounds finding 1 rather than standing
+apart from it: what makes a tight budget defensible is knowing the real ceiling,
+and step 1 exists because the spec already applies that standard to the inlay
+figure.
+
+What would satisfy it: either a measurement with a populated class census behind
+the number, or a budget chosen with margin against the unmeasured case and the
+margin's reasoning stated.
+
+**Finding 3 (question 2). The fork is stated at the wrong layer, and the layer
+that owns it already documents this extension point.** Step 3's fork is "a new
+reader per grain or a tighter bound on the existing interactive one", argued from
+`StoreReader`'s javadoc and the connection count. But the class that routes
+grains to readers is `StoreAccess`, whose javadoc names three doors
+(`answering` for every interactive surface, `answeringAll` for the drain alone,
+`readingSessionGraph` for session state), says the doors "partition the grains
+exactly as they stand, which is what makes routing by door a delegation split
+rather than a restructure", and closes with the sentence this item is the
+occasion for: "If a second interactive caller of `answeringAll` ever appears,
+the door is the thing to split." Step 3 mentions neither the class nor the doors.
+
+So the shape is in the tree and the spec proposes beside it. Concretely, what an
+implementer needs and cannot get from step 3: which surfaces move behind the new
+door. Navigation alone, or navigation and the declaration hover that shares its
+arms, and whether completion and code action keep the three-second guard. That
+choice also decides what step 4's budget-arm candidate would import as "the
+production navigation figure".
+
+**Finding 4 (question 2). The fork is handed to the reviewer, and this gate
+cannot take it.** "Open for the reviewer: whether this is a new reader per grain
+or a tighter bound on the existing interactive one" asks for the one thing the
+findings-not-fixes split exists to keep out of a spec. Naming both arms with
+their arguments is the right preparation; the pick is the author's. Findings 1
+through 3 are the material the pick needs.
+
+**Finding 5 (question 2, smaller). Step 2's opening sentence describes a change
+that is already textually present.** The arm reads
+`.from(INTENT_TYPE_BACKING).join(SQL_TABLE).on(...)` with both cheap predicates
+already in its `where`, so "the arm departs from the wrong end" and "rewrite the
+arm so the filtered derived relation drives" name an edit an implementer would
+find already made. The diagnosis is right and the spec knows it: H2 reorders,
+which is why the derived-table control was refuted. But the instruction has to
+be the structural one the controls actually measured, a correlated lookup on the
+census keyed by the class name that H2 cannot reorder, not a driving-side
+rewording. Stating it that way also keeps the refuted controls doing their job,
+which is stopping the next person from spending the afternoon the author already
+spent.
+
+**Count correction, not a finding.** Five request surfaces share
+`INTERACTIVE_READ_BUDGET`; the drain runs on `SESSION_READ_BUDGET`, as this
+item's own measurement table records. "One figure for six surfaces" and "they
+share a single three-second budget" overstate by one, and the five-surface
+version is the accurate form of the same argument. Left for the author because
+the sentences are being rewritten anyway.
+
+**Non-blocking.** The claim that `DeclarationFacts` reads none of
+`report-inline-multiplicity`'s fifteen heaviest is the one measurement here I
+could not check without a build; R793 restates it independently, and the
+mechanism claim behind it (`InlineMultiplicityCheck` computes from the DDL
+alone, ranks relations, reports rather than gates, `TOP = 15`) is accurate as
+written. The scan-count enforcer of step 4 is a new mechanism rather than an
+extension of one in the tree (nothing reads H2's `scanCount` today), which the
+spec is honest about pricing; R793's "whichever of the two lands second should
+extend that enforcer" settles the ownership, so this is not a gap.
