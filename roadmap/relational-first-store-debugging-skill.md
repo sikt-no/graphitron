@@ -1,13 +1,13 @@
 ---
 id: R770
 title: "A skill that makes store slowness a database question first, not a Java one"
-status: Spec
+status: Ready
 bucket: dx
 priority: 3
 theme: tooling
 depends-on: []
 created: 2026-08-21
-last-updated: 2026-08-22
+last-updated: 2026-08-21
 ---
 
 # A skill that makes store slowness a database question first, not a Java one
