@@ -36,9 +36,11 @@ store's own columns:
   (`intent_type_backing_conflict.candidates`); a collection serialized into a scalar fails
   (`class_names`, same relation, same key), because its element grain sits inside the value
   where no key, constraint or join reaches it and only string surgery gets it back. That
-  pair, same relation and same key, is the whole lesson in one exemplar. This is also what
-  makes R803's denylist coherent: `ARRAY_AGG` is no delimited string, but it is a
-  collection in a scalar.
+  pair, same relation and same key, is the whole lesson in one exemplar, and it has a live
+  wrong answer behind it: `DiagnosticFacets.DIRECTIVES` filters with exact set equality on
+  the MCP surface, so asking for conflicts involving one directive silently returns only
+  the conflicts whose entire set is that directive. This is also what makes R803's denylist
+  coherent: `ARRAY_AGG` is no delimited string, but it is a collection in a scalar.
 * A serialized set used as a canonical group key is the case that looks legitimate and is
   not: it answers only equality of the whole set, where the relational form answers that
   and membership too, for one join. Grouping by a set is a query's business; the store owes
@@ -67,16 +69,20 @@ lands before the gate exists, the line is a disclosed gap explicitly marked clos
 unlike the Name-the-row section's unclosable one; landing the paragraph in the same window
 as the gate commit avoids the page ever carrying the gap.
 
-Two citations that lift the case past taste: "boundaries decode and encode" (a delimited
-column is a wire format inside the interior, and `ClaimFacts` wrapping the string straight
-back into a jOOQ `multiset` is the decode happening at the wrong place) and "one model,
-many views" (`ClaimFacts` in graphitron-lsp and `SchemaQueries` in graphitron-mcp hold two
-hand-maintained parsers of one encoding today, the shadow-taxonomy smell at column scale).
+Two citations that lift the case past taste, both corrected against R803's Spec revision
+round 1 (an earlier form of this paragraph claimed two hand-maintained parsers; neither
+consumer parses, and the truth is stronger): "boundaries decode and encode" (a serialized
+column is a wire format inside the interior, and nothing ever decodes it; the joined
+string travels intact into a hover) and the encoding leaking into a consumer's types (in
+`ClaimFacts`, `contested` is a `Field<List<String>>` beside `grounded` and `reached`,
+which are genuine multiset row lists, but holds a one-element list containing the joined
+string: three sibling fields, one Java type, two meanings).
 
 Out of scope: development-principles.adoc, whose preamble already delegates the store's
 modeling discipline to fact-model.adoc and whose word budget is gated.
 
-A finding for R803's reviewer rather than this item: once the message render's input is
-named correctly (a Java enum's declaration order, which is not a captured fact), its arm 1
-may fit the schema header's existing first post-capture reason, a derivation no view can
-express, so the header extension R803 poses as an open question may be unnecessary.
+R803's Spec revision round 1 has since adopted this item's discriminator, lifted the same
+"display material, never a dimension" vocabulary, and settled its message fork on the
+schema header's existing post-capture reason (the render's input is a Java enum's
+declaration order, not a captured fact), so the two items state one rule and this item's
+articles cite the gate R803 lands.
