@@ -1,7 +1,7 @@
 ---
 id: R805
 title: "A principles section under docs/architecture"
-status: Ready
+status: In Progress
 bucket: docs
 priority: 6
 theme: docs
