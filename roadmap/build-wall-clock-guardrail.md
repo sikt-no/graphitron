@@ -169,6 +169,31 @@ unnecessary today. Closing that wants a fixture registration whose view reads an
 target, and this pass's failure text is the concrete case such a fixture has to fail on before R746's
 sort is in place.
 
+### The third registration has since shipped elsewhere, and this slice needs re-scoping
+
+Added by the In Review gate on `roadmap/diagnostics-drain-overruns-its-session-budget.md`, which
+landed `intent_resolved_type_binding` as a `meta_materialize` registration at `272ef13` for the
+language server's diagnostics drain, together with a second registration of
+`intent_field_column_scope`. So the slice above, the one this item measured as worth more than
+everything else in it combined, is on trunk. It arrived from the language-server side rather than
+from the build-wall-clock side, and its `reason` row argues the drain's arithmetic rather than this
+item's.
+
+Two things follow for this item's Spec pass. The 18.99s to 11.61s on `GeneratorDeterminismTest` and
+the 2.55s to 0.40s of store time per run are now trunk's baseline rather than an available win, so
+the ordering of the remaining slices was computed against a store that no longer exists and wants
+re-deriving from fresh numbers. And the block this item recorded is gone: the refresh order is no
+longer the registry's `source_view_name` order but a topological one over
+`meta_materialize_dependency`, derived at boot by
+`no.sikt.graphitron.model.derive.MaterializeDependencies`, which is exactly the case that landed
+here, `intent_field_column_scope_live` reading the binding's target while sorting ahead of it
+alphabetically.
+
+The per-refresh `INFORMATION_SCHEMA.COLUMNS` probe this item priced is untouched and has grown
+rather than shrunk. `Materializations` still asks the catalog whether each target carries a
+`graph_name` column once per registration per refresh, and the registry now holds six registrations
+rather than the three that number was taken at.
+
 ### The index slice is refuted, and the premise it rested on was wrong too
 
 Slice 3 below was promoted to first by the second pass. This pass measured it and it is worth nothing.

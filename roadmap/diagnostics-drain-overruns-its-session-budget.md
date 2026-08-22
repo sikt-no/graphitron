@@ -304,3 +304,57 @@ correction.
 Reviewer rule: the implementation commits are `session_01Bh91SfEBTRb6MjmgfYG9Wm`; this session is
 `session_01ArRUrte6WnVy19HnpRyvLM`, a different party. This session authored the spec body, which the
 In Review gate's rule does not bar, and is disclosed here rather than left to be noticed.
+
+### Round 1 corroboration, and the fixture-size question answered
+
+A second In Review gate ran concurrently against the same tree
+(`session_01Rxu8sAUqhx2sKc4urHo392`) and reached the finding above independently, by reverting the
+SQL resource to the delivery's parent, rebuilding the model and re-running the class rather than by
+lowering the ceiling. It reproduces both numbers exactly, 658 delivered and 1291 unregistered, and
+adds that all twelve cases in the class stay green on the reverted tree, not only the new one. Two
+methods, one answer, so the finding is not an artefact of how the actual was read.
+
+What that pass adds is the measurement the finding above left to the implementer: whether growing the
+fixture is worth it, and how far. The separation is a property of how many rows the statement drives,
+so it widens with the graph and settles quickly. Same box and catalog, one file of N table-bound types
+each carrying two column-bound fields and a reference:
+
+[cols="2,2,2,1",options="header"]
+|===
+| Graph | Unregistered | Delivered | Ratio
+
+| 4 types, the fixture the test uses
+| 1291
+| 658
+| 2.0x
+
+| 10 types
+| 7407
+| 2244
+| 3.3x
+
+| 40 types
+| 23727
+| 6924
+| 3.4x
+|===
+
+So the ratio is about 3.4x once the driving side is big enough to show it, and it is not orders of
+magnitude at any size a unit test would want; the sakila-scale catastrophe in the write-up comes from
+a catalog and a schema this tier does not stand up. That bounds both repairs. Retuning the constant
+on the present fixture has a factor of two to sit in, which works and is tight. Growing the fixture to
+around forty types instead leaves the already-chosen 20000 exactly where it is and lets it do the job
+it was written for: the unregistered shape breaches it at 23727 while the delivered shape keeps a
+threefold margin at 6924. The second is the cheaper thing to defend later, since the number stops
+being a constant somebody has to justify against a nearby failure.
+
+Worth knowing either way: these are synthetic types all bound to one table, which is a lower bound on
+the divergence rather than the worst case, so a fixture built from varied bindings would separate the
+two shapes further at the same size.
+
+Not blocking, and for the same pass. Three citations in this body now dangle:
+`roadmap/lsp-surface-latency-budgets.md` is cited at the leading hypothesis, at Coordination and in
+the write-up, and that item reached Done and deleted its file while this one was in review. The
+write-up's sentence also has the landing order backwards, saying the scan-count enforcer landed first
+here when that item's `SurfaceScanCountTest` was already on trunk. Restate what those citations carry
+rather than repointing them, since the target is gone.
