@@ -66,6 +66,13 @@ import static org.jooq.impl.DSL.select;
  * is a far narrower claim than every relation in the schema, and that the fixture below is fixed. A
  * change to the fixture's catalog moves these numbers, and moving them is the right response.
  *
+ * <p>Every ceiling here was set from both shapes measured on <em>this</em> fixture, and each was
+ * confirmed to fail with the defect reinstated. That is the whole difference between a ceiling and a
+ * decoration, and it is easy to lose: a number carried over from a bigger fixture's arithmetic, or
+ * chosen as a round generous-looking figure, can sit above the very regression it names and pass on
+ * a tree with the fix removed. So a ceiling added here for a new surface is not finished when it
+ * passes; it is finished when it has been seen to fail.
+ *
  * <p>The ceilings alone would not have caught the defect that prompted them, though: it cost a
  * declaration read 121 extra scans at this fixture's size, which is 15% of one of the numbers below
  * and no ceiling anybody would defend. What makes it visible is that the excess *grows with the

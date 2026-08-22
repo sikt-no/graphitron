@@ -1,7 +1,7 @@
 ---
 id: R795
 title: "No language-server surface blocks the editor"
-status: Ready
+status: In Review
 bucket: bug
 priority: 2
 theme: lsp
