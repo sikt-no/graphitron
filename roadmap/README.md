@@ -30,7 +30,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
-| `R799` | The inlay read reads the whole schema, and no enforcer sees it | Ready | 2026-08-22 <sub>created 2026-08-21</sub> | [plan](inlay-read-overruns-the-interactive-budget.md) |
+| `R799` | The inlay read reads the whole schema, and no enforcer sees it | In Progress | 2026-08-22 <sub>created 2026-08-21</sub> | [plan](inlay-read-overruns-the-interactive-budget.md) |
 | `R687` | A DML carrier payload with an errors field loses its return-derived write target | Spec | 2026-08-20 <sub>created 2026-08-17</sub> | [plan](dml-carrier-errors-field-blocks-return-derived-table.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -513,7 +513,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R430` [**LSP publishes graphitron:dev compile diagnostics against generated-file URIs**](lsp-compile-diagnostics-publish.md) — Backlog, feature
 - `R578` [**Raise the LSP unknown-input-field diagnostic to Error severity**](unknown-input-field-diagnostic-severity.md) — Backlog, cleanup
 - `R782` [**Completions and code actions get statement-count enforcers**](completion-and-code-action-statement-counts.md) — Backlog, architecture
-- `R799` [**The inlay read reads the whole schema, and no enforcer sees it**](inlay-read-overruns-the-interactive-budget.md) — Ready, testing
+- `R799` [**The inlay read reads the whole schema, and no enforcer sees it**](inlay-read-overruns-the-interactive-budget.md) — In Progress, testing
 - `R802` [**The scan-count ceiling javadoc contradicts itself about what a ceiling catches**](scan-ceiling-lesson-contradicts-itself.md) — Backlog, docs
 - `R381` [**LSP-guided @reference path authoring**](lsp-reference-path-authoring.md) — Spec, architecture
 - `R797` [**Pull diagnostics, so a client can ask, cancel, and be told to ask again**](pull-diagnostics-so-a-client-can-ask-and-cancel.md) — Spec, feature
