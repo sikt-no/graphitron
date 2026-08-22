@@ -100,7 +100,10 @@ Membership is two tests applied together, and the population below is the sweep 
 applied, so implementation transcribes it rather than re-sweeping. A relation is on the roster
 when it owns a normalization rule of its own, spelled in its own body, not when it reads a
 relation that states one; and when that rule mediates a meeting between two families'
-vocabularies, not a normalization inside one. The flagship row is `intent_spelled_table`.
+vocabularies, not a normalization inside one. Where the DDL assigns a rule's ownership in its
+own comments, the roster follows that assignment: a coordinate-shaped sibling whose comment says
+the rule is argued at the other site restates a body, not a rule, and gets a disclosure rather
+than a second row. The flagship row is `intent_spelled_table`.
 
 Crossings by plain column equality on a shared natural key get no bridge row by design. A
 foreign key is already a declared, engine-checked join path, and a coordinate-equality join
@@ -274,16 +277,19 @@ The selection rule applied: the family's anchor or central grain first, then the
 shows how the family is read, then at most one resident that shows the family's character (an
 overflow, a reduction, a register). Every named relation exists in the DDL today.
 
-**Bridge rows.** The sweep over the DDL's function-mediated match sites (every `UPPER`, `LOWER`,
-`REPLACE`, `SUBSTRING` and generated `*_upper` join outside comments), with the two membership
-tests applied to each site against its view's body. Three relations pass both; each row's rule
-is one sentence. All three carry their spelled and census families in the direct read set (the
+**Bridge rows.** The sweep over the DDL's function-mediated match sites: every `UPPER`, `LOWER`,
+`REPLACE`, `SUBSTRING`, `LEFT`, `TRIM`, `REGEXP_REPLACE` and every `*_upper` column reference in
+a view body, comments stripped. Seventeen relations hold one, and every one of them is accounted
+for below: four rostered, the rest reconciled in the disclosure list, so implementation
+transcribes rather than re-sweeping and the follow-up inherits a complete list. Each row's rule
+is one sentence. All four carry their spelled and census families in the direct read set (the
 flagship's through its registered source view, which is the materialize resolution already
 recorded for the follow-up), so no row needs a transitive-reach note.
 
 | relation_name | spelled_prefix | census_prefix | rule |
 |---|---|---|---|
 | `intent_spelled_table` | `graphitron_` | `sql_` | A written table reference meets the catalog census by case-insensitive match on pre-normalized spelling columns, one row per candidate. |
+| `intent_field_reference_step_hop` | `graphitron_` | `sql_` | A written key reference meets the constraint census case-insensitively under the resolver's namespace precedence: a qualifier binds hard, the SQL constraint name answers first, and the generated Keys-class constant is eligible only where no SQL constraint answers the name. |
 | `intent_column_match_claim` | `graphql_` | `sql_` | A field's own name meets the columns of the table its site navigates to, case-insensitively, with no directive involved. |
 | `intent_argmapping_key_column_candidate` | `graphitron_` | `sql_` | An argMapping path segment meets column names case-insensitively along the binding walk. |
 
@@ -298,8 +304,9 @@ bean-prefix strip, but reads only `jvm_` relations: it mints the member vocabula
 relations meet, and a `(spelled_prefix, census_prefix)` row describes a crossing, which a
 normalizer that crosses nothing is not.
 
-Four normalizations stay off the roster, recorded here because the follow-up's predicate
-analysis will see each as a function application and must classify it:
+The remaining sites stay off the roster, reconciled here so the follow-up's predicate analysis
+inherits every site the sweep found, not only the ones the roster rejected. Five carry a
+normalization the analysis must classify:
 
 - The SDL type-expression peel (bracket and bang stripping to reach a bare type name)
   normalizes SDL syntax into an SDL name, one vocabulary, so there is no family crossing to
@@ -319,9 +326,27 @@ analysis will see each as a function application and must classify it:
   (`intent_resolved_node_key_shape`, `intent_node_id_decode_column`). No relation can own a
   bridge row for a rule the schema deliberately states as nobody's; whether the follow-up
   reifies the convention as a declarable fact is its call.
+- The rostered key-reference rule's coordinate-shaped restatement:
+  `intent_argument_reference_step_hop` spells `intent_field_reference_step_hop`'s comparison arm
+  for arm in its own body, and its comment assigns the rule to the field-site view ("the
+  duplication is the SQL body and not the rule") with an anchor test asserting the two agree.
+  The roster follows that assignment, so the sibling is a recognized restatement site, not a
+  second row.
+
+Five more sites fail a test outright, one clause each. `intent_name_matched_key_pair` matches
+column names case-insensitively but its own comment calls it "the schema's rule for a comparison
+inside one family": no crossing. `intent_field_reference_discovery` compares two `sql_table`
+names for inequality: intra-family, and not a resolution. `meta_relation_family` owns the real,
+forkable prefix-match rule, but between the engine catalog and `meta_family`: no family
+crossing. `intent_authored_claim_conflict`'s `REPLACE` formats a directive list into a message:
+matches nothing. `diagnostic`'s seven `REGEXP_REPLACE` calls render a directory from a stored
+file path: matches nothing, and worth naming precisely because a predicate walker meets them in
+a view spanning six families, the most conspicuous function-over-cross-family-columns sites in
+the schema that mediate no meeting at all.
 
 The roster declares owned cross-family rules only; a normalization that fails either test is
-real but a different fact, and the follow-up inherits the list above with the register question.
+real but a different fact, and the follow-up inherits the full reconciliation above with the
+register questions.
 
 The introductions above run one paragraph each in the friendly register the explanation pages
 use; headline rosters stay at two to four rows or they stop being curation; bridge rules are one
@@ -339,8 +364,9 @@ sentence each.
 6. The follow-up item's stub updated to carry its inherited remit: the view-read census, the
    crossing gate with its materialize-aware resolution, the keyed-crossing register (the
    reviewer's closed-vocabulary recommendation recorded as its starting shape), the
-   predicate-level analysis with the four disclosed off-roster normalizations it must classify,
-   and the bean-strip register question, all seeded by the declared bridges.
+   predicate-level analysis with the Population section's complete seventeen-site
+   reconciliation (the sites it must classify and the sites that match nothing), and the
+   bean-strip register question, all seeded by the declared bridges.
 
 ## Risks
 
@@ -667,3 +693,29 @@ fails is enough; the four existing disclosures are the right length.
 **Not a finding.** I have now checked the roster twice from opposite directions, forward from the
 three rostered rows and backward from every function site in the file, and the three rows
 themselves have held both times. The re-sweep should confirm rather than disturb them.
+
+### Round 3 response (author, 2026-08-22)
+
+Finding 4 accepted. I re-ran the sweep with the reviewer's wider function list over the
+comment-stripped DDL and reproduced exactly seventeen relations, then verified
+`intent_field_reference_step_hop`'s KEY arm against its body: the qualifier-binds-hard,
+SQL-name-first, Keys-constant-only-on-absence precedence is spelled there with its own
+anti-exists, `graphitron_field_reference_step` and the constraint census both in the direct read
+set, and `key_matched_by` making the precedence visible data. It is the fourth roster row, and
+it resolves a different name against a different census than the flagship, so it is not the
+flagship's rule renamed.
+
+The sibling question is settled by the DDL's own words: `intent_argument_reference_step_hop`'s
+comment assigns every arm and every precedence to the field-site view, calls its own body a
+duplication of SQL and not of rule, and an anchor test already asserts the two agree. The roster
+follows the schema's stated ownership, so one row plus a disclosed restatement site, and the
+membership tests gain the clause that says so, since the owns test as previously written would
+have read the sibling's textual body as ownership.
+
+The disclosure list is now the complete reconciliation of all seventeen sites: the five
+disclosed normalizations (the restatement joins the four from round 2) and the five sites that
+fail a test or match nothing, each with its one clause, `diagnostic`'s seven directory renders
+named as the conspicuous case the follow-up's walker must classify as matching nothing.
+Deliverable 6 and the follow-up's stub now hand over that full reconciliation rather than only
+what the roster rejected. The three previously rostered rows are untouched, as the round's
+closing note expects.
