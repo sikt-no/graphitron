@@ -12,8 +12,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Pins the cross-file anchored-xref contract: which spans and blocks yield a reference, which
- * declaration forms publish an anchor, which staged path maps back to which authored source,
+ * Pins the cross-file xref contract: which spans and blocks yield a reference (anchored or
+ * not), which declaration forms publish an anchor, which source provenance turns a wrong path
+ * into a failure rather than a count, which staged path maps back to which authored source,
  * and the one under-report the same-line detection rule knowingly accepts.
  */
 class AdocXrefAnchorCheckTest {
@@ -43,6 +44,28 @@ class AdocXrefAnchorCheckTest {
         // this check exists for.
         assertThat(AdocXrefAnchorCheck.collectFrom(PAGE, "See xref:#session-identity[Session].\n"))
             .isEmpty();
+    }
+
+    @Test
+    void unanchoredCrossFileTarget_isCollected() {
+        // A plain page reference dangles just as silently as an anchored one when the page
+        // moves; the widened population carries a null anchor and gets the path check only.
+        List<AdocXrefAnchorCheck.Reference> refs = AdocXrefAnchorCheck.collectFrom(PAGE,
+            "See xref:../how-to/dev-loop.adoc[the dev loop].\n");
+
+        assertThat(refs).singleElement().satisfies(r -> {
+            assertThat(r.targetPath()).isEqualTo("../how-to/dev-loop.adoc");
+            assertThat(r.anchor()).isNull();
+        });
+    }
+
+    @Test
+    void nonAdocAndAttributeBearingTargets_areNotCollected() {
+        // An attribute-bearing target resolves only after a substitution this check does not
+        // perform, and a non-.adoc target is not a page staging can vouch for.
+        String adoc = "See xref:{site-url}/page.adoc[attr] and xref:diagram.svg[image].\n";
+
+        assertThat(AdocXrefAnchorCheck.collectFrom(PAGE, adoc)).isEmpty();
     }
 
     @Test
@@ -147,7 +170,7 @@ class AdocXrefAnchorCheckTest {
 
         assertThatThrownBy(() -> AdocXrefAnchorCheck.run(List.of(root.toString())))
             .isInstanceOf(BuildFailure.class)
-            .hasMessageContaining("anchors the target pages do not publish");
+            .hasMessageContaining("target pages or anchors do not exist");
     }
 
     @Test
@@ -173,16 +196,57 @@ class AdocXrefAnchorCheckTest {
     }
 
     @Test
-    void targetOutsideTheStagedTree_isCountedNotFailed(@TempDir Path root) throws IOException {
-        // Neither silently passed nor failed: a wrong path is a different failure with a
-        // different fix, and failing on one would turn every quoted example into a build break.
+    void danglingPathInRoadmapProse_isCountedNotFailed(@TempDir Path root) throws IOException {
+        // Neither silently passed nor failed: item bodies quote example paths, and failing on
+        // a wrong path there would turn every quoted example into a build break.
         writeTree(root);
-        Files.writeString(root.resolve("manual/nodeId.adoc"), """
+        Files.createDirectories(root.resolve("roadmap/plans"));
+        Files.writeString(root.resolve("roadmap/plans/some-item.adoc"), """
             See xref:no-such-page.adoc#anchor[label].
-            And xref:../../../outside.adoc#anchor[label].
+            And xref:../../../outside.adoc[label].
             """);
 
         assertThat(AdocXrefAnchorCheck.run(List.of(root.toString()))).isZero();
+    }
+
+    @Test
+    void danglingPathOnADocsAuthoredPage_failsTheBuild(@TempDir Path root) throws IOException {
+        // On a published docs page a wrong path is an authoring defect with nothing to excuse
+        // it: the link 404s on the site. Anchored or not, it fails.
+        writeTree(root);
+        Files.writeString(root.resolve("manual/nodeId.adoc"),
+            "See xref:no-such-page.adoc[label].\n");
+
+        assertThatThrownBy(() -> AdocXrefAnchorCheck.run(List.of(root.toString())))
+            .isInstanceOf(BuildFailure.class)
+            .hasMessageContaining("target pages or anchors do not exist");
+    }
+
+    @Test
+    void danglingPathOnAGeneratedBoard_failsTheBuild(@TempDir Path root) throws IOException {
+        // The status boards are emitted from front-matter, not authored prose: a wrong path
+        // there is an emitter defect, exactly the class an authored-tree walker cannot see.
+        writeTree(root);
+        Files.createDirectories(root.resolve("roadmap"));
+        Files.writeString(root.resolve("roadmap/index.adoc"),
+            "See xref:../architecture/no-such-page.adoc[label].\n");
+
+        assertThatThrownBy(() -> AdocXrefAnchorCheck.run(List.of(root.toString())))
+            .isInstanceOf(BuildFailure.class);
+    }
+
+    @Test
+    void scanBelowTheFloor_failsTheBuild(@TempDir Path root) throws IOException {
+        // The widened population is pinned against vacuity: a collector regression that stops
+        // seeing references must fail, not pass an empty scan.
+        writeTree(root);
+        Files.writeString(root.resolve("manual/nodeId.adoc"),
+            "See xref:node.adoc#several-node-types-over-one-table[label].\n");
+
+        assertThat(AdocXrefAnchorCheck.run(List.of(root.toString(), "1"))).isZero();
+        assertThatThrownBy(() -> AdocXrefAnchorCheck.run(List.of(root.toString(), "2")))
+            .isInstanceOf(BuildFailure.class)
+            .hasMessageContaining("below the floor");
     }
 
     @Test

@@ -338,6 +338,12 @@
                             <arguments>
                                 <argument>check-adoc-xrefs</argument>
                                 <argument>${project.build.directory}/staging</argument>
+                                <!--
+                                    Anti-vacuity floor on the collected population (~1950 at
+                                    pinning): a collector regression that stops seeing
+                                    references fails the build instead of passing an empty scan.
+                                -->
+                                <argument>1000</argument>
                             </arguments>
                             <classpathScope>compile</classpathScope>
                             <includePluginDependencies>true</includePluginDependencies>

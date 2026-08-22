@@ -180,7 +180,7 @@ public final class Main {
             + " [--output=<path>]");
         System.err.println("  source-coverage <root-dir>");
         System.err.println("  check-adoc-tables <root-dir>...");
-        System.err.println("  check-adoc-xrefs <staging-dir>");
+        System.err.println("  check-adoc-xrefs <staging-dir> [min-references]");
         System.err.println("  check-coverage-agent-wiring <repo-root>");
         System.err.println("  check-native-load-isolation <repo-root>");
         System.err.println("  check-transient-citations <repo-root>");
