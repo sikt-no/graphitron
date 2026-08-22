@@ -1,7 +1,7 @@
 ---
 id: R800
 title: "Family pages open with an introduction, main grains and bridge roster"
-status: Spec
+status: Ready
 bucket: docs
 depends-on: []
 created: 2026-08-21
@@ -719,3 +719,58 @@ named as the conspicuous case the follow-up's walker must classify as matching n
 Deliverable 6 and the follow-up's stub now hand over that full reconciliation rather than only
 what the roster rejected. The three previously rostered rows are untouched, as the round's
 closing note expects.
+
+### Round 4, Spec → Ready, signed off (session_01VZWrUh1e8MWgV9E1SV7nZB, 2026-08-22)
+
+Finding 4 is discharged and the spec is Ready. Everything the round 3 response asserts checks out
+against the DDL:
+
+- `intent_field_reference_step_hop`'s KEY arm is spelled as described. The qualifier arm binds
+  both `table_schema_upper` and `constraint_name_upper`; the unqualified arm answers on
+  `constraint_name_upper` first and admits `jooq_name_upper` only under a `NOT EXISTS` over
+  `sql_constraint` for the same name in the graph's sources. The roster's rule sentence is an
+  accurate one-sentence statement of exactly that.
+- `key_matched_by` exists, carries `SQL_NAME`/`JOOQ_NAME`, and its comment says it "Makes the
+  resolver's namespace precedence visible data instead of a hidden pick".
+- The anchor test is real and stronger than the response claims for it.
+  `ArgumentReferenceStepTargetTest` "additionally binds the two views to each other: the arms are
+  textually parallel, so one case seeds one path shape at both sites and asserts the shared
+  columns come back equal". That is what makes the one-row disposal sound rather than merely
+  consistent with the comment: the sibling's body cannot fork silently, because a fork fails that
+  test. The new membership clause rests on a mechanism, not on prose.
+- The seventeen-site reconciliation is arithmetically complete: four rostered, eight across the
+  five disclosed normalizations, five failing a test outright, seventeen exactly, with no site
+  named twice and none left over.
+
+I also re-ran the roster question against a deliberately wider net than the sweep's own, since
+the completeness claim is one I helped set the boundary for: every `LIKE`, string concatenation,
+`POSITION`, `COALESCE`, `CAST`, `NULLIF` and length function appearing in any view's join or
+filter predicate, not only the name-matching set. Eleven further views hit that net and none is a
+crossing. The `LIKE`s are population filters (an Apollo spec URL prefix, the `\_%` introspection-name
+exclusion); `intent_authored_field_claim`'s `||` and `POSITION` build and test a path string for
+cycle detection inside one vocabulary; the `COALESCE`s are null-fallbacks choosing which authored
+value to look up. `intent_bound_table` is the closest call and still out: it joins
+`intent_spelled_table` on `COALESCE(t.table_ref, t.type_name)`, which reads the flagship's rule
+rather than owning one, the same way `intent_field_routine_method` does. So the roster of four is
+complete under the two membership tests, checked forward from the rows and backward from every
+function site in the file.
+
+**Non-blocking, for deliverable 6's execution rather than for this spec.** Those eleven views are
+outside the seventeen because the sweep is scoped to function-mediated *match* sites, which is the
+right scope for the roster and the claim the spec actually makes. But deliverable 6 hands the
+reconciliation over as what the predicate analysis "must classify", and a predicate walker's net
+is the wider one. At least one of the eleven meets the follow-up's remit as its stub currently
+words it: `intent_bound_table` applies `COALESCE` to a `graphitron_table` column and compares it
+against an `intent_spelled_table` column, which is a function over columns tracing to two
+families' relations, outside a bridge-registered view. Its disposition is easy, and the follow-up
+owns defining its own predicate boundary by its stub's own words ("The Spec must pin what counts
+as a crossing predicate"), so this is not a gap in R800. It is worth one line when the stub is
+written, so the follow-up's author knows the inherited list was drawn at match sites and their
+own sweep will be wider.
+
+Signing off. Question 1: a reader who opens a family page will get a plain-language introduction,
+a short curated "start here" list with a grain sentence per entry, and a statement of how the
+family's rows meet other families' rows, with the charter demoted and the index blurbs
+rewritten. Question 2: every artifact extends a shape already in the tree, the population is
+drafted and now verified against the schema it describes, and the boundary with the follow-up is
+stated in one sentence and honoured in both directions.

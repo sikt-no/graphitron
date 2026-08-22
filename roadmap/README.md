@@ -46,12 +46,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R749` | Same-named fields on two participants of one discriminated interface collide on the __rk_ alias, and one join path is silently dropped | In Review | 2026-08-21 <sub>created 2026-08-20</sub> | [plan](participant-projection-alias-collision.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | 2026-07-14 | [plan](capability-catalog.md) |
-| `R800` | Family pages open with an introduction, main grains and bridge roster | Spec | 2026-08-22 <sub>created 2026-08-21</sub> | [plan](family-page-introductions.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | 2026-07-14 | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-07-14 <sub>created 2026-05-21</sub> | [plan](intellij-lsp-plugin.md) |
 | `R697` | Name matching is a stratum: side relations, match views, and folds nowhere else | Spec | 2026-08-18 <sub>created 2026-08-17</sub> | [plan](name-matching-stratum.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-08-06 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
+| `R800` | Family pages open with an introduction, main grains and bridge roster | Ready | 2026-08-22 <sub>created 2026-08-21</sub> | [plan](family-page-introductions.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
 
 ---
