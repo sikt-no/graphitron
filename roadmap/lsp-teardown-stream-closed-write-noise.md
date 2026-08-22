@@ -1,7 +1,7 @@
 ---
 id: R794
 title: "LSP connection teardown logs SEVERE stack traces for stream-closed writes"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: lsp
