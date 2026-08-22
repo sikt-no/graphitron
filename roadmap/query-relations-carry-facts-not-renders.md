@@ -255,23 +255,21 @@ this item's gate as its enforcer and asks to land its paragraph in the same wind
 gate commit so the page never ships carrying a forward-looking claim. Whoever implements
 this should say so on R804 when the gate lands.
 
-Two corrections owed back to R804, neither of which changes its argument:
+Round 1 of this item owed R804 two corrections and **R804 has taken both**: the
+`ClaimFacts` / `SchemaQueries` citation no longer claims two hand-maintained parsers (there
+are none; both pass the string through, which makes the "boundaries decode and encode"
+point stronger rather than weaker), and its `class_names` exemplar now carries the live
+wrong answer on the MCP filter surface. Nothing outstanding there; a reviewer should not go
+looking.
 
-* Its `ClaimFacts` / `SchemaQueries` citation says the two hold "two hand-maintained
-  parsers of one encoding". They hold none; both pass the string through untouched. The
-  "boundaries decode and encode" point survives and gets stronger, because the decode does
-  not happen at the wrong place, it does not happen at all.
-* Its `class_names` exemplar can be sharpened for free by adding that the sibling
-  `diagnostic.directives` is used as a grouping *and filtering* dimension, in contradiction
-  of the "never a dimension" line `class_names`'s own comment draws. A rule the schema
-  states about itself and a consumer already breaks is a better exhibit than one nobody has
-  tested.
-* Its sentence scoping the `diagnostic` exemption is load-bearing and this item now proves
-  it: `diagnostic.directory` fails the discipline on a relation the exemption covers, and
-  `diagnostic.coordinate` passes on the same relation. R804 should cite that pair rather
-  than assert the scoping abstractly, since two columns of one exempted relation landing on
-  opposite sides is the clearest possible demonstration that the exemption is about a
-  relation's name and population and not about what its columns may hold.
+One correction is still owed, from round 2. R804's placement paragraph asks for "one
+sentence scoping the `diagnostic` exemption", on the grounds that "the largest single
+offender sits on the exempted relation". That sentence is right and can now be written from
+an exemplar instead of asserted: `diagnostic.directory` fails the discipline and
+`diagnostic.coordinate` passes, on the same exempted relation. Two columns of one relation
+landing on opposite sides demonstrates that the exemption covers a relation's name and
+population and not what its columns may hold, which is exactly the inference R804 is trying
+to block.
 
 ## Notes
 
