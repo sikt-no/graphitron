@@ -15,6 +15,10 @@ import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import graphql.language.SourceLocation;
+import org.eclipse.lsp4j.InlayHintParams;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
@@ -46,7 +50,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Nothing here asserts a duration. An overrun is provoked by making a relation the production
  * query reads non-terminating, so the case turns on an arm rather than on a clock; the door-routing
- * case turns on a session setting. {@code RunawayRelation} carries the reasoning.
+ * cases turn on which reader answered, read off a session setting where a door can be called
+ * directly and off the budget the boundary's own warning names where only the surface can.
+ * {@code RunawayRelation} carries the reasoning.
  */
 class StoreOutOfBudgetTest {
 
@@ -191,6 +197,64 @@ class StoreOutOfBudgetTest {
             } finally {
                 boundary.detachAppender(recorded);
                 boundary.setLevel(inherited);
+            }
+        }
+    }
+
+    /**
+     * The inlay request reaches the store through the annotation door, asserted from the service
+     * rather than from the door. {@link #eachDoorReachesTheReaderItsGrainStates} pins that each door
+     * holds the reader its grain states, which leaves the routing itself unpinned: changing one
+     * identifier at the call site would put a whole-region read back in front of the cursor with
+     * every test still green, and that is the regression this item exists to prevent.
+     *
+     * <p>Which reader answered is read off the boundary's own warning, because the surface swallows
+     * the expired arm and the log line is the only thing it emits. The budget in that line is the
+     * reader's, so labelling the two apart names the connection. The read is aborted on the
+     * membership resolution every door performs before any fact is read, which is why this needs
+     * neither an inlay-producing schema nor an enabled configuration: the request is routed, the
+     * resolution runs on whichever reader the routing chose, and the relation it reads never returns.
+     */
+    @Test
+    @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void theInlayRequestIsRoutedThroughTheAnnotationDoor() throws Exception {
+        try (var fixture = StoreFixture.of(tmp, SDL);
+             var access = fixture.access(INTERACTIVE, ANNOTATION, SESSION_WIDE)) {
+            String uri = Path.of(fixture.sourceName()).toUri().toString();
+            var workspace = new Workspace();
+            workspace.setStore(access);
+            var service = new GraphitronTextDocumentService(workspace, ignored -> {}, Runnable::run);
+            service.setClient(new RecordingClient());
+            // Opened before the relation goes runaway, so the drain this triggers is not the read
+            // under test and completes normally.
+            workspace.didOpen(uri, 1, SDL);
+            fixture.makeRunaway("store_graph_source");
+
+            var boundary = (Logger) LoggerFactory.getLogger(StoreAccess.class);
+            var recorded = new ListAppender<ILoggingEvent>();
+            recorded.start();
+            boundary.addAppender(recorded);
+            try {
+                var params = new InlayHintParams(new TextDocumentIdentifier(uri),
+                    new Range(new Position(0, 0), new Position(SDL.split("\n").length, 0)));
+
+                assertThat(service.inlayHint(params).get())
+                    .as("no hints, the read having been aborted before it annotated anything")
+                    .isEmpty();
+
+                var warns = recorded.list.stream()
+                    .filter(event -> event.getLevel() == Level.WARN)
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .toList();
+                assertThat(warns).hasSize(1);
+                assertThat(warns.getFirst())
+                    .as("the inlay read overran the annotation reader's budget, so that is the "
+                        + "connection it was on; the cursor's reader was never involved")
+                    .contains(StoreRead.INLAY_HINTS.phrase())
+                    .contains(ANNOTATION.describe())
+                    .doesNotContain(INTERACTIVE.describe());
+            } finally {
+                boundary.detachAppender(recorded);
             }
         }
     }

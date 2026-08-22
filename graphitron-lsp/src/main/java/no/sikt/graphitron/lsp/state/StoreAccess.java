@@ -53,9 +53,10 @@ import java.util.function.Function;
  * budget. Each door says which grain it is for, so the choice is visible where it is made, and the
  * consequence is a mis-sized budget or a needless wait rather than a wrong answer.
  *
- * <p>Every answer goes through {@link #answering}, which does two things a handler must not do for
- * itself. It opens the one read transaction the answer assembles inside, so a handler running
- * several queries cannot see one capture for its first and the next for its second. And it resolves
+ * <p>Every answer goes through one of the doors above, each of which does two things a handler must
+ * not do for itself. It opens the one read transaction the answer assembles inside, so a handler
+ * running several queries cannot see one capture for its first and the next for its second. And it
+ * resolves
  * the document to the graph whose facts answer for it, which is the step that makes a store shared
  * by a whole workspace safe to query: the graph-keyed relations lead with {@code graph_name}, and
  * the source-keyed ones reach it through {@code store_graph_source}.
@@ -111,7 +112,8 @@ public final class StoreAccess implements AutoCloseable {
      * <p>Not delegated to {@link #answeringAll}, which is what it used to be. The two doors carry
      * different budgets now, so a single-document read routed through the bulk one would answer
      * every keystroke on the reader the drain owns, which is both the wrong budget and the
-     * head-of-line blocking two readers exist to remove. They share the private form below instead.
+     * head-of-line blocking the separate readers exist to remove. They share the private form below
+     * instead.
      */
     public <R> StoreAnswer<R> answering(
         StoreRead read, String sourceName, Function<Optional<StoreHandle>, R> answer

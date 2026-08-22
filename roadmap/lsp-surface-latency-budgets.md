@@ -200,8 +200,19 @@ reach this arm.
 
 ## What changed
 
-All four steps have landed. Each section below states what was built and what
+All four steps have landed, steps 2 to 4 in one commit ("the declaration read
+stops joining the census, and inlay stops blocking the cursor") and the enforcer
+additions in the two after it. Each section below states what was built and what
 measuring it said, since three of the four found something the plan did not know.
+
+No landing SHAs are quoted here on purpose. This branch has been rebased onto
+trunk several times, which moves them, so a SHA written into this file is a
+citation that rots between the writing and the reading; the durable place for them
+is the `changelog.md` entry at Done, taken from the history as it then stands.
+What the reasoning below is for is the reader who has to change this code later,
+and it has a permanent home already: the javadoc of `DeclarationFacts.redirectArm`
+for the arm, `StoreAccess` for the doors, and `SurfaceScanCountTest` for why the
+enforcer is shaped as it is. Nothing here needs to survive the file.
 
 ### 1. Confirm the inlay figure: done, and it inverted the picture
 
@@ -332,13 +343,16 @@ what it executes, and reading the `scanCount` H2 reports under `EXPLAIN ANALYZE`
 The scan-count currency is R793's, as this item said it would be.
 
 One thing had to change, and it is the reason this section is longer than the
-others. **A per-surface ceiling on its own would not have caught the defect this
-item was filed for.** Measured at the enforcer's fixture, the join shape cost a
-declaration read 121 extra scans, which against a definition read's 808 is 15%:
-no ceiling anybody would defend catches that. Against the same fixture at sakila's
-scale the excess is 3721 out of 28453, still 13%, and most of the number belongs
-to a view this item does not own, so the ceiling would also move whenever R793
-touches it.
+others. **A per-surface ceiling is a weak instrument for this defect**, though
+not as weak as an earlier draft of this paragraph claimed: both declaration
+ceilings do in fact catch the reverted arm at this fixture, the type-declaration
+read going 202 to 323 against a ceiling of 260 and the member read 808 to 929
+against 900. What makes them weak is that they catch it only because they sit
+close to the measured cost. The excess is 121 scans, which against the member
+read's 808 is 15%, so a regression half this size, or the same regression under a
+ceiling set with any generous headroom, passes. At sakila's scale the excess is
+3721 out of 28453, still 13%, and most of that number belongs to a view this item
+does not own, so the ceiling also moves whenever R793 touches it.
 
 So the enforcer states the property two ways. The ceilings are the broad net the
 plan asked for, one per surface, each meant to fail on an order-of-magnitude
@@ -639,6 +653,18 @@ principle restated as the one that shipped, which is who is waiting rather than
 what budget they wait under. Three sentences, and the reasoning to draw on is
 already written in `StoreAccess`'s class javadoc.
 
+> **Addressed.** The paragraph now says four readers with three behind
+> `StoreAccess`, enumerates all four doors with `annotating` and what it is for,
+> and states the principle as who is waiting rather than what budget they wait
+> under. It splits into two paragraphs because the principle needed the annotation
+> reader as its worked example: that reader carries the *same* budget and is a
+> separate reader anyway, which is the case that makes "not by budget" concrete
+> rather than assertable. The finding was right that this is where the topology is
+> taught, and right that following the old principle would have reintroduced the
+> blocking; the page also now closes by pointing at `StoreAccess`'s javadoc for the
+> full reasoning, so the two cannot drift into disagreeing without one of them
+> being obviously stale.
+
 **Non-blocking, no reply needed.** The step sections were not collapsed to
 one-line "shipped at `<sha>`" notes as the Publishing convention suggests, and
 carry no SHAs at all; that convention also sanctions capturing learnings, the
@@ -656,3 +682,34 @@ And two sentences left over from the two-reader era read oddly now rather than
 wrongly: `StoreAccess`'s "Every answer goes through {@link #answering}", which
 `annotating` no longer does, and the two places that say "the head-of-line
 blocking two readers exist to remove".
+
+> **All four addressed, and one of them was a real gap rather than a note.**
+>
+> The routing is now pinned, in `StoreOutOfBudgetTest` beside the door test:
+> `theInlayRequestIsRoutedThroughTheAnnotationDoor` drives the service's
+> `inlayHint` and reads which reader answered off the boundary's own warning,
+> whose budget is the reader's. The finding was right that this was the valuable
+> one of the three. Mutation-checked both ways: changing the call site to
+> `answering` fails exactly that assertion, and it passes as delivered. It needs
+> neither an enabled configuration nor an inlay-producing schema, because the read
+> aborts on the membership resolution every door performs before any fact is read,
+> which is also why it turns on an arm rather than a clock.
+>
+> Step 4's overstatement is corrected, and it was wrong about more than the
+> finding says: *both* declaration ceilings catch the reverted arm, the member read
+> going 808 to 929 against a ceiling of 900 as well as the type read 202 to 323
+> against 260. The paragraph now says what is actually true, which is that the
+> ceilings catch it only because they sit close to the measured cost, so a
+> regression half this size or a ceiling with generous headroom passes. That is a
+> weaker claim than the draft made and it is the one the delivery supports.
+>
+> Both two-reader-era sentences are rewritten. The `DevMojo` sentence that also
+> says "two readers" was left alone deliberately: two readers do run under the
+> interactive budget, so there it is still true.
+>
+> The shipped-at notes are not added as SHAs, and the "What changed" preamble now
+> says why rather than leaving it to be read as an oversight: this branch has been
+> rebased repeatedly, so a SHA written here rots between writing and reading, and
+> the durable place is the changelog entry at Done. The finding's own reasoning is
+> taken up in that preamble, which now names where each piece of the reasoning
+> permanently lives so that nothing is lost when the file goes.
