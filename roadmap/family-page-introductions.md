@@ -36,7 +36,9 @@ First delivery, aimed at the documentation; the definition of done is that the r
 browsable on the public site. In scope: an authored introduction per family, an authored headline
 roster per family, the declared bridge roster with resolve gates, a derived foreign-key reference
 view, the renderer sections that put all of it on the family pages, and the drift-check extension
-that keeps the new prose honest.
+that keeps the new prose honest. The population itself (every introduction, every headline row,
+every bridge row) is drafted in this spec's Population section, so the gate reviews the content
+and not only the mechanism.
 
 Deferred to the follow-up item (`view-read-census-and-bridge-closure`): all derivation over the
 declarations. That is the machine-written view-read census, the crossing gate that closes the
@@ -180,16 +182,122 @@ introduction or no headline rows fails the render loudly.
 
 ## Authoring work
 
-Thirteen families each need an introduction and a headline roster; the bridge roster needs the
-`intent_` sweep. This is the bulk of the item's effort and most of it is writing. The
-introductions are authored in the friendly register the explanation pages use, one paragraph
-each; headline rosters stay short (two to four rows) or they stop being curation; bridge rules
-are one sentence each.
+The population is the judgment-heavy half of the item, so it is drafted in this spec and
+reviewed at this gate rather than appearing first in an implementation diff. The section below
+is the draft. Implementation transcribes it into the DDL's string literals (single physical
+lines, the accepted inline AsciiDoc subset, so no emphasis pairs and backticks only where a
+symbol is named), corrects any row the view bodies contradict, and any correction that changes a
+row's meaning returns through the spec rather than shipping silently.
+
+## Population (drafted for this gate)
+
+**Introductions.** One per family, honouring the discriminator: no relation names, no other
+family's name.
+
+- `store_`: Every run of the generator leaves a record of itself here: which module it captured,
+  which files it read, what configuration it held in hand, and where it wrote. The rows answer
+  bookkeeping questions rather than schema questions: what was this store built from, and which
+  graph do these facts belong to. When two runs disagree, this family is where you look up what
+  each of them actually saw.
+- `graphql_`: A complete transcription of the GraphQL schema documents, as any SDL reader would
+  see them. Every type, field, argument and directive application lands here exactly as written,
+  with no judgment about what any of it means. The two judgment rows it does hold are the SDL
+  toolchain's own verdicts on whether the documents parse and validate at all.
+- `graphitron_`: What the generator understands the author to have asked for. Each row is the
+  decoded reading of one directive application: the same information that stands in the schema
+  documents, restated in the generator's own vocabulary so later questions can be asked with
+  plain joins instead of re-parsing strings. Decoding is tolerant: a value that does not fit the
+  declared shape is quarantined rather than lost.
+- `sql_`: What the consumer's database declares, read through the generated jOOQ model: schemas,
+  tables, columns, keys, constraints, indexes and callables. These rows are the ground that
+  written table and column references are checked against. A few rows also transcribe what the
+  generated model states about itself, because that model ships as one unit with the catalog it
+  was generated from.
+- `jvm_`: A census of the classes available on the declared compile classpath: the classes
+  themselves, their public methods and parameters, their record components and supertypes. When
+  the schema names Java code, this census is what the name is checked against. Presence says
+  nothing about purpose; a class earns its row by being on the classpath, not by being used.
+- `java_`: Where things are written in the consumer's own Java sources: the position and
+  documentation comment of each class, method and field declaration, from a plain parse of the
+  source files. It exists so tools can point at a line in a file the author owns. It reads the
+  sources rather than the compiled output deliberately, because the two answer different
+  questions and may legitimately disagree.
+- `javac_`: What the JDK compiler reported when the emitted sources were last compiled: one row
+  per diagnostic, in the compiler's own words. Each compile round replaces the previous one
+  wholesale, so the family always describes the latest round and nothing older.
+- `walk_`: What the legacy classification walk concluded, kept while that walk is being retired.
+  The rows exist so new derivations can be checked against the old code's answers during the
+  migration; when the walk is gone, the family goes with it.
+- `intent_`: The derivation layer: what follows once the schema's readings, the database catalog
+  and the classpath census are put side by side. Rows here are computed, never captured; each
+  view states one rule, and taller derivations are built by reading shorter ones. This is the
+  family the generator and the editor tooling actually plan from.
+- `rejection_`: The legacy walk's error verdicts, in the sealed rejection hierarchy's own
+  vocabulary. Transitional by construction: each kind of verdict moves out as its detection is
+  rebuilt store-native, and the family empties as that migration completes.
+- `lint_`: The linter's findings: one row per finding, plus the corrections a rule can compute
+  for its own findings. A correction here is a suggestion an editor may offer, never a rewrite
+  the build performs. The family speaks the linter's vocabulary, where severity follows from the
+  rule.
+- `build_warning_`: The advisory arm of build feedback: warnings that point at nothing
+  rule-shaped, just a message and a location worth a human's attention. Small on purpose.
+- `meta_`: The schema describing itself: which families exist, where the exceptions live, and
+  how the roster closes against the relations actually observed. These rows are versioned with
+  the schema definition and never change at run time. The reference pages you are reading are
+  rendered from this family's rows and the comments beside them.
+
+**Headline rosters.** Ordinals follow list order. The single-relation families list their one
+resident, which keeps the every-family-has-a-headline gate uniform.
+
+- `store_`: `store_graph`, `store_graph_source`, `store_stamp`.
+- `graphql_`: `graphql_type_coordinate`, `graphql_field`, `graphql_directive_site`.
+- `graphitron_`: `graphitron_table`, `graphitron_field_reference`,
+  `graphitron_undecoded_argument`.
+- `sql_`: `sql_table`, `sql_column`, `sql_referential_constraint`.
+- `jvm_`: `jvm_class`, `jvm_method`, `jvm_record_component`.
+- `java_`: `java_file`, `java_class_declaration`, `java_method_declaration`.
+- `javac_`: `javac_diagnostic`.
+- `walk_`: `walk_type_backing_class`.
+- `intent_`: `intent_spelled_table`, `intent_bound_table`, `intent_resolved_field_claim`,
+  `intent_node_type`.
+- `rejection_`: `rejection_validation_error`.
+- `lint_`: `lint_finding`, `lint_finding_fix`.
+- `build_warning_`: `build_warning_no_rule`.
+- `meta_`: `meta_family`, `meta_relation_family`, `meta_materialize`.
+
+The selection rule applied: the family's anchor or central grain first, then the resident that
+shows how the family is read, then at most one resident that shows the family's character (an
+overflow, a reduction, a register). Every named relation exists in the DDL today.
+
+**Bridge rows.** Drafted from a sweep of the DDL's normalization sites (the pre-normalized
+`*_upper` generated columns and the resolution views joining on them, the bean-prefix strip, the
+verbatim Java-reference match). Each row's rule is one sentence; implementation verifies each
+against its view's body before transcribing.
+
+| relation_name | spelled_prefix | census_prefix | rule |
+|---|---|---|---|
+| `intent_spelled_table` | `graphitron_` | `sql_` | A written table reference meets the catalog census by case-insensitive match on pre-normalized spelling columns, one row per candidate. |
+| `intent_field_routine_method` | `graphitron_` | `sql_` | A written routine reference meets the catalog's callables by the same case-insensitive spelling rule, onto the generated call surface. |
+| `intent_field_producer_method` | `graphitron_` | `jvm_` | A written Java class-and-method reference meets the classpath census verbatim, one row per method it matches. |
+| `intent_class_member_slot` | `graphitron_` | `jvm_` | A written member name meets a backing class through the bean-prefix strip that turns census method names into the author's member vocabulary. |
+| `intent_column_match_claim` | `graphql_` | `sql_` | A field's own name meets the columns of the table its site navigates to, case-insensitively, with no directive involved. |
+| `intent_argmapping_key_column_candidate` | `graphitron_` | `sql_` | An argMapping path segment meets column names case-insensitively along the binding walk. |
+
+Two normalizations the sweep found stay off the roster by the distinct-family rule, and are
+recorded here for the follow-up item's predicate analysis: the SDL type-expression peel (bracket
+and bang stripping to reach a bare type name) normalizes within one family, and the
+node-metadata column match (stated key-column strings against declared columns) normalizes
+within another. The roster declares cross-family rules only; intra-family normalization is real
+but a different fact.
+
+The introductions above run one paragraph each in the friendly register the explanation pages
+use; headline rosters stay at two to four rows or they stop being curation; bridge rules are one
+sentence each.
 
 ## Deliverables
 
 1. DDL: the `introduction` column, `meta_family_headline`, `meta_family_bridge`,
-   `meta_relation_reference`, comments on everything new, rosters populated for all families.
+   `meta_relation_reference`, comments on everything new, populated per the Population section.
 2. Reader: `StoreCatalog` extensions and the grain-sentence extractor with its pinned
    acceptance-line test.
 3. Gates: the roster gates above; the drift-check corpus extension.
@@ -209,8 +317,9 @@ are one sentence each.
 - The introductions and the naming-the-row explanation page overlap in register; mitigation is
   length (one paragraph) and subject (one family), and the discriminator comment keeps rosters
   out of the prose.
-- Twenty-six or more authored prose pieces invite register drift; single-session authoring and
-  review of the DDL diff as one piece is the mitigation.
+- Twenty-six or more authored prose pieces invite register drift; drafting the whole population
+  in this spec, reviewed as one piece at this gate, is the mitigation, with the DDL diff a
+  transcription of what was approved.
 
 ## Done criteria
 
