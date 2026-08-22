@@ -28,13 +28,38 @@ import static org.jooq.impl.DSL.table;
  *
  * <p>Ordering is fixed so consumers are deterministic without sorting again: families by their
  * authored ordinal, relations by name, columns in declaration order, key and constraint columns
- * in constraint order.
+ * in constraint order, headlines by family ordinal then their own, bridges and key edges by the
+ * relations they name.
  */
 public record StoreCatalog(List<Family> families, List<Exemption> exemptions,
-                           List<Relation> relations) {
+                           List<Relation> relations, List<Headline> headlines,
+                           List<Bridge> bridges, List<Reference> references) {
 
-    /** One {@code meta_family} row: a relation-name prefix and its authored charter. */
-    public record Family(String prefix, String title, int ordinal, String definition) {}
+    /**
+     * One {@code meta_family} row: a relation-name prefix, the introduction that presents the
+     * family and the charter that defends its name.
+     */
+    public record Family(String prefix, String title, int ordinal, String introduction,
+                         String definition) {}
+
+    /**
+     * One {@code meta_family_headline} row, carrying the family the census puts the relation in.
+     * That prefix is read through the census join rather than stored beside the name, so a
+     * relation cannot be a headline of a family it does not belong to.
+     */
+    public record Headline(String relationName, String familyPrefix, int ordinal) {}
+
+    /**
+     * One {@code meta_family_bridge} row: the relation owning a sanctioned normalization rule,
+     * the family whose vocabulary a name is spelled in, the family whose census it is matched
+     * against, and the rule in one sentence.
+     */
+    public record Bridge(String relationName, String spelledPrefix, String censusPrefix,
+                         String rule) {}
+
+    /** One {@code meta_relation_reference} row: a declared key edge, both ends with its family. */
+    public record Reference(String childRelationName, Optional<String> childPrefix,
+                            String parentRelationName, Optional<String> parentPrefix) {}
 
     /**
      * One {@code meta_prefixless_relation} row. An empty {@code page} is the authored statement
@@ -70,10 +95,41 @@ public record StoreCatalog(List<Family> families, List<Exemption> exemptions,
         var families = dsl.select(field(name("PREFIX"), String.class),
                 field(name("TITLE"), String.class),
                 field(name("ORDINAL"), Integer.class),
+                field(name("INTRODUCTION"), String.class),
                 field(name("DEFINITION"), String.class))
             .from(table(name("META_FAMILY")))
             .orderBy(field(name("ORDINAL")))
-            .fetch(r -> new Family(r.value1(), r.value2(), r.value3(), r.value4()));
+            .fetch(r -> new Family(r.value1(), r.value2(), r.value3(), r.value4(), r.value5()));
+
+        var headlines = dsl.select(field(name("H", "RELATION_NAME"), String.class),
+                field(name("C", "PREFIX"), String.class),
+                field(name("H", "ORDINAL"), Integer.class))
+            .from(table(name("META_FAMILY_HEADLINE")).as("H"))
+            .join(table(name("META_RELATION_FAMILY")).as("C"))
+            .on(field(name("C", "RELATION_NAME"), String.class)
+                .eq(field(name("H", "RELATION_NAME"), String.class)))
+            .join(table(name("META_FAMILY")).as("F"))
+            .on(field(name("F", "PREFIX"), String.class)
+                .eq(field(name("C", "PREFIX"), String.class)))
+            .orderBy(field(name("F", "ORDINAL")), field(name("H", "ORDINAL")))
+            .fetch(r -> new Headline(r.value1(), r.value2(), r.value3()));
+
+        var bridges = dsl.select(field(name("RELATION_NAME"), String.class),
+                field(name("SPELLED_PREFIX"), String.class),
+                field(name("CENSUS_PREFIX"), String.class),
+                field(name("RULE"), String.class))
+            .from(table(name("META_FAMILY_BRIDGE")))
+            .orderBy(field(name("RELATION_NAME")))
+            .fetch(r -> new Bridge(r.value1(), r.value2(), r.value3(), r.value4()));
+
+        var references = dsl.select(field(name("CHILD_RELATION_NAME"), String.class),
+                field(name("CHILD_PREFIX"), String.class),
+                field(name("PARENT_RELATION_NAME"), String.class),
+                field(name("PARENT_PREFIX"), String.class))
+            .from(table(name("META_RELATION_REFERENCE")))
+            .orderBy(field(name("CHILD_RELATION_NAME")), field(name("PARENT_RELATION_NAME")))
+            .fetch(r -> new Reference(r.value1(), Optional.ofNullable(r.value2()), r.value3(),
+                Optional.ofNullable(r.value4())));
 
         var exemptions = dsl.select(field(name("RELATION_NAME"), String.class),
                 field(name("PAGE"), String.class),
@@ -101,7 +157,7 @@ public record StoreCatalog(List<Family> families, List<Exemption> exemptions,
                 foreignKeysByName(foreignKeys, r.value1()),
                 checks.getOrDefault(r.value1(), List.of())));
 
-        return new StoreCatalog(families, exemptions, relations);
+        return new StoreCatalog(families, exemptions, relations, headlines, bridges, references);
     }
 
     private static Map<String, String> relationComments(DSLContext dsl) {

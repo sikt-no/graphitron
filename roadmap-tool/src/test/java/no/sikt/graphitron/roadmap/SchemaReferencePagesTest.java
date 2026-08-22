@@ -51,44 +51,130 @@ class SchemaReferencePagesTest {
         assertThat(SchemaReferencePages.render(catalog)).isEqualTo(pages);
     }
 
+    /**
+     * The front matter every family page now opens with, asserted from the store's own rows
+     * rather than from a roster restated here: the introduction where the charter used to be, a
+     * start-here entry per headline carrying its grain sentence, the charter demoted under its
+     * own heading, and the index blurbs reading as introductions.
+     */
+    @Test
+    void everyFamilyPageOpensWithItsIntroductionHeadlinesAndMeetings() {
+        StoreCatalog catalog;
+        try (var store = GraphitronModelStore.open()) {
+            catalog = StoreCatalog.read(store.dsl());
+        }
+        var pages = SchemaReferencePages.render(catalog);
+        String index = pages.get("index.adoc");
+
+        for (var family : catalog.families()) {
+            String page = pages.get(family.prefix().replaceAll("_$", "") + ".adoc");
+            assertThat(page).as("a page for " + family.prefix()).isNotNull();
+            assertThat(page.indexOf(family.introduction()))
+                .as(family.prefix() + " opens with its introduction, before every heading")
+                .isPositive()
+                .isLessThan(page.indexOf("== Where to start"));
+            assertThat(page).as(family.prefix() + " demotes its charter under its own heading")
+                .contains("== Why the name is right\n\n" + family.definition());
+            assertThat(page.indexOf("== Where to start"))
+                .as(family.prefix() + " starts the reader before telling them how it meets others")
+                .isLessThan(page.indexOf("== How this family meets the others"));
+            assertThat(index).as("the index blurb for " + family.prefix() + " is its introduction")
+                .contains(family.introduction())
+                .doesNotContain(family.definition());
+        }
+
+        for (var headline : catalog.headlines()) {
+            String page = pages.get(headline.familyPrefix().replaceAll("_$", "") + ".adoc");
+            String start = page.substring(page.indexOf("== Where to start"),
+                page.indexOf("== How this family meets the others"));
+            assertThat(start).as(headline.relationName() + " is linked from where to start")
+                .contains("#" + headline.relationName() + "[" + headline.relationName() + "]::");
+        }
+
+        for (var bridge : catalog.bridges()) {
+            for (String prefix : List.of(bridge.spelledPrefix(), bridge.censusPrefix())) {
+                assertThat(pages.get(prefix.replaceAll("_$", "") + ".adoc"))
+                    .as(prefix + " states the crossing " + bridge.relationName() + " owns")
+                    .contains(bridge.rule());
+            }
+        }
+    }
+
+    @Test
+    void aFamilyWithNoIntroductionFailsTheFloor() {
+        assertThatThrownBy(() -> SchemaReferencePages.render(
+            catalogOf(new StoreCatalog.Family("x_", "X", 0, " ", "The x_ family."),
+                List.of(new StoreCatalog.Headline("x_thing", "x_", 0)))))
+            .isInstanceOf(BuildFailure.class)
+            .hasMessageContaining("no introduction");
+    }
+
+    @Test
+    void aFamilyWithNoHeadlineFailsTheFloor() {
+        assertThatThrownBy(() -> SchemaReferencePages.render(catalogOf(family(), List.of())))
+            .isInstanceOf(BuildFailure.class)
+            .hasMessageContaining("no headline relations");
+    }
+
+    @Test
+    void aHeadlineOnNoPageFailsTheFloor() {
+        assertThatThrownBy(() -> SchemaReferencePages.render(
+            catalogOf(family(), List.of(new StoreCatalog.Headline("x_thing", "x_", 0),
+                new StoreCatalog.Headline("x_gone", "x_", 1)))))
+            .isInstanceOf(BuildFailure.class)
+            .hasMessageContaining("renders on no page");
+    }
+
+    private static StoreCatalog.Family family() {
+        return new StoreCatalog.Family("x_", "X", 0, "The x_ rows.", "The x_ family.");
+    }
+
+    private static StoreCatalog catalogOf(StoreCatalog.Family family,
+                                          List<StoreCatalog.Headline> headlines) {
+        var relation = new StoreCatalog.Relation("x_thing", true, "A thing exists.",
+            Optional.of("x_"), false, List.of(), List.of(), List.of(), List.of());
+        return new StoreCatalog(List.of(family), List.of(), List.of(relation), headlines,
+            List.of(), List.of());
+    }
+
     @Test
     void anEmptyCatalogFailsTheFloor() {
         assertThatThrownBy(() -> SchemaReferencePages.render(
-            new StoreCatalog(List.of(), List.of(), List.of())))
+            new StoreCatalog(List.of(), List.of(), List.of(), List.of(), List.of(), List.of())))
             .isInstanceOf(BuildFailure.class)
             .hasMessageContaining("empty catalog");
     }
 
     @Test
     void aBlankCommentFailsTheFloor() {
-        var family = new StoreCatalog.Family("x_", "X", 0, "The x_ family.");
         var relation = new StoreCatalog.Relation("x_thing", false, " ",
             Optional.of("x_"), false, List.of(), List.of(), List.of(), List.of());
         assertThatThrownBy(() -> SchemaReferencePages.render(
-            new StoreCatalog(List.of(family), List.of(), List.of(relation))))
+            new StoreCatalog(List.of(family()), List.of(), List.of(relation), List.of(),
+                List.of(), List.of())))
             .isInstanceOf(BuildFailure.class)
             .hasMessageContaining("blank comment");
     }
 
     @Test
     void aRelationOnNoPageFailsTheFloor() {
-        var family = new StoreCatalog.Family("x_", "X", 0, "The x_ family.");
         var orphan = new StoreCatalog.Relation("stray", true, "A stray.",
             Optional.empty(), false, List.of(), List.of(), List.of(), List.of());
         assertThatThrownBy(() -> SchemaReferencePages.render(
-            new StoreCatalog(List.of(family), List.of(), List.of(orphan))))
+            new StoreCatalog(List.of(family()), List.of(), List.of(orphan), List.of(),
+                List.of(), List.of())))
             .isInstanceOf(BuildFailure.class)
             .hasMessageContaining("no documentation page");
     }
 
     @Test
     void anExemptionNamingNoFamilyPageFailsTheFloor() {
-        var family = new StoreCatalog.Family("x_", "X", 0, "The x_ family.");
         var exemption = new StoreCatalog.Exemption("stray", Optional.of("y_"), "Because.");
         var stray = new StoreCatalog.Relation("stray", true, "A stray.",
             Optional.empty(), true, List.of(), List.of(), List.of(), List.of());
         assertThatThrownBy(() -> SchemaReferencePages.render(
-            new StoreCatalog(List.of(family), List.of(exemption), List.of(stray))))
+            new StoreCatalog(List.of(family()), List.of(exemption), List.of(stray), List.of(),
+                List.of(), List.of())))
             .isInstanceOf(BuildFailure.class)
             .hasMessageContaining("no family");
     }

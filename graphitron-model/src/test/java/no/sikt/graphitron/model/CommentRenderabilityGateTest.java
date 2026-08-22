@@ -1,19 +1,16 @@
 package no.sikt.graphitron.model;
 
+import no.sikt.graphitron.model.catalog.StoreProse;
 import no.sikt.graphitron.model.test.FactStores;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.regex.Pattern;
 
 import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.jooq.impl.DSL.field;
-import static org.jooq.impl.DSL.name;
-import static org.jooq.impl.DSL.table;
 
 /**
  * The renderability gate beside the comment-coverage gate: every {@code COMMENT ON} body and
@@ -54,31 +51,22 @@ class CommentRenderabilityGateTest {
     @DisplayName("every relation and column comment renders in the accepted subset")
     void everyCommentRendersInTheAcceptedSubset() {
         try (var store = FactStores.inMemory()) {
-            var relationComments = store.dsl()
-                .select(field(name("TABLE_NAME"), String.class),
-                    field(name("REMARKS"), String.class))
-                .from(table(name("INFORMATION_SCHEMA", "TABLES")))
-                .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
-                .fetch();
-            var columnComments = store.dsl()
-                .select(field(name("TABLE_NAME"), String.class)
-                        .concat(".").concat(field(name("COLUMN_NAME"), String.class)),
-                    field(name("REMARKS"), String.class))
-                .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
-                .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
-                .fetch();
+            var prose = StoreProse.read(store.dsl());
+            var relationComments = ofKind(prose, StoreProse.Kind.RELATION_COMMENT);
+            var columnComments = ofKind(prose, StoreProse.Kind.COLUMN_COMMENT);
 
             // The floor against a vacuous pass, with no literal to fall behind: the sweep must
             // have seen exactly the census's relations, and every one of them contributes columns.
             int censusCount = store.dsl().fetchCount(META_RELATION_FAMILY);
             assertThat(relationComments).as("relation comments swept").hasSize(censusCount);
-            assertThat(columnComments.stream().map(r -> r.value1().split("\\.")[0]).distinct())
+            assertThat(columnComments.stream()
+                .map(entry -> entry.context().split("\\.")[0]).distinct())
                 .as("relations contributing column comments")
                 .hasSize(censusCount);
 
             var findings = new ArrayList<String>();
-            relationComments.forEach(r -> findings.addAll(scan(r.value1(), r.value2())));
-            columnComments.forEach(r -> findings.addAll(scan(r.value1(), r.value2())));
+            relationComments.forEach(e -> findings.addAll(scan(e.context(), e.text())));
+            columnComments.forEach(e -> findings.addAll(scan(e.context(), e.text())));
             assertThat(findings)
                 .as("comment text outside the accepted AsciiDoc inline subset")
                 .isEmpty();
@@ -89,32 +77,22 @@ class CommentRenderabilityGateTest {
     @DisplayName("every meta prose value renders in the accepted subset")
     void everyMetaProseValueRendersInTheAcceptedSubset() {
         try (var store = FactStores.inMemory()) {
-            var metaRelations = store.dsl()
-                .select(META_RELATION_FAMILY.RELATION_NAME)
-                .from(META_RELATION_FAMILY)
-                .where(META_RELATION_FAMILY.PREFIX.eq("meta_"))
-                .fetch(0, String.class);
-            assertThat(metaRelations).as("meta relations to sweep").isNotEmpty();
-
             // Total over every character-typed value of every meta_ relation, so a later prose
-            // column joins the sweep by existing rather than by being remembered here.
+            // column joins the sweep by existing rather than by being remembered anywhere.
+            var metaValues = ofKind(StoreProse.read(store.dsl()), StoreProse.Kind.META_VALUE);
+            assertThat(metaValues).as("meta prose values swept").isNotEmpty();
+
             var findings = new ArrayList<String>();
-            int swept = 0;
-            for (String relation : metaRelations) {
-                for (var row : store.dsl().fetch(table(name(relation.toUpperCase(Locale.ROOT))))) {
-                    for (var f : row.fields()) {
-                        if (row.get(f) instanceof String value) {
-                            findings.addAll(scan(relation + "." + f.getName(), value));
-                            swept++;
-                        }
-                    }
-                }
-            }
-            assertThat(swept).as("meta prose values swept").isPositive();
+            metaValues.forEach(e -> findings.addAll(scan(e.context(), e.text())));
             assertThat(findings)
                 .as("meta prose outside the accepted AsciiDoc inline subset")
                 .isEmpty();
         }
+    }
+
+    private static List<StoreProse.Entry> ofKind(List<StoreProse.Entry> prose,
+                                                 StoreProse.Kind kind) {
+        return prose.stream().filter(entry -> entry.kind() == kind).toList();
     }
 
     @Test

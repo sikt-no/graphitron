@@ -1,6 +1,7 @@
 package no.sikt.graphitron.roadmap;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.catalog.GrainSentence;
 import no.sikt.graphitron.model.catalog.StoreCatalog;
 
 import java.io.IOException;
@@ -17,11 +18,16 @@ import java.util.Map;
  * the reference cannot drift from it.
  *
  * <p>Everything structural is read from the store through {@link StoreCatalog}: the page set,
- * titles, ordering and preambles come from the {@code meta_family} rows, the per-object prose
- * from the {@code COMMENT ON} text, and prefix-less relations render where their
+ * titles and ordering come from the {@code meta_family} rows, which also carry the introduction a
+ * page opens with and the charter it closes the front matter on; what a family holds first comes
+ * from {@code meta_family_headline}, how it meets the other families from
+ * {@code meta_family_bridge} and {@code meta_relation_reference}, the per-object prose from the
+ * {@code COMMENT ON} text, and prefix-less relations render where their
  * {@code meta_prefixless_relation} row says (an empty page means the index, the reference's one
  * cross-family surface). The renderer owns only presentation vocabulary: file names, heading
- * levels, the fixed template phrases. Comment and meta prose interpolates verbatim as AsciiDoc
+ * levels, the fixed template phrases. Even the one-line summary beside a headline is the store's
+ * convention rather than the renderer's, lifted by {@link GrainSentence}, which is why that
+ * extractor lives beside the catalog reader and not here. Comment and meta prose interpolates verbatim as AsciiDoc
  * (the renderability gate beside the store's comment-coverage gate holds the accepted subset);
  * spans this class mints itself go out inert via {@link InertSpans}, the module's own line
  * against accidental substitution.
@@ -79,6 +85,7 @@ final class SchemaReferencePages {
         }
 
         Map<String, String> pageByRelation = assignPages(catalog);
+        checkFamilyOpenings(catalog, pageByRelation);
 
         var pages = new LinkedHashMap<String, String>();
         for (var family : catalog.families()) {
@@ -86,6 +93,35 @@ final class SchemaReferencePages {
         }
         pages.put("index.adoc", indexPage(catalog, pageByRelation));
         return pages;
+    }
+
+    /**
+     * The floors on what a family page opens with. Generated-not-committed means a family whose
+     * introduction never got authored, or whose headline roster was dropped, would render a page
+     * that opens on nothing and looks deliberate; the store's roster gates hold the live DDL to
+     * both, and these hold the renderer to them for any catalog it is handed.
+     */
+    private static void checkFamilyOpenings(StoreCatalog catalog,
+                                            Map<String, String> pageByRelation) {
+        var openings = new ArrayList<String>();
+        for (var family : catalog.families()) {
+            if (isBlank(family.introduction())) {
+                openings.add(family.prefix() + " has no introduction");
+            }
+            if (headlinesOf(catalog, family).isEmpty()) {
+                openings.add(family.prefix() + " has no headline relations");
+            }
+        }
+        for (var headline : catalog.headlines()) {
+            if (!pageByRelation.containsKey(headline.relationName())) {
+                openings.add(headline.relationName() + " is a headline of "
+                    + headline.familyPrefix() + " but renders on no page");
+            }
+        }
+        if (!openings.isEmpty()) {
+            throw new BuildFailure("families whose page would open on nothing: "
+                + String.join(", ", openings));
+        }
     }
 
     /**
@@ -133,6 +169,10 @@ final class SchemaReferencePages {
         header(page, family.title(), "The " + family.prefix()
             + " family of the graphitron fact store, generated from the DDL's own comments.");
         page.append("Prefix: ").append(InertSpans.monospace(family.prefix())).append(".\n\n");
+        page.append(family.introduction()).append("\n");
+        whereToStart(page, catalog, family, pageByRelation);
+        howThisFamilyMeetsTheOthers(page, catalog, family, pageByRelation);
+        page.append("\n== Why the name is right\n\n");
         page.append(family.definition()).append("\n");
 
         String file = pageFile(family.prefix());
@@ -145,14 +185,139 @@ final class SchemaReferencePages {
         return page.toString();
     }
 
+    /**
+     * The family's headline roster: where a reader should start, each entry linked to its own
+     * entry further down the page and carrying the grain sentence lifted from that entry's
+     * comment. Nothing here is authored twice; the roster names relations and
+     * {@link GrainSentence} says what each one is, out of the relation's own prose.
+     */
+    private static void whereToStart(StringBuilder page, StoreCatalog catalog,
+                                     StoreCatalog.Family family,
+                                     Map<String, String> pageByRelation) {
+        page.append("\n== Where to start\n\n");
+        for (var headline : headlinesOf(catalog, family)) {
+            page.append(relationLink(headline.relationName(), pageByRelation)).append("::\n")
+                .append(GrainSentence.of(commentOf(catalog, headline.relationName())))
+                .append("\n");
+        }
+    }
+
+    /**
+     * How the family's rows reach other families' rows, in the two provenances the store keeps
+     * apart. The declared crossings are authored rows saying which relation owns a normalization
+     * rule; the key edges are the engine's own foreign keys, aggregated per family. The wording
+     * presents the crossings as declarations and claims no exhaustiveness, because the store
+     * declares them and nothing yet closes them against what the view definitions do.
+     */
+    private static void howThisFamilyMeetsTheOthers(StringBuilder page, StoreCatalog catalog,
+                                                    StoreCatalog.Family family,
+                                                    Map<String, String> pageByRelation) {
+        page.append("\n== How this family meets the others\n\n");
+        var crossings = catalog.bridges().stream()
+            .filter(bridge -> bridge.spelledPrefix().equals(family.prefix())
+                || bridge.censusPrefix().equals(family.prefix()))
+            .toList();
+        var edges = keyEdgesByOtherFamily(catalog, family);
+        if (crossings.isEmpty() && edges.isEmpty()) {
+            page.append("No crossing is declared for this family and no foreign key crosses its"
+                + " boundary; its rows meet the other families' only where a reader joins"
+                + " them.\n");
+            return;
+        }
+
+        if (!crossings.isEmpty()) {
+            page.append("The normalization crossings declared for this family: rules by which a"
+                + " name written in one family's vocabulary is matched against another's census."
+                + " Declared rows rather than a closed set, so a crossing nobody has declared"
+                + " does not appear here.\n\n");
+            page.append(".Declared crossings\n");
+            for (var bridge : crossings) {
+                page.append(relationLink(bridge.relationName(), pageByRelation)).append(" (")
+                    .append(InertSpans.monospace(bridge.spelledPrefix()))
+                    .append(" spellings against the ")
+                    .append(InertSpans.monospace(bridge.censusPrefix()))
+                    .append(" census)::\n").append(bridge.rule()).append("\n");
+            }
+            page.append("\n");
+        }
+
+        if (!edges.isEmpty()) {
+            page.append(".Declared key edges\n");
+            edges.forEach((prefix, edge) -> page.append(InertSpans.monospace(prefix))
+                .append("::\n").append(edge).append("\n"));
+        }
+    }
+
+    /**
+     * The declared foreign keys crossing this family's boundary, one sentence per family on the
+     * other end, in roster order. Edges inside the family are left out: the section is about how
+     * this family meets the others, and its own internal shape is what the relation entries say.
+     */
+    private static Map<String, String> keyEdgesByOtherFamily(StoreCatalog catalog,
+                                                             StoreCatalog.Family family) {
+        var outgoing = new LinkedHashMap<String, Integer>();
+        var incoming = new LinkedHashMap<String, Integer>();
+        for (var reference : catalog.references()) {
+            String child = reference.childPrefix().orElse(null);
+            String parent = reference.parentPrefix().orElse(null);
+            if (child == null || parent == null || child.equals(parent)) {
+                continue;
+            }
+            if (child.equals(family.prefix())) {
+                outgoing.merge(parent, 1, Integer::sum);
+            } else if (parent.equals(family.prefix())) {
+                incoming.merge(child, 1, Integer::sum);
+            }
+        }
+        var edges = new LinkedHashMap<String, String>();
+        for (var other : catalog.families()) {
+            int out = outgoing.getOrDefault(other.prefix(), 0);
+            int in = incoming.getOrDefault(other.prefix(), 0);
+            if (out == 0 && in == 0) {
+                continue;
+            }
+            var sentence = new StringBuilder();
+            if (out > 0) {
+                sentence.append(foreignKeyCount(out)).append(" from this family's rows into that"
+                    + " one");
+            }
+            if (in > 0) {
+                sentence.append(out > 0 ? ", and " : "").append(foreignKeyCount(in))
+                    .append(out > 0 ? " the other way" : " from that family's rows into this one");
+            }
+            edges.put(other.prefix(), sentence.append(".").toString());
+        }
+        return edges;
+    }
+
+    private static String foreignKeyCount(int count) {
+        return count + (count == 1 ? " foreign key" : " foreign keys");
+    }
+
+    private static List<StoreCatalog.Headline> headlinesOf(StoreCatalog catalog,
+                                                           StoreCatalog.Family family) {
+        return catalog.headlines().stream()
+            .filter(headline -> family.prefix().equals(headline.familyPrefix()))
+            .toList();
+    }
+
+    private static String commentOf(StoreCatalog catalog, String relationName) {
+        return catalog.relations().stream()
+            .filter(relation -> relation.relationName().equals(relationName))
+            .findFirst()
+            .map(StoreCatalog.Relation::comment)
+            .orElse("");
+    }
+
     private static String indexPage(StoreCatalog catalog, Map<String, String> pageByRelation) {
         var page = new StringBuilder();
         header(page, "The fact store schema",
             "The graphitron fact store's relations, one page per family, generated from the"
                 + " DDL's own comments.");
         page.append("One page per relation-name family, every page generated from the DDL"
-            + " (graphitron-model.sql): the family roster and preambles from the meta_family"
-            + " rows, the per-object prose from the COMMENT ON text. The DDL is the only"
+            + " (graphitron-model.sql): the family roster, its introductions and charters, the"
+            + " headline relations and the declared crossings from the meta_ rows, the"
+            + " per-object prose from the COMMENT ON text. The DDL is the only"
             + " authored source; where prose elsewhere disagrees with it, the DDL wins.\n");
 
         page.append("\n== Families\n\n");
@@ -163,7 +328,7 @@ final class SchemaReferencePages {
             page.append(InertSpans.monospace(family.prefix())).append(" xref:")
                 .append(pageFile(family.prefix())).append("[").append(family.title())
                 .append("] (").append(count).append(count == 1 ? " relation" : " relations")
-                .append(")::\n").append(family.definition()).append("\n\n");
+                .append(")::\n").append(family.introduction()).append("\n\n");
         }
 
         var indexed = catalog.relations().stream()

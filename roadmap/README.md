@@ -50,8 +50,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R697` | Name matching is a stratum: side relations, match views, and folds nowhere else | Spec | 2026-08-18 <sub>created 2026-08-17</sub> | [plan](name-matching-stratum.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-08-06 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
-| `R800` | Family pages open with an introduction, main grains and bridge roster | Ready | 2026-08-22 <sub>created 2026-08-21</sub> | [plan](family-page-introductions.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
+| `R800` | Family pages open with an introduction, main grains and bridge roster | In Review | 2026-08-22 <sub>created 2026-08-21</sub> | [plan](family-page-introductions.md) |
 
 ---
 

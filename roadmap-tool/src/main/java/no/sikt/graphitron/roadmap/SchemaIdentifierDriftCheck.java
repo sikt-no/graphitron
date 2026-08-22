@@ -2,6 +2,7 @@ package no.sikt.graphitron.roadmap;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.catalog.StoreCatalog;
+import no.sikt.graphitron.model.catalog.StoreProse;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -25,10 +26,20 @@ import java.util.stream.Stream;
  * <p>The universe of valid names comes from the booted store through {@link StoreCatalog}, the
  * same reader the generated schema reference renders from, never from regexing the DDL: if the
  * guard parsed the {@code .sql} itself, two mechanisms of different fidelity would answer "what
- * relations exist". A backtick-quoted identifier is in scope when it starts with an observed
- * family prefix; it resolves as a family prefix, a relation name, or a {@code relation.column}
- * pair. Identifiers outside every family (ordinary code words, module names, bare column names)
- * are not the store's to police and are ignored.
+ * relations exist". An identifier is in scope when it starts with an observed family prefix; it
+ * resolves as a family prefix, a relation name, or a {@code relation.column} pair. Identifiers
+ * outside every family (ordinary code words, module names, bare column names) are not the
+ * store's to police and are ignored.
+ *
+ * <p>Two corpora, one universe and one resolver. The authored architecture pages cite the schema
+ * in delimited backtick spans, so {@link #scan} looks for spans. The store's own prose cites it
+ * in bare running text, and cites it constantly: a relation comment explaining why a fact lives
+ * where it does names its neighbours, a family charter names the families it is not, and a
+ * declared crossing names the rule's owner by construction. Those citations drift the same way
+ * the pages' do and had nothing watching them, so {@link #scanStoreProse} sweeps them with its own
+ * extractor over prefix-anchored bare tokens. Rejected names in the charters ({@code jooq_},
+ * {@code extension_}, {@code validator_}) are not a hazard: an unobserved prefix is out of scope
+ * by the same filter that keeps ordinary words out.
  */
 final class SchemaIdentifierDriftCheck {
 
@@ -40,12 +51,26 @@ final class SchemaIdentifierDriftCheck {
      */
     static final String SCANNED_TREE = "docs/architecture";
 
+    /** What a store-prose finding names instead of a page path: the DDL is one file. */
+    static final String STORE_CORPUS =
+        "graphitron-model/src/main/resources/no/sikt/graphitron/model/graphitron-model.sql";
+
     /** A backtick span on one line; the inert plus form is unwrapped before matching. */
     private static final Pattern SPAN = Pattern.compile("`([^`]+)`");
 
     /** The shape of a store identifier: one token, optionally qualified by one column. */
     private static final Pattern IDENTIFIER =
         Pattern.compile("[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)?");
+
+    /**
+     * The same shape found loose in running text. The leading guard refuses a start inside a
+     * longer word or after a dot, so a package-qualified name contributes its own first segment
+     * and never one of its tails; the trailing guard refuses a match that stops mid-word. A
+     * sentence-ending dot is not a word character, so a relation named at the end of a sentence
+     * is still seen.
+     */
+    private static final Pattern BARE_IDENTIFIER =
+        Pattern.compile("(?<![\\w.])[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)?(?![\\w])");
 
     /** The store-metadata half of the reader, reduced to what resolution needs. */
     record Universe(Set<String> prefixes, Map<String, Set<String>> columnsByRelation) {}
@@ -78,8 +103,10 @@ final class SchemaIdentifierDriftCheck {
         }
 
         Universe universe;
+        List<StoreProse.Entry> prose;
         try (var store = GraphitronModelStore.open()) {
             universe = universeOf(StoreCatalog.read(store.dsl()));
+            prose = StoreProse.read(store.dsl());
         }
         if (universe.prefixes().isEmpty() || universe.columnsByRelation().isEmpty()) {
             System.err.println("check-schema-identifiers: the booted store yielded no families or"
@@ -97,26 +124,34 @@ final class SchemaIdentifierDriftCheck {
             throw new BuildFailure("authored architecture tree holds no pages");
         }
 
+        if (prose.isEmpty()) {
+            System.err.println("check-schema-identifiers: the booted store yielded no prose;"
+                + " the store corpus would pass vacuously.");
+            throw new BuildFailure("store prose read as nothing");
+        }
+
         var findings = new ArrayList<Finding>();
         for (Path page : pages) {
             findings.addAll(scan(root.relativize(page).toString(),
                 Files.readString(page), universe));
         }
+        findings.addAll(scanStoreProse(prose, universe));
 
         if (findings.isEmpty()) {
-            System.out.println("check-schema-identifiers: " + pages.size() + " pages resolve"
-                + " against " + universe.columnsByRelation().size() + " relations in "
+            System.out.println("check-schema-identifiers: " + pages.size() + " pages and "
+                + prose.size() + " store prose values resolve against "
+                + universe.columnsByRelation().size() + " relations in "
                 + universe.prefixes().size() + " families.");
             return 0;
         }
         System.err.println("check-schema-identifiers: " + findings.size() + " identifier(s) the"
             + " store does not declare. Rename the citation to the live relation, or drop it;"
-            + " the store's DDL is the model of record and the page must follow it.");
+            + " the store's DDL is the model of record and the prose beside it must follow it.");
         for (Finding finding : findings) {
             System.err.println("  " + finding.file() + ":" + finding.line() + ": `"
                 + finding.identifier() + "`");
         }
-        throw new BuildFailure("authored pages cite store identifiers the schema does not declare");
+        throw new BuildFailure("citations name store identifiers the schema does not declare");
     }
 
     /** Reduces the catalog to the resolution universe; the meta rows contribute like any other. */
@@ -165,6 +200,34 @@ final class SchemaIdentifierDriftCheck {
                 }
                 if (!resolves(content, relationPart, universe)) {
                     findings.add(new Finding(file, n + 1, content));
+                }
+            }
+        }
+        return findings;
+    }
+
+    /**
+     * Scans the store's own prose: bare prefix-anchored tokens, resolved against the same
+     * universe the pages are. A finding names the prose value's context in the file position's
+     * place, since a comment has no line of its own once the engine holds it; the DDL is one
+     * file and the context is what a reader searches it by.
+     */
+    static List<Finding> scanStoreProse(List<StoreProse.Entry> prose, Universe universe) {
+        var findings = new ArrayList<Finding>();
+        for (var entry : prose) {
+            if (entry.text() == null) {
+                continue;
+            }
+            var token = BARE_IDENTIFIER.matcher(entry.text());
+            while (token.find()) {
+                String content = token.group();
+                String relationPart = content.contains(".")
+                    ? content.substring(0, content.indexOf('.')) : content;
+                if (universe.prefixes().stream().noneMatch(relationPart::startsWith)) {
+                    continue;
+                }
+                if (!resolves(content, relationPart, universe)) {
+                    findings.add(new Finding(STORE_CORPUS, 0, entry.context() + ": " + content));
                 }
             }
         }

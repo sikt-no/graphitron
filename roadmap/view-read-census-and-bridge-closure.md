@@ -60,3 +60,18 @@ case the walker must not trip over. Two design questions ride with the list, thi
 answer: whether a normalizer that is not a crossing (the bean strip) gets its own register
 beside the bridge roster, and whether the settled convention is reified as a declarable fact so
 its applications can be gated rather than recognized case by case.
+
+The inherited list was drawn at function-mediated *match* sites, which is the right scope for
+the roster and the only claim the declaring item makes. A predicate walker's net is wider, and
+this item's Spec is where that boundary gets pinned, so expect the walker to meet sites the list
+does not name. The declaring item's review swept the wider net once as a check on the roster
+(every `LIKE`, string concatenation, `POSITION`, `COALESCE`, `CAST`, `NULLIF` and length function
+in any join or filter predicate) and found eleven further views, none of them a crossing: the
+`LIKE`s are population filters, `intent_authored_field_claim` builds and tests a path string for
+cycle detection inside one vocabulary, and the `COALESCE`s choose which authored value to look
+up. One of the eleven already meets this item's remit as worded above: `intent_bound_table`
+applies `COALESCE` to a `graphitron_table` column and compares it against an
+`intent_spelled_table` column, a function over columns tracing to two families' relations,
+outside a bridge-registered view. Its disposition is easy, since it reads the flagship's rule
+rather than owning one, but it is the shape that says the predicate boundary needs deciding
+before the walker is written rather than after.

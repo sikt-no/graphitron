@@ -135,7 +135,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       view stating it, and the canonically named target the materializer refills from that view
  *       on the same cadence. The {@code meta_} rows are derived in the widest sense of the arm,
  *       being rows the DDL alone determines rather than anything a run reads, which is why
- *       {@code meta_materialize} sits here beside the three rosters and why
+ *       {@code meta_materialize} sits here beside the rosters and why
  *       {@code meta_materialize_dependency}, whose rows the bootstrap derives from the stored
  *       view definitions, sits beside it. A pure re-projection
  *       ({@code graphql_directive_site}) registers the base relations it projects and its
@@ -496,10 +496,16 @@ class FactCaptureAgreementTest {
         // The schema self-description stratum: views over row values authored in the DDL itself,
         // so capture never writes them and agreement with the walk is vacuous by construction.
         // Their anchors are the roster gates in FactSchemaGateTest, which close the family rows
-        // against the observed relations in both directions on every build.
+        // against the observed relations in both directions on every build, and the roster gates
+        // in no.sikt.graphitron.model.FamilyRosterGateTest, which close the two page rosters the
+        // same way. meta_relation_reference is derived in the narrower sense as well: its rows
+        // are the engine's own declared foreign keys, so nothing authored can disagree with them.
         registrations.put("meta_family", Arm.DERIVED);
+        registrations.put("meta_family_headline", Arm.DERIVED);
+        registrations.put("meta_family_bridge", Arm.DERIVED);
         registrations.put("meta_prefixless_relation", Arm.DERIVED);
         registrations.put("meta_relation_family", Arm.DERIVED);
+        registrations.put("meta_relation_reference", Arm.DERIVED);
         registrations.put("meta_materialize", Arm.DERIVED);
         registrations.put("meta_materialize_dependency", Arm.DERIVED);
         registrations.put("javac_diagnostic", Arm.ORACLE);

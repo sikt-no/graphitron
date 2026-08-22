@@ -1,7 +1,7 @@
 ---
 id: R800
 title: "Family pages open with an introduction, main grains and bridge roster"
-status: Ready
+status: In Review
 bucket: docs
 depends-on: []
 created: 2026-08-21

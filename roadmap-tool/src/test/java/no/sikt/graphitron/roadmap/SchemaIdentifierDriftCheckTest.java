@@ -1,5 +1,6 @@
 package no.sikt.graphitron.roadmap;
 
+import no.sikt.graphitron.model.catalog.StoreProse;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -61,7 +62,36 @@ class SchemaIdentifierDriftCheckTest {
     }
 
     @Test
-    void theTreeItGuardsSatisfiesIt() throws IOException {
+    void storeProseResolvesBareCitations() {
+        assertThat(SchemaIdentifierDriftCheck.scanStoreProse(
+            prose("The graphql_ family, its graphql_field relation, and graphql_field.type_sdl."),
+            UNIVERSE)).isEmpty();
+    }
+
+    @Test
+    void storeProseSeesARelationNamedAtTheEndOfASentence() {
+        assertThat(SchemaIdentifierDriftCheck.scanStoreProse(
+            prose("Stated once on graphql_gone. The rest follows."), UNIVERSE))
+            .extracting(SchemaIdentifierDriftCheck.Finding::identifier)
+            .containsExactly("t: graphql_gone");
+    }
+
+    /**
+     * The extractor's two hazards, both real in the corpus: a package-qualified class name whose
+     * tail segments would resolve as nothing, and words that merely start the way a family does.
+     * A tail is unreachable because a match may not begin after a dot; a hyphenated word is out
+     * because a family prefix ends in an underscore and {@code store-native} does not.
+     */
+    @Test
+    void storeProseIgnoresQualifiedTailsAndOrdinaryWords() {
+        assertThat(SchemaIdentifierDriftCheck.scanStoreProse(
+            prose("Derived by no.sikt.graphitron.roadmap.Main, store-native, from a graph_name"
+                + " column, per the graphql spec."), UNIVERSE)).isEmpty();
+    }
+
+    /** Both corpora at once: {@code run} scans the authored pages and the store's own prose. */
+    @Test
+    void theTreeAndTheStoreProseItGuardsSatisfyIt() throws IOException {
         assertThat(SchemaIdentifierDriftCheck.run(List.of(repoRoot().toString()))).isZero();
     }
 
@@ -89,6 +119,10 @@ class SchemaIdentifierDriftCheckTest {
         // rather than quietly scanning nothing and reporting all clear.
         assertThatThrownBy(() -> SchemaIdentifierDriftCheck.run(List.of(dir.toString())))
             .isInstanceOf(BuildFailure.class);
+    }
+
+    private static List<StoreProse.Entry> prose(String text) {
+        return List.of(new StoreProse.Entry(StoreProse.Kind.RELATION_COMMENT, "t", text));
     }
 
     private static void writePage(Path root, String content) throws IOException {
