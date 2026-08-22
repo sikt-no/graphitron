@@ -1,7 +1,7 @@
 ---
 id: R803
 title: "Query relations carry facts, not rendered strings"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 5
 theme: model-cleanup
@@ -27,7 +27,7 @@ demonstrates why: the store legitimately holds renders today. `diagnostic.coordi
 sites here fail is:
 
 * A column may carry an opaque value the store did not compose, provided nothing joins,
-  groups or filters on it. Four DDL comments already spell this as "display material, never
+  groups or filters on it. Six DDL comments already spell this as "display material, never
   a dimension"; the item should lift that vocabulary rather than mint a rival one.
 * A column anything joins, groups or filters on must be atomic to the engine and a function
   of its relation's own key. `intent_type_backing_conflict` carries the whole lesson in one
