@@ -40,7 +40,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
-| `R805` | A principles section under docs/architecture | In Review | 2026-08-22 | [plan](principles-section-under-architecture.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-08-06 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
@@ -591,7 +590,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R614` [**lookupKey.adoc claims a per-input-field shape the Query side rejects**](lookupkey-per-input-field-doc-claim.md) — Backlog, docs
 - `R804` [**Composed columns are atomic and key-dependent: state the discipline in the explanation articles**](rendering-is-a-query-time-construct.md) — Backlog, docs
 - `R636` [**The generated schema reference tells the truth about view columns**](schema-reference-view-column-fidelity.md) — Backlog, cleanup
-- `R805` [**A principles section under docs/architecture**](principles-section-under-architecture.md) — In Review, docs
 - `R530` [**Manual how-to: serve your schema over HTTP (the GraphitronApplication SPI adapter)**](manual-howto-serve-schema-over-http.md) — Backlog, cleanup
 - `R498` [**Restore or repoint the missing getting-started quieting-warnings doc referenced by the RAG dev-warm hint**](rag-log-quieting-getting-started-doc.md) — Backlog, docs
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup
