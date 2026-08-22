@@ -37,7 +37,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R724` | The stated key-column match spends its ambiguity silently; make it state its arity | Ready | 2026-08-19 | [plan](stated-key-column-match-states-its-arity.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
-| `R803` | Query relations carry facts, not rendered strings | In Progress | 2026-08-22 | [plan](query-relations-carry-facts-not-renders.md) |
+| `R803` | Query relations carry facts, not rendered strings | In Review | 2026-08-22 | [plan](query-relations-carry-facts-not-renders.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
@@ -565,7 +565,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R528` [**Carry backed-vs-unbacked by permit identity across GraphitronType and ReturnTypeRef**](graphitron-type-permit-identity-splits.md) — Backlog, cleanup
 - `R702` [**Catalog-vs-catalog name comparisons in Java fold case as a hedge; make them exact**](exact-catalog-name-comparisons.md) — Backlog, cleanup
 - `R359` [**Guard ColumnRef.sqlName() comparisons against case-sensitivity drift**](column-sqlname-comparison-case-guard.md) — Backlog, cleanup
-- `R803` [**Query relations carry facts, not rendered strings**](query-relations-carry-facts-not-renders.md) — In Progress, cleanup
+- `R803` [**Query relations carry facts, not rendered strings**](query-relations-carry-facts-not-renders.md) — In Review, cleanup
 - `R533` [**Single-source the null-source-guarded data-channel predicate as a classifier-assigned fact**](localcontext-guard-predicate-single-source.md) — Backlog, architecture
 - `R724` [**The stated key-column match spends its ambiguity silently; make it state its arity**](stated-key-column-match-states-its-arity.md) — Ready, cleanup
 - `R729` [**findColumn picks silently where two columns answer one spelled name**](findcolumn-picks-silently-on-a-colliding-table.md) — Backlog, cleanup

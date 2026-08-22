@@ -1,7 +1,7 @@
 ---
 id: R803
 title: "Query relations carry facts, not rendered strings"
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 5
 theme: model-cleanup
