@@ -1,7 +1,7 @@
 ---
 id: R794
 title: "LSP connection teardown logs SEVERE stack traces for stream-closed writes"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: lsp
@@ -391,3 +391,24 @@ after the shutdown) rather than becoming dead code. Retired vocabulary now names
 three prose sites carrying the uncleared-slot claim and gives the Done gate its grep
 query. Coverage pin 3 drives the service's own register-and-clear path in both
 directions, and pin 2 names its module.
+
+### Round 3: Spec -> Ready, signed off (2026-08-22, session_01KH4F9G6Ad8qwSCmJdQeRMr)
+
+Both round 2 findings are closed at the level they were raised. Deliverable 2 now derives
+its cost from what the tree does rather than from a publish that never happens, and the
+one surviving cost carries the deliverable on its own terms; the coupling paragraph and
+the `Retired vocabulary` section follow from it, and the section names all three prose
+sites, which is what the Done gate's sweep needs. The compare's identity is named as a
+mechanism rather than left to the implementation, the residual race is stated along with
+the instruction that the `RejectedExecutionException` absorption survives as its guard,
+and coverage pin 3 now drives the service's own register-and-clear path in both
+directions, which is what makes it able to fail.
+
+One thing this pass verified that no earlier round had: the `receivedRequestMap`
+parenthetical in "What actually happens" is exact. `RemoteEndpoint.handleRequest` chains
+`thenAccept` (writes the response), `exceptionally` (consults the exception handler, then
+writes an error response), then `thenApply`, and the third stage is the one that calls
+`receivedRequestMap.remove`. A failing error-response write in the second stage completes
+that stage exceptionally, so the removal is skipped and the entry leaks. Worth noting as a
+consequence the plan does not claim: because Deliverable 1's wrapper makes both writes
+return normally, the third stage runs and the leak goes away with the noise.
