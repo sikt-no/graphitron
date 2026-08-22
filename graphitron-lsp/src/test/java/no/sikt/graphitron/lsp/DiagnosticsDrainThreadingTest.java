@@ -148,9 +148,9 @@ class DiagnosticsDrainThreadingTest {
     }
 
     /**
-     * The teardown window: the workspace outlives connections and its listener slot is not cleared,
-     * so after an editor detaches (shutting its connection's executor down) a build swap still
-     * reaches the dead connection's service. Inline this window was quiet, so the mutator must not
+     * The teardown window: teardown clears the workspace's listener slot, but a mutation can read
+     * the slot before the clear and run the listener after the connection's executor is shut down,
+     * so a rejected submit is still reachable. Inline this window was quiet, so the mutator must not
      * gain a throw: the rejection is absorbed, and the collapse flag does not record a drain that
      * never ran, leaving a later accepted submit free to drain as usual.
      */
