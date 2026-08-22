@@ -1,13 +1,13 @@
 ---
 id: R793
 title: "The diagnostics drain overruns its 30 s session budget on a real workspace"
-status: In Review
+status: Ready
 bucket: bug
 priority: 2
 theme: lsp
 depends-on: []
 created: 2026-08-21
-last-updated: 2026-08-21
+last-updated: 2026-08-22
 ---
 
 # The diagnostics drain overruns its 30 s session budget on a real workspace
@@ -126,8 +126,8 @@ so what is pinned in-tree is the scan-count shape via the existing statement-cou
 timings live in this item's write-up and in the `reason` column of any registration it produces.
 
 **Not in scope.** Raising the budget, which converts a diagnosed defect into a longer silence. Making
-the drain asynchronous, which is `roadmap/diagnostics-drain-leaves-the-triggering-thread.md` and is
-worth doing whatever this item finds. Splitting the drain's read per file, which would trade away the
+the drain asynchronous, which was the item beside this one and has since shipped, having been worth
+doing whatever this item found. Splitting the drain's read per file, which would trade away the
 one-snapshot consistency the batch exists to give and multiply the statement count.
 
 ## What the diagnosis found, and what was done
@@ -237,3 +237,70 @@ binding before writing anything, per the boundary both items already state.
 The acceptance criterion holds with more headroom than it asked for: 191 ms against the 3 s
 interactive budget, on a box slower than the one that filed the report, and the scan counts say why.
 
+
+## Reviewer findings
+
+### Round 1, In Review, rework requested
+
+Question 1 passes. The diagnosis is the work this item asked for and the delivery is the change the
+spec approved. The lever order was honoured: the plan's conditional said a driving-side finding takes
+a join rewrite and not a registration, the measurement refuted the driving side and found an
+unprunable term under it, and a registration is what that finding licenses. The two `reason` rows
+carry the arithmetic the plan asked them to. Nothing was widened: no Java changed, and the plan's
+reserved refusal (registering the 131-second view itself, on refresh cost) was applied rather than
+quietly dropped. The `_live` pair, the canonical-name discipline and the `meta_materialize` row are
+the established shape, not a parallel mechanism: three registrations already use it. Refresh
+ordering, cycle-freedom, kind and column-shape agreement between each hand-written target table and
+its view are all pre-existing build gates, and all six of `MaterializeRegistryGateTest` and all eight
+of `MaterializationOrderTest` pass on the delivered tree, so the risks a view-to-table conversion
+carries are enforced rather than argued. Full `mvn install -Plocal-db` is green.
+
+Question 2 fails, on the one piece of evidence the spec named for itself.
+
+**The pin cannot fail on the shape it exists to guard.** The acceptance said what is pinned in-tree is
+the scan-count shape via the statement-count tier, so `theDrainsStatementStaysCollapsed` is this
+item's completeness evidence and the gate turns on whether it holds. It does not discriminate.
+Reverting the whole delivery, both `meta_materialize` rows and both view-to-table conversions, and
+keeping the new test, leaves it green: the SQL resource was reverted to its parent state, the model
+rebuilt, and the test passed in 4.2 s. Measured on the fixture the test actually runs, by lowering the
+ceiling to 1 and reading the actual off the failure in each shape:
+
+[cols="3,2",options="header"]
+|===
+| Shape, same fixture | Total `scanCount`
+
+| unregistered, the shape this guards against
+| 1291
+
+| registered, as delivered
+| 658
+
+| the ceiling asserted
+| 20000
+|===
+
+So the ceiling sits about fifteen times above the worst number the regression produces here, and the
+guard would pass on a tree with the fix entirely removed. The delivered 658 corroborates the write-up,
+which is worth saying: the measurement is right and the fix is real. It is the enforcer that is inert.
+
+The javadoc explains the ceiling with a claim that is false on this fixture: that the guarded shape
+"measures in the hundreds of thousands of scans on this fixture". Hundreds of thousands is the
+sakila-scale number from the write-up's attribution work. `StoreFixture.ofCatalog(tmp, GRAPH_SDL,
+...)` is a far smaller catalog, and on it the two shapes are 1291 against 658. That sentence is what
+made a 20000 ceiling look like a generous margin over a catastrophe when it is fifteen times the
+catastrophe.
+
+What would satisfy the question: a ceiling that fails on the unregistered shape and passes on the
+delivered one. The numbers above leave a factor of two to place it in, they are scan counts rather
+than a clock so they are deterministic, and the tier's own reason for existing is that this residue
+is the clock-free one. Retuning the constant is the whole change; whether the fixture should also be
+grown so the separation is wider than 2x is the implementer's call and not something this gate asks
+for. Correct the javadoc's fixture claim in the same pass, to the numbers actually measured here.
+
+Not blocking, and not asking for anything: the hand-back to the latency item is the right shape and
+its instruction to re-measure before writing is what keeps the two from growing two spellings of one
+correction.
+
+Reviewer rule: the implementation commits are `session_01Bh91SfEBTRb6MjmgfYG9Wm`; this session is
+`session_01ArRUrte6WnVy19HnpRyvLM`, a different party. This session authored the spec body, which the
+In Review gate's rule does not bar, and is disclosed here rather than left to be noticed.
