@@ -226,14 +226,40 @@ class DiagnosticsStatementCountTest {
     }
 
     /**
-     * Ceiling on the total {@code scanCount} H2 reports for the drain's one statement against
-     * {@link #GRAPH_SDL}. The number is a shape pin, not a benchmark: the same statement in the
-     * shape this guards against, with the registered relations under it evaluated once per naming
-     * and per driving row instead of read as tables, measures in the hundreds of thousands of scans
-     * on this fixture, so the ceiling separates the two shapes by orders of magnitude while leaving
-     * room for the fixture to grow. Chosen from a measured total in the mid hundreds.
+     * How many table-bound types {@link #theDrainsStatementStaysCollapsed} stands up, and the reason
+     * it stands up its own graph rather than reusing {@link #GRAPH_SDL}. The separation between the
+     * collapsed shape and the shape below it is a property of how many rows the statement drives, so
+     * it is invisible on a small graph: at the four types {@code GRAPH_SDL} carries, the two shapes
+     * measure 658 scans and 1291, so a ceiling between them has a factor of two to live in and no
+     * room for the fixture to grow. The ratio settles near 3.4x once the driving side is big enough
+     * to show it, and forty types is where that leaves a ceiling both margins it needs. Growing
+     * {@code GRAPH_SDL} instead would make every other case in this class pay for one case's
+     * driving side, and those cases assert statement counts that this one's scale cannot help.
      */
-    private static final long DRAIN_SCAN_CEILING = 20_000;
+    private static final int DRAIN_FIXTURE_TYPES = 40;
+
+    /**
+     * Ceiling on the total {@code scanCount} H2 reports for the drain's one statement, over a graph
+     * of {@link #DRAIN_FIXTURE_TYPES} table-bound types. Both shapes were measured on that fixture:
+     * the collapsed shape this asserts totals 6924 scans, and the shape it guards against, with the
+     * relations beneath the statement evaluated per naming and per driving row instead of read as
+     * registered tables, totals 23983. The ceiling sits between them, a little over twice the
+     * collapsed total and a little under two thirds of the regression's.
+     *
+     * <p>Neither number is a wall clock and neither is a benchmark. The scan total is what makes a
+     * ceiling assertable at all in this tier, being the deterministic residue the shape leaves in a
+     * query plan.
+     *
+     * <p>This ceiling was seen to fail before it was trusted: with both {@code meta_materialize}
+     * registrations removed from the model's DDL and nothing else changed, this case fails on 23983.
+     * That is the discipline {@code SurfaceScanCountTest} states for the same currency, and it is
+     * what this ceiling did not have when it first landed. It was then 20000 over the four-type
+     * graph above, explained by a hundreds-of-thousands figure that belonged to a sakila-scale
+     * catalog this tier does not stand up. On the fixture the case actually ran, the regression
+     * totalled 1291 against a collapsed 658, so the ceiling sat fifteen times above the very shape
+     * it named and the guard passed on a tree with the fix entirely removed.
+     */
+    private static final long DRAIN_SCAN_CEILING = 15_000;
 
     @Test
     void theDrainsStatementStaysCollapsed() {
@@ -242,31 +268,61 @@ class DiagnosticsStatementCountTest {
         // session budget. The scan total is the deterministic, clock-free residue of that shape, so
         // it is what this tier can pin. Asserted against the plan of the same statement the drain
         // issues, captured rather than restated, so the pin cannot drift from the production read.
-        var capturedSql = new AtomicReference<String>();
-        var configuration = store.handle().dsl().configuration()
-            .derive(new DefaultExecuteListenerProvider(new ExecuteListener() {
-                @Override
-                public void executeStart(ExecuteContext ctx) {
-                    if (ctx.query() != null) {
-                        capturedSql.set(DSL.using(ctx.configuration()).renderInlined(ctx.query()));
+        String sdl = boundTypes(DRAIN_FIXTURE_TYPES);
+        try (var driving = StoreFixture.ofCatalog(
+                tmp.resolve("drain-scan"), sdl, StoreFixture.backingClasses())) {
+            var capturedSql = new AtomicReference<String>();
+            var configuration = driving.handle().dsl().configuration()
+                .derive(new DefaultExecuteListenerProvider(new ExecuteListener() {
+                    @Override
+                    public void executeStart(ExecuteContext ctx) {
+                        if (ctx.query() != null) {
+                            capturedSql.set(DSL.using(ctx.configuration()).renderInlined(ctx.query()));
+                        }
                     }
-                }
-            }));
-        diagnose(new StoreHandle(DSL.using(configuration), StoreFixture.GRAPH), GRAPH_SDL);
-        assertThat(capturedSql.get()).isNotNull();
+                }));
+            diagnose(new StoreHandle(DSL.using(configuration), StoreFixture.GRAPH), sdl);
+            assertThat(capturedSql.get()).isNotNull();
 
-        String plan = store.handle().dsl()
-            .resultQuery("EXPLAIN ANALYZE " + capturedSql.get())
-            .fetchOne(0, String.class);
-        long total = Pattern.compile("scanCount: (\\d+)").matcher(plan).results()
-            .mapToLong(m -> Long.parseLong(m.group(1)))
-            .sum();
-        assertThat(total)
-            .as("total scanCount of the drain's statement plan")
-            .isLessThanOrEqualTo(DRAIN_SCAN_CEILING);
+            String plan = driving.handle().dsl()
+                .resultQuery("EXPLAIN ANALYZE " + capturedSql.get())
+                .fetchOne(0, String.class);
+            long total = Pattern.compile("scanCount: (\\d+)").matcher(plan).results()
+                .mapToLong(m -> Long.parseLong(m.group(1)))
+                .sum();
+            assertThat(total)
+                .as("total scanCount of the drain's statement plan over %d bound types",
+                    DRAIN_FIXTURE_TYPES)
+                .isLessThanOrEqualTo(DRAIN_SCAN_CEILING);
+        }
     }
 
     // ===== Helpers =====
+
+    /**
+     * A graph of {@code count} table-bound types, each carrying two column-bound fields and a
+     * reference across a real foreign key. The driving side the collapse pin needs: every type is a
+     * row the statement's relations expand over, and the bindings are what puts them there.
+     *
+     * <p>All of them bind the same table, which understates the divergence rather than exaggerating
+     * it. Varied bindings would separate the two shapes further at the same type count, so a ceiling
+     * set from this shape is conservative.
+     */
+    private static String boundTypes(int count) {
+        var sb = new StringBuilder("type Query {\n");
+        for (int i = 0; i < count; i++) {
+            sb.append("    t").append(i).append(": T").append(i).append("\n");
+        }
+        sb.append("}\n\n");
+        for (int i = 0; i < count; i++) {
+            sb.append("type T").append(i).append(" @table(name: \"film\") {\n")
+                .append("    a: String @field(name: \"title\")\n")
+                .append("    b: String @field(name: \"description\")\n")
+                .append("    language: Language @reference(path: [{key: \"film_language_id_fkey\"}])\n")
+                .append("}\n\n");
+        }
+        return sb.append("type Language @table(name: \"language\") { name: String }\n").toString();
+    }
 
     /** A type with {@code count} column-bound fields, which is the shape the old count grew with. */
     private static String fields(int count) {

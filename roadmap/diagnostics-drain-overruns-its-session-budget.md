@@ -1,7 +1,7 @@
 ---
 id: R793
 title: "The diagnostics drain overruns its 30 s session budget on a real workspace"
-status: Ready
+status: In Review
 bucket: bug
 priority: 2
 theme: lsp
@@ -50,8 +50,8 @@ them pair a base or census relation with a derived one. So the unit under test i
 read, and the first move is attribution across its subqueries rather than a hunt for one expensive
 relation.
 
-**The leading hypothesis, and it is measured.**
-`roadmap/lsp-surface-latency-budgets.md` diagnosed the same shape one statement over:
+**The leading hypothesis, and it is measured.** The language-server latency item, since shipped,
+diagnosed the same shape one statement over:
 `DeclarationFacts`'s `redirects` arm joins the census relation `sql_table` to the derived relation
 `intent_type_backing` on the class name, H2 drives from the census side, and the derived relation is
 therefore evaluated once per catalog table with its cheap filter applied after the expansion instead
@@ -109,7 +109,7 @@ or after, which is the question the leading hypothesis asks.
    case in the relation's own arithmetic, and the refresh of a 151-second view is a cost to price
    rather than assume.
 
-**Coordination.** `roadmap/lsp-surface-latency-budgets.md` states the boundary from its side and this
+**Coordination.** The language-server latency item stated the boundary from its side and this
 item holds the other half of it: that item does not touch this statement, and this item does not
 restate the budget-per-grain question or ask for a larger budget. What the two must not do is grow two
 spellings of one correction, so if that item lands its driving-side fix to `DeclarationFacts` first,
@@ -222,17 +222,26 @@ said to price lands at about 175 ms per capture for the pair, and the registrati
 view itself was rejected on exactly the refresh-cost ground the plan reserved for it.
 
 **The pin.** `DiagnosticsStatementCountTest.theDrainsStatementStaysCollapsed` captures the drain's
-own statement off the production read, `EXPLAIN ANALYZE`s it against the fixed fixture, and asserts
-a total scan-count ceiling: measured 658, ceiling 20000, against hundreds of thousands for the
-collapsed shape's return. That is the enforcer currency the coordination section agreed with
-`roadmap/lsp-surface-latency-budgets.md`, landed first here; that item extends it across the six
-surfaces rather than introducing a second currency.
+own statement off the production read and `EXPLAIN ANALYZE`s it, asserting a total scan-count
+ceiling. That is the enforcer currency the coordination section agreed with the latency item, whose
+own `SurfaceScanCountTest` carries it across the six surfaces; that test was already on trunk when
+this one landed, so this is the second use of the currency rather than the first.
 
-**Hand-back to the latency item.** Its step 2 prescribes a correlated-lookup rewrite of
-`DeclarationFacts`'s redirects arm, measured against the binding as a view. The registration
-landed here removes the term that rewrite works around, and this statement's identical arm fell from
-timeout to 6 ms with no Java change, so that item should re-measure its arm against the registered
-binding before writing anything, per the boundary both items already state.
+The first cut of this pin did not discriminate and was sent back at the gate; what it asserted and
+why it failed to are recorded in the reviewer findings below. It now stands up its own graph of forty
+table-bound types, because the separation between the two shapes is a property of how many rows the
+statement drives and is invisible at the four types the class's shared fixture carries. On that graph
+the collapsed shape totals 6924 scans against the unregistered shape's 23983, and the ceiling is
+15000, confirmed to fail with both registrations removed from the DDL before it was trusted.
+
+**Hand-back to the latency item, since discharged.** Its step 2 prescribed a correlated-lookup
+rewrite of `DeclarationFacts`'s redirects arm, measured against the binding as a view. The
+registration landed here removes the term that rewrite works around, and this statement's identical
+arm fell from timeout to 6 ms with no Java change, so the hand-back asked that item to re-measure
+against the registered binding before writing anything. It did: that item shipped the rewrite and
+re-ran its four affected suites against these registrations, on the ground that this change moves the
+counts its own ceilings measure. Neither item grew a second spelling of the correction, which is what
+the shared boundary existed to prevent.
 
 The acceptance criterion holds with more headroom than it asked for: 191 ms against the 3 s
 interactive budget, on a box slower than the one that filed the report, and the scan counts say why.
