@@ -29,84 +29,140 @@ that proves the surgery complete.
 
 ## Deliverable 1: the section
 
-New directory `docs/architecture/principles/` with its own `index.adoc`. No `docs/pom.xml`
-change: the `stage-adoc` step already globs `architecture/**/*.adoc`.
+New directory `docs/architecture/principles/` with its own `index.adoc`. The `stage-adoc`
+glob already includes `architecture/**/*.adoc`, but the staging pipeline also carries a
+hand-maintained per-directory roster in `docs/pom.xml`: one `<copy>` of `css/` and the two
+`docinfo-*.html` files per staged directory, every entry `failonerror="false"`. The new
+directory needs both entries, and nothing fails when they are missed; the first report of
+a miss is a published page with no stylesheet and no site nav, so this spec names the two
+entries as deliverables and the implementer eyeballs the rendered page. Deriving that
+fan-out from the staged tree instead of listing it is the durable fix and is out of scope
+here (see Not in scope).
 
-`development-principles.adoc` moves there keeping its filename. The slug
-`development-principles` is a key in roadmap-tool's `LinkTarget.ARCH_QUADRANT`, the map
-that resolves legacy flat links in roadmap bodies to their Diataxis home; renaming the file
-to `index.adoc` would break that slug mapping and buy nothing. The page's content is
-untouched: this item is a move, and splitting the six axioms into per-axiom pages is out of
-scope. The word-budget gate moves with the file unchanged (a path-constant update in
-`DocSizeBudgetTest`), since the budget is about consult-time context cost, not location.
+`development-principles.adoc` moves there keeping its filename, and the reason is the
+two-documents argument, not link compatibility: the router and the axiom page have two
+jobs and two budgets. The section index routes to three destinations, while the 3,500-word
+cap in `DocSizeBudgetTest` is a cap on the axiom page's consult cost; folding the router
+into the budgeted page either charges routing prose to the axiom budget or points the
+budget test at a router. That the slug also keys roadmap-tool's `ARCH_QUADRANT` map is a
+footnote, and Deliverable 3 binds that map to the tree so it stops being load-bearing. The
+budget gate itself moves with the file unchanged (a path-constant update in
+`DocSizeBudgetTest`). The page's prose is untouched; its own six explanation-sibling
+xrefs re-point to `../explanation/`, and its three cross-directory ones
+(`../../graphitron-principles.adoc`, `../how-to/testing.adoc`,
+`../reference/emitter-conventions.adoc#helper-locality`) are depth-invariant and survive
+as written.
 
-The section index is the wayfinding the item exists for. It routes to the moved page and to
-the principles that deliberately live elsewhere:
+The section index is the wayfinding the item exists for: one line per destination, no
+axiom roster and no count of six, because a router that summarizes its targets is an
+unguarded inventory the moment a seventh axiom lands. Destinations:
 
-* `docs/graphitron-principles.adoc` (strategic principles) stays at the docs root. It is
-  linked from the user manual, the FAQ, the top-level README, `docs/index.adoc`,
-  `quick-start.adoc` and the site footer; a consumer-facing blast radius this
-  contributor-side move should not touch. The index links it.
-* `explanation/fact-model.adoc` (the store's modeling discipline) stays in `explanation/`;
-  its reference web and register are explanation. The index links it.
+* the moved page;
+* `docs/graphitron-principles.adoc` (strategic principles), which stays at the docs root,
+  and the index says why (register and audience: it is linked from the user manual, the
+  FAQ, the top-level README, `docs/index.adoc`, `quick-start.adoc` and the site footer),
+  so the section does not read as an incomplete move;
+* `explanation/fact-model.adoc` (the store's modeling discipline), which stays in
+  `explanation/` with its reference web.
 
-`architecture/index.adoc` gains the section as a nav entry (the quadrant grid already
-carries a non-Diataxis "Ongoing work" cell, so a fifth entry has precedent; exact layout is
-the implementer's) and repoints its "deeper reference" line. `explanation/index.adoc` drops
-its development-principles entry in favour of a pointer to the section.
+`architecture/index.adoc`: leave the 2x2 Diataxis grid alone and introduce principles as a
+short lead-in band above it. Principles govern all three quadrants, which is exactly why
+they are not one of them; and a fifth cell in the `cols="1,1"` grid would yield a
+three-row grid with a lone trailing cell whose mobile collapse keys on `td:last-child`.
+The page's `:description:` and its "pick the quadrant" sentence, plus the section
+enumerations in `docs/index.adoc` and `explanation/index.adoc`, update in the same change:
+prose that enumerates the sections is falsified by the new one. `explanation/index.adoc`
+drops its development-principles entry in favour of a pointer to the section.
 
 ## Deliverable 2: the link surgery, by mechanism
 
+Grep the path prefix `architecture/explanation/development-principles`, not the filename:
+because the filename survives the move, bare-filename mentions (`TypeFetcherGenerator`,
+`ServiceCatalog`, `FieldBuilder` and their siblings' javadoc) stay correct, and churning
+them is noise. What changes is every path-qualified mention:
+
 * **roadmap-tool**: the `ARCH_QUADRANT` entry for `development-principles` flips to
   `principles` (and the map's "Diataxis quadrant" comment loosens to "section", since
-  principles is not a Diataxis quadrant); the three emit sites in `Main.java` (the roadmap
-  index adoc header, two README.md sentences) repoint; `LinkTargetRoundTripTest`'s
-  expectations follow; the README regenerates.
-* **docs xrefs**: roughly ten pages, including the anchored xrefs from
-  `typed-rejection.adoc` and `dispatch-axes.adoc` into the page's four explicit block
-  anchors, which become `../principles/` cross-directory xrefs, and the moved page's own
-  ten outbound xrefs, which become `../explanation/` and `../../` forms.
-* **prose paths outside docs**: `CLAUDE.md`, the `srp` and `reviewer-prompt` skills, the
-  `principles-architect` agent definition, and about fourteen javadoc prose mentions across
-  main and test sources. These are prose, not `{@link}`s, so the javadoc reference gate
-  does not see them; a grep sweep at implementation and the retirement sweep at the Done
-  gate are the coverage.
+  principles is not a Diataxis quadrant); the `Main.java` emit site in the staged roadmap
+  index header repoints, as do the two README.md emit sentences (those two are already
+  gated: `ReadmeLinkIntegrityTest` walks every README.md repo-wide, the regenerated
+  `roadmap/README.md` included); `LinkTargetRoundTripTest`'s expectations follow; the
+  README regenerates.
+* **docs xrefs**: the anchored xrefs from `typed-rejection.adoc` and `dispatch-axes.adoc`
+  into the page's four explicit block anchors become `../principles/` cross-directory
+  xrefs; `how-to/testing.adoc`, the `reference/` pages that cite the path,
+  `architecture/index.adoc`, the history page and the manual's `asConnection.adoc`
+  repoint.
+* **the concept page**: `roadmap/concepts/flattened-selection-result-keys.html` carries an
+  authored href to the old path, staged through `LinkTarget.DeepDocsPath` into a site URL.
+  Concept pages outlive the items that back them, so this belongs to the permanent sweep,
+  and nothing checks that a `DeepDocsPath` target exists, so a miss is a silent site 404.
+* **prose paths outside docs**: `CLAUDE.md`, the skills that cite the path (`srp` and
+  `reviewer-prompt`; confirm `explain`, `nested-jooq` and `store-performance` at pickup),
+  the `principles-architect` agent definition, and the path-qualified javadoc mentions
+  (`ClassAccessorResolver`, `ArgPathHelperRegistry`). These are prose, not `{@link}`s, so
+  the javadoc reference gate does not see them; the grep sweep at implementation and the
+  retirement sweep at the Done gate are the coverage.
 * **roadmap bodies**: transient items deep-linking the old path get a mechanical sed so
   active items' rendered links stay live; no gate owed.
 
-## Deliverable 3: the gate the move exposes the need for
+## Deliverable 3: the gates, landed additive-then-cutover
 
-A dangling xref between architecture pages currently has no enforcer.
-`ManualXrefIntegrityTest` walks `docs/manual/` only, and roadmap-tool's
-`AdocXrefAnchorCheck` fails on a wrong anchor but deliberately reports-without-failing a
-wrong path (its own javadoc: a 404 is self-reporting). The move's primary failure mode is
-exactly this class, so the gate lands with the move: widen `ManualXrefIntegrityTest` to
-walk the authored docs tree (`manual/`, `architecture/`, `history/`, the root-level
-`.adoc` files; skip `target/` and `_theme/`), same rule as today (the target file exists;
-anchors stay `AdocXrefAnchorCheck`'s business), renamed to match its widened scope.
-Pre-existing danglers the widening surfaces get fixed in the same change; that is the
-gate doing its job on arrival, not scope creep. The two checkers stay complementary, not
-overlapping: the widened test owns paths at the source tree, the anchor check owns anchors
-at staging.
+Land the gates first, green over the tree as it stands (fixing any pre-existing danglers
+they surface), then land the move against gates already trusted. A gate authored in the
+same breath as the change it validates gets its scope tuned to exactly what the change
+touched; the sequencing is what prevents that.
+
+* **Path integrity has one owner, at staging.** A dangling xref between architecture pages
+  currently has no enforcer: `ManualXrefIntegrityTest` walks `docs/manual/` only, and
+  roadmap-tool's `AdocXrefAnchorCheck` fails on a wrong anchor but deliberately
+  reports-without-failing a wrong path. Widening the sakila-example walker was the first
+  sketch and is the wrong shape twice over: it would stand up a second enforcer giving the
+  opposite verdict on the same defect the check's own javadoc argues must not fail, and an
+  authored-tree walker structurally cannot see the staged roadmap index header, a
+  generated page with no authored `.adoc`. Instead, extend `AdocXrefAnchorCheck`: cover
+  unanchored `xref:` targets, and make the path verdict a function of provenance, failing
+  when the source page is authored under `docs/` and staying report-only where the source
+  is roadmap prose, which is the population its self-reporting argument was written for.
+  One enforcer, one verdict per population, and it sees generated pages. Pin an
+  anti-vacuity floor on the widened population, per the check's own "N references" line
+  and `RetiredVocabularyGuardTest`'s minimum-scan precedent.
+* **The layout map binds to the tree.** `ARCH_QUADRANT` is roadmap-tool's private copy of
+  the docs layout, repaired by hand on every move. Add a roadmap-tool test that every
+  entry resolves to an existing `docs/architecture/<section>/<slug>.adoc`, so the next
+  move fails the build instead of shipping a link that renders live and 404s.
+* **Section indexes are exhaustive.** A page that lands in a section and is never listed
+  in its index is invisible with every gate green, the exact failure this item's problem
+  statement complains about. `HowToIndexCoverageTest` already pins index coverage
+  bidirectionally for `docs/manual/how-to`; parameterize its rule over the section
+  directories (`architecture/explanation`, `architecture/reference`,
+  `architecture/how-to`, `architecture/principles`, `manual/how-to`) so an unlisted page
+  fails the build. This gate is what proves the section real, not just the move complete.
 
 ## Tests
 
-* The widened xref-integrity test is Deliverable 3's own gate and the regression pin for
-  the whole surgery: any missed docs-side xref fails it.
-* `ReadmeLinkIntegrityTest` (walks every README.md repo-wide) fails if the `Main.java`
-  emit sites are missed, via the regenerated roadmap README.
-* `LinkTargetRoundTripTest` pins the `ARCH_QUADRANT` flip.
+* The three gates above are their own tests and the regression pins for the surgery.
+* `ReadmeLinkIntegrityTest` covers the README emit sites via the regenerated roadmap
+  README.
+* `ManualXrefIntegrityTest` keeps covering the manual's outbound xref into the moved page,
+  unchanged.
 * `DocSizeBudgetTest` keeps enforcing the budget at the new path; it failing to find the
   file is the tripwire for a half-done move.
 * The verification build's docs render covers the AsciiDoctor side.
 
 ## Not in scope
 
-* Splitting `development-principles.adoc` into per-axiom pages; the content is untouched.
+* Splitting `development-principles.adoc` into per-axiom pages; the prose is untouched.
 * Old-URL redirects on the docs site: the page is contributor-facing, the site has no
   redirect mechanism, and the break is accepted.
 * Moving `docs/graphitron-principles.adoc`.
+* Deriving the `docs/pom.xml` css/docinfo fan-out from the staged tree instead of the
+  hand-maintained per-directory roster. That is the durable fix for a roster this item
+  can only append to (`SchemaIdentifierDriftCheck` is the read-the-tree precedent), and it
+  is its own Backlog item.
 
 ## Retired vocabulary
 
-* `docs/architecture/explanation/development-principles.adoc` as a path
+* `docs/architecture/explanation/development-principles.adoc` as a path. A slash-bearing
+  path cannot be a `RetiredVocabularyGuardTest` registry entry, so this line is the
+  Done-gate reviewer's grep query per the retirement sweep, not a guard entry.
