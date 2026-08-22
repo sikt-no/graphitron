@@ -1,26 +1,46 @@
 ---
 id: R801
-title: "Predicate-level closure of the family bridge roster"
+title: "View-read census and closure of the declared family bridges"
 status: Backlog
 bucket: architecture
 depends-on: [family-page-introductions]
 created: 2026-08-21
-last-updated: 2026-08-21
+last-updated: 2026-08-22
 ---
 
-# Predicate-level closure of the family bridge roster
+# View-read census and closure of the declared family bridges
 
-The family-page item lands `meta_family_bridge` (the sanctioned normalization crossings),
-`meta_view_read` (the machine-written census of every view's direct read set) and the
-relation-grain crossing gate: a view reading across families must argue itself into the bridge
-roster or the keyed-crossing register. That gate is deliberately coarse: it sees which relations
-a view reads, never how the view compares their columns, so a view can hold a truthful
-keyed-crossing row and still add its own function-mediated spelling match beside the sanctioned
-bridge. This item closes that gap at predicate grain: walk each view's parsed definition
-(the same jOOQ query object model the read-census walk uses), and reject any comparison that
-applies functions to columns tracing to two different families' relations unless it occurs
-inside a bridge-registered view. The Spec must pin what counts as a crossing predicate (which
-function applications, whether casts count, how a column traces to its source relation through
-aliases, subqueries and CTEs), the exemption shape for legitimate cases, and whether the
-keyed-crossing register's reasons can then be verified rather than trusted. Plain column
-equality on shared keys stays ungated; those are declared paths, not rules.
+The family-page item declares the base facts: `meta_family_bridge`, the sanctioned normalization
+crossings, authored in the DDL and resolve-gated only. This item derives over those declarations
+and closes them against what the views actually do. Layers, in order:
+
+**The census.** `meta_view_read`, machine-written at boot in the `meta_materialize_dependency`
+one-writer pattern: one row per view and relation its stored definition directly reads, produced
+by the parse walk `MaterializeDependencies.relationsReadBy` already implements (jOOQ's parser
+over the stored `VIEW_DEFINITION`, qualified-name filtering so aliases and CTE names cannot mint
+rows). The walk is `private static` today and must be lifted or widened. As a keyed `meta_` base
+table the relation needs its own case in `FactSchemaGateTest.everyRelationLeadsWithItsPartitionDimension`,
+whose `meta_` arm hard-codes the two materialize relations and defaults the rest to `graph_name`.
+
+**The crossing gate.** Every view whose census rows span two or more families argues itself into
+exactly one register: the declared bridge roster, or a keyed-crossing exemption register this
+item adds (one row per multi-family view whose meetings are plain equality on shared keys or
+reads through a registered bridge). Exemption polarity throughout, both directions closed. A
+bridge row names the relation a consumer reads, per the declaring item, so for a registered
+reduction the gate resolves the row through `meta_materialize` to its source view before
+consulting the census. The Spec-review of the declaring item counted roughly 46 multi-family
+views (textual approximation), nearly all `intent_`; at that size the exemption register's
+`reason` should be a small closed vocabulary of crossing kinds, each kind's sentence stated once
+on the column comment, with a free note only where a row differs, rather than dozens of
+paraphrases no gate can check. Recorded here as the reviewer's recommendation and this item's
+starting shape.
+
+**The predicate analysis, last.** The census sees which relations a view reads, never how it
+compares their columns, so a view can hold a truthful exemption row and still add its own
+function-mediated spelling match beside the sanctioned bridge. Walk each view's parsed definition
+with the same query object model and reject any comparison applying functions to columns tracing
+to two different families' relations unless it occurs inside a bridge-registered view. The Spec
+must pin what counts as a crossing predicate (which function applications, whether casts count,
+how a column traces to its source relation through aliases, subqueries and CTEs) and whether the
+exemption register's kinds can then be verified rather than trusted. Plain column equality on
+shared keys stays ungated; those are declared paths, not rules.
