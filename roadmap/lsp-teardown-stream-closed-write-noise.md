@@ -7,7 +7,7 @@ priority: 3
 theme: lsp
 depends-on: []
 created: 2026-08-21
-last-updated: 2026-08-21
+last-updated: 2026-08-22
 ---
 
 # LSP connection teardown logs SEVERE stack traces for stream-closed writes
@@ -67,22 +67,25 @@ where the process and the shared `Workspace` both outlive any one connection. Be
 a disconnect and the next reconnect, the workspace still holds the dead connection's
 `publishDiagnosticsForRecalculate`, and any mutation in that window runs it.
 
-Nothing crashes. `publishDiagnostics` is a notification, and `RemoteEndpoint.notify`
-catches its own write failure, so the recalculating thread never sees one. The cost is
-three smaller things instead. Every failed publish logs one record carrying the
-throwable, which prints as a console stack trace for the reason given under "What
-'fixed' means" below. The drain that produced those diagnostics did real work first,
-walking each queued file and running a store read, for an answer with no recipient. And
-a dead connection's service stays reachable from live shared state, which is the kind of
-thing that is merely untidy until the day something else starts depending on the slot.
+What that run does today is almost nothing, and the plan has to be honest about the
+almost. The connection's drain executor is shut down in `DevServer.serve`'s `finally`
+before the socket closes, and `publishDiagnosticsForRecalculate` catches the
+`RejectedExecutionException` a submit into it raises, resets its pending flag and logs
+at debug. No drain walks, no store read runs, no publish is attempted, so no JUL record
+appears. The code on both sides of that absorption says why it is there: the listener
+slot is not cleared on teardown, so a build swap can still reach a dead connection's
+service. The one cost that survives is exactly that reachability: live shared state
+holding a dead connection's service, documented by a comment on each side instead of
+removed by code. That is hygiene rather than a crash or noise, and Deliverable 2 is
+scoped on those terms.
 
-Both defects are in scope here, as two ordered deliverables, but they are two distinct
-costs rather than one problem and its mitigation. Deliverable 1 silences the console,
-including the notification records, since a wrapper that swallows the failure inside
-`consume` means `notify` never catches anything to log. It does nothing about the wasted
-drain or the stale reference. Deliverable 2 addresses those and would not, on its own,
-quiet a single `SEVERE` trace. Shipping only the first would leave the item quiet and
-still wrong; shipping only the second would leave it correct and still noisy.
+Both defects stay in scope as two ordered deliverables, but they are two distinct costs
+with no overlap. Deliverable 1 silences the console, including the notification
+records, since a wrapper that swallows the failure inside `consume` means `notify`
+never catches anything to log; it does not touch the stale reference. Deliverable 2
+retires the stale reference and the prose that leans on it, and would not, on its own,
+quiet a single trace. Shipping only the first would leave live state still pointing at
+dead connections; shipping only the second would leave the console still noisy.
 
 ## What "fixed" means
 
@@ -142,10 +145,10 @@ replacing it goes through slf4j like the rest of our code.
 
 ## Deliverable 2: teardown stops leaving a dead connection reachable
 
-This one is hygiene and wasted work, not crash prevention, and is worth doing on those
-terms rather than inflated ones. It buys back the drain's walk and store read in the
-disconnect window, and it stops a dead connection's service being reachable from the
-shared workspace.
+This one is hygiene, not crash prevention and not noise reduction, and is worth doing
+on those terms rather than inflated ones. It stops a dead connection's service being
+reachable from the shared workspace, and it lets two comments that currently document
+a standing leak document a race guard instead.
 
 `Workspace.setRecalculateListener` is a single-slot setter with a no-op default, so the
 minimal correct fix is a compare-and-clear: teardown clears the slot only if the
@@ -156,12 +159,33 @@ diagnostics for the live editor. Getting that ordering backwards would turn a co
 bug into a functional one, which is why it is spelled out here rather than left to the
 implementation.
 
+The compare needs an identity to compare on, and a method reference is not one: every
+evaluation of `this::publishDiagnosticsForRecalculate` yields a fresh object with
+identity equality, so a teardown that passes a second evaluation compares unequal
+against the instance `setClient` registered and clears nothing, silently. That arm
+fails closed, so the item would ship looking done with the slot never cleared. The
+mechanism: `GraphitronTextDocumentService` holds the listener `Runnable` in a field,
+created once, registers that instance in `setClient`, and surrenders the same instance
+at teardown for the compare-and-clear. (A registration token returned by the workspace
+would also work; the field is the smaller change and keeps the workspace's surface at
+one method plus its inverse.)
+
 The clear belongs where the connection ends rather than in `exit()`. `exit()` is a
 client-driven notification that a disconnecting editor may never send, so the `finally`
 in `DevServer.serve` is the only place guaranteed to run. `GraphitronLanguageServer`
 needs to expose the teardown; its `exit()` comment ("lsp4j drives process lifetime;
 nothing to clean up") is true for stdio and false for the shared-workspace server, and
 should stop saying so.
+
+The clear narrows the disconnect window; it does not close it. A mutation can read the
+slot before the clear and run the listener after the executor shutdown, so the
+`RejectedExecutionException` absorption in `publishDiagnosticsForRecalculate` stays as
+the guard for that residual race. It must not be deleted as dead code when the slot
+starts being cleared: removing it would hand the mutator (the dev goal's watcher
+thread among them) exactly the throw it exists to prevent. What changes is its story,
+along with the `finally` comment in `DevServer.serve`: both currently state the
+uncleared slot as their reason for existing, and after this item both describe the
+residual race instead.
 
 ## Coverage
 
@@ -172,8 +196,10 @@ Three pins, deliberately split by what each can prove:
    and assert the wrapper returns; hand it one that throws a `JsonRpcException` wrapping
    an unrelated `IOException` and assert it propagates. This is the pin that fails if
    someone later widens the catch.
-2. **The end-to-end suppression**, deterministic rather than racy. A test-owned
-   launcher pair over a real socket, with a local service method that blocks on a latch:
+2. **The end-to-end suppression**, in `graphitron-lsp` next to the factory it pins
+   (the alternative home, `graphitron-maven-plugin` beside `DevServerTest`, would put
+   the pin behind that module's native-access surefire configuration for no gain),
+   deterministic rather than racy. A test-owned launcher pair over a real socket, with a local service method that blocks on a latch:
    the client sends the request, the test closes the socket, the test releases the latch,
    the handler completes, and lsp4j attempts the write into a socket that is already
    gone. Attach a `java.util.logging.Handler` to the
@@ -187,9 +213,13 @@ Three pins, deliberately split by what each can prove:
    The latch is what makes this worth writing: "send a request and close fast" would pass
    vacuously whenever the response happened to win the race, and a test that can silently
    prove nothing is worse here than no test.
-3. **The listener slot**, in `graphitron-lsp` against a `Workspace` directly: a
-   registration cleared by its own owner clears, and a registration cleared after a
-   second owner has taken the slot does not.
+3. **The listener slot**, in `graphitron-lsp`, driven through the service's own
+   register-and-clear path rather than with test-authored `Runnable`s, which would
+   compare each instance against itself and pass whatever identity the production
+   registration uses. Positive case: a service registered via `setClient` and then
+   torn down leaves the slot cleared, observable as its listener no longer firing on
+   the next mutation. Negative case: tearing down a service after a second service
+   has taken the slot leaves the second registration in place and firing.
 
 `DevServerTest.multipleClientsShareWorkspaceState` already closes a connection and
 reconnects against a shared workspace, so it is the natural place to assert the console
@@ -222,8 +252,14 @@ statement: the cost is not the noise itself but that it trains a developer to ig
 
 ## Retired vocabulary
 
-None. No symbol or mechanism is removed; `GraphitronLanguageServer.exit` keeps its
-signature and loses only a comment that is no longer true.
+No symbol or mechanism is removed, but one claim is: "the listener slot is not cleared
+on teardown" stops being true. Three prose sites state it and must be rewritten when
+the clear lands: the `exit()` comment in `GraphitronLanguageServer` ("lsp4j drives
+process lifetime; nothing to clean up"), the `finally` comment in `DevServer.serve`,
+and the javadoc on `GraphitronTextDocumentService.publishDiagnosticsForRecalculate`.
+Grep for "listener slot" at the Done gate. The rewritten comments around the
+`RejectedExecutionException` absorption describe the residual race the absorption
+still guards; the absorption itself survives, per Deliverable 2.
 
 ## Reviewer findings
 
@@ -339,3 +375,19 @@ and pin 2 needs only lsp4j plus a loopback socket, so `graphitron-lsp` reads as 
 but the factory's home module is worth stating since the alternative reading
 (`graphitron-maven-plugin`, next to `DevServerTest`) would put the pin behind that module's
 native-access surefire configuration for no gain.
+
+**Addressed (author, round 2).** Both findings confirmed against the tree before
+revising: `DevServer.serve`'s `finally` shuts the drain executor down before closing
+the socket, `publishDiagnosticsForRecalculate` absorbs the rejected submit with a
+debug log, and `setClient` registers a fresh method-reference object per evaluation.
+The second-defect section now derives its cost from what the tree actually does (a
+stale run reaches a dead executor and returns; only the reachability cost survives)
+and the two-deliverable coupling rests on that cost alone. Deliverable 2 names the
+compare's identity mechanism, the service holding the registered `Runnable` in a field
+and surrendering the same instance at teardown, with the workspace-token alternative
+noted and set aside; it also states that the `RejectedExecutionException` absorption
+stays as the guard for the residual race (slot read before the clear, listener run
+after the shutdown) rather than becoming dead code. Retired vocabulary now names all
+three prose sites carrying the uncleared-slot claim and gives the Done gate its grep
+query. Coverage pin 3 drives the service's own register-and-clear path in both
+directions, and pin 2 names its module.
