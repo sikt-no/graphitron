@@ -446,3 +446,91 @@ recommendation is recorded in the follow-up's stub as its starting shape (delive
 non-blocking notes, the drift-check extractor and gate-naming corrections are folded into the
 body; the partition-dimension switch case and the `relationsReadBy` visibility note travel with
 `meta_view_read` to the follow-up.
+
+### Round 2, Spec → Ready, revisions requested (session_01VZWrUh1e8MWgV9E1SV7nZB, 2026-08-22)
+
+Round 1's findings are both settled, and settled better than either of my suggestions would have
+managed. Declaration precedes derivation dissolves finding 1 rather than answering it: with the
+census and the crossing gate out of this item, a bridge row is a declaration about the schema and
+the only question left is which relation a consumer reads, which the bridge section now answers
+directly and pushes the materialize-aware resolution to the follow-up as an inherited
+requirement. Finding 2 goes with it, and recording the closed-vocabulary suggestion as the
+follow-up's starting shape rather than acting on it here is the right disposal. The item is
+smaller and its boundary is now stated in one sentence.
+
+Pulling the population into the spec was the right call, and it is what this round is about.
+
+**Finding 3 (question 2). Three of the six drafted bridge rows are contradicted by the view
+bodies they claim to describe, and each fails a rule this spec itself states.** The resolve gates
+would pass all six: every relation is observed, every prefix pair is rostered and distinct, every
+rule is non-blank. So nothing mechanical catches these, which is the argument for reviewing the
+population here and the reason they have to be settled before Ready.
+
+`intent_field_routine_method` does not own a rule. Its body joins `graphitron_routine` to
+`intent_spelled_table` on the spelling and then onto `sql_routine` by plain equality on
+`source_name`, `table_schema` and `routine_name`, and its own comment says so in as many words:
+"How a written name meets the catalog is the spelling view's rule, stated once there". It is a
+consumer of the flagship bridge, not a second bridge. Declaring it states the flagship's rule
+twice under two names, which is the fork the roster exists to prevent, arriving through the
+roster instead of around it.
+
+`intent_class_member_slot` reads only `jvm_` relations (`jvm_record_component`, `jvm_class`,
+`jvm_method`, `jvm_method_parameter`). Its `spelled_prefix` of `graphitron_` names a family the
+relation never touches. The row's rule sentence contains two different facts welded together: the
+bean-prefix strip, which is what the relation does, and "a written member name meets a backing
+class", which is what some later relation does with the strip's output. The strip is a real rule
+worth declaring, and a new view could genuinely fork it by respelling the `LOWER(SUBSTRING(...))`
+in its own join, so I am not saying the fact is imaginary. I am saying the row shape cannot hold
+it: `(spelled_prefix, census_prefix)` describes a crossing, and this is a normalization that
+produces a matchable vocabulary without crossing anything. The relation where the SDL name
+actually meets that vocabulary is `intent_field_accessor_hop` (`graphql_field` and
+`graphitron_field_binding` against `intent_class_member_element`, which reads the slot view), and
+its census side arrives through two `intent_` hops rather than directly. So this is a design
+question, not a transcription slip: does the roster admit a normalizer that is not itself a
+crossing, or does the bean strip get declared on the relation that performs the meeting, or does
+it join the two off-roster normalizations already recorded for the follow-up?
+
+`intent_field_producer_method` matches verbatim. Its body is
+`m.class_name = r.class_name AND m.method_name = r.method_name`, and its column comment states
+the consequence: "matched against the reference exactly. Java names are case-sensitive, so a
+misspelling resolves to nothing rather than to a near match". The row's own rule sentence says
+"verbatim", which is the admission. This spec's exclusion paragraph removes plain column equality
+from the roster on the ground that the roster is "only for the rule-mediated meetings, because
+those are the ones a new view can silently fork", and an identity comparison is precisely what
+cannot be forked: there is no rule to re-derive differently. Separately, its spelled side is
+transitive, reaching `graphitron_service` through `intent_field_producer_reference`, so
+`graphitron_` is not in its direct read set either.
+
+The three that survive are sound and I checked them the same way: `intent_spelled_table` (the
+genuine spelling normalization, pre-folded `*_upper` columns with the qualified and unqualified
+arms), `intent_column_match_claim` (`graphql_field` against `sql_column`, case-insensitive, both
+families read directly) and `intent_argmapping_key_column_candidate`
+(`graphitron_argument_path_segment` against `sql_column`, likewise).
+
+What would satisfy this: re-run the sweep with the spec's own two exclusions applied as the test,
+which is what separates the surviving three from the failing three. A relation is on the roster
+when it owns a normalization rule of its own, not when it reads one; and when that rule mediates
+a meeting between two families, not a normalization inside one. Then say what the roster's
+honest population is. Three rows is a perfectly good roster and would not weaken the item; a
+roster of six where three are wrong is worse than a roster of three, because the rendered section
+would state rules the schema does not contain. If the re-sweep turns up further crossings, all
+the better, but the count is not the thing to protect. Where a row's spelled or census side is
+reachable only transitively, note it: the follow-up's gate at direct-read grain will not confirm
+it, and that belongs in deliverable 6 beside the materialize resolution already recorded there.
+
+**Not findings, recorded because they were checked.**
+
+- All thirty-six relations named across the headline rosters and the bridge table exist in the
+  DDL under exactly those names, so "Every named relation exists in the DDL today" holds.
+- Every family has a headline roster and the ordinals are dense by list order, so the gate the
+  spec proposes passes on the drafted population. `javac_`, `walk_` and `build_warning_` really
+  are single-relation families, so "list their one resident" is accurate for those three;
+  `rejection_` has two relations and lists one, which reads as ordinary curation rather than the
+  sentence being wrong.
+- The introductions honour the discriminator: none of the thirteen names a relation or another
+  family, including `intent_`, which describes three other families by role without naming them.
+  This is the one part of the population no gate can check, so it is worth saying that it holds.
+- The two normalizations pushed off the roster (the SDL type-expression peel, the node-metadata
+  column match) are correctly excluded on the distinct-family rule. That rule was applied
+  carefully there, which is what makes its non-application to `intent_class_member_slot` look
+  like an oversight rather than a disagreement.
