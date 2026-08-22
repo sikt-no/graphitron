@@ -93,7 +93,7 @@ agreeing, so a schema holding only facts is portable as a side effect. That matt
 docs tooling ever grows a second, non-JVM reader of this file, but this item does not
 depend on that happening and should not be reviewed as if it did.
 
-## Deliverable 1: the four rendered columns become rows
+## Deliverable 1: the five serialized columns become rows
 
 Every site is named by symbol; re-measure line positions at pickup.
 
@@ -122,14 +122,31 @@ also what makes the facet dimension answer the question an author actually asks.
 a dimension from the MCP facet surface is a consumer-visible change and needs a line in the
 item's notes when it lands.
 
+**`diagnostic.directory`** (`REGEXP_REPLACE(file, '/[^/]*$', '')`, in all seven arms). This
+one carries no aggregate and so trips no denylist, which is exactly why it belongs here: a
+path is a sequence of segments, and the truncation keeps one of them and discards the rest.
+`DIRECTORY` sits in `LOCATION_DERIVED_DIMENSIONS`, so it is grouped and filtered on, and it
+answers precisely one question: immediate parent. Not module root, not `src/main` versus
+`src/test`, not any other prefix. Those are questions the segments answer and the
+truncation cannot, and choosing among them is the query's business. Drop the column; the row
+already carries `file`, and a consumer grouping by directory does its own truncation at the
+depth its question needs.
+
+Distinguish this from `diagnostic.coordinate` (`type_name || '.' || field_name`), which is
+also a composite, also a dimension, and **stays**. Its atoms ride along on the same row and
+`TYPE` is its own dimension, so every question the parts answer is still answerable. That
+pair is the item's own control: the rule is not "no composites", it is "no collection you
+cannot get back out".
+
 ### The design fork: where the conflict message gets rendered
 
-`diagnostic` unions six arms. Five of them (`rejection_validation_error`, `lint_finding`,
-`build_warning_no_rule`, `graphql_syntax_error`, `graphql_schema_error`) read `message`
-from a captured table column: the generator or the parser produced that text and the store
-recorded it, which makes the message a fact about what was emitted. Only the
-`intent_authored_claim_conflict` arm manufactures its message inside SQL. So the arm is the
-odd one out among its own siblings, and the target shape is for it to look like them.
+`diagnostic` unions seven arms. Six of them (`rejection_validation_error`, `lint_finding`,
+`build_warning_no_rule`, `graphql_syntax_error`, `graphql_schema_error`,
+`javac_diagnostic`) read `message` from a captured table column: the generator, the parser
+or javac produced that text and the store recorded it, which makes the message a fact about
+what was emitted. Only the `intent_authored_claim_conflict` arm manufactures its message
+inside SQL. So the arm is the odd one out among its own siblings, and the target shape is
+for it to look like them.
 
 Two arms are available and the reviewer should press on which:
 
@@ -175,6 +192,15 @@ columns (`UPPER(...)` is a scalar function on one column of the same row),
 `COUNT`/`MAX`/`MIN`/`SUM` aggregates including `intent_type_backing_conflict.candidates`.
 All are functions of the row's own key and atomic to the engine.
 
+**A disclosed gap, and the item should not pretend otherwise.** The gate catches aggregates
+and nothing else, so it would not have caught `diagnostic.directory`: a row-local
+`REGEXP_REPLACE` that truncates a path is a collection in a scalar with no aggregate
+anywhere. Deliverable 1 removes that column; nothing stops the next one. Detecting
+"serialization" in a scalar expression is not mechanizable, which is why R804's prose is the
+real enforcer for that half and the denylist covers only the half that is. State the gap in
+the gate's own javadoc rather than leaving a reader to infer that a green gate means a clean
+schema.
+
 Placement: beside the existing schema gates in graphitron-model
 (`CommentRenderabilityGateTest`, `MaterializeRegistryGateTest`) rather than in roadmap-tool,
 whose `check-` steps are for prose and doc drift. The gate reads the DDL text, not the
@@ -206,6 +232,9 @@ restate the rule; the gate's message and that page are the same rule with two au
   involving it. That case returns nothing today (`isNotDistinctFrom` against the joined
   set), so write it as a failing test first and let the conversion turn it green: it is the
   one place the modelling defect is visible as a wrong answer rather than as friction.
+* A `DiagnosticFacets` test that grouping by directory at a depth other than immediate
+  parent is expressible. `DiagnosticFactsTest` currently asserts `getDirectory()` directly,
+  so that assertion moves to whatever the consumer computes.
 * `AuthoredClaimConflictsTest` keeps asserting the verdict and coordinate set. Its
   hand-written message expectations follow the render to wherever Deliverable 1's fork puts
   it, and stay hand-written there.
@@ -237,9 +266,20 @@ Two corrections owed back to R804, neither of which changes its argument:
   of the "never a dimension" line `class_names`'s own comment draws. A rule the schema
   states about itself and a consumer already breaks is a better exhibit than one nobody has
   tested.
+* Its sentence scoping the `diagnostic` exemption is load-bearing and this item now proves
+  it: `diagnostic.directory` fails the discipline on a relation the exemption covers, and
+  `diagnostic.coordinate` passes on the same relation. R804 should cite that pair rather
+  than assert the scoping abstractly, since two columns of one exempted relation landing on
+  opposite sides is the clearest possible demonstration that the exemption is about a
+  relation's name and population and not about what its columns may hold.
 
 ## Notes
 
+* R807 is the sibling for the `diagnostic` view's unbound `Rejection.*` string literals,
+  found in the same pass over that view. Kept separate because it is an enforcer problem
+  rather than a collection-in-a-scalar one, but sequenced behind this item: if the message
+  fork mints post-capture from Java, the variant mints with it and R807 largely dissolves
+  into this item's implementation. Say so on R807 when the fork resolves.
 * Not in scope: the `collate` column name and the view column-alias lists, both of which
   are portability findings from the same investigation. They are a separate item if the
   second reader is ever built, and folding them in here would confuse a modelling cleanup
@@ -252,6 +292,9 @@ Two corrections owed back to R804, neither of which changes its argument:
 
 * `directives` as a column name on `intent_authored_claim_conflict` and `diagnostic`
 * `class_names` as a column name on `intent_type_backing_conflict`
+* `directory` as a column name on `diagnostic`, and "renderings of the stored pair and the
+  stored file path", the phrase the view's comment uses to cover `coordinate` and
+  `directory` together. `coordinate` survives and needs its own sentence saying why.
 * "the canonical claim render for grouping", the phrase
   `intent_authored_claim_conflict.directives`'s comment uses for itself, and the "canonical
   render" / "cannot split a group on row order" argument it shares with `class_names` and
