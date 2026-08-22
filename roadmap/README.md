@@ -35,6 +35,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R797` | Pull diagnostics, so a client can ask, cancel, and be told to ask again | Spec | 2026-08-21 | [plan](pull-diagnostics-so-a-client-can-ask-and-cancel.md) |
+| `R803` | Query relations carry facts, not rendered strings | Spec | 2026-08-22 | [plan](query-relations-carry-facts-not-renders.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R724` | The stated key-column match spends its ambiguity silently; make it state its arity | Ready | 2026-08-19 | [plan](stated-key-column-match-states-its-arity.md) |
@@ -562,6 +563,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R528` [**Carry backed-vs-unbacked by permit identity across GraphitronType and ReturnTypeRef**](graphitron-type-permit-identity-splits.md) — Backlog, cleanup
 - `R702` [**Catalog-vs-catalog name comparisons in Java fold case as a hedge; make them exact**](exact-catalog-name-comparisons.md) — Backlog, cleanup
 - `R359` [**Guard ColumnRef.sqlName() comparisons against case-sensitivity drift**](column-sqlname-comparison-case-guard.md) — Backlog, cleanup
+- `R803` [**Query relations carry facts, not rendered strings**](query-relations-carry-facts-not-renders.md) — Spec, cleanup
 - `R533` [**Single-source the null-source-guarded data-channel predicate as a classifier-assigned fact**](localcontext-guard-predicate-single-source.md) — Backlog, architecture
 - `R724` [**The stated key-column match spends its ambiguity silently; make it state its arity**](stated-key-column-match-states-its-arity.md) — Ready, cleanup
 - `R729` [**findColumn picks silently where two columns answer one spelled name**](findcolumn-picks-silently-on-a-colliding-table.md) — Backlog, cleanup
