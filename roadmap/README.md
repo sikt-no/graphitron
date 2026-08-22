@@ -15,8 +15,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
+| `R795` | No language-server surface blocks the editor | Ready | 2026-08-22 <sub>created 2026-08-21</sub> | [plan](lsp-surface-latency-budgets.md) |
 | `R784` | Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it | Ready | 2026-08-21 | [plan](straddling-reference-update-partition.md) |
-| `R795` | No language-server surface blocks the editor | In Review | 2026-08-21 | [plan](lsp-surface-latency-budgets.md) |
 | `R793` | The diagnostics drain overruns its 30 s session budget on a real workspace | In Review | 2026-08-21 | [plan](diagnostics-drain-overruns-its-session-budget.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
@@ -505,7 +505,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R799` [**Inlay hints do not finish inside the interactive budget on a real schema**](inlay-read-overruns-the-interactive-budget.md) — Backlog, bug
 - `R626` [**LSP argMapping completions and diagnostics at the @routine coordinate**](lsp-argmapping-routine-coordinate.md) — Backlog, architecture
-- `R795` [**No language-server surface blocks the editor**](lsp-surface-latency-budgets.md) — In Review, bug
+- `R795` [**No language-server surface blocks the editor**](lsp-surface-latency-budgets.md) — Ready, bug
 - `R793` [**The diagnostics drain overruns its 30 s session budget on a real workspace**](diagnostics-drain-overruns-its-session-budget.md) — In Review, bug
 - `R798` [**A build swap still spends its session budget loading the directive vocabulary on the watcher thread**](vocabulary-load-blocks-the-build-watcher-thread.md) — Backlog, bug
 - `R794` [**LSP connection teardown logs SEVERE stack traces for stream-closed writes**](lsp-teardown-stream-closed-write-noise.md) — Spec, architecture

@@ -1,13 +1,13 @@
 ---
 id: R795
 title: "No language-server surface blocks the editor"
-status: In Review
+status: Ready
 bucket: bug
 priority: 2
 theme: lsp
 depends-on: []
 created: 2026-08-21
-last-updated: 2026-08-21
+last-updated: 2026-08-22
 ---
 
 # No language-server surface blocks the editor
@@ -577,3 +577,82 @@ wants a number. And an `inlayHint` request carries a range rather than a
 document, so "the whole-file request" is a ceiling rather than what an editor
 sends; measuring the ceiling is the conservative direction for a should-we-split
 decision, so the framing is loose in a way that does not mislead.
+
+### Round 1, In Review → Done, rework requested (session_01E8fSaAUXqPaqyLagPFEs82, 2026-08-22)
+
+One finding, and it is the only thing standing between this and Done. The code is
+right and the evidence is real; the document that teaches the mechanism the item
+changed still teaches the mechanism it replaced.
+
+**What was verified, so the next pass does not re-derive it.** Question 1 is
+answered. The arm rewrite is faithful column for column: the flat form's
+`value2..value6` and the nested form's `value1..value5` land on the same
+`CatalogTable` and `TableRow` components, the inner join's drop of a backing class
+the census does not name is reproduced by an empty nested multiset flat-mapped to
+nothing, and `CENSUS_ORDER` restores exactly the `ORDER BY TABLE_SCHEMA,
+TABLE_NAME` the flat form stated, with no tie to break since one census row names
+one record class. Both consumers of the arm (`Rows.scope`, `Rows.tables`) read it
+through that order and are unaffected. Step 3 shipped as step 3 was approved: four
+doors, `inlayHint` alone on `annotating`, hover, definition, completion and code
+action still on `answering`, the drain still on `answeringAll`, and both budget
+constants unchanged at 3000 and 30000.
+
+Question 2 was checked by mutation rather than taken on the commit message's word.
+With `redirectArm` reverted to the flat join, `theCensusLookupDoesNotTrackTheSchemasSize`
+fails at the one-type schema and `everySurfaceStaysUnderItsCeiling` fails on the
+type-declaration ceiling; both pass with the arm as delivered. So the enforcer
+does catch the defect it was written for, and it catches it at the smaller of the
+two schema sizes, which is what makes the fixture's size defensible. The door
+split has an enforcer too, `eachDoorReachesTheReaderItsGrainStates`, added after
+the step 3 diff and not mentioned in the body above. `mvn install -Plocal-db`
+passes on the delivered tree, and the four affected suites still pass after
+rebasing onto R793's `meta_materialize` registrations, which was worth checking
+because that change moves scan counts the ceilings measure.
+
+**Finding 1 (question 2). `docs/architecture/how-to/dev-loop-internals.adoc`
+still describes the two-reader shape, and states as its splitting principle the
+one this item reversed.** The paragraph beginning "The session mints three store
+readers, not one" is wrong three ways after this item. The session mints four, not
+three, and three of them go to the LSP rather than two. Its enumeration of the
+doors names `answering`, `answeringAll` and `readingSessionGraph` and omits
+`annotating`, so a contributor choosing a door for a new surface cannot learn from
+this page that an annotation door exists. And it gives the reason for the split as
+"per latency contract rather than per consumer", which is the argument step 3 set
+out to replace: the annotation reader carries the interactive budget, so its
+latency contract is identical, and a contributor applying the documented principle
+would conclude that no third reader was warranted and route a new
+document-scoped surface onto the cursor's reader. That is the head-of-line
+blocking this item removed, reintroduced by following the documentation.
+
+This is not a phrasing point. It is the completeness surface question 2 names
+alongside the tests, on the item's own headline mechanism, and it matters more
+once this file is deleted at Done: `StoreAccess`'s javadoc is excellent and will
+carry the reasoning for anyone editing that class, but the dev-loop how-to is
+where the reader topology is taught to somebody who is not editing it yet. The
+precedent is one commit before this item's implementation: `1dbdd38`, R796's
+rework round 1, made the same file's stale reading a blocking finding for an
+analogous LSP change.
+
+What would satisfy it: the paragraph updated to four readers, three of them the
+LSP's, the four doors enumerated with `annotating` among them, and the splitting
+principle restated as the one that shipped, which is who is waiting rather than
+what budget they wait under. Three sentences, and the reasoning to draw on is
+already written in `StoreAccess`'s class javadoc.
+
+**Non-blocking, no reply needed.** The step sections were not collapsed to
+one-line "shipped at `<sha>`" notes as the Publishing convention suggests, and
+carry no SHAs at all; that convention also sanctions capturing learnings, the
+learnings here are substantial, and they have a durable home in the javadoc of
+`redirectArm`, `StoreAccess` and `SurfaceScanCountTest`, so nothing is lost when
+the file goes. Step 4's claim that "no ceiling anybody would defend catches that"
+is a little stronger than the delivery: the type-declaration ceiling of 260 does
+catch the reverted arm, the 121-extra-scans arithmetic having been taken against
+the member read's 808. Nothing pins that `GraphitronTextDocumentService.inlayHint`
+routes through `workspace.annotating` rather than `workspace.answering`; the door
+test pins that the door reaches its own reader, so a one-line edit at the call
+site would put inlay back in front of the cursor with every test green, and
+`TextDocumentServiceTest` already drives the service if that is worth closing.
+And two sentences left over from the two-reader era read oddly now rather than
+wrongly: `StoreAccess`'s "Every answer goes through {@link #answering}", which
+`annotating` no longer does, and the two places that say "the head-of-line
+blocking two readers exist to remove".
