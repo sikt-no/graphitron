@@ -16,7 +16,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R784` | Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it | Ready | 2026-08-21 | [plan](straddling-reference-update-partition.md) |
-| `R793` | The diagnostics drain overruns its 30 s session budget on a real workspace | In Review | 2026-08-22 <sub>created 2026-08-21</sub> | [plan](diagnostics-drain-overruns-its-session-budget.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
 | `R705` | A condition-join hop in a reference filter path is rejected, though the emitter it needs already ships | Spec | 2026-08-21 <sub>created 2026-08-18</sub> | [plan](condition-join-hops-in-reference-filter-paths.md) |
@@ -509,7 +508,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### lsp
 
 - `R626` [**LSP argMapping completions and diagnostics at the @routine coordinate**](lsp-argmapping-routine-coordinate.md) — Backlog, architecture
-- `R793` [**The diagnostics drain overruns its 30 s session budget on a real workspace**](diagnostics-drain-overruns-its-session-budget.md) — In Review, bug
 - `R798` [**A build swap still spends its session budget loading the directive vocabulary on the watcher thread**](vocabulary-load-blocks-the-build-watcher-thread.md) — Backlog, bug
 - `R430` [**LSP publishes graphitron:dev compile diagnostics against generated-file URIs**](lsp-compile-diagnostics-publish.md) — Backlog, feature
 - `R578` [**Raise the LSP unknown-input-field diagnostic to Error severity**](unknown-input-field-diagnostic-severity.md) — Backlog, cleanup

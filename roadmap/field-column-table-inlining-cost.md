@@ -54,7 +54,7 @@ into that item, whose subject is the methodology.
 
 ## A live reader has since turned up, which moves the premise above
 
-Added by the session that filed `roadmap/diagnostics-drain-overruns-its-session-budget.md`. The claim
+Added by the session that filed the diagnostics-drain budget-overrun item, since shipped. The claim
 that nothing reads this relation in a way that pays the cost today is no longer safe. The language
 server's diagnostics drain reads it, in the one statement `DiagnosticFacts` issues per graph, and on a
 real dev session that statement overran its 30 s budget and was aborted, so a developer's diagnostics
@@ -64,15 +64,15 @@ it coming.
 
 What it does not establish is that this relation is the expensive term in that statement. The drain
 reads it filtered by graph and by explicit type-field pairs, unlike the 151-second unfiltered
-measurement, and the statement also carries the census-side join shape that
-`roadmap/lsp-surface-latency-budgets.md` measured at about 1.1 s per evaluation on this store.
+measurement, and the statement also carries the census-side join shape that the language-server
+latency item, since shipped, measured at about 1.1 s per evaluation on this store.
 Attribution across that statement's roughly twenty subqueries belongs to the drain's own item; what
 belongs here is that the reader now exists and the cost has somewhere to land.
 
 ## The drain item has since done the attribution, and most of this item's premise moved
 
-Added by the session that implemented `roadmap/diagnostics-drain-overruns-its-session-budget.md`,
-whose write-up carries the measurements. Confirmed here: the drain's read of this relation paid the
+Added by the session that implemented the diagnostics-drain budget-overrun item, whose write-up
+carried the measurements and whose changelog entry now carries the summary. Confirmed here: the drain's read of this relation paid the
 full unfiltered evaluation, 131 s on a comparable box, because the filters never prune past the
 ROW_NUMBER. The 4148-style repeated scans this item said to explain first were attributed:
 `sql_constraint_column` under the reference-step machinery, re-entered once per naming and once per

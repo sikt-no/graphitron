@@ -35,6 +35,6 @@ spent here is attributed to no span at all: a contributor investigating a slow b
 to have gone. Whatever the remedy for the blocking is, the span coverage is worth closing on its own,
 because a trace that accounts for none of a cost is worse than one that names it.
 
-Not in scope: the cost of the vocabulary read itself as a database question, which is the shape
-`roadmap/diagnostics-drain-overruns-its-session-budget.md` owns for the drain's statement and which the
+Not in scope: the cost of the vocabulary read itself as a database question, which is the shape the
+diagnostics-drain budget-overrun item, since shipped, took for the drain's statement and which the
 `store-performance` skill's method covers if a measurement here turns out to want it.

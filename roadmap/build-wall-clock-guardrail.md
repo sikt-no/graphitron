@@ -171,7 +171,7 @@ sort is in place.
 
 ### The third registration has since shipped elsewhere, and this slice needs re-scoping
 
-Added by the In Review gate on `roadmap/diagnostics-drain-overruns-its-session-budget.md`, which
+Added by the In Review gate on the diagnostics-drain budget-overrun item, since shipped, which
 landed `intent_resolved_type_binding` as a `meta_materialize` registration at `272ef13` for the
 language server's diagnostics drain, together with a second registration of
 `intent_field_column_scope`. So the slice above, the one this item measured as worth more than
