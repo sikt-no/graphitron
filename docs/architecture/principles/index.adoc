@@ -1,0 +1,11 @@
+= Architecture: Principles
+:description: Where the Graphitron project's principles live, one destination per register.
+:!toc:
+
+What are this project's principles? Start here. Three registers, three pages:
+
+* xref:development-principles.adoc[Graphitron Development Principles]: the technical axioms the generator's code is held to, each with its enforcement named.
+* xref:../../graphitron-principles.adoc[Graphitron Principles]: the strategic principles behind the product. They stay at the docs root rather than moving here, by register and audience: the user manual, the FAQ, the top-level README, the docs landing page, `quick-start` and the site footer all link them there.
+* xref:../explanation/fact-model.adoc[The fact model]: the store's modeling discipline, every rule with its enforcer named. It stays in `explanation/` with the reference web that cites it.
+
+xref:../index.adoc[← Architecture]

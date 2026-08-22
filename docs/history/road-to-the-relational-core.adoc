@@ -458,7 +458,7 @@ not chosen in advance.
 
 == Where the present is described
 
-* xref:../architecture/explanation/development-principles.adoc[Graphitron Development Principles]
+* xref:../architecture/principles/development-principles.adoc[Graphitron Development Principles]
   for the axioms in force.
 * xref:../architecture/explanation/pipeline-overview.adoc[Pipeline overview] for the stages as
   they run today.

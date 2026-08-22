@@ -17,7 +17,7 @@ last-updated: 2026-08-14
 source fragments against it, roughly 33 `contains` / `doesNotContain` calls across its arms
 (`.contains("rows = filmByIdInputRows(env, filmTable)")`,
 `.contains(".values(rows).as(\"filmByIdInput\", \"idx\", \"film_id\")")`, and so on).
-`docs/architecture/explanation/development-principles.adoc` bans exactly this: "Code-string
+`docs/architecture/principles/development-principles.adoc` bans exactly this: "Code-string
 assertions on generated method bodies are banned at every tier: they test implementation, not
 behaviour, and break on every refactor", with the compile and execution tiers named as the
 replacement. `docs/architecture/how-to/testing.adoc` repeats the ban for the neighbouring

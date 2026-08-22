@@ -44,7 +44,7 @@ Files changed:
 
 # Read first (these define what "good" looks like here)
 
-- docs/architecture/explanation/development-principles.adoc  (technical principles)
+- docs/architecture/principles/development-principles.adoc  (technical principles)
 - docs/graphitron-principles.adoc                         (strategic principles)
 - docs/architecture/explanation/fact-model.adoc    (the fact-store modeling discipline)
 - docs/architecture/explanation/pipeline-overview.adoc  (the shipped pipeline; what is transitional)

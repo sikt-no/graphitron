@@ -20,7 +20,7 @@ it concentrates: `contendedSingularShapes_emitTwoDistinctHelpers_andEachFetcherR
 `identicalShapesAcrossDifferentInputTypes_collapseToOneBareHelper` each assert on
 `createFilmRecordN(env.getArgument(` appearing (or not appearing) in a fetcher body, and one arm
 counts how many rendered helper bodies contain the string `RELEASE_YEAR`.
-`docs/architecture/explanation/development-principles.adoc` bans code-string assertions on generated
+`docs/architecture/principles/development-principles.adoc` bans code-string assertions on generated
 method bodies "at every tier", and `docs/architecture/how-to/testing.adoc` repeats the ban for the
 pipeline tier this file sits in.
 

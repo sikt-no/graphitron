@@ -14,7 +14,7 @@ model a normalized fact base: each fact captured once at the boundary, everythin
 build, each such view is a materialized view, never a copy that can drift from its source ; that
 copy is *the drift smell*, and it recurs at every scale below. Strategic principles live at
 xref:../../graphitron-principles.adoc[graphitron-principles.md]; the typed-rejection narrative at
-xref:typed-rejection.adoc[Typed rejection]; additive-then-cutover change discipline in
+xref:../explanation/typed-rejection.adoc[Typed rejection]; additive-then-cutover change discipline in
 `roadmap/workflow.adoc`.
 
 '''
@@ -27,7 +27,7 @@ relations ; provenance kept, not overwritten ; and the derived strata carry each
 over that base, so the resolved answer never replaces the authored fact beneath it. During the
 strangler window the classification walk (`GraphitronSchemaBuilder`) is the same boundary in
 transitional form. Every consumer receives "what to do", never "what to interpret"; the modeling
-discipline behind the store is xref:fact-model.adoc[The fact model].
+discipline behind the store is xref:../explanation/fact-model.adoc[The fact model].
 
 Signs a model type needs more pre-resolution:
 
@@ -105,7 +105,7 @@ or two passes sharing a hardcoded skip-list, is the tell.
 
 Every builder-step lift returns a sealed `Resolved`; rejection is a typed variant with a stable
 LSP code, never a string or out-param. The full narrative lives at
-xref:typed-rejection.adoc[Typed rejection]. In fact-base terms, rejections are facts too: located
+xref:../explanation/typed-rejection.adoc[Typed rejection]. In fact-base terms, rejections are facts too: located
 violations asserted once and rendered into views ; the build log, the LSP ; never prose composed
 at the detection site.
 
@@ -122,11 +122,11 @@ and natural key, carry each axis as its own slot or sealed sub-interface, and ei
 cross-axis views at the read site or materialize them from the base. The drift smell at field
 scale is the spliced identifier: two axes fused into one permit name, so the cross-product falls to
 hand-maintenance rather than derivation. The model's durable statement is
-xref:fact-model.adoc[The fact model].
+xref:../explanation/fact-model.adoc[The fact model].
 
 The DataLoader-backed source side is the worked example: key shape, body input contract, row
 count, and loader registration are independent axes, and each dispatch site reads off whichever
-axis it forks on (xref:dispatch-axes.adoc[Dispatch axes] narrates the split). The smell to watch
+axis it forks on (xref:../explanation/dispatch-axes.adoc[Dispatch axes] narrates the split). The smell to watch
 for: a single shared accessor whose meaning depends on the variant.
 
 *Enforced by:* the compiler where cross-axis invariants live in compact constructors; review at
@@ -167,7 +167,7 @@ named thing didn't resolve" to a cross-product of missing/inconsistent-slot erro
 views over the one base; none owns a private model, and each view's coverage guarantee is an
 exhaustive gate over its own sealed vocabulary (`GeneratorCoverageTest`,
 `TriggerDispatchMatrixTest`): a new variant breaks the build until every view covers it. The drift smell at model scale is a consumer-side shadow taxonomy; the re-sourcing
-invariant is xref:fact-model.adoc[The fact model].
+invariant is xref:../explanation/fact-model.adoc[The fact model].
 
 *Enforced by:* the coverage gate at each seam.
 

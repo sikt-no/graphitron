@@ -13,7 +13,7 @@ last-updated: 2026-07-28
 # Retire the generated-body string-scan helpers in TypeSpecAssertions
 
 `TypeSpecAssertions` exists to replace the `assertThat(method.code().toString()).contains(...)`
-pattern that `docs/architecture/explanation/development-principles.adoc` bans, but four of its
+pattern that `docs/architecture/principles/development-principles.adoc` bans, but four of its
 helpers implement that pattern internally: `hasFieldsArm`, `appendsRequiredColumn`,
 `armGuardsArgumentConsistency`, and `serviceChildKeyExtractionIsUnconditional` all scan a rendered
 method body for a substring. The file's own javadoc argues this is acceptable because the fragility

@@ -133,7 +133,7 @@ short non-blocking section, or goes unsaid.
 # Materials
 
 - {{spec-path}}: the plan under review.
-- docs/architecture/explanation/development-principles.adoc and
+- docs/architecture/principles/development-principles.adoc and
   docs/graphitron-principles.adoc: where "good" is defined here.
 - docs/architecture/index.adoc: orientation when the spec's domain is
   unfamiliar.
@@ -235,7 +235,7 @@ else you noticed goes in a short non-blocking section, or goes unsaid.
   That is the deliverable, not the path taken to it. The commit list under
   Bookkeeping is provenance if you want it, but reading forward through it
   spends attention on states a later commit already replaced.
-- docs/architecture/explanation/development-principles.adoc and
+- docs/architecture/principles/development-principles.adoc and
   docs/graphitron-principles.adoc: where "good" is defined here.
 - roadmap/workflow.adoc: this gate carries obligations of its own; its
   "User-facing-doc check" and "Retirement sweep" paragraphs apply before

@@ -44,7 +44,7 @@ indicates room to grow):
   states what file it emits and the input model shape.
 - `GraphitronSchemaValidator`: invariants enforced; how it composes with
   the classifier (cross-link to "Rejections: validator mirrors classifier
-  invariants" in `docs/architecture/explanation/development-principles.adoc`).
+  invariants" in `docs/architecture/principles/development-principles.adoc`).
 
 ### 2. `package-info.java` files
 

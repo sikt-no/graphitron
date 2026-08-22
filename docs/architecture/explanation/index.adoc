@@ -2,9 +2,8 @@
 :description: Design rationale for the Graphitron generator.
 :!toc:
 
-Why the generator is shaped the way it is.
+Why the generator is shaped the way it is. The development axioms these pages lean on live in the xref:../principles/index.adoc[Principles] section.
 
-* xref:development-principles.adoc[Graphitron Development Principles]: the six axioms, their corollaries, and the named enforcement behind each.
 * xref:pipeline-overview.adoc[Pipeline overview]: how a `.graphqls` schema flows from parse through capture, the fact store's derived strata, planning and the render fold to consumer compile.
 * xref:fact-model.adoc[The fact model]: the modeling discipline behind the fact store; natural keys, provenance as separate relations, derived reads as views, the closed command graph, every rule with its enforcer named.
 * xref:naming-the-row.adoc[Naming the row]: a gentle introduction to the store's naming habit, with examples, a pantry metaphor, and the honest costs; start here if the fact model page is your first contact with the store.

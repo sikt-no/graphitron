@@ -40,7 +40,7 @@ import java.util.Set;
  *
  * <p>Part of the rewrite's reflection roster ({@code ServiceCatalog}, {@code FieldBuilder}'s
  * payload-errors path, {@code SourceRowDirectiveResolver}); see
- * {@code docs/architecture/explanation/development-principles.adoc} ("The parse boundary is a
+ * {@code docs/architecture/principles/development-principles.adoc} ("The parse boundary is a
  * containment invariant") for the boundary rule.
  */
 public final class ClassAccessorResolver {

@@ -26,7 +26,7 @@ unreachable *because* the validator rejects the combination first; nothing fails
 rejection stops firing, and the failure mode is a generator `IllegalStateException` instead of
 a located build error. Second, `isInlineArmSwitchedDataField` excludes `DefaultRead` for the
 same reason, also unpinned. Per "Every invariant has an enforcer" in
-`docs/architecture/explanation/development-principles.adoc`, a claimed pin with no named test
+`docs/architecture/principles/development-principles.adoc`, a claimed pin with no named test
 is the review-only label the axiom warns about. Reachability is worth settling as part of the
 item: `DefaultRead` arises for `@error`-type parents (which carry no `WrapperArm` errors field,
 so not that route) and for class-backed parents whose backing class did not load, so the live

@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class DocSizeBudgetTest {
 
-    private static final String DOCS_PATH = "docs/architecture/explanation/development-principles.adoc";
+    private static final String DOCS_PATH = "docs/architecture/principles/development-principles.adoc";
 
     private static final int WORD_BUDGET = 3_500;
 

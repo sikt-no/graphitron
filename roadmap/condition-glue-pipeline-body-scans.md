@@ -15,7 +15,7 @@ last-updated: 2026-07-30
 `ConditionGluePipelineTest.twoQueryFields_sharingNodeIdType_emitOneSharedHelper` asserts
 `assertThat(body).contains("decodeBarRowsOrThrow(")` against `method.code().toString()` for both
 condition methods, the code-string-on-generated-body pattern
-`docs/architecture/explanation/development-principles.adoc` bans at every tier. The lines predate
+`docs/architecture/principles/development-principles.adoc` bans at every tier. The lines predate
 the condition-command reshape (they rode the file's rename from `QueryConditionsPipelineTest`) and
 carry unique signal the structural assertions beside them do not: `hasSize(1)` on the helper set
 proves the registry deduplicated, but only the body scan proves *both* methods reference the shared

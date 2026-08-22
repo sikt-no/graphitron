@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Asserts on the classified {@link BodyParam#nonNull()} slot, not on the rendered method
  * body (code-string assertions on emitted bodies are banned at every tier per
- * {@code docs/architecture/explanation/development-principles.adoc}). Execution-tier coverage of
+ * {@code docs/architecture/principles/development-principles.adoc}). Execution-tier coverage of
  * the runtime {@code .in(null)} rendering lives in the Sakila test
  * {@code GraphQLQueryTest.filmsByEffectiveNullability_omittedFilter_returnsUnfilteredBaseline}.
  */

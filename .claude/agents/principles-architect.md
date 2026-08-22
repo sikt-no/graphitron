@@ -25,7 +25,7 @@ You are not a reviewer. The Spec → Ready and In Review → Done gates are hand
 These are the principle sources. Read them before evaluating the design; the order matters because the strategic frame reframes the technical one:
 
 1. `docs/graphitron-principles.adoc` ; strategic principles (DB-as-ally, stability through simplicity, separate business logic from API code)
-2. `docs/architecture/explanation/development-principles.adoc` ; technical principles (six axioms with corollaries and named enforcement: decide once at capture and carry decision plus provenance as facts, orthogonal axes, one model many views, boundaries decode and encode, every invariant has an enforcer, generated code is a consumer artifact)
+2. `docs/architecture/principles/development-principles.adoc` ; technical principles (six axioms with corollaries and named enforcement: decide once at capture and carry decision plus provenance as facts, orthogonal axes, one model many views, boundaries decode and encode, every invariant has an enforcer, generated code is a consumer artifact)
 3. `docs/architecture/explanation/fact-model.adoc` ; the fact-store modeling discipline (natural keys, provenance shapes, derived reads as views, the re-sourcing invariant, the closed command graph), each rule with its enforcer named
 4. `docs/architecture/explanation/pipeline-overview.adoc` ; the shipped pipeline, stage by stage, with the transitional classification walk named as transitional
 5. `docs/architecture/index.adoc` ; orientation

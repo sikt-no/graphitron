@@ -38,5 +38,5 @@ Likely starting points based on the R205 investigation:
 
 - `docs/argument-resolution.adoc` § "Truth table" — the pattern that bit us; the rest of this doc may have analogues.
 - `docs/typed-rejection.adoc` § "Sealed `Resolved` across the resolver siblings" — the thirteen sibling resolvers; spot-check each producer/consumer pair for "the rejection arm is read by every consumer."
-- `docs/architecture/explanation/development-principles.adoc` § "Builder-step results are sealed, not strings or out-params" — the meta-principle; audit for `List<String> errors` out-params co-existing with sealed result types (the violation R205 closed at `InputFieldResolver.resolve`).
+- `docs/architecture/principles/development-principles.adoc` § "Builder-step results are sealed, not strings or out-params" — the meta-principle; audit for `List<String> errors` out-params co-existing with sealed result types (the violation R205 closed at `InputFieldResolver.resolve`).
 - Per-resolver javadocs on `*DirectiveResolver.Resolved` declarations.

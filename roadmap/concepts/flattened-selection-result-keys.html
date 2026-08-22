@@ -122,7 +122,7 @@ nodes {          films(first: 10) { title } }</code></pre>
   </div>
 
   <h2>Where the fix lives</h2>
-  <p>One defect site covers every route in: plain connections and polymorphic connections both funnel into the same generated <code>$fields</code> loop (the polymorphic path goes through a <code>restrictTo</code> view that already preserves full occurrence lists). The merge and the divergence guard are schema-independent, so they land on a shared util-singleton scaffold rather than being copied into every generated type class; the guard's applicability derives from the same structural fact that makes an arm read arguments off the selection (<code>ArgumentValueSource.FromSelectedField</code>), so future arm variants inherit it instead of silently reverting to first-occurrence picking. The reasoning behind both choices is the <a href="../../docs/architecture/explanation/development-principles.adoc">development principles</a> (single-sourced facts, every invariant has an enforcer); the fail-loud stance is the same instinct as <a href="../../docs/architecture/explanation/typed-rejection.adoc">typed rejection</a>, applied at the only tier that can see a query.</p>
+  <p>One defect site covers every route in: plain connections and polymorphic connections both funnel into the same generated <code>$fields</code> loop (the polymorphic path goes through a <code>restrictTo</code> view that already preserves full occurrence lists). The merge and the divergence guard are schema-independent, so they land on a shared util-singleton scaffold rather than being copied into every generated type class; the guard's applicability derives from the same structural fact that makes an arm read arguments off the selection (<code>ArgumentValueSource.FromSelectedField</code>), so future arm variants inherit it instead of silently reverting to first-occurrence picking. The reasoning behind both choices is the <a href="../../docs/architecture/principles/development-principles.adoc">development principles</a> (single-sourced facts, every invariant has an enforcer); the fail-loud stance is the same instinct as <a href="../../docs/architecture/explanation/typed-rejection.adoc">typed rejection</a>, applied at the only tier that can see a query.</p>
 
   <!-- derived:status -->
   <h2>Where it stands <span style="font-weight:400;font-size:.8em;color:var(--muted)">(as of 2026-07-17)</span></h2>
@@ -139,7 +139,7 @@ nodes {          films(first: 10) { title } }</code></pre>
     <a href="../result-key-aware-reference-projection.md">R500</a> ·
     <a href="../../docs/manual/reference/directives/asConnection.adoc"><code>@asConnection</code></a> ·
     <a href="../../docs/manual/reference/directives/reference.adoc"><code>@reference</code></a> ·
-    <a href="../../docs/architecture/explanation/development-principles.adoc">Development principles</a>
+    <a href="../../docs/architecture/principles/development-principles.adoc">Development principles</a>
     <!-- derived:backlinks -->
     <p style="margin-top:1em"><strong>Referenced by.</strong> No roadmap items link this page yet.</p>
     <!-- /derived:backlinks -->

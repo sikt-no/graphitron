@@ -2,7 +2,7 @@
 
 Conventions for the code the generator emits; the reference companion to the "Generated code is a
 consumer artifact" axiom in
-xref:../explanation/development-principles.adoc[Graphitron Development Principles].
+xref:../principles/development-principles.adoc[Graphitron Development Principles].
 
 == Return types
 

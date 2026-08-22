@@ -18,7 +18,7 @@ only the tier below it, so a planner never reaches past the facts into anything 
 them, and an emitter never reaches past its command into the thing that produced it.
 
 That sentence is the functional-core / imperative-shell topology the development principles fix
-(`docs/architecture/explanation/development-principles.adoc`), applied to the emit path: the
+(`docs/architecture/principles/development-principles.adoc`), applied to the emit path: the
 planners are the core, pure derivation from typed facts to command rows, and `render` is the shell
 that encodes those rows outward. `roadmap/audits/2026-07-26-fcis-command-layer-distance.md`
 measured the tree's distance from that ideal; this item owns closing it, and closing it is what
@@ -1109,7 +1109,7 @@ read against:
 * **The doc estate is a terminal-step deliverable beside the test estate.** The deletion
   invalidates named exemplars in the principle documents: the leaf-keyed dispatch partition under
   "validator mirrors classifier invariants" in
-  `docs/architecture/explanation/development-principles.adoc` (a rewrite under that file's size
+  `docs/architecture/principles/development-principles.adoc` (a rewrite under that file's size
   budget, so a displacement decision), `GraphitronSchemaBuilder`'s top comment as the
   orientation-javadoc exemplar, the transitional-walk sentence in the fact-model page,
   `pipeline-overview.adoc`'s transitional classification stage, and `code-generation-triggers`

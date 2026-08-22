@@ -24,7 +24,7 @@ import java.util.Map;
  * one guarded rebind per level, an early {@code return null} when a level is absent or is not a
  * {@code Map}, and the leaf cast last. That shape is the point rather than an incidental style
  * choice; see the "statement form over expression tricks" rule in
- * {@code docs/architecture/explanation/development-principles.adoc}, whose stated reason is that a
+ * {@code docs/architecture/principles/development-principles.adoc}, whose stated reason is that a
  * developer cannot breakpoint a ternary arm.
  *
  * <p>The root map arrives as a <em>parameter</em> rather than being read inside the helper body.

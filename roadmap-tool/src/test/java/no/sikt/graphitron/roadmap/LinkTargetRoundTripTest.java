@@ -79,9 +79,9 @@ class LinkTargetRoundTripTest {
     @Test
     void architectureDoc_quadrantMapped() {
         assertThat(plan("[principles](../docs/development-principles.adoc)"))
-            .contains("xref:../../architecture/explanation/development-principles.adoc[principles]");
+            .contains("xref:../../architecture/principles/development-principles.adoc[principles]");
         assertThat(standalone("[principles](../docs/development-principles.adoc)"))
-            .contains("xref:../architecture/explanation/development-principles.adoc[principles]");
+            .contains("xref:../architecture/principles/development-principles.adoc[principles]");
         // .md straggler resolves the same way.
         assertThat(plan("[triggers](../docs/code-generation-triggers.md)"))
             .contains("xref:../../architecture/reference/code-generation-triggers.adoc[triggers]");

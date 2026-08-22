@@ -54,7 +54,7 @@ The `mvn install -Plocal-db` command above runs the full pipeline (build-fixture
 
 Reach for the deeper docs only when the task requires it:
 
-- Adding/structuring tests, or unsure which tier (unit vs pipeline vs compilation vs execution) to put a test in: `docs/architecture/how-to/testing.adoc`, which carries the tier names, locations, decision rubric, and per-tier commands. For *why* the tiers are shaped that way: `docs/architecture/explanation/development-principles.adoc`.
+- Adding/structuring tests, or unsure which tier (unit vs pipeline vs compilation vs execution) to put a test in: `docs/architecture/how-to/testing.adoc`, which carries the tier names, locations, decision rubric, and per-tier commands. For *why* the tiers are shaped that way: `docs/architecture/principles/development-principles.adoc`.
 - Navigating the sealed variant hierarchy, classification taxonomy, or runtime extension points: `docs/architecture/index.adoc`.
 - Diagnosing build/test failures specific to the web sandbox: `.claude/web-environment.md`.
 

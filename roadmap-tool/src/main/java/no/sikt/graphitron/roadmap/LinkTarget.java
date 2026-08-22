@@ -38,7 +38,7 @@ sealed interface LinkTarget {
 
     /**
      * Flat legacy architecture-doc reference {@code ../docs/<slug>.{md,adoc}}.
-     * {@code quadrant} is the Diataxis quadrant from {@code ARCH_QUADRANT},
+     * {@code quadrant} is the section from {@code ARCH_QUADRANT},
      * or {@code null} for a slug absent from the map (renders flat under
      * {@code architecture/}).
      */
@@ -69,12 +69,14 @@ sealed interface LinkTarget {
     /** Anything else; both emitters pass it through unchanged. */
     record Unknown(String target) implements LinkTarget {}
 
-    // Diataxis quadrant for each authored architecture page (R182). Drives the
-    // ../docs/<slug>.adoc → ../architecture/<quadrant>/<slug>.adoc mapping. A
+    // Section for each authored architecture page; not every section is a
+    // Diataxis quadrant (principles sits above the grid). Drives the
+    // ../docs/<slug>.adoc → ../architecture/<section>/<slug>.adoc mapping,
+    // and ArchQuadrantBindingTest binds every entry to the docs tree. A
     // slug absent from this map (e.g. index) renders flat under architecture/;
     // workflow.adoc is handled separately (it left the site).
     Map<String, String> ARCH_QUADRANT = Map.ofEntries(
-        Map.entry("development-principles", "explanation"),
+        Map.entry("development-principles", "principles"),
         Map.entry("emitter-conventions", "reference"),
         Map.entry("dispatch-axes", "explanation"),
         Map.entry("typed-rejection", "explanation"),

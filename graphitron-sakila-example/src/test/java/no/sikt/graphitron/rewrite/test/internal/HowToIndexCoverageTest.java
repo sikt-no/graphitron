@@ -47,6 +47,7 @@ class HowToIndexCoverageTest {
         "docs/architecture/explanation",
         "docs/architecture/reference",
         "docs/architecture/how-to",
+        "docs/architecture/principles",
         "docs/manual/how-to",
     })
     void everyPageIsListedInIndexAndEveryListedSlugResolves(String sectionDir) throws IOException {

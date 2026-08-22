@@ -263,7 +263,7 @@ gain their `ORDER BY` and the guard stays as written; say so in the commit messa
 reads as the intended change rather than as the thing the test exists to catch.
 
 Asserting on the generated `.orderBy(...)` string in a generated *method body* is banned by
-`docs/architecture/explanation/development-principles.adoc` and would prove nothing about the rows;
+`docs/architecture/principles/development-principles.adoc` and would prove nothing about the rows;
 the SQL baseline above is a rendered-statement assertion, which is a different thing and is the
 idiom that file already uses.
 
