@@ -197,8 +197,14 @@ public final class RejectionFacts {
      * {@code UpdateRowsError.NoUniqueKeyCoverage} versus the {@code DeleteRowsError} leaf), and
      * an ambiguous {@code variant} would fuse two families in the very dimension that exists to
      * split them.
+     *
+     * <p>Public because it is the one site, not merely this writer's helper: the store-native
+     * pilot's variant is minted through here too
+     * ({@link no.sikt.graphitron.rewrite.derive.AuthoredClaimRejectionRows}), so the two
+     * relations cannot spell one rejection family two ways and a rename of a leaf carries into
+     * every stored spelling by construction rather than by a reader remembering to follow it.
      */
-    private static String classSpelling(Class<?> cls) {
+    public static String classSpelling(Class<?> cls) {
         return cls.getCanonicalName().substring(cls.getPackageName().length() + 1);
     }
 

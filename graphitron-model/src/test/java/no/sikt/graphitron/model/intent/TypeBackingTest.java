@@ -34,8 +34,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * as provenance, never as a rank: a reader that wants one arm filters on it and owns having chosen,
  * and what it may not do is mistake the precedence for agreement. The contest view is where a reader
  * learns that it has to choose, counted over distinct classes so one class both arms name is one
- * answer, with the classes rendered in one canonical order so two readers grouping by the contested
- * set cannot split a group on row order.
+ * answer. The arity is all the contest view adds: the contesting classes are this relation's own
+ * rows under the same key, so a reader wanting them joins here and gets one row per class, which
+ * answers membership as well as set equality.
  *
  * <p>Where the closure's own rows come from is not asked here. The seeds are
  * {@code no.sikt.graphitron.model.intent.TypeBackingSeedTest}'s subject, and the reachability over
@@ -98,8 +99,9 @@ class TypeBackingTest {
             assertThat(backings(dsl)).containsExactlyInAnyOrder(
                 "Film=" + recordOf(GRAPH, "film") + " BOUND_TABLE",
                 "Film=app.FilmDto BACKING_CLOSURE");
-            assertThat(conflicts(dsl))
-                .containsExactly("Film=app.FilmDto, " + recordOf(GRAPH, "film") + " 2");
+            assertThat(conflicts(dsl)).containsExactly("Film 2");
+            assertThat(contested(dsl, "Film"))
+                .containsExactly("app.FilmDto", recordOf(GRAPH, "film"));
         });
     }
 
@@ -135,23 +137,23 @@ class TypeBackingTest {
     }
 
     /**
-     * A contest names its classes in one canonical order and counts each of them once. Four rows
+     * A contest counts each of its classes once, and the classes themselves join as rows. Four rows
      * answer this type and three classes do, the table's record being one the closure also reached,
-     * so the render and the arity are both over the classes rather than over the rows. The order is
-     * the classes' own and not the order anything seeded them in, nor the order the populations
-     * answered in, which is what lets two readers group by the contested set without splitting a
-     * group; the arity is what a rejection stands on.
+     * so the arity is over the classes rather than over the rows. The classes come back as rows
+     * under the contested type's key, which is what lets a reader ask whether one class is among
+     * them; the arity is what a rejection stands on.
      */
     @Test
-    void aContestNamesItsClassesInOrderAndCountsEachOnce() {
+    void aContestCountsEachClassOnceAndItsClassesJoinAsRows() {
         withSeededStore(GRAPH, dsl -> {
             seedTypeBackingClass(dsl, GRAPH, "Film", "zz.Dto");
             seedTypeBackingClass(dsl, GRAPH, "Film", "app.Alpha");
             seedTypeBackingClass(dsl, GRAPH, "Film", recordOf(GRAPH, "film"));
             bindTable(dsl, GRAPH, "Film", "film");
 
-            assertThat(conflicts(dsl)).containsExactly(
-                "Film=app.Alpha, " + recordOf(GRAPH, "film") + ", zz.Dto 3");
+            assertThat(conflicts(dsl)).containsExactly("Film 3");
+            assertThat(contested(dsl, "Film"))
+                .containsExactly("app.Alpha", recordOf(GRAPH, "film"), "zz.Dto");
         });
     }
 
@@ -190,12 +192,29 @@ class TypeBackingTest {
             .fetch(r -> r.getTypeName() + "=" + r.getClassName() + " " + r.getDeclaredVia());
     }
 
-    /** Every contested type of this graph, with the render and the arity the view adds. */
+    /** Every contested type of this graph, with the arity the view adds. */
     private static List<String> conflicts(DSLContext dsl) {
         derive(dsl);
         return dsl.selectFrom(INTENT_TYPE_BACKING_CONFLICT)
             .where(INTENT_TYPE_BACKING_CONFLICT.GRAPH_NAME.eq(GRAPH))
-            .fetch(r -> r.getTypeName() + "=" + r.getClassNames() + " " + r.getCandidates());
+            .fetch(r -> r.getTypeName() + " " + r.getCandidates());
+    }
+
+    /**
+     * The classes contesting one type, read as the consumer reads them: a join from the contest to
+     * the backing rows under the same key, in class-name order because that is the order this
+     * reader wants and not an order the store baked in.
+     */
+    private static List<String> contested(DSLContext dsl, String typeName) {
+        derive(dsl);
+        var c = INTENT_TYPE_BACKING_CONFLICT;
+        var b = INTENT_TYPE_BACKING;
+        return dsl.selectDistinct(b.CLASS_NAME)
+            .from(c)
+            .join(b).on(b.GRAPH_NAME.eq(c.GRAPH_NAME), b.TYPE_NAME.eq(c.TYPE_NAME))
+            .where(c.GRAPH_NAME.eq(GRAPH), c.TYPE_NAME.eq(typeName))
+            .orderBy(b.CLASS_NAME)
+            .fetch(b.CLASS_NAME);
     }
 
     /** The same two over the whole store, graph first, so the partition is read as a value. */
@@ -209,8 +228,7 @@ class TypeBackingTest {
     private static List<String> allConflicts(DSLContext dsl) {
         derive(dsl);
         return dsl.selectFrom(INTENT_TYPE_BACKING_CONFLICT)
-            .fetch(r -> r.getGraphName() + " " + r.getTypeName() + "=" + r.getClassNames()
-                + " " + r.getCandidates());
+            .fetch(r -> r.getGraphName() + " " + r.getTypeName() + " " + r.getCandidates());
     }
 
     // ===== Fixtures =====

@@ -44,6 +44,7 @@ class MaterializeRegistryGateTest {
     private static final Set<String> HAND_WRITTEN = Set.of(
         "intent_type_domain",
         "intent_type_backing_class",
+        "intent_authored_claim_rejection",
         "intent_input_occurrence_path",
         "intent_input_occurrence_path_step");
 

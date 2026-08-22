@@ -19,6 +19,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * documentation's structure: the tool description's dimension gloss renders from these bucket
  * lists, so the second assertion pins that the render names every dimension rather than
  * trusting hand-maintained prose.
+ *
+ * <p>The second assertion covers {@link DiagnosticFacets.Filter} on the same terms. A filter is
+ * not a bucket of the dimension partition (it cannot be grouped by at all, which is why it sits
+ * outside the enum), but it shares the {@code where} map's key namespace and the same gloss, so
+ * a collision or an undiscoverable key fails here.
  */
 class DiagnosticDimensionCoverageTest {
 
@@ -57,6 +62,19 @@ class DiagnosticDimensionCoverageTest {
                 .as("the tool description's dimension gloss renders from the partition, so it "
                     + "names every dimension")
                 .contains(name);
+        }
+
+        // The where-only filters share one namespace with the dimensions, since one `where` map
+        // is keyed by both, and the gloss renders them too: a key an agent can pass and cannot
+        // discover is a guess-and-retry the closed vocabulary exists to remove.
+        var filters = DiagnosticFacets.Filter.wireNames();
+        assertThat(filters).doesNotHaveDuplicates();
+        assertThat(filters)
+            .as("a filter's wire name cannot collide with a dimension's; one where map is keyed "
+                + "by both, and groupBy takes the dimensions alone")
+            .doesNotContainAnyElementsOf(names);
+        for (String name : filters) {
+            assertThat(gloss).as("the gloss names every where-only filter").contains(name);
         }
     }
 }

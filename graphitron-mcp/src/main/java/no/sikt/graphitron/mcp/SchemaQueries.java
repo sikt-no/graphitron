@@ -25,6 +25,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_CONFLICT;
+import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_REJECTION;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
@@ -219,13 +220,14 @@ final class SchemaQueries {
     /**
      * A claim conflict at a coordinate.
      *
-     * @param directives the canonical comma-joined render the store groups by, sorted, so two readers
-     *     grouping on a directive set cannot split a group on claim order
+     * <p>Carries no directive list of its own: the entry this sits on already publishes the
+     * coordinate's claims as rows, each with the trigger that claimed it, so a caller reads which
+     * directives contest the coordinate there and can ask membership rather than compare a joined
+     * set. A second, joined spelling here would have answered strictly less for one more column.
+     *
      * @param message the report's own message for the violation, display only
      */
-    record Conflict(
-        String verdict, String directives, String message, Optional<McpWire.Position> position
-    ) {}
+    record Conflict(String verdict, String message, Optional<McpWire.Position> position) {}
 
     /**
      * One catalog table a type's {@code @table} binding resolves to.
@@ -256,8 +258,14 @@ final class SchemaQueries {
      */
     record MemberSlot(String name, String type, String origin, String accessorMethodName) {}
 
-    /** The classes a type is answered by where that is more than one, and how many. */
-    record BackingConflict(String classNames, int candidates) {}
+    /**
+     * How many classes answer a type where that is more than one.
+     *
+     * <p>The arity alone: the contesting classes are the entry's own {@code backing} rows, each
+     * with the population that named it, so a caller reads them there rather than from a second
+     * comma-joined spelling of the same set.
+     */
+    record BackingConflict(int candidates) {}
 
     /**
      * An {@code @node}'s identity as the author wrote it.
@@ -469,17 +477,33 @@ final class SchemaQueries {
             .and(INTENT_AUTHORED_CLAIM_CONFLICT.FIELD_NAME.isNull()));
     }
 
-    /** The conflict at one coordinate, whichever grain {@code coordinate} names. */
+    /**
+     * The conflict at one coordinate, whichever grain {@code coordinate} names.
+     *
+     * <p>The verdict and the location are the view's; the message is the minted rejection's, read
+     * from {@code intent_authored_claim_rejection} by the same inner join the diagnostics surface
+     * uses. It is minted rather than derived because its naming order is the claim enum's
+     * declaration order, which no view over this store can express, and the mint runs at capture
+     * cadence, so the join is total on any settled store.
+     */
     private static Field<Optional<Conflict>> conflicts(Condition coordinate) {
         return multiset(
-            select(INTENT_AUTHORED_CLAIM_CONFLICT.VERDICT, INTENT_AUTHORED_CLAIM_CONFLICT.DIRECTIVES,
-                INTENT_AUTHORED_CLAIM_CONFLICT.MESSAGE, INTENT_AUTHORED_CLAIM_CONFLICT.SOURCE_NAME,
+            select(INTENT_AUTHORED_CLAIM_CONFLICT.VERDICT,
+                INTENT_AUTHORED_CLAIM_REJECTION.MESSAGE,
+                INTENT_AUTHORED_CLAIM_CONFLICT.SOURCE_NAME,
                 INTENT_AUTHORED_CLAIM_CONFLICT.SOURCE_LINE,
                 INTENT_AUTHORED_CLAIM_CONFLICT.SOURCE_COLUMN)
                 .from(INTENT_AUTHORED_CLAIM_CONFLICT)
+                .join(INTENT_AUTHORED_CLAIM_REJECTION)
+                .on(INTENT_AUTHORED_CLAIM_REJECTION.GRAPH_NAME
+                        .eq(INTENT_AUTHORED_CLAIM_CONFLICT.GRAPH_NAME),
+                    INTENT_AUTHORED_CLAIM_REJECTION.TYPE_NAME
+                        .eq(INTENT_AUTHORED_CLAIM_CONFLICT.TYPE_NAME),
+                    INTENT_AUTHORED_CLAIM_REJECTION.FIELD_NAME
+                        .isNotDistinctFrom(INTENT_AUTHORED_CLAIM_CONFLICT.FIELD_NAME))
                 .where(coordinate))
-            .convertFrom(r -> r.map(row -> new Conflict(row.value1(), row.value2(), row.value3(),
-                McpWire.position(row.value4(), row.value5(), row.value6()))).stream().findFirst());
+            .convertFrom(r -> r.map(row -> new Conflict(row.value1(), row.value2(),
+                McpWire.position(row.value3(), row.value4(), row.value5()))).stream().findFirst());
     }
 
     /**
@@ -539,7 +563,7 @@ final class SchemaQueries {
     /** The types the store answers this one with where that is more than one class. */
     private static Field<Optional<BackingConflict>> backingConflict() {
         return multiset(
-            select(INTENT_TYPE_BACKING_CONFLICT.CLASS_NAMES, INTENT_TYPE_BACKING_CONFLICT.CANDIDATES)
+            select(INTENT_TYPE_BACKING_CONFLICT.CANDIDATES)
                 .from(INTENT_TYPE_BACKING_CONFLICT)
                 .where(ofType(INTENT_TYPE_BACKING_CONFLICT.GRAPH_NAME,
                     INTENT_TYPE_BACKING_CONFLICT.TYPE_NAME)))

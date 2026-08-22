@@ -93,12 +93,20 @@ public final class ClaimFacts {
      * facts, and, for a type no claim reaches, the class standing for it or the classes it cannot be
      * resolved between. At most one of the last two is present, {@code contested} being what the
      * store answers where {@code backing} is the answer it declines to give.
+     *
+     * <p>{@code contested} is a list for the same reason {@code grounded} and {@code reached} are:
+     * it is a set of class names, one row per class, and a surface that wants one string joins them
+     * where it renders them rather than reading a join the store performed.
      */
-    public record TypeBlock(List<ClaimBlock> claims, String backing, String contested) {
+    public record TypeBlock(List<ClaimBlock> claims, String backing, List<String> contested) {
+
+        public TypeBlock {
+            contested = List.copyOf(contested);
+        }
 
         /** The store says nothing about the type at all, which is a declaration with no block. */
         public boolean isEmpty() {
-            return claims.isEmpty() && backing == null && contested == null;
+            return claims.isEmpty() && backing == null && contested.isEmpty();
         }
 
         /** The classifiers claiming the type, in the order the claims were read. */
@@ -309,10 +317,17 @@ public final class ClaimFacts {
                 .and(INTENT_TYPE_BACKING.TYPE_NAME.eq(typeName)))
                 .convertFrom(rows -> rows.map(Record1::value1))
                 .as("type_claim_reached");
-            contested = multiset(select(INTENT_TYPE_BACKING_CONFLICT.CLASS_NAMES)
+            // The contested set is the backing rows the conflict relation names, joined rather
+            // than read off a column: the classes are rows under the same key, and the relation
+            // that says the type is contested carries the arity and nothing else.
+            contested = multiset(selectDistinct(INTENT_TYPE_BACKING.CLASS_NAME)
                 .from(INTENT_TYPE_BACKING_CONFLICT)
+                .join(INTENT_TYPE_BACKING)
+                .on(INTENT_TYPE_BACKING.GRAPH_NAME.eq(INTENT_TYPE_BACKING_CONFLICT.GRAPH_NAME),
+                    INTENT_TYPE_BACKING.TYPE_NAME.eq(INTENT_TYPE_BACKING_CONFLICT.TYPE_NAME))
                 .where(INTENT_TYPE_BACKING_CONFLICT.GRAPH_NAME.eq(graph))
-                .and(INTENT_TYPE_BACKING_CONFLICT.TYPE_NAME.eq(typeName)))
+                .and(INTENT_TYPE_BACKING_CONFLICT.TYPE_NAME.eq(typeName))
+                .orderBy(INTENT_TYPE_BACKING.CLASS_NAME))
                 .convertFrom(rows -> rows.map(Record1::value1))
                 .as("type_claim_contested");
         }
@@ -331,7 +346,8 @@ public final class ClaimFacts {
                 claims.add(new ClaimBlock(classifier, typeFactsOf(classifier, rows)));
             }
             var backing = TypeBackingClass.resolve(rows.grounded(), rows.reached()).orElse(null);
-            return new TypeBlock(claims, backing, backing == null ? first(rows.contested()) : null);
+            return new TypeBlock(claims, backing,
+                backing == null ? rows.contested() : List.of());
         }
     }
 
@@ -467,11 +483,6 @@ public final class ClaimFacts {
         add(facts, "Table", mutation.tableRef());
         if (Boolean.TRUE.equals(mutation.multiRow())) add(facts, "Rows", "many");
         return facts;
-    }
-
-    /** The single row an at-most-one-row arm holds, or null where it holds none. */
-    private static String first(List<String> values) {
-        return values.isEmpty() ? null : values.getFirst();
     }
 
     /** The three-part coordinate every field-grain read here is keyed on. */

@@ -273,6 +273,65 @@ to block.
 
 ## Notes
 
+### What landed, and the consumer-visible changes
+
+The message fork resolved onto arm 1, minting post-capture. Concretely:
+
+* `intent_authored_claim_conflict` lost `directives` and `message`, and with them four
+  `LISTAGG` calls, the `REPLACE` surgery and both eight-branch `CASE` ladders. What remains is
+  the verdict, the coordinate and the location.
+* A new hand-written `intent_` resident, `intent_authored_claim_rejection`, holds one row per
+  violated coordinate with the `kind`, `variant` and `message` of the rejection that coordinate
+  mints. `AuthoredClaimRejectionRows` writes it at capture cadence beside `TypeBackingRows`, and
+  the mint's one home is `AuthoredClaimConflicts.rejectionOf`, shared with the build-error
+  consumer so a violation cannot be worded two ways. `diagnostic`'s claim-conflict arm now reads
+  `kind`, `variant` and `message` as plain columns by inner join, which makes it structurally the
+  same shape as the residue arm beside it.
+* Minting `variant` and `kind` rather than only `message` was not scope creep but the fork's own
+  consequence, and it dissolves R807: both `Rejection.*` string literals left the DDL, and the
+  `verdict`-to-`kind` `CASE` that restated `RejectionKind.of` left with them. R807 has been
+  updated to say so; what survives there is its own "loose end", the parser arm's
+  `InvalidSyntaxException` literal, which is a third-party name and carries no rename risk.
+
+**Consumer-visible: the MCP facet surface lost the `directives` dimension.** It is replaced by a
+`directive` filter, usable in `where` and not in `groupBy`, which asks membership: `directive:
+service` now returns every conflict whose claims include `@service` where the dimension returned
+only those whose entire set was exactly `service`. The filter reaches the two arms that carry
+directives at all by joining out of the view (the residue's directive child under its error's
+key, the pilot's claim rows under the violated coordinate). It cannot be grouped by, because a
+finding carries several directives and the aggregate's stated invariant is that group counts sum
+to the row count. `DiagnosticFacets.Filter` is the new closed vocabulary; the refusal message and
+the rendered gloss name it beside the dimensions, and `DiagnosticDimensionCoverageTest` pins that
+its names cannot collide with a dimension's.
+
+**Consumer-visible: `diagnostic` lost `directory`, and the MCP `directory` dimension stayed.**
+The truncation moved into the consumer's own query (`DiagnosticFacets.parentDirectory`), so the
+wire is unchanged and a caller wanting another depth truncates further over the same stored path,
+which is a test. Removing the *column* is what buys that; the dimension was never the problem.
+
+**Consumer-visible, mildly: two MCP wire slots lost a redundant list.** `conflict.directives` and
+`backingConflict.classes` are gone from the `schema` tool's entries. Both were the joined spelling
+of a set the same entry already publishes as rows (`claims` beside the conflict, `backing` beside
+the backing conflict), so nothing left the wire that a caller cannot still read, and what it reads
+now answers membership. `TypeBlock.contested` in the LSP became a `List<String>` matching its
+`grounded` and `reached` siblings, joined for display in `DeclarationHovers`.
+
+One judgment call a reviewer should press on. The item asked for the `directive` filter to "reach
+them by join" without saying what identifies a `diagnostic` row, and the view has no key: its
+seven arms key themselves differently and none of those keys is projected. The filter therefore
+correlates on the identity the view does publish for a directive-bearing row, which is its graph,
+its variant and its coordinate. Two findings of one variant at one coordinate would answer as one
+set. That is stated in the filter's javadoc rather than hidden, it is strictly better than the
+exact-set-equality wrong answer it replaces, and the alternative (a synthetic row identity on a
+seven-arm union view) is a larger change than this item's remit. If a reviewer wants that
+identity, it is its own item.
+
+The gate is `CollectionValuedColumnGateTest` in graphitron-model. It reads the DDL text, scopes
+the scan to statement regions by blanking `--` comments and string-literal bodies in one linear
+pass, and pins its acceptance line in both directions: each denied construct fails, prose naming
+the constructs passes, and the `UPPER` fold, the `||` coordinate and the `COUNT`/`MAX`/`MIN`/`SUM`
+aggregates pass. Its javadoc states the disclosed gap.
+
 * R807 is the sibling for the `diagnostic` view's unbound `Rejection.*` string literals,
   found in the same pass over that view. Kept separate because it is an enforcer problem
   rather than a collection-in-a-scalar one, but sequenced behind this item: if the message

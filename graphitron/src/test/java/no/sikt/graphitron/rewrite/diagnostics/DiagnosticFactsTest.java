@@ -161,14 +161,26 @@ class DiagnosticFactsTest {
 
             var conflict = rows.stream()
                 .filter(r -> "Rejection.InvalidSchema.DirectiveConflict".equals(r.getVariant())).findFirst().orElseThrow();
-            assertThat(conflict.getDirectives())
-                .as("the canonical render sorts, so claim order cannot split a group")
-                .isEqualTo("routine,splitQuery");
             assertThat(conflict.getCoordinate()).isEqualTo("Film");
 
+            // The directives are rows under the error's key rather than a column on the surface,
+            // which is what lets this read ask membership instead of comparing a joined set.
+            assertThat(dsl.select(REJECTION_VALIDATION_ERROR_DIRECTIVE.DIRECTIVE)
+                    .from(REJECTION_VALIDATION_ERROR_DIRECTIVE)
+                    .join(REJECTION_VALIDATION_ERROR)
+                    .on(REJECTION_VALIDATION_ERROR.GRAPH_NAME
+                            .eq(REJECTION_VALIDATION_ERROR_DIRECTIVE.GRAPH_NAME),
+                        REJECTION_VALIDATION_ERROR.ORDINAL
+                            .eq(REJECTION_VALIDATION_ERROR_DIRECTIVE.ERROR_ORDINAL))
+                    .where(REJECTION_VALIDATION_ERROR.GRAPH_NAME.eq(GRAPH),
+                        REJECTION_VALIDATION_ERROR.VARIANT.eq(conflict.getVariant()),
+                        REJECTION_VALIDATION_ERROR.TYPE_NAME.eq("Film"))
+                    .orderBy(REJECTION_VALIDATION_ERROR_DIRECTIVE.POSITION)
+                    .fetch(REJECTION_VALIDATION_ERROR_DIRECTIVE.DIRECTIVE))
+                .as("the claiming directives, in the rejection's own order")
+                .containsExactly("splitQuery", "routine");
+
             assertThat(conflict.getFile()).isEqualTo(source);
-            assertThat(conflict.getDirectory())
-                .isEqualTo(source.substring(0, source.lastIndexOf('/')));
         });
     }
 
@@ -209,7 +221,6 @@ class DiagnosticFactsTest {
             assertThat(wholeBuild.getFile())
                 .as("a whole-build finding sits in the stated NULL absent bucket")
                 .isNull();
-            assertThat(wholeBuild.getDirectory()).isNull();
         });
     }
 
@@ -280,13 +291,11 @@ class DiagnosticFactsTest {
             assertThat(sentinel.getFile())
                 .as("javac's (no source) sentinel normalises to the uniform NULL absent bucket")
                 .isNull();
-            assertThat(sentinel.getDirectory()).isNull();
             assertThat(sentinel.getSourceLine()).isNull();
             assertThat(sentinel.getSourceColumn()).isNull();
             var locatedRow = rows.stream()
                 .filter(r -> "cannot find symbol".equals(r.getMessage())).findFirst().orElseThrow();
             assertThat(locatedRow.getFile()).isEqualTo("/gen/A.java");
-            assertThat(locatedRow.getDirectory()).isEqualTo("/gen");
             assertThat(locatedRow.getSourceLine()).isEqualTo(12);
         });
     }
@@ -314,8 +323,9 @@ class DiagnosticFactsTest {
             assertThat(row.getMessage())
                 .as("the view's rendered message is byte-identical to the report's for this family")
                 .isEqualTo(expected.getFirst().message());
-            assertThat(row.getVariant()).isEqualTo("Rejection.InvalidSchema.DirectiveConflict");
-            assertThat(row.getDirectives()).isEqualTo("nodeId,service");
+            assertThat(row.getVariant())
+                .as("the variant is minted from the rejection's own class, not spelled in SQL")
+                .isEqualTo("Rejection.InvalidSchema.DirectiveConflict");
             assertThat(row.getCoordinate()).isEqualTo("Film.id");
             assertThat(row.getFile())
                 .as("the pilot arm projects capture's own source name, one spelling with the "
@@ -444,8 +454,8 @@ class DiagnosticFactsTest {
 
     /**
      * Every file this graph holds, gathered from the four columns the arms write and from the view's
-     * own {@code file} and {@code directory}, and asserted to be a path. The row count is asserted
-     * alongside so the case cannot pass by seeding nothing.
+     * own {@code file}, and asserted to be a path. The row count is asserted alongside so the case
+     * cannot pass by seeding nothing.
      */
     private static void assertEveryFileIsAPath(DSLContext dsl, int expectedViewRows) {
         var files = new java.util.ArrayList<String>();
@@ -461,7 +471,6 @@ class DiagnosticFactsTest {
         var view = dsl.selectFrom(DIAGNOSTIC).where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH)).fetch();
         assertThat(view).hasSize(expectedViewRows);
         files.addAll(view.map(row -> row.getFile()));
-        files.addAll(view.map(row -> row.getDirectory()));
         assertThat(files.stream().filter(java.util.Objects::nonNull).toList())
             .as("the file axis is a path wherever it is stored or projected; a wire that names a "
                 + "document by URI renders one at its own boundary")

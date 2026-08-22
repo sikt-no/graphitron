@@ -86,3 +86,37 @@ R803's Spec revision round 1 has since adopted this item's discriminator, lifted
 schema header's existing post-capture reason (the render's input is a Java enum's
 declaration order, not a captured fact), so the two items state one rule and this item's
 articles cite the gate R803 lands.
+
+## What R803's implementation left for this item
+
+R803 has landed, so nothing here is forward-looking any more and the paragraph can be
+written named-and-true.
+
+The gate exists and its name is `CollectionValuedColumnGateTest`, in graphitron-model beside
+the other schema gates. It denies `LISTAGG`, `STRING_AGG`, `GROUP_CONCAT`, `ARRAY_AGG` and
+the `WITHIN GROUP` clause inside the DDL's statement regions, and its own javadoc states the
+gap this item's prose is the enforcer for: a row-local scalar expression that discards part
+of a value trips nothing, because detecting serialization inside an arbitrary expression is
+not mechanizable.
+
+The exemplar for the `diagnostic` exemption sentence is available and needs no assertion.
+Two columns of that one exempted relation landed on opposite sides of the discriminator:
+`coordinate` passes and survives, because its atoms ride the same row, and the `directory`
+column failed and was removed, because a path is a sequence of segments and the truncation
+kept one and discarded the rest. One relation, two verdicts, is what shows that the
+exemption covers a relation's name and population and says nothing about what its columns
+may hold. Note that `directory` is also the exemplar of the gate's gap, so the two sentences
+are the same example read twice.
+
+The `ClaimFacts` citation needs one word changed rather than dropping: `contested` is now a
+genuine `List<String>` of one row per contesting class, matching its `grounded` and
+`reached` siblings, so the leak the citation describes is a defect this item's rule closed
+and should be told in the past tense. The joined string it used to hold travelled intact
+into a hover, which is still the point.
+
+Also worth stating in the discipline paragraph, because it is what the conversion actually
+bought and it is not obvious from the rule alone: a serialized set makes a filter answer set
+equality where an author asked membership. The MCP diagnostics surface had a `directives`
+dimension compared with `IS NOT DISTINCT FROM`, so filtering by `service` returned only the
+conflicts whose entire set was exactly `service`. That was a wrong answer, not a stylistic
+preference, and it is now a join.

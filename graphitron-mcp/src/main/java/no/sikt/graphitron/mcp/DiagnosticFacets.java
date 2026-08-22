@@ -19,6 +19,11 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
+import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_REJECTION;
+import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
+import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
+import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR;
+import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR_DIRECTIVE;
 
 /**
  * The faceted diagnostics aggregate and the shared filter mechanism under it: the closed
@@ -33,10 +38,16 @@ import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
  * discovers it from the tool's input schema in one shot, a name that is not in it fails with the
  * full vocabulary instead of a parse error, and the server keeps the result guarantees (exact
  * counts, the stated tail rule, the zero-argument triage preset) that a raw query could not be
- * made to keep on the caller's behalf. Every dimension is one single-valued view column, so
- * every {@code groupBy} groups at one row per diagnostic and group counts sum to the row count;
+ * made to keep on the caller's behalf. Every dimension is single-valued at one row per diagnostic,
+ * so every {@code groupBy} groups at one row per diagnostic and group counts sum to the row count;
  * absence is uniformly SQL {@code NULL} and every comparison is {@code IS NOT DISTINCT FROM},
- * so {@code where} and {@code groupBy} cannot disagree about the absent bucket.
+ * so {@code where} and {@code groupBy} cannot disagree about the absent bucket. Most dimensions
+ * are one view column; the directory axis is that invariant's one computed member, truncating the
+ * stored path here because a path's depth is the question's property rather than the row's.
+ *
+ * <p>{@link Filter} is the {@code where}-only half of that vocabulary: a question answered by
+ * joining out of the view, whose key a finding carries several of and which therefore cannot be
+ * grouped by without multiplying the rows an aggregate counts.
  *
  * <p>The bet covers the argument values too, in the two shapes the ownership of a vocabulary
  * allows. A value drawn from a vocabulary this module owns, a dimension name or an
@@ -92,13 +103,35 @@ final class DiagnosticFacets {
             "which lookup space a name resolution failed in", Spelling.UPPER_SNAKE),
         ATTEMPT("attempt", DIAGNOSTIC.ATTEMPT, "the name the author wrote"),
         STUB_KEY("stubKey", DIAGNOSTIC.STUB_KEY, ""),
-        DIRECTIVES("directives", DIAGNOSTIC.DIRECTIVES,
-            "the directive names identifying a conflict, as one value"),
         LINT_RULE("lintRule", DIAGNOSTIC.LINT_RULE, ""),
         COORDINATE("coordinate", DIAGNOSTIC.COORDINATE, "a type or Type.field"),
         TYPE("type", DIAGNOSTIC.TYPE_NAME, ""),
         FILE("file", DIAGNOSTIC.FILE, "", Spelling.FILE_URI),
-        DIRECTORY("directory", DIAGNOSTIC.DIRECTORY, "", Spelling.DIRECTORY_URI);
+        DIRECTORY("directory", parentDirectory(DIAGNOSTIC.FILE), "the file's parent directory",
+            Spelling.DIRECTORY_URI);
+
+        /**
+         * The parent directory of a stored path, truncated here rather than read off a view column.
+         *
+         * <p>A path is a sequence of segments and this keeps one of them, so which depth is right
+         * is the question's property and not the row's: immediate parent is what this server's
+         * directory axis asks for, and a caller wanting module root or a {@code src/main} split
+         * writes its own expression over the same {@code file} column at the depth its question
+         * needs. The store holds the whole path, which is what makes every one of those questions
+         * answerable, and the column that used to hold this truncation could answer none of them.
+         *
+         * <p>Declared inside the enum rather than beside its siblings on the enclosing class
+         * because a constant initializer calls it: a call out to the enclosing class would
+         * initialize that class while this one is still initializing, and its dimension-partition
+         * lists would then read half-built constants.
+         */
+        static Field<String> parentDirectory(Field<String> path) {
+            // The pattern and the replacement are inlined rather than bound. H2 matches a GROUP BY
+            // expression against the select list structurally, and two occurrences of the same
+            // expression carrying their own bind markers do not match, so a bound pattern makes
+            // this column ungroupable at the depth above the first.
+            return DSL.regexpReplaceAll(path, DSL.inline("/[^/]*$"), DSL.inline(""));
+        }
 
         private final String wireName;
         private final Field<?> column;
@@ -188,12 +221,135 @@ final class DiagnosticFacets {
                 }
             }
             throw new BadRequest("unknown dimension '" + wireName + "'; the dimensions are "
-                + wireNames() + ".");
+                + wireNames() + ", and the where-only filters are " + Filter.wireNames() + ".");
         }
 
         static List<String> wireNames() {
             return java.util.Arrays.stream(values()).map(Dimension::wireName).toList();
         }
+    }
+
+    /**
+     * A {@code where}-only key: a question the surface answers by joining out of the view rather
+     * than by reading one of its columns. Beside {@link Dimension} rather than inside it because
+     * the two make different promises, and collapsing them would break the one every
+     * {@code groupBy} rests on: a dimension is single-valued at one row per diagnostic, so group
+     * counts sum to the row count. A directive is not. A conflict names two or more of them, and a
+     * {@code groupBy} over a multi-valued key would multiply the very rows an aggregate is counting.
+     *
+     * <p>The filter that replaced a dimension, and it answers a different question rather than the
+     * same one differently. The column it replaced held the conflict's whole directive set joined
+     * into one value, and a column is compared with {@code IS NOT DISTINCT FROM}, so filtering by
+     * {@code service} matched only the conflicts whose entire set was exactly {@code service} and
+     * silently returned none of the ones that involve it. Membership is the question an author
+     * asks, and rows are what answer it.
+     */
+    enum Filter {
+        /**
+         * A directive name the finding's claims include, without the leading {@code @}. Reaches the
+         * two arms that carry directives at all: the residue's ordered directive child under its
+         * error's key, and the store-native pilot's claim rows under the violated coordinate.
+         *
+         * <p>Correlated on the identity the view publishes for a directive-bearing row, which is
+         * its graph, its variant and its coordinate. Two findings of one variant at one coordinate
+         * would answer as one, which is a grain this filter states rather than hides; the axis it
+         * replaced could not distinguish them either.
+         */
+        DIRECTIVE("directive", "a directive name a finding's claims include");
+
+        private final String wireName;
+        private final String gloss;
+
+        Filter(String wireName, String gloss) {
+            this.wireName = wireName;
+            this.gloss = gloss;
+        }
+
+        String wireName() {
+            return wireName;
+        }
+
+        String glossed() {
+            return wireName + " (" + gloss + ")";
+        }
+
+        /** The join this filter contributes, against the value as the caller wrote it. */
+        Condition matches(Object wireValue) {
+            if (wireValue == null) {
+                throw new BadRequest("filter '" + wireName + "' takes a name, not null: it asks "
+                    + "which findings involve one, and absence is not a membership question.");
+            }
+            return switch (this) {
+                case DIRECTIVE -> involvesDirective(String.valueOf(wireValue));
+            };
+        }
+
+        /** Resolves a wire name to a filter, or empty when the name is not one. */
+        static java.util.Optional<Filter> of(String wireName) {
+            for (Filter filter : values()) {
+                if (filter.wireName.equals(wireName)) {
+                    return java.util.Optional.of(filter);
+                }
+            }
+            return java.util.Optional.empty();
+        }
+
+        static List<String> wireNames() {
+            return java.util.Arrays.stream(values()).map(Filter::wireName).toList();
+        }
+    }
+
+    /**
+     * Whether the diagnostic's own claims include {@code directive}: the membership join behind
+     * {@link Filter#DIRECTIVE}, one arm per relation that holds a finding's directives as rows.
+     *
+     * <p>The pilot arms correlate through {@code intent_authored_claim_rejection} rather than by
+     * testing the view's {@code variant} against a spelled class name. The minted row carries the
+     * spelling, so the correlation proves the arm instead of restating it, and a rejection leaf's
+     * rename cannot leave a stale literal here.
+     */
+    private static Condition involvesDirective(String directive) {
+        var residue = DSL.exists(DSL.selectOne()
+            .from(REJECTION_VALIDATION_ERROR)
+            .join(REJECTION_VALIDATION_ERROR_DIRECTIVE)
+            .on(REJECTION_VALIDATION_ERROR_DIRECTIVE.GRAPH_NAME
+                    .eq(REJECTION_VALIDATION_ERROR.GRAPH_NAME),
+                REJECTION_VALIDATION_ERROR_DIRECTIVE.ERROR_ORDINAL
+                    .eq(REJECTION_VALIDATION_ERROR.ORDINAL))
+            .where(REJECTION_VALIDATION_ERROR.GRAPH_NAME.eq(DIAGNOSTIC.GRAPH_NAME),
+                REJECTION_VALIDATION_ERROR.VARIANT.eq(DIAGNOSTIC.VARIANT),
+                REJECTION_VALIDATION_ERROR.TYPE_NAME.isNotDistinctFrom(DIAGNOSTIC.TYPE_NAME),
+                REJECTION_VALIDATION_ERROR.FIELD_NAME.isNotDistinctFrom(DIAGNOSTIC.FIELD_NAME),
+                REJECTION_VALIDATION_ERROR_DIRECTIVE.DIRECTIVE.eq(directive)));
+        var pilotTypeGrain = DSL.exists(DSL.selectOne()
+            .from(INTENT_AUTHORED_CLAIM_REJECTION)
+            .join(INTENT_AUTHORED_TYPE_CLAIM)
+            .on(INTENT_AUTHORED_TYPE_CLAIM.GRAPH_NAME
+                    .eq(INTENT_AUTHORED_CLAIM_REJECTION.GRAPH_NAME),
+                INTENT_AUTHORED_TYPE_CLAIM.TYPE_NAME
+                    .eq(INTENT_AUTHORED_CLAIM_REJECTION.TYPE_NAME))
+            .where(INTENT_AUTHORED_CLAIM_REJECTION.GRAPH_NAME.eq(DIAGNOSTIC.GRAPH_NAME),
+                INTENT_AUTHORED_CLAIM_REJECTION.VARIANT.eq(DIAGNOSTIC.VARIANT),
+                INTENT_AUTHORED_CLAIM_REJECTION.TYPE_NAME.isNotDistinctFrom(DIAGNOSTIC.TYPE_NAME),
+                INTENT_AUTHORED_CLAIM_REJECTION.FIELD_NAME.isNull(),
+                DIAGNOSTIC.FIELD_NAME.isNull(),
+                INTENT_AUTHORED_TYPE_CLAIM.TRIGGER.eq(directive)));
+        var pilotFieldGrain = DSL.exists(DSL.selectOne()
+            .from(INTENT_AUTHORED_CLAIM_REJECTION)
+            .join(INTENT_AUTHORED_FIELD_CLAIM)
+            .on(INTENT_AUTHORED_FIELD_CLAIM.GRAPH_NAME
+                    .eq(INTENT_AUTHORED_CLAIM_REJECTION.GRAPH_NAME),
+                INTENT_AUTHORED_FIELD_CLAIM.TYPE_NAME
+                    .eq(INTENT_AUTHORED_CLAIM_REJECTION.TYPE_NAME),
+                INTENT_AUTHORED_FIELD_CLAIM.FIELD_NAME
+                    .eq(INTENT_AUTHORED_CLAIM_REJECTION.FIELD_NAME))
+            .where(INTENT_AUTHORED_CLAIM_REJECTION.GRAPH_NAME.eq(DIAGNOSTIC.GRAPH_NAME),
+                INTENT_AUTHORED_CLAIM_REJECTION.VARIANT.eq(DIAGNOSTIC.VARIANT),
+                INTENT_AUTHORED_CLAIM_REJECTION.TYPE_NAME.isNotDistinctFrom(DIAGNOSTIC.TYPE_NAME),
+                INTENT_AUTHORED_CLAIM_REJECTION.FIELD_NAME
+                    .isNotDistinctFrom(DIAGNOSTIC.FIELD_NAME),
+                INTENT_AUTHORED_FIELD_CLAIM.TRIGGER.eq(directive)));
+        return residue.or(pilotTypeGrain).or(pilotFieldGrain);
     }
 
     /**
@@ -303,7 +459,7 @@ final class DiagnosticFacets {
     static final List<Dimension> TYPED_KEY_DIMENSIONS = List.of(
         Dimension.SEVERITY, Dimension.SOURCE, Dimension.ACTIONABLE, Dimension.KIND,
         Dimension.VARIANT, Dimension.LSP_CODE, Dimension.ATTEMPT_KIND, Dimension.ATTEMPT,
-        Dimension.STUB_KEY, Dimension.DIRECTIVES, Dimension.LINT_RULE);
+        Dimension.STUB_KEY, Dimension.LINT_RULE);
 
     static final List<Dimension> LOCATION_DERIVED_DIMENSIONS = List.of(
         Dimension.COORDINATE, Dimension.TYPE, Dimension.FILE, Dimension.DIRECTORY);
@@ -320,7 +476,11 @@ final class DiagnosticFacets {
             + "; the pairs are coarse and fine grains of one axis, so pick deliberately. "
             + "Absence is a value: rows without a coordinate or file group into one null-keyed "
             + "bucket rather than dropping out of the totals, and advisory warnings, which carry "
-            + "no typed dimension at all, group by location only.";
+            + "no typed dimension at all, group by location only. Filters usable in where but not "
+            + "in groupBy, because a finding carries several: "
+            + java.util.Arrays.stream(Filter.values()).map(Filter::glossed)
+                .collect(Collectors.joining(", "))
+            + ".";
     }
 
     /** The zero-argument triage preset: the actionable / deferred headline with kind sub-counts. */
@@ -355,7 +515,12 @@ final class DiagnosticFacets {
             throw new BadRequest("'where' must be an object mapping dimension names to values.");
         }
         for (var entry : map.entrySet()) {
-            conditions.add(Dimension.of(String.valueOf(entry.getKey())).matches(entry.getValue()));
+            String key = String.valueOf(entry.getKey());
+            // The where vocabulary is the dimensions plus the join-only filters; groupBy takes the
+            // dimensions alone, a multi-valued key being no grouping.
+            conditions.add(Filter.of(key)
+                .map(filter -> filter.matches(entry.getValue()))
+                .orElseGet(() -> Dimension.of(key).matches(entry.getValue())));
         }
         return conditions;
     }

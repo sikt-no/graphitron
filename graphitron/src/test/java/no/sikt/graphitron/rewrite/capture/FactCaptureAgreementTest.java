@@ -317,7 +317,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       the view does not produce, the re-aimed anchor left standing after the corpus shadow
  *       proved the cutover and retired with the Java reduction it shadowed, and the two claim
  *       relations it reads are pinned given rows by
- *       {@code no.sikt.graphitron.model.intent.AuthoredClaimTest}). Later derivation
+ *       {@code no.sikt.graphitron.model.intent.AuthoredClaimTest}; the same class binds
+ *       {@code intent_authored_claim_rejection}, the post-capture mint over that view, on the one
+ *       claim a minted relation can be held to, that it stands one-to-one with the view it mints
+ *       from and words each violation exactly as the build-error projection does, which is what
+ *       the diagnostics surface's inner join over it rests on). Later derivation
  *       strata land as registrations here, not as exemptions.</li>
  *   <li>{@link Arm#ORACLE} for relations an oracle writer owns, at the oracle's own cadence
  *       (javac writes after capture; the legacy classification walk's reach writes inside the
@@ -484,6 +488,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_input_occurrence_path_step", Arm.DERIVED);
         registrations.put("intent_input_occurrence_override", Arm.DERIVED);
         registrations.put("intent_authored_claim_conflict", Arm.DERIVED);
+        registrations.put("intent_authored_claim_rejection", Arm.DERIVED);
         // The diagnostics union view is a pure re-projection of its five arms, so its agreement
         // is vacuous by construction on the graphql_directive_site precedent; the arm-specific
         // derived columns are pinned by DiagnosticFactsTest against their Java spellings.

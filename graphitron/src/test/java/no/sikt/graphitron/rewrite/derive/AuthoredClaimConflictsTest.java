@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_CONFLICT;
+import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_REJECTION;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
@@ -537,6 +538,62 @@ class AuthoredClaimConflictsTest {
                 .where(INTENT_AUTHORED_TYPE_CLAIM.GRAPH_NAME.eq(GRAPH))
                 .fetch(r -> decoded.add(AuthoredClaim.fromClassifier(r.value1())));
             assertThat(decoded).isEqualTo(EnumSet.allOf(AuthoredClaim.class));
+        });
+    }
+
+    // ===== The minted rejection =====
+
+    /**
+     * The capture-cadence mint stands one-to-one with the view it mints from, and words each
+     * violation exactly as the projection does. That is the whole of what the diagnostics surface
+     * rests on: it reads the minted row by inner join, so a coordinate the mint missed would drop
+     * off the surface silently and a coordinate the mint invented would appear there twice.
+     *
+     * <p>Both grains and both verdicts in one fixture, and ungated: the mint is total over the view
+     * where {@link AuthoredClaimConflicts} narrows to the classification domain, so a type no field
+     * reaches is minted here and the editor's diagnostic arm can read it.
+     */
+    @Test
+    void theMintedRejectionMatchesTheViewRowForRowAndWordForWord() {
+        var sdl = """
+            type Film @table(name: "film") @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
+                title: String
+                    @service(service: {className: "%s", method: "get"})
+                    @externalField(reference: {className: "%s", method: "rating"})
+            }
+            type Query {
+                film(id: ID @lookupKey): Film @routine(name: "film_fn")
+            }
+            """.formatted(SERVICE_STUB, EXTERNAL_FIELD_STUB);
+        withCapturedStore(tmp, sdl, dsl -> {
+            var v = INTENT_AUTHORED_CLAIM_CONFLICT;
+            var m = INTENT_AUTHORED_CLAIM_REJECTION;
+            var coordinates = dsl.selectFrom(v).where(v.GRAPH_NAME.eq(GRAPH))
+                .fetch(row -> row.getFieldName() == null
+                    ? row.getTypeName()
+                    : row.getTypeName() + "." + row.getFieldName());
+            assertThat(coordinates)
+                .as("the fixture violates at both grains and reaches both verdicts")
+                .containsExactlyInAnyOrder("Film", "Film.title", "Query.film");
+            assertThat(dsl.selectFrom(m).where(m.GRAPH_NAME.eq(GRAPH))
+                    .fetch(row -> row.getFieldName() == null
+                        ? row.getTypeName()
+                        : row.getTypeName() + "." + row.getFieldName()))
+                .as("one minted row per violated coordinate, no more and no fewer")
+                .containsExactlyInAnyOrderElementsOf(coordinates);
+
+            assertThat(dsl.selectFrom(m).where(m.GRAPH_NAME.eq(GRAPH))
+                    .orderBy(m.ORDINAL)
+                    .fetch(row -> row.getKind() + " " + row.getVariant() + " " + row.getMessage()))
+                .as("kind, variant and message are the three projections of one Rejection, and the "
+                    + "variant is the leaf class's own spelling rather than a SQL literal")
+                .containsExactlyInAnyOrder(
+                    "INVALID_SCHEMA Rejection.InvalidSchema.DirectiveConflict "
+                        + "Type 'Film': @table, @error are mutually exclusive",
+                    "INVALID_SCHEMA Rejection.InvalidSchema.DirectiveConflict "
+                        + "Field 'Film.title': @service, @externalField are mutually exclusive",
+                    "DEFERRED Rejection.Deferred Field 'Query.film': @routine with @lookupKey on a "
+                        + "root field classifies but does not emit yet");
         });
     }
 

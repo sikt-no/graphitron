@@ -304,8 +304,11 @@ public final class DeclarationHovers {
         if (block.backing() != null) {
             sb.append("\n\nBacked by: `").append(block.backing()).append("`");
         }
-        if (block.contested() != null) {
-            sb.append("\n\nBacking contested, so nothing binds: `").append(block.contested()).append("`");
+        if (!block.contested().isEmpty()) {
+            // The join is here, at the point of display: the store answers with one row per
+            // contesting class, and one canonical spelling of the set is a hover's business.
+            sb.append("\n\nBacking contested, so nothing binds: `")
+                .append(String.join(", ", block.contested())).append("`");
         }
         return sb.toString();
     }

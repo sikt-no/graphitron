@@ -1318,12 +1318,12 @@ class GraphitronMcpServerTest {
 
             assertThat(conflict)
                 .containsEntry("verdict", "CONFLICT")
-                // The canonical comma-joined render the store groups by, sorted, so two readers
-                // grouping on a directive set cannot split a group on claim order.
-                .containsEntry("directives", "mutation,service")
                 .containsEntry("message",
                     "Field 'Mutation.deleteFilm': @service, @mutation are mutually exclusive")
-                .containsKey("location");
+                .containsKey("location")
+                // No directive list of its own: the claims below are the contesting directives, one
+                // row each, so a caller asks membership rather than comparing a joined set.
+                .doesNotContainKey("directives");
 
             // Both rival claims survive with their own provenance, which is what the conflicted arm
             // of the retired wire carried and what generalises here to every coordinate.

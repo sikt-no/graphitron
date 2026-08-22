@@ -109,9 +109,10 @@ final class SchemaView {
         putConflict(entry, type.conflict());
         putList(entry, "tables", type.tables(), SchemaView::mapTable);
         putList(entry, "backing", type.backing(), SchemaView::mapBacking);
+        // No class list of its own: the backing rows above are the contesting classes, each with
+        // the population that named it, so this slot carries the arity that makes them a contest.
         type.backingConflict().ifPresent(conflict -> {
             var map = new LinkedHashMap<String, Object>();
-            map.put("classes", conflict.classNames());
             map.put("candidates", conflict.candidates());
             entry.put("backingConflict", map);
         });
@@ -249,10 +250,11 @@ final class SchemaView {
     private static void putConflict(
         Map<String, Object> entry, Optional<SchemaQueries.Conflict> conflict
     ) {
+        // No directive list of its own: the entry's own claims carry the triggers that contest the
+        // coordinate, one per row, which answers membership where a joined set answered equality.
         conflict.ifPresent(c -> {
             var map = new LinkedHashMap<String, Object>();
             map.put("verdict", c.verdict());
-            map.put("directives", c.directives());
             map.put("message", c.message());
             McpWire.putPosition(map, "location", c.position());
             entry.put("conflict", map);

@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
+import no.sikt.graphitron.rewrite.derive.AuthoredClaimRejectionRows;
 import no.sikt.graphitron.rewrite.derive.NodeIdDecodeDefects;
 import no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections;
 import no.sikt.graphitron.rewrite.derive.StoreDetections;
@@ -512,6 +513,7 @@ public final class FactCapture {
                 expansions.synthesizedEdges());
             InputOccurrencePaths.derive(txDsl, graph.name());
             TypeBackingRows.derive(txDsl, graph.name());
+            AuthoredClaimRejectionRows.derive(txDsl, graph.name());
             Materializations.refresh(txDsl, graph.name());
             sources.commitStamps(txDsl);
         });

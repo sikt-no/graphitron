@@ -12,6 +12,25 @@ last-updated: 2026-08-22
 
 # The diagnostic view spells Java class names that nothing binds to the classes
 
+**The `Rejection.*` half of this item has dissolved into R803's implementation, exactly as
+the sequencing note below predicted.** R803's message fork resolved onto the post-capture
+arm: the claim-conflict arm's message is minted in Java into
+`intent_authored_claim_rejection`, and the variant and kind minted with it, from
+`RejectionFacts.classSpelling` and `RejectionKind.of` over the actual rejection value. Both
+SQL literals are gone from the DDL, the spelling is now bound to the class through the one
+Java site the residue writer already used, and a rename of a leaf carries into both
+relations by construction. The gate this item's fallback proposed (every dotted
+`Rejection.*` literal in the DDL resolves to a loadable class) has nothing left to guard,
+and adding it would be an enforcer for an empty population.
+
+What survives is the loose end at the bottom of this item: the syntax-error arm's
+`'InvalidSyntaxException'` literal. That one carries no rename risk, being a third-party
+name, so what is left here is a consistency question and not a correctness one. The rest of
+this body is kept as the record of how the defect was found and why the test suite did not
+catch it, which is still worth reading; treat the "What to do" section as answered.
+
+The original statement follows.
+
 The `diagnostic` view's claim-conflict arm writes two of our own class names as SQL string
 literals, `'Rejection.Deferred'` and `'Rejection.InvalidSchema.DirectiveConflict'`, and
 nothing connects either to the class it names. Rename the record and the SQL keeps the old

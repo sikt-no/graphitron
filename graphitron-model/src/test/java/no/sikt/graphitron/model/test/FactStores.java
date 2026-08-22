@@ -69,6 +69,29 @@ public final class FactStores {
     }
 
     /**
+     * The fact schema's own text, as the store boots it.
+     *
+     * <p>Here rather than at a reader, for the reason every other entry point is here: this is the
+     * one place the test side names the store, and a gate over the authored DDL has to read the
+     * same resource the boot reads or the two would answer different questions about what the
+     * schema says. A reader of this text is asking about the schema as authored, which is a
+     * question no booted catalog can answer: the engine keeps a view's expanded definition and has
+     * already lost the spelling by the time a column has a type.
+     */
+    public static String schemaText() {
+        try (var in = GraphitronModelStore.class
+                .getResourceAsStream(GraphitronModelStore.DDL_RESOURCE)) {
+            if (in == null) {
+                throw new IllegalStateException("the fact schema is not on the test classpath at "
+                    + GraphitronModelStore.DDL_RESOURCE + "; a reader of it would scan nothing");
+            }
+            return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    /**
      * How many stores this harness has opened so far in this JVM, across every thread and every
      * entry point. Monotonic, so a reader that wants a run's total reads it at the end of the run;
      * a module holding itself to a budget checks it where its own cases pass, which is what

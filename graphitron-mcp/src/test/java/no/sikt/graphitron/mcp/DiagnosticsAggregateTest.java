@@ -188,21 +188,52 @@ class DiagnosticsAggregateTest {
         }
     }
 
+    /**
+     * Filtering by one directive answers membership, which is the question an author asks. The
+     * column this filter replaced held the whole claim set joined into one value and was compared
+     * with {@code IS NOT DISTINCT FROM}, so asking for {@code service} matched only the conflict
+     * whose entire set was exactly {@code service} and silently returned none of the others that
+     * involve it. Two of these three conflicts involve it and both come back.
+     */
     @Test
-    void directivesGroupOnTheCanonicalSortedRenderSoClaimOrderCannotSplitAGroup() {
+    void filteringByOneDirectiveAnswersMembershipRatherThanSetEquality() {
         try (var store = FactStores.inMemory()) {
             var loc = new SourceLocation(1, 1, "/s.graphqls");
             var handle = volumeHandle(store.dsl(), List.of(
                 ValidationError.forType("A",
                     Rejection.directiveConflict(List.of("splitQuery", "routine"), "conflict"), loc),
                 ValidationError.forType("B",
-                    Rejection.directiveConflict(List.of("routine", "splitQuery"), "conflict"), loc)));
+                    Rejection.directiveConflict(List.of("service", "mutation"), "conflict"), loc),
+                ValidationError.forType("C",
+                    Rejection.directiveConflict(List.of("service", "routine"), "conflict"), loc)));
 
-            var structured = structured(aggregate(handle, Map.of("groupBy", List.of("directives"))));
-            assertThat(groups(structured)).singleElement().satisfies(group -> {
-                assertThat(key(group)).containsEntry("directives", "routine,splitQuery");
-                assertThat(group.get("count")).isEqualTo(2);
-            });
+            assertThat(coordinatesWhere(handle, "directive", "service"))
+                .containsExactlyInAnyOrder("B", "C");
+            assertThat(coordinatesWhere(handle, "directive", "routine"))
+                .containsExactlyInAnyOrder("A", "C");
+            assertThat(coordinatesWhere(handle, "directive", "table"))
+                .as("a directive no conflict claims is a question with an honest empty answer")
+                .isEmpty();
+        }
+    }
+
+    /**
+     * A directive is a filter and not a dimension, and the refusal says so rather than reporting a
+     * name that is not in the vocabulary. Grouping by a key a finding carries several of would
+     * multiply the very rows the aggregate counts, which is the invariant every {@code groupBy}
+     * rests on.
+     */
+    @Test
+    void aDirectiveIsAFilterAndNotAGroupBy() {
+        try (var store = FactStores.inMemory()) {
+            var handle = volumeHandle(store.dsl(), List.of());
+            var result = DiagnosticFacets.aggregateResult(handle,
+                Map.of("groupBy", List.of("directive")));
+            assertThat(result.isError()).isTrue();
+            assertThat(firstLine(result))
+                .contains("unknown dimension 'directive'")
+                .as("the refusal names the where-only filters, so the retry needs no second guess")
+                .contains("where-only filters are [directive]");
         }
     }
 
@@ -395,7 +426,51 @@ class DiagnosticsAggregateTest {
         }
     }
 
+    /**
+     * The directory axis truncates in the query, so a coarser depth is a different expression over
+     * the same stored path rather than a column the store would have had to carry. This is what the
+     * removed {@code directory} column could not do: it kept one segment and discarded the rest, so
+     * module root, a {@code src} split, or any other depth was unanswerable from the row.
+     */
+    @Test
+    void groupingByADirectoryDepthOtherThanImmediateParentIsExpressible() {
+        try (var store = FactStores.inMemory()) {
+            var loc = new SourceLocation(1, 1, "/a/b/c/s.graphqls");
+            var other = new SourceLocation(1, 1, "/a/b/d/t.graphqls");
+            var handle = volumeHandle(store.dsl(), List.of(
+                ValidationError.forType("A", Rejection.structural("one"), loc),
+                ValidationError.forType("B", Rejection.structural("two"), other)));
+
+            var parent = DiagnosticFacets.Dimension.parentDirectory(DIAGNOSTIC.FILE);
+            assertThat(store.dsl().selectDistinct(parent).from(DIAGNOSTIC)
+                    .where(DIAGNOSTIC.FILE.isNotNull())
+                    .fetch(parent))
+                .as("the axis this server publishes is the immediate parent")
+                .containsExactlyInAnyOrder("/a/b/c", "/a/b/d");
+
+            var grandparent = DiagnosticFacets.Dimension.parentDirectory(parent);
+            var count = org.jooq.impl.DSL.count();
+            assertThat(store.dsl().select(grandparent, count).from(DIAGNOSTIC)
+                    .where(DIAGNOSTIC.FILE.isNotNull())
+                    .groupBy(grandparent)
+                    .fetch(row -> row.get(grandparent) + "=" + row.get(count)))
+                .as("a consumer asking a coarser depth truncates further, and the two paths that "
+                    + "split at the parent group as one here")
+                .containsExactly("/a/b=2");
+        }
+    }
+
     // ---- helpers ----
+
+    /** The coordinates the aggregate reports under one {@code where} key. */
+    private List<String> coordinatesWhere(StoreHandle handle, String key, Object value) {
+        var structured = structured(aggregate(handle,
+            Map.of("groupBy", List.of("coordinate"), "where", Map.of(key, value))));
+        return groups(structured).stream()
+            .map(group -> (String) key(group).get("coordinate"))
+            .toList();
+    }
+
 
     /** The {@code diagnostics} answer for one {@code where} dimension, unpaged. */
     private static McpSchema.CallToolResult filtered(
