@@ -161,7 +161,9 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
 
     @Override
     public void exit() {
-        // lsp4j drives process lifetime; nothing to clean up.
+        // Deliberately empty: exit() is a client-driven notification a disconnecting editor may
+        // never send, so it is the wrong place to release anything. Per-connection teardown is
+        // disconnect(), called by whoever owns the connection.
     }
 
     @Override
@@ -178,5 +180,18 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
     public void connect(LanguageClient client) {
         this.client = client;
         textService.setClient(client);
+    }
+
+    /**
+     * The inverse of {@link #connect}, for a caller whose workspace outlives this server. It
+     * releases what {@code connect} installed in state this server does not own; state the
+     * server does own goes with the server. A single-connection transport (the stdio
+     * {@link Launcher}, whose process ends with its one connection) need not call it.
+     *
+     * <p>Not {@link #exit()}: that is a client-driven notification a disconnecting editor may
+     * never send, so the only reliable caller is whoever owns the connection's lifetime.
+     */
+    public void disconnect() {
+        textService.disconnect();
     }
 }

@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 /**
@@ -36,12 +37,18 @@ import java.util.function.Function;
  */
 public final class Workspace {
 
+    /**
+     * The empty slot. A constant rather than a fresh lambda per clear, so the slot's empty
+     * state is one identity and {@link #clearRecalculateListener} has something to put back.
+     */
+    private static final Runnable NO_LISTENER = () -> {};
+
     private final Object lock = new Object();
     private final Map<String, WorkspaceFile> files = new LinkedHashMap<>();
     private final List<String> toRecalculate = new ArrayList<>();
     private volatile LspVocabulary vocabulary;
     private volatile InlayHintConfig inlayHintConfig = InlayHintConfig.defaults();
-    private volatile Runnable recalculateListener = () -> {};
+    private final AtomicReference<Runnable> recalculateListener = new AtomicReference<>(NO_LISTENER);
     // The session's read access to the fact store, set once by whoever started the session and
     // null when nobody did. Nothing here is swapped per generator round: the store is written by
     // capture on its own cadence and read live, so there is nothing to refresh. A session without
@@ -356,7 +363,23 @@ public final class Workspace {
      * service drains the queue and ships diagnostics).
      */
     public void setRecalculateListener(Runnable listener) {
-        this.recalculateListener = listener;
+        recalculateListener.set(listener);
+    }
+
+    /**
+     * The inverse, for a workspace that outlives its connections. The {@code dev} goal shares
+     * one workspace across editor connections, so a connection that ends without clearing its
+     * slot leaves live state pointing at a dead connection's service.
+     *
+     * <p>The clear compares first: it empties the slot only if {@code listener} is still the
+     * instance installed there. A reconnect can register before the previous connection's
+     * teardown runs, and an unconditional clear would then silently stop diagnostics for the
+     * live editor. The compare is on identity, so the caller has to surrender the same object
+     * it registered; a freshly evaluated method reference is a different object and would
+     * clear nothing.
+     */
+    public void clearRecalculateListener(Runnable listener) {
+        recalculateListener.compareAndSet(listener, NO_LISTENER);
     }
 
     /**
@@ -381,7 +404,7 @@ public final class Workspace {
         // is not trivially small here means the listener has stopped being a submit.
         mutate(mutation);
         try (var _ = LspTrace.span("workspace.notify")) {
-            recalculateListener.run();
+            recalculateListener.get().run();
         }
     }
 

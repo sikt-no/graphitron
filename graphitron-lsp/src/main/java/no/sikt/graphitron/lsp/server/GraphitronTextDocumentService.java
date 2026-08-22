@@ -84,6 +84,11 @@ public class GraphitronTextDocumentService implements TextDocumentService {
     // into one follow-up. Safe because the recalculation queue is the state: a drain takes
     // whatever drainRecalculate hands it, and a drain that finds nothing queued is a no-op.
     private final AtomicBoolean drainWanted = new AtomicBoolean();
+    // Created once so the registration has an identity to surrender. The workspace's slot is
+    // cleared by comparing against the instance installed in it, and every evaluation of
+    // this::publishDiagnosticsForRecalculate yields a different object, so a teardown that
+    // passed a second evaluation would compare unequal and clear nothing.
+    private final Runnable recalculateListener = this::publishDiagnosticsForRecalculate;
     private LanguageClient client;
 
     public GraphitronTextDocumentService(Workspace workspace) {
@@ -119,7 +124,18 @@ public class GraphitronTextDocumentService implements TextDocumentService {
      */
     public void setClient(LanguageClient client) {
         this.client = client;
-        workspace.setRecalculateListener(this::publishDiagnosticsForRecalculate);
+        workspace.setRecalculateListener(recalculateListener);
+    }
+
+    /**
+     * Undoes {@link #setClient}'s registration when this connection ends: the workspace can
+     * outlive it (the {@code dev} goal shares one across editor connections), and a slot left
+     * pointing here keeps a dead connection's service reachable from live state. The clear
+     * compares on identity, so it is a no-op once a reconnect has taken the slot, which is why
+     * the listener is a field rather than a method reference evaluated per call.
+     */
+    public void disconnect() {
+        workspace.clearRecalculateListener(recalculateListener);
     }
 
     @Override
@@ -172,16 +188,15 @@ public class GraphitronTextDocumentService implements TextDocumentService {
      * running collapses into the one already wanted; the caller pays a
      * flag-and-submit, never the drain.
      *
-     * <p>A rejected submit is absorbed here, never rethrown. The window is
-     * real: the workspace outlives connections and its listener slot is not
-     * cleared on teardown, so between an editor detaching (which shuts this
-     * connection's executor down) and the next connection's {@link #setClient}
-     * a build swap still reaches this service. Inline, that window was quiet,
-     * lsp4j's {@code RemoteEndpoint.notify} catching its own write failure;
-     * a mutator (the dev goal's watcher thread among them) must not gain a
-     * throw the inline path never had. The flag is reset so it does not
-     * record a drain that will never run, leaving every later mutation free
-     * to submit again rather than collapsing into a phantom.
+     * <p>A rejected submit is absorbed here, never rethrown. {@link #disconnect} clears the
+     * workspace's slot at teardown, which narrows the window without closing it: a mutation
+     * can read the slot before the clear and run the listener after this connection's executor
+     * is shut down, so a rejected submit is still reachable and must stay absorbed. Inline,
+     * that window was quiet, lsp4j's {@code RemoteEndpoint.notify} catching its own write
+     * failure; a mutator (the dev goal's watcher thread among them) must not gain a throw the
+     * inline path never had. The flag is reset so it does not record a drain that will never
+     * run, leaving every later mutation free to submit again rather than collapsing into a
+     * phantom.
      */
     private void publishDiagnosticsForRecalculate() {
         if (client == null) return;

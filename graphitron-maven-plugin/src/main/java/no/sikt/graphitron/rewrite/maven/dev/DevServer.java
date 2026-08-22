@@ -1,9 +1,9 @@
 package no.sikt.graphitron.rewrite.maven.dev;
 
 import no.sikt.graphitron.lsp.server.GraphitronLanguageServer;
+import no.sikt.graphitron.lsp.server.LauncherFactory;
 import no.sikt.graphitron.lsp.state.Workspace;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
-import org.eclipse.lsp4j.services.LanguageClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,10 +20,11 @@ import java.util.function.Consumer;
 /**
  * The {@code dev} goal's socket-side surface: binds a {@link ServerSocket}
  * on a configured loopback port, accepts editor connections, and hands
- * each connection's streams to a fresh lsp4j {@link Launcher} backed by
- * a shared {@link Workspace}. One server instance per Mojo invocation;
- * one {@link GraphitronLanguageServer} per editor connection (so each
- * editor session has its own client proxy).
+ * each connection's streams to a fresh lsp4j {@link Launcher}, built by
+ * {@link LauncherFactory} so this transport and the stdio one share a
+ * connection policy, backed by a shared {@link Workspace}. One server
+ * instance per Mojo invocation; one {@link GraphitronLanguageServer} per
+ * editor connection (so each editor session has its own client proxy).
  *
  * <p>The shared workspace means parsed buffers and the catalog reference
  * survive editor restarts: an editor reattach is sub-second because all
@@ -108,14 +109,11 @@ public final class DevServer implements AutoCloseable {
         // session says which thread the drain is on.
         var drainExecutor = Executors.newSingleThreadExecutor(
             r -> daemon(r, "graphitron-lsp-diagnostics-drain"));
+        GraphitronLanguageServer server = null;
         try {
-            var server = new GraphitronLanguageServer(workspace, onSchemaSaved, drainExecutor);
-            var launcher = new Launcher.Builder<LanguageClient>()
-                .setLocalService(server)
-                .setRemoteInterface(LanguageClient.class)
-                .setInput(client.getInputStream())
-                .setOutput(client.getOutputStream())
-                .create();
+            server = new GraphitronLanguageServer(workspace, onSchemaSaved, drainExecutor);
+            var launcher = LauncherFactory.forStreams(
+                server, client.getInputStream(), client.getOutputStream());
             server.connect(launcher.getRemoteProxy());
             launcher.startListening().get();
         } catch (Exception e) {
@@ -123,13 +121,18 @@ public final class DevServer implements AutoCloseable {
         } finally {
             // This finally is the per-connection teardown seam: exit() is a client-driven
             // notification a disconnecting editor may never send, so this is the only place
-            // guaranteed to run. The interrupting shutdown drops any queued drain and interrupts
-            // one in flight, best-effort: a store read already inside the database runs to its
-            // budget, and a publish that still lands on the closed client is lsp4j's own quiet
-            // stream-closed path. The daemon flag keeps JVM exit correct regardless. The workspace
-            // outlives this connection with its listener slot uncleared, so a build swap can still
-            // submit to this executor after the shutdown; the document service absorbs that
-            // rejection quietly rather than throwing into the mutator.
+            // guaranteed to run. The disconnect goes first: it releases what this connection
+            // installed in the shared workspace, so a build swap arriving after it reaches
+            // nothing rather than a service whose executor is about to die. The interrupting
+            // shutdown then drops any queued drain and interrupts one in flight, best-effort: a
+            // store read already inside the database runs to its budget, and a publish that
+            // still lands on the closed client is dropped by the launcher's stream-closed
+            // policy. The daemon flag keeps JVM exit correct regardless. The disconnect narrows
+            // the window without closing it, so the document service still absorbs a rejected
+            // submit from a mutation that read the listener slot before the clear.
+            if (server != null) {
+                server.disconnect();
+            }
             drainExecutor.shutdownNow();
             try {
                 client.close();

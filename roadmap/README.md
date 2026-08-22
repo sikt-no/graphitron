@@ -24,9 +24,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R794` | LSP connection teardown logs SEVERE stack traces for stream-closed writes | In Progress | 2026-08-22 <sub>created 2026-08-21</sub> | [plan](lsp-teardown-stream-closed-write-noise.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-20 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | In Review | 2026-08-21 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
+| `R794` | LSP connection teardown logs SEVERE stack traces for stream-closed writes | In Review | 2026-08-22 <sub>created 2026-08-21</sub> | [plan](lsp-teardown-stream-closed-write-noise.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R799` | The inlay read reads the whole schema, and no enforcer sees it | Spec | 2026-08-22 <sub>created 2026-08-21</sub> | [plan](inlay-read-overruns-the-interactive-budget.md) |
@@ -507,7 +507,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R626` [**LSP argMapping completions and diagnostics at the @routine coordinate**](lsp-argmapping-routine-coordinate.md) — Backlog, architecture
 - `R793` [**The diagnostics drain overruns its 30 s session budget on a real workspace**](diagnostics-drain-overruns-its-session-budget.md) — Ready, bug
 - `R798` [**A build swap still spends its session budget loading the directive vocabulary on the watcher thread**](vocabulary-load-blocks-the-build-watcher-thread.md) — Backlog, bug
-- `R794` [**LSP connection teardown logs SEVERE stack traces for stream-closed writes**](lsp-teardown-stream-closed-write-noise.md) — In Progress, architecture
+- `R794` [**LSP connection teardown logs SEVERE stack traces for stream-closed writes**](lsp-teardown-stream-closed-write-noise.md) — In Review, architecture
 - `R430` [**LSP publishes graphitron:dev compile diagnostics against generated-file URIs**](lsp-compile-diagnostics-publish.md) — Backlog, feature
 - `R578` [**Raise the LSP unknown-input-field diagnostic to Error severity**](unknown-input-field-diagnostic-severity.md) — Backlog, cleanup
 - `R782` [**Completions and code actions get statement-count enforcers**](completion-and-code-action-statement-counts.md) — Backlog, architecture

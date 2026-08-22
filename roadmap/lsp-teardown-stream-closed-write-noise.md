@@ -1,7 +1,7 @@
 ---
 id: R794
 title: "LSP connection teardown logs SEVERE stack traces for stream-closed writes"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 3
 theme: lsp
@@ -260,6 +260,46 @@ and the javadoc on `GraphitronTextDocumentService.publishDiagnosticsForRecalcula
 Grep for "listener slot" at the Done gate. The rewritten comments around the
 `RejectedExecutionException` absorption describe the residual race the absorption
 still guards; the absorption itself survives, per Deliverable 2.
+
+## What landed
+
+**Deliverable 1.** `LauncherFactory` in `graphitron-lsp` builds the launcher both transports
+use, from a `LanguageServer` plus an input and output stream, and both call sites now go
+through it: `no.sikt.graphitron.lsp.server.Launcher` (stdio) and `DevServer.serve` (socket).
+No `Launcher.Builder` remains anywhere else in the tree, so the policy cannot be forgotten by
+a site. The wrapper is `LauncherFactory.quietOnStreamClosed`, package-private so the
+predicate boundary is pinnable without a socket: it catches a `consume` failure, consults
+`JsonRpcException.indicatesStreamClosed`, logs at debug and returns on a true verdict, and
+rethrows everything else unchanged. The factory's parameter is lsp4j's `LanguageServer`
+rather than `GraphitronLanguageServer`, which is what lets the end-to-end pin drive the real
+factory with a latch-blocking stub server.
+
+**Deliverable 2.** `Workspace`'s slot is now an `AtomicReference` with a `NO_LISTENER`
+constant, `setRecalculateListener` unchanged in signature and `clearRecalculateListener`
+added as its compare-and-clear inverse. `GraphitronTextDocumentService` holds its listener in
+a field created once and surrenders that instance from a new `disconnect()`, which
+`GraphitronLanguageServer.disconnect()` exposes and `DevServer.serve`'s `finally` calls. The
+clear runs before the executor shutdown, so a build swap arriving after it reaches nothing
+rather than a service whose executor is about to die; the `RejectedExecutionException`
+absorption stays for the mutation that read the slot before the clear. All three prose sites
+carrying the uncleared-slot claim are rewritten: `exit()` now says why it is deliberately
+empty and names `disconnect()`, and the other two describe the residual race.
+
+**Coverage, and what each pin was proved able to catch.** Each pin was run against a
+deliberately broken tree, because a suppression assertion that cannot fail is worse than no
+assertion. `LauncherFactoryTest` carries pins 1 and 2. With `wrapMessages` removed from the
+factory, both pin-2 cases fail, and their failure messages are the two records this item
+exists to remove: `SEVERE: Internal error: ... JsonRpcException: java.net.SocketException:
+Socket closed` on the response path and `INFO: Failed to send notification message.` on the
+notification path. That is also the spec's INFO argument reproduced rather than reasoned
+about: a `SEVERE`-only assertion would have passed on the second case. Pin 2 counts write
+attempts through a decorating `OutputStream`, so "nothing was logged" is distinguishable from
+"nothing was attempted". `ConnectionTeardownTest` carries pin 3, driven through
+`setClient` / `disconnect` as specified: making the clear unconditional fails its negative
+case (the live editor stops publishing), and surrendering a freshly evaluated method
+reference instead of the field fails its positive case (the slot is never cleared), which is
+the identity bug the round 2 review named. `DevServerTest.multipleClientsShareWorkspaceState`
+gained the log assertion and is explicitly commented as the non-deterministic companion.
 
 ## Reviewer findings
 

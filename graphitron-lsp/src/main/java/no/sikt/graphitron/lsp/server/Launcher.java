@@ -1,8 +1,6 @@
 package no.sikt.graphitron.lsp.server;
 
 import no.sikt.graphitron.lsp.state.Workspace;
-import org.eclipse.lsp4j.jsonrpc.Launcher.Builder;
-import org.eclipse.lsp4j.services.LanguageClient;
 
 import java.util.concurrent.Executors;
 
@@ -24,12 +22,7 @@ public final class Launcher {
             return thread;
         });
         var server = new GraphitronLanguageServer(new Workspace(), uri -> {}, drainExecutor);
-        var launcher = new Builder<LanguageClient>()
-            .setLocalService(server)
-            .setRemoteInterface(LanguageClient.class)
-            .setInput(System.in)
-            .setOutput(System.out)
-            .create();
+        var launcher = LauncherFactory.forStreams(server, System.in, System.out);
         server.connect(launcher.getRemoteProxy());
         launcher.startListening().get();
     }

@@ -71,6 +71,12 @@ class DevServerTest {
     @Test
     void multipleClientsShareWorkspaceState() throws Exception {
         var workspace = new Workspace();
+        // The reattach must also be quiet. This is not the deterministic pin for that (nothing
+        // here guarantees a request is still in flight when the first connection closes, which
+        // LauncherFactoryTest arranges with a latch); it asserts the console stays clean across
+        // the sequence a developer actually performs.
+        var records = new RecordingLsp4jLogHandler();
+        records.attach();
         try (var server = new DevServer(loopback(0), workspace, uri -> {})) {
             try (var s1 = new Socket(InetAddress.getLoopbackAddress(), server.port())) {
                 var p1 = clientProxy(s1);
@@ -95,7 +101,52 @@ class DevServerTest {
                 ).get(5, TimeUnit.SECONDS);
                 assertThat(result.isLeft()).isTrue();
             }
+        } finally {
+            records.detach();
         }
+
+        assertThat(records.withThrowable())
+            .as("closing a connection and reattaching is a routine dev-loop move, so it must "
+                + "leave the console usable for real failures")
+            .isEmpty();
+    }
+
+    /**
+     * Collects what lsp4j's endpoint logs during a test. Any record carrying a throwable is a
+     * console stack trace under a default {@code java.util.logging} setup, whatever its level,
+     * which is why the level is not part of the assertion.
+     */
+    static final class RecordingLsp4jLogHandler extends java.util.logging.Handler {
+        private final List<String> records = new java.util.ArrayList<>();
+        private final java.util.logging.Logger logger =
+            java.util.logging.Logger.getLogger("org.eclipse.lsp4j.jsonrpc.RemoteEndpoint");
+        private java.util.logging.Level restore;
+
+        void attach() {
+            restore = logger.getLevel();
+            logger.setLevel(java.util.logging.Level.ALL);
+            logger.addHandler(this);
+        }
+
+        void detach() {
+            logger.removeHandler(this);
+            logger.setLevel(restore);
+        }
+
+        synchronized List<String> withThrowable() {
+            return List.copyOf(records);
+        }
+
+        @Override
+        public synchronized void publish(java.util.logging.LogRecord record) {
+            if (record.getThrown() != null) {
+                records.add(record.getLevel() + ": " + record.getMessage()
+                    + " (" + record.getThrown() + ")");
+            }
+        }
+
+        @Override public void flush() {}
+        @Override public void close() {}
     }
 
     @Test
