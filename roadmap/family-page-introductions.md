@@ -94,15 +94,20 @@ canonically named relation (`intent_spelled_table`), never its `_live` source vi
 comment tells readers not to spell it; the reference cross-links what it names, so the register
 carries reader-facing names by construction. The follow-up's crossing gate owns the consequence:
 to check a registered reduction's row against the view-read census it must resolve through
-`meta_materialize` to the source view first, and its spec inherits that requirement. The
-flagship row is `intent_spelled_table`; implementation enumerates the rest by sweeping the
-`intent_` views for resolutions keyed on a written name (the family charter already names that
-layer).
+`meta_materialize` to the source view first, and its spec inherits that requirement.
+
+Membership is two tests applied together, and the population below is the sweep with both
+applied, so implementation transcribes it rather than re-sweeping. A relation is on the roster
+when it owns a normalization rule of its own, spelled in its own body, not when it reads a
+relation that states one; and when that rule mediates a meeting between two families'
+vocabularies, not a normalization inside one. The flagship row is `intent_spelled_table`.
 
 Crossings by plain column equality on a shared natural key get no bridge row by design. A
 foreign key is already a declared, engine-checked join path, and a coordinate-equality join
-between families is the ordinary case the whole `intent_` stratum exists for. The bridge roster
-is only for the rule-mediated meetings, because those are the ones a new view can silently fork.
+between families is the ordinary case the whole `intent_` stratum exists for. The same exclusion
+covers a verbatim match on a name two families carry: an identity comparison has no rule to
+re-derive differently, so there is nothing a new view could silently fork. The bridge roster is
+only for the rule-mediated meetings, because those are the ones a fork can corrupt.
 
 ## The derived artifact
 
@@ -269,26 +274,54 @@ The selection rule applied: the family's anchor or central grain first, then the
 shows how the family is read, then at most one resident that shows the family's character (an
 overflow, a reduction, a register). Every named relation exists in the DDL today.
 
-**Bridge rows.** Drafted from a sweep of the DDL's normalization sites (the pre-normalized
-`*_upper` generated columns and the resolution views joining on them, the bean-prefix strip, the
-verbatim Java-reference match). Each row's rule is one sentence; implementation verifies each
-against its view's body before transcribing.
+**Bridge rows.** The sweep over the DDL's function-mediated match sites (every `UPPER`, `LOWER`,
+`REPLACE`, `SUBSTRING` and generated `*_upper` join outside comments), with the two membership
+tests applied to each site against its view's body. Three relations pass both; each row's rule
+is one sentence. All three carry their spelled and census families in the direct read set (the
+flagship's through its registered source view, which is the materialize resolution already
+recorded for the follow-up), so no row needs a transitive-reach note.
 
 | relation_name | spelled_prefix | census_prefix | rule |
 |---|---|---|---|
 | `intent_spelled_table` | `graphitron_` | `sql_` | A written table reference meets the catalog census by case-insensitive match on pre-normalized spelling columns, one row per candidate. |
-| `intent_field_routine_method` | `graphitron_` | `sql_` | A written routine reference meets the catalog's callables by the same case-insensitive spelling rule, onto the generated call surface. |
-| `intent_field_producer_method` | `graphitron_` | `jvm_` | A written Java class-and-method reference meets the classpath census verbatim, one row per method it matches. |
-| `intent_class_member_slot` | `graphitron_` | `jvm_` | A written member name meets a backing class through the bean-prefix strip that turns census method names into the author's member vocabulary. |
 | `intent_column_match_claim` | `graphql_` | `sql_` | A field's own name meets the columns of the table its site navigates to, case-insensitively, with no directive involved. |
 | `intent_argmapping_key_column_candidate` | `graphitron_` | `sql_` | An argMapping path segment meets column names case-insensitively along the binding walk. |
 
-Two normalizations the sweep found stay off the roster by the distinct-family rule, and are
-recorded here for the follow-up item's predicate analysis: the SDL type-expression peel (bracket
-and bang stripping to reach a bare type name) normalizes within one family, and the
-node-metadata column match (stated key-column strings against declared columns) normalizes
-within another. The roster declares cross-family rules only; intra-family normalization is real
-but a different fact.
+Three relations an earlier draft rostered fail the tests against their own bodies and are out.
+`intent_field_routine_method` reads the flagship's rule (it joins through `intent_spelled_table`
+and then onto `sql_routine` by plain equality), so a row for it would state the flagship's rule
+twice under two names. `intent_field_producer_method` matches verbatim
+(`class_name`/`method_name` equality, its own column comment stating the consequence), which the
+exclusion paragraph removes: no rule, nothing to fork; its spelled side is also only transitive,
+through `intent_field_producer_reference`. `intent_class_member_slot` owns a real rule, the
+bean-prefix strip, but reads only `jvm_` relations: it mints the member vocabulary that later
+relations meet, and a `(spelled_prefix, census_prefix)` row describes a crossing, which a
+normalizer that crosses nothing is not.
+
+Four normalizations stay off the roster, recorded here because the follow-up's predicate
+analysis will see each as a function application and must classify it:
+
+- The SDL type-expression peel (bracket and bang stripping to reach a bare type name)
+  normalizes SDL syntax into an SDL name, one vocabulary, so there is no family crossing to
+  declare, even though the expression is carried on a `graphitron_` row where a macro rewrote
+  it. It is deliberately spelled at three sites (`intent_field_column_scope_live`,
+  `intent_argument_scope_table_live`, `intent_routine_return_binding`, whose comments
+  cross-reference the rule), so the analysis meets it three times.
+- The node-metadata column match (stated key-column strings against declared columns,
+  `intent_node_metadata_defect`) normalizes within `sql_`.
+- The bean-prefix strip (`intent_class_member_slot`, above): a real, forkable rule with no
+  crossing. Whether a normalizer that is not a crossing gets its own register, gets declared on
+  the relation that performs the eventual meeting (`intent_field_accessor_hop`, two `intent_`
+  hops on), or stays a disclosure is the follow-up's design question.
+- The settled case-fold convention: column names match case-insensitively wherever a reader
+  does it, stated as convention on `intent_resolved_node_key_column.column_name` rather than
+  owned by any relation, and applied by readers at their own crossings
+  (`intent_resolved_node_key_shape`, `intent_node_id_decode_column`). No relation can own a
+  bridge row for a rule the schema deliberately states as nobody's; whether the follow-up
+  reifies the convention as a declarable fact is its call.
+
+The roster declares owned cross-family rules only; a normalization that fails either test is
+real but a different fact, and the follow-up inherits the list above with the register question.
 
 The introductions above run one paragraph each in the friendly register the explanation pages
 use; headline rosters stay at two to four rows or they stop being curation; bridge rules are one
@@ -305,8 +338,9 @@ sentence each.
 5. jOOQ regeneration fallout in `graphitron-model` as the build produces it.
 6. The follow-up item's stub updated to carry its inherited remit: the view-read census, the
    crossing gate with its materialize-aware resolution, the keyed-crossing register (the
-   reviewer's closed-vocabulary recommendation recorded as its starting shape), and the
-   predicate-level analysis, all seeded by the declared bridges.
+   reviewer's closed-vocabulary recommendation recorded as its starting shape), the
+   predicate-level analysis with the four disclosed off-roster normalizations it must classify,
+   and the bean-strip register question, all seeded by the declared bridges.
 
 ## Risks
 
@@ -534,3 +568,28 @@ it, and that belongs in deliverable 6 beside the materialize resolution already 
   column match) are correctly excluded on the distinct-family rule. That rule was applied
   carefully there, which is what makes its non-application to `intent_class_member_slot` look
   like an oversight rather than a disagreement.
+
+### Round 2 response (author, 2026-08-22)
+
+Finding 3 is verified against all three view bodies and accepted in full; the re-sweep is done
+and the population revised. The roster is three rows, the three the finding confirms, and the
+membership tests now stand in the bridge section as the rule (owns, not reads; crosses, not
+normalizes), with the sweep recorded as applied so implementation transcribes rather than
+re-sweeps. The three failed rows are named in the population with why each fails, so the next
+draft cannot re-admit one by forgetting. The exclusion paragraph gains the verbatim-match case
+`intent_field_producer_method` teaches: an identity comparison has no rule to fork.
+
+On the `intent_class_member_slot` design question, the third disposal: the bean strip joins the
+off-roster disclosures. The row shape cannot hold it, as the finding says, and the relation that
+performs the eventual meeting reads the strip rather than owning it, so declaring it there would
+fail the owns-not-reads test the same way `intent_field_routine_method` does. Whether a
+normalizer without a crossing deserves its own register is recorded as the follow-up's question.
+
+The re-sweep also corrected one disclosure and added one. The SDL peel's exclusion ground moves
+from "within one family" to "one vocabulary": the peeled expression is carried on a
+`graphitron_` row, but the rule turns SDL syntax into an SDL name, and it is spelled at three
+sites the follow-up's analysis will meet. New is the settled case-fold convention, stated on
+`intent_resolved_node_key_column.column_name` as nobody's rule and applied at two readers'
+crossings; it fails the owns test by the schema's own words, and whether to reify it is the
+follow-up's. All four disclosures and the register questions are in the follow-up's stub
+(deliverable 6), not only in this item's history.

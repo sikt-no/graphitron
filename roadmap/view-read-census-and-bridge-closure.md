@@ -44,3 +44,17 @@ must pin what counts as a crossing predicate (which function applications, wheth
 how a column traces to its source relation through aliases, subqueries and CTEs) and whether the
 exemption register's kinds can then be verified rather than trusted. Plain column equality on
 shared keys stays ungated; those are declared paths, not rules.
+
+The declaring item's population sweep hands this analysis four off-roster normalizations it will
+meet as function applications and must classify rather than reject (its Population section
+carries the full reasoning): the SDL type-expression peel, one vocabulary but spelled at three
+sites (`intent_field_column_scope_live`, `intent_argument_scope_table_live`,
+`intent_routine_return_binding`) and carried on a `graphitron_` row, so it traces cross-family;
+the node-metadata column match inside `sql_` (`intent_node_metadata_defect`); the bean-prefix
+strip (`intent_class_member_slot`), a real forkable rule with no crossing; and the settled
+case-fold convention stated on `intent_resolved_node_key_column.column_name` as nobody's rule,
+applied at `intent_resolved_node_key_shape` and `intent_node_id_decode_column`. Two design
+questions ride with them, this item's to answer: whether a normalizer that is not a crossing
+(the bean strip) gets its own register beside the bridge roster, and whether the settled
+convention is reified as a declarable fact so its applications can be gated rather than
+recognized case by case.
