@@ -593,3 +593,77 @@ sites the follow-up's analysis will meet. New is the settled case-fold conventio
 crossings; it fails the owns test by the schema's own words, and whether to reify it is the
 follow-up's. All four disclosures and the register questions are in the follow-up's stub
 (deliverable 6), not only in this item's history.
+
+### Round 3, Spec → Ready, revisions requested (session_01VZWrUh1e8MWgV9E1SV7nZB, 2026-08-22)
+
+Finding 3 is discharged well, and the two membership tests are a better rule than the finding
+asked for: "owns, spelled in its own body, not reads" and "crosses two vocabularies, not
+normalizes inside one" are sharp enough to apply mechanically, and naming the three rejected
+relations with their reasons does stop a later draft re-admitting one. The two new disclosures
+check out against the DDL. The case-fold convention is stated on
+`intent_resolved_node_key_column.column_name` in almost the spec's words ("Matching against a
+table's columns is case-insensitive wherever a reader does it, which is settled convention
+rather than this relation's rule"), and `intent_node_metadata_defect` does read only `sql_`
+relations, so "normalizes within `sql_`" is exact. Every symbol the round 2 response introduces
+exists under the name it is given.
+
+**Finding 4 (question 2). The sweep is presented as complete and as the thing implementation
+transcribes rather than re-runs, and it misses a relation that passes both membership tests.**
+The bridge section now says the population "is the sweep with both applied, so implementation
+transcribes it rather than re-sweeping", which makes the sweep's coverage load-bearing in a way
+it was not in round 2. I ran the sweep the spec describes, over view bodies with comments
+stripped: every `UPPER`, `LOWER`, `REPLACE`, `SUBSTRING`, `LEFT`, `TRIM`, `REGEXP_REPLACE` and
+every `*_upper` column reference. Seventeen views hold one. Ten are accounted for in the spec
+(three rostered, one rejected, and the four disclosures across their six sites). Seven are not
+mentioned anywhere, and one of them belongs on the roster.
+
+`intent_field_reference_step_hop` reads `graphitron_field_reference_step` on the written side and
+`sql_constraint`, `sql_referential_constraint` and `sql_table` on the census side, and matches
+them on the pre-normalized columns in its own body: `c.constraint_name_upper =
+s.key_ref_name_part_upper`, with `c.table_schema_upper = s.key_ref_namespace_part_upper` when a
+qualifier was written, and a fallback onto `c.jooq_name_upper`. Its own comment states the rule
+and its precedence: "a leading qualifier, split off by capture and stored beside the value, binds
+hard, an unqualified name matches the SQL constraint name, and only where no SQL constraint in
+this graph's sources answers that name does the generated Keys-class constant become eligible,
+which is the resolver's namespace precedence rather than a looser match on either". That owns a
+rule, spelled in its own body, mediating `graphitron_` spellings against the `sql_` census, with
+both families in the direct read set. It passes both tests, and it is exactly the fork hazard the
+roster exists for: a new view that tried `jooq_name_upper` first, or dropped the precedence, would
+produce plausible rows against a different rule. It also resolves a different name against a
+different census than the flagship does, so it is not the flagship's rule under a second name.
+
+Its argument-site sibling `intent_argument_reference_step_hop` spells the same comparison in its
+own body, which is a fork surface, but its comment says the rule is argued at the field-site view
+and "the duplication is the SQL body and not the rule". Whether that is two rows or one row with
+the sibling noted is yours; I flag it rather than settle it, since the tests as written point one
+way and the DDL's own framing points the other.
+
+The other six unaccounted sites all look correctly out to me, and I list them so the disclosure
+list can be completed without re-deriving the sweep. The classification is yours; this is my
+read. `intent_name_matched_key_pair` matches column names case-insensitively but its comment
+already calls it "the schema's rule for a comparison inside one family", so it fails the crossing
+test on the schema's own words. `intent_field_reference_discovery` compares
+`arriving.table_name_upper <> departing.table_name_upper`, two `sql_table` rows, intra-family and
+an inequality rather than a resolution. `meta_relation_family` matches on
+`LEFT(LOWER(t.table_name), CHAR_LENGTH(f.prefix)) = f.prefix`, a real and forkable rule, but
+between the engine catalog and `meta_family`, so no family crossing. `intent_authored_claim_conflict`'s
+`REPLACE(g.declared, ',', ', @')` formats a directive list into a message and matches nothing.
+`diagnostic`'s `REGEXP_REPLACE(x, '/[^/]*$', '')` strips a filename to a directory, seven times,
+also matching nothing.
+
+That last one is the part of this finding that is not just about the roster. The disclosure list
+is framed as what the follow-up's predicate analysis "must classify", and deliverable 6 hands it
+over on that basis. A predicate walker will meet `diagnostic`'s seven `REGEXP_REPLACE` calls in a
+view spanning six families, which is the single most conspicuous function-over-cross-family-columns
+site in the schema, and it is not in the list. `meta_relation_family`'s prefix match is the same
+shape. Whatever the roster decision, the handoff is under-specified until the disclosure list
+covers what the sweep actually found rather than what the roster rejected.
+
+What would satisfy this: reconcile the sweep against all seventeen sites, put the missed row or
+rows on the roster with a rule sentence, and extend the disclosures to the remainder so
+deliverable 6 hands over a complete list. If a site is out, one clause saying which test it
+fails is enough; the four existing disclosures are the right length.
+
+**Not a finding.** I have now checked the roster twice from opposite directions, forward from the
+three rostered rows and backward from every function site in the file, and the three rows
+themselves have held both times. The re-sweep should confirm rather than disturb them.
