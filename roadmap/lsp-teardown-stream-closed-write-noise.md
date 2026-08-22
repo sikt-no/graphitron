@@ -279,3 +279,63 @@ bridge or `logging.properties`, and a record carrying a throwable prints a stack
 under the default handler at INFO as well as `SEVERE`, which was confirmed by emitting
 one. Coverage pin 2 changed as a result, from a `SEVERE`-only assertion to any record
 carrying a throwable, plus a notification-path case.
+
+### Round 2: Spec -> Ready, revisions requested (2026-08-22, session_01KH4F9G6Ad8qwSCmJdQeRMr)
+
+Round 1's finding is addressed, and everything Deliverable 1 rests on re-verified clean
+against the tree and the 0.24.0 bytecode, including the load-bearing new claim that a
+wrapper swallowing inside `consume` leaves `notify` nothing to log. Deliverable 1 is
+ready as written. Two findings on Deliverable 2.
+
+**Finding 1: two of Deliverable 2's three costs are already absorbed in the tree.**
+`DevServer.serve`'s `finally` calls `drainExecutor.shutdownNow()` before it closes the
+socket, and `GraphitronTextDocumentService.publishDiagnosticsForRecalculate` catches the
+`RejectedExecutionException` that a submit to a shut-down executor throws, resets
+`drainWanted`, and logs at debug. So in exactly the window the plan describes, between an
+editor detaching and the next reconnect, a stale listener's `run()` reaches a dead
+executor and returns. There is no drain walk, no store read, no publish, and therefore no
+JUL record. Both the first cost ("every failed publish logs one record carrying the
+throwable") and the second ("the drain ... did real work first, walking each queued file
+and running a store read") are unreachable there. The third cost, a dead connection's
+service reachable from live shared state, stands.
+
+Two consequences for the plan body. First, the two-deliverable coupling now rests on that
+third cost alone: "shipping only the first would leave the item quiet and still wrong" is
+true only in the stale-reference sense. That is still a fair reason to do the clear, and
+the plan already frames Deliverable 2 as hygiene, but it should be argued on the cost it
+actually buys rather than on noise and wasted work the tree already absorbs.
+
+Second, `Retired vocabulary` names one stale comment when there are three. Both
+`DevServer.serve`'s `finally` comment ("the workspace outlives this connection with its
+listener slot uncleared, so a build swap can still submit to this executor after the
+shutdown") and `publishDiagnosticsForRecalculate`'s javadoc ("the window is real: ... its
+listener slot is not cleared on teardown") state the uncleared slot as their own reason for
+existing, and Deliverable 2 narrows that window to a residual race: a mutation that reads
+the slot before the clear and runs the listener after the shutdown. Say explicitly that the
+`RejectedExecutionException` absorption stays as the guard for that race rather than
+becoming dead code, because "teardown clears the slot" reads as license to delete it, and
+deleting it would hand a mutator (the dev goal's watcher thread among them) the throw that
+javadoc exists to prevent.
+
+**Finding 2: the compare in compare-and-clear needs an identity the plan has not given
+it.** `setClient` registers `workspace.setRecalculateListener(this::publishDiagnosticsForRecalculate)`.
+A method reference yields a fresh object at every evaluation and lambdas inherit identity
+equality, so a teardown that calls the clear with `this::publishDiagnosticsForRecalculate`
+compares unequal against the instance the registration installed and clears nothing. The
+plan spells out the opposite hazard, an unconditional clear clobbering a live reconnect, on
+the grounds that getting the ordering backwards would turn a cosmetic bug into a functional
+one. The same standard applies here, and more sharply: this arm fails closed and silently,
+so the item would ship looking done with the slot never cleared. Name the mechanism the
+compare uses, either capturing the registered `Runnable` in a field on the service and
+handing that same instance back, or having registration return a token teardown surrenders.
+
+Coverage pin 3 as written would not catch it. "Against a `Workspace` directly" with
+test-authored `Runnable`s compares each instance against itself, which passes whatever the
+production registration does. The pin needs to drive the service's own register-and-clear
+path for at least the positive case.
+
+**Non-blocking.** Coverage pin 2 does not name a module. Pins 1 and 3 say `graphitron-lsp`,
+and pin 2 needs only lsp4j plus a loopback socket, so `graphitron-lsp` reads as intended,
+but the factory's home module is worth stating since the alternative reading
+(`graphitron-maven-plugin`, next to `DevServerTest`) would put the pin behind that module's
+native-access surefire configuration for no gain.
