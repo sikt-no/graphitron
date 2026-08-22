@@ -243,3 +243,103 @@ curation; keyed-crossing reasons are one sentence each.
   of done the item exists for.
 - The follow-up item's stub reflects the narrowed remit (predicate-level analysis over a census
   that now exists).
+
+## Reviewer findings
+
+### Round 1, Spec → Ready, revisions requested (session_01VZWrUh1e8MWgV9E1SV7nZB, 2026-08-22)
+
+Question 1 is answered, and answered well. What lands for a consumer is legible without reading
+the deliverables: today `graphitron.sikt.no/architecture/reference/schema/intent.html` opens with
+a dense naming-discipline argument for why the family is called `intent_` and then dumps every
+relation in it alphabetically; after this ships the page opens with a plain-language paragraph
+saying what the family holds, then a short "start here" list naming two to four relations with
+one sentence each on what a row means, then a section saying how this family's rows meet other
+families' rows, with the charter demoted under its own heading and the index blurbs reading as
+introductions rather than charters. The viability claims hold: every symbol the spec names exists
+as named and does what the spec says it does.
+
+The two findings below are both question 2, and both are about the same seam: the registers'
+grain. Neither is about naming or phrasing.
+
+**Finding 1 (question 2). The flagship bridge row names a base table, and the crossing gate can
+only see views, so the register's own worked example fails the gate it ships with.** The spec
+says the flagship `meta_family_bridge` row is `intent_spelled_table`, and that the crossing gate
+requires "every row of either register resolves to an observed view that actually spans families"
+and that "a bridge row's two named families both appear among the families of its view's read
+set". But `intent_spelled_table` is a `CREATE TABLE` (graphitron-model.sql:3284), the
+materialization target of the registration `('intent_spelled_table_live', 'intent_spelled_table',
+...)` in `meta_materialize`. It has no stored definition, so `meta_view_read` (defined as "this
+view's stored definition directly reads this relation") holds no rows for it, and both gate
+clauses reject the row on day one. The view that actually spans families is
+`intent_spelled_table_live`, which reads `graphitron_table` and its four siblings,
+`store_graph_source` and `sql_table`: three families.
+
+This is not a slip in one row, because the resolution is a design choice with visible
+consequences and the spec does not name it:
+
+- If the register keys on `intent_spelled_table_live`, the gate closes uniformly, but the
+  rendered "How this family meets the others" section then cross-links a relation whose own
+  comment tells readers not to name it ("a reader naming this relation instead is asking for
+  on-demand evaluation and will get it"). The reader-facing section would point at the half of a
+  registration that consumers are meant never to spell.
+- If it keys on `intent_spelled_table`, the reader-facing name is right, but the gate needs a
+  materialize-aware indirection the spec does not describe: resolve a register row's relation
+  through `meta_materialize` to its source view before consulting `meta_view_read`.
+- If instead `meta_view_read` mints rows for a materialized target copied from its source view,
+  the census's stated meaning changes from "this view's stored definition directly reads this
+  relation" to something else, and the follow-up item inherits that redefinition.
+
+The same fork reaches the keyed-crossing register and the rest of the bridge sweep, so it cannot
+be settled one row at a time. There are six registrations, all in `intent_`, and the spec's own
+method for finding further bridge rows is "sweeping the `intent_` views for resolutions keyed on
+a written name", which is exactly the layer the registrations live in. Four of the six `_live`
+source views span families today. What would satisfy this: the spec pins which relation of a
+registered pair a register row names, and states how the crossing gate resolves it, in one place
+that both registers and the renderer read.
+
+**Finding 2 (question 2). The register-size question the spec hands to this gate has fired, and
+the answer changes the DDL and the bulk of the authoring, so it has to be settled before Ready.**
+The first risk bullet asks the Spec reviewer to weigh a stratum-level exemption "if the `intent_`
+stratum yields dozens of rows". It does. Counting `FROM`/`JOIN` targets in the 72 view bodies of
+graphitron-model.sql against the family prefixes gives 47 multi-family views: 46 in `intent_`,
+plus `diagnostic`. That is a textual approximation rather than the AST walk, so treat it as the
+order of magnitude and not the exact figure, but it is decisively "dozens" and not "a handful".
+
+At that size the per-view register with a bespoke one-sentence `reason` per row has a failure
+mode the spec's own withdrawn-draft note is alert to in the other direction: 46 near-identical
+sentences saying "combines readings by coordinate on shared keys", which nobody re-reads, and
+which the next author satisfies by copying a neighbour. An exemption register whose rows are
+copied is a checkbox wearing an argument's clothes. The flat stratum-level exemption is worse,
+though, and for the reason the withdrawn-draft note already gives: one row absolving the whole
+`intent_` derivation layer auto-absolves every future resident, which is inclusion polarity
+again.
+
+My recommendation, offered as a recommendation and not as the answer: keep one row per view, so
+the register keeps the gate's grain and its per-view force, but give the `reason` column a small
+closed vocabulary of crossing kinds (a coordinate-equality join, a union of arms across
+vocabularies, and whatever third the sweep turns up), each kind's sentence stated once on the
+column comment, with the row carrying the kind plus a short note only where it differs from the
+kind's sentence. Forty-six enum values that a gate can check against a closed set beat forty-six
+paraphrases that it cannot. Whatever shape you pick, it belongs in the plan body before authoring
+starts, because it decides `meta_keyed_crossing`'s columns and most of the item's effort.
+
+**Non-blocking, no response needed.**
+
+- The drift-check corpus extension overstates its reuse. "The check already boots the store and
+  resolves spans; the store corpus reuses both" is right about booting and about `resolves` /
+  `universeOf`, but `SchemaIdentifierDriftCheck.scan` extracts backtick spans under an AsciiDoc
+  block context, and the DDL has backticks on two lines out of 7022: store comments cite
+  relations in bare prose. The store corpus needs its own extractor, prefix-anchored bare tokens
+  rather than delimited spans. Tractable, and the family charters' own rejected names (`jooq_`,
+  `extension_`, `validator_`) fall outside the observed-prefix filter, so they are not the
+  hazard they look like. It is just more than a corpus swap.
+- `meta_view_read` as a keyed `meta_` base table will trip
+  `FactSchemaGateTest.everyRelationLeadsWithItsPartitionDimension`, whose `meta_` arm is a switch
+  hard-coding `meta_materialize` and `meta_materialize_dependency` and defaulting everything else
+  to `graph_name`. One case, but the deliverables do not mention it and "without new code" in the
+  Gates section reads as though nothing there moves.
+- `MaterializeDependencies.relationsReadBy` is `private static`. Generalizing it means widening
+  or lifting it, which the spec plainly intends; noted only so it is not read as already shared.
+- "the existing comment-coverage and capture-agreement gates" names nothing in the tree under the
+  second half. The closest thing is `FactSchemaGateTest`'s census-closure test, "every relation
+  resolves to one family page or carries an exemption row".
