@@ -77,7 +77,18 @@ import static org.jooq.impl.DSL.select;
  * declaration read 121 extra scans at this fixture's size, which is 15% of one of the numbers below
  * and no ceiling anybody would defend. What makes it visible is that the excess *grows with the
  * schema*, and that is {@link #theCensusLookupDoesNotTrackTheSchemasSize}, which states the arm's
- * invariant directly and at two sizes. That test is the sharp one; the ceilings are the net.
+ * invariant directly and at two sizes. Those tests are the sharp ones; the ceilings are the net.
+ *
+ * <p>{@link #theInlayReadCostsABoundedAmountPerDeclaration} is the second of them, and the reason it
+ * exists is worth stating because the same reason will apply to the next surface. A fixed small
+ * fixture is structurally blind to a cost that grows with the schema, the fixture being exactly
+ * where such a term is smallest: the shape that made the inlay read answer nothing at all on a real
+ * schema cost 1544 scans over the three types below and 561851 over sakila's 239. A retuned ceiling
+ * catches that one defect and says nothing about the next, which will be a term invisible at three
+ * types and dominant at three hundred. So the two live together by design. The five other surfaces
+ * here still have only the net, and that gap is real rather than overlooked: each of their ceilings
+ * passes on the unregistered tree too. What the helpers below are shaped for is that a second
+ * surface is one more assertion rather than a second mechanism.
  */
 class SurfaceScanCountTest {
 
@@ -85,12 +96,54 @@ class SurfaceScanCountTest {
     private static final Pattern SCAN_COUNT = Pattern.compile("scanCount: (\\d+)");
 
     /**
+     * The inlay ceiling, placed between two measured shapes rather than above one. The read costs
+     * 482 scans on this fixture as the store stands, and 1544 with the two {@code meta_materialize}
+     * registrations it depends on removed; that unregistered shape is not a hypothetical, it is what
+     * the surface cost on a real schema until those rows landed for another surface's sake, and at
+     * sakila's size it answered nothing at all. 800 leaves a factor of 1.66 below and 1.93 above.
+     *
+     * <p>So this is a number whose whole value is that it discriminates, and it cannot be raised on
+     * the strength of the current cost alone. Raising it because a new arm pushed today's figure up
+     * is exactly how it returns to being inert: re-measure the unregistered shape first, and if no
+     * window is left between the two, say so rather than picking a number above both.
+     */
+    private static final long INLAY_CEILING = 800;
+
+    /**
+     * What one inlay request may cost per declaration of the schema it is pointed at, which is the
+     * property the ceiling above is structurally blind to, for the reason this class's own
+     * documentation gives.
+     *
+     * <p>Asserted as a level rather than as a growth ratio, for a measured reason. Both shapes are
+     * flat in the schema, 42 then 41 per declaration as the store stands and 150 then 141
+     * unregistered across a fourfold schema, so a ratio reads about 1 either way and separates
+     * nothing. What separates them is the size of the constant, and 80 sits between the two with a
+     * factor of 1.9 below and 1.76 above the worse of the guarded pair. Two sizes rather than one
+     * because a single size cannot tell a bounded constant from the low end of a superlinear curve,
+     * and flatness across the pair is what says the constant is the whole story.
+     */
+    private static final long INLAY_PER_DECLARATION_CEILING = 80;
+
+    /** Types in the smaller and larger schema the per-declaration cost is measured over. */
+    private static final int SMALLER_SCHEMA = 60;
+    private static final int LARGER_SCHEMA = 240;
+
+    /**
+     * Omitted-name {@code @field} sites per type in those two schemas. More than one on purpose. A
+     * leaf field carrying a {@code @field} is what the omitted-name arm reads, so sites are the
+     * dimension that arm's cost actually tracks, and a type declaring a single field is not a shape
+     * an author writes. Four is enough for the per-declaration figure to be flat across a fourfold
+     * schema, which is what the assertion needs of the fixture.
+     */
+    private static final int SITES_PER_TYPE = 4;
+
+    /**
      * The fixture every ceiling below is measured against: a type bound to a catalog table, a field
      * whose name a column answers, a field carrying an omitted directive argument for the inlay
      * surface to fill, and a type no table binds. Small on purpose. The costs a surface pays here
      * are the fixed shape of its statement rather than a function of how much schema it was pointed
-     * at, which is what makes a constant ceiling meaningful; the one property that does need two
-     * sizes says so and builds its own fixtures.
+     * at, which is what makes a constant ceiling meaningful; the two properties that do need two
+     * sizes say so and build their own fixtures.
      */
     private static final String SDL = """
         type Query {
@@ -147,8 +200,9 @@ class SurfaceScanCountTest {
 
         assertThat(scansFor(handle ->
             InlayHints.compute(everyHintEnabled(), file, Optional.of(handle), wholeFile())))
-            .as("inlay hints over the whole file, every axis enabled")
-            .isLessThan(1800);
+            .as("inlay hints over the whole file, every axis enabled; see INLAY_CEILING before "
+                + "raising this, the number sits between two measured shapes")
+            .isLessThan(INLAY_CEILING);
 
         assertThat(scansFor(handle ->
             Diagnostics.compute(store.vocabulary(), "file:///x.graphqls", file, Optional.of(handle))))
@@ -188,7 +242,50 @@ class SurfaceScanCountTest {
             .isLessThan(150);
     }
 
+    /**
+     * One inlay request reads a relation over the whole captured graph and then filters, so what a
+     * window asks decides which rows come back and not how many are visited: a ten-line window and a
+     * four-thousand-line file scan the same amount. That is the shape this states, at a region held
+     * fixed while the schema around it grows, so the number is a cost per declaration of schema the
+     * author wrote and not a cost per hint the editor asked for.
+     *
+     * <p>Bounded rather than absent is the claim. The cost is allowed to track the schema, since
+     * every arm reads a relation of it; what it may not do is track it steeply enough for a large
+     * consumer's schema to stop answering, which is what the guarded shape did.
+     */
+    @Test
+    void theInlayReadCostsABoundedAmountPerDeclaration() {
+        assertThat(inlayScansPerDeclaration(SMALLER_SCHEMA))
+            .as("per declaration over a " + SMALLER_SCHEMA + "-type schema")
+            .isLessThan(INLAY_PER_DECLARATION_CEILING);
+        assertThat(inlayScansPerDeclaration(LARGER_SCHEMA))
+            .as("per declaration over a " + LARGER_SCHEMA + "-type schema, four times the schema "
+                + "and so the size that would show a term the smaller one hides")
+            .isLessThan(INLAY_PER_DECLARATION_CEILING);
+    }
+
     // ===== Helpers =====
+
+    /**
+     * What an inlay request costs per declaration at a schema of {@code types} scaled types. The
+     * region is the same few lines at both sizes, so the growth the number would show is the
+     * schema's and not the request's.
+     */
+    private static long inlayScansPerDeclaration(int types) {
+        Path directory = tmp.resolve("inlay-scale-" + types);
+        String sdl = scaledSdl(types, SITES_PER_TYPE);
+        try (var scaled = StoreFixture.ofCatalog(directory, sdl, StoreFixture.backingClasses())) {
+            var snapshot = WorkspaceFileTestSupport.snapshot(sdl);
+            long total = scansFor(scaled, handle -> InlayHints.compute(
+                everyHintEnabled(), snapshot, Optional.of(handle), firstDeclarations()));
+            return total / declarations(types, SITES_PER_TYPE);
+        }
+    }
+
+    /** A region small enough to be the same request at every schema size, and not empty at any. */
+    private static Range firstDeclarations() {
+        return new Range(new Position(0, 0), new Position(4, 0));
+    }
 
     /**
      * What reaching the census costs the redirect arm over reading its driving relation alone, at a
@@ -219,12 +316,40 @@ class SurfaceScanCountTest {
 
     /** {@code types} types each bound to a real catalog table, so every census row it reads exists. */
     private static String scaledSdl(int types) {
+        return scaledSdl(types, 0);
+    }
+
+    /**
+     * The same schema with {@code sites} leaf fields per type, each carrying a {@code @field} whose
+     * name argument was omitted. A dimension of its own rather than a fixed count, because the cost
+     * tracks sites and types separately and a schema of one field per type is not the shape an
+     * author writes. The thirteen tables are the same thirteen at every size, which is what holds
+     * the catalog census fixed while the schema grows; the catalog is the other scaling direction
+     * and not this one's subject.
+     */
+    private static String scaledSdl(int types, int sites) {
         var tables = List.of("film", "actor", "address", "category", "city", "country", "customer",
             "inventory", "language", "payment", "rental", "staff", "store");
         return "type Query { first: T0 }\n" + IntStream.range(0, types)
             .mapToObj(i -> "type T" + i + " @table(name: \"" + tables.get(i % tables.size())
-                + "\") { id: ID }\n")
+                + "\") { id: ID" + fieldSites(sites) + " }\n")
             .reduce("", String::concat);
+    }
+
+    /** The omitted-name {@code @field} sites one scaled type carries. */
+    private static String fieldSites(int sites) {
+        return IntStream.range(0, sites)
+            .mapToObj(s -> " f" + s + ": String @field")
+            .reduce("", String::concat);
+    }
+
+    /**
+     * The type and field declarations {@link #scaledSdl(int, int)} writes, which is what a
+     * per-declaration cost is stated over. The root type and its one field are left out as a
+     * constant two that neither size's arithmetic turns on.
+     */
+    private static int declarations(int types, int sites) {
+        return types * (1 + sites);
     }
 
     /** Every axis on, which is what a client that opted in sends and what the default is not. */
@@ -265,12 +390,17 @@ class SurfaceScanCountTest {
      * with its bind values inlined so the plan is the one the surface would have got.
      */
     private static long scansFor(Consumer<StoreHandle> surface) {
+        return scansFor(store, surface);
+    }
+
+    /** The same instrument over a store a test built for itself, which the scaled sizes need. */
+    private static long scansFor(StoreFixture fixture, Consumer<StoreHandle> surface) {
         var executed = new ArrayList<Query>();
-        surface.accept(recording(executed));
+        surface.accept(recording(fixture, executed));
         assertThat(executed).as("a surface that read nothing would pass every ceiling").isNotEmpty();
         long total = 0;
         for (Query query : executed) {
-            total += scans(store.handle(), query);
+            total += scans(fixture.handle(), query);
         }
         return total;
     }
@@ -288,8 +418,8 @@ class SurfaceScanCountTest {
     }
 
     /** The fixture's store, seen through a handle that keeps every statement it executes. */
-    private static StoreHandle recording(List<Query> into) {
-        var configuration = store.handle().dsl().configuration()
+    private static StoreHandle recording(StoreFixture fixture, List<Query> into) {
+        var configuration = fixture.handle().dsl().configuration()
             .derive(new DefaultExecuteListenerProvider(new ExecuteListener() {
                 @Override
                 public void executeStart(ExecuteContext ctx) {
