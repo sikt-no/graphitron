@@ -1,7 +1,7 @@
 ---
 id: R799
 title: "The inlay read reads the whole schema, and no enforcer sees it"
-status: Spec
+status: Ready
 bucket: testing
 priority: 4
 theme: lsp
