@@ -1,7 +1,7 @@
 ---
 id: R804
 title: "Composed columns are atomic and key-dependent: state the discipline in the explanation articles"
-status: Ready
+status: In Review
 bucket: docs
 priority: 5
 theme: docs
@@ -69,58 +69,32 @@ and the encoding leaking into a consumer's types (in `ClaimFacts`, `contested` w
 held a one-element list containing the joined string; it is now one row per contesting
 class like its siblings).
 
-## Deliverable 1: the discipline paragraph in fact-model.adoc
+## What landed
 
-One paragraph inside "Derived reads are views, not stored facts", in the opening shape
-cluster beside the converse test ("two spellings of one value are two base columns"), not
-a new section: the tail of that section is measured cost rules, where a shape rule reads
-as a non-sequitur. The paragraph states the two-clause discriminator above, the
-`intent_type_backing_conflict` exemplar pair (one exemplar per side, from one relation and
-one key), the membership-versus-set-equality argument against that pair, and one
-cross-reference to the provenance section's minted-message sentence for the order half.
-The concrete wrong answer goes in the same paragraph as one past-tense clause, on the
-relation that actually paid it: the claim-conflict relation's retired directives column and
-the MCP facet that filtered it. Keep that a clause and not a second exemplar pair. The
-exemplar pair is the live one, and the retired column is what the argument predicted,
-which is the only weight it has to carry here. Do not enumerate the
-sanctioned columns as a roster (an unguarded census); the DDL comments own the per-column
-arguments, and seven of them already spell the vocabulary this paragraph lifts ("display
-material, never a dimension"). Name only live columns; the removed ones are told as
-history, which is the register the page already uses for the retired assignability
-closure.
+All three deliverables shipped in one commit. Where each one went, so the Done gate can
+read the diff against what was approved:
 
-Its enforcer line, written named-and-true: *Enforced by:*
-`CollectionValuedColumnGateTest` (graphitron-model) for the named constructs in the DDL's
-statement regions; disclosed gap, per that gate's own javadoc: a row-local scalar
-expression that discards part of a value trips nothing, because detecting serialization
-inside an arbitrary expression is not mechanizable, so this paragraph is the coverage for
-that residue. The gap is closable case by case (each such expression is findable in
-review) and the removed path-truncation column on `diagnostic` is its exemplar.
-
-## Deliverable 2: two scoping sentences in fact-model.adoc
-
-* In "Name the row, not the question", one forward-linking sentence: a column encoding a
-  set means the row asserts something about several things at once, so the one-sentence
-  check cannot be finished honestly at the column grain either.
-* At the `diagnostic` exemption (the roster's placement exemption in the strata section),
-  one sentence scoping it: the exemption covers a relation's name and population and says
-  nothing about what a column may hold. The exemplar is one relation, two verdicts:
-  `coordinate` passes because its atoms ride the same row (the view's own comment argues
-  this), and the path-truncation column failed the same test and was removed. Without the
-  sentence the next author reads `diagnostic` as pre-cleared, and the largest offender
-  R803 removed sat on exactly that relation.
-
-## Deliverable 3: the sibling half of naming-the-row.adoc's worked example
-
-Extend the existing `intent_bound_table` worked example (the "candidate count is a column
-rather than a rule buried inside whichever consumer asked first" punchline) with its
-failing sibling, in the page's register and against the shape the reader has just been
-taught: a count as a column is the honest fold; the list of the counted things serialized
-into a scalar beside it is the dishonest one, because the question an author asks of a
-list is membership, and a serialized set can only answer equality of the whole. One short
-paragraph, no new example, no roster. If the pantry metaphor stretches naturally (a label
-that says how many jars, versus three jars taped together under one label), use it; if it
-strains, plain prose.
+* **Deliverable 1, the discipline paragraph.** `fact-model.adoc`, "Derived reads are views,
+  not stored facts", at the end of the opening shape cluster (after the declared-versus-erased
+  return type pair, before "A derivation gets a relation as soon as a second reader asks
+  it"). One paragraph carrying the two-clause discriminator, the
+  `intent_type_backing_conflict` exemplar pair on one key, the
+  membership-versus-set-equality argument, the retired directives column and its MCP facet
+  as one past-tense clause, and the order half as a cross-reference to the provenance
+  section's minted-message sentence rather than a restatement. No roster of sanctioned
+  columns; the only column names in it are live. Its enforcer line follows as its own
+  italic line, in the mid-section shape the strata section already uses, naming
+  `CollectionValuedColumnGateTest` and the gap that gate's javadoc discloses.
+* **Deliverable 2, the two scoping sentences.** One at the end of the one-sentence check in
+  "Name the row, not the question", pointing forward to the shape rule by section title,
+  which is how that page already forward-links (see the grain paragraph under "One base,
+  many views"). One at the end of the stratum-three bullet, scoping the `diagnostic`
+  placement exemption to name and population and giving the one-relation-two-verdicts
+  exemplar.
+* **Deliverable 3, the failing sibling.** `naming-the-row.adoc`, appended to the
+  `intent_bound_table` worked example directly after the candidate-count punchline, before
+  the promotion history. One paragraph, no new example, and the pantry metaphor held (a
+  label saying how many jars, versus three jars taped together under one label).
 
 ## Verification
 
@@ -134,6 +108,24 @@ strains, plain prose.
   `intent_type_backing`, `diagnostic.coordinate`.
 * No mechanical test pins prose content; the Spec → Ready and In Review → Done gates are
   the review. The one build-checked claim is the enforcer line naming a test that exists.
+
+What the implementer checked, so the Done gate can spot-check rather than redo it:
+
+* The same-page reference resolves in the rendered HTML. It is written as a natural cross
+  reference on the section title (`<<Provenance: pick the shape per fact,...>>`) rather than
+  on the generated id, so a section rename breaks it visibly instead of silently
+  mis-landing the reader; `fact-model.html` renders it as
+  `href="#provenance-pick-the-shape-per-fact"` against a heading publishing exactly that id,
+  with no unresolved-reference fallback text anywhere on the page.
+* Every quoted phrase is quoted from the live tree: "display material, never a dimension"
+  (seven columns spell it), the conflict view's own set-equality sentence, the `diagnostic`
+  view's argument that `coordinate`'s atoms ride the same row, and the gate javadoc's
+  disclosed gap. `intent_type_backing_conflict.candidates`, `intent_type_backing` and
+  `diagnostic.coordinate` are live; the two retired columns are named by description only,
+  in past tense, so no retired identifier appears on either page.
+* Full reactor build green on the exact tree, and the docs render checked at the HTML rather
+  than at BUILD SUCCESS: both new paragraphs and the enforcer line are present as prose in
+  `fact-model.html` and `naming-the-row.html`.
 
 ## Not in scope
 

@@ -84,6 +84,15 @@ column rather than a rule buried inside whichever consumer asked first. A single
 answer table could not have served them both without growing a flag, then a mode, then a second
 copy.
 
+That column has a failing sibling worth seeing beside it, because the two look equally harmless.
+The count of the candidates is a column. The candidates themselves, glued into one string in a
+column next to it, are not, and the reason is the question an author actually asks of a list: is
+the table I care about one of them. A glued string can answer only whether the whole list is
+exactly the list you named, so membership takes picking the string apart, and every reader picks
+it apart its own way. The candidates are rows keyed the same way the count is, so a reader joins
+and asks. Back in the pantry: a label saying how many jars is a fine label, and three jars taped
+together under one label are no longer three jars.
+
 The history is telling and ordinary: `intent_bound_table` began as a subquery inside one
 consumer's query, and became a named view the day a second consumer asked the same question.
 Facts stayed facts; the question got promoted to a view when it earned it.
