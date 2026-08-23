@@ -6,6 +6,14 @@ A guide to how GraphQL schema patterns drive Graphitron's code generation. This 
 
 == How Classification Works
 
+[NOTE]
+====
+*Transitional.* This section describes the classification walk and the sealed model it produces, a
+surface being drained rather than one to extend. What it states is accurate today. For the
+architecture the walk drains into, the fact store and the command relations rendered from it, see
+xref:../explanation/pipeline-overview.adoc[Pipeline overview].
+====
+
 `GraphitronSchemaBuilder` reads the schema once and classifies every type and field into a sealed
 hierarchy. The generators then operate on these classified models ; they never re-read directives.
 The walk and the `GraphitronSchema` model it produces are the *transitional producer surface* of the
@@ -41,7 +49,12 @@ directive-pattern → variant → generator output chain.
 
 [NOTE]
 ====
-*Original framing.* This section describes the field axes (source context, target type, scope) in their original form. They fold into the three-axis `(source, operation, target)` model in <<field-classification,Field Classification>>, which the field now carries directly through its `source()` / `operation()` / `target()` accessors. Treat <<field-classification,Field Classification>> as canonical for how a field classifies; the terms below survive as the historical framing and as properties derived from the three axes, not as independent axes.
+*Transitional.* This section describes the field axes (source context, target type, scope) in their
+original form, superseded by the three-axis `(source, operation, target)` model the field now carries
+directly through its `source()` / `operation()` / `target()` accessors. The terms below survive as
+properties derived from those three axes, not as independent axes. For how a field classifies today,
+see <<field-classification,Field Classification>>; for the architecture both are being drained into,
+see xref:../explanation/pipeline-overview.adoc[Pipeline overview].
 ====
 
 Two independent classifications describe every field: the *source context* it is defined on (parent type), and the *target type* it returns. Both matter because scope transitions are determined by the pair, not by either alone.
@@ -134,6 +147,14 @@ Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
 
 == Type Classification
 
+[NOTE]
+====
+*Transitional.* This section describes the sealed type leaves the classification walk produces, a
+surface being drained rather than one to extend. What it states is accurate today. For the
+architecture the walk drains into, see
+xref:../explanation/pipeline-overview.adoc[Pipeline overview].
+====
+
 The worked examples in this section render directly from the classification test corpus
 (`ClassifiedCorpus` in `graphitron`'s test sources): the SDL shown is the live fixture the classifier
 runs against, projected through a documented query by the query-as-view renderer, with the test-only
@@ -204,6 +225,14 @@ example's projection query, rendered as SDL descriptions by `QueryViewRenderer`.
 
 [#field-classification]
 == Field Classification
+
+[NOTE]
+====
+*Transitional.* This section describes the sealed field leaves the classification walk produces and
+the generator output each drives, a surface being drained rather than one to extend. What it states
+is accurate today. For the architecture the walk drains into, see
+xref:../explanation/pipeline-overview.adoc[Pipeline overview].
+====
 
 A field's classification factors into three asserted axes plus a derived layer. The worked examples below
 render the dimensional form from the corpus; the leaf-name tables that follow are a curated reference,
@@ -676,6 +705,14 @@ Four categories of DataLoader-backed child field, distinguished by `@splitQuery`
 
 == Implicit Classification Rules
 
+[NOTE]
+====
+*Transitional.* This section describes the schema patterns the classification walk reads without a
+directive, a surface being drained rather than one to extend. What it states is accurate today. For
+the architecture the walk drains into, see
+xref:../explanation/pipeline-overview.adoc[Pipeline overview].
+====
+
 Not all classification requires directives. The builder also classifies based on:
 
 |===
@@ -689,6 +726,18 @@ Not all classification requires directives. The builder also classifies based on
 '''
 
 == Source Map
+
+[WARNING]
+====
+*Incomplete.* This map covers the draining `no.sikt.graphitron.rewrite` tree only. Its opening claim
+that all source lives there is false: `no.sikt.graphitron.facts`,
+`no.sikt.graphitron.plan`, `no.sikt.graphitron.command` and `no.sikt.graphitron.render` are
+top-level siblings of `rewrite`, and this map names none of them, so it does not route a
+contributor to where a change belongs. The per-file lists below are hand-maintained and have
+drifted from the tree in both directions. For the packages that hold the destination, see
+xref:../explanation/pipeline-overview.adoc[Pipeline overview] and
+xref:../explanation/fact-model.adoc[The fact model].
+====
 
 All source lives under `graphitron/src/main/java/no/sikt/graphitron/rewrite/`. Each file has Javadoc documenting its variants and record components.
 

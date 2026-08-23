@@ -168,6 +168,16 @@ only that level's implicit condition.
 
 ==== Legacy behavior reference (and intentional divergence)
 
+[WARNING]
+====
+*Incomplete.* This section compares the rule above against the retired `graphitron-parent`
+generator, which no longer ships and which
+xref:../principles/development-principles.adoc[Graphitron Development Principles] declares retired.
+The comparison is narration of how the rule got here, not a statement of how arguments resolve
+today. For the current rule, read the sections above this one; the divergence rationale belongs in
+xref:../../history/index.adoc[History] and moves there.
+====
+
 The rule above (downward inheritance, explicit methods survive) is the rule
 the *rewrite* will enforce. It is NOT the rule the legacy generator
 implements. Reviewers and implementers should know the delta before signing
