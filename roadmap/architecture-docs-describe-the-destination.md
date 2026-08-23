@@ -63,6 +63,8 @@ and is already gated, and what is left over is deleted. On the one page whose or
 *is* the draining surface, `reference/code-generation-triggers.adoc`, that is not enough: cleaning
 its leaf tables would still leave a reference page about the thing R682 deletes. That page is
 rebuilt around the fact-based chain instead, and this section owns the design of the rebuild.
+Both halves take sessions to land, so the first slice does neither: it marks the outdated content
+as outdated, because the marking's value is exactly the window while the rest runs.
 
 ### The replacement page
 
@@ -314,11 +316,38 @@ narration to rather than only deleting it.
 
 ## Implementation
 
-Four slices. The ordering between them is load-bearing in two places: the gates land before the
-prose cleanup, so the cleanup is verified by the mechanism that will hold it rather than by a
-reviewer reading 3,757 lines, and the renderers land before the page sections that include their
-output. Within that constraint each slice is independently committable and independently pushable
-to trunk.
+Five slices, 0 through 4. The ordering between them is load-bearing in three places: slice 0
+lands first because its value is the window while the rest runs, the gates land before the prose
+cleanup, so the cleanup is verified by the mechanism that will hold it rather than by a reviewer
+reading 3,757 lines, and the renderers land before the page sections that include their output.
+Within that constraint each slice is independently committable and independently pushable to
+trunk.
+
+### Slice 0: mark the outdated content as outdated
+
+The rebuild's value arrives at the end; until then every reader the survey describes is still
+routed into the draining surface with nothing on the section saying so. So the first commit
+changes no behavior and fixes nothing: each section a later slice replaces gains one admonition,
+in present tense, saying what the section describes and where the current statement lives. Two
+kinds of mark, because the survey found two kinds of content:
+
+- **Transitional but accurate.** The variant tables and the leaf taxonomy describe live behavior
+  of the surface being drained; their mark says so and points at
+  `explanation/pipeline-overview.adoc` for the destination chain. The mark uses the form R810
+  owns (transitional, accurate today, where the rationale lives); page-grain and entry-point
+  marking is R810's charter, not this slice's. The "Classification Vocabulary" section already
+  carries its superseded-framing NOTE and is only normalized to the shared shape.
+- **Known stale.** The Source Map's opening claim is false and its generator lists have drifted;
+  its mark says the map covers the draining `rewrite/` tree only and does not name the
+  destination packages. The mark states the incompleteness, the replacement map is slice 3's.
+  `reference/argument-resolution.adoc`'s legacy section gains a mark naming its comparison target
+  as the retired generator.
+
+Rules the marks obey: present tense only, no roadmap ids in the mark text (the pages render to
+the public site, and the slice-1 gates must not fail on text this slice added), one uniform shape
+rather than per-section improvisation, and each mark is deleted by the slice that rebuilds its
+section; a mark surviving its section's rebuild is a defect. A mark is never a substitute for the
+rebuild: this slice fixes nothing, so slice 1's guards still fail on the tree it leaves.
 
 ### Slice 1: the gates
 
@@ -460,6 +489,13 @@ in ungated prose beside them.
   pre-deletion obligation. And R682's terminal step claims a doc sweep over this same page; the
   ownership split in the design keeps that sweep a deletion of transitional sentences rather than
   a second restructure. The corpus's `@classified` leaf assertions retire with R682, not here.
+- R810 (Transitional surfaces say so where a reader arrives, and say why) owns the page-grain and
+  entry-point markers and the marker convention itself; slice 0 here is the section-grain
+  application of that form to the sections this item's later slices replace. No ordering between
+  the two items: whichever lands first, the other reuses its stated form rather than minting a
+  second one. R810's own non-goals defer the taxonomy page's fate to another item; this item is
+  that item, and the lead paragraph R810 adds to the page is subsumed by the rebuilt chain intro
+  in slice 3.
 - R207 (Audit design-doc claims for implementation conformance) is adjacent but distinct: it
   covers claims that are *wrong* (doc says X, code does Y). This item covers claims that are
   *true but about the wrong thing*, plus citation rot. The overlap is on
