@@ -453,7 +453,6 @@ class FactCaptureAgreementTest {
         registrations.put("intent_resolved_type_binding_live", Arm.DERIVED);
         registrations.put("intent_field_column_scope_live", Arm.DERIVED);
         registrations.put("intent_field_reference_step_hop_live", Arm.DERIVED);
-        registrations.put("intent_field_chain_node_live", Arm.DERIVED);
         registrations.put("intent_argmapping_segment_binding", Arm.DERIVED);
         registrations.put("intent_argmapping_binding_leaf", Arm.DERIVED);
         registrations.put("intent_argmapping_bound_parameter_type", Arm.DERIVED);

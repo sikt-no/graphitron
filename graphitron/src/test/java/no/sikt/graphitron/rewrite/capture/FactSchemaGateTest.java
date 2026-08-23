@@ -136,7 +136,7 @@ class FactSchemaGateTest {
         }
 
         type FilmCategory @table(name: "film_category") {
-          film: Film
+          film: Film @reference(path: [{table: "film"}])
         }
 
         type Category @table(name: "category") @node {
@@ -739,8 +739,10 @@ class FactSchemaGateTest {
      * the fixture catalog together and has to be maintained as registrations are added. The catalog
      * is what {@code intent_spelled_table} resolves its table spellings against; the
      * {@code @routine} application is what gives {@code intent_argmapping_pair} an arm that fires;
-     * and the {@code @node} type with an {@code @nodeId} argument naming it is what puts a row in
-     * {@code intent_node_id_instruction}. Without any of them the case above passes over an empty
+     * the {@code @node} type with an {@code @nodeId} argument naming it is what puts a row in
+     * {@code intent_node_id_instruction}; and the {@code @reference} whose element names a table a
+     * foreign key reaches is what puts one in {@code intent_field_reference_step_hop}. Without any
+     * of them the case above passes over an empty
      * relation, which is exactly what its own non-empty assertion refuses to let happen quietly.
      */
     private static void captureMaterializationFixture(DSLContext dsl, String graphName,
