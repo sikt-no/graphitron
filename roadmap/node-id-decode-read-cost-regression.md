@@ -51,13 +51,16 @@ the cost warning in the relation's own `COMMENT ON`, where the fact model says s
 because the cost is invisible at the call site.
 
 What changes for a consumer of graphitron, stated plainly: nothing they can observe today. This
-relation has no Java reader, and the claim is about the next one rather than today's. The generator
-reaches the node-identity family through `intent_node_id_decode_defect` instead
-(`NodeIdDecodeDefects.detect`, called from `FactCapture` on every capture), and that view reads
-`intent_node_id_decode_slot`, which is most of the decode's own subtree. So a consumer's build may
-already be paying a share of this move through the sibling, and whether it is has never been
-measured. That measurement is part of the control below, and it decides how urgent the lever item is
-rather than whether this item pulls it.
+relation has no Java reader, and the claim is about the next one rather than today's. The reader the
+build does have is one relation over: `intent_node_id_decode_defect`, read by
+`NodeIdDecodeDefects.detect` in `FactCapture`'s detection pass, which runs over a freshly captured
+store on any run carrying a classified model. That is a read and not a capture, the rule being wholly
+the view's (it picks between its two verdicts on the node key's arity in one pass, and the class
+writes nothing at all); what the Java adds is the build-error consumer's own filter and the prose.
+The relevant fact for this item is what that view stands on, which is `intent_node_id_decode_slot`,
+most of the decode's own subtree. So a consumer's build may already be paying a share of this move
+through the sibling, and whether it is has never been measured. That measurement is part of the
+control below, and it decides how urgent the lever item is rather than whether this item pulls it.
 
 ## What was measured
 
@@ -177,8 +180,9 @@ With the instrument in hand the control is:
   cost change and an answer change cannot be confused. The defect view is the one with a reader on
   the build path today and it has never been timed at all.
 . Price the refresh beside the reads. A registered relation's `count(*)` is a table scan and says
-  nothing about the `Materializations.refreshAll` that filled it, and that refresh runs inside
-  `FactCapture` on every capture. The trade a registration has to win is a refresh against the
+  nothing about the refresh that filled it, and that refresh is real build work:
+  `Materializations.refresh` runs per graph inside `FactCapture`'s capture transaction. The trade a
+  registration has to win is a refresh against the
   re-evaluations it avoids, so a control that prices only reads is answering half the question, and
   "what does a consumer's build pay" is the half it leaves out.
 . Un-register `intent_resolved_type_binding` alone, in its own store, and re-measure the same list.
