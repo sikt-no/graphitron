@@ -90,6 +90,16 @@ final class TypeFetcherEmissionContext {
         return CodeBlock.of("graphitronContext(env)");
     }
 
+    /**
+     * This class's {@code graphitronContext(env)} seam as a value, for the {@code render/}
+     * emitters that need the call but must not hold this context. Recording is
+     * {@link #graphitronContextCall()}'s, so a renderer's request drains through the same
+     * {@link HelperKind#GRAPHITRON_CONTEXT} set an in-package emitter's does.
+     */
+    no.sikt.graphitron.render.RequestContextRead requestContextRead() {
+        return this::graphitronContextCall;
+    }
+
     boolean isRequested(HelperKind kind) {
         return requested.contains(kind);
     }

@@ -2,6 +2,7 @@ package no.sikt.graphitron.render;
 
 import no.sikt.graphitron.command.Arity;
 import no.sikt.graphitron.command.RoutineWriteCommand;
+import no.sikt.graphitron.command.TenantRouting;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -46,10 +47,12 @@ import java.util.List;
  * the follow-up propagates as a field error and cannot undo the committed write, the same caveat
  * the DML fetchers carry.
  *
- * <p>Two fragments arrive from the shell rather than the row, for the reason the launcher
- * renderer's do: {@code dslDeclaration} is the coordinate's tenancy binding rendered as a
- * declaration, and {@code localContextTail} the routed-tenant rider on the success return. Both
- * are classification-side emission, empty on a single-tenant run, and a command must not hold them.
+ * <p>The connection the write runs against comes off the run's tenancy axis
+ * ({@link TenantRouting}) rather than from the shell: the plan folds each coordinate's classified
+ * binding into the acquisition its entry point emits, and
+ * {@link TenantAcquisitionFragments} renders it. What the shell still hands over is its own
+ * {@code graphitronContext(env)} seam, a per-class helper collector rather than a decision, so a
+ * request-context read and the helper it names land on one class together.
  *
  * <p>The direct arm's shape, at list arity:
  * <pre>{@code
@@ -81,16 +84,17 @@ public final class RoutineWriteFetcherRenderer {
     private static final ClassName RESULT = ClassName.get("org.jooq", "Result");
     private static final ClassName ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
 
-    /** Renders one routine-write entry point from its row. */
-    public static MethodSpec render(RoutineWriteCommand row, CodeBlock dslDeclaration,
-            CodeBlock localContextTail, ArgPathHelperRegistry argHelpers,
-            ProjectedKeyHost keyHost) {
+    /** Renders one routine-write entry point from its row and the run's tenancy axis. */
+    public static MethodSpec render(RoutineWriteCommand row, TenantRouting tenancy,
+            ArgPathHelperRegistry argHelpers, ProjectedKeyHost keyHost,
+            RequestContextRead contextRead) {
         var keys = keyHost.at(row.coordinate());
+        var dsl = TenantAcquisitionFragments.declare(tenancy, row.coordinate(), contextRead);
         return switch (row) {
             case RoutineWriteCommand.ChainReread r ->
-                renderChainReread(r, dslDeclaration, localContextTail, argHelpers, keys);
+                renderChainReread(r, dsl.statement(), dsl.localContextTail(), argHelpers, keys);
             case RoutineWriteCommand.CarrierKeys r ->
-                renderCarrierKeys(r, dslDeclaration, localContextTail, argHelpers, keys);
+                renderCarrierKeys(r, dsl.statement(), dsl.localContextTail(), argHelpers, keys);
         };
     }
 

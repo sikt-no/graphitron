@@ -178,7 +178,7 @@ class RoutineWriteRelationTest {
     @Test
     void theRelationIsKeyedByCoordinate() {
         var row = directArm();
-        assertThatThrownBy(() -> new RoutineWriteRelation(List.of(row, row)))
+        assertThatThrownBy(() -> RoutineWriteRelation.unrouted(List.of(row, row)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("keyed by coordinate");
     }
@@ -198,7 +198,7 @@ class RoutineWriteRelationTest {
             FieldCoordinates.coordinates("Mutation", "rentfilm"), row.chain(),
             row.terminusProjection(), row.arity(), row.errors());
 
-        assertThat(new RoutineWriteRelation(List.of(row, twin)).rows())
+        assertThat(RoutineWriteRelation.unrouted(List.of(row, twin)).rows())
             .as("case-distinct field names are two rows, not a collision")
             .hasSize(2);
         assertThat(twin.unit().methodName()).isNotEqualTo(row.unit().methodName());

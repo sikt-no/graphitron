@@ -723,9 +723,9 @@ public class TypeFetcherGenerator {
                 // fragments handed in beside it are the tenancy binding's declaration form and
                 // its localContext rider, classification-side emission no command holds.
                 case MutationField.MutationRoutineWriteField f ->
-                    builder.addMethod(renderRoutineWrite(ctx, f, routineWrites, outputPackage));
+                    builder.addMethod(renderRoutineWrite(ctx, f, routineWrites));
                 case MutationField.MutationRoutineWriteRecordField f ->
-                    builder.addMethod(renderRoutineWrite(ctx, f, routineWrites, outputPackage));
+                    builder.addMethod(renderRoutineWrite(ctx, f, routineWrites));
                 case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(buildMutationServiceRecordFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServicePolymorphicField f ->
@@ -1347,22 +1347,20 @@ public class TypeFetcherGenerator {
     /**
      * Renders the fetcher entry point of one {@code @routine}-writing mutation coordinate off its
      * command row ({@link no.sikt.graphitron.render.RoutineWriteFetcherRenderer}, total over the
-     * row's two arms). This shell reads the leaf for one thing only, the coordinate's tenancy
-     * binding, whose declaration form is classification-side emission; everything the body says
-     * about the write and its follow-up comes off the row.
+     * row's two arms) and the relation's own tenancy axis. This shell reads the leaf for its name
+     * alone; everything the body says, the connection it acquires included, comes off the plan.
      */
     private static MethodSpec renderRoutineWrite(TypeFetcherEmissionContext ctx,
             no.sikt.graphitron.rewrite.model.OutputField field,
-            no.sikt.graphitron.plan.RoutineWriteRelation routineWrites, String outputPackage) {
+            no.sikt.graphitron.plan.RoutineWriteRelation routineWrites) {
         var row = routineWrites.rowFor(ctx.parentTypeName(), field.name())
             .orElseThrow(() -> new IllegalStateException(
                 "Graphitron generator bug (routine-write dispatch): coordinate '"
                 + ctx.parentTypeName() + "." + field.name() + "' has no routine-write row;"
                 + " the producer's membership and this dispatch have drifted"));
-        var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage);
         return no.sikt.graphitron.render.RoutineWriteFetcherRenderer.render(
-            row, tenantDsl.declaration(), tenantDsl.localContextTail(), ctx.argPathHelpers(),
-            ctx.projectedKeyHost());
+            row, routineWrites.tenancy(), ctx.argPathHelpers(), ctx.projectedKeyHost(),
+            ctx.requestContextRead());
     }
 
 

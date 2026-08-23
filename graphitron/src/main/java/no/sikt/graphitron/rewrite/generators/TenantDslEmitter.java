@@ -42,8 +42,14 @@ import java.util.List;
  */
 final class TenantDslEmitter {
 
-    /** The local holding the divined tenant key when {@link Resolution#handsDownTenant()}. */
-    static final String TENANT_KEY_LOCAL = "_divinedTenant";
+    /**
+     * The local holding the divined tenant key when {@link Resolution#handsDownTenant()}. One
+     * home, shared with the command-driven emission that renders the same acquisition off a
+     * plan row ({@code TenantAcquisitionFragments}), so the two paths cannot mint two names for
+     * one generated local while both exist.
+     */
+    static final String TENANT_KEY_LOCAL =
+        no.sikt.graphitron.render.TenantAcquisitionFragments.TENANT_KEY_LOCAL;
 
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
 

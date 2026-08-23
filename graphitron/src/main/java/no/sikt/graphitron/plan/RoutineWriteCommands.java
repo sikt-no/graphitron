@@ -4,14 +4,20 @@ import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.Arity;
 import no.sikt.graphitron.command.ErrorDispatch;
 import no.sikt.graphitron.command.RoutineWriteCommand;
+import no.sikt.graphitron.command.TenantAcquisition;
+import no.sikt.graphitron.command.TenantRouting;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.TableExpr;
+import no.sikt.graphitron.rewrite.model.TenantBinding;
+import no.sikt.graphitron.rewrite.model.TenantScopes;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -45,7 +51,80 @@ public final class RoutineWriteCommands {
                 }
             }
         }
-        return new RoutineWriteRelation(rows);
+        return new RoutineWriteRelation(rows, tenancyOf(schema, rows, units));
+    }
+
+    /**
+     * The run's acquisition axis over these rows. Single-tenant runs state the absence once; a
+     * multi-tenant run names the generated carrier and folds every covered coordinate's classified
+     * binding into the arm its entry point emits.
+     *
+     * <p>This fold is the axis's one home for the family, copying the rule
+     * {@link LauncherCommands} states for the fan-out axis beside it: a binding is a
+     * classification, an acquisition is what an entry point emits, and the translation happens
+     * where the row is minted rather than at every emission site.
+     */
+    private static TenantRouting tenancyOf(GraphitronSchema schema, List<RoutineWriteCommand> rows,
+            GeneratedUnits units) {
+        if (!(schema.tenantScopes() instanceof TenantScopes.Configured)) {
+            return new TenantRouting.Unrouted();
+        }
+        Map<FieldCoordinates, TenantAcquisition> byCoordinate = new LinkedHashMap<>();
+        for (var row : rows) {
+            byCoordinate.put(row.coordinate(), acquisitionOf(schema, row.coordinate()));
+        }
+        return new TenantRouting.Routed(units.tenantConnections(), byCoordinate);
+    }
+
+    /**
+     * One coordinate's classified binding as the acquisition its entry point emits. The per-row
+     * family (a node id's or a federation representation's decoded tenant slot) folds onto the
+     * inherited read: a mutation root is not a per-row dispatch surface, so what reaches it is the
+     * value an ancestor divined.
+     *
+     * <p>Two arms are refused rather than translated. A missing binding is the classifier's typed
+     * {@code noTenantBinding} finding, which the validator turns into a located build error before
+     * the plan runs, so reaching it here means production ran on a schema validation would have
+     * rejected; the refusal restates that rather than acquiring the default source, which is the
+     * cross-tenant read the axis exists to prevent. A fanned binding is refused because the fanned
+     * emission owns its coordinate's acquisition; a routine write is not a fannable shape, so
+     * reaching it here is drift rather than a deferred feature.
+     */
+    private static TenantAcquisition acquisitionOf(GraphitronSchema schema, FieldCoordinates coordinate) {
+        var binding = schema.tenantBindingOf(coordinate);
+        if (binding == null) {
+            throw new IllegalStateException(
+                "the routine-write coordinate " + coordinate + " reaches a tenant-scoped table with"
+                + " no tenant binding in scope; that is the classifier's noTenantBinding finding and"
+                + " the validator rejects it with a located error, so a plan produced for it ran"
+                + " past validation, and acquiring the default source here would read another"
+                + " tenant's rows");
+        }
+        return switch (binding) {
+            case TenantBinding.Untenanted ignored -> new TenantAcquisition.Untenanted();
+            case TenantBinding.Inherited ignored -> new TenantAcquisition.Inherited();
+            case TenantBinding.NodeIdBound ignored -> new TenantAcquisition.Inherited();
+            case TenantBinding.EntityRepBound ignored -> new TenantAcquisition.Inherited();
+            case TenantBinding.ArgumentBound bound -> new TenantAcquisition.ArgumentBound(
+                bound.bindings().stream().map(RoutineWriteCommands::slotReadOf).toList(),
+                bound.bindings().getFirst().column());
+            case TenantBinding.FanOut ignored -> throw new IllegalStateException(
+                "the routine-write coordinate " + coordinate + " is classified as tenant fan-out;"
+                + " the fanned emission acquires per tenant through scatter and owns that"
+                + " coordinate itself, so no entry point of this family declares its connection");
+        };
+    }
+
+    /** One bound slot's runtime read, restated in the command vocabulary the renderer reads. */
+    private static TenantAcquisition.SlotRead slotReadOf(TenantBinding.BoundSlot slot) {
+        return switch (slot.read()) {
+            case TenantBinding.SlotRead.TopLevelArg ignored ->
+                new TenantAcquisition.SlotRead.TopLevelArg(slot.slotName());
+            case TenantBinding.SlotRead.NestedInput nested ->
+                new TenantAcquisition.SlotRead.NestedInput(nested.outerArgName(), nested.path());
+            case TenantBinding.SlotRead.ContextArg ignored ->
+                new TenantAcquisition.SlotRead.ContextArg(slot.slotName());
+        };
     }
 
     /**
@@ -116,6 +195,10 @@ public final class RoutineWriteCommands {
      * which holds fields but no schema. Mirrors the launcher producer's overload at the same call
      * site: membership stays here rather than the generator asserting that a nesting-reached
      * type's children hold no mutation root field.
+     *
+     * <p>Unrouted by construction, and correct rather than approximate: a nesting-reached type's
+     * children are never mutation roots, so this relation holds no rows for an acquisition to
+     * cover.
      */
     public static RoutineWriteRelation produceWithoutSchema(List<? extends GraphitronField> fields,
             String outputPackage) {
@@ -129,6 +212,6 @@ public final class RoutineWriteCommands {
                 }
             }
         }
-        return new RoutineWriteRelation(rows);
+        return RoutineWriteRelation.unrouted(rows);
     }
 }

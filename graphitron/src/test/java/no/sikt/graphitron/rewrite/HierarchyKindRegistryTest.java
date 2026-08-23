@@ -252,6 +252,11 @@ class HierarchyKindRegistryTest {
         Map.entry(no.sikt.graphitron.command.ResultShape.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.Invocation.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.TenantStrategy.class, HierarchyKind.COMMAND),
+        // The acquisition axis beside the fan-out one: not the classifier's binding taxonomy but
+        // what an entry point emits to get its connection, folded from a binding where the row is
+        // minted. Its run-grain carrier is a command for the same reason.
+        Map.entry(no.sikt.graphitron.command.TenantAcquisition.class, HierarchyKind.COMMAND),
+        Map.entry(no.sikt.graphitron.command.TenantRouting.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.LaunchSource.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.TypeUnitCommand.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.GlobalCommand.class, HierarchyKind.COMMAND),

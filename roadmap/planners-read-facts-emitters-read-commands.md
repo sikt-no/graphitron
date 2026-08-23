@@ -892,6 +892,39 @@ deliverable) applies three times over. In order:
   `LauncherCommands.tenancyOf` already states for the fan-out axis. Slice one rewires only
   `RoutineWriteFetcherRenderer`, which drops its two `CodeBlock` parameters; the other three
   fragment hosts follow with their own families.
+
+  Delivered as `TenantAcquisition` (the three arms, plus a `SlotRead` vocabulary of its own) and
+  `TenantRouting` (the run-grain axis), both in `command/`, rendered by
+  `render/TenantAcquisitionFragments` and folded by `RoutineWriteCommands.tenancyOf`. Four
+  decisions the draft above did not settle. **The axis rides the relation as an overlay index, not
+  as a slot on each row**, which is what "the run fact rides the relation" costs once the arms are
+  the three multi-tenant ones: a per-row slot would have to be nullable or carry a fourth
+  single-tenant arm, and that arm would be the run fact stamped onto every coordinate. The
+  classifier drew this line first, `TenantBindingIndex` being empty in a single-tenant build
+  rather than uniformly untenanted, so `TenantRouting.Unrouted` states the absence once and
+  `Routed` carries the carrier ref beside the per-coordinate arms. Coverage of the rows is then
+  the relation's invariant and is checked in `RoutineWriteRelation`'s constructor. **The slot
+  reads are restated in command vocabulary rather than borrowed**, because `command/`'s
+  import-direction allowlist admits no `TenantBinding`; the fold that turns one into the other is
+  the producer's, which is where the draft wanted it anyway. **The bound key's Java type rides a
+  `ColumnRef`**, the primary bound slot's own tenant column, because the emitted local must be
+  declared (generated sources never use `var`) and `ColumnRef` is on that allowlist where a
+  javapoet `TypeName` is not; every co-bound column agrees with it by validation. **An uncovered
+  coordinate under a routed axis is refused at both ends**, in the producer when a binding is
+  missing and in the renderer when the index has no arm, rather than falling back to the
+  request-context read the way `TenantDslEmitter` does: that fallback compiles, runs, and reads
+  another tenant's rows.
+
+  One thing the draft's parameter arithmetic missed. The two `CodeBlock` parameters go, but the
+  renderer needs one more thing the row cannot hold: the host class's `graphitronContext(env)`
+  seam, because the request-context read and the context-argument slot read both emit a call that
+  only compiles if the same class also carries the helper. That is a per-class collector rather
+  than a decision, so it is threaded as `render/RequestContextRead` beside the two collectors the
+  renderer already takes, and both existing hosts satisfy it. The anchors are
+  `TenantAcquisitionFragmentsTest` (7 unit-tier cases, each declaration pinned as exact text
+  because a plausible-reading fragment that acquires the wrong source is the failure this axis
+  exists to prevent) and `RoutineWriteTenancyPipelineTest` (3 pipeline-tier cases joining the
+  producer's fold to the renderer's arms on a classified schema).
 * **Command vocabulary: take the type lift the hop relation pays for.** `RoutineWriteCommand`
   today carries the walk's `RoutineChain` as a component, guarded by two compact-constructor
   throws and read back out through three casts. Rebuilding that carrier out of store rows just
