@@ -21,26 +21,37 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class TransientCitationCheckTest {
 
     /**
-     * Writes both declared documents under {@code root}, plus one clean page in each declared
-     * tree, so a scan reaches its full habitat. Without the tree the walk finds no pages and
-     * reports the tree missing, which is the anti-vacuous floor doing its job rather than a
-     * fixture problem.
+     * Writes both declared documents under {@code root}, plus one clean page in every declared
+     * tree, so a scan reaches its full habitat. A tree left empty makes the walk report it
+     * missing, which is the anti-vacuous floor doing its job rather than a fixture problem.
      */
     private static void writeBothDocs(Path root, String claudeMd, String webEnvMd) throws IOException {
+        writeOnlyTheDocs(root, claudeMd, webEnvMd);
+        for (String tree : TransientCitationCheck.SCANNED_TREES) {
+            writeTreePage(root, tree, "clean.adoc", "= Clean\n\nNo citations here.\n");
+        }
+    }
+
+    /** The two declared documents and no trees, for the cases that are about a missing habitat. */
+    private static void writeOnlyTheDocs(Path root, String claudeMd, String webEnvMd) throws IOException {
         Files.writeString(root.resolve("CLAUDE.md"), claudeMd);
         Path claudeDir = root.resolve(".claude");
         Files.createDirectories(claudeDir);
         Files.writeString(claudeDir.resolve("web-environment.md"), webEnvMd);
-        writeTreePage(root, "clean.adoc", "= Clean\n\nNo citations here.\n");
     }
 
-    /** Writes one page into the first declared tree under {@code root}. */
-    private static Path writeTreePage(Path root, String name, String content) throws IOException {
-        Path tree = root.resolve(TransientCitationCheck.SCANNED_TREES.get(0));
-        Files.createDirectories(tree);
-        Path page = tree.resolve(name);
+    /** Writes one page into the named declared tree under {@code root}. */
+    private static Path writeTreePage(Path root, String tree, String name, String content) throws IOException {
+        Path dir = root.resolve(tree);
+        Files.createDirectories(dir);
+        Path page = dir.resolve(name);
         Files.writeString(page, content);
         return page;
+    }
+
+    /** The first declared tree, for a case that only needs some page in some scanned tree. */
+    private static String firstTree() {
+        return TransientCitationCheck.SCANNED_TREES.get(0);
     }
 
     @Test
@@ -113,8 +124,9 @@ class TransientCitationCheckTest {
 
         assertThat(result.missing()).isEmpty();
         assertThat(result.scanned())
-            .as("both declared documents plus the one page written into the walked tree")
-            .isEqualTo(TransientCitationCheck.SCANNED_DOCS.size() + 1);
+            .as("both declared documents plus one page in each walked tree")
+            .isEqualTo(TransientCitationCheck.SCANNED_DOCS.size()
+                + TransientCitationCheck.SCANNED_TREES.size());
         assertThat(result.findings()).singleElement()
             .satisfies(f -> {
                 assertThat(f.doc()).isEqualTo(".claude/web-environment.md");
@@ -127,7 +139,9 @@ class TransientCitationCheckTest {
         // The floor against a vacuous pass: if a declared document moved or was renamed, the scan
         // must say so rather than quietly reading one fewer file and reporting all clear.
         Files.writeString(dir.resolve("CLAUDE.md"), "# Clean\n\nNo citations.\n");
-        writeTreePage(dir, "clean.adoc", "= Clean\n\nNo citations here.\n");
+        for (String tree : TransientCitationCheck.SCANNED_TREES) {
+            writeTreePage(dir, tree, "clean.adoc", "= Clean\n\nNo citations here.\n");
+        }
 
         TransientCitationCheck.Result result = TransientCitationCheck.scan(dir);
 
@@ -139,13 +153,13 @@ class TransientCitationCheckTest {
     void itemIdOnAnArchitecturePage_isFlagged(@TempDir Path dir) throws IOException {
         // The habitat this walk exists for: the same rule, in a tree the fixed list never reached.
         writeBothDocs(dir, "# Clean\n\nNo citations.\n", "# Web env\n\nClean.\n");
-        writeTreePage(dir, "rotting.adoc", "= Page\n\nUPSERT generation is gated pending R145.\n");
+        writeTreePage(dir, firstTree(), "rotting.adoc", "= Page\n\nUPSERT generation is gated pending R145.\n");
 
         TransientCitationCheck.Result result = TransientCitationCheck.scan(dir);
 
         assertThat(result.missing()).isEmpty();
         assertThat(result.findings()).singleElement().satisfies(f -> {
-            assertThat(f.doc()).isEqualTo(TransientCitationCheck.SCANNED_TREES.get(0) + "/rotting.adoc");
+            assertThat(f.doc()).isEqualTo(firstTree() + "/rotting.adoc");
             assertThat(f.citation()).isEqualTo("R145");
         });
     }
@@ -155,7 +169,7 @@ class TransientCitationCheckTest {
         // The changelog is a permanent artifact, and it is the redirect the rule points provenance
         // at, so a page citing it must stay clean or the rule has nowhere to send an author.
         writeBothDocs(dir, "# Clean\n\nNo citations.\n", "# Web env\n\nClean.\n");
-        writeTreePage(dir, "cites.adoc", "= Page\n\nWhat shipped is in `roadmap/changelog.md`.\n");
+        writeTreePage(dir, firstTree(), "cites.adoc", "= Page\n\nWhat shipped is in `roadmap/changelog.md`.\n");
 
         assertThat(TransientCitationCheck.scan(dir).findings()).isEmpty();
     }
@@ -166,7 +180,7 @@ class TransientCitationCheckTest {
         // permanent artifact as roadmap/README.md under its published name, and the site's own
         // navigation link to it must not read as a transient citation.
         writeBothDocs(dir, "# Clean\n\nNo citations.\n", "# Web env\n\nClean.\n");
-        writeTreePage(dir, "entry.adoc", "= Page\n\nSee xref:../roadmap/index.adoc[the Rewrite Roadmap].\n");
+        writeTreePage(dir, firstTree(), "entry.adoc", "= Page\n\nSee xref:../roadmap/index.adoc[the Rewrite Roadmap].\n");
 
         assertThat(TransientCitationCheck.scan(dir).findings()).isEmpty();
     }
@@ -175,15 +189,13 @@ class TransientCitationCheckTest {
     void aWalkedTreeThatReachesNoPages_isReportedMissing(@TempDir Path dir) throws IOException {
         // The anti-vacuous floor, one level up from the fixed list's: a renamed docs directory
         // must fail the check rather than silently scanning nothing and reporting all clear.
-        Files.writeString(dir.resolve("CLAUDE.md"), "# Clean\n\nNo citations.\n");
-        Path claudeDir = dir.resolve(".claude");
-        Files.createDirectories(claudeDir);
-        Files.writeString(claudeDir.resolve("web-environment.md"), "# Web env\n\nClean.\n");
+        writeOnlyTheDocs(dir, "# Clean\n\nNo citations.\n", "# Web env\n\nClean.\n");
 
         TransientCitationCheck.Result result = TransientCitationCheck.scan(dir);
 
-        assertThat(result.missing()).singleElement().asString()
-            .startsWith(TransientCitationCheck.SCANNED_TREES.get(0));
+        assertThat(result.missing())
+            .as("every declared tree that reached no page must be named, not just the first")
+            .hasSize(TransientCitationCheck.SCANNED_TREES.size());
         assertThatThrownBy(() -> TransientCitationCheck.run(List.of(dir.toString())))
             .isInstanceOf(BuildFailure.class);
     }
@@ -216,6 +228,27 @@ class TransientCitationCheckTest {
         assertThat(TransientCitationCheck.isBaselineRoot(dir)).isFalse();
         assertThat(TransientCitationCheck.isBaselineRoot(repoRoot())).isTrue();
         assertThat(TransientCitationCheck.run(List.of(dir.toString()))).isZero();
+    }
+
+    @Test
+    void bothPublishedDocTreesAreScanned() {
+        // The scope is a decision, not an accident of where the survey happened to look. Both
+        // trees render to the same public site, where the roadmap directory is not the reader's
+        // to search, so an id is exactly as unresolvable on an author-facing page as on a
+        // contributor-facing one. Narrowing this list back needs a reason stated here.
+        assertThat(TransientCitationCheck.SCANNED_TREES)
+            .containsExactlyInAnyOrder("docs/architecture", "docs/manual");
+    }
+
+    @Test
+    void everyDeclaredTreeResolvesInThisRepository() throws IOException {
+        // The anti-vacuous floor, checked against the real tree rather than a fixture: a declared
+        // tree that has been renamed would pass every fixture case above and scan nothing here.
+        for (String tree : TransientCitationCheck.SCANNED_TREES) {
+            assertThat(TransientCitationCheck.pagesUnder(repoRoot().resolve(tree)))
+                .as("declared tree %s must hold pages in this repository", tree)
+                .isNotEmpty();
+        }
     }
 
     @Test

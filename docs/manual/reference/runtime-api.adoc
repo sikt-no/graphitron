@@ -115,7 +115,7 @@ default Validator getValidator(DataFetchingEnvironment env) {
 }
 ----
 
-`DefaultValidatorHolder` is a holder-class idiom inside the same emitted file; its `INSTANCE` is initialised on the first call to `getValidator` (`Validation.buildDefaultValidatorFactory().getValidator()`) and shared by every subsequent default-using request. The method is no longer an override point on the sealed interface; custom-validator-factory configuration ships under R192 as a Mojo-driven hook.
+`DefaultValidatorHolder` is a holder-class idiom inside the same emitted file; its `INSTANCE` is initialised on the first call to `getValidator` (`Validation.buildDefaultValidatorFactory().getValidator()`) and shared by every subsequent default-using request. The method is no longer an override point on the sealed interface, and there is no custom-validator-factory configuration today.
 
 == `NodeIdEncoder` utility
 

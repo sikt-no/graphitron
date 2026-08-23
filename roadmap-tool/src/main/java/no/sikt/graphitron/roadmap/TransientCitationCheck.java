@@ -61,12 +61,21 @@ final class TransientCitationCheck {
      * level up: a declared tree that yields no pages fails, so a renamed directory cannot quietly
      * shrink the scan to nothing.
      *
-     * <p>{@code docs/architecture} is the tree the rot was found in, and the narrow scope is
-     * deliberate. {@code docs/manual} is author-facing and cites nothing from {@code roadmap/},
-     * so widening buys nothing today; widening it later is one line.
+     * <p>Both published trees are in scope. {@code docs/architecture} is where the rot was found;
+     * {@code docs/manual} was left out at first on the claim that it cited nothing from
+     * {@code roadmap/}, which was half right, since it carried no path citations but did carry
+     * three item ids. The rule does not weaken across the seam: both trees render to the same
+     * public site, where the {@code roadmap/} directory is not the reader's to search, so an id is
+     * exactly as unresolvable on an author-facing page as on a contributor-facing one.
+     *
+     * <p>This scan widens where the sibling symbol gate deliberately does not. The two have
+     * different costs: text matching has no exemption surface to grow, while resolving a cited
+     * type against a classpath does, and the manual names consumer-visible generated types the
+     * reactor never declares. Cheap here, not cheap there.
      */
     static final List<String> SCANNED_TREES = List.of(
-        "docs/architecture"
+        "docs/architecture",
+        "docs/manual"
     );
 
     /** The extension a page in a scanned tree must carry to be read. */

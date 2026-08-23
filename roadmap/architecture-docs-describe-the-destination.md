@@ -553,6 +553,21 @@ on `code-generation-triggers.adoc`, which belong to the sections slice 3 rebuild
 derived-layer prose still name. Both empty out with slice 3, and both fail the build on an entry
 whose finding is gone, so neither can survive as a permanent exemption.
 
+**Scope added at the owner's direction.** The citation gate now walks `docs/manual` as well as
+`docs/architecture`, and the manual's three item ids are gone. It was left out at first on the
+claim that the manual cited nothing from `roadmap/`, which was half right: no path citations, but
+three ids. The rule does not weaken across the seam, since both trees render to the same public
+site where the `roadmap/` directory is not the reader's to search.
+
+The sibling symbol gate stays on `docs/architecture` alone, and measurement now backs the reason
+the plan's second open fork gave rather than only asserting it. The manual cites 257 distinct
+type-shaped spans, 96 of which resolve to nothing, against 65 of 495 for the architecture tree,
+and the architecture tree's 65 reduced to 4 real findings once categorised. The manual's 96 are
+almost entirely the three weakest exemption categories: GraphQL types from worked examples, names
+the generator emits into a consumer's sources, and classes in modules that tier does not depend
+on. Widening would roughly triple the exemption list while adding no finding of the kind the gate
+exists to catch, which is the fork's own stated objection, now with a number on it.
+
 **Not started.** Slice 2's outcome-block renderer, and slice 3.
 
 **A fork the outcome block needs settled before it is built.** A prototype established that the
