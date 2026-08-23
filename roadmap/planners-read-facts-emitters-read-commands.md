@@ -63,6 +63,47 @@ strategy, and every section below serves one of them:
    into the fact model as rows, and the error surface reads those rows. Either way the walk stops
    being what validation reads.
 
+### What "deleted, not migrated" forbids
+
+The four points say what the new path is. This says what the condemned path is owed, because the
+instinct runs the other way and did during slice one.
+
+The walk is condemned, not serviced. `FieldBuilder`, `BuildContext`, `TypeBuilder`, the `walker/`
+package and the classifier passes beside them are the thing being deleted, so three rules follow.
+
+**Their size is not a metric.** `FieldBuilder` growing while relations land is evidence of nothing.
+The number that measures this item is leaf dispatch inside `plan/`, which counts the new tree
+reaching into the old model. A line count over condemned code measures the size of the thing being
+removed, not the progress of removing it.
+
+**They never read the store.** This holds by construction today: store reads under `rewrite/` are
+confined to `capture/`, `derive/`, `diagnostics/` and `compile/`, which are the fact writers and the
+new readers, while the walk itself holds no reference to any relation. Plumbing a relation into a
+condemned pass buys one spelling in a file with no future, and reuse between the old path and the
+new one is exactly what makes a cutover hard. When a derivation inside the walk looks like it wants
+to be a relation, the relation lands when the *new* path needs it, stated from facts on its own
+terms, and the old pass dies untouched rather than being rewritten to agree. The worked example is
+the mapping-constant dedup pass: its grouping and its handler-list fingerprint are pure functions of
+captured facts and could be a relation today, and making it read one would be the mistake, because
+that pass is deleted rather than migrated.
+
+**They are not deduplicated or improved.** A second spelling of a rule inside condemned code is not
+debt. It is scheduled for deletion, and touching it spends effort on the wrong side of the line.
+
+Two consequences worth stating because they read as problems and are not. A relation with no reader
+is the normal state of a store-first slice: the store deliverables land ahead of the producers that
+read them, and the old spelling is never reconciled with the new one, it goes away when the new path
+covers the coordinate. The real finding is the opposite shape, a producer in `plan/` deriving
+something the store could have stated. And the pins are not monotonic gates: `PLAN_LEAF_REFERENCES`
+rises when a capability lands as leaf dispatch and falls when it dissolves onto facts, so a gate
+demanding it fall every slice would block the first half of every cycle. What it makes visible is a
+*stalled* relocation, which is a shape in the trend rather than a value in one slice.
+
+The one thing both paths must share is what the output is called. Both emit into one output package
+during the cutover, so a generated unit or constant has to carry the same name whichever path minted
+it. That is why the naming vocabulary in `GeneratedUnits` is imported by condemned code and why that
+does not violate the second rule: it is an output contract, not a derivation. Nothing else crosses.
+
 ## Problem
 
 Every store migration that has landed so far moved a *reader*. The authored-claim conflict detection
