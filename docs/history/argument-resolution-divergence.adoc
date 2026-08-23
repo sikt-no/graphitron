@@ -1,0 +1,99 @@
+= Argument resolution: the legacy divergence
+:description: What the retired graphitron-parent generator did with @condition inheritance, and why the rewrite departs from it.
+:!toc:
+
+The rewrite's rule for `@condition` inheritance (downward inheritance, explicit methods survive) is
+stated in xref:../architecture/reference/argument-resolution.adoc[Argument Resolution]. It is not
+the rule the retired `graphitron-parent` generator implemented. That generator no longer ships, so
+this page is history rather than reference: it records what the delta was and why the rewrite chose
+to diverge, for a reader migrating a schema written against the old behaviour.
+
+The links below point into the retired generator's own sources on `main`.
+
+The rule above (downward inheritance, explicit methods survive) is the rule
+the *rewrite* will enforce. It is NOT the rule the legacy generator
+implements. Reviewers and implementers should know the delta before signing
+off on §Override propagation.
+
+*Legacy schema, `withListedInputConditions`*
+(link:https://github.com/sikt-no/graphitron/blob/main/graphitron-codegen-parent/graphitron-java-codegen/src/test/resources/queries/fetch/records/withListedInputConditions/schema.graphqls[schema.graphqls]):
+
+[source,graphql]
+----
+type Query {
+  customer(in: [CustomerInput]):         CustomerTable @condition(..., method: "customerJOOQRecordList")
+  customerOverride(in: [CustomerInput]): CustomerTable @condition(..., method: "customerJOOQRecordList", override: true)
+}
+input CustomerInput @table(name: "CUSTOMER") {
+  id:    ID!     @condition(..., method: "customerString")
+  first: String! @field(name: "FIRST_NAME")
+                 @condition(..., method: "customerString", override: true)
+}
+----
+
+*Legacy output, same fixture's*
+link:https://github.com/sikt-no/graphitron/blob/main/graphitron-codegen-parent/graphitron-java-codegen/src/test/resources/queries/fetch/records/withListedInputConditions/expected/QueryDBQueries.java[`expected/QueryDBQueries.java`]:
+
+- `customerForQuery` (no outer override, :17-37) emits the full stack:
+  row-IN containing `hasId(id)` + `customerString(table, id)` +
+  `customerString(table, firstName)`, AND-ed with `customerJOOQRecordList`.
+  Inner `id` (no override) contributes both implicit condition AND explicit
+  method; inner `first` (`override: true`) contributes only the explicit
+  method (its own implicit condition suppressed at the input-field level).
+  No explicit method is dropped by the outer level.
+- `customerOverrideForQuery` (outer override, :40-48) emits *only*
+  `customerJOOQRecordList`. Every inner contribution is dropped: `id`'s
+  implicit condition, `id`'s explicit `customerString`, and `first`'s
+  explicit `customerString`. There is no row-IN construct at all.
+
+**The legacy rule is total-replace: an outer `override: true` substitutes its
+own explicit method for everything below it, regardless of whether inner
+fields carry their own explicit `@condition` methods.** The rewrite's
+proposed rule preserves inner explicit methods across the boundary. That is
+a *deliberate divergence* from legacy.
+
+*Rationale for diverging.* The legacy behavior couples implicit conditions
+and explicit methods into a single "outer owns everything" toggle, which means
+a schema author can't declaratively compose an outer replacement condition
+with inner explicit side-conditions. The rewrite treats each level's
+`override` flag as affecting only that level's implicit condition, which lets
+`@condition(override: true)` replace the implicit condition without also
+silencing explicit input-field conditions written by the schema author.
+
+*Divergence-pinning tests.* Two execution tests pin the rewrite against
+legacy's total-replace rule:
+`inputFieldCondition_tableInput_outerOverride_preservesInnerExplicitMethod`
+(outer `@condition(override: true)` over a filter input whose field
+carries its own `@condition`; the test name's `tableInput` is historical) and
+`inputFieldCondition_plainInput_outerOverride_preservesInnerExplicitMethod`
+(same shape against a second filter input; alf production shape). Both generate a
+predicate conjunction that evaluates to an empty result set; a regression
+to the legacy "outer owns everything" rule would drop the inner predicate
+and return rows, breaking the tests by name.
+
+*If a downstream consumer relies on the legacy coupling*, handle it with
+an author-side schema edit (drop the inner `@condition` methods that
+should not run under outer override) or promote to its own backlog item.
+The rewrite does not reproduce total-replace.
+
+*Audit of legacy override fixtures.* Three additional fixtures under
+`queries/fetch/records/` were inspected to confirm the 6-row truth table
+is complete:
+
+- `multiLevelInputJavaRecordOverrideCondition`: three-level nesting
+  `Input3 → Input2 → Input1`, with `@condition(override: true)` at the
+  `Input2.input1` nesting field (not at outer arg, not at field). Confirms
+  nesting-field-level override is a real production shape; already covered
+  by the "any enclosing override (field ⊇ arg ⊇ nesting-field)" propagation
+  rule. No new row.
+- `nestedListInputJavaRecordOverrideCondition`: arg-level
+  `@condition(override: true)` over `[Input1]` whose fields carry no
+  `@condition`. Row 4 of the truth table.
+- `listInputJavaRecordAndFieldOverrideCondition`: parent-field-level
+  `@condition(override: true)` composed with arg-level `@condition` (no
+  override) on a sibling scalar-list arg. Parent-field-level override
+  propagates to the arg's implicit conditions; explicit arg method fires.
+  Row 2 and row 5 combined across two args; no new row for input-field
+  semantics (no input type is involved).
+
+All three fall within the 6-row table.

@@ -81,6 +81,8 @@ sealed interface LinkTarget {
         Map.entry("dispatch-axes", "explanation"),
         Map.entry("typed-rejection", "explanation"),
         Map.entry("pipeline-overview", "explanation"),
+        Map.entry("fact-model", "explanation"),
+        Map.entry("naming-the-row", "explanation"),
         Map.entry("code-generation-triggers", "reference"),
         Map.entry("argument-resolution", "reference"),
         Map.entry("runtime-extension-points", "reference"),

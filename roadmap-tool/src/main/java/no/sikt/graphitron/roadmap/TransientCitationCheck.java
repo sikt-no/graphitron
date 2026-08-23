@@ -280,57 +280,10 @@ final class TransientCitationCheck {
 
     private static Set<String> knownCitations() {
         Set<String> known = new java.util.LinkedHashSet<>();
-        // explanation/dispatch-axes.adoc
-        known.add("docs/architecture/explanation/dispatch-axes.adoc|R305");
-        known.add("docs/architecture/explanation/dispatch-axes.adoc|R314");
-        known.add("docs/architecture/explanation/dispatch-axes.adoc|R431");
-        known.add("docs/architecture/explanation/dispatch-axes.adoc|R432");
-        // explanation/typed-rejection.adoc
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R96");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R181");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R188");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R190");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R215");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R238");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R244");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R246");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R256");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R261");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R266");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R275");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R308");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R322");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R354");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R453");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R457");
-        known.add("docs/architecture/explanation/typed-rejection.adoc|R501");
-        // how-to/dev-loop-internals.adoc
-        known.add("docs/architecture/how-to/dev-loop-internals.adoc|R118");
-        known.add("docs/architecture/how-to/dev-loop-internals.adoc|R385");
-        // how-to/release-natives.adoc
-        known.add("docs/architecture/how-to/release-natives.adoc|R401");
-        // principles/development-principles.adoc
-        known.add("docs/architecture/principles/development-principles.adoc|R50");
-        known.add("docs/architecture/principles/development-principles.adoc|R79");
-        known.add("docs/architecture/principles/development-principles.adoc|R239");
-        known.add("docs/architecture/principles/development-principles.adoc|R240");
-        known.add("docs/architecture/principles/development-principles.adoc|R260");
-        known.add("docs/architecture/principles/development-principles.adoc|R268");
-        known.add("docs/architecture/principles/development-principles.adoc|R334");
         // reference/code-generation-triggers.adoc
         known.add("docs/architecture/reference/code-generation-triggers.adoc|R145");
         known.add("docs/architecture/reference/code-generation-triggers.adoc|R431");
         known.add("docs/architecture/reference/code-generation-triggers.adoc|R432");
-        // reference/modules.adoc
-        known.add("docs/architecture/reference/modules.adoc|R118");
-        known.add("docs/architecture/reference/modules.adoc|R385");
-        known.add("docs/architecture/reference/modules.adoc|R399");
-        known.add("docs/architecture/reference/modules.adoc|R416");
-        // reference/runtime-extension-points.adoc
-        known.add("docs/architecture/reference/runtime-extension-points.adoc|R45");
-        known.add("docs/architecture/reference/runtime-extension-points.adoc|R190");
-        known.add("docs/architecture/reference/runtime-extension-points.adoc|R192");
-        known.add("docs/architecture/reference/runtime-extension-points.adoc|R429");
         return Set.copyOf(known);
     }
 

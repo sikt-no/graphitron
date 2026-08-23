@@ -22,7 +22,7 @@ a|
 
 I know what I am looking for and want the facts.
 
-The classification taxonomy and what each generator emits, the unified argument-resolution lift, the runtime extension points, and the module map.
+What each schema pattern generates and where it lands, the unified argument-resolution lift, the runtime extension points, and the module map.
 
 a|
 [.quadrant-title]*xref:how-to/index.adoc[How-to guides]*
@@ -52,7 +52,9 @@ You're *integrating an editor or agent with the dev loop*, what the `dev` Mojo w
 
 You want to know *how the architecture got here*, why the model is keyed by coordinate, what the sealed-leaf hierarchy was right about, and what measurement redirected the work onto a relational core. → xref:../history/road-to-the-relational-core.adoc[The road to the relational core].
 
-You want to *read the classification taxonomy*, every variant the transitional classification walk produces and what each drives. → xref:reference/code-generation-triggers.adoc[Code Generation Triggers]. For where that walk sits in the strangler migration, start at xref:explanation/pipeline-overview.adoc[Pipeline overview].
+You want to know *what graphitron does with a schema pattern*, which facts capture writes down, how a coordinate's verdict is derived from them, and what gets generated where. → start at xref:explanation/pipeline-overview.adoc[Pipeline overview] for the chain the architecture runs, then xref:explanation/fact-model.adoc[The fact model] for the discipline that shapes it. xref:reference/code-generation-triggers.adoc[Code Generation Triggers] carries the per-pattern detail; its leaf taxonomy describes the transitional classification walk rather than the architecture the walk drains into, and each section there says so.
+
+You want to know *where a change goes*. → The generator's destination packages are `facts` (what capture writes), `plan` (what produces command rows from those facts), `command` (the rows themselves, pure data) and `render` (what folds a row into emitted output). xref:explanation/pipeline-overview.adoc[Pipeline overview] names the boundaries between them; `rewrite` is the transitional tree being drained and is not where new work belongs.
 
 You're looking for a *deeper reference*, the architectural principles that govern both classifier and emitter, the test-tier rubric, the unified argument-resolution lift, the dispatch-axis model behind DataLoader-backed source-side fields. → see xref:principles/development-principles.adoc[Graphitron Development Principles], xref:how-to/testing.adoc[Test-tier guide], xref:reference/argument-resolution.adoc[Argument Resolution], xref:explanation/dispatch-axes.adoc[Dispatch axes]. The module map is at xref:reference/modules.adoc[Modules]; the pipeline overview at xref:explanation/pipeline-overview.adoc[Pipeline overview].
 

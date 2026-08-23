@@ -66,6 +66,8 @@ class ArchitectureDocSymbolGuardTest {
      *   <li><b>schema</b>: a GraphQL type from a worked example, not a Java type at all.</li>
      *   <li><b>value</b>: an enum constant or axis value. The index holds types, not fields.</li>
      *   <li><b>library</b>: a third-party type not on this module's classpath.</li>
+     *   <li><b>rejected</b>: a name the page gives to something deliberately not built. The prose
+     *       is accurate and there is no live symbol for it to point at.</li>
      * </ul>
      */
     static final Map<String, String> EXEMPT = exemptions();
@@ -216,8 +218,13 @@ class ArchitectureDocSymbolGuardTest {
         exempt.put("FilmOrActor", "schema: worked-example GraphQL union");
         exempt.put("FilmStats", "schema: worked-example GraphQL type");
         exempt.put("Foo", "schema: placeholder type in a worked example");
-        exempt.put("Input2", "schema: worked-example GraphQL input type");
         exempt.put("Int", "schema: GraphQL built-in scalar");
+        exempt.put("ExternalCodeReference", "schema: the directives schema's shared input type");
+
+        // rejected: a name the page gives to something deliberately not built. The citation is
+        // accurate prose about a decision, so there is no live symbol for it to point at.
+        exempt.put("ConditionDirectives", "rejected: a utility class the design considered and did not build");
+        exempt.put("NodeIdField", "rejected: an input-field variant argument resolution leaves out of scope");
 
         // value: an enum constant or axis value. The index holds types, not fields.
         exempt.put("Fetch", "value: an Operation axis constant");
@@ -241,13 +248,6 @@ class ArchitectureDocSymbolGuardTest {
         known.put("InputDirectiveInputTypes", "Source Map directives row; the class is gone");
         known.put("FetchRelated", "named as a member of the derived layer; no such type");
         known.put("LiftedHop", "retired onto ParentCorrelation.OnLiftedSlots; the row still names it");
-        known.put("ConditionDirectives", "argument-resolution names it; no such type");
-        known.put("NodeIdField", "argument-resolution names it; no such type");
-        known.put("ExternalCodeReference", "development-principles names it; no such type");
-        known.put("HasSlots", "emitter-conventions names HasSlots.slots(); no such type");
-        known.put("RowsMethodBody", "dispatch-axes names the permit; no such type");
-        known.put("RowsMethodSkeleton", "dispatch-axes names RowsMethodSkeleton.build; no such type");
-        known.put("ObjectTypeGeneratorTest", "testing.adoc names it as an example; no such test");
         return known;
     }
 }

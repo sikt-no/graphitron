@@ -2,13 +2,13 @@
 
 A DataLoader-backed source-side field carries five orthogonal pieces of dispatch information: the per-row key shape, the key-lift provenance for record-backed parents, the loader container kind, the loader dispatch verb, and (per endpoint that owns one) a delivery arity. Each is a separate type axis in the model. Consumers read off whichever axis they actually fork on; no consumer reconstructs an axis by `instanceof`-ing a conflated permit.
 
-This page is the chapter narrative for that contract. Reference detail (the per-arm record components, the per-axis enum/sealed values) lives on the source: javadoc on `SourceKey`, `KeyLift`, `SourceKey.Wrap`, `SourceEnvelope`, `Arity`, and `LoaderRegistration`. (R431 decomposed the former six-component `SourceKey` onto these facts; the pre-decomposition shape of this chapter is in the git history.)
+This page is the chapter narrative for that contract. Reference detail (the per-arm record components, the per-axis enum/sealed values) lives on the source: javadoc on `SourceKey`, `KeyLift`, `SourceKey.Wrap`, `SourceEnvelope`, `Arity`, and `LoaderRegistration`.
 
 The carriers live on the classified leaf model, which is the transitional producer surface of the strangler migration (see the xref:pipeline-overview.adoc[Pipeline overview]); the axis decomposition itself is the durable part. Each axis is an independent functional dependency of the coordinate, which is exactly the shape a fact relation stores, so the axes migrate as facts while the leaf carriers that hold them today drain.
 
 == The axes
 
-Three classify-time model values carry the dispatch axes between them: a `SourceKey` per batch-keyed field (the key residue), a `KeyLift` on the batched re-query leaves (how the key tuple is lifted off the parent's held object; total on the merged leaves since R432), and a `LoaderRegistration` per field (DataLoader identity).
+Three classify-time model values carry the dispatch axes between them: a `SourceKey` per batch-keyed field (the key residue), a `KeyLift` on the batched re-query leaves (how the key tuple is lifted off the parent's held object; total on the merged leaves), and a `LoaderRegistration` per field (DataLoader identity).
 
 `SourceKey` is the batch key itself, nothing more:
 
@@ -28,7 +28,7 @@ KeyLift
 ├─ FkColumns()                    ← project the key columns off the held jOOQ record, per column
 ├─ Lifter(LifterRef)              ← @sourceRow static lifter (authored provenance)
 ├─ Accessor(AccessorRef, Arity)   ← typed zero-arg accessor; arity = the accessor's return arity
-└─ ProducedRecords(Arity)         ← R305 source=target re-fetch; arity = the produced wrapper
+└─ ProducedRecords(Arity)         ← source=target re-fetch; arity = the produced wrapper
 ----
 
 `LoaderRegistration` carries the loader identity:
@@ -44,7 +44,7 @@ record LoaderRegistration(
 
 The values together describe one DataLoader-backed source side. Splitting them at these seams is what makes the boundary cases representable: a `@service`-backed field has a `SourceKey` and no `KeyLift` (its key extraction is the wrap-driven read the `Sources` signature authors); the carrier passthrough leaves (`SingleRecordIdField`, `RecordCompositeField`) carry a first-class `SourceEnvelope` and no `LoaderRegistration` (no DataLoader at all).
 
-On the merged batched leaves the lift is total (R432): a table-parent `@splitQuery` field carries `KeyLift.FkColumns`, a genuine member of the axis — the key tuple is projected off the held jOOQ record by column, exactly the mechanism `FkColumns` names on a record-backed parent. A total `lift` removes an absence case and tells no lie; that the Table arm's emit path is still wrap-driven (`GeneratorUtils.buildKeyExtraction`) while only the constructor's `checkResidueAgreement` consumes the stored lift today is deliberate provisioning for R314's unified fetcher, not a second meaning. The parent-backing fact itself is the leaf's stored `SourceShape` — it cannot be recovered from the lift, since `FkColumns` is legitimately carried by both a table-row parent and a jOOQ-record-backed result parent.
+On the merged batched leaves the lift is total: a table-parent `@splitQuery` field carries `KeyLift.FkColumns`, a genuine member of the axis — the key tuple is projected off the held jOOQ record by column, exactly the mechanism `FkColumns` names on a record-backed parent. A total `lift` removes an absence case and tells no lie; that the Table arm's emit path is still wrap-driven (`GeneratorUtils.buildKeyExtraction`) while only the constructor's `checkResidueAgreement` consumes the stored lift today is deliberate provisioning for the unified fetcher, not a second meaning. The parent-backing fact itself is the leaf's stored `SourceShape` — it cannot be recovered from the lift, since `FkColumns` is legitimately carried by both a table-row parent and a jOOQ-record-backed result parent.
 
 === `Wrap`: per-row key shape
 
@@ -108,7 +108,7 @@ Each emit site reads off whichever axis it actually forks on, without re-derivin
 
 * `RowsMethodCall.batchLoaderLambda` reads `registration.container()` to choose `List<K>` vs `Set<K>` for the lambda's keys parameter; one axis, one read.
 
-* `RowsMethodSkeleton.build` dispatches the body framing on the `RowsMethodBody` permit, which the caller projected from the field variant and `registration.container()`. The skeleton's exhaustive switch over the `RowsMethodBody` permits is the seam between body construction (per-shape) and outer-method framing (uniform across permits).
+* `RootLauncherRenderer.render` frames every rows-method and root-launcher body, from a launcher command row. The per-shape skeleton that used to dispatch body framing on a permit projected from the field variant retired with the service fold, so the seam between body construction and outer-method framing is the command row itself; `UnifiedEmissionPinsTest` counts the render call sites that keep it there.
 
 * `FetcherEmitter`'s carrier leaves fork on the leaf's `SourceEnvelope` component to narrow `Outcome.Success` before the read; the bulk arrival is the field's own wrapper position (`returnType().wrapper().isList()`), not a stored count.
 
@@ -116,4 +116,4 @@ The pattern: each consumer's switch is exhaustive over exactly one axis, and the
 
 == Connection to the principle
 
-This is the live worked example for xref:../principles/development-principles.adoc#sealed-hierarchies-over-enums-for-typed-information[Sealed hierarchies over enums for typed information]. The axis split is the principle in action: each axis is a sealed sub-hierarchy or enum carrying exactly the information its consumers need, and the compiler enforces exhaustive switches at every dispatch site. The smell the principle warns about (a single shared accessor whose meaning depends on the variant, or a permit name that splices two axes together) is the alternative this model rejects by construction; the R431 decomposition (which deleted the conflated `target`/`path`/`cardinality`/`reader` components this chapter used to narrate) is the same principle applied to the key itself.
+This is the live worked example for xref:../principles/development-principles.adoc#sealed-hierarchies-over-enums-for-typed-information[Sealed hierarchies over enums for typed information]. The axis split is the principle in action: each axis is a sealed sub-hierarchy or enum carrying exactly the information its consumers need, and the compiler enforces exhaustive switches at every dispatch site. The smell the principle warns about (a single shared accessor whose meaning depends on the variant, or a permit name that splices two axes together) is the alternative this model rejects by construction; the decomposition (which deleted the conflated `target`/`path`/`cardinality`/`reader` components this chapter used to narrate) is the same principle applied to the key itself.

@@ -8,5 +8,7 @@ and where the two disagree, Architecture wins.
 
 * xref:road-to-the-relational-core.adoc[The road to the relational core]: from a sealed-leaf
   hierarchy to a relational fact store, and what each step along the way was right about.
+* xref:argument-resolution-divergence.adoc[Argument resolution: the legacy divergence]: what the
+  retired generator did with `@condition` inheritance, and why the rewrite departs from it.
 
 xref:../index.adoc[← Graphitron]

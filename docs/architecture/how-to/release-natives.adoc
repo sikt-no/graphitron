@@ -44,8 +44,8 @@ Bundling the runtime reverses the module's original grammar-only split. That
 split made the runtime a system dependency (`brew install tree-sitter`,
 `pacman -S`, `vcpkg install`, or a from-source build on Debian/Ubuntu, whose
 apt `libtree-sitter0` is 0.20.x and too old). The recurring cost of that
-install path, especially on Windows and Debian/Ubuntu, is what R401 retired
-by bundling the runtime; the tree-sitter project still does not publish a
+install path, especially on Windows and Debian/Ubuntu, is what bundling the
+runtime retired; the tree-sitter project still does not publish a
 prebuilt `libtree-sitter` asset, so we build it ourselves on native runners
 from the pinned source (see "Cutting a release" below).
 

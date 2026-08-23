@@ -107,7 +107,7 @@ class ArchitectureDocSymbolScannerTest {
         assertThat(ArchitectureDocSymbolGuardTest.EXEMPT.values())
             .as("an exemption's reason is what makes it reviewable; each must name its category")
             .allSatisfy(reason -> assertThat(reason)
-                .matches("^(emitted|module|schema|value|library): .+"));
+                .matches("^(emitted|module|schema|value|library|rejected): .+"));
     }
 
     @Test
