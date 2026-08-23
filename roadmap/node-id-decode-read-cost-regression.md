@@ -1,7 +1,7 @@
 ---
 id: R811
-title: "The node-id decode read costs fifty seconds and nobody measured it"
-status: Backlog
+title: "Gate that a registration cannot make another relation's read worse, and attribute the decode's ten-times move"
+status: Spec
 bucket: store
 priority: 2
 theme: nodeid
@@ -10,14 +10,54 @@ created: 2026-08-23
 last-updated: 2026-08-23
 ---
 
-# The node-id decode read costs fifty seconds and nobody measured it
+# Gate that a registration cannot make another relation's read worse, and attribute the decode's ten-times move
 
-`intent_node_id_decode` is the fact schema's heaviest derived read, and one read of it
-against a real capture now takes about fifty seconds. It took about five and a half a few
-days earlier. Nothing about the relation's answer changed: it returns the same 43 rows in
-both measurements. What the number costs is not a surface budget yet, no reader on the
-critical path having named it, which is exactly why it moved ten times over without any gate
-saying so.
+`intent_node_id_decode` is the fact schema's heaviest derived read. One read of it against a real
+capture went from about five and a half seconds to about fifty in a few days, and back to about
+thirteen when the step-hop registration landed beside this item. Nothing about the relation's answer
+changed at any point: it returns the same 43 rows in all three measurements. What the number costs is
+not a surface budget yet, no reader on the critical path having named it, which is exactly why it
+moved ten times over without any gate saying so.
+
+## What this item delivers
+
+In one sentence: after this item, a `meta_materialize` registration that makes some *other*
+relation's read more expensive fails the build instead of landing unremarked, and this relation's
+ten-times move is attributed rather than suspected.
+
+The gate is the deliverable and it does not wait on the attribution. Its claim is directional and
+carries no number: for a registration and a relation whose derivation reaches that registration's
+target, materializing must not cost that relation more scans than leaving it a view. That is this
+item's defect stated as an invariant, and it is checkable today, before anyone knows which change
+did it. Nothing in the tree makes that claim now. `report-inline-multiplicity` ranks breadth and
+records that breadth is not cost; `SurfaceScanCountTest` holds seven ceilings across six *reader
+surfaces* and none over a relation; `MaterializeRegistryGateTest` closes the register against the
+schema and asks nothing about what a registration costs anybody.
+
+The attribution is the second half, and it is the item's origin: which change made this relation ten
+times more expensive, and by which mechanism. It is a deliverable rather than preparation because the
+last attempt at it returned a confident wrong answer, for the reason recorded below. The instrument
+that makes the control cheap and repeatable is therefore part of the work rather than a script
+somebody throws away afterwards: no timing probe over this schema survives anywhere in the tree, so
+every investigation of a relation's cost so far has rebuilt one from the store-performance skill's
+recipe and deleted it again. The same instrument is what makes the gate's claim measurable, so it is
+one piece of work serving both halves rather than two.
+
+Explicitly not in scope: the lever. Whatever the attribution names, making this relation cheaper is a
+change to the schema with its own trade to argue, and it belongs to an item that owns the relation
+the lever touches, in the shape R781 owns `intent_field_column_table`'s lever. This item files that
+item and hands it the measurement. What it lands instead is the gate, the recorded attribution, and
+the cost warning in the relation's own `COMMENT ON`, where the fact model says such a warning belongs
+because the cost is invisible at the call site.
+
+What changes for a consumer of graphitron, stated plainly: nothing they can observe today. This
+relation has no Java reader, and the claim is about the next one rather than today's. The generator
+reaches the node-identity family through `intent_node_id_decode_defect` instead
+(`NodeIdDecodeDefects.detect`, called from `FactCapture` on every capture), and that view reads
+`intent_node_id_decode_slot`, which is most of the decode's own subtree. So a consumer's build may
+already be paying a share of this move through the sibling, and whether it is has never been
+measured. That measurement is part of the control below, and it decides how urgent the lever item is
+rather than whether this item pulls it.
 
 ## What was measured
 
@@ -65,17 +105,103 @@ silently measured the previously installed model instead. The failure is worth r
 because the run *looked* like a result, reproducing the un-reverted tree's figures to within
 noise.
 
-## The control to run
+## The instrument, and the control it makes cheap
 
-Per relation, one candidate at a time, rebuilding `graphitron-model` between each:
+The control this item needs is "what did this relation cost before that registration existed", and
+the obvious way to ask it is the way that already failed: check the DDL out at a parent commit,
+rebuild `graphitron-model`, re-probe. That route has three defects and they are why the failed run
+looked like a result. It reverts a whole commit rather than one registration, so it cannot attribute
+to a registration when a commit carries two. It reverts everything else that commit did to the
+schema alongside, and by now that is a schema several changes behind the one whose cost is in
+question. And its failure mode is silent: a model build that does not execute the DDL leaves the
+previous artifact installed and the probe reads that, reproducing the un-reverted tree's figures to
+within noise.
 
-. Check out `graphitron-model.sql` at the candidate commit's parent.
-. `mvn install -pl :graphitron-model -Plocal-db` and confirm the DDL actually executed;
-  a failed model build leaves the previous artifact installed and the probe will read it.
-. Time `intent_node_id_decode` against a sakila capture and compare row counts.
+Two cheaper routes exist and it is worth being clear about which question each one answers, because
+one of them needs no instrument at all.
 
-Reverting `272ef13` alone also reverts the other registration in the same commit, which is
-fine for attribution and not for the fix: the two are independently registrable.
+For a *registered relation's own* two shapes there is nothing to build. The registration keeps the
+rule under `<relation>_live`, so reading the `_live` view is exactly "this rule evaluated on demand"
+and reading the canonical name is the materialized shape. The register's own column comment says so.
+Any question of the form "what did this relation cost before it was registered" is already answerable.
+
+For *which registrations a relation even reaches*, there is a walk in the tree that answers it from
+the catalog with no probe and no timing: `MaterializeDependencies.relationsReadBy` parses each stored
+view definition through jOOQ's parser and recurses through unregistered views, which is how
+`meta_materialize_dependency` gets its rows. Pointed at `intent_node_id_decode` it names the
+registrations structurally inside the decode's subtree, which narrows the suspect set before any
+measurement and narrows the gate's domain afterwards. The routine is `private static` today and wants
+lifting, which is a smaller change than anything else here. Do this on day one: the three-commit
+suspect list in the section above is a reference count over the whole schema, and this replaces it
+with reachability.
+
+What neither route answers is this item's actual question, which is what a registration costs a
+*different* relation, and that needs the registration genuinely absent while the reader is read. So
+the instrument is a test-only helper that reverses one registration inside a live store, with no DDL
+edit and no model rebuild: rename the target table out of the way, then create a view of the
+canonical name over the `_live` view, and every reader of the canonical name is reading the
+unregistered shape. That is the move `RunawayRelation` already makes for a different purpose, one
+relation swapped for a view of the same shape by rename-then-create, and this helper is its sibling in
+the same module and test tree: `UnregisteredRelation.install(dsl, registration)`, taking a
+`Materializations.Registration` rather than a name. Taking the name would make the helper reconstruct
+the source view by appending `_live`, and nothing in the tree pins that suffix;
+`MaterializeRegistryGateTest` checks kinds, column lists, acyclicity and refresh order and never the
+naming convention. The register already holds the pair and `Materializations.registrations` already
+hands it out, so the helper takes the pair and cannot be pointed at an unregistered relation at all.
+
+The helper is one-way per store, like its sibling, but for its own reasons and the javadoc states
+those rather than inheriting the sentence. `RunawayRelation` is one-way because its swap makes a
+relation non-terminating. This swap preserves every answer; what makes it one-way is that two
+mechanisms afterwards address the canonical name as a table. `Materializations.refreshAll`, which is
+what `SeededStore.derive` calls, would empty and refill a name that is now a view, and
+`ThreadConfinedStore`'s clear would truncate one. So a store that has been un-registered is spent,
+and it follows that the measurement is one store per registration plus a baseline rather than one
+store carrying every shape. That is the matrix this gate has to pay for, and pricing it is part of the
+work rather than a surprise at the end.
+
+Verify before building on it: H2 must re-resolve a dependent view against the renamed name.
+`RunawayRelation` proves the direct read path and claims nothing about views that name the swapped
+relation, and every relation worth un-registering is named by a dozen view bodies. Check this on the
+first day of the work, against a registered relation with known readers, and if H2 holds a compiled
+reference instead, the fallback is an arm on `FactStores` that boots a store from the schema resource
+with one registration's three statements textually reversed. That is the same claim built one level
+lower, still with no model rebuild, and it keeps `StoreFixtureGuardTest` satisfied because the store
+still comes from a harness.
+
+With the instrument in hand the control is:
+
+. Price the family as it stands, against one sakila capture (`CapturedStore.ofCatalog` over the
+  sakila example's own schema and the sakila catalog): `intent_node_id_decode`, and beside it
+  `intent_node_id_decode_slot`, `intent_node_id_decode_column`, `intent_node_id_decode_endpoint`,
+  `intent_resolved_node_key_shape` and `intent_node_id_decode_defect`. Row counts every time, so a
+  cost change and an answer change cannot be confused. The defect view is the one with a reader on
+  the build path today and it has never been timed at all.
+. Price the refresh beside the reads. A registered relation's `count(*)` is a table scan and says
+  nothing about the `Materializations.refreshAll` that filled it, and that refresh runs inside
+  `FactCapture` on every capture. The trade a registration has to win is a refresh against the
+  re-evaluations it avoids, so a control that prices only reads is answering half the question, and
+  "what does a consumer's build pay" is the half it leaves out.
+. Un-register `intent_resolved_type_binding` alone, in its own store, and re-measure the same list.
+  This is the attribution the earlier attempt could not make, and it is now one relation rather than
+  one commit.
+. Read the scan-count shape as well as the duration, because the two mechanisms consistent with a
+  registration making some *other* reader slower want different levers and the plan tells them apart.
+  One enormous `scanCount` on a single node is per-driving-row re-evaluation, which is what a join
+  order flipped by a relation acquiring row statistics looks like, the shape
+  `SurfaceScanCountTest.theCensusLookupDoesNotTrackTheSchemasSize` already records for the catalog
+  census. A few hundred nodes each carrying the same middling count is inlining, a term the drain
+  does not reach being expanded once per naming down the decode's tree. The item's own prose assumes
+  the second; the first is the only mechanism by which materializing a relation can *cost* a reader
+  anything, so it is not the one to leave untested.
+. If un-registering the binding refutes the suspicion, take the other two schema changes in the
+  window the same way (`ed424f6` moving query relations onto facts rather than rendered strings is
+  the next candidate, and it is a candidate for a stated reason: replacing a rendered string with
+  facts is exactly how a join key stops being a column and starts being an expression, which the
+  fact model prices at two orders of magnitude).
+
+Report the controls that refuted, in the item body, not only the one that survived. Two of three
+controls on the investigation that introduced this discipline refuted the reading taken first, and a
+note recording only the survivor leaves the next reader to re-run the dead ends.
 
 ## Why this is not simply reverted
 
@@ -90,11 +216,192 @@ The step-hop registration this item was found alongside already recovers most of
 without touching the suspect, which is some evidence that the residual is a distinct term
 rather than the registration as such.
 
-## What would close it
+## Which lever, which this item hands on rather than pulls
 
-A named ceiling. The scan-count surface pins already exist for six reader surfaces and the
-rule they carry is that a ceiling is finished when it has been seen to fail, not when it
-passes. No pin covers a derived relation's own read cost, which is the gap that let a
-ten-times move land unremarked. Whether the answer is a pin over this relation, over the
-derived-read stratum, or a rule that a registration states which readers it was measured
-against, is the item's to decide.
+The lever is chosen after the attribution and not before, and the ordering is the fact model's own:
+a captured fact, then a registration, then a rewrite. Three outcomes are possible and each has a
+different answer, so the plan names all three rather than pretending the first is the likely one. What
+this item does with them is file the follow-up item and hand it the measurement; the analysis below is
+what that item inherits, and it is written here because the control produces it.
+
+If the term is a relation the decode family reaches and the drain does not, and it has more than one
+reader, it is a registration candidate and the depth rule decides which relation gets registered:
+the deepest one whose materialization removes the re-evaluation for more readers than the relation
+that looked slow from here. Stopping short of that depth is measurably not a fix, and this family is
+where that was measured, the endpoint materialized with the recursive step's input left a view being
+no better off than before.
+
+If the term is a join order flipped by the binding becoming a table, the lever is on the reader
+rather than underneath it, because nothing beneath it is slow: the shape to look for is the one the
+fact model prices, a derived relation met on an expression rather than on a column, and the fix is to
+project the expression as a column in an inner derived table and join on that.
+
+And if the control says the residual is inlining with no expensive child, the lever may be none of
+them yet. `intent_node_id_decode` has no reader that pays this cost today, so a registration's
+refresh would buy nothing per capture, which is exactly the counter-case the register already carries
+in its own words: the hop-column registration was deliberately made in the increment that added its
+reader rather than when the cost was first seen. A follow-up item whose answer is "wait for the
+reader" is a real answer, and it is the one R781 already holds for its own relation.
+
+What the pricing of the defect and slot views decides is that item's priority, not this item's
+scope. If
+`intent_node_id_decode_defect` or `intent_node_id_decode_slot` moved with the decode, the cost is on
+`FactCapture`'s path in every consumer build today, the reader has already arrived, and the lever item
+is filed at a priority that says so. If they did not move, it is filed as a latent cost with its
+measurement attached. Either way it is a separate item, because a schema change with a trade to argue
+is not something to append to a gate.
+
+## The gate
+
+One assertion, directional, with no number in it. Not the ceiling the Backlog body asked for, and the
+reason is worth stating because it is the plan's least obvious correction: a ceiling of the kind
+`SurfaceScanCountTest` holds cannot be written for this relation at all. That recipe works there
+because the registration *helped*, so the ceiling sits between a lower registered figure and a higher
+unregistered one, and reinstating the defect raises the number past it. Here the ordering is inverted,
+which is the entire subject of this item: un-registering makes the decode cheaper. A ceiling above
+today's figure can never be failed by that mutation, and a ceiling between the two figures fails on
+the shipping tree. The two rules, discriminate and pass, are jointly unsatisfiable exactly when the
+attribution lands. So the discriminating assertion is the direction itself, and the ceiling over this
+relation is minted by the lever item from its post-fix figure, with the pre-fix figure as the shape it
+discriminates against. That also takes the priced-relation roster out of this item, the roster's only
+purpose having been to carry ceilings.
+
+The claim, then: for every registration in `meta_materialize` and every relation whose derivation
+reaches that registration's target, the registered shape costs no more scans than the unregistered
+shape. A registration is a shared investment, and making some other reader ten times worse is a
+regression whether or not anybody has named a budget for that reader. There is no magic number in it,
+so there is nothing for a later contributor to raise; the only way past it is a row saying so.
+
+Both axes of the domain come off the booted store rather than a hand-kept list. Registrations from
+`Materializations.registrations`. Readers from the reachability walk lifted out of
+`MaterializeDependencies`, since a registration can only affect a relation whose view subtree names
+its target. Single-sourcing the second axis is what keeps the domain from rotting as views are added,
+and it is the same rule `meta_materialize_dependency` is already built on: the universe of relations
+comes from the booted store and never from a copy of the DDL. It also shrinks the matrix, which
+matters for the reason below.
+
+Known non-monotonic pairs are pinned as a set asserted by equality, not as a ceiling and not as a
+free-floating allowlist. Equality is what gives the ratchet: adding a pair fails the build, and so
+does *removing* one, so the day the lever lands the assertion fails until the row goes, rather than
+the row surviving as a stale exemption nobody is forced to revisit. `MaterializeRegistryGateTest`'s
+own `HAND_WRITTEN` set is the precedent for a pinned roster of deliberate exceptions in this family.
+Expect exactly one row at landing, this item's own pair, with the control's finding as its comment.
+
+The alternative is `ExemptionRegistry` in `graphitron`'s test tree, which is the repo's shipped
+exemption mechanism and carries three legs (keys in-domain, keys still uncovered, domain fully
+accounted for) plus a reflective discovery guard that fails the build on any static
+`Map<..., Exemption>` that is not a registry row. Joining it is the right move for the second and
+third such pair and it is not free for the first: `Obligation` is typed on `Class<?>` keys throughout
+and a pair of relation names is not a class, so joining means generifying the row's key type, and the
+`Exemption` arms are a coverage-triage taxonomy whose own javadoc argues against arms no population
+confirms, so an accepted-cost-regression arm would have to be added. Two changes to a shared
+mechanism for one row is the wrong trade, and the discovery guard does not force it, since it fires on
+`Map<..., Exemption>` and an equality-pinned `Set<String>` is not one. State that trade in the test's
+javadoc so the second pair's author knows where the line is rather than rediscovering it.
+
+Module and fixture: `graphitron`'s test tree, over a `CapturedStore` capture, scaled. Module follows
+harness and harness follows subject, which is `testing.adoc`'s rule in that order, and the subject
+here is what a registration costs a reader over a realistic population. That is the `CapturedStore`
+row of the harness table, and `CapturedStore` lives in `graphitron`. A seeded fixture was the earlier
+choice and it is wrong for a stated reason rather than a preference: the mechanism this item names as
+the only one by which materializing can *cost* a reader anything is a join order flipped by a relation
+acquiring row statistics, and a dozen seeded rows cannot exhibit a statistics-driven plan flip. The
+store-performance skill says it twice, that a seeded store of a dozen rows tells you nothing about
+cost and that a plan over a dozen rows is a different plan. `graphitron-model` keeping the decode
+family's algebra tests is not evidence against this, it is evidence for it: those tests read this
+relation cheaply on seeded rows, which is what a fixture blind to cost looks like. The exemption
+question above points the same way, `ExemptionRegistry`'s discovery guard walking `graphitron`'s own
+`target/test-classes`.
+
+Instrument is the `scanCount` H2 annotates each `EXPLAIN ANALYZE` plan node with, for the reason
+`SurfaceScanCountTest` gives and `ReadBudget` states the other half of: a count of rows visited is the
+same number on a fast machine and a loaded one, so a tier that must not fail for being slow can still
+hold a cost claim. No duration is asserted anywhere in this test. Note that scan counts and durations
+are not the same claim, so the control's timings do not transfer: the gate's figures are measured with
+the gate's own instrument on the gate's own fixture.
+
+The cost of the gate is real and this plan owns it rather than discovering it in review. Each
+un-registration spends its store, so the matrix is one store per (registration, size) cell plus a
+baseline, each store paying a capture, and `EXPLAIN ANALYZE` executes the statement rather than
+estimating it, so a cell containing this relation pays its full evaluation. Three things keep that
+bounded and all three are decisions rather than hopes: the reachability walk restricts the reader axis
+to registrations actually in a relation's subtree, so most cells do not exist; each store counts
+against `ThreadConfinedStore`'s boot budget, so the cell count is a number the plan states and the
+implementation checks against that budget rather than one it discovers; and if the bounded matrix is
+still too expensive for the pipeline tier, the answer is fewer relations in the domain, never a
+smaller fixture, because a smaller fixture is the one change that would make the gate pass while
+seeing nothing.
+
+## Doctrine
+
+One paragraph on `docs/architecture/explanation/fact-model.adoc`, under "Derived reads are views,
+not stored facts", stating the rule and naming the gate that holds it. The page's depth rule already
+says to materialize the relation the cost multiplies through and to count the candidate's readers;
+what it does not say is that a registration's effect on relations *other* than its motivating reader
+is not free, which is the whole content of this item. If the attribution lands, the paragraph names
+the mechanism by which it happened.
+
+What the paragraph does not do is restate the arithmetic, and `meta_materialize.reason` is not
+widened to carry a list of the relations a registration was measured against. That was the item's
+third candidate answer and the gate supersedes it: once the measured-against matrix is data the build
+checks, a prose copy of it in a `reason` column is a second copy with no enforcer, and the column's
+own comment defines it as *why* the relation is materialized rather than as a measurement log. The
+same reasoning is why no measured number from this item's control is copied onto the page: the
+control's findings live in this item, which dies at Done, and the numbers that must outlive it live
+where a gate reads them.
+
+## Tests
+
+* `DerivedReadCostTest` (new, `graphitron`'s test tree, pipeline tier): the monotonicity assertion
+  over the derived domain, and the equality-pinned set of known non-monotonic pairs.
+* A case for the un-registration helper itself: install it on a registered relation and assert that
+  the canonical name still answers the same rows, and that a view naming that relation does too.
+  That is the claim every number taken through the helper rests on, and a helper that silently
+  changed an answer would make all of them wrong in the same direction. It is also where the
+  dependent-view question above stops being a risk and becomes an assertion. Note that
+  `RunawayRelation`, the shape this helper follows, has no case of its own in the model tree at all:
+  it is a test-jar helper exercised from `graphitron-lsp` and `graphitron-mcp` fixtures. This helper's
+  case lives with its reader rather than repeating that gap.
+* A case for the lifted reachability walk, if lifting it out of `MaterializeDependencies` widens its
+  surface: the walk is already exercised through `meta_materialize_dependency`'s rows, and what a new
+  caller adds is a second question asked of it, so the case pins the answer for one relation whose
+  subtree is known by inspection.
+* `MaterializeRegistryGateTest` gains nothing here. It closes the register against the schema, which
+  is a different question; a cost claim belongs with the cost assertions.
+* No execution-tier work, no generated-output change, no fixture regeneration.
+
+## Acceptance
+
+. The monotonicity assertion is in the tree, its domain derived from the booted store on both axes,
+  and it has been seen to fail: removing this item's pair from the pinned set fails the build, and so
+  does adding a pair nothing measured.
+. The control has run and its finding is recorded in this item, including the controls that refuted.
+. `intent_node_id_decode_defect`, `intent_node_id_decode_slot` and the node-family refreshes are
+  priced, so "does a consumer's build pay this today" has an answer rather than an assumption.
+. The lever item is filed, at a priority those two figures decided, carrying the control's findings.
+. `intent_node_id_decode`'s `COMMENT ON` carries its cost warning.
+
+No user-visible surface, so the first-client user-docs draft does not apply. The only prose the item
+ships is the contributor-facing fact-model page and the relation's own `COMMENT ON`.
+
+## Roadmap entries
+
+One item filed: the lever for `intent_node_id_decode`, per the section above, carrying the control's
+findings and priced by the third measurement. It is filed as Backlog by this item's implementation
+rather than pre-filed now, since its body is the control's output.
+
+Three siblings touch this and none of them is absorbed by it. R781 prices
+`intent_field_column_table` at 151 seconds and owns that relation's lever; it is the nearest sibling
+to the item this one files, and the two are comparable because both will state their relation's two
+shapes with the same instrument. R802 corrects `SurfaceScanCountTest`'s own account of what a ceiling
+catches; this item takes the corrected reading as its rule, and its finding that a ceiling must be
+seen to fail is what rules a ceiling out here at all, so R802 is a dependency in reasoning and not in
+code.
+
+R733's boundary is the one worth stating precisely, because the easy version of it is a dodge. R733
+owns a guardrail over the reactor's wall clock. This gate asserts no duration, so it cannot conflict
+with that guardrail's assertions, but it does *consume* the resource R733 owns: a matrix of captured
+stores is build time. So the honest boundary is that the two do not overlap in what they assert and
+do overlap in what they spend, which is why the cost paragraph above is part of this plan and why the
+implementation reports the wall clock it added when it lands. If that number is large enough to matter
+to R733, R733 is the item that decides what to do about it.
