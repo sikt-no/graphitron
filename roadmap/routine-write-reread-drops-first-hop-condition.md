@@ -194,3 +194,79 @@ grep for, because both survive as text rather than as code:
 * the deferral framing of this shape: "does not emit yet" and "is likewise deferred" applied to a
   routine chain's first hop, in the classifier message and in `routine.adoc`;
 * `UNANCHORED_FIRST_HOP` appearing in a list of shapes the generator owes an emitter.
+
+## Reviewer findings
+
+### Round 1 (Spec → Ready gate, session_01UjdWPdE2PhrX1russQuxoU, 2026-08-23)
+
+Independent reviewer session, status stays `Spec`. Two findings, one per gate question.
+
+Question 1 is answered as it stands, and the establishing read holds up: every symbol, code site,
+test and message fragment the body names exists as named, and the three claims the read turns on
+were re-derived from the tree rather than taken on trust. What changes for a consumer is plain
+without the phase list: an author who writes a `condition:` on the first `@reference` element of a
+`@routine`-writing mutation still gets a build failure at their coordinate, but the message now
+names the shape they actually wrote, says the predicate's departure side is the routine's own
+result and so can never appear in the post-commit query, names the two places the predicate can go
+instead, and stops promising a release that will accept it; the manual moves the rule out of
+*Deferred write shapes* into `== Constraints`, and the store's own verdict partition stops filing
+it as a shape the generator owes.
+
+1. **Question 2. The new plan-time pin is seated at `RoutineWriteCommands.anchorOf`, whose own
+   javadoc says that site is not an assertion site, and the seat the tree already uses for the
+   sibling half of the same invariant goes unmentioned.** The Implementation section calls the
+   filter throw "the missing symmetric half of the invariant that already sits there" and asks for
+   it "in the same shape and voice as the sibling check". The sibling check's voice is the problem:
+   `anchorOf`'s javadoc reads "The leaf guarantees both halves in its own constructor (at least one
+   hop, and hop 0 joining by column pairs), so this is the translation of that guarantee into the
+   shape the row declares, *not a second assertion of it*: what the check below adds is the Java
+   narrowing the wider carrier's type cannot express." Both halves are pinned in
+   `MutationField.MutationRoutineWriteField`'s compact constructor, whose own comment says the
+   emitter narrows to `On.ColumnPairs` "on this pin's authority", and that leaf accepts a filtered
+   `On.ColumnPairs` hop 0 today. So the plan as written leaves the producer's authority incomplete
+   (a filtered leaf stays constructible and legal by the leaf's own account), adds a pure assertion
+   at a site that exists for type narrowing, and falsifies a javadoc paragraph the plan does not
+   mention rewriting. `docs/architecture/principles/development-principles.adoc`, "Acceptances:
+   classifier guarantees shape emitter assumptions", anchors this class of contract on
+   "type-system narrowing at the producer", which points at the leaf.
+
+   The fork is visible in the Tests section too, and is what makes it a plan question rather than a
+   detail. At the leaf's compact constructor the test is a one-liner in exactly the
+   `anAnchorCapturingNoKeyIsRefused` shape the plan wants to copy
+   (`assertThatThrownBy(() -> new MutationRoutineWriteField(...))`). At `anchorOf`, which is
+   `private static` and reachable only by driving `EmitPlan.produceWithoutStore` over a
+   hand-assembled model whose classifier would never produce that leaf, it is not, which is why the
+   plan has to pre-authorize a fallback ("assert the throw at the narrowest reachable seam"). The
+   fallback reads as a hedge against an unknown; it is actually the predictable consequence of the
+   seat choice.
+
+   What would satisfy: pick the seat deliberately in the body and say why. The leaf's compact
+   constructor beside its two siblings, `anchorOf`, or both are all defensible, and the argument
+   for `anchorOf` (it is where `filter()` is dropped, since it reads `targetTable()`, `alias()` and
+   the pairs and nothing else) is real and worth stating if that is the choice. Where the chosen
+   seat contradicts prose already in the tree, say what happens to that prose. Then let the test
+   paragraph follow from the choice rather than hedge against it.
+
+2. **Question 1. The retirement sweep list, which is the Done gate's only grep query, misses the two
+   javadoc paragraphs that carry the retired claim.** The item's stated outcome is that "no surface
+   anywhere implies a future release will take it", and two contributor-facing surfaces would say
+   otherwise the moment this lands: `FieldBuilder.classifyMutationRoutineChain`'s own javadoc ("so a
+   condition-joined or filtered hop 0 ... has no derivable re-read anchor; it lands a typed
+   `Deferred` rather than reaching the leaf"), and `MutationField.MutationRoutineWriteField`'s
+   javadoc plus the comment above its hop-0 pin, both of which say the re-read-anchor verdict
+   "routes every other shape to a typed `Deferred`". Neither contains "does not emit yet" or "is
+   likewise deferred", so the sweep as specified would not catch them, and the second one lives in a
+   file the Implementation section does not touch. What would satisfy: name both in the sweep list
+   (or in Implementation), so the Done-gate grep has a query that reaches them.
+
+Non-blocking, noted only, neither bearing on the two questions:
+
+* The current verdict's `!(hop0.on() instanceof On.ColumnPairs)` is total over `On`'s three
+  variants; a literal split "into the two shapes an author can actually write" is not, and an
+  `On.Lateral` hop 0 would fall through to the leaf's `IllegalArgumentException` instead of a
+  located rejection. That arm is unreachable here (`walkRoutineChain` adds a lateral hop only when
+  `runningSource != null`, and the root-head rule puts `@routine` first on a Mutation root), so
+  this is robustness rather than a hole; a sealed switch or a retained fallthrough keeps it total.
+* `docs/manual/reference/index.adoc` carries the same "four deferred emit-block reasons" drift the
+  out-of-scope section attributes to `diagnostics-glossary.adoc`'s opener. Worth folding into
+  whatever item eventually closes that drift.
