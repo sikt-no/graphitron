@@ -395,11 +395,9 @@ skeleton: the chain intro, the verdict-layer section, the command-relation secti
 include plus the per-relation closure prose), the rejection section and the package map land, and
 the "Classification Vocabulary" section (95 lines, self-declared historical) and the Source Map
 are deleted with them. Then the examples, per the `classified-corpus` loop adapted to the new
-assertion. Only 2 of the 55 corpus examples carry a projection `query` today (`catalog` and
-`paginated-joined-table-interface`), which is what makes an example render; the other 53 are
-tested and invisible while the tables restate their verdicts in ungated prose beside them. The
-page's other six GraphQL blocks are hand-written, not corpus-rendered, so they carry no guard
-either.
+assertion. Only 8 of the 55 corpus examples carry a projection `query` today, which is what makes
+an example render; the other 47 are tested and invisible while the tables restate their verdicts
+in ungated prose beside them.
 
 - Promoting an example means, in one commit: add a projection `query` where the example lacks
   one, paste the rendered SDL and outcome blocks under prose, and delete the leaf-named table
@@ -539,3 +537,47 @@ open.
   public site where the roadmap directory is not the reader's to search. A reviewer who wants
   provenance preserved should say whether the changelog redirect is sufficient or whether some
   narrower allowance belongs in the gate.
+
+## Implementation state
+
+Slices 0, 1 and 4 are on trunk, and so is the first of slice 2's two renderers. What follows is
+what the next session inherits.
+
+**Landed.** Slice 0's section marks; slice 1's two gates, each carrying an explicit burn-down list
+of what it currently finds; slice 2's command-relation fragment, generated at build from the
+relation types and their grain javadoc and included as an AsciiDoc partial; slice 4 in full.
+
+**The burn-down lists.** `TransientCitationCheck.KNOWN_CITATIONS` is down from 43 entries to the 3
+on `code-generation-triggers.adoc`, which belong to the sections slice 3 rebuilds.
+`ArchitectureDocSymbolGuardTest.KNOWN_DANGLING` is down from 11 to the 4 the Source Map and the
+derived-layer prose still name. Both empty out with slice 3, and both fail the build on an entry
+whose finding is gone, so neither can survive as a permanent exemption.
+
+**Not started.** Slice 2's outcome-block renderer, and slice 3.
+
+**A fork the outcome block needs settled before it is built.** A prototype established that the
+pieces compose: `CapturedStore.ofCatalog` puts a fixture's facts in a store,
+`intent_resolved_field_claim` answers with classifier and tier,
+`QueryViewRenderer.touchedCoordinates` (not committed; the prototype added it) gives exactly the
+coordinates an example shows, and a generation run gives the emitted unit and method names. It
+also turned up something the plan does not cover: **not every doc example generates.** The
+`mapping` fixture is classification-only, and a real generation run rejects it with an author
+error (`Film.details` projects a nested record type whose `count` field resolves to no column).
+Its `@classified` assertions are all satisfied, so it is not a rejection example in the sense
+section 5 of the page means, but it has no emitted names for an outcome block to render.
+
+Three ways to settle it, and the choice belongs to whoever owns the plan:
+
+1. Render the rejection as that example's outcome, through the same machinery section 5 uses. The
+   honest reading, and it makes the block total over the corpus. The cost is that a rejection's
+   prose is not stable enough to drift-guard verbatim, so the block would have to render the
+   rejection's arm rather than its message.
+2. Render the verdict half only where a fixture does not generate, and say so in the block. Cheap,
+   total, and it makes "no emitted names" a visible fact rather than an omission.
+3. Give the fixture a projection that generates, and treat a non-generating doc example as a
+   corpus defect. Largest change, and it may not be reachable for every such fixture.
+
+Option 2 is the recommendation: it keeps the block lean the way the design already argues for,
+and it does not put a second rejection-rendering mechanism beside section 5's before section 5
+exists. Whichever is chosen, the count of doc examples affected should be measured first; only
+`mapping` was checked.
