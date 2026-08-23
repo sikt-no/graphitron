@@ -1,122 +1,136 @@
 ---
 id: R804
 title: "Composed columns are atomic and key-dependent: state the discipline in the explanation articles"
-status: Backlog
+status: Spec
 bucket: docs
 priority: 5
 theme: docs
 depends-on: []
 created: 2026-08-22
-last-updated: 2026-08-22
+last-updated: 2026-08-23
 ---
 
 # Composed columns are atomic and key-dependent: state the discipline in the explanation articles
 
-R803 converts the six string-aggregation sites in the fact schema to rows and adds a build
-gate denying the constructs in the DDL. That is the mechanical attack. This item is the
-documentation sibling: state the principle those changes enforce in the two explanation
-articles, so the next author who reaches for `LISTAGG` (or its next of kin: a sentence
-assembled in SQL, a set serialized for grouping) has a page that says why, not just a gate
-to bounce off.
+R803 converted the fact schema's serialized-collection columns to rows and landed
+`CollectionValuedColumnGateTest`, the gate that denies the constructs in the DDL. That was
+the mechanical attack, and it is done. This item is the documentation sibling: state the
+principle those changes enforce in the two explanation articles, so the next author who
+reaches for `LISTAGG` (or its next of kin: a sentence assembled in SQL, a set serialized
+for grouping) has a page that says why, not just a gate to bounce off.
 
 The first framing, "rendering is a query-time construct, not a model construct", proved too
 blunt under a principles consult: the store as shipped legitimately holds renders (the
-rendered coordinate string, the `_upper` case folds), and the worst offender defends itself
-as a grouping key rather than presentation, `intent_authored_claim_conflict.directives`
-calling itself "the canonical claim render for grouping" in its own comment. The sharper
-discriminator is atomicity plus key-dependence, and most of it is already written on the
-store's own columns:
+rendered coordinate string, the `_upper` case folds), and the worst offender defended
+itself as a grouping key rather than presentation, the retired serialized-directives
+column calling itself "the canonical claim render for grouping" in its own comment. The
+sharper discriminator is atomicity plus key-dependence, and most of it is already written
+on the store's own columns:
 
 * A column may carry an opaque value the store did not compose (a captured message, a
-  transcribed docstring), provided nothing joins, groups or filters on it. Four DDL
+  transcribed docstring), provided nothing joins, groups or filters on it. The DDL
   comments already state this line as "display material, never a dimension"; lift that
   vocabulary rather than minting a new one.
 * A column anything joins, groups or filters on must be atomic to the engine and a function
   of its relation's own key. A count or arity passes
-  (`intent_type_backing_conflict.candidates`); a collection serialized into a scalar fails
-  (`class_names`, same relation, same key), because its element grain sits inside the value
-  where no key, constraint or join reaches it and only string surgery gets it back. That
-  pair, same relation and same key, is the whole lesson in one exemplar, and it has a live
-  wrong answer behind it: `DiagnosticFacets.DIRECTIVES` filters with exact set equality on
-  the MCP surface, so asking for conflicts involving one directive silently returns only
-  the conflicts whose entire set is that directive. This is also what makes R803's denylist
-  coherent: `ARRAY_AGG` is no delimited string, but it is a collection in a scalar.
+  (`intent_type_backing_conflict.candidates`); a collection serialized into a scalar fails,
+  because its element grain sits inside the value where no key, constraint or join reaches
+  it and only string surgery gets it back. The exemplar pair is that same relation:
+  `candidates` stays, and the contesting classes it counts are `intent_type_backing`'s rows
+  under the same key, where until R803 a serialized twin sat beside the count. The wrong
+  answer that twin produced is the cost stated concretely: the MCP diagnostics surface
+  filtered the conflict set with exact set equality, so asking for conflicts involving one
+  directive silently returned only the conflicts whose entire set was that directive; it is
+  now a join that asks membership. This is also what makes the gate's denylist coherent:
+  `ARRAY_AGG` is no delimited string, but it is a collection in a scalar.
 * A serialized set used as a canonical group key is the case that looks legitimate and is
   not: it answers only equality of the whole set, where the relational form answers that
   and membership too, for one join. Grouping by a set is a query's business; the store owes
   it the rows, not a canonical spelling of them.
 * Order is admissible as data (a captured ordinal, a `position` column) and inadmissible as
   a rule copied from a consumer's vocabulary with nothing binding the copy, which is what
-  the eight-branch `CASE` ladder restating a Java enum's declaration order is. That is
-  "every invariant has an enforcer" rather than a rendering point, and stating it
-  separately gives the doc a rule that survives whichever arm of R803's message fork wins.
+  the retired eight-branch `CASE` ladder restating a Java enum's declaration order was.
+  R803's own edit to fact-model.adoc already landed this argument where the minted message
+  now lives (the provenance section: the naming order "is not a captured fact of any graph
+  and so is no view's to express"), so the new paragraph cross-references that sentence
+  rather than restating it.
 
-Placement: inside fact-model.adoc's "Derived reads are views, not stored facts", in the
-opening shape cluster beside the converse test, not a new section. One forward-linking
-sentence from "Name the row, not the question": a column encoding a set means the row
-asserts something about several things at once, so the one-sentence check cannot be
-finished honestly at the column grain either. And one sentence scoping the `diagnostic`
-exemption, which covers a relation's name and population and says nothing about what a
-column may hold; the largest single offender sits on the exempted relation, so without that
-sentence the next author reads `diagnostic` as pre-cleared. In naming-the-row.adoc, extend
-the existing `intent_bound_table` worked example with the failing sibling rather than
-adding a new example. Do not enumerate the sanctioned columns as a roster (an unguarded
-census); state the discriminator, one exemplar per side, and let the DDL comments carry the
-per-column arguments they already own.
+Two citations lift the case past taste, both told in past tense now that R803 closed the
+defects: "boundaries decode and encode" (a serialized column is a wire format inside the
+interior, and nothing ever decoded it; the joined string travelled intact into a hover)
+and the encoding leaking into a consumer's types (in `ClaimFacts`, `contested` was a
+`Field<List<String>>` beside `grounded` and `reached`, genuine multiset row lists, but
+held a one-element list containing the joined string; it is now one row per contesting
+class like its siblings).
 
-Enforcer: R803's gate, written named-and-true rather than forward-looking. If this item
-lands before the gate exists, the line is a disclosed gap explicitly marked closable,
-unlike the Name-the-row section's unclosable one; landing the paragraph in the same window
-as the gate commit avoids the page ever carrying the gap.
+## Deliverable 1: the discipline paragraph in fact-model.adoc
 
-Two citations that lift the case past taste, both corrected against R803's Spec revision
-round 1 (an earlier form of this paragraph claimed two hand-maintained parsers; neither
-consumer parses, and the truth is stronger): "boundaries decode and encode" (a serialized
-column is a wire format inside the interior, and nothing ever decodes it; the joined
-string travels intact into a hover) and the encoding leaking into a consumer's types (in
-`ClaimFacts`, `contested` is a `Field<List<String>>` beside `grounded` and `reached`,
-which are genuine multiset row lists, but holds a one-element list containing the joined
-string: three sibling fields, one Java type, two meanings).
+One paragraph inside "Derived reads are views, not stored facts", in the opening shape
+cluster beside the converse test ("two spellings of one value are two base columns"), not
+a new section: the tail of that section is measured cost rules, where a shape rule reads
+as a non-sequitur. The paragraph states the two-clause discriminator above, the
+`intent_type_backing_conflict` exemplar pair (one exemplar per side, from one relation and
+one key), the membership-versus-set-equality cost, and one cross-reference to the
+provenance section's minted-message sentence for the order half. Do not enumerate the
+sanctioned columns as a roster (an unguarded census); the DDL comments own the per-column
+arguments, and seven of them already spell the vocabulary this paragraph lifts ("display
+material, never a dimension"). Name only live columns; the removed ones are told as
+history, which is the register the page already uses for the retired assignability
+closure.
 
-Out of scope: development-principles.adoc, whose preamble already delegates the store's
-modeling discipline to fact-model.adoc and whose word budget is gated.
+Its enforcer line, written named-and-true: *Enforced by:*
+`CollectionValuedColumnGateTest` (graphitron-model) for the named constructs in the DDL's
+statement regions; disclosed gap, per that gate's own javadoc: a row-local scalar
+expression that discards part of a value trips nothing, because detecting serialization
+inside an arbitrary expression is not mechanizable, so this paragraph is the coverage for
+that residue. The gap is closable case by case (each such expression is findable in
+review) and the removed path-truncation column on `diagnostic` is its exemplar.
 
-R803's Spec revision round 1 has since adopted this item's discriminator, lifted the same
-"display material, never a dimension" vocabulary, and settled its message fork on the
-schema header's existing post-capture reason (the render's input is a Java enum's
-declaration order, not a captured fact), so the two items state one rule and this item's
-articles cite the gate R803 lands.
+## Deliverable 2: two scoping sentences in fact-model.adoc
 
-## What R803's implementation left for this item
+* In "Name the row, not the question", one forward-linking sentence: a column encoding a
+  set means the row asserts something about several things at once, so the one-sentence
+  check cannot be finished honestly at the column grain either.
+* At the `diagnostic` exemption (the roster's placement exemption in the strata section),
+  one sentence scoping it: the exemption covers a relation's name and population and says
+  nothing about what a column may hold. The exemplar is one relation, two verdicts:
+  `coordinate` passes because its atoms ride the same row (the view's own comment argues
+  this), and the path-truncation column failed the same test and was removed. Without the
+  sentence the next author reads `diagnostic` as pre-cleared, and the largest offender
+  R803 removed sat on exactly that relation.
 
-R803 has landed, so nothing here is forward-looking any more and the paragraph can be
-written named-and-true.
+## Deliverable 3: the sibling half of naming-the-row.adoc's worked example
 
-The gate exists and its name is `CollectionValuedColumnGateTest`, in graphitron-model beside
-the other schema gates. It denies `LISTAGG`, `STRING_AGG`, `GROUP_CONCAT`, `ARRAY_AGG` and
-the `WITHIN GROUP` clause inside the DDL's statement regions, and its own javadoc states the
-gap this item's prose is the enforcer for: a row-local scalar expression that discards part
-of a value trips nothing, because detecting serialization inside an arbitrary expression is
-not mechanizable.
+Extend the existing `intent_bound_table` worked example (the "candidate count is a column
+rather than a rule buried inside whichever consumer asked first" punchline) with its
+failing sibling, in the page's register and against the shape the reader has just been
+taught: a count as a column is the honest fold; the list of the counted things serialized
+into a scalar beside it is the dishonest one, because the question an author asks of a
+list is membership, and a serialized set can only answer equality of the whole. One short
+paragraph, no new example, no roster. If the pantry metaphor stretches naturally (a label
+that says how many jars, versus three jars taped together under one label), use it; if it
+strains, plain prose.
 
-The exemplar for the `diagnostic` exemption sentence is available and needs no assertion.
-Two columns of that one exempted relation landed on opposite sides of the discriminator:
-`coordinate` passes and survives, because its atoms ride the same row, and the `directory`
-column failed and was removed, because a path is a sequence of segments and the truncation
-kept one and discarded the rest. One relation, two verdicts, is what shows that the
-exemption covers a relation's name and population and says nothing about what its columns
-may hold. Note that `directory` is also the exemplar of the gate's gap, so the two sentences
-are the same example read twice.
+## Verification
 
-The `ClaimFacts` citation needs one word changed rather than dropping: `contested` is now a
-genuine `List<String>` of one row per contesting class, matching its `grounded` and
-`reached` siblings, so the leak the citation describes is a defect this item's rule closed
-and should be told in the past tense. The joined string it used to hold travelled intact
-into a hover, which is still the point.
+* Prose-only change. The verification build covers the AsciiDoctor render, and the
+  widened `AdocXrefAnchorCheck` fails on any xref path or anchor the edit gets wrong.
+* No retired column name appears as a live citation; the failing exemplars are past
+  tense. Live names used: `intent_type_backing_conflict.candidates`,
+  `intent_type_backing`, `diagnostic.coordinate`.
+* No mechanical test pins prose content; the Spec → Ready and In Review → Done gates are
+  the review. The one build-checked claim is the enforcer line naming a test that exists.
 
-Also worth stating in the discipline paragraph, because it is what the conversion actually
-bought and it is not obvious from the rule alone: a serialized set makes a filter answer set
-equality where an author asked membership. The MCP diagnostics surface had a `directives`
-dimension compared with `IS NOT DISTINCT FROM`, so filtering by `service` returned only the
-conflicts whose entire set was exactly `service`. That was a wrong answer, not a stylistic
-preference, and it is now a join.
+## Not in scope
+
+* development-principles.adoc: its preamble already delegates the store's modeling
+  discipline to fact-model.adoc, and its word budget is gated.
+* The DDL comments: they already carry the vocabulary and the per-column arguments; this
+  item adds the page-level rule they instantiate.
+* Any further schema or consumer change; R803 finished those.
+
+(The handoff notes R803's implementer appended here are folded into the deliverables
+above: the gate's name and its disclosed gap into Deliverable 1's enforcer line, the
+one-relation-two-verdicts exemplar into Deliverable 2, the membership-versus-set-equality
+cost into the discriminator bullet, and the `ClaimFacts` past-tense correction into the
+citations paragraph.)
