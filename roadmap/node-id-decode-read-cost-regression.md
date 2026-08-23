@@ -1,7 +1,7 @@
 ---
 id: R811
 title: "Gate that a registration cannot make another relation's read worse, and attribute the decode's ten-times move"
-status: In Progress
+status: In Review
 bucket: store
 priority: 2
 theme: nodeid
