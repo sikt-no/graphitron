@@ -34,6 +34,18 @@
             <version>${project.version}</version>
             <scope>provided</scope>
         </dependency>
+        <!--
+            Same shape, for render-command-relations. The command-relation table renders from the
+            relation types themselves, so the renderer needs them on a classpath, and this module
+            is where a docs fragment is assembled. provided scope on a pom-packaged module that
+            already sets maven.deploy.skip, so nothing here reaches a published artifact.
+        -->
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron</artifactId>
+            <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -311,6 +323,30 @@
                         check-adoc-xrefs so the authored xrefs into schema/ resolve against the
                         generated pages.
                     -->
+                    <!--
+                        The command-relation table the architecture reference includes: which
+                        relations exist comes from the types on the classpath, the grain sentence
+                        beside each from that relation's own javadoc. Generated straight into the
+                        Asciidoctor source tree and never committed, so there is no checked-in copy
+                        to drift and no verify guard to forget. Base build rather than the docs
+                        profile, on the same reasoning as the schema reference below: the render's
+                        own floors must gate a -P!docs build too, and a missing fragment must fail
+                        the include rather than render a page with a hole in it.
+                    -->
+                    <execution>
+                        <id>render-command-relations</id>
+                        <phase>process-resources</phase>
+                        <goals><goal>java</goal></goals>
+                        <configuration>
+                            <mainClass>no.sikt.graphitron.docs.CommandRelationFragment</mainClass>
+                            <arguments>
+                                <argument>${project.basedir}/../graphitron/src/main/java</argument>
+                                <argument>${project.build.directory}/staging/architecture/reference/_command-relations.adoc</argument>
+                            </arguments>
+                            <classpathScope>compile</classpathScope>
+                            <includePluginDependencies>true</includePluginDependencies>
+                        </configuration>
+                    </execution>
                     <execution>
                         <id>render-schema-reference</id>
                         <phase>process-resources</phase>

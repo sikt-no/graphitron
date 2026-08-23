@@ -9,8 +9,12 @@ import java.util.List;
  * {@link RetiredVocabularyGuardTest}): the in-scope module roots and the repository-root
  * anchor both guards walk from. One definition, so a new module cannot silently join one
  * guard's scope and not the other's.
+ *
+ * <p>Public so a guard in another test package resolves the repository root through this anchor
+ * rather than re-deriving one: two walks that disagree about where the root is would put two
+ * guards on two different trees.
  */
-final class GuardScope {
+public final class GuardScope {
 
     /**
      * Module source roots to scan, relative to the repository root. {@code roadmap-tool} is
@@ -38,7 +42,7 @@ final class GuardScope {
      * {@code roadmap/workflow.adoc} anchor. Surefire runs from the module directory, so the
      * root is one or more parents up.
      */
-    static Path locateRepoRoot() {
+    public static Path locateRepoRoot() {
         Path cwd = Path.of("").toAbsolutePath();
         for (Path p = cwd; p != null; p = p.getParent()) {
             if (Files.isRegularFile(p.resolve("roadmap/workflow.adoc"))) return p;
