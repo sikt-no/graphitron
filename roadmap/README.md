@@ -16,7 +16,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R784` | Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it | Ready | 2026-08-21 | [plan](straddling-reference-update-partition.md) |
-| `R811` | Gate that a registration cannot make another relation's read worse, and attribute the decode's ten-times move | In Review | 2026-08-23 | [plan](node-id-decode-read-cost-regression.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
 | `R705` | A condition-join hop in a reference filter path is rejected, though the emitter it needs already ships | Spec | 2026-08-21 <sub>created 2026-08-18</sub> | [plan](condition-join-hops-in-reference-filter-paths.md) |
@@ -421,7 +420,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### nodeid
 
 - `R815` [**Answer the step-hop and binding registrations costing three other relations an order of magnitude**](step-hop-registration-costs-two-readers.md) — Backlog, store
-- `R811` [**Gate that a registration cannot make another relation's read worse, and attribute the decode's ten-times move**](node-id-decode-read-cost-regression.md) — In Review, store
 - `R615` [**init.sql documents the live idreffixture DDL as serving deleted shim tests**](idreffixture-purpose-comment-stale.md) — Backlog, tech-debt
 - `R673` [**A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId**](nodeid-arg-dispatches-on-typeid.md) — In Review, bug
 - `R676` [**A @nodeId filter input on a multitable query cannot state a per-participant join path**](nodeid-filter-per-participant-paths.md) — Spec, bug
