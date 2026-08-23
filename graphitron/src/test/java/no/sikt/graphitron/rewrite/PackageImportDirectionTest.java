@@ -112,7 +112,11 @@ class PackageImportDirectionTest {
         "no.sikt.graphitron.rewrite.model.RowsMethodShape",
         // Already admitted implicitly through ParamSource.Arg (see BORROWED_COMPONENT_CLOSURE);
         // named here because the routine call emitter forks on the path shape directly: a bare
-        // slot reads the argument, a dot-path reads it through a registered descent helper.
+        // slot reads the argument, a dot-path reads it through a registered descent helper. Held
+        // by render/ alone now: a command-tier routine argument carries the path as the author
+        // wrote it, which is what the two forks actually read, and the per-segment list-lifting
+        // the resolved carrier also holds decides nothing at either call site. The entry retires
+        // with the model-shaped overloads beside the converted ones.
         "no.sikt.graphitron.rewrite.PathExpr",
         // The result-key alias namespace verdict, stamped at capture on the alias-minting leaves.
         // Borrowed rather than restated as a command-tier enum because both halves of an aliased

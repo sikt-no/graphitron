@@ -9,6 +9,8 @@ import no.sikt.graphitron.rewrite.model.RoutineRef;
 import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.javapoet.ClassName;
 
+import java.util.List;
+
 /**
  * Emits the table expression for a {@link TableExpr.RoutineCall} node: the schema's
  * generated {@code Routines} convenience method invoked with the bound IN parameters,
@@ -94,16 +96,51 @@ public final class RoutineCallEmitter {
             call.methodName(), args);
     }
 
+    /**
+     * One argument of a command-tier call, read off the request at the path the row states.
+     *
+     * <p>The path arrives written rather than resolved, so the segment split happens here. That is
+     * the whole of what the resolved carrier was supplying: both reads below take segment names,
+     * and the per-segment list-lifting the carrier also holds is consulted by neither.
+     */
     private static CodeBlock argExpression(RoutineCall.RoutineArgument argument,
             ArgumentValueSource argSource, ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys) {
-        var path = argument.path();
+        var segments = argument.segments();
+        var tail = segments.subList(1, segments.size());
         TypeName paramType = CatalogRefs.typeName(argument.javaTypeName());
+        if (tail.isEmpty()) {
+            // A projection names a key column past a node id, so it has at least two segments.
+            // Asked before the leaf is derived rather than after, as the sink's own arm does.
+            return typedSlotRead(paramType, segments.getFirst(), argSource);
+        }
+        var leaf = segments.subList(0, segments.size() - 1);
         // Row presence decides, not a shape test on the path, for the reason the model-shaped arm
         // below states: a projected binding's path is spelled exactly like an ordinary dotted one.
-        return keys.readFor(path, argSource, argHelpers)
-            .orElseGet(() -> path.isHead()
-                ? typedSlotRead(paramType, path.headName(), argSource)
-                : nestedSlotRead(paramType, path, argSource, argHelpers));
+        return keys.readFor(argument.path(), String.join(".", leaf),
+                () -> descentRead(leaf, TypeName.get(Object.class), argSource, argHelpers))
+            .orElseGet(() -> descentRead(segments, paramType, argSource, argHelpers));
+    }
+
+    /**
+     * A path's value read off the request: the outer slot directly when the path is one segment,
+     * otherwise through a registered descent helper that walks the tail and applies the leaf cast.
+     * Untyped at the read where the caller asks for {@code Object}, which is what the wire read
+     * behind a projected binding wants: the decode helper guards the wire shape itself, so a value
+     * that is not a string is a null decode rather than a cast failure.
+     */
+    private static CodeBlock descentRead(List<String> segments, TypeName leafType,
+            ArgumentValueSource argSource, ArgPathHelperRegistry argHelpers) {
+        String head = segments.getFirst();
+        CodeBlock root = switch (argSource) {
+            case ArgumentValueSource.Env ignored -> CodeBlock.of("env.getArgument($S)", head);
+            case ArgumentValueSource.FromSelectedField sf ->
+                CodeBlock.of("$L.getArguments().get($S)", sf.sfLocal(), head);
+        };
+        if (segments.size() == 1) {
+            return root;
+        }
+        return CodeBlock.of("$L($L)",
+            argHelpers.register(head, segments.subList(1, segments.size()), leafType), root);
     }
 
     private static CodeBlock argExpression(RoutineRef.ArgBinding b, boolean correlated,

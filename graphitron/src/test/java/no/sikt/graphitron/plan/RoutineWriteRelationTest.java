@@ -3,6 +3,7 @@ package no.sikt.graphitron.plan;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.Arity;
 import no.sikt.graphitron.command.ErrorDispatch;
+import no.sikt.graphitron.command.RoutineCall;
 import no.sikt.graphitron.command.RoutineWriteCommand;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
@@ -122,7 +123,7 @@ class RoutineWriteRelationTest {
         assertThat(row.call().arguments())
             .as("the routine's IN parameters ride the row in declaration order, each bound to the"
                 + " argument the author's argMapping named")
-            .extracting(a -> a.path().asString())
+            .extracting(RoutineCall.RoutineArgument::path)
             .containsExactly("inventoryId", "customerId");
         assertThat(row.terminusProjection())
             .as("the follow-up query projects the terminus type through its projection unit")

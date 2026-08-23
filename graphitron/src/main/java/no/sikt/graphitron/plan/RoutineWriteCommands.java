@@ -310,7 +310,7 @@ public final class RoutineWriteCommands {
                 + " routine write's call is the chain's head, which has no previous node");
         }
         return new RoutineCall.RoutineArgument(binding.routineParamName(),
-            binding.paramType().toString(), arg.path());
+            binding.paramType().toString(), arg.path().asString());
     }
 
     /**

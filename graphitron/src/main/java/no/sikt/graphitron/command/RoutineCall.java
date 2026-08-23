@@ -1,7 +1,5 @@
 package no.sikt.graphitron.command;
 
-import no.sikt.graphitron.rewrite.PathExpr;
-
 import java.util.List;
 import java.util.Objects;
 
@@ -61,21 +59,33 @@ public record RoutineCall(String routinesClassName, String methodName, CatalogTa
      *                      into a type argument at the call site where the column's is spelled into
      *                      a record type; a producer holding the reflected form normalises it where
      *                      the row is minted, which is where a spelling difference belongs
-     * @param path          where the value is read from the request, as the author's
-     *                      {@code argMapping} resolved it: a bare slot, or a descent through nested
-     *                      input fields to a leaf
+     * @param path          where the value is read from the request: the author's
+     *                      {@code argMapping} right-hand side as written, dot-separated, or the
+     *                      parameter's own name where the author wrote no entry and the call
+     *                      identity-binds the argument of that name. The written form and not a
+     *                      resolved path carrier, matching what {@link KeyProjectionRelation} keys
+     *                      its rows by and what
+     *                      {@link no.sikt.graphitron.rewrite.PathExpr#asString()} renders. The
+     *                      per-segment list-lifting a resolved path also carries decides nothing at
+     *                      this call site: the emission reads segment names and nothing else
      */
-    public record RoutineArgument(String parameterName, String javaTypeName, PathExpr path) {
+    public record RoutineArgument(String parameterName, String javaTypeName, String path) {
 
         public RoutineArgument {
             Objects.requireNonNull(parameterName, "parameterName");
             Objects.requireNonNull(javaTypeName, "javaTypeName");
             Objects.requireNonNull(path, "path");
-            if (javaTypeName.isBlank()) {
+            if (javaTypeName.isBlank() || path.isBlank()) {
                 throw new IllegalArgumentException(
-                    "a routine argument carries its parameter's bound type; the read at the call"
-                    + " site is typed by it, so a blank one emits an untyped read");
+                    "a routine argument carries its parameter's bound type and the path its value"
+                    + " is read from; the read at the call site is typed by the one and addressed"
+                    + " by the other, so a blank either way emits a call that does not compile");
             }
+        }
+
+        /** The path's segments, outermost first; a bare slot is one segment. */
+        public List<String> segments() {
+            return List.of(path.split("\\."));
         }
     }
 }
