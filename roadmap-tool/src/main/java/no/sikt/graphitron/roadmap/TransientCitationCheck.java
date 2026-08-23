@@ -22,6 +22,14 @@ import java.util.regex.Pattern;
  * That test parses Java comment and string-literal regions, which markdown documents have
  * none of, so the same rule needs a second enforcement site for the prose habitat. This is it.
  *
+ * <p>Two habitats, one rule. {@link #SCANNED_DOCS} is a fixed list of the prose documents an agent
+ * session reads before acting. {@link #SCANNED_TREES} is a walked tree of published documentation
+ * pages, added because the architecture pages carry the same rot and nothing scanned them: the
+ * Java-source guard parses comment and string regions, which an {@code .adoc} file has none of,
+ * and the fixed list never reached {@code docs/}. Those pages render to a public site where the
+ * {@code roadmap/} directory is not the reader's to search, so a stale id there resolves to
+ * nothing at all.
+ *
  * <p>Build configuration is a third habitat this check does not reach: {@code pom.xml} comments
  * carry item ids too, and no scan covers them.
  */
@@ -47,6 +55,24 @@ final class TransientCitationCheck {
     );
 
     /**
+     * The walked habitat: doc trees whose pages carry the same rule. These are a tree rather than
+     * a list because the pages move between quadrants, and enumerating nineteen paths would put a
+     * scan behind every page rename. The floor that keeps a list honest applies here too, one
+     * level up: a declared tree that yields no pages fails, so a renamed directory cannot quietly
+     * shrink the scan to nothing.
+     *
+     * <p>{@code docs/architecture} is the tree the rot was found in, and the narrow scope is
+     * deliberate. {@code docs/manual} is author-facing and cites nothing from {@code roadmap/},
+     * so widening buys nothing today; widening it later is one line.
+     */
+    static final List<String> SCANNED_TREES = List.of(
+        "docs/architecture"
+    );
+
+    /** The extension a page in a scanned tree must carry to be read. */
+    private static final String PAGE_SUFFIX = ".adoc";
+
+    /**
      * Item id: literal {@code R} followed by digits. The {@code R<n>} placeholder that the rule
      * itself uses when stating the forbidden shape does not match, so a document may quote the
      * rule without tripping it.
@@ -64,7 +90,21 @@ final class TransientCitationCheck {
      * The three roadmap artifacts that outlive every individual item and may therefore be
      * cited by path: the changelog, the workflow reference, and the generated roll-up.
      */
-    private static final Set<String> PERMANENT_ARTIFACTS = Set.of("changelog.md", "workflow.adoc", "README.md");
+    private static final Set<String> PERMANENT_ARTIFACTS =
+        Set.of("changelog.md", "workflow.adoc", "README.md", "index.adoc");
+
+    /**
+     * Citations already in the walked habitat when the walk was added, each one real. Carrying
+     * them lets the guard land before the pages are rewritten rather than after, which is the
+     * order that makes the rewrite verifiable: the mechanism that will hold the pages is in place
+     * while they are edited. Every entry is {@code <repo-relative page>|<citation>}.
+     *
+     * <p>This is a burn-down list, not a suppression list, and {@link #staleBaselineEntries} is
+     * what keeps the distinction real: an entry whose citation is gone fails the check, so the set
+     * empties itself as the pages are cleaned and cannot survive as a permanent exemption. When it
+     * reaches empty, delete it, {@link #staleBaselineEntries}, and this javadoc with it.
+     */
+    static final Set<String> KNOWN_CITATIONS = knownCitations();
 
     private TransientCitationCheck() {}
 
@@ -100,6 +140,20 @@ final class TransientCitationCheck {
             }
             throw new BuildFailure("agent-onboarding document declared for scanning does not exist");
         }
+
+        List<String> stale = isBaselineRoot(root) ? staleBaselineEntries(root, KNOWN_CITATIONS) : List.of();
+        if (!stale.isEmpty()) {
+            System.err.println("check-transient-citations: " + stale.size()
+                + " baseline entr(ies) in TransientCitationCheck.KNOWN_CITATIONS name a citation"
+                + " that is no longer in the tree. The baseline is a burn-down list: delete the"
+                + " entry in the commit that removed the citation, so it cannot survive as a"
+                + " permanent exemption.");
+            for (String entry : stale) {
+                System.err.println("  " + entry);
+            }
+            throw new BuildFailure("stale transient-citation baseline entries");
+        }
+
         if (result.findings().isEmpty()) {
             System.out.println("check-transient-citations: no transient roadmap citations in "
                 + result.scanned() + " agent-onboarding document(s).");
@@ -136,7 +190,66 @@ final class TransientCitationCheck {
                 findings.add(new Finding(doc, f.line(), f.citation(), f.content()));
             }
         }
+        for (String tree : SCANNED_TREES) {
+            List<Path> pages = pagesUnder(root.resolve(tree));
+            if (pages.isEmpty()) {
+                missing.add(tree + " (declared tree, no " + PAGE_SUFFIX + " pages found)");
+                continue;
+            }
+            for (Path page : pages) {
+                scanned++;
+                String relative = root.relativize(page).toString().replace('\\', '/');
+                for (Finding f : scanFile(page)) {
+                    if (KNOWN_CITATIONS.contains(relative + "|" + f.citation())) continue;
+                    findings.add(new Finding(relative, f.line(), f.citation(), f.content()));
+                }
+            }
+        }
         return new Result(findings, missing, scanned);
+    }
+
+    /**
+     * Pages under one declared tree, sorted so a failure list is stable. Excludes {@code target/}:
+     * the docs module stages a rendered copy of these trees there, and a citation would be
+     * reported twice, once at a path nobody edits.
+     */
+    static List<Path> pagesUnder(Path tree) throws IOException {
+        if (!Files.isDirectory(tree)) return List.of();
+        try (var paths = Files.walk(tree)) {
+            return paths.filter(Files::isRegularFile)
+                .filter(p -> p.toString().endsWith(PAGE_SUFFIX))
+                .filter(p -> !p.toString().contains("/target/"))
+                .sorted()
+                .toList();
+        }
+    }
+
+    /**
+     * Baseline entries whose citation is no longer in the tree. Each one is an edit that cleaned a
+     * page without deleting the line that recorded it, which is how a burn-down list turns into a
+     * permanent exemption if nothing checks.
+     */
+    static List<String> staleBaselineEntries(Path root, Set<String> baseline) throws IOException {
+        Set<String> live = new java.util.LinkedHashSet<>();
+        for (String tree : SCANNED_TREES) {
+            for (Path page : pagesUnder(root.resolve(tree))) {
+                String relative = root.relativize(page).toString().replace('\\', '/');
+                for (Finding f : scanFile(page)) {
+                    live.add(relative + "|" + f.citation());
+                }
+            }
+        }
+        return baseline.stream().filter(entry -> !live.contains(entry)).sorted().toList();
+    }
+
+    /**
+     * Whether {@code root} is the repository the baseline was written against, by the same
+     * {@code roadmap/workflow.adoc} anchor the Java-source guards walk up to find. The baseline
+     * names paths in this repository, so against any other root every entry would read as stale
+     * and the check would fail for a reason that has nothing to do with a citation.
+     */
+    static boolean isBaselineRoot(Path root) {
+        return Files.isRegularFile(root.resolve("roadmap/workflow.adoc"));
     }
 
     /**
@@ -162,6 +275,63 @@ final class TransientCitationCheck {
             }
         }
         return findings;
+    }
+
+
+    private static Set<String> knownCitations() {
+        Set<String> known = new java.util.LinkedHashSet<>();
+        // explanation/dispatch-axes.adoc
+        known.add("docs/architecture/explanation/dispatch-axes.adoc|R305");
+        known.add("docs/architecture/explanation/dispatch-axes.adoc|R314");
+        known.add("docs/architecture/explanation/dispatch-axes.adoc|R431");
+        known.add("docs/architecture/explanation/dispatch-axes.adoc|R432");
+        // explanation/typed-rejection.adoc
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R96");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R181");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R188");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R190");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R215");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R238");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R244");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R246");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R256");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R261");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R266");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R275");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R308");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R322");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R354");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R453");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R457");
+        known.add("docs/architecture/explanation/typed-rejection.adoc|R501");
+        // how-to/dev-loop-internals.adoc
+        known.add("docs/architecture/how-to/dev-loop-internals.adoc|R118");
+        known.add("docs/architecture/how-to/dev-loop-internals.adoc|R385");
+        // how-to/release-natives.adoc
+        known.add("docs/architecture/how-to/release-natives.adoc|R401");
+        // principles/development-principles.adoc
+        known.add("docs/architecture/principles/development-principles.adoc|R50");
+        known.add("docs/architecture/principles/development-principles.adoc|R79");
+        known.add("docs/architecture/principles/development-principles.adoc|R239");
+        known.add("docs/architecture/principles/development-principles.adoc|R240");
+        known.add("docs/architecture/principles/development-principles.adoc|R260");
+        known.add("docs/architecture/principles/development-principles.adoc|R268");
+        known.add("docs/architecture/principles/development-principles.adoc|R334");
+        // reference/code-generation-triggers.adoc
+        known.add("docs/architecture/reference/code-generation-triggers.adoc|R145");
+        known.add("docs/architecture/reference/code-generation-triggers.adoc|R431");
+        known.add("docs/architecture/reference/code-generation-triggers.adoc|R432");
+        // reference/modules.adoc
+        known.add("docs/architecture/reference/modules.adoc|R118");
+        known.add("docs/architecture/reference/modules.adoc|R385");
+        known.add("docs/architecture/reference/modules.adoc|R399");
+        known.add("docs/architecture/reference/modules.adoc|R416");
+        // reference/runtime-extension-points.adoc
+        known.add("docs/architecture/reference/runtime-extension-points.adoc|R45");
+        known.add("docs/architecture/reference/runtime-extension-points.adoc|R190");
+        known.add("docs/architecture/reference/runtime-extension-points.adoc|R192");
+        known.add("docs/architecture/reference/runtime-extension-points.adoc|R429");
+        return Set.copyOf(known);
     }
 
     record Finding(String doc, int line, String citation, String content) {}
