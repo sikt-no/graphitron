@@ -37,12 +37,18 @@ on the store's own columns:
   because its element grain sits inside the value where no key, constraint or join reaches
   it and only string surgery gets it back. The exemplar pair is that same relation:
   `candidates` stays, and the contesting classes it counts are `intent_type_backing`'s rows
-  under the same key, where until R803 a serialized twin sat beside the count. The wrong
-  answer that twin produced is the cost stated concretely: the MCP diagnostics surface
-  filtered the conflict set with exact set equality, so asking for conflicts involving one
-  directive silently returned only the conflicts whose entire set was that directive; it is
-  now a join that asks membership. This is also what makes the gate's denylist coherent:
-  `ARRAY_AGG` is no delimited string, but it is a collection in a scalar.
+  under the same key, where until R803 a serialized twin sat beside the count. What the
+  rows answer and a serialized set cannot is membership: a set in one column answers
+  equality of the whole set and nothing else, where the rows answer that and membership
+  too, for one join. Both live sites state it in that form already, the relation's own
+  comment and `CollectionValuedColumnGateTest`'s javadoc, so the paragraph lifts the
+  argument rather than minting it. The concrete wrong answer that argument predicts was
+  paid on a different relation and is told as history: the claim-conflict relation's
+  retired directives column was a filterable dimension on the MCP diagnostics surface, so
+  asking for conflicts involving one directive returned only the conflicts whose entire
+  set was exactly that directive; the surface now joins and asks membership. This is also
+  what makes the gate's denylist coherent: `ARRAY_AGG` is no delimited string, but it is a
+  collection in a scalar.
 * A serialized set used as a canonical group key is the case that looks legitimate and is
   not: it answers only equality of the whole set, where the relational form answers that
   and membership too, for one join. Grouping by a set is a query's business; the store owes
@@ -70,8 +76,13 @@ cluster beside the converse test ("two spellings of one value are two base colum
 a new section: the tail of that section is measured cost rules, where a shape rule reads
 as a non-sequitur. The paragraph states the two-clause discriminator above, the
 `intent_type_backing_conflict` exemplar pair (one exemplar per side, from one relation and
-one key), the membership-versus-set-equality cost, and one cross-reference to the
-provenance section's minted-message sentence for the order half. Do not enumerate the
+one key), the membership-versus-set-equality argument against that pair, and one
+cross-reference to the provenance section's minted-message sentence for the order half.
+The concrete wrong answer goes in the same paragraph as one past-tense clause, on the
+relation that actually paid it: the claim-conflict relation's retired directives column and
+the MCP facet that filtered it. Keep that a clause and not a second exemplar pair. The
+exemplar pair is the live one, and the retired column is what the argument predicted,
+which is the only weight it has to carry here. Do not enumerate the
 sanctioned columns as a roster (an unguarded census); the DDL comments own the per-column
 arguments, and seven of them already spell the vocabulary this paragraph lifts ("display
 material, never a dimension"). Name only live columns; the removed ones are told as
@@ -113,8 +124,11 @@ strains, plain prose.
 
 ## Verification
 
-* Prose-only change. The verification build covers the AsciiDoctor render, and the
-  widened `AdocXrefAnchorCheck` fails on any xref path or anchor the edit gets wrong.
+* Prose-only change. The verification build covers the AsciiDoctor render, and the widened
+  `AdocXrefAnchorCheck` fails the build on a wrong cross-file xref path or anchor on a page
+  authored under `docs/`. Deliverable 1's cross-reference is same-page, which that check
+  leaves alone by design (Asciidoctor already reports the same-file forms at INFO), so that
+  one reference is the review's to catch rather than the build's.
 * No retired column name appears as a live citation; the failing exemplars are past
   tense. Live names used: `intent_type_backing_conflict.candidates`,
   `intent_type_backing`, `diagnostic.coordinate`.
@@ -124,7 +138,8 @@ strains, plain prose.
 ## Not in scope
 
 * development-principles.adoc: its preamble already delegates the store's modeling
-  discipline to fact-model.adoc, and its word budget is gated.
+  discipline to fact-model.adoc by name, so the rule belongs on the page it delegates to,
+  and a second copy here would be the drift smell that same preamble warns about.
 * The DDL comments: they already carry the vocabulary and the per-column arguments; this
   item adds the page-level rule they instantiate.
 * Any further schema or consumer change; R803 finished those.
@@ -182,6 +197,20 @@ Everything else checked out, and the list of what was verified is in the commit 
 
    Either resolution satisfies the finding; the spec needs to say which, so the paragraph
    the implementer writes is the one that was reviewed.
+
+   **Author's resolution (2026-08-23).** Taken, as a hybrid of the two, and the body now
+   says so. The exemplar pair stays live and stays on one relation and one key, and the
+   membership argument is now stated structurally against it, in the form both live sites
+   already use. The concrete wrong answer stays, because this spec's own framing is that
+   the citations lift the case past taste and an abstract capability difference does not,
+   but it is now attributed to the relation that paid it and told as history in one clause,
+   with Deliverable 1 saying explicitly that it is a clause and not a second exemplar pair.
+   The retired directives column could not have been the exemplar pair itself: both its
+   sides are gone, so it can show no live pass, and Deliverable 1 requires live names there.
+   Both non-blocking notes are also taken: the word-budget claim is replaced with the
+   delegation-and-drift argument, which is the true one, and the Verification section now
+   scopes the `AdocXrefAnchorCheck` claim to the cross-file case and says the same-page
+   reference is the review's to catch.
 
 ### Non-blocking
 
