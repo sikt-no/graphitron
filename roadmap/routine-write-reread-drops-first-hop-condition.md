@@ -1,7 +1,7 @@
 ---
 id: R816
 title: "Refuse a routine write's first-hop condition instead of deferring it"
-status: Spec
+status: Ready
 bucket: generator
 priority: 3
 theme: routine
@@ -248,8 +248,11 @@ Alongside the three that the author-facing phrasing does reach:
   one.
 
 The sweep query that reaches all five is the verdict's own name rather than the deferral prose:
-grep `re-read-anchor verdict` and `re-read anchor` across main and test sources plus the `.adoc`
-tree, and read every hit for whether it still claims an emitter is owed. Grepping "Deferred" near
+grep `re-read-anchor verdict`, `re-read anchor` and `derivable re-read` across main and test
+sources plus the `.adoc` tree, and read every hit for whether it still claims an emitter is owed.
+The third term is what reaches the first surface above: that javadoc wraps the phrase as "no
+derivable re-read / anchor" across two lines, so a line-based grep for the second term alone
+misses it. Grepping "Deferred" near
 "routine" also works and is noisier, the sibling deferrals in that family (procedures, scalar and
 void routines, the hop-less Mutation `@routine`, the multi-routine chain) being genuine and staying.
 
@@ -354,3 +357,43 @@ Non-blocking, noted only, neither bearing on the two questions:
 requires the verdict to stay total over `On`, as a switch with an `On.Lateral` arm of its own, and
 says why that arm exists given it fires for nobody today. The out-of-scope bullet now names both
 pages carrying the glossary drift rather than one.
+
+### Round 2 (Spec → Ready gate, session_01UjdWPdE2PhrX1russQuxoU, 2026-08-23)
+
+Same reviewer session as round 1, taking the next pass with that context. Both findings are
+addressed and both non-blocking notes are taken. **Signed off; `Spec → Ready`.**
+
+Finding 1 is answered, and answered better than the finding asked for. The seat moves to
+`MutationRoutineWriteField`'s compact constructor, the argument for it is stated rather than
+assumed, and the counter-argument for `anchorOf` is met head-on: a `filter()` throw narrows
+nothing, so that site's javadoc stays true and the pin lands where the leaf's own authority
+already sits. The hazard the old paragraph existed for survives as the reason the pin exists,
+which is the right place for it. The two prose surfaces named as moving with the pin both check
+out: `anchorOf`'s "both halves" clause reads exactly as quoted in the current tree, and
+`GraphitronSchemaValidator`'s switch-arm comment enumerates the leaf's pins verbatim as
+"hops non-empty, terminus rule, ColumnPairs hop 0 via the classifier's re-read-anchor verdict".
+The anticipated counter-example is handled correctly too: `RoutineWriteCommands.joinBasisOf` does
+refuse `On.Lateral` by name, and its own javadoc calls that "produce-time narrowing" following
+`FkHop#narrow`, so it is the category the plan says it is rather than a precedent for assertions
+at the plan tier. The Tests paragraph now follows the seat: the two named siblings are `@UnitTier`
+direct-construction with `assertThatThrownBy`, `ParentCorrelationFirstHopInvariantTest` is indeed
+`@PipelineTier` and builds SDL so the exclusion is right, and the claim that none of the leaf's
+pins is asserted today holds (no test constructs the leaf, and none asserts its pin messages).
+
+Finding 2 is answered. All five surfaces are named, and the split between the two the
+author-facing phrasing cannot reach and the three it can is the useful cut. Moving the pin into
+`MutationField` also removes the "file Implementation does not touch" half of the finding, which
+is a better fix than the one requested.
+
+One correction made in this commit, design-neutral and inside the reviewer's latitude: the sweep
+query as written reached four of the five, not five. `classifyMutationRoutineChain`'s javadoc
+wraps the phrase as "no derivable re-read / anchor" across two lines, so a line-based grep for
+`re-read anchor` skips exactly the surface the first bullet names. Added `derivable re-read` as a
+third term, which does hit it, with a note saying why. Nothing else changed; the bullet list
+already named the surface, so this makes the query match the list rather than altering it.
+
+Not worth a round, recorded so the Done-gate reviewer is not misled: the author response under
+finding 1 describes the new test as "model-tier" and "in the `ParentCorrelationFirstHopInvariantTest`
+idiom", which is the one test the Tests section explicitly rules out and the wrong tier name. The
+plan body is unambiguous and correct, and the body is what the implementer builds; the response
+note is the slip, and it dies with the file at Done.
