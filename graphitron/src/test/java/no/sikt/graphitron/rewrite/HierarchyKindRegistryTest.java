@@ -261,6 +261,11 @@ class HierarchyKindRegistryTest {
         Map.entry(no.sikt.graphitron.command.TypeUnitCommand.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.GlobalCommand.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.RoutineWriteCommand.class, HierarchyKind.COMMAND),
+        // How one hop joins to the node before it, at emit grain and in captured names. A command
+        // rather than a resolved view of the classifier's On: it drops the arm a command tier must
+        // not be able to spell (the lateral node), and carries the keying and the pairing as the
+        // strings the emission spells rather than as the refs the walk resolved.
+        Map.entry(no.sikt.graphitron.command.JoinBasis.class, HierarchyKind.COMMAND),
         // The catch arm's whole content, at emit grain: not the classifier's channel taxonomy but
         // what a catch arm emits from one, which is why it is a command and not a resolved view.
         Map.entry(no.sikt.graphitron.command.ErrorDispatch.class, HierarchyKind.COMMAND),

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.render;
 
+import no.sikt.graphitron.command.JoinCondition;
 import no.sikt.graphitron.command.SelectTerm;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -230,5 +231,16 @@ public final class PathFragments {
         var method = condition.method();
         return CodeBlock.of("$T.$L($L, $L)",
             ClassName.bestGuess(method.className()), method.methodName(), srcAlias, tgtAlias);
+    }
+
+    /**
+     * {@link #emitTwoArgMethodCall(JoinConditionRef, String, String)} for a caller whose condition
+     * arrived as a command row. One convention, two carriers of it: the row states which method,
+     * this states how it is called.
+     */
+    public static CodeBlock emitTwoArgMethodCall(JoinCondition condition, String srcAlias,
+            String tgtAlias) {
+        return CodeBlock.of("$T.$L($L, $L)",
+            ClassName.bestGuess(condition.className()), condition.methodName(), srcAlias, tgtAlias);
     }
 }

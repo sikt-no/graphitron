@@ -18,6 +18,7 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * The routine-write relation's membership enforcer and per-arm fact pins, in the fetcher edge
@@ -115,9 +116,14 @@ class RoutineWriteRelationTest {
         assertThat(row.unit().methodName())
             .as("the emitted entry point takes the field's own name")
             .isEqualTo("rentFilm");
-        assertThat(row.call().routine().methodName())
+        assertThat(row.call().methodName())
             .as("the write is the declared routine call")
             .isEqualTo("rentFilm");
+        assertThat(row.call().arguments())
+            .as("the routine's IN parameters ride the row in declaration order, each bound to the"
+                + " argument the author's argMapping named")
+            .extracting(a -> a.path().asString())
+            .containsExactly("inventoryId", "customerId");
         assertThat(row.terminusProjection())
             .as("the follow-up query projects the terminus type through its projection unit")
             .isEqualTo(UNITS.typeClass("Rental"));
@@ -146,9 +152,9 @@ class RoutineWriteRelationTest {
         assertThat(row.anchor().alias())
             .as("the follow-up query departs from hop 0")
             .isEqualTo(hop0.alias());
-        assertThat(row.anchor().table())
-            .as("and from hop 0's table, narrowed off the chain's table expression")
-            .isEqualTo(hop0.targetTable());
+        assertThat(row.anchor().table().tableClassName())
+            .as("and from hop 0's table, carried as the captured class name the renderer lifts")
+            .isEqualTo(hop0.targetTable().tableClass().canonicalName());
         assertThat(row.hops().stream().map(RoutineWriteCommand.RereadHop::alias))
             .as("the tail is every hop after the anchor, in authored order")
             .containsExactlyElementsOf(hops.stream().skip(1)
@@ -157,12 +163,19 @@ class RoutineWriteRelationTest {
             .as("the projection reads the chain's terminus, which on a one-hop chain is the"
                 + " anchor itself")
             .isEqualTo(((JoinStep.Hop) hops.getLast()).alias());
-        assertThat(row.anchor().capturedSlots())
-            .as("the captured pairing is hop 0's own")
-            .isEqualTo(((no.sikt.graphitron.rewrite.model.On.ColumnPairs) hop0.on()).slots());
-        assertThat(row.anchor().capturedSlots().stream().map(s -> s.sourceSide().javaName()))
+        var hop0Slots = ((no.sikt.graphitron.rewrite.model.On.ColumnPairs) hop0.on()).slots();
+        assertThat(row.anchor().capturedPairs())
+            .as("the captured pairing is hop 0's own, cell for cell and side for side")
+            .extracting(p -> p.sourceSide().javaName(), p -> p.targetSide().javaName())
+            .containsExactlyElementsOf(hop0Slots.stream()
+                .map(s -> tuple(s.sourceSide().javaName(), s.targetSide().javaName())).toList());
+        assertThat(row.anchor().capturedPairs().stream().map(p -> p.sourceSide().javaName()))
             .as("the routine's result rows carry the rental key")
             .containsExactly("RENTAL_ID");
+        assertThat(row.anchor().capturedPairs().stream().map(p -> p.sourceSide().javaTypeName()))
+            .as("each captured column carries its bound Java type as a name, which is what lets"
+                + " the renderer declare the key record without a live catalog")
+            .containsExactly("java.lang.Integer");
     }
 
     /**
@@ -185,8 +198,8 @@ class RoutineWriteRelationTest {
         var row = carrierArm();
 
         assertThat(row.unit().methodName()).isEqualTo("rentFilmPayload");
-        assertThat(row.call().routine().methodName()).isEqualTo("rentFilm");
-        assertThat(row.targetTable().tableName())
+        assertThat(row.call().methodName()).isEqualTo("rentFilm");
+        assertThat(row.targetTable().sqlName())
             .as("the captured keys are projected under the target table's own key fields")
             .isEqualTo("rental");
         assertThat(row.capturedPairs().stream().map(s -> s.targetSide().javaName()))

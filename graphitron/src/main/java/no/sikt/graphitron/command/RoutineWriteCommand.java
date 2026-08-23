@@ -1,11 +1,6 @@
 package no.sikt.graphitron.command;
 
 import graphql.schema.FieldCoordinates;
-import no.sikt.graphitron.rewrite.model.JoinConditionRef;
-import no.sikt.graphitron.rewrite.model.JoinSlot;
-import no.sikt.graphitron.rewrite.model.On;
-import no.sikt.graphitron.rewrite.model.TableExpr;
-import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.List;
 import java.util.Objects;
@@ -27,9 +22,12 @@ import java.util.Objects;
  * the payload data field's on the carrier arm, which is why it rides the row rather than being
  * re-read from either.
  *
- * <p>Generated class names ride as refs ({@link UnitRef}, {@link UnitMethodRef}) so the renderer
- * derives no name: the method's own address, the terminus projection unit, and the two units the
- * {@link ErrorDispatch} arm calls.
+ * <p>Every catalog fact rides as a captured name ({@link CatalogTable}, {@link CatalogColumn},
+ * {@link JoinBasis}), never as one of the walk's javapoet-bearing refs. That is the line the
+ * package draws: which class a table is emitted as is a fact the store holds, and how that name is
+ * spelled into source is the renderer's business. Generated class names ride as refs
+ * ({@link UnitRef}, {@link UnitMethodRef}) for the same reason from the other side, the plan's
+ * naming vocabulary being their one mint.
  */
 public sealed interface RoutineWriteCommand
         permits RoutineWriteCommand.ChainReread, RoutineWriteCommand.CarrierKeys {
@@ -41,7 +39,7 @@ public sealed interface RoutineWriteCommand
     FieldCoordinates coordinate();
 
     /** The routine call the write half executes, inside the transaction. */
-    TableExpr.RoutineCall call();
+    RoutineCall call();
 
     /** Whether the emitted fetcher delivers one row or many. */
     Arity arity();
@@ -52,23 +50,23 @@ public sealed interface RoutineWriteCommand
     /**
      * Where the post-commit re-read departs from: the chain's first hop, restated as the two
      * facts the re-read actually uses. {@code table} and {@code alias} are what the local
-     * declaration and the {@code FROM} spell; {@code capturedSlots} is that hop's column pairing,
+     * declaration and the {@code FROM} spell; {@code capturedPairs} is that hop's column pairing,
      * whose source side the write half captures off the routine's result rows inside the
      * transaction and whose target side is what the re-read filters this table on.
      *
-     * <p>The anchor carries no {@code on} and no filter, and the absence is structural rather
+     * <p>The anchor carries no join basis and no filter, and the absence is structural rather
      * than an omission. The re-read departs from this table instead of joining into it: the side
      * a first hop would join from is the routine's own result, which never appears in the
      * post-commit {@code FROM} because re-invoking it would re-execute the write. A join
      * condition or a two-argument filter method there would have no argument to be given.
      */
-    record RereadAnchor(TableRef table, String alias, List<JoinSlot.FkSlot> capturedSlots) {
+    record RereadAnchor(CatalogTable table, String alias, List<KeyPair> capturedPairs) {
 
         public RereadAnchor {
             Objects.requireNonNull(table, "table");
             Objects.requireNonNull(alias, "alias");
-            capturedSlots = List.copyOf(capturedSlots);
-            if (capturedSlots.isEmpty()) {
+            capturedPairs = List.copyOf(capturedPairs);
+            if (capturedPairs.isEmpty()) {
                 throw new IllegalArgumentException(
                     "a routine-write re-read captures at least one key column; with none the"
                     + " post-commit query has nothing to filter its anchor on and would re-read"
@@ -83,12 +81,14 @@ public sealed interface RoutineWriteCommand
      * filter that lands on the enclosing {@code WHERE}. {@code filter} is null where the path
      * element carried no {@code condition:}.
      *
-     * <p>{@code table} is a {@link TableRef} and not a {@link TableExpr}, which is the narrowing
-     * this shape exists for: a re-read hop is a catalog table, the family's rule being that the
-     * routine appears in no statement after the one that ran it. A routine node reaching here
-     * would carry {@link On.Lateral}, which the renderer refuses by name.
+     * <p>The two catalog-only narrowings this shape exists for are both in its types. {@code table}
+     * is a {@link CatalogTable}, so a hop is a table that can be declared and aliased; and
+     * {@code on} is a {@link JoinBasis}, which has no lateral arm, so a hop cannot be a routine
+     * node correlated against what precedes it. Together they say the family's rule, that the
+     * routine appears in no statement after the one that ran it, in a form a renderer inherits
+     * rather than re-checks.
      */
-    record RereadHop(TableRef table, String alias, On on, JoinConditionRef filter) {
+    record RereadHop(CatalogTable table, String alias, JoinBasis on, JoinCondition filter) {
 
         public RereadHop {
             Objects.requireNonNull(table, "table");
@@ -105,13 +105,13 @@ public sealed interface RoutineWriteCommand
      *
      * <p>The re-read's shape is declared here rather than borrowed from the walk's chain carrier,
      * which is what lets the row state it exactly: the anchor is a component, so there is one by
-     * construction, and its pairing is a slot list, so there is a key to capture. Both were
+     * construction, and its pairing is a pair list, so there is a key to capture. Both were
      * compact-constructor throws while the row held the wider carrier, and both were second
      * copies of throws the classified leaf already makes. The tail hops are their own grain, so a
      * reader iterating them joins from hop to hop without skipping an anchor that is not one of
      * them.
      */
-    record ChainReread(UnitMethodRef unit, FieldCoordinates coordinate, TableExpr.RoutineCall call,
+    record ChainReread(UnitMethodRef unit, FieldCoordinates coordinate, RoutineCall call,
                        RereadAnchor anchor, List<RereadHop> hops,
                        UnitRef terminusProjection, Arity arity,
                        ErrorDispatch errors) implements RoutineWriteCommand {
@@ -147,8 +147,8 @@ public sealed interface RoutineWriteCommand
      * Its target side is the target table's key by the classifier's pin on the shape; the row
      * carries the pairing and does not re-derive that.
      */
-    record CarrierKeys(UnitMethodRef unit, FieldCoordinates coordinate, TableExpr.RoutineCall call,
-                       List<JoinSlot.FkSlot> capturedPairs, TableRef targetTable, Arity arity,
+    record CarrierKeys(UnitMethodRef unit, FieldCoordinates coordinate, RoutineCall call,
+                       List<KeyPair> capturedPairs, CatalogTable targetTable, Arity arity,
                        ErrorDispatch errors) implements RoutineWriteCommand {
 
         public CarrierKeys {

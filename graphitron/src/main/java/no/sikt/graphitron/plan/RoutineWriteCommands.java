@@ -2,17 +2,29 @@ package no.sikt.graphitron.plan;
 
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.Arity;
+import no.sikt.graphitron.command.CatalogColumn;
+import no.sikt.graphitron.command.CatalogTable;
 import no.sikt.graphitron.command.ErrorDispatch;
+import no.sikt.graphitron.command.JoinBasis;
+import no.sikt.graphitron.command.JoinCondition;
+import no.sikt.graphitron.command.KeyPair;
+import no.sikt.graphitron.command.RoutineCall;
 import no.sikt.graphitron.command.RoutineWriteCommand;
 import no.sikt.graphitron.command.TenantAcquisition;
 import no.sikt.graphitron.command.TenantRouting;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.JoinConditionRef;
+import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.On;
+import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.RoutineRef;
 import no.sikt.graphitron.rewrite.model.TableExpr;
+import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
 import no.sikt.graphitron.rewrite.model.TenantScopes;
 
@@ -139,7 +151,7 @@ public final class RoutineWriteCommands {
             case MutationField.MutationRoutineWriteField f -> new RoutineWriteCommand.ChainReread(
                 units.fetcherEntryMethod(f.parentTypeName(), f.name()),
                 FieldCoordinates.coordinates(f.parentTypeName(), f.name()),
-                f.chain().start(),
+                routineCallOf(f.chain().start()),
                 anchorOf(f),
                 tailOf(f),
                 units.typeClass(f.returnType().returnTypeName()),
@@ -152,9 +164,9 @@ public final class RoutineWriteCommands {
             case MutationField.MutationRoutineWriteRecordField f -> new RoutineWriteCommand.CarrierKeys(
                 units.fetcherEntryMethod(f.parentTypeName(), f.name()),
                 FieldCoordinates.coordinates(f.parentTypeName(), f.name()),
-                new TableExpr.RoutineCall(f.routine(), f.routineResultTable()),
-                f.capturedPairs(),
-                f.targetTable(),
+                routineCallOf(new TableExpr.RoutineCall(f.routine(), f.routineResultTable())),
+                pairsOf(f.capturedPairs()),
+                tableOf(f.targetTable()),
                 // The payload data field's SDL wrapper, the only cardinality claim for this shape:
                 // jOOQ types every table-valued function as a Table<R>, so the catalog carries no
                 // per-call cardinality fact.
@@ -187,7 +199,8 @@ public final class RoutineWriteCommands {
                 + "; the classifier's re-read-anchor verdict admits only column pairs, because"
                 + " every other shape leaves the re-read no key to filter on");
         }
-        return new RoutineWriteCommand.RereadAnchor(hop.targetTable(), hop.alias(), pairs.slots());
+        return new RoutineWriteCommand.RereadAnchor(tableOf(hop.targetTable()), hop.alias(),
+            pairsOf(pairs.slots()));
     }
 
     /** The hops after the anchor, in authored order: the re-read's forward joins. */
@@ -195,8 +208,8 @@ public final class RoutineWriteCommands {
         var tail = new ArrayList<RoutineWriteCommand.RereadHop>();
         for (int i = 1; i < f.chain().hops().size(); i++) {
             var hop = hopAt(f, i);
-            tail.add(new RoutineWriteCommand.RereadHop(
-                hop.targetTable(), hop.alias(), hop.on(), hop.filter()));
+            tail.add(new RoutineWriteCommand.RereadHop(tableOf(hop.targetTable()), hop.alias(),
+                joinBasisOf(hop, f), conditionOf(hop.filter())));
         }
         return tail;
     }
@@ -205,6 +218,99 @@ public final class RoutineWriteCommands {
         return switch (f.chain().hops().get(index)) {
             case JoinStep.Hop hop -> hop;
         };
+    }
+
+    // -------------------------------------------------------------------------------------
+    // The catalog facts, restated as the captured names the row carries. Every method below
+    // narrows a walk-minted ref onto the command tier's own vocabulary: the emit types the refs
+    // hold are decided again in the renderer, from these names, which is what keeps the plan from
+    // deciding how a class is spelled as well as which class it is. They are the shape of a read
+    // rather than a translation the plan owes the world, so a producer sourcing the same facts
+    // from the store decodes rows into these types directly and drops the methods.
+    // -------------------------------------------------------------------------------------
+
+    /**
+     * The re-read's join basis, decoded from the hop's own resolution.
+     *
+     * <p>The lateral arm is refused here, which is where the family's rule that the routine
+     * appears in no statement after the one that ran it becomes structural. A routine node in a
+     * chain carries that arm by the hop's own invariant, and the command tier can spell no lateral
+     * join, so the shape stops at the mint instead of reaching a renderer that would have to throw
+     * on it. This is the produce-time narrowing {@link no.sikt.graphitron.command.FkHop#narrow}
+     * sets the precedent for.
+     */
+    private static JoinBasis joinBasisOf(JoinStep.Hop hop, MutationField.MutationRoutineWriteField f) {
+        return switch (hop.on()) {
+            case On.ColumnPairs cp -> new JoinBasis.ColumnPairs(keyingOf(cp.keying()), pairsOf(cp.slots()));
+            case On.Predicate p -> new JoinBasis.Predicate(conditionOf(p.condition()));
+            case On.Lateral ignored -> throw new IllegalStateException(
+                "the routine-write re-read for " + f.parentTypeName() + "." + f.name() + " reaches"
+                + " a lateral hop at alias '" + hop.alias() + "'; a chain admits exactly one"
+                + " routine node, its start, and re-invoking it after the commit would re-execute"
+                + " the write");
+        };
+    }
+
+    private static JoinBasis.Keying keyingOf(On.Keying keying) {
+        return switch (keying) {
+            case On.Keying.ForeignKey fk -> new JoinBasis.Keying.ForeignKey(
+                fk.fk().keysClass().canonicalName(), fk.fk().constantName());
+            case On.Keying.NameMatchedKey ignored -> new JoinBasis.Keying.NameMatched();
+        };
+    }
+
+    /** Null in, null out: an absent {@code condition:} is an absent filter, never a blank one. */
+    private static JoinCondition conditionOf(JoinConditionRef ref) {
+        return ref == null ? null
+            : new JoinCondition(ref.method().className(), ref.method().methodName());
+    }
+
+    private static List<KeyPair> pairsOf(List<JoinSlot.FkSlot> slots) {
+        return slots.stream()
+            .map(s -> new KeyPair(columnOf(s.sourceSide()), columnOf(s.targetSide())))
+            .toList();
+    }
+
+    private static CatalogTable tableOf(TableRef table) {
+        return new CatalogTable(table.tableName(), table.javaFieldName(),
+            table.tableClass().canonicalName(), table.constantsClass().canonicalName());
+    }
+
+    /**
+     * A column's captured form. {@code columnClass} rather than the ref's decoded javapoet type,
+     * because that name is the one the store holds and the one an array column survives: it is the
+     * raw {@code Class.getName()} spelling, which the renderer decodes back.
+     */
+    private static CatalogColumn columnOf(ColumnRef column) {
+        return new CatalogColumn(column.sqlName(), column.javaName(), column.columnClass());
+    }
+
+    /**
+     * The routine call, with its IN parameters in declaration order.
+     *
+     * <p>Every binding is refused unless it reads a request value. A routine parameter may also
+     * read a column of the node a chain arrives from, but a routine <em>write</em> sits at a
+     * mutation root where the routine is the chain's head and there is no previous node to name;
+     * the classifier refuses such a binding there, so reaching it here is drift rather than a
+     * shape this family defers.
+     */
+    private static RoutineCall routineCallOf(TableExpr.RoutineCall call) {
+        var routine = call.routine();
+        return new RoutineCall(routine.routinesClass().canonicalName(), routine.methodName(),
+            tableOf(call.resultTable()),
+            routine.argBindings().stream().map(b -> argumentOf(routine, b)).toList());
+    }
+
+    private static RoutineCall.RoutineArgument argumentOf(RoutineRef routine,
+            RoutineRef.ArgBinding binding) {
+        if (!(binding.source() instanceof ParamSource.Arg arg)) {
+            throw new IllegalStateException(
+                "the routine parameter '" + binding.routineParamName() + "' of "
+                + routine.methodName() + " binds a column of the chain's previous node, and a"
+                + " routine write's call is the chain's head, which has no previous node");
+        }
+        return new RoutineCall.RoutineArgument(binding.routineParamName(),
+            binding.paramType().toString(), arg.path());
     }
 
     /**

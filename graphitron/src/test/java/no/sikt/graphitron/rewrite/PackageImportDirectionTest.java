@@ -71,6 +71,15 @@ class PackageImportDirectionTest {
      * rather than copied field by field) and {@code ParticipantRef} (the discriminated arm's
      * per-participant facts, borrowed whole so type name, discriminator value, cross-table
      * fields, the child-to-parent hop and the alias formulas ride one ref).
+     *
+     * <p>The dial shrinks by conversion, not by exception, and the routine-write family is the
+     * first entry to shrink it. That family used to borrow {@code RoutineChain}, then narrowed to
+     * {@code TableRef}, {@code JoinSlot}, {@code On}, {@code TableExpr} and {@code JoinConditionRef};
+     * it now borrows none of them, its row carrying the catalog facts as captured names
+     * ({@code CatalogTable}, {@code CatalogColumn}, {@code JoinBasis}, {@code RoutineCall}) that the
+     * renderer lifts into emit types. The entries above survive on their other families' accounts
+     * alone, which is what the dial is for: it names what is still borrowed, so a family's
+     * conversion is visible as a line leaving rather than as prose claiming one did.
      */
     private static final Set<String> BORROWED_MODEL_REFS = Set.of(
         "no.sikt.graphitron.rewrite.model.TableRef",
@@ -105,14 +114,6 @@ class PackageImportDirectionTest {
         // named here because the routine call emitter forks on the path shape directly: a bare
         // slot reads the argument, a dot-path reads it through a registered descent helper.
         "no.sikt.graphitron.rewrite.PathExpr",
-        // The routine-write command's entries. RoutineChain used to be here, borrowed whole so a
-        // chain's one-routine-node pin rode with it; the row now declares the re-read's own shape
-        // (an anchor and its tail hops) and the pin rides the hops' TableRef-typed target plus the
-        // renderer's refusal of a lateral join, so the wider carrier is off the dial. JoinSlot was
-        // already in the component closure through On.ColumnPairs; naming it here admits the
-        // direct import the captured pairings carry. The re-read hop's filter slot needs no new
-        // entry, JoinConditionRef being named above for the same reason.
-        "no.sikt.graphitron.rewrite.model.JoinSlot",
         // The result-key alias namespace verdict, stamped at capture on the alias-minting leaves.
         // Borrowed rather than restated as a command-tier enum because both halves of an aliased
         // term have to spell the same value: the projection contribution carries it to the

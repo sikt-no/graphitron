@@ -1,5 +1,6 @@
 package no.sikt.graphitron.render;
 
+import no.sikt.graphitron.command.RoutineCall;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.PathExpr;
@@ -67,6 +68,42 @@ public final class RoutineCallEmitter {
             .map(b -> argExpression(b, correlated, previousNode, argSource, argHelpers, keys))
             .toList(), ", ");
         return CodeBlock.of("$T.$L($L)", routine.routinesClass(), routine.methodName(), args);
+    }
+
+    /**
+     * {@code Routines.<method>(<args>)} for a caller whose call arrived as a command row.
+     *
+     * <p>Uncorrelated by construction, so the value overload is the only shape: a command-tier
+     * {@link RoutineCall} binds every parameter to a request value, there being no previous chain
+     * node at a mutation root for a column binding to name. That is the row's narrowing rather
+     * than an assumption made here, which is why this method takes no
+     * {@link PreviousNodeRef} to be given {@link PreviousNodeRef.None}.
+     *
+     * @param call       the routine call to emit
+     * @param argSource  where the argument values are read, the env-vs-SelectedField fork
+     * @param argHelpers collects the descent helper a dotted binding needs
+     * @param keys       the emitting method's node-id decodes, for a binding whose path projects a
+     *                   key column
+     */
+    public static CodeBlock emitCall(RoutineCall call, ArgumentValueSource argSource,
+            ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys) {
+        CodeBlock args = CodeBlock.join(call.arguments().stream()
+            .map(a -> argExpression(a, argSource, argHelpers, keys))
+            .toList(), ", ");
+        return CodeBlock.of("$T.$L($L)", CatalogRefs.className(call.routinesClassName()),
+            call.methodName(), args);
+    }
+
+    private static CodeBlock argExpression(RoutineCall.RoutineArgument argument,
+            ArgumentValueSource argSource, ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys) {
+        var path = argument.path();
+        TypeName paramType = CatalogRefs.typeName(argument.javaTypeName());
+        // Row presence decides, not a shape test on the path, for the reason the model-shaped arm
+        // below states: a projected binding's path is spelled exactly like an ordinary dotted one.
+        return keys.readFor(path, argSource, argHelpers)
+            .orElseGet(() -> path.isHead()
+                ? typedSlotRead(paramType, path.headName(), argSource)
+                : nestedSlotRead(paramType, path, argSource, argHelpers));
     }
 
     private static CodeBlock argExpression(RoutineRef.ArgBinding b, boolean correlated,

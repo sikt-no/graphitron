@@ -1,5 +1,6 @@
 package no.sikt.graphitron.render;
 
+import no.sikt.graphitron.command.JoinBasis;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.model.On;
 
@@ -36,6 +37,33 @@ public final class JoinFragments {
      */
     public static CodeBlock emitForwardJoin(On.ColumnPairs cp, String prevAlias, String hopAlias) {
         return emitKeyedJoin(cp, /*joinedAlias=*/hopAlias, prevAlias, hopAlias);
+    }
+
+    /**
+     * {@link #emitForwardJoin(On.ColumnPairs, String, String)} for a caller whose hop arrived as a
+     * command row rather than as a walked model hop. Same emission and the same two shapes; what
+     * differs is only where the keying and the pairing were resolved, which is the point of the
+     * command tier carrying them as captured names.
+     */
+    public static CodeBlock emitForwardJoin(JoinBasis.ColumnPairs cp, String prevAlias,
+            String hopAlias) {
+        return switch (cp.keying()) {
+            case JoinBasis.Keying.ForeignKey k -> CodeBlock.of(".join($L).onKey($T.$L)",
+                hopAlias, CatalogRefs.className(k.keysClassName()), k.constantName());
+            case JoinBasis.Keying.NameMatched ignored -> {
+                var on = CodeBlock.builder();
+                int i = 0;
+                for (var pair : cp.pairs()) {
+                    if (i > 0) on.add(".and(");
+                    on.add("$L.$L.eq($L.$L)",
+                        prevAlias, pair.sourceSide().javaName(),
+                        hopAlias, pair.targetSide().javaName());
+                    if (i > 0) on.add(")");
+                    i++;
+                }
+                yield CodeBlock.of(".join($L).on($L)", hopAlias, on.build());
+            }
+        };
     }
 
     private static CodeBlock emitKeyedJoin(On.ColumnPairs cp, String joinedAlias,

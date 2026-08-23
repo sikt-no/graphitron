@@ -1,5 +1,7 @@
 package no.sikt.graphitron.render;
 
+import no.sikt.graphitron.command.CatalogColumn;
+import no.sikt.graphitron.command.CatalogTable;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -43,6 +45,27 @@ public final class RecordSentinel {
      */
     public static CodeBlock bulk(TableRef table, List<ColumnRef> keyColumns) {
         return sentinel("newResult", table, keyColumns);
+    }
+
+    /** {@link #single(TableRef, List)} for a caller whose table arrived as a command row. */
+    public static CodeBlock single(CatalogTable table, List<CatalogColumn> keyColumns) {
+        return sentinel("newRecord", table, keyColumns);
+    }
+
+    /** {@link #bulk(TableRef, List)} for a caller whose table arrived as a command row. */
+    public static CodeBlock bulk(CatalogTable table, List<CatalogColumn> keyColumns) {
+        return sentinel("newResult", table, keyColumns);
+    }
+
+    private static CodeBlock sentinel(String factory, CatalogTable table,
+            List<CatalogColumn> keyColumns) {
+        var b = CodeBlock.builder().add("$T.using($T.DEFAULT).$L(", DSL, SQL_DIALECT, factory);
+        for (int i = 0; i < keyColumns.size(); i++) {
+            if (i > 0) b.add(", ");
+            b.add(CatalogRefs.constantColumn(table, keyColumns.get(i)));
+        }
+        b.add(")");
+        return b.build();
     }
 
     private static CodeBlock sentinel(String factory, TableRef table, List<ColumnRef> keyColumns) {
