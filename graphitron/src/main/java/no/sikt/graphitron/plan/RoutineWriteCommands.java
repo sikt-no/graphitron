@@ -2,33 +2,18 @@ package no.sikt.graphitron.plan;
 
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.Arity;
-import no.sikt.graphitron.command.CatalogColumn;
-import no.sikt.graphitron.command.CatalogTable;
 import no.sikt.graphitron.command.ErrorDispatch;
 import no.sikt.graphitron.command.JoinBasis;
-import no.sikt.graphitron.command.JoinCondition;
-import no.sikt.graphitron.command.KeyPair;
-import no.sikt.graphitron.command.RoutineCall;
 import no.sikt.graphitron.command.RoutineWriteCommand;
 import no.sikt.graphitron.command.TenantAcquisition;
 import no.sikt.graphitron.command.TenantRouting;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
-import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.JoinConditionRef;
-import no.sikt.graphitron.rewrite.model.JoinSlot;
-import no.sikt.graphitron.rewrite.model.JoinStep;
-import no.sikt.graphitron.rewrite.model.MutationField;
-import no.sikt.graphitron.rewrite.model.On;
-import no.sikt.graphitron.rewrite.model.ParamSource;
-import no.sikt.graphitron.rewrite.model.RoutineRef;
-import no.sikt.graphitron.rewrite.model.TableExpr;
-import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
 import no.sikt.graphitron.rewrite.model.TenantScopes;
+import no.sikt.graphitron.rewrite.model.WithErrorChannel;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,34 +22,40 @@ import java.util.Optional;
 /**
  * Produces the routine-write command relation ({@link RoutineWriteRelation}): one row per
  * {@code @routine}-writing mutation coordinate, carrying what the coordinate's fetcher entry
- * point emits. Membership has one home, the total switch below: the two routine-write leaves mint
- * a row and every other mutation shape is outside the relation by the fact, with no default arm,
- * so a new mutation leaf is a compile-time decision here rather than a silent non-member.
+ * point emits.
  *
- * <p>The two arms map one-to-one onto the two leaves, so this producer decides nothing the
- * classifier has not already decided; what it adds is the naming vocabulary (the entry point's
- * own address, the terminus projection unit, the units the {@code catch} arm calls) and the
- * restatement of the error channel as the arm the catch emits. That restatement is the only
- * translation step: a channel is a classification fact carrying the resolved {@code @error} types
- * it was built from, and all a catch arm emits from it is the mappings constant's name.
+ * <p>Membership is read, not decided. {@link RoutineWriteFacts} states which coordinates the store
+ * admits and every catalog fact their emission reads, so this producer walks no schema: it names
+ * things. What it adds over the facts is the naming vocabulary (the entry point's own address, the
+ * terminus projection unit, the units the {@code catch} arm calls) and two folds the store does not
+ * state per coordinate, each of which retires with the family that owns it:
+ *
+ * <ul>
+ *   <li>the error channel's minted constant, whose name comes from a whole-schema dedup over every
+ *       channel-carrying field ({@link no.sikt.graphitron.rewrite.MappingsConstantNameDedup}) and so
+ *       cannot be minted from one coordinate's facts;</li>
+ *   <li>the run's tenant binding, which the tenancy family converts.</li>
+ * </ul>
+ *
+ * <p>Both read the classified schema through interfaces the whole model shares rather than through
+ * a mutation leaf, which is what keeps this producer's remaining schema use off the leaf taxonomy.
  */
 public final class RoutineWriteCommands {
 
     private RoutineWriteCommands() {}
 
-    public static RoutineWriteRelation produce(GraphitronSchema schema, String outputPackage) {
+    /**
+     * The relation for one run. A null store is the no-store arm's, and yields no rows: a plan
+     * produced without a store emits no routine write rather than falling back to a walk, the walk
+     * having been the thing this read replaced.
+     */
+    public static RoutineWriteRelation produce(StoreHandle store, GraphitronSchema schema,
+            String outputPackage) {
         var units = new GeneratedUnits(outputPackage);
-        var rows = new ArrayList<RoutineWriteCommand>();
-        for (var type : schema.types().values()) {
-            for (var field : schema.fieldsOf(type.name())) {
-                if (field instanceof MutationField mf) {
-                    var row = rowOf(mf, units);
-                    if (row != null) {
-                        rows.add(row);
-                    }
-                }
-            }
-        }
+        var facts = store == null ? RoutineWriteFacts.Rows.empty() : RoutineWriteFacts.read(store);
+        var rows = facts.rows().stream()
+            .map(fact -> rowOf(fact, schema, units))
+            .toList();
         return new RoutineWriteRelation(rows, tenancyOf(schema, rows, units));
     }
 
@@ -142,186 +133,81 @@ public final class RoutineWriteCommands {
     }
 
     /**
-     * The mutation family's membership-and-production switch, total with no default. Only the two
-     * routine-write leaves are members: every other mutation shape writes through DML or delegates
-     * to a developer service, and neither emits a routine call.
+     * One admitted coordinate's row, in the seat the store put it in. The seat is the whole of the
+     * branch: a chain-seated write re-reads by walking its own {@code @reference} chain, a
+     * carrier-seated one by the key its payload data field captured, and no third shape reaches
+     * here because the seat relation admits no third verdict.
      */
-    private static RoutineWriteCommand rowOf(MutationField field, GeneratedUnits units) {
-        return switch (field) {
-            case MutationField.MutationRoutineWriteField f -> new RoutineWriteCommand.ChainReread(
-                units.fetcherEntryMethod(f.parentTypeName(), f.name()),
-                FieldCoordinates.coordinates(f.parentTypeName(), f.name()),
-                routineCallOf(f.chain().start()),
-                anchorOf(f),
-                tailOf(f),
-                units.typeClass(f.returnType().returnTypeName()),
-                f.returnType().wrapper().isList() ? Arity.LIST : Arity.SINGLE,
-                // The leaf's channel is structurally absent (a chain-re-reading routine write
-                // carries no payload carrier to route into), so the disposition is the router's
-                // privacy arm. Derived from the leaf's own slot rather than hard-coded, so a
-                // channel appearing there surfaces as a rejected translation, not a dropped fact.
-                dispatchFor(f.errorChannel(), units));
-            case MutationField.MutationRoutineWriteRecordField f -> new RoutineWriteCommand.CarrierKeys(
-                units.fetcherEntryMethod(f.parentTypeName(), f.name()),
-                FieldCoordinates.coordinates(f.parentTypeName(), f.name()),
-                routineCallOf(new TableExpr.RoutineCall(f.routine(), f.routineResultTable())),
-                pairsOf(f.capturedPairs()),
-                tableOf(f.targetTable()),
-                // The payload data field's SDL wrapper, the only cardinality claim for this shape:
-                // jOOQ types every table-valued function as a Table<R>, so the catalog carries no
-                // per-call cardinality fact.
-                f.dataFieldArrival() == no.sikt.graphitron.rewrite.model.Arity.MANY
-                    ? Arity.LIST : Arity.SINGLE,
-                dispatchFor(f.errorChannel(), units));
-            case MutationField.DmlTableField ignored -> null;
-            case MutationField.MutationServiceTableField ignored -> null;
-            case MutationField.MutationServiceRecordField ignored -> null;
-            case MutationField.MutationServicePolymorphicField ignored -> null;
-            case MutationField.MutationServiceTableInterfaceField ignored -> null;
-            case MutationField.MutationDmlRecordField ignored -> null;
-            case MutationField.MutationBulkDmlRecordField ignored -> null;
+    private static RoutineWriteCommand rowOf(RoutineWriteFacts.Row fact, GraphitronSchema schema,
+            GeneratedUnits units) {
+        var coordinate = FieldCoordinates.coordinates(fact.typeName(), fact.fieldName());
+        var unit = units.fetcherEntryMethod(fact.typeName(), fact.fieldName());
+        var arity = fact.listReturn() ? Arity.LIST : Arity.SINGLE;
+        var errors = dispatchFor(schema, coordinate, units);
+        return switch (fact.seat()) {
+            case CHAIN -> new RoutineWriteCommand.ChainReread(unit, coordinate, fact.call(),
+                anchorOf(fact), tailOf(fact),
+                units.typeClass(fact.returnTypeName()), arity, errors);
+            case CARRIER -> new RoutineWriteCommand.CarrierKeys(unit, coordinate, fact.call(),
+                fact.capturedPairs(), fact.targetTable(), arity, errors);
         };
     }
 
     /**
-     * The re-read's departure, narrowed once here. The leaf guarantees both halves in its own
-     * constructor (at least one hop, and hop 0 joining by column pairs), so this is the
-     * translation of that guarantee into the shape the row declares, not a second assertion of
-     * it: what the check below adds is the Java narrowing the wider carrier's type cannot
-     * express, which is why the command used to re-derive it through casts at every read.
+     * The re-read's departure: the chain's first hop, which the statement selects from rather than
+     * joins, so what the row keeps of it is its table, its alias and the pairing the capture
+     * projects and filters on.
      */
-    private static RoutineWriteCommand.RereadAnchor anchorOf(MutationField.MutationRoutineWriteField f) {
-        var hop = hopAt(f, 0);
-        if (!(hop.on() instanceof On.ColumnPairs pairs)) {
+    private static RoutineWriteCommand.RereadAnchor anchorOf(RoutineWriteFacts.Row fact) {
+        if (fact.hops().isEmpty()) {
             throw new IllegalStateException(
-                "the routine-write coordinate " + f.parentTypeName() + "." + f.name() + " anchors"
-                + " its post-commit re-read on a hop joining by " + hop.on().getClass().getSimpleName()
-                + "; the classifier's re-read-anchor verdict admits only column pairs, because"
+                "the chain-seated routine write at " + fact.typeName() + "." + fact.fieldName()
+                + " states no hop after its routine node, so its post-commit re-read has no table"
+                + " to depart from; the seat relation admits that shape only with a chain to walk");
+        }
+        var hop = fact.hops().getFirst();
+        if (!(hop.on() instanceof JoinBasis.ColumnPairs pairs)) {
+            throw new IllegalStateException(
+                "the routine-write coordinate " + fact.typeName() + "." + fact.fieldName()
+                + " anchors its post-commit re-read on a hop joining by "
+                + hop.on().getClass().getSimpleName() + "; only column pairs can anchor it, because"
                 + " every other shape leaves the re-read no key to filter on");
         }
-        return new RoutineWriteCommand.RereadAnchor(tableOf(hop.targetTable()), hop.alias(),
-            pairsOf(pairs.slots()));
+        return new RoutineWriteCommand.RereadAnchor(hop.table(), hop.alias(), pairs.pairs());
     }
 
-    /** The hops after the anchor, in authored order: the re-read's forward joins. */
-    private static List<RoutineWriteCommand.RereadHop> tailOf(MutationField.MutationRoutineWriteField f) {
-        var tail = new ArrayList<RoutineWriteCommand.RereadHop>();
-        for (int i = 1; i < f.chain().hops().size(); i++) {
-            var hop = hopAt(f, i);
-            tail.add(new RoutineWriteCommand.RereadHop(tableOf(hop.targetTable()), hop.alias(),
-                joinBasisOf(hop, f), conditionOf(hop.filter())));
-        }
-        return tail;
-    }
-
-    private static JoinStep.Hop hopAt(MutationField.MutationRoutineWriteField f, int index) {
-        return switch (f.chain().hops().get(index)) {
-            case JoinStep.Hop hop -> hop;
-        };
-    }
-
-    // -------------------------------------------------------------------------------------
-    // The catalog facts, restated as the captured names the row carries. Every method below
-    // narrows a walk-minted ref onto the command tier's own vocabulary: the emit types the refs
-    // hold are decided again in the renderer, from these names, which is what keeps the plan from
-    // deciding how a class is spelled as well as which class it is. They are the shape of a read
-    // rather than a translation the plan owes the world, so a producer sourcing the same facts
-    // from the store decodes rows into these types directly and drops the methods.
-    // -------------------------------------------------------------------------------------
-
-    /**
-     * The re-read's join basis, decoded from the hop's own resolution.
-     *
-     * <p>The lateral arm is refused here, which is where the family's rule that the routine
-     * appears in no statement after the one that ran it becomes structural. A routine node in a
-     * chain carries that arm by the hop's own invariant, and the command tier can spell no lateral
-     * join, so the shape stops at the mint instead of reaching a renderer that would have to throw
-     * on it. This is the produce-time narrowing {@link no.sikt.graphitron.command.FkHop#narrow}
-     * sets the precedent for.
-     */
-    private static JoinBasis joinBasisOf(JoinStep.Hop hop, MutationField.MutationRoutineWriteField f) {
-        return switch (hop.on()) {
-            case On.ColumnPairs cp -> new JoinBasis.ColumnPairs(keyingOf(cp.keying()), pairsOf(cp.slots()));
-            case On.Predicate p -> new JoinBasis.Predicate(conditionOf(p.condition()));
-            case On.Lateral ignored -> throw new IllegalStateException(
-                "the routine-write re-read for " + f.parentTypeName() + "." + f.name() + " reaches"
-                + " a lateral hop at alias '" + hop.alias() + "'; a chain admits exactly one"
-                + " routine node, its start, and re-invoking it after the commit would re-execute"
-                + " the write");
-        };
-    }
-
-    private static JoinBasis.Keying keyingOf(On.Keying keying) {
-        return switch (keying) {
-            case On.Keying.ForeignKey fk -> new JoinBasis.Keying.ForeignKey(
-                fk.fk().keysClass().canonicalName(), fk.fk().constantName());
-            case On.Keying.NameMatchedKey ignored -> new JoinBasis.Keying.NameMatched();
-        };
-    }
-
-    /** Null in, null out: an absent {@code condition:} is an absent filter, never a blank one. */
-    private static JoinCondition conditionOf(JoinConditionRef ref) {
-        return ref == null ? null
-            : new JoinCondition(ref.method().className(), ref.method().methodName());
-    }
-
-    private static List<KeyPair> pairsOf(List<JoinSlot.FkSlot> slots) {
-        return slots.stream()
-            .map(s -> new KeyPair(columnOf(s.sourceSide()), columnOf(s.targetSide())))
+    /** The hops after the anchor, in chain order: the re-read's forward joins. */
+    private static List<RoutineWriteCommand.RereadHop> tailOf(RoutineWriteFacts.Row fact) {
+        return fact.hops().stream().skip(1)
+            .map(hop -> new RoutineWriteCommand.RereadHop(hop.table(), hop.alias(), hop.on(),
+                hop.filter()))
             .toList();
     }
 
-    private static CatalogTable tableOf(TableRef table) {
-        return new CatalogTable(table.tableName(), table.javaFieldName(),
-            table.tableClass().canonicalName(), table.constantsClass().canonicalName());
-    }
-
     /**
-     * A column's captured form. {@code columnClass} rather than the ref's decoded javapoet type,
-     * because that name is the one the store holds and the one an array column survives: it is the
-     * raw {@code Class.getName()} spelling, which the renderer decodes back.
-     */
-    private static CatalogColumn columnOf(ColumnRef column) {
-        return new CatalogColumn(column.sqlName(), column.javaName(), column.columnClass());
-    }
-
-    /**
-     * The routine call, with its IN parameters in declaration order.
+     * The coordinate's error channel restated as what the {@code catch} arm emits, read off the
+     * classified field rather than the store.
      *
-     * <p>Every binding is refused unless it reads a request value. A routine parameter may also
-     * read a column of the node a chain arrives from, but a routine <em>write</em> sits at a
-     * mutation root where the routine is the chain's head and there is no previous node to name;
-     * the classifier refuses such a binding there, so reaching it here is drift rather than a
-     * shape this family defers.
+     * <p>This is the one fact of the row the store cannot state per coordinate. A routed channel's
+     * mappings constant is named by a dedup over every channel-carrying field in the schema
+     * ({@link no.sikt.graphitron.rewrite.MappingsConstantNameDedup}), so minting it from one
+     * coordinate's facts would either collide with a sibling's constant or invent a second naming
+     * rule; the read stays on the schema until that fold has a home of its own. It narrows to
+     * {@link WithErrorChannel}, which the whole classified model shares, so no mutation leaf is
+     * named here.
+     *
+     * <p>An absent channel is the router's privacy disposition; a {@link ErrorChannel.LocalContext}
+     * channel hands the matched throwable back as graphql-java {@code localContext}, and its
+     * mappings constant is all the arm needs. The remaining channel arm is unreachable on these two
+     * shapes by classification: a routine write's carrier is a directiveless structural payload,
+     * which has no developer payload class for the mapped arm to instantiate.
      */
-    private static RoutineCall routineCallOf(TableExpr.RoutineCall call) {
-        var routine = call.routine();
-        return new RoutineCall(routine.routinesClass().canonicalName(), routine.methodName(),
-            tableOf(call.resultTable()),
-            routine.argBindings().stream().map(b -> argumentOf(routine, b)).toList());
-    }
-
-    private static RoutineCall.RoutineArgument argumentOf(RoutineRef routine,
-            RoutineRef.ArgBinding binding) {
-        if (!(binding.source() instanceof ParamSource.Arg arg)) {
-            throw new IllegalStateException(
-                "the routine parameter '" + binding.routineParamName() + "' of "
-                + routine.methodName() + " binds a column of the chain's previous node, and a"
-                + " routine write's call is the chain's head, which has no previous node");
-        }
-        return new RoutineCall.RoutineArgument(binding.routineParamName(),
-            binding.paramType().toString(), arg.path().asString());
-    }
-
-    /**
-     * The channel restated as what the {@code catch} arm emits. An absent channel is the router's
-     * privacy disposition; a {@link ErrorChannel.LocalContext} channel hands the matched throwable
-     * back as graphql-java {@code localContext}, and its mappings constant is all the arm needs.
-     * The remaining channel arm is unreachable on these two leaves by classification: a routine
-     * write's carrier is a directiveless structural payload, which has no developer payload class
-     * for the mapped arm to instantiate.
-     */
-    private static ErrorDispatch dispatchFor(Optional<? extends ErrorChannel> channel, GeneratedUnits units) {
+    private static ErrorDispatch dispatchFor(GraphitronSchema schema, FieldCoordinates coordinate,
+            GeneratedUnits units) {
+        var field = schema.fields().get(coordinate);
+        var channel = field instanceof WithErrorChannel withChannel
+            ? withChannel.errorChannel()
+            : Optional.<ErrorChannel>empty();
         if (channel.isEmpty()) {
             return new ErrorDispatch.Redacting(units.errorRouter());
         }
@@ -334,30 +220,5 @@ public final class RoutineWriteCommands {
             + channel.get().getClass().getSimpleName() + "; the routine-write carrier is a"
             + " directiveless structural payload, so the classifier produces only the"
             + " localContext-routed channel here");
-    }
-
-    /**
-     * The relation over a bare field set, for the fetcher generator's nesting-reached fallback,
-     * which holds fields but no schema. Mirrors the launcher producer's overload at the same call
-     * site: membership stays here rather than the generator asserting that a nesting-reached
-     * type's children hold no mutation root field.
-     *
-     * <p>Unrouted by construction, and correct rather than approximate: a nesting-reached type's
-     * children are never mutation roots, so this relation holds no rows for an acquisition to
-     * cover.
-     */
-    public static RoutineWriteRelation produceWithoutSchema(List<? extends GraphitronField> fields,
-            String outputPackage) {
-        var units = new GeneratedUnits(outputPackage);
-        var rows = new ArrayList<RoutineWriteCommand>();
-        for (var field : fields) {
-            if (field instanceof MutationField mf) {
-                var row = rowOf(mf, units);
-                if (row != null) {
-                    rows.add(row);
-                }
-            }
-        }
-        return RoutineWriteRelation.unrouted(rows);
     }
 }

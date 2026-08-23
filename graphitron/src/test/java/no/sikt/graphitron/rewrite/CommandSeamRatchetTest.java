@@ -239,8 +239,17 @@ class CommandSeamRatchetTest {
      * only splice, and a splice is how a non-participant type's bare alias reaches the fold), and
      * one selects the discriminated interfaces the census runs over, the same narrowing the
      * joined-table reprojection drain already makes.
+     *
+     * <p>Lowered 147 to 136 when the routine-write producer stopped walking: its membership switch
+     * over the mutation hierarchy (nine arms, two of them minting a row and seven declaring the
+     * shapes that do not) and the two narrowings that reached it are gone, the seat relation stating
+     * membership instead. What stayed is the error-channel read, and it costs this pin nothing
+     * because it narrows to {@code WithErrorChannel}, an interface the whole classified model
+     * shares rather than a leaf of any of the seven hierarchies. That is the shape a conversion
+     * should leave behind: a producer that still asks the schema something asks it of the widest
+     * carrier that can answer.
      */
-    private static final int PLAN_LEAF_REFERENCES = 147;
+    private static final int PLAN_LEAF_REFERENCES = 136;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

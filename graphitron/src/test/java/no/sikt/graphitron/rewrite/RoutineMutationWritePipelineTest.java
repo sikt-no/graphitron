@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterSpec;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -11,7 +10,6 @@ import javax.lang.model.element.Modifier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -28,6 +26,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @PipelineTier
 class RoutineMutationWritePipelineTest {
+
+    @org.junit.jupiter.api.io.TempDir
+    static java.nio.file.Path tmp;
 
     private static final String SDL = """
         type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
@@ -185,8 +186,7 @@ class RoutineMutationWritePipelineTest {
     }
 
     private static no.sikt.graphitron.javapoet.TypeSpec fetchersClass(String sdl) {
-        var schema = TestSchemaHelper.buildSchema(sdl);
-        return TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        return TestSchemaHelper.storeBackedFetchers(tmp, sdl).stream()
             .filter(t -> t.name().equals("MutationFetchers"))
             .findFirst()
             .orElseThrow();

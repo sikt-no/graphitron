@@ -76,6 +76,88 @@ public final class TestSchemaHelper {
     }
 
     /**
+     * The plan a run produces for {@code schemaText}, store-backed: capture fills a store against
+     * the test catalog, the plan's producers read it, and the store closes behind them, the
+     * relations it yielded being values.
+     *
+     * <p>The counterpart of {@link #buildSchema} for the plan tier, and the arm to reach for as
+     * producers convert: a test whose subject is a relation read from the store gets nothing from
+     * {@code EmitPlan.produceWithoutStore}, which plans that relation empty by construction.
+     *
+     * @param directory a temp directory the fixture is written into, typically a {@code @TempDir}
+     */
+    public static no.sikt.graphitron.plan.EmitPlan storeBackedPlan(java.nio.file.Path directory,
+            String schemaText) {
+        return storeBackedPlan(directory, schemaText, TestConfiguration.testContext());
+    }
+
+    /** {@link #storeBackedPlan(java.nio.file.Path, String)} under a context the caller names. */
+    public static no.sikt.graphitron.plan.EmitPlan storeBackedPlan(java.nio.file.Path directory,
+            String schemaText, RewriteContext ctx) {
+        return storeBackedPlan(directory, schemaText, ctx,
+            no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections.Projections.empty());
+    }
+
+    /**
+     * The same with key projections the caller states rather than the empty set. Those are the one
+     * plan input still resolved outside this window in production, so a test whose subject is a
+     * projected {@code argMapping} spells them here as the store would have resolved them.
+     */
+    public static no.sikt.graphitron.plan.EmitPlan storeBackedPlan(java.nio.file.Path directory,
+            String schemaText, RewriteContext ctx,
+            no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections.Projections projections) {
+        var bundle = buildBundle(schemaText, ctx);
+        try (var store = CapturedStore.ofCatalog(directory, CapturedStore.GRAPH, schemaText,
+                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), classpathCensus(ctx))) {
+            return no.sikt.graphitron.plan.EmitPlan.produce(bundle.model(), bundle.federationLink(),
+                bundle.usesOneOf(), ctx.outputPackage(), projections,
+                new no.sikt.graphitron.model.read.StoreHandle(store.dsl(), CapturedStore.GRAPH));
+        }
+    }
+
+    /**
+     * The {@code *Fetchers} classes a run emits for {@code schemaText}, rendered through its own
+     * store-backed plan.
+     *
+     * <p>The arm to reach for whenever the emission under test is one the plan dispatches on by row
+     * presence. {@code TypeFetcherGenerator.generate(schema, outputPackage)} plans no store, so any
+     * relation read from one comes back empty there, and a coordinate the classifier still calls a
+     * routine write then meets a dispatch with no row to render from. That is the generator's own
+     * drift guard firing, correctly, on a fixture that simply never opened a store.
+     */
+    public static java.util.List<no.sikt.graphitron.javapoet.TypeSpec> storeBackedFetchers(
+            java.nio.file.Path directory, String schemaText) {
+        return storeBackedFetchers(directory, schemaText, TestConfiguration.testContext());
+    }
+
+    /** {@link #storeBackedFetchers(java.nio.file.Path, String)} under a context the caller names. */
+    public static java.util.List<no.sikt.graphitron.javapoet.TypeSpec> storeBackedFetchers(
+            java.nio.file.Path directory, String schemaText, RewriteContext ctx) {
+        var bundle = buildBundle(schemaText, ctx);
+        var plan = storeBackedPlan(directory, schemaText, ctx);
+        return no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator.generate(
+            bundle.model(), bundle.assembled(), ctx.outputPackage(), plan.launchers(),
+            plan.typeUnits().fetchers(), plan.typeUnits().errorFetchers(), plan.routineWrites(),
+            plan.keyProjections());
+    }
+
+    /**
+     * The classpath census capture reads the {@code jvm_} families from, scanned off the test
+     * classes' own root: what a rule reading a class's declared form states is only worth
+     * something when the classes it read are real ones.
+     */
+    private static java.util.List<no.sikt.graphitron.rewrite.catalog.CompletionData.ExternalReference>
+            classpathCensus(RewriteContext ctx) {
+        try {
+            var root = java.nio.file.Path.of(TestSchemaHelper.class.getProtectionDomain()
+                .getCodeSource().getLocation().toURI());
+            return no.sikt.graphitron.rewrite.catalog.ClasspathScanner.scan(root, ctx.jooqPackage());
+        } catch (java.net.URISyntaxException e) {
+            throw new IllegalStateException("the test classes are not on a file path", e);
+        }
+    }
+
+    /**
      * The node predicate over the default test context's jOOQ catalog. Test sites that drive
      * {@link SchemaReachability}, the fact traversal, or
      * {@link no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser} directly, rather than

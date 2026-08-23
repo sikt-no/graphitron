@@ -3,18 +3,23 @@ package no.sikt.graphitron.plan;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.Arity;
 import no.sikt.graphitron.command.ErrorDispatch;
+import no.sikt.graphitron.command.JoinBasis;
 import no.sikt.graphitron.command.RoutineCall;
 import no.sikt.graphitron.command.RoutineWriteCommand;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.MutationField;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,14 +28,21 @@ import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * The routine-write relation's membership enforcer and per-arm fact pins, in the fetcher edge
- * relation's shape: the relation's coordinate keys equal exactly the two routine-write leaves'
+ * relation's shape: the relation's coordinate keys equal exactly the routine-write leaves'
  * coordinates derived from the model (never a hand tag), the keys are disjoint from the launcher
  * relation's, and each arm's witness pins the facts its renderer reads.
  *
- * <p>The fixture carries all three mutation shapes on one schema so membership is tested against a
- * live non-member rather than against an empty relation: a chain-re-reading routine write, a
- * payload-carrier routine write whose payload has an {@code @error} field (so the routed dispatch
- * arm is reached rather than only the redacting one), and a DML insert.
+ * <p>The relation is read from the fact store and every expectation is the classifier's own, so
+ * each check that joins the two is an agreement between them: the store says what a coordinate's
+ * emission reads, the walk's carriers say what it should read, and a divergence anywhere in that
+ * surface fails a case here rather than surfacing as changed output several tiers down.
+ *
+ * <p>The fixture carries every mutation shape on one schema so membership is tested against a
+ * live non-member rather than against an empty relation: a chain-re-reading routine write, a second
+ * one whose chain crosses two hops (the shape that states the alias numbering and the per-hop
+ * keying a one-hop chain leaves unstated), a payload-carrier routine write whose payload has an
+ * {@code @error} field (so the routed dispatch arm is reached rather than only the redacting one),
+ * and a DML insert.
  */
 @PipelineTier
 class RoutineWriteRelationTest {
@@ -47,6 +59,7 @@ class RoutineWriteRelationTest {
           errors: [RentFilmError!]
         }
         type Film @table(name: "film") { title: String }
+        type Customer @table(name: "customer") { customerId: Int! @field(name: "customer_id") }
         input FilmInput { title: String }
 
         type Query { rental: Rental }
@@ -54,6 +67,9 @@ class RoutineWriteRelationTest {
           rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
             @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
             @reference(path: [{table: "rental"}])
+          rentFilmCustomer(inventoryId: Int!, customerId: Int!): [Customer!]!
+            @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+            @reference(path: [{table: "rental"}, {table: "customer"}])
           rentFilmPayload(inventoryId: Int!, customerId: Int!): RentFilmPayload
             @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
           createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
@@ -62,15 +78,16 @@ class RoutineWriteRelationTest {
 
     private static final GeneratedUnits UNITS = new GeneratedUnits(DEFAULT_OUTPUT_PACKAGE);
 
+    @TempDir
+    static Path tmp;
+
     private static GraphitronSchema model;
     private static EmitPlan plan;
 
     @BeforeAll
     static void producePlan() {
-        var bundle = TestSchemaHelper.buildBundle(SDL);
-        model = bundle.model();
-        plan = EmitPlan.produceWithoutStore(model, bundle.federationLink(), bundle.usesOneOf(),
-            DEFAULT_OUTPUT_PACKAGE);
+        model = TestSchemaHelper.buildBundle(SDL).model();
+        plan = TestSchemaHelper.storeBackedPlan(tmp, SDL);
     }
 
     @Test
@@ -84,7 +101,7 @@ class RoutineWriteRelationTest {
         assertThat(declared)
             .as("the fixture declares both routine-write shapes; a membership test against an"
                 + " empty derived set would pass vacuously")
-            .hasSize(2);
+            .hasSize(3);
         assertThat(plan.routineWrites().rows().stream().map(RoutineWriteCommand::coordinate))
             .as("the relation's keys are the two routine-write leaves' coordinates, derived from"
                 + " the model rather than restated")
@@ -145,9 +162,52 @@ class RoutineWriteRelationTest {
      */
     @Test
     void theChainRereadArmsShapeIsTheClassifiedChainNarrowed() {
-        var row = directArm();
-        var hops = ((MutationField.MutationRoutineWriteField)
-            model.fields().get(FieldCoordinates.coordinates("Mutation", "rentFilm"))).chain().hops();
+        assertNarrowsItsClassifiedChain("rentFilm");
+    }
+
+    /**
+     * The same join on a chain of two hops, which states the facts a one-hop chain cannot. The
+     * aliases run continuously across the chain rather than restarting per {@code @reference}
+     * element, the tail is non-empty, and the terminus is the chain's last hop rather than the
+     * anchor doubling as one.
+     */
+    @Test
+    void aTwoHopChainNarrowsTheSameWay() {
+        var row = chainArm("rentFilmCustomer");
+        assertNarrowsItsClassifiedChain("rentFilmCustomer");
+
+        assertThat(Stream.concat(Stream.of(row.anchor().alias()),
+                row.hops().stream().map(RoutineWriteCommand.RereadHop::alias)))
+            .as("the alias index counts hops along the whole chain from zero, so a second"
+                + " @reference element continues the numbering rather than restarting it")
+            .containsExactly("rentFilmCustomer_0", "rentFilmCustomer_1");
+    }
+
+    /**
+     * The keying a one-hop chain never states. A re-read departs from its anchor rather than
+     * joining it, so only a hop after the anchor declares a basis; a chain crossing a real foreign
+     * key names that key's generated constant, which is what lets the renderer spell the join
+     * without a live catalog.
+     */
+    @Test
+    void aHopAfterTheAnchorNamesTheForeignKeyItCrosses() {
+        var hop = chainArm("rentFilmCustomer").hops().getFirst();
+        var fk = (On.Keying.ForeignKey) ((On.ColumnPairs)
+            ((JoinStep.Hop) hopsOf("rentFilmCustomer").get(1)).on()).keying();
+
+        assertThat(((JoinBasis.ColumnPairs) hop.on()).keying())
+            .as("the hop is keyed by the classified foreign key, named as its generated constant")
+            .isEqualTo(new JoinBasis.Keying.ForeignKey(
+                fk.fk().keysClass().canonicalName(), fk.fk().constantName()));
+        assertThat(((JoinBasis.ColumnPairs) hop.on()).pairs())
+            .extracting(p -> p.sourceSide().javaName(), p -> p.targetSide().javaName())
+            .as("and pairs the two ends of that key, side for side")
+            .containsExactly(tuple("CUSTOMER_ID", "CUSTOMER_ID"));
+    }
+
+    private void assertNarrowsItsClassifiedChain(String fieldName) {
+        var row = chainArm(fieldName);
+        var hops = hopsOf(fieldName);
         var hop0 = (JoinStep.Hop) hops.get(0);
 
         assertThat(row.anchor().alias())
@@ -162,9 +222,9 @@ class RoutineWriteRelationTest {
                 .map(h -> ((JoinStep.Hop) h).alias()).toList());
         assertThat(row.terminalAlias())
             .as("the projection reads the chain's terminus, which on a one-hop chain is the"
-                + " anchor itself")
+                + " anchor itself and on a longer one the last hop")
             .isEqualTo(((JoinStep.Hop) hops.getLast()).alias());
-        var hop0Slots = ((no.sikt.graphitron.rewrite.model.On.ColumnPairs) hop0.on()).slots();
+        var hop0Slots = ((On.ColumnPairs) hop0.on()).slots();
         assertThat(row.anchor().capturedPairs())
             .as("the captured pairing is hop 0's own, cell for cell and side for side")
             .extracting(p -> p.sourceSide().javaName(), p -> p.targetSide().javaName())
@@ -250,8 +310,18 @@ class RoutineWriteRelationTest {
     }
 
     private static RoutineWriteCommand.ChainReread directArm() {
+        return chainArm("rentFilm");
+    }
+
+    private static RoutineWriteCommand.ChainReread chainArm(String fieldName) {
         return (RoutineWriteCommand.ChainReread) plan.routineWrites()
-            .rowFor("Mutation", "rentFilm").orElseThrow();
+            .rowFor("Mutation", fieldName).orElseThrow();
+    }
+
+    /** The leaf's own classified chain, which every narrowing check above joins back to. */
+    private static List<JoinStep> hopsOf(String fieldName) {
+        return ((MutationField.MutationRoutineWriteField) model.fields()
+            .get(FieldCoordinates.coordinates("Mutation", fieldName))).chain().hops();
     }
 
     private static RoutineWriteCommand.CarrierKeys carrierArm() {

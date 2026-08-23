@@ -5,6 +5,7 @@ import no.sikt.graphitron.command.KeyProjectionRelation;
 import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.GlobalUnitKind;
 import no.sikt.graphitron.command.UnitRef;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -81,14 +82,20 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
      * bundle's schema-level facts; the schema's resolved session-hook carrier
      * ({@link GraphitronSchema#sessionHooks()}) decides the connection runtime's hook unit;
      * {@code outputPackage} anchors every unit name. {@code projections} is the store's resolved
-     * key projections, the one input that arrives from the fact store rather than from the walk;
-     * {@link #produceWithoutStore} is the arm for a caller that has none.
+     * key projections and {@code store} the open handle a producer reads its own facts through;
+     * both arrive from the fact store rather than from the walk, and
+     * {@link #produceWithoutStore} is the arm for a caller that has neither.
+     *
+     * <p>The handle is the direction of travel: each producer that converts stops reading the
+     * classified schema and starts reading the store through this parameter, so a conversion is a
+     * change here and in that producer rather than a change to how the plan is called.
      */
     public static EmitPlan produce(GraphitronSchema schema,
                                    boolean federationLink,
                                    boolean usesOneOf,
                                    String outputPackage,
-                                   ResolvedKeyProjections.Projections projections) {
+                                   ResolvedKeyProjections.Projections projections,
+                                   StoreHandle store) {
         var units = new GeneratedUnits(outputPackage);
         var globals = new ArrayList<GlobalCommand>();
 
@@ -143,7 +150,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             globals.add(one(GlobalUnitKind.DEV_EXECUTOR, units.rootUnit("GraphitronDevExecutor")));
         }
         var conditions = ConditionCommands.produce(schema, outputPackage);
-        var routineWrites = RoutineWriteCommands.produce(schema, outputPackage);
+        var routineWrites = RoutineWriteCommands.produce(store, schema, outputPackage);
         var launchers = LauncherCommands.produce(schema, conditions, outputPackage);
         var keyProjections = KeyProjectionCommands.produce(projections);
         requireEveryProjectionIsReachable(keyProjections, routineWrites, launchers, conditions);
@@ -201,19 +208,27 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
     }
 
     /**
-     * The plan of a caller with no fact store to read: every relation the walk produces, and an
-     * empty key-projection relation. Named for what it lacks rather than defaulted into
-     * {@link #produce}, because the absence is not benign. A projected {@code argMapping} binding
-     * whose projection is missing renders as an ordinary nested read, which is the raw-base64
-     * emission this family exists to stop, so a caller reaching for this arm is asserting its graph
-     * has no projected binding rather than being handed that assumption silently.
+     * The plan of a caller with no fact store to read: every relation the walk still produces, and
+     * empty relations for the two that no longer walk. Named for what it lacks rather than
+     * defaulted into {@link #produce}, because the absence is not benign, and the two absences
+     * differ in kind.
+     *
+     * <p>An empty key-projection relation means a projected {@code argMapping} binding renders as
+     * an ordinary nested read, which is the raw-base64 emission that family exists to stop, so a
+     * caller reaching for this arm is asserting its graph has no projected binding rather than
+     * being handed that assumption silently.
+     *
+     * <p>An empty routine-write relation is the sharper one: that relation is read from the store
+     * now, so a graph whose mutations do write through {@code @routine} plans no row for them here
+     * and every such coordinate falls through to its legacy builder. This arm is for callers that
+     * emit no mutation fetchers at all.
      */
     public static EmitPlan produceWithoutStore(GraphitronSchema schema,
                                                boolean federationLink,
                                                boolean usesOneOf,
                                                String outputPackage) {
         return produce(schema, federationLink, usesOneOf, outputPackage,
-            ResolvedKeyProjections.Projections.empty());
+            ResolvedKeyProjections.Projections.empty(), null);
     }
 
     /** A fixed-substrate global command committing exactly one unit. */

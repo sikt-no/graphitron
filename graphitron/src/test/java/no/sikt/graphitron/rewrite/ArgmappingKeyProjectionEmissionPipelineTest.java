@@ -51,6 +51,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @PipelineTier
 class ArgmappingKeyProjectionEmissionPipelineTest {
 
+    @org.junit.jupiter.api.io.TempDir
+    static java.nio.file.Path tmp;
+
     /** The motivating shape: a {@code @nodeId} input field opened with the node type's key column. */
     private static final String SDL = """
         type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
@@ -172,9 +175,8 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
      */
     @Test
     void aProjectionNoEmitterOwnsStopsThePlan() {
-        var bundle = TestSchemaHelper.buildBundle(SDL);
-        assertThatThrownBy(() -> EmitPlan.produce(bundle.model(), bundle.federationLink(),
-            bundle.usesOneOf(), DEFAULT_OUTPUT_PACKAGE,
+        assertThatThrownBy(() -> TestSchemaHelper.storeBackedPlan(tmp, SDL,
+            no.sikt.graphitron.common.configuration.TestConfiguration.testContext(),
             new ResolvedKeyProjections.Projections(List.of(
                 inventoryProjection("Query", "rental", "input.inventoryId.inventory_id")))))
             .isInstanceOf(IllegalStateException.class)
@@ -233,11 +235,10 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
 
     /** The one conditions class the fixture's single glue owner produces, rendered through the plan. */
     private static TypeSpec conditionsClass() {
-        var bundle = TestSchemaHelper.buildBundle(CONDITION_SDL);
         var projections = new ResolvedKeyProjections.Projections(List.of(
             filmProjection("Query", "films", "in.filmId.film_id")));
-        var plan = EmitPlan.produce(bundle.model(), bundle.federationLink(), bundle.usesOneOf(),
-            DEFAULT_OUTPUT_PACKAGE, projections);
+        var plan = TestSchemaHelper.storeBackedPlan(tmp, CONDITION_SDL,
+            no.sikt.graphitron.common.configuration.TestConfiguration.testContext(), projections);
         assertThat(plan.conditions().rows())
             .as("the fixture's @condition mints a row, so the glue below is not empty by accident")
             .isNotEmpty();
@@ -261,8 +262,8 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
         var schema = bundle.model();
         var projections = new ResolvedKeyProjections.Projections(List.of(
             inventoryProjection("Mutation", "rentFilm", "input.inventoryId.inventory_id")));
-        var plan = EmitPlan.produce(schema, bundle.federationLink(), bundle.usesOneOf(),
-            DEFAULT_OUTPUT_PACKAGE, projections);
+        var plan = TestSchemaHelper.storeBackedPlan(tmp, sdl, no.sikt.graphitron.common.configuration.TestConfiguration.testContext(),
+            projections);
         assertThat(KeyProjectionCommands.produce(projections).rows())
             .as("the fixture's projection reaches a command row, so the emission below is not passing"
                 + " because nothing was carried")

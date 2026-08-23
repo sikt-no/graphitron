@@ -127,7 +127,11 @@ public class TypeFetcherGenerator {
                 no.sikt.graphitron.plan.ConditionCommands.produce(schema, outputPackage), outputPackage),
             typeUnits.fetchers(),
             typeUnits.errorFetchers(),
-            no.sikt.graphitron.plan.RoutineWriteCommands.produce(schema, outputPackage),
+            // Rowless: the routine-write relation is read from the fact store, and this overload
+            // holds no handle to one. A @routine-writing coordinate reaching here therefore fails
+            // the dispatch's drift guard by its name rather than emitting something plausible;
+            // such a caller wants the store-backed plan instead.
+            no.sikt.graphitron.plan.RoutineWriteCommands.produce(null, schema, outputPackage),
             no.sikt.graphitron.command.KeyProjectionRelation.empty());
     }
 
@@ -189,7 +193,10 @@ public class TypeFetcherGenerator {
                 result.add(generateTypeSpec(row.typeName(), wiring.returnType().table(), null, nestedFields,
                     assembled, outputPackage, null, null,
                     no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(nestedFields, outputPackage),
-                    no.sikt.graphitron.plan.RoutineWriteCommands.produceWithoutSchema(nestedFields, outputPackage),
+                    // The run's own relation rather than one derived from these fields: a
+                    // nesting-reached type's children are never mutation roots, so every lookup
+                    // against it comes back empty, which is exactly the behaviour this arm wants.
+                    routineWrites,
                     keyProjections));
             }
         }
@@ -449,7 +456,11 @@ public class TypeFetcherGenerator {
         return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, null,
             null,
             no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(fields, outputPackage),
-            no.sikt.graphitron.plan.RoutineWriteCommands.produceWithoutSchema(fields, outputPackage),
+            // Empty, and that is the overload's shape rather than a gap: the routine-write relation
+            // is read from the fact store, which a model-only caller has none of. A coordinate that
+            // writes through @routine fails the dispatch's drift guard by name here, which is the
+            // signal to render it through a store-backed plan instead.
+            no.sikt.graphitron.plan.RoutineWriteRelation.unrouted(java.util.List.of()),
             no.sikt.graphitron.command.KeyProjectionRelation.empty());
     }
 
@@ -1357,7 +1368,9 @@ public class TypeFetcherGenerator {
             .orElseThrow(() -> new IllegalStateException(
                 "Graphitron generator bug (routine-write dispatch): coordinate '"
                 + ctx.parentTypeName() + "." + field.name() + "' has no routine-write row;"
-                + " the producer's membership and this dispatch have drifted"));
+                + " the producer's membership and this dispatch have drifted. The relation is read"
+                + " from the fact store, so a caller that generated without one plans no row for"
+                + " any routine write and reaches this by construction"));
         return no.sikt.graphitron.render.RoutineWriteFetcherRenderer.render(
             row, routineWrites.tenancy(), ctx.argPathHelpers(), ctx.projectedKeyHost(),
             ctx.requestContextRead());

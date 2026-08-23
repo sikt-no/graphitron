@@ -2,8 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.plan.RoutineWriteCommands;
-import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
+import no.sikt.graphitron.plan.EmitPlan;
 import no.sikt.graphitron.command.TenantRouting;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -42,9 +41,12 @@ class RoutineWriteTenancyPipelineTest {
         }
         """;
 
+    @org.junit.jupiter.api.io.TempDir
+    static java.nio.file.Path tmp;
+
     @Test
     void aSingleTenantRunDeclaresTheRequestContextsConnectionAndCarriesItsHelper() {
-        var fetchers = mutationFetchers(TestSchemaHelper.buildSchema(SDL));
+        var fetchers = mutationFetchers(TestConfiguration.testContext());
 
         assertThat(body(fetchers))
             .contains("org.jooq.DSLContext dsl = graphitronContext(env).getDslContext(env);");
@@ -55,10 +57,8 @@ class RoutineWriteTenancyPipelineTest {
 
     @Test
     void aMultiTenantRunRoutesAnUntenantedWriteThroughTheGeneratedCarrier() {
-        var schema = TestSchemaHelper.buildSchema(
-            SDL, TestConfiguration.testContext().withTenantColumn("film_id"));
-
-        assertThat(body(mutationFetchers(schema)))
+        assertThat(body(mutationFetchers(
+                TestConfiguration.testContext().withTenantColumn("film_id"))))
             .as("the rental table carries no film_id, so the write is global reference data")
             .contains("org.jooq.DSLContext dsl = " + DEFAULT_OUTPUT_PACKAGE
                 + ".schema.TenantConnections.dslDefault(env);")
@@ -72,14 +72,11 @@ class RoutineWriteTenancyPipelineTest {
      */
     @Test
     void theRunGrainAxisRidesTheRelation() {
-        assertThat(RoutineWriteCommands.produce(
-                TestSchemaHelper.buildSchema(SDL), DEFAULT_OUTPUT_PACKAGE).tenancy())
+        assertThat(planFor(TestConfiguration.testContext()).routineWrites().tenancy())
             .isInstanceOf(TenantRouting.Unrouted.class);
 
-        var routed = RoutineWriteCommands.produce(
-            TestSchemaHelper.buildSchema(
-                SDL, TestConfiguration.testContext().withTenantColumn("film_id")),
-            DEFAULT_OUTPUT_PACKAGE).tenancy();
+        var routed = planFor(TestConfiguration.testContext().withTenantColumn("film_id"))
+            .routineWrites().tenancy();
         assertThat(routed).isInstanceOf(TenantRouting.Routed.class);
         assertThat(((TenantRouting.Routed) routed).byCoordinate().keySet())
             .as("every row this relation holds is an entry point that declares a connection")
@@ -87,8 +84,12 @@ class RoutineWriteTenancyPipelineTest {
             .hasToString("Mutation.rentFilm");
     }
 
-    private static TypeSpec mutationFetchers(GraphitronSchema schema) {
-        return TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+    private static EmitPlan planFor(RewriteContext ctx) {
+        return TestSchemaHelper.storeBackedPlan(tmp, SDL, ctx);
+    }
+
+    private static TypeSpec mutationFetchers(RewriteContext ctx) {
+        return TestSchemaHelper.storeBackedFetchers(tmp, SDL, ctx).stream()
             .filter(t -> t.name().equals("MutationFetchers"))
             .findFirst()
             .orElseThrow();

@@ -517,17 +517,16 @@ public class GraphQLRewriteGenerator {
         // legacy builder), and those generators need no store, so the window closes here.
         var plan = captureAndRead(attributed, read, schema,
             (store, storeFacts) -> {
-                // The handle is what the window exists to hand over, and the plan tier is what
-                // will hold it: the producers convert onto the store one family at a time, and
-                // each conversion is then a parameter change rather than a lifecycle one. Until
-                // the first of them lands, the plan is still produced from the walk and the
-                // handle's only reader is the test that pins the window open.
+                // The handle is what the window exists to hand over, and the plan tier holds it:
+                // the producers convert onto the store one family at a time, and each conversion
+                // is a parameter change inside the plan rather than a lifecycle one here. The
+                // routine-write relation is the first that reads it.
                 var errors = validateAndLogErrors(schema, storeFacts.violations());
                 if (!errors.isEmpty()) {
                     throw new ValidationFailedException(errors);
                 }
                 return EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), outputPackage,
-                    storeFacts.keyProjections());
+                    storeFacts.keyProjections(), store);
             });
 
         var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage,
