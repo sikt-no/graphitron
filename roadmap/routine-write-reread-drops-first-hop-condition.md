@@ -113,18 +113,49 @@ what it costs, which is that the filter would be dropped and the field would ret
 predicate should exclude. Steer to dropping the `condition:` or moving it onto a later element,
 where both of the method's tables are joined into the re-read.
 
+Keep the verdict total over `On`. The single condition it replaces is total by construction
+(`!(hop0.on() instanceof On.ColumnPairs)` catches everything that is not column pairs), and two
+hand-written arms are not, so write it as a switch over `hop0.on()` and give `On.Lateral` an arm of
+its own: a first element resolving to a second routine call, which the re-read cannot depart from
+for the same reason. That arm fires for nobody today, the one-routine-per-chain rule refusing a
+second `@routine` earlier and `walkRoutineChain` adding a lateral hop only where a running source
+exists, so it is there to keep every reachable shape on a located rejection rather than on the
+leaf's `IllegalArgumentException` if either of those rules moves.
+
 Per the javadoc conventions, neither message nor either comment cites a roadmap item; the prose
 names the live symbols and states the fact.
 
-**`RoutineWriteCommands.anchorOf`.** Add the missing symmetric half of the invariant that already
-sits there. The method narrows hop 0 and throws when `on()` is not `On.ColumnPairs`, restating the
-classifier's guarantee as a plan-time invariant; it reads `targetTable()`, `alias()` and the pairs
-and never looks at `filter()`. So the one thing that would make the re-read silently unfiltered, a
-regression in the classifier verdict, is the one thing the plan does not refuse. Throw on a non-null
-`filter()` too, in the same shape and voice as the sibling check, naming the coordinate. This is the
-item's guard against the hazard the Backlog body was actually worried about: with it, dropping the
-verdict's filter clause fails loudly at plan time instead of emitting a re-read that returns rows
-the author's predicate should have excluded.
+**`MutationField.MutationRoutineWriteField`'s compact constructor.** This is where the guard goes,
+and the seat is a decision rather than a detail, so here is the argument. The hazard is real and
+worth guarding: `RoutineWriteCommands.anchorOf` reads hop 0's `targetTable()`, `alias()` and pairs
+and never looks at `filter()`, so a regression in the classifier verdict would emit an unfiltered
+re-read and return rows the author's predicate should have excluded, silently. But the leaf is
+the producer-side pin that the classifier's guarantee is already restated at: it pins `hops`
+non-empty and hop 0 joining by `On.ColumnPairs`, and its own comment says the emitter narrows
+"on this pin's authority". Add the third pin there, a non-null `filter()` on hop 0, so the leaf's
+account of itself becomes complete and a filtered hop-0 leaf stops being constructible at all.
+`docs/architecture/principles/development-principles.adoc`'s acceptance rule anchors this class of
+contract on narrowing at the producer, which points here.
+
+Nothing is added at `anchorOf`, and that is the point of the seat choice rather than an omission.
+Its javadoc disclaims being an assertion site ("the translation of that guarantee into the shape the
+row declares, not a second assertion of it: what the check below adds is the Java narrowing the
+wider carrier's type cannot express"), and a `filter()` throw narrows nothing, so seating one there
+would falsify that paragraph to buy a weaker guarantee than the leaf gives. The producer's own
+`joinBasisOf` refuses a lateral hop by name, and that is the same category rather than a
+counter-example: it is a decode with no arm to put a lateral in, which is the narrowing that javadoc
+endorses. Two prose surfaces move with the pin instead:
+
+* `anchorOf`'s javadoc says the leaf guarantees "both halves"; with the third pin it guarantees
+  three, and the added clause names the filter one.
+* `GraphitronSchemaValidator`'s `MutationRoutineWriteField` switch-arm comment enumerates the leaf's
+  pins ("hops non-empty, terminus rule, ColumnPairs hop 0 via the classifier's re-read-anchor
+  verdict") and needs the filter pin added, on the validator-mirrors-classifier rule that comment
+  exists to state.
+
+`RoutineWriteCommand.RereadAnchor`'s javadoc already calls the filter's absence structural rather
+than an omission. It needs no edit; what changes is that the claim becomes enforced upstream instead
+of asserted, and the pin's own message should read as the enforcement of it.
 
 **`intent_mutation_routine_seat`'s verdict comment** (`graphitron-model/src/main/resources/no/sikt/graphitron/model/graphitron-model.sql`).
 Its closing sentence partitions the fourteen verdicts into the ones an author fixes and the ones the
@@ -155,12 +186,16 @@ uses exactly this SDL and stays green untouched: the view's verdict name and log
 Worth naming here so a reviewer sees the two tiers are deliberately asserting different things,
 the classifier's rejection and the store's verdict.
 
-**`RoutineWriteRelationTest`.** Add the plan-time refusal beside
-`anAnchorCapturingNoKeyIsRefused`, in the same construction-check shape: build the anchor's hop with
-a filter attached and assert `anchorOf` refuses it. If reaching `anchorOf` with a filtered hop is
-awkward from that test's fixture (it produces the relation from a classified model, and a filtered
-hop 0 never classifies), assert the throw at the narrowest reachable seam rather than weakening the
-check, and say in the test's javadoc why the shape has to be constructed rather than classified.
+**A new unit-tier invariant test for the leaf's pin**, in the `model/` package's established
+`*InvariantTest` idiom. The siblings to copy are the direct-construction ones,
+`ColumnBackedFieldInvariantTest` and `SingleRecordIdFieldKeyShapeInvariantTest`: `@UnitTier`, a leaf
+built by hand, `assertThatThrownBy` on the compact constructor. (Not
+`ParentCorrelationFirstHopInvariantTest`, whose name is close but whose shape is not: it is
+pipeline-tier and classifies SDL.) Construct a `MutationRoutineWriteField` whose hop 0 is an
+`On.ColumnPairs` hop carrying a filter and assert the throw, in the one-liner
+`assertThatThrownBy(() -> new ...)` shape. Worth knowing before writing it: none of the leaf's three
+pins is asserted anywhere today, so this adds the first, and covering the two it joins in the same
+class is cheap and in scope.
 
 **`RejectionKindProjectionTest`** needs no change (the projection is per-arm, not per-site), and
 neither does the diagnostics glossary, whose `deferred` entry describes the kind and enumerates no
@@ -178,8 +213,10 @@ model module every downstream module reads, and the `.adoc` change renders in th
   condition method's parameter-table check, which the two foreign-key branches beside it do run. It
   is unobservable once this shape is refused outright, so noting it here is enough; if it is worth
   closing it is worth closing for its own reasons, on the read side.
-* **The stale promise in `diagnostics-glossary.adoc`'s opening paragraph** ("the four `deferred`
-  emit-block reasons", a section the page no longer has). Unrelated drift, not this item's.
+* **The stale promise about "the four `deferred` emit-block reasons"**, a section neither page still
+  has, in `diagnostics-glossary.adoc`'s opening paragraph and again in
+  `docs/manual/reference/index.adoc`. Unrelated drift, not this item's, and both spellings belong to
+  whichever item closes it.
 * **`R682`'s disclosed silence** on the bare-`{condition:}` first hop, which reads as
   `CHAIN_UNRESOLVED` on the seat view because such an element resolves to no hop row at all. That
   item owns the view's verdict logic; this one changes only the comment's author-fixable partition,
@@ -188,12 +225,33 @@ model module every downstream module reads, and the `.adoc` change renders in th
 
 ## Retired vocabulary
 
-Nothing symbol-level is retired. Two prose claims are, and they are what the Done-gate sweep should
-grep for, because both survive as text rather than as code:
+Nothing symbol-level is retired. What is retired is the claim that this shape awaits an emitter, and
+it survives as prose in five places rather than as code, so the sweep needs a query that reaches all
+five. Two of them carry no phrase from the author-facing surfaces and would be missed by a sweep
+built from those alone:
+
+* `FieldBuilder.classifyMutationRoutineChain`'s own javadoc, whose "One write-only verdict on top"
+  paragraph says a condition-joined or filtered hop 0 "lands a typed `Deferred` rather than reaching
+  the leaf";
+* `MutationField.MutationRoutineWriteField`'s javadoc ("this leaf adds two pins of its own ... the
+  classifier's re-read-anchor verdict routes every other shape to a typed `Deferred`") and the
+  comment above its hop-0 pin, which repeats it. Both are edited by this item's own Implementation
+  section, the leaf being where the new pin lands, so the sweep is confirming rather than
+  discovering; naming them here is what makes that checkable at the gate.
+
+Alongside the three that the author-facing phrasing does reach:
 
 * the deferral framing of this shape: "does not emit yet" and "is likewise deferred" applied to a
   routine chain's first hop, in the classifier message and in `routine.adoc`;
-* `UNANCHORED_FIRST_HOP` appearing in a list of shapes the generator owes an emitter.
+* `UNANCHORED_FIRST_HOP` appearing in a list of shapes the generator owes an emitter;
+* `GraphitronSchemaValidator`'s switch-arm comment enumerating the leaf's pins without the filter
+  one.
+
+The sweep query that reaches all five is the verdict's own name rather than the deferral prose:
+grep `re-read-anchor verdict` and `re-read anchor` across main and test sources plus the `.adoc`
+tree, and read every hit for whether it still claims an emitter is owed. Grepping "Deferred" near
+"routine" also works and is noisier, the sibling deferrals in that family (procedures, scalar and
+void routines, the hop-less Mutation `@routine`, the multi-routine chain) being genuine and staying.
 
 ## Reviewer findings
 
@@ -247,6 +305,19 @@ it as a shape the generator owes.
    seat contradicts prose already in the tree, say what happens to that prose. Then let the test
    paragraph follow from the choice rather than hedge against it.
 
+   *Author response.* Agreed, and the seat moves to the leaf's compact constructor. The
+   Implementation section's `anchorOf` paragraph is replaced by one that names the leaf, argues the
+   choice (the leaf is the pin's existing authority and the acceptance rule points at narrowing at
+   the producer; a `filter()` throw narrows nothing, so seating one at `anchorOf` would falsify that
+   javadoc to buy a weaker guarantee), and states explicitly that nothing is added at `anchorOf`.
+   The hazard the old paragraph was reaching for is kept in the argument rather than dropped, since
+   it is why the pin exists at all. Two prose surfaces are now named as moving with the pin:
+   `anchorOf`'s "both halves" clause, and `GraphitronSchemaValidator`'s switch-arm comment
+   enumerating the leaf's pins, which the finding's own reading of the validator-mirrors-classifier
+   rule implies. The Tests paragraph follows the choice: a model-tier `*InvariantTest` in the
+   `ParentCorrelationFirstHopInvariantTest` idiom, no fallback, plus the fact that none of the
+   leaf's three pins is asserted today so this adds the first.
+
 2. **Question 1. The retirement sweep list, which is the Done gate's only grep query, misses the two
    javadoc paragraphs that carry the retired claim.** The item's stated outcome is that "no surface
    anywhere implies a future release will take it", and two contributor-facing surfaces would say
@@ -259,6 +330,14 @@ it as a shape the generator owes.
    file the Implementation section does not touch. What would satisfy: name both in the sweep list
    (or in Implementation), so the Done-gate grep has a query that reaches them.
 
+   *Author response.* Both are named in the rewritten `## Retired vocabulary`, which now lists five
+   surfaces and separates the two the author-facing phrasing cannot reach from the three it can. Two
+   things the finding surfaced beyond what it asked for are folded in: the sweep now leads with a
+   query that actually finds all five (`re-read-anchor verdict` / `re-read anchor`, the verdict's own
+   name, rather than the deferral prose), and the `MutationField` file is no longer untouched by
+   Implementation, since finding 1 moved the pin into it, so the sweep confirms an edit instead of
+   discovering an omission. `GraphitronSchemaValidator`'s pin enumeration is listed too.
+
 Non-blocking, noted only, neither bearing on the two questions:
 
 * The current verdict's `!(hop0.on() instanceof On.ColumnPairs)` is total over `On`'s three
@@ -270,3 +349,8 @@ Non-blocking, noted only, neither bearing on the two questions:
 * `docs/manual/reference/index.adoc` carries the same "four deferred emit-block reasons" drift the
   out-of-scope section attributes to `diagnostics-glossary.adoc`'s opener. Worth folding into
   whatever item eventually closes that drift.
+
+*Author response to both notes.* Taken. The Implementation section's classifier paragraph now
+requires the verdict to stay total over `On`, as a switch with an `On.Lateral` arm of its own, and
+says why that arm exists given it fires for nobody today. The out-of-scope bullet now names both
+pages carrying the glossary drift rather than one.
