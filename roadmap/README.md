@@ -24,8 +24,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R814` | The architecture docs describe the surface being drained as if it were the design | Ready | 2026-08-23 | [plan](architecture-docs-describe-the-destination.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-20 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
+| `R814` | The architecture docs describe the surface being drained as if it were the design | In Progress | 2026-08-23 | [plan](architecture-docs-describe-the-destination.md) |
 | `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | In Review | 2026-08-21 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -589,7 +589,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R604` [**LeafCoverageReport carries a private escapeAdocCell duplicating Main's**](roadmap-tool-adoc-cell-escape-dedup.md) — Backlog, cleanup
 - `R348` [**Regenerate and guard the generated supported-schema-shapes migration doc against drift**](supported-schema-shapes-regen-guard.md) — Backlog, tech-debt
 - `R600` [**Retire the roadmap markdown-to-AsciiDoc translator by authoring plans in AsciiDoc**](roadmap-plans-authored-as-asciidoc.md) — Backlog, cleanup
-- `R814` [**The architecture docs describe the surface being drained as if it were the design**](architecture-docs-describe-the-destination.md) — Ready, architecture
+- `R814` [**The architecture docs describe the surface being drained as if it were the design**](architecture-docs-describe-the-destination.md) — In Progress, architecture
 - `R758` [**The fact model page never learns the materialization registry**](fact-model-page-learns-the-registry.md) — Backlog, dx
 - `R635` [**The schema drift guard covers the prefix-less relations too**](schema-drift-guard-covers-prefixless-relations.md) — Backlog, cleanup
 - `R614` [**lookupKey.adoc claims a per-input-field shape the Query side rejects**](lookupkey-per-input-field-doc-claim.md) — Backlog, docs

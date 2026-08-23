@@ -1,7 +1,7 @@
 ---
 id: R814
 title: "The architecture docs describe the surface being drained as if it were the design"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: docs
