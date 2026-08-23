@@ -336,10 +336,13 @@ the gate's own instrument on the gate's own fixture.
 
 Some cells cannot be measured, and the register says so in its own words. The hop-column
 registration's `reason` records that the unregistered walk "does not finish inside a two-minute
-timeout", and the binding's records a read that "did not finish inside a five-minute timeout". Those
-are not exotic cells: the walk in question is `intent_node_id_decode_column`, which
-`intent_node_id_decode` names, so the family this item exists to price contains one. Reachability puts
-that cell in the domain rather than taking it out, and no honest carve-out removes it, since a
+timeout", and that walk is `intent_node_id_decode_column`, which `intent_node_id_decode` names, so the
+family this item exists to price contains one. That is the register's only such cell, and the
+distinction matters for what the arm has to cover. The binding's reason records a five-minute
+non-completion too, but that one is a census-driven join inside the diagnostics drain, a Java reader's
+cost rather than a view named by another view, so it is evidence that unregistered shapes reach these
+durations rather than a second cell of this gate. One cell is enough to need an answer. Reachability
+puts it in the domain rather than taking it out, and no honest carve-out removes it, since a
 hand-kept exclusion list is exactly what deriving both axes from the store was for. So the gate needs
 a stated answer, and here it is.
 
@@ -353,8 +356,8 @@ Two decisions make that concrete.
 The budget is per cell and relative, not one global number. `ReadBudget.Bounded` is the mechanism, and
 what bounds the unregistered side is a multiple of the wall clock the *registered* side of the same
 cell just took, floored at a stated minimum for the cells where that figure is milliseconds. The
-reason to make it relative is the objection `ReadBudget`'s own javadoc raises against a bare number,
-that a wall-clock threshold large enough to be safe on one machine is a flake on another: both sides
+reason to make it relative is the objection `RunawayRelation`'s javadoc raises against a fixed
+threshold, that one reliable on one machine is a flake on another: both sides
 of a cell are timed in the same run on the same machine, so a loaded machine slows both and the ratio
 holds where an absolute figure would not. Pick the multiple from the gap the register already
 documents, which is seconds against never.
@@ -383,12 +386,21 @@ than an identity. That is precisely what the pinned set of exhausted cells is fo
 it is a cell nobody has compared, named where somebody can see it, rather than a silent hole in the
 domain.
 
-If the implementation finds the ratio too tight to be stable, the fallback is structural rather than
-another number: both non-terminating cases in the register are relations named inside another view's
-*recursive term*, which is the shape whose whole cost is being re-evaluated per accumulated row. That
-property is derivable from the same parsed view definitions the domain already comes from, so it would
-exclude the cells by their shape rather than by a list or a clock. It is the fallback and not the first
-answer because it is a real extension of the parse walk, and the budget shape needs no new machinery.
+If the implementation finds the ratio too tight to be stable, there is a structural excuse available
+for part of the population rather than another number. The known cell's relation,
+`intent_node_id_decode_hop_column`, is named inside `intent_node_id_decode_column`'s *recursive term*,
+which is the shape whose whole cost is re-evaluated per accumulated row, and that property is
+derivable from the same parsed view definitions the domain already comes from, so it would excuse such
+a cell by its shape rather than by a list or a clock.
+
+What that property does not reach is the binding. Its one appearance in a recursive view is the *seed*
+of `intent_field_reference_step_target`, which that view's own comment states in those words, and a
+seed is evaluated once, so the per-accumulated-row rationale does not describe its position and a
+predicate written to that rationale would leave the binding's cells in. So the structural route is a
+partial excuse by shape and not a replacement for the budget, which is the better reason for it being
+the fallback than its cost as an extension of the parse walk. If the binding's cells turn out to need
+excusing structurally too, the property that covers them has to be found rather than assumed; until
+then they are the budget's business and, when they exhaust it, the pinned set's.
 
 ### What the gate costs
 
@@ -675,6 +687,22 @@ only because settling it requires a choice I am not the one to make.
    hypothetical one is still satisfiable, the decode family supplying that cell; it only means the
    plan should not present the binding as the second instance of the same thing.
 
+   *Reviewer, same day, at the user's explicit direction:* the user asked me to make the tweak and
+   sign off rather than bounce the item a second time, so the three edits below are mine and not the
+   author's, and this note exists because the findings-not-fixes split otherwise hides that. I took
+   the narrowing arm of the two I offered, since it invents no new predicate. The fallback paragraph
+   now says the recursive-term property excuses the hop-column cell, states that it does not reach the
+   binding because the binding sits in `intent_field_reference_step_target`'s seed and a seed is
+   evaluated once, and concludes that the structural route is a partial excuse by shape rather than a
+   replacement for the budget, which is a better reason for it being the fallback than its cost as an
+   extension of the parse walk. Finding a property that covers the binding's cells is left open and
+   explicitly not assumed. The section's opening paragraph now presents the hop-column cell as the
+   register's only cell of this gate and demotes the binding's five-minute figure to what it is,
+   evidence from a Java reader. Nothing about the arm, the budget, the pinned set or the
+   safe-in-one-direction argument changed. An implementer who disagrees with the narrowing should
+   treat it as reviewer prose that no third session has read as a draft, which is the risk the split
+   exists to price.
+
 ### Round 2 non-blocking
 
 * The relative budget's motivating citation is pointed at the wrong javadoc. `ReadBudget`'s own
@@ -687,3 +715,27 @@ only because settling it requires a choice I am not the one to make.
   changes; only the attribution is off. Worth noting that the plan's *other* use of the type, that
   asserting no duration keeps "the tier guarantee `ReadBudget`'s two arms exist to protect", reads
   that javadoc correctly, so this is one citation to repoint rather than a misreading of the type.
+  *Reviewer, repointed in the sign-off commit* at `RunawayRelation`, which is the javadoc that makes
+  the cross-machine argument. This one is a citation repair of the kind the gate leaves to the
+  reviewer, so it needed no direction.
+
+### Round 2 verdict
+
+Review resolved. Both gate questions are answered and I have no remaining findings. What a consumer
+gets is nothing observable today and a build that refuses a `meta_materialize` registration which
+makes some other relation's read more expensive, with this relation's ten-times move attributed rather
+than suspected. The design extends shapes already here rather than standing new ones beside them:
+`RunawayRelation`'s rename-then-create swap, `meta_materialize_dependency`'s rule that the universe of
+relations comes off the booted store, `SurfaceScanCountTest`'s `scanCount` instrument, and
+`MaterializeRegistryGateTest`'s pinned roster of deliberate exceptions. Every symbol, relation, count
+and quoted javadoc the plan names was checked against the tree across the two passes and holds as
+named, and the one claim that did not is corrected above. The pass-on-exhaustion arm's mechanism was
+verified reachable rather than assumed. What remains open is named as open: the multiple for the
+budget, and whether the binding's cells ever need a structural excuse of their own.
+
+`status:` stays `Spec` in this commit, and not because anything in the plan is unresolved. Having
+taken the plan-body tweak myself at the user's direction, this reviewer session is now the spec file's
+last committer, so the Spec to Ready guard in `roadmap/workflow.adoc` reads reviewer equals last
+committer and refuses the flip. That guard is doing its job rather than obstructing: the narrowing
+above is reviewer prose no third party has read as a draft. The flip is one command for any other
+party, this review having nothing further to raise.
