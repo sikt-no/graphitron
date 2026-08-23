@@ -1,7 +1,7 @@
 ---
 id: R814
 title: "The architecture docs describe the surface being drained as if it were the design"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: docs
@@ -360,8 +360,9 @@ the point: a guard that passes on arrival proves nothing.
   anti-vacuous-pass discipline the existing code and `ArchQuadrantBindingTest` both apply: a walk
   that finds no pages fails, rather than passing on an empty set.
 - Add a doc-symbol drift gate as a `graphitron` test-tier meta-test beside
-  `RoadmapReferenceGuardTest`. It reads every `docs/architecture/**.adoc` (locating the tree by
-  walking up, as `ClassifiedDocTest` already does), extracts backtick-delimited CamelCase spans,
+  `RoadmapReferenceGuardTest`. It reads every `docs/architecture/**.adoc` (locating the tree
+  robustly against the working directory, as `ClassifiedDocTest.PAGE_CANDIDATES` already does with
+  its two candidate relative paths), extracts backtick-delimited CamelCase spans,
   and fails on a span that resolves to no type on the reactor classpath. The universe must come
   from the classpath, not a regex over source files, for the same reason `SchemaIdentifierDriftCheck`
   boots the store rather than parsing the DDL: two mechanisms of different fidelity answering
@@ -370,7 +371,7 @@ the point: a guard that passes on arrival proves nothing.
   slice. A backticked CamelCase span is not always a type: `SelectedField.getArguments()`,
   `PageInfo`, `LEFT JOIN`, and generated-output names a consumer sees but the reactor never
   declares are all legitimate. Recommend an explicit, commented exemption set in the guard (the
-  shape `VariantCoverageTest.NO_CASE_REQUIRED` already uses) over a clever heuristic, so each
+  shape `ExemptionRegistry.CORPUS_NO_CASE_REQUIRED` already uses) over a clever heuristic, so each
   exemption is a reviewable claim rather than a silent miss.
 
 ### Slice 2: the two renderers
@@ -394,9 +395,11 @@ skeleton: the chain intro, the verdict-layer section, the command-relation secti
 include plus the per-relation closure prose), the rejection section and the package map land, and
 the "Classification Vocabulary" section (95 lines, self-declared historical) and the Source Map
 are deleted with them. Then the examples, per the `classified-corpus` loop adapted to the new
-assertion. Only 8 of the 55 corpus examples carry a projection `query` today, which is what makes
-an example render; the other 47 are tested and invisible while the tables restate their verdicts
-in ungated prose beside them.
+assertion. Only 2 of the 55 corpus examples carry a projection `query` today (`catalog` and
+`paginated-joined-table-interface`), which is what makes an example render; the other 53 are
+tested and invisible while the tables restate their verdicts in ungated prose beside them. The
+page's other six GraphQL blocks are hand-written, not corpus-rendered, so they carry no guard
+either.
 
 - Promoting an example means, in one commit: add a projection `query` where the example lacks
   one, paste the rendered SDL and outcome blocks under prose, and delete the leaf-named table
