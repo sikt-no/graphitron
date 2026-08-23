@@ -11,9 +11,9 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
-import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.SourceKey;
+import no.sikt.graphitron.rewrite.model.TableRef;
 
 import javax.lang.model.element.Modifier;
 
@@ -32,9 +32,9 @@ import java.util.List;
  *
  * <ul>
  *   <li>{@link RoutineWriteCommand.ChainReread} owns its follow-up. After the commit it re-reads
- *       from hop 0's table, keyed by the values captured off the routine's result rows, joining the
- *       chain's remaining hops forward exactly as a read chain does, and projects the terminus type
- *       through its projection unit.</li>
+ *       from its {@link RoutineWriteCommand.RereadAnchor}'s table, keyed by the values captured off
+ *       the routine's result rows, joining the chain's remaining hops forward exactly as a read
+ *       chain does, and projects the terminus type through its projection unit.</li>
  *   <li>{@link RoutineWriteCommand.CarrierKeys} has no follow-up here: the captured key record
  *       <em>is</em> the fetcher's value, and the payload's data field owns the re-read. The keys are
  *       projected under the target table's own key fields, so the data field's correlation reads
@@ -114,28 +114,25 @@ public final class RoutineWriteFetcherRenderer {
         builder.addCode(keys.declarations());
         builder.beginControlFlow("try");
         builder.addStatement("$T source = $L", row.call().resultTable().tableClass(), call);
-        for (JoinStep step : row.hops()) {
-            var hop = (JoinStep.Hop) step;
-            builder.addStatement("$T $L = $L.as($S)", hop.targetTable().tableClass(), hop.alias(),
-                PathFragments.emitTableExpression(step, new PreviousNodeRef.None(),
-                    new ArgumentValueSource.Env(), argHelpers),
-                hop.alias());
+        declareAlias(builder, row.anchor().table(), row.anchor().alias());
+        for (var hop : row.hops()) {
+            declareAlias(builder, hop.table(), hop.alias());
         }
         builder.addCode(dslDeclaration);
 
         // The write. The routine executes inside the per-field transaction; the SELECT captures
-        // hop 0's source-side key columns off the routine's result rows, and the commit happens
-        // when the lambda returns.
-        var capturedColumns = sourceSides(row.capturedSlots());
+        // the anchor's source-side key columns off the routine's result rows, and the commit
+        // happens when the lambda returns.
+        var capturedColumns = sourceSides(row.anchor().capturedSlots());
         TypeName keyRowType = SourceKey.keyElementType(new SourceKey.Wrap.Record(), capturedColumns);
         builder.addCode(captureTransaction(
             isList ? ParameterizedTypeName.get(RESULT, keyRowType) : keyRowType,
             capturedColumns, null, isList));
         builder.addCode(nullKeysGuard(valueType, isList));
 
-        // The post-commit re-read: anchored on hop 0's table keyed by the captured values, with
-        // the remaining hops joining forward exactly as the read chain's fetcher emits them.
-        String anchorLocal = row.anchorAlias();
+        // The post-commit re-read: departing from the anchor's table keyed by the captured values,
+        // with the tail hops joining forward exactly as the read chain's fetcher emits them.
+        String anchorLocal = row.anchor().alias();
         var sel = CodeBlock.builder()
             .add("$T payload = dsl\n", valueType)
             .indent()
@@ -143,27 +140,31 @@ public final class RoutineWriteFetcherRenderer {
                 className(row.terminusProjection()), row.terminalAlias()))
             .add(".from($L)\n", anchorLocal);
         var filters = new ArrayList<CodeBlock>();
-        var hops = row.hops();
-        for (int i = 1; i < hops.size(); i++) {
-            var hop = (JoinStep.Hop) hops.get(i);
-            String prev = ((JoinStep.Hop) hops.get(i - 1)).alias();
+        String prev = anchorLocal;
+        for (var hop : row.hops()) {
             switch (hop.on()) {
                 case On.ColumnPairs cp -> sel.add("$L\n", JoinFragments.emitForwardJoin(cp, prev, hop.alias()));
                 case On.Predicate pred -> sel.add(".join($L).on($L)\n", hop.alias(),
                     PathFragments.emitTwoArgMethodCall(pred.condition(), prev, hop.alias()));
-                // Unrepresentable: the chain admits exactly one routine node, its start, so no
-                // hop position carries a lateral join.
+                // The pin that a re-read hop is a catalog node: lateralness and routine-ness are
+                // one fact on the model hop this row narrowed, so a routine node reaching the
+                // re-read arrives spelled this way. It cannot be joined here for the reason the
+                // family exists, that the routine appears in no statement after the one that ran
+                // it, so it is refused rather than emitted.
                 case On.Lateral ignored -> throw new IllegalStateException(
-                    "a lateral routine hop cannot appear in a root routine chain's hops");
+                    "the routine-write re-read for " + row.coordinate() + " reaches a lateral hop;"
+                    + " a chain admits exactly one routine node, its start, and re-invoking it"
+                    + " after the commit would re-execute the write");
             }
             if (hop.filter() != null) {
                 filters.add(PathFragments.emitTwoArgMethodCall(hop.filter(), prev, hop.alias()));
             }
+            prev = hop.alias();
         }
-        var anchorCols = row.capturedSlots().stream()
+        var anchorCols = row.anchor().capturedSlots().stream()
             .map(s -> CodeBlock.of("$L.$L", anchorLocal, s.targetSide().javaName()))
             .toList();
-        var capturedCols = row.capturedSlots().stream()
+        var capturedCols = row.anchor().capturedSlots().stream()
             .map(s -> CodeBlock.of("source.$L", s.sourceSide().javaName()))
             .toList();
         var where = filters.stream().reduce(keysInCondition(anchorCols, capturedCols, isList),
@@ -260,6 +261,17 @@ public final class RoutineWriteFetcherRenderer {
         return isList
             ? CodeBlock.of("")
             : CodeBlock.builder().add("if (keys == null) ").add(FetcherResult.nullData(valueType)).build();
+    }
+
+    /**
+     * One re-read table's local: {@code <Table> <alias> = Tables.<TABLE>.as("<alias>");}. The
+     * table expression is the catalog constant and nothing else, which is what the row's
+     * {@link no.sikt.graphitron.rewrite.model.TableRef}-typed hops state; a routine node would
+     * need its call rendered here instead, and is refused at the join below.
+     */
+    private static void declareAlias(MethodSpec.Builder builder, TableRef table, String alias) {
+        builder.addStatement("$T $L = $T.$L.as($S)", table.tableClass(), alias,
+            table.constantsClass(), table.javaFieldName(), alias);
     }
 
     private static List<ColumnRef> sourceSides(List<JoinSlot.FkSlot> slots) {

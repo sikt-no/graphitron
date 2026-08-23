@@ -130,24 +130,54 @@ class RoutineWriteRelationTest {
             .isInstanceOf(ErrorDispatch.Redacting.class);
     }
 
+    /**
+     * The narrowing the row performs on the classified chain, joined back to the chain itself
+     * rather than restated: the anchor is hop 0 with its column pairing, the tail is what
+     * follows it, and the terminus derives from the two. Reading the leaf's own chain here is
+     * what makes this a join and not a self-comparison, the row no longer carrying that carrier.
+     */
     @Test
-    void theChainRereadArmsDerivedAliasesAreTheChainsOwn() {
+    void theChainRereadArmsShapeIsTheClassifiedChainNarrowed() {
         var row = directArm();
-        var hops = row.chain().hops();
+        var hops = ((MutationField.MutationRoutineWriteField)
+            model.fields().get(FieldCoordinates.coordinates("Mutation", "rentFilm"))).chain().hops();
+        var hop0 = (JoinStep.Hop) hops.get(0);
 
-        assertThat(row.anchorAlias())
-            .as("the follow-up query anchors on hop 0")
-            .isEqualTo(((JoinStep.Hop) hops.get(0)).alias());
+        assertThat(row.anchor().alias())
+            .as("the follow-up query departs from hop 0")
+            .isEqualTo(hop0.alias());
+        assertThat(row.anchor().table())
+            .as("and from hop 0's table, narrowed off the chain's table expression")
+            .isEqualTo(hop0.targetTable());
+        assertThat(row.hops().stream().map(RoutineWriteCommand.RereadHop::alias))
+            .as("the tail is every hop after the anchor, in authored order")
+            .containsExactlyElementsOf(hops.stream().skip(1)
+                .map(h -> ((JoinStep.Hop) h).alias()).toList());
         assertThat(row.terminalAlias())
-            .as("the projection reads the chain's last hop")
+            .as("the projection reads the chain's terminus, which on a one-hop chain is the"
+                + " anchor itself")
             .isEqualTo(((JoinStep.Hop) hops.getLast()).alias());
-        assertThat(row.capturedSlots())
-            .as("the captured pairing is hop 0's own, derived rather than carried beside it")
-            .isEqualTo(((no.sikt.graphitron.rewrite.model.On.ColumnPairs)
-                ((JoinStep.Hop) hops.get(0)).on()).slots());
-        assertThat(row.capturedSlots().stream().map(s -> s.sourceSide().javaName()))
+        assertThat(row.anchor().capturedSlots())
+            .as("the captured pairing is hop 0's own")
+            .isEqualTo(((no.sikt.graphitron.rewrite.model.On.ColumnPairs) hop0.on()).slots());
+        assertThat(row.anchor().capturedSlots().stream().map(s -> s.sourceSide().javaName()))
             .as("the routine's result rows carry the rental key")
             .containsExactly("RENTAL_ID");
+    }
+
+    /**
+     * The pairing the anchor exists for, stated on the carrier: a re-read whose anchor captures
+     * nothing would filter on no key and re-read the whole table. This is the one construction
+     * check the narrowing keeps, and it is the same one the sibling carrier arm makes about its
+     * own captured pairs.
+     */
+    @Test
+    void anAnchorCapturingNoKeyIsRefused() {
+        var anchor = directArm().anchor();
+        assertThatThrownBy(() -> new RoutineWriteCommand.RereadAnchor(
+                anchor.table(), anchor.alias(), List.of()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("at least one key column");
     }
 
     @Test
@@ -195,7 +225,8 @@ class RoutineWriteRelationTest {
         var row = directArm();
         var twin = new RoutineWriteCommand.ChainReread(
             UNITS.fetcherEntryMethod("Mutation", "rentfilm"),
-            FieldCoordinates.coordinates("Mutation", "rentfilm"), row.chain(),
+            FieldCoordinates.coordinates("Mutation", "rentfilm"), row.call(),
+            row.anchor(), row.hops(),
             row.terminusProjection(), row.arity(), row.errors());
 
         assertThat(RoutineWriteRelation.unrouted(List.of(row, twin)).rows())

@@ -9,7 +9,9 @@ import no.sikt.graphitron.command.TenantRouting;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.MutationField;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
 import no.sikt.graphitron.rewrite.model.TenantScopes;
@@ -137,7 +139,9 @@ public final class RoutineWriteCommands {
             case MutationField.MutationRoutineWriteField f -> new RoutineWriteCommand.ChainReread(
                 units.fetcherEntryMethod(f.parentTypeName(), f.name()),
                 FieldCoordinates.coordinates(f.parentTypeName(), f.name()),
-                f.chain(),
+                f.chain().start(),
+                anchorOf(f),
+                tailOf(f),
                 units.typeClass(f.returnType().returnTypeName()),
                 f.returnType().wrapper().isList() ? Arity.LIST : Arity.SINGLE,
                 // The leaf's channel is structurally absent (a chain-re-reading routine write
@@ -164,6 +168,42 @@ public final class RoutineWriteCommands {
             case MutationField.MutationServiceTableInterfaceField ignored -> null;
             case MutationField.MutationDmlRecordField ignored -> null;
             case MutationField.MutationBulkDmlRecordField ignored -> null;
+        };
+    }
+
+    /**
+     * The re-read's departure, narrowed once here. The leaf guarantees both halves in its own
+     * constructor (at least one hop, and hop 0 joining by column pairs), so this is the
+     * translation of that guarantee into the shape the row declares, not a second assertion of
+     * it: what the check below adds is the Java narrowing the wider carrier's type cannot
+     * express, which is why the command used to re-derive it through casts at every read.
+     */
+    private static RoutineWriteCommand.RereadAnchor anchorOf(MutationField.MutationRoutineWriteField f) {
+        var hop = hopAt(f, 0);
+        if (!(hop.on() instanceof On.ColumnPairs pairs)) {
+            throw new IllegalStateException(
+                "the routine-write coordinate " + f.parentTypeName() + "." + f.name() + " anchors"
+                + " its post-commit re-read on a hop joining by " + hop.on().getClass().getSimpleName()
+                + "; the classifier's re-read-anchor verdict admits only column pairs, because"
+                + " every other shape leaves the re-read no key to filter on");
+        }
+        return new RoutineWriteCommand.RereadAnchor(hop.targetTable(), hop.alias(), pairs.slots());
+    }
+
+    /** The hops after the anchor, in authored order: the re-read's forward joins. */
+    private static List<RoutineWriteCommand.RereadHop> tailOf(MutationField.MutationRoutineWriteField f) {
+        var tail = new ArrayList<RoutineWriteCommand.RereadHop>();
+        for (int i = 1; i < f.chain().hops().size(); i++) {
+            var hop = hopAt(f, i);
+            tail.add(new RoutineWriteCommand.RereadHop(
+                hop.targetTable(), hop.alias(), hop.on(), hop.filter()));
+        }
+        return tail;
+    }
+
+    private static JoinStep.Hop hopAt(MutationField.MutationRoutineWriteField f, int index) {
+        return switch (f.chain().hops().get(index)) {
+            case JoinStep.Hop hop -> hop;
         };
     }
 

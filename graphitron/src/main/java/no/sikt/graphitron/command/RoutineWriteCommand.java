@@ -1,10 +1,9 @@
 package no.sikt.graphitron.command;
 
 import graphql.schema.FieldCoordinates;
+import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
-import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
-import no.sikt.graphitron.rewrite.model.RoutineChain;
 import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
@@ -51,66 +50,90 @@ public sealed interface RoutineWriteCommand
     ErrorDispatch errors();
 
     /**
-     * The direct-return arm: the routine's write, then a post-commit re-read anchored on the
-     * chain's first hop and keyed by the values captured off the routine's result rows,
-     * projecting the terminus type inline.
+     * Where the post-commit re-read departs from: the chain's first hop, restated as the two
+     * facts the re-read actually uses. {@code table} and {@code alias} are what the local
+     * declaration and the {@code FROM} spell; {@code capturedSlots} is that hop's column pairing,
+     * whose source side the write half captures off the routine's result rows inside the
+     * transaction and whose target side is what the re-read filters this table on.
      *
-     * <p>{@code hops} is the {@code @reference}-contributed tail of {@link #chain}, restated as
-     * an accessor rather than a slot. The two pins the re-read needs are stated here rather than
-     * left to the classifier that produced the row: there is at least one hop, so an anchor
-     * exists, and hop 0 joins by column pairs, so there is a key to capture. A renderer reading
-     * this row narrows on that authority instead of on faith.
+     * <p>The anchor carries no {@code on} and no filter, and the absence is structural rather
+     * than an omission. The re-read departs from this table instead of joining into it: the side
+     * a first hop would join from is the routine's own result, which never appears in the
+     * post-commit {@code FROM} because re-invoking it would re-execute the write. A join
+     * condition or a two-argument filter method there would have no argument to be given.
      */
-    record ChainReread(UnitMethodRef unit, FieldCoordinates coordinate, RoutineChain chain,
+    record RereadAnchor(TableRef table, String alias, List<JoinSlot.FkSlot> capturedSlots) {
+
+        public RereadAnchor {
+            Objects.requireNonNull(table, "table");
+            Objects.requireNonNull(alias, "alias");
+            capturedSlots = List.copyOf(capturedSlots);
+            if (capturedSlots.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "a routine-write re-read captures at least one key column; with none the"
+                    + " post-commit query has nothing to filter its anchor on and would re-read"
+                    + " the whole table");
+            }
+        }
+    }
+
+    /**
+     * One forward join of the post-commit re-read, at the grain the re-read joins on: the table
+     * and alias to declare, how this hop joins to the one before it, and the optional per-hop
+     * filter that lands on the enclosing {@code WHERE}. {@code filter} is null where the path
+     * element carried no {@code condition:}.
+     *
+     * <p>{@code table} is a {@link TableRef} and not a {@link TableExpr}, which is the narrowing
+     * this shape exists for: a re-read hop is a catalog table, the family's rule being that the
+     * routine appears in no statement after the one that ran it. A routine node reaching here
+     * would carry {@link On.Lateral}, which the renderer refuses by name.
+     */
+    record RereadHop(TableRef table, String alias, On on, JoinConditionRef filter) {
+
+        public RereadHop {
+            Objects.requireNonNull(table, "table");
+            Objects.requireNonNull(alias, "alias");
+            Objects.requireNonNull(on, "on");
+        }
+    }
+
+    /**
+     * The direct-return arm: the routine's write, then a post-commit re-read departing from
+     * {@link #anchor} keyed by the values captured off the routine's result rows, joining
+     * {@link #hops} forward exactly as a read chain does, and projecting the terminus type
+     * inline.
+     *
+     * <p>The re-read's shape is declared here rather than borrowed from the walk's chain carrier,
+     * which is what lets the row state it exactly: the anchor is a component, so there is one by
+     * construction, and its pairing is a slot list, so there is a key to capture. Both were
+     * compact-constructor throws while the row held the wider carrier, and both were second
+     * copies of throws the classified leaf already makes. The tail hops are their own grain, so a
+     * reader iterating them joins from hop to hop without skipping an anchor that is not one of
+     * them.
+     */
+    record ChainReread(UnitMethodRef unit, FieldCoordinates coordinate, TableExpr.RoutineCall call,
+                       RereadAnchor anchor, List<RereadHop> hops,
                        UnitRef terminusProjection, Arity arity,
                        ErrorDispatch errors) implements RoutineWriteCommand {
 
         public ChainReread {
             Objects.requireNonNull(unit, "unit");
             Objects.requireNonNull(coordinate, "a routine-write row is keyed by its field coordinate");
-            Objects.requireNonNull(chain, "chain");
+            Objects.requireNonNull(call, "call");
+            Objects.requireNonNull(anchor, "anchor");
             Objects.requireNonNull(terminusProjection, "terminusProjection");
             Objects.requireNonNull(arity, "arity");
             Objects.requireNonNull(errors, "errors");
-            if (chain.hops().isEmpty()) {
-                throw new IllegalArgumentException(
-                    "a direct-return routine write re-reads through at least one hop; with no hop"
-                    + " there is no post-commit table to anchor on, and the hop-less shape is the"
-                    + " carrier arm's");
-            }
-            if (!(((JoinStep.Hop) chain.hops().get(0)).on() instanceof On.ColumnPairs)) {
-                throw new IllegalArgumentException(
-                    "a direct-return routine write captures hop 0's column pairs; a hop 0 joining"
-                    + " any other way leaves the post-commit re-read no key to filter on");
-            }
-        }
-
-        @Override public TableExpr.RoutineCall call() {
-            return chain.start();
-        }
-
-        /** The chain's {@code @reference}-contributed steps, in authored order. */
-        public List<JoinStep> hops() {
-            return chain.hops();
+            hops = List.copyOf(hops);
         }
 
         /**
-         * Hop 0's column pairing: the source side is captured off the routine's result rows
-         * inside the transaction, the target side is what the re-read filters hop 0's table on.
-         * Derived from the chain rather than carried beside it, so the pairing has one spelling.
+         * The alias the projection reads from: the chain's terminus, which is the last tail hop
+         * or the anchor itself on a chain that hops no further. Derived rather than carried, so
+         * the terminus has one spelling.
          */
-        public List<JoinSlot.FkSlot> capturedSlots() {
-            return ((On.ColumnPairs) ((JoinStep.Hop) chain.hops().get(0)).on()).slots();
-        }
-
-        /** The alias the re-read anchors on: hop 0's. */
-        public String anchorAlias() {
-            return ((JoinStep.Hop) chain.hops().get(0)).alias();
-        }
-
-        /** The alias the projection reads from: the last hop's, the chain's terminus. */
         public String terminalAlias() {
-            return ((JoinStep.Hop) chain.hops().getLast()).alias();
+            return hops.isEmpty() ? anchor.alias() : hops.getLast().alias();
         }
     }
 

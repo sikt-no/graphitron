@@ -933,6 +933,37 @@ deliverable) applies three times over. In order:
   grain plus the anchor slots as components, the hop-0 invariant held by the store fact rather
   than asserted at construction. `RoutineChain` then retires with the walk instead of surviving
   as a value record the command still depends on.
+
+  Delivered as two nested carriers on `RoutineWriteCommand`: a `RereadAnchor` (table, alias, the
+  captured pairing) and an ordered list of `RereadHop` (table, alias, `on`, filter), with the
+  routine call itself lifted to a component of its own. `RoutineChain` leaves the command tier
+  and its entry leaves `PackageImportDirectionTest`'s borrow dial. Four decisions the draft above
+  did not settle. **The anchor is its own component rather than index 0 of one flat hop list**,
+  because it is not a join: the re-read departs from it, and a flat list makes every reader start
+  at 1 and remember why. Split, the join loop has no index arithmetic, and the terminus derives
+  from the pair (the anchor's alias where the chain hops no further). **A hop's table is a
+  `TableRef` and not a `TableExpr`**, which is the narrowing that carries `RoutineChain`'s
+  catalog-only pin across. The pin does not vanish with the carrier: a routine node at a hop
+  position carries `On.Lateral` by `JoinStep.Hop`'s own invariant, so the renderer's refusal of a
+  lateral join *is* that pin, and it now reads as one rather than as defensive code. **The two
+  retired throws were second copies**, not checks: `MutationRoutineWriteField`'s own constructor
+  already makes both (at least one hop, hop 0 joining by column pairs), and the command re-made
+  them only because it held the wider carrier. What replaces them is structural, the anchor being
+  a component and its pairing a slot list. **One narrowing check moves to the producer**
+  (`anchorOf`), on the precedent `FkHop.narrow` already sets: the Java narrowing a wider type
+  cannot express happens once where the row is minted, not at every read. Net on the counters the
+  draft names: three casts and two command-tier throws out, one production-side narrowing in.
+
+  Two things worth stating that the draft did not raise. The anchor keeps one construction check,
+  a non-empty pairing, symmetric with the sibling arm's `capturedPairs`; it is not a third copy
+  of the retired pair, being about a list the row itself declares rather than about the chain's
+  shape, and once the producer reads the store nothing upstream will guarantee it. And the anchor
+  carries no filter slot, which makes an existing silent drop structural instead of accidental:
+  the renderer never emitted hop 0's `condition:` filter, and cannot, a filter being a
+  two-argument method over departure and arrival whose departure is the routine result, which
+  never appears in the post-commit `FROM`. The loop that starts at 1 was the whole of that rule;
+  now the type says it. Whether an author can write such a `condition:` and have it silently
+  ignored is a separate question, filed rather than answered here.
 * **Planner.** `RoutineWriteCommands.produce` takes the `StoreHandle`, the generator's first
   `StoreHandle` use (see "Where a producer's SQL lives"), reads one statement per grain with the
   hops riding `MULTISET`, and lands the statement-count pin in the same commit. It stays small:

@@ -105,13 +105,13 @@ class PackageImportDirectionTest {
         // named here because the routine call emitter forks on the path shape directly: a bare
         // slot reads the argument, a dot-path reads it through a registered descent helper.
         "no.sikt.graphitron.rewrite.PathExpr",
-        // The routine-write command's two entries. RoutineChain is borrowed whole rather than
-        // decomposed into its start call and its hop list: it enforces that a chain holds exactly
-        // one routine node, and splitting it across two slots would drop that pin at the one seam
-        // whose renderer narrows on it. JoinSlot was already in the component closure through
-        // On.ColumnPairs; naming it here admits the direct import the carrier arm's captured
-        // pairs carry.
-        "no.sikt.graphitron.rewrite.model.RoutineChain",
+        // The routine-write command's entries. RoutineChain used to be here, borrowed whole so a
+        // chain's one-routine-node pin rode with it; the row now declares the re-read's own shape
+        // (an anchor and its tail hops) and the pin rides the hops' TableRef-typed target plus the
+        // renderer's refusal of a lateral join, so the wider carrier is off the dial. JoinSlot was
+        // already in the component closure through On.ColumnPairs; naming it here admits the
+        // direct import the captured pairings carry. The re-read hop's filter slot needs no new
+        // entry, JoinConditionRef being named above for the same reason.
         "no.sikt.graphitron.rewrite.model.JoinSlot",
         // The result-key alias namespace verdict, stamped at capture on the alias-minting leaves.
         // Borrowed rather than restated as a command-tier enum because both halves of an aliased
@@ -153,7 +153,6 @@ class PackageImportDirectionTest {
         "no.sikt.graphitron.rewrite.model.ParamSource",
         "no.sikt.graphitron.rewrite.model.ParentCorrelation",
         "no.sikt.graphitron.rewrite.model.ParticipantRef",
-        "no.sikt.graphitron.rewrite.model.RoutineChain",
         "no.sikt.graphitron.rewrite.model.RoutineRef",
         "no.sikt.graphitron.rewrite.model.RowsMethodShape",
         "no.sikt.graphitron.rewrite.model.SourceKey",
