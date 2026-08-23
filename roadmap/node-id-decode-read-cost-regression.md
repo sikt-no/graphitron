@@ -1,7 +1,7 @@
 ---
 id: R811
 title: "Gate that a registration cannot make another relation's read worse, and attribute the decode's ten-times move"
-status: Spec
+status: Ready
 bucket: store
 priority: 2
 theme: nodeid
@@ -773,9 +773,19 @@ named, and the one claim that did not is corrected above. The pass-on-exhaustion
 verified reachable rather than assumed. What remains open is named as open: the multiple for the
 budget, and whether the binding's cells ever need a structural excuse of their own.
 
-`status:` stays `Spec` in this commit, and not because anything in the plan is unresolved. Having
-taken the plan-body tweak myself at the user's direction, this reviewer session is now the spec file's
-last committer, so the Spec to Ready guard in `roadmap/workflow.adoc` reads reviewer equals last
-committer and refuses the flip. That guard is doing its job rather than obstructing: the narrowing
-above is reviewer prose no third party has read as a draft. The flip is one command for any other
-party, this review having nothing further to raise.
+`status:` was held at `Spec` for one commit rather than flipped with the verdict, because taking the
+plan-body tweak had made this reviewer session the spec file's last committer and the Spec to Ready
+guard reads that as reviewer equals author. The author's draft-reading above resolved it the way the
+alternation is supposed to work rather than by waiving the guard: they read the narrowing as a draft,
+checked its claim against the DDL themselves, accepted it, and added the shape of the property it
+leaves open. That commit makes them the last committer again, so the flip is this session's to take.
+
+Signed off. The author's addition was read as a draft in turn, and its three checkable claims hold:
+the binding's registration says in its own words that a reader joining it on an expression rather than
+a column pays one evaluation per driving row; the fact model does carry the expression-join and
+recursive-term costs as two separate rules, which is what makes *position* rather than recursion the
+thing they share; and the predicate analysis that would decide the second is scoped last in
+`roadmap/view-read-census-and-bridge-closure.md`, tracing operands through aliases, subqueries and
+CTEs, so it is that item's machinery and not a small extension of this one's walk. That item being
+Backlog blocks nothing here, the paragraph existing precisely to say this item does not take that
+route.
