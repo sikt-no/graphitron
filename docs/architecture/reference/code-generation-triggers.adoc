@@ -184,6 +184,22 @@ type Film @table(name: "film") {
 }
 ----
 
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#title(Object)`
+
+| `Query.film`
+| no claiming directive
+| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
+
+|===
+
 `Film` classifies as `TableType` (full SQL generation: queries, joins, projections); `Query.film`
 enters the scope; `Film.title` projects an inline column. Asserted by the `catalog` corpus example via
 `@classifiedType(as: TableType)`. The field descriptions come from `# ...` comments authored on the
@@ -292,6 +308,30 @@ type Country @table(name: "country") {
 }
 ----
 
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `City.country`
+| no claiming directive
+| `fetchers.CityFetchers#country(DataFetchingEnvironment)`
+
+| `City.countrySplit`
+| no claiming directive
+| `fetchers.CityFetchers#countrySplit(DataFetchingEnvironment)`
+
+| `Country.name`
+| `TABLE_COLUMN`, inferred
+| `fetchers.CountryFetchers#name(Object)`
+
+| `Query.city`
+| no claiming directive
+| `fetchers.QueryFetchers#city(DataFetchingEnvironment)`
+
+|===
+
 `City.country` and `City.countrySplit` return the same `Country` over the same `city -> country` foreign
 key and carry the same `Child` / `Fetch` / `Table` verdict; `@splitQuery` flips only the derived
 new-query layer, not an asserted axis. Asserted by the `child-table` corpus example.
@@ -323,6 +363,34 @@ type FilmDetails {
   language: Language @reference(path: [{key : "film_language_id_fkey"}])
 }
 ----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.details`
+| no claiming directive
+| `fetchers.FilmFetchers#details(Object)`
+
+| `Film.language`
+| no claiming directive
+| `fetchers.FilmFetchers#language(DataFetchingEnvironment)`
+
+| `FilmDetails.language`
+| no claiming directive
+| `fetchers.FilmDetailsFetchers#language(DataFetchingEnvironment)`
+
+| `Language.name`
+| `TABLE_COLUMN`, inferred
+| `fetchers.LanguageFetchers#name(Object)`
+
+| `Query.film`
+| no claiming directive
+| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
+
+|===
 
 `Film.language` (`TableField`) and `FilmDetails.language` (a record-sourced `BatchedTableField`) return the same `Language`
 over the same `film_language_id_fkey` foreign key and carry the same `Fetch` / `Table` operation and
@@ -360,6 +428,34 @@ type FilmStats {
   count: Int
 }
 ----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1"]
+|===
+| Coordinate | Verdict
+
+| `Film.details`
+| no claiming directive
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+
+| `FilmDetails.stats`
+| no claiming directive
+
+| `FilmStats.count`
+| no claiming directive
+
+| `Query.film`
+| no claiming directive
+
+|===
+
+NOTE: This pattern classifies but does not generate: the build rejects it, so there
+are no emitted names to show. The verdicts above are what the store derives either
+way. See xref:../explanation/typed-rejection.adoc[Typed rejection] for what a
+rejection carries.
 
 `Film.title` classifies with target shape `Column` (`title` is a column of the `film` table graphitron
 builds the projection for). `FilmStats.count`, a scalar under the record-backed `FilmStats`, classifies
@@ -402,6 +498,26 @@ interface Named {
 }
 ----
 
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Customer.address`
+| no claiming directive
+| `fetchers.CustomerFetchers#address(DataFetchingEnvironment)`
+
+| `Named.name`
+| no claiming directive
+| no method of its own
+
+| `Query.customer`
+| no claiming directive
+| `fetchers.QueryFetchers#customer(DataFetchingEnvironment)`
+
+|===
+
 `Customer.address` returns the plain interface `Named` (implemented by the `@table` type `Address`),
 so it classifies with `source = Child`, `operation = Fetch`, target shape `Interface` (`InterfaceField`):
 a derived new keyed query projects the participant table, with `Address` recorded as the participant slot.
@@ -431,6 +547,30 @@ type Actor @table(name: "actor") {
 
 union FilmOrActor = Film | Actor
 ----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Actor.firstName`
+| `TABLE_COLUMN`, inferred
+| `fetchers.ActorFetchers#firstName(Object)`
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#title(Object)`
+
+| `FilmActor.related`
+| no claiming directive
+| `fetchers.FilmActorFetchers#related(DataFetchingEnvironment)`
+
+| `Query.filmActor`
+| no claiming directive
+| `fetchers.QueryFetchers#filmActor(DataFetchingEnvironment)`
+
+|===
 
 `FilmActor.related` returns the union `FilmOrActor`, so it classifies with `source = Child`,
 `operation = Fetch`, target shape `Union` (`UnionField`): a derived new keyed query projects whichever
@@ -481,6 +621,34 @@ type Individual implements Party @table(name: "party_individual") @discriminator
   birthDate: String @field(name: "birth_date")
 }
 ----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Individual.birthDate`
+| `TABLE_COLUMN`, inferred
+| `fetchers.IndividualFetchers#birthDate(Object)`
+
+| `Party.displayName`
+| `TABLE_COLUMN`, inferred
+| no method of its own
+
+| `Query.parties`
+| no claiming directive
+| `fetchers.QueryFetchers#parties(DataFetchingEnvironment)`
+
+| `QueryPartiesConnection.edges`
+| no claiming directive
+| `fetchers.QueryPartiesConnectionFetchers#edges(DataFetchingEnvironment)`
+
+| `QueryPartiesEdge.node`
+| no claiming directive
+| `fetchers.QueryPartiesEdgeFetchers#node(DataFetchingEnvironment)`
+
+|===
 
 Asserted by the `paginated-joined-table-interface` corpus example.
 
@@ -592,6 +760,25 @@ input FilmInput {
   title: String
 }
 ----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1"]
+|===
+| Coordinate | Verdict
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+
+| `Mutation.createFilm`
+| `MUTATION`, authored
+
+|===
+
+NOTE: This pattern classifies but does not generate: the build rejects it, so there
+are no emitted names to show. The verdicts above are what the store derives either
+way. See xref:../explanation/typed-rejection.adoc[Typed rejection] for what a
+rejection carries.
 
 `Mutation.createFilm` inserts a `film` row from `FilmInput` and projects the inserted row as the `@table`
 type `Film`: `source = Mutation`, `operation = Insert`, target shape `Table` (`MutationField.DmlTableField` carrying an Insert write arm),

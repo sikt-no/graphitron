@@ -119,6 +119,37 @@ class ArchitectureDocSymbolScannerTest {
     }
 
     @Test
+    void aGeneratedBlockIsSkippedWholeAndTheScanResumesAfterIt() throws IOException {
+        // A generated block is not an authored citation, and it names GraphQL types in its
+        // coordinates. The region must end at the table's *closing* delimiter: ending at the
+        // opening one leaves every row in scope, which is the entire population being skipped.
+        Path page = Files.createTempFile("generated", ".adoc");
+        try {
+            Files.writeString(page, ArchitectureDocSymbolScanner.GENERATED_BLOCK_MARKER + """
+                 Do not edit.
+                .What the pipeline makes of it
+                [cols="1,1"]
+                |===
+                | Coordinate | Verdict
+
+                | `NoSuchGraphQLTypeHere.field`
+                | `TABLE_COLUMN`, inferred
+
+                |===
+
+                Authored prose after the block still cites `LauncherRelation`.
+                """);
+
+            assertThat(ArchitectureDocSymbolScanner.scanPage(page.getParent(), page))
+                .extracting(ArchitectureDocSymbolScanner.Citation::symbol)
+                .as("nothing inside the block, everything after it")
+                .containsExactly("LauncherRelation");
+        } finally {
+            Files.deleteIfExists(page);
+        }
+    }
+
+    @Test
     void theStagedDocsCopyIsNotScannedTwice() throws IOException {
         Path root = GuardScope.locateRepoRoot();
         List<Path> pages = ArchitectureDocSymbolScanner.pages(root);

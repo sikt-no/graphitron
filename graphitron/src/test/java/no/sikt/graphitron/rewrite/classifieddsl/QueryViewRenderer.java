@@ -109,6 +109,24 @@ public final class QueryViewRenderer {
         new graphql.schema.idl.SchemaParser().parse(ClassifiedDsl.PRELUDE)
             .getDirectiveDefinitions().keySet());
 
+    /**
+     * The output-field coordinates the {@code selection} touches, parent type to field names.
+     *
+     * <p>Exposed because the outcome block beside a rendered example must speak about exactly the
+     * coordinates the example shows. Deriving that set a second way, from the rendered SDL or from
+     * the fixture, would let the two halves of one example disagree about what the example is.
+     */
+    public static Map<String, Set<String>> touchedCoordinates(String fixtureSdl, String selection) {
+        String full = ClassifiedDsl.PRELUDE + "\n" + fixtureSdl;
+        TypeDefinitionRegistry registry = TestSchemaHelper.parseRegistryWithPrelude(full);
+        GraphQLSchema schema = GraphitronSchemaBuilder.buildBundle(registry, TestConfiguration.testContext()).assembled();
+
+        Document doc = new Parser().parseDocument(selection);
+        Touched touched = new Touched();
+        new Walk(schema, indexFragments(doc), touched).fromDocument(doc);
+        return Map.copyOf(touched.fieldsByParent);
+    }
+
     /** Renders the SDL closure the {@code selection} (a query/mutation or fragment document) touches over {@code fixtureSdl}. */
     public static String render(String fixtureSdl, String selection) {
         String full = ClassifiedDsl.PRELUDE + "\n" + fixtureSdl;

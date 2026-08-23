@@ -540,12 +540,17 @@ open.
 
 ## Implementation state
 
-Slices 0, 1 and 4 are on trunk, and so is the first of slice 2's two renderers. What follows is
+Slices 0, 1, 2 and 4 are on trunk. What follows is
 what the next session inherits.
 
 **Landed.** Slice 0's section marks; slice 1's two gates, each carrying an explicit burn-down list
-of what it currently finds; slice 2's command-relation fragment, generated at build from the
-relation types and their grain javadoc and included as an AsciiDoc partial; slice 4 in full.
+of what it currently finds; slice 2 in full, both renderers; slice 4 in full.
+
+Slice 2's second renderer puts an outcome block under each of the eight worked examples already on
+the page, stating each coordinate's verdict from `intent_resolved_field_claim` and the methods the
+generator emitted for it, held verbatim by `OutcomeBlockDocTest` the way `ClassifiedDocTest` holds
+the SDL half. The "what gets generated" half of those eight examples is drift-guarded rather than
+ungated prose.
 
 **The burn-down lists.** `TransientCitationCheck.KNOWN_CITATIONS` is down from 43 entries to the 3
 on `code-generation-triggers.adoc`, which belong to the sections slice 3 rebuilds.
@@ -568,31 +573,21 @@ the generator emits into a consumer's sources, and classes in modules that tier 
 on. Widening would roughly triple the exemption list while adding no finding of the kind the gate
 exists to catch, which is the fork's own stated objection, now with a number on it.
 
-**Not started.** Slice 2's outcome-block renderer, and slice 3.
+**Not started.** Slice 3: the page's restructure, the other 47 examples, and the table
+rows each promotion deletes.
 
-**A fork the outcome block needs settled before it is built.** A prototype established that the
-pieces compose: `CapturedStore.ofCatalog` puts a fixture's facts in a store,
-`intent_resolved_field_claim` answers with classifier and tier,
-`QueryViewRenderer.touchedCoordinates` (not committed; the prototype added it) gives exactly the
-coordinates an example shows, and a generation run gives the emitted unit and method names. It
-also turned up something the plan does not cover: **not every doc example generates.** The
-`mapping` fixture is classification-only, and a real generation run rejects it with an author
-error (`Film.details` projects a nested record type whose `count` field resolves to no column).
-Its `@classified` assertions are all satisfied, so it is not a rejection example in the sense
-section 5 of the page means, but it has no emitted names for an outcome block to render.
+**The outcome block, and the fork the owner settled.** Building it turned up something the plan
+does not cover: **not every doc example generates.** The corpus is a classification corpus, and a
+fixture earns its place by pinning a verdict rather than by producing output, so a fixture can pin
+a verdict on a pattern the generator then rejects. Two of the eight doc examples do: `mapping` and
+`dml`. Their `@classified` assertions all pass, so neither is a rejection example in the sense
+section 5 of the page means, but neither has emitted names for a block to render.
 
-Three ways to settle it, and the choice belongs to whoever owns the plan:
-
-1. Render the rejection as that example's outcome, through the same machinery section 5 uses. The
-   honest reading, and it makes the block total over the corpus. The cost is that a rejection's
-   prose is not stable enough to drift-guard verbatim, so the block would have to render the
-   rejection's arm rather than its message.
-2. Render the verdict half only where a fixture does not generate, and say so in the block. Cheap,
-   total, and it makes "no emitted names" a visible fact rather than an omission.
-3. Give the fixture a projection that generates, and treat a non-generating doc example as a
-   corpus defect. Largest change, and it may not be reachable for every such fixture.
-
-Option 2 is the recommendation: it keeps the block lean the way the design already argues for,
-and it does not put a second rejection-rendering mechanism beside section 5's before section 5
-exists. Whichever is chosen, the count of doc examples affected should be measured first; only
-`mapping` was checked.
+Settled at the owner's direction, option 2 of three: where a fixture does not generate, the block
+renders the verdict half and states that the pattern generates nothing, pointing at
+`explanation/typed-rejection.adoc`. "No emitted names" becomes a visible fact about the example
+rather than a hole in the table, and no second rejection-rendering mechanism stands beside section
+5's before section 5 exists. The two alternatives were to render the rejection itself through
+section 5's machinery, which needs an arm rather than a message to be drift-guardable, and to give
+every such fixture a projection that generates, which may not be reachable and would treat a
+classification-only fixture as a corpus defect.

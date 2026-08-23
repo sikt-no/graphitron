@@ -42,10 +42,22 @@ import java.util.zip.ZipFile;
  * need the pages to cite fully-qualified names, which is a change to how the prose reads rather
  * than to this scan.
  */
-final class ArchitectureDocSymbolScanner {
+public final class ArchitectureDocSymbolScanner {
 
     /** The docs tree this guard is scoped to, relative to the repository root. */
     static final String ARCHITECTURE_DOCS = "docs/architecture";
+
+    /**
+     * The comment a machine-rendered block opens with, and the reason this scan skips one.
+     *
+     * <p>A generated block is not an authored citation, and it is already held to something
+     * stronger than name resolution: the renderer that produced it runs the real pipeline, and its
+     * doc guard asserts the block on the page verbatim. Scanning it too would report the GraphQL
+     * types in a rendered coordinate ({@code Individual.birthDate}) as dangling Java types, which
+     * is the extractor being wrong rather than the page. Marking the region is also what tells a
+     * human not to hand-edit it.
+     */
+    public static final String GENERATED_BLOCK_MARKER = "// Generated from the corpus.";
 
     /** Anything between backticks. AsciiDoc's {@code +...+} passthrough form is stripped separately. */
     private static final Pattern BACKTICK_SPAN = Pattern.compile("`([^`]+)`");
@@ -85,8 +97,23 @@ final class ArchitectureDocSymbolScanner {
         String relative = root.relativize(page).toString();
         List<Citation> citations = new ArrayList<>();
         List<String> lines = Files.readAllLines(page);
+        int generatedTableDelimiters = -1;
         for (int i = 0; i < lines.size(); i++) {
-            Matcher spans = BACKTICK_SPAN.matcher(lines.get(i));
+            String line = lines.get(i);
+            if (line.startsWith(GENERATED_BLOCK_MARKER)) {
+                generatedTableDelimiters = 0;
+                continue;
+            }
+            if (generatedTableDelimiters >= 0) {
+                // A generated block is one AsciiDoc table, so it holds exactly two `|===` lines:
+                // the region ends at the second, the closing one. Ending at the first would leave
+                // the table's own rows in scope, which is the whole population being skipped.
+                if (line.strip().equals("|===") && ++generatedTableDelimiters == 2) {
+                    generatedTableDelimiters = -1;
+                }
+                continue;
+            }
+            Matcher spans = BACKTICK_SPAN.matcher(line);
             while (spans.find()) {
                 String symbol = symbolOf(spans.group(1));
                 if (symbol != null) citations.add(new Citation(relative, i + 1, symbol));
