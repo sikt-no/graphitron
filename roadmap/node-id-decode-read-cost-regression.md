@@ -89,6 +89,13 @@ Row counts are unchanged at every point: 43 for the decode, 0 for the defect rel
 this is a cost change and not an answer change, and the second column is there to show that
 the same window improved one heavy relation while the first regressed.
 
+Two of the hashes in this section no longer resolve in this repository, `200fd26` above and
+`272ef13` below, both lost to a rebase after the figures were taken. They are kept as written because
+a hash that once named a tree is still the honest provenance of a measurement taken on it, and
+inventing a nearby one that resolves would be worse. Nothing below depends on reaching either tree:
+the control is per registration rather than per commit, and the suspect list those hashes belong to is
+replaced on day one by the reachability walk.
+
 ## What was not established
 
 Which commit did it. Three commits touch the fact schema DDL between those two trunk points:
@@ -157,7 +164,8 @@ those rather than inheriting the sentence. `RunawayRelation` is one-way because 
 relation non-terminating. This swap preserves every answer; what makes it one-way is that two
 mechanisms afterwards address the canonical name as a table. `Materializations.refreshAll`, which is
 what `SeededStore.derive` calls, would empty and refill a name that is now a view, and
-`ThreadConfinedStore`'s clear would truncate one. So a store that has been un-registered is spent,
+`ThreadConfinedStore`'s clear refuses outright, H2 declining to truncate a name the swap has turned
+into a view. So a store that has been un-registered is spent,
 and it follows that the measurement is one store per registration plus a baseline rather than one
 store carrying every shape. That is the matrix this gate has to pay for, and pricing it is part of the
 work rather than a surprise at the end.
@@ -324,17 +332,87 @@ hold a cost claim. No duration is asserted anywhere in this test. Note that scan
 are not the same claim, so the control's timings do not transfer: the gate's figures are measured with
 the gate's own instrument on the gate's own fixture.
 
+### What the gate does when the unregistered side does not answer
+
+Some cells cannot be measured, and the register says so in its own words. The hop-column
+registration's `reason` records that the unregistered walk "does not finish inside a two-minute
+timeout", and the binding's records a read that "did not finish inside a five-minute timeout". Those
+are not exotic cells: the walk in question is `intent_node_id_decode_column`, which
+`intent_node_id_decode` names, so the family this item exists to price contains one. Reachability puts
+that cell in the domain rather than taking it out, and no honest carve-out removes it, since a
+hand-kept exclusion list is exactly what deriving both axes from the store was for. So the gate needs
+a stated answer, and here it is.
+
+A cell whose unregistered side does not answer passes, and the gate records that it passed that way.
+Non-termination is the strongest possible form of "materializing did not make this worse", so passing
+is the only reading that is not a lie; what must not happen is passing *silently*, because a cell that
+quietly stops being measured is a gate quietly getting weaker.
+
+Two decisions make that concrete.
+
+The budget is per cell and relative, not one global number. `ReadBudget.Bounded` is the mechanism, and
+what bounds the unregistered side is a multiple of the wall clock the *registered* side of the same
+cell just took, floored at a stated minimum for the cells where that figure is milliseconds. The
+reason to make it relative is the objection `ReadBudget`'s own javadoc raises against a bare number,
+that a wall-clock threshold large enough to be safe on one machine is a flake on another: both sides
+of a cell are timed in the same run on the same machine, so a loaded machine slows both and the ratio
+holds where an absolute figure would not. Pick the multiple from the gap the register already
+documents, which is seconds against never.
+
+The exhausted cells are pinned by equality, exactly like the non-monotonic pairs and for the same
+reason. A cell that starts timing out fails the build until somebody records it and says why; a
+recorded cell that starts answering fails until the row goes. That is what keeps "passes on
+exhaustion" from becoming "passes for reasons nobody is tracking", and it means the gate reports two
+kinds of known exception rather than one, each with its own ratchet.
+
+What this deliberately does not do is assert a duration. The budget decides whether a cell is measured
+or recorded as unmeasurable; it never decides pass against fail. So slowness can make this gate more
+permissive and can never make it red, which is the tier guarantee `ReadBudget`'s two arms exist to
+protect, kept by pointing the timeout at the outcome that cannot fail a build.
+
+And there is a stronger reason the cut is safe, which is the one that makes pass-on-exhaustion sound
+rather than merely convenient. Read the failure mode in the right direction: the gate fails when the
+*registered* shape costs more, so a regression is a cell whose *unregistered* side is the cheap one.
+A cheap side finishes. So a budget on the unregistered side can only ever discard cells whose
+unregistered side was slow, and a slow unregistered side is evidence for the registration rather than
+against it. The arm cannot swallow the defect the gate hunts, because the defect arrives fast.
+
+Stated with its one gap: scans and wall clock are different metrics, so a shape that visits fewer rows
+while taking longer would divide the two, and the argument above is then a strong heuristic rather
+than an identity. That is precisely what the pinned set of exhausted cells is for. A cell sitting in
+it is a cell nobody has compared, named where somebody can see it, rather than a silent hole in the
+domain.
+
+If the implementation finds the ratio too tight to be stable, the fallback is structural rather than
+another number: both non-terminating cases in the register are relations named inside another view's
+*recursive term*, which is the shape whose whole cost is being re-evaluated per accumulated row. That
+property is derivable from the same parsed view definitions the domain already comes from, so it would
+exclude the cells by their shape rather than by a list or a clock. It is the fallback and not the first
+answer because it is a real extension of the parse walk, and the budget shape needs no new machinery.
+
+### What the gate costs
+
 The cost of the gate is real and this plan owns it rather than discovering it in review. Each
-un-registration spends its store, so the matrix is one store per (registration, size) cell plus a
+un-registration spends its store, so the matrix is one store per registration in the domain plus a
 baseline, each store paying a capture, and `EXPLAIN ANALYZE` executes the statement rather than
-estimating it, so a cell containing this relation pays its full evaluation. Three things keep that
-bounded and all three are decisions rather than hopes: the reachability walk restricts the reader axis
-to registrations actually in a relation's subtree, so most cells do not exist; each store counts
-against `ThreadConfinedStore`'s boot budget, so the cell count is a number the plan states and the
-implementation checks against that budget rather than one it discovers; and if the bounded matrix is
-still too expensive for the pipeline tier, the answer is fewer relations in the domain, never a
-smaller fixture, because a smaller fixture is the one change that would make the gate pass while
-seeing nothing.
+estimating it, so a cell containing this relation pays its full evaluation. There is no second size
+axis: two sizes are how `SurfaceScanCountTest` tells a bounded constant from the low end of a curve,
+and a directional comparison between two shapes of one relation does not ask that question.
+
+Three things keep the matrix bounded and all three are decisions rather than hopes. The reachability
+walk restricts the reader axis to registrations actually in a relation's subtree, so most cells do not
+exist. The gate asserts its own cell count against a figure stated in the test, so the matrix cannot
+grow silently as views are added: a new view that puts a new cell in the domain fails the count until
+somebody looks at it. And if the bounded matrix is still too expensive for the pipeline tier, the
+answer is fewer relations in the domain, never a smaller fixture, because a smaller fixture is the one
+change that would make the gate pass while seeing nothing.
+
+That second leg is the gate stating its own number, which is what this tree already expects of a
+module that starts counting store boots: `ThreadConfinedStore`'s boot budget is deliberately scoped to
+`graphitron-model`, its own javadoc saying the other three modules boot per case by design and that
+one adopting a funnel states its own figure. `graphitron` is one of those others, the class and its
+accessor are package-private, and `CapturedStore` takes a store per capture by design, so this gate
+cannot lean on that budget and does not: it counts what it opens and says how many that may be.
 
 ## Doctrine
 
@@ -357,7 +435,10 @@ where a gate reads them.
 ## Tests
 
 * `DerivedReadCostTest` (new, `graphitron`'s test tree, pipeline tier): the monotonicity assertion
-  over the derived domain, and the equality-pinned set of known non-monotonic pairs.
+  over the derived domain; the equality-pinned set of known non-monotonic pairs; the equality-pinned
+  set of cells whose unregistered side exhausts its budget; and the assertion on its own cell count.
+  Four assertions, one of which is a number the test states, and the domain of all four comes off the
+  booted store.
 * A case for the un-registration helper itself: install it on a registered relation and assert that
   the canonical name still answers the same rows, and that a view naming that relation does too.
   That is the claim every number taken through the helper rests on, and a helper that silently
@@ -379,6 +460,10 @@ where a gate reads them.
 . The monotonicity assertion is in the tree, its domain derived from the booted store on both axes,
   and it has been seen to fail: removing this item's pair from the pinned set fails the build, and so
   does adding a pair nothing measured.
+. The pass-on-exhaustion arm has fired on a real cell rather than being written against a
+  hypothetical one, and its pinned set ratchets both ways: removing a recorded cell fails, and so does
+  a cell timing out that nothing recorded. The decode family supplies the cell, the register's
+  hop-column reason already naming the walk that does not finish unregistered.
 . The control has run and its finding is recorded in this item, including the controls that refuted.
 . `intent_node_id_decode_defect`, `intent_node_id_decode_slot` and the node-family refreshes are
   priced, so "does a consumer's build pay this today" has an answer rather than an assumption.
@@ -453,6 +538,29 @@ and test the spec names; the verification list is in the commit message.
    unregistered side does not answer, and it wants to hold for the population the plan already knows
    about rather than for the one cell above.
 
+   *Author, same day:* accepted, and the position is now stated in the gate section under "What the
+   gate does when the unregistered side does not answer". A cell whose unregistered side does not
+   answer passes, non-termination being the strongest form of the very claim the gate makes, and it is
+   recorded as having passed that way so the gate cannot go quiet. Two decisions carry it. The budget
+   is `ReadBudget.Bounded` at a multiple of the wall clock the registered side of the same cell just
+   took rather than one global figure, because both sides are timed in the same run on the same machine
+   and the ratio survives a loaded machine where an absolute number does not, which is that type's own
+   objection to a bare threshold. And the exhausted cells are pinned by equality like the
+   non-monotonic pairs, so a cell that starts timing out and a recorded cell that starts answering both
+   fail until somebody looks. The finding's implicit worry about smuggling a wall clock into this tier
+   is answered by direction: the budget decides measured against recorded-as-unmeasurable, never pass
+   against fail, so slowness can only make the gate more permissive. A structural alternative is named
+   as the fallback, both non-terminating cases in the register being relations inside another view's
+   recursive term, which the existing parse walk could derive; it is the fallback because it extends
+   that walk and the budget needs no new machinery.
+
+   One argument the finding did not ask for but the arm needs, added in the same pass: the cut is safe
+   in one direction, and that is why a timeout may pass. The gate fails when the registered shape costs
+   more, so a regression is a cell whose unregistered side is the *cheap* one, and a cheap side
+   finishes. A budget on the unregistered side therefore discards only cells whose unregistered side
+   was slow, which are the passes. The plan says that, and says the one gap: scans and wall clock can
+   diverge, which is what the pinned set is for.
+
 2. **`ThreadConfinedStore`'s boot budget does not govern `graphitron`'s test tree, and cannot be read
    from it, so the leg that turns the cell count from discovered into checked is not there.** The
    cost paragraph offers three bounding decisions "rather than hopes", and the second is that "each
@@ -486,6 +594,16 @@ and test the spec names; the verification list is in the commit message.
    superlinear curve, which a directional comparison does not ask. As written the phrase doubles the
    matrix the plan claims to own.
 
+   *Author, same day:* accepted on both halves. The boot-budget leg is gone, and what replaces it is
+   the gate asserting its own cell count against a figure stated in the test, so a new view that puts
+   a new cell in the domain fails the count rather than growing the matrix silently. That is the shape
+   `BOOT_BUDGET`'s javadoc prescribes for a module that starts counting, a module adopting a funnel
+   stating its own number, and the paragraph now says why this gate cannot lean on `graphitron-model`'s
+   figure instead. The size axis is deleted rather than defended: it was a leftover from the seeded
+   two-size fixture the previous revision replaced with a capture, and the plan now says explicitly
+   that a directional comparison does not ask the question two sizes exist to answer. The cost is one
+   store per registration in the domain plus a baseline, matching the control section.
+
 ### Non-blocking
 
 * Two commit hashes cited in the measurement sections are not valid objects in this repository:
@@ -499,3 +617,11 @@ and test the spec names; the verification list is in the commit message.
   `RunawayRelation`'s javadoc has H2 "declining to truncate" a name the DDL has turned into a view.
   The plan's conclusion, that the store is spent either way, is the same one that javadoc draws, so
   this is wording rather than substance.
+
+*Author, same day:* both taken. The wording now says the clear refuses, H2 declining to truncate a
+name the swap has turned into a view. On the hashes: `200fd26` and `272ef13` are confirmed missing
+(`git cat-file -t` finds neither) while the other four resolve, and they are kept as written with a
+note in the measurement section saying they are pre-rebase. Keeping them is deliberate: a hash that
+once named a tree is the honest provenance of a figure taken on it, and substituting a nearby
+resolvable one would make the provenance false rather than stale. The note also says why nothing
+downstream needs those trees.
