@@ -134,3 +134,67 @@ above: the gate's name and its disclosed gap into Deliverable 1's enforcer line,
 one-relation-two-verdicts exemplar into Deliverable 2, the membership-versus-set-equality
 cost into the discriminator bullet, and the `ClaimFacts` past-tense correction into the
 citations paragraph.)
+
+## Reviewer findings (Spec → Ready gate, 2026-08-23)
+
+Independent reviewer session, status stays `Spec`. One finding, on question 1: the
+spec's claims about code that exists are checkable, and one of them does not hold.
+Everything else checked out, and the list of what was verified is in the commit message.
+
+1. **The membership-versus-set-equality cost is attached to the wrong retired column, and
+   Deliverable 1 carries that misattribution into the paragraph the implementer writes.**
+   The second discriminator bullet says the exemplar pair is `intent_type_backing_conflict`,
+   that "until R803 a serialized twin sat beside the count", and then that "the wrong answer
+   *that twin* produced" was the MCP diagnostics surface filtering the conflict set with
+   exact set equality, "so asking for conflicts involving one directive silently returned
+   only the conflicts whose entire set was that directive". Those are two different columns
+   on two different relations. The twin beside `candidates` was
+   `intent_type_backing_conflict.class_names`, which held *classes*, not directives, and
+   which no consumer ever filtered: pre-R803 its only two readers projected it,
+   `ClaimFacts` into the LSP hover and `SchemaQueries` into the MCP schema read. The
+   set-equality filter was `DIAGNOSTIC.DIRECTIVES`, a filterable `DiagnosticFacets.Dimension`
+   over `diagnostic.directives`, whose source column
+   `intent_authored_claim_conflict.directives` is the one whose own comment called itself
+   "the canonical claim render for grouping" (the comment this spec quotes two paragraphs
+   earlier, correctly, against that relation). The bullet is internally inconsistent as it
+   stands, a set of classes cannot be filtered by a directive, and the cost as stated is
+   simply not what `class_names` did.
+
+   This blocks rather than being a correction the reviewer takes, because Deliverable 1
+   requires the paragraph to state both "the `intent_type_backing_conflict` exemplar pair
+   (one exemplar per side, from one relation and one key)" *and* "the
+   membership-versus-set-equality cost", so an implementer working from the deliverable
+   writes the false attribution onto a published page. Which way to resolve it is a
+   design choice the author owns, and both ways are open:
+
+   * State the cost abstractly against `intent_type_backing_conflict`, which is how both
+     live sites already state it and is one relation and one key as the deliverable asks.
+     `CollectionValuedColumnGateTest`'s javadoc: "the same set joined into one string
+     would fail ... A serialized set answers set equality and nothing else, where the rows
+     answer that and membership, for one join." The relation's own DDL comment: "a set
+     serialized into one column here would have answered set equality and nothing else."
+     This drops the concrete wrong answer and keeps the exemplar pair.
+   * Keep the concrete wrong answer and tell it in past tense against the relation that
+     produced it, the retired directives column and the MCP facet that filtered it. That
+     is admissible under the deliverable's own history register, but it puts a second
+     relation in the paragraph, so the "one relation and one key" instruction needs
+     restating with it.
+
+   Either resolution satisfies the finding; the spec needs to say which, so the paragraph
+   the implementer writes is the one that was reviewed.
+
+### Non-blocking
+
+* "Not in scope" justifies excluding development-principles.adoc partly on "its word
+  budget is gated". There is no mechanical gate on that page's length; nothing in
+  `roadmap-tool` or the poms measures it. The delegation half of the sentence is true and
+  carries the exclusion on its own: the preamble does hand the store's modeling discipline
+  to fact-model.adoc, in the sentence at development-principles.adoc line 30. Bears on
+  nothing the implementer builds, so it is noted rather than counted.
+* Deliverable 1's cross-reference to the provenance section is same-page, so
+  `AdocXrefAnchorCheck` will not see it (it scans cross-file `xref:` only, by design, since
+  Asciidoctor already reports same-file forms at INFO). The Verification section's claim
+  that the widened check "fails on any xref path or anchor the edit gets wrong" holds for
+  the cross-file case and for a page authored under `docs/`, which is where this edit lands;
+  it just does not cover this particular reference. No action needed unless the edit ends up
+  linking across files.
