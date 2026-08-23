@@ -27,18 +27,26 @@ we are leaving, and route them into it.
 
 When this lands, a contributor or agent session opening `docs/architecture/` learns the
 architecture the generator is being built into, and is routed to the package where a change
-belongs. Concretely, three things become true that are false today:
+belongs. Concretely, four things become true that are false today:
 
-1. The pages describe the present tense. Narration of how a shape changed lives in
+1. `reference/code-generation-triggers.adoc` answers its original question, "I wrote this schema
+   pattern; what does graphitron generate, and where does it land", in a vocabulary that survives
+   R682's deletion of the classification walk and the sealed leaf taxonomy. The page traces the
+   chain the architecture actually runs (captured facts, then per-coordinate verdicts derived as
+   `intent_` views, then command rows, then rendered units) and takes its closed vocabulary from
+   the verdict layer, the one tier of that chain that is permanent, many-consumer, and only added
+   to by R682.
+2. The pages describe the present tense. Narration of how a shape changed lives in
    `docs/history/`, which already declares the precedence rule this needs ("where the two
    disagree, Architecture wins"), or is deleted where it carries nothing.
-2. Every enumerable claim on a page renders from a gated source, or is not on the page. The
+3. Every enumerable claim on a page renders from a gated source, or is not on the page. The
    variant tables, the dispatch-path column and the Source Map are hand-maintained censuses of
-   things the build already knows; they become views over those sources.
-3. A citation cannot rot silently. A dangling symbol or a roadmap id in an architecture page
+   things the build already knows; they are replaced by build-generated fragments and by worked
+   examples whose blocks a guard holds verbatim.
+4. A citation cannot rot silently. A dangling symbol or a roadmap id in an architecture page
    fails the build, the way a dangling `{@link}` and a stale store identifier already do.
 
-The measurable form of (3): the survey's three dangling symbols and 63 roadmap-id citations go to
+The measurable form of (4): the survey's three dangling symbols and 63 roadmap-id citations go to
 zero, and a planted regression of each fails the build.
 
 ## Design
@@ -50,42 +58,131 @@ the model that violates both. They hand the reader a hand-maintained census (the
 the Source Map) of a surface that is draining, and they ask the reader to interpret which half of
 a two-vocabulary page is current.
 
-So the fix is not a rewrite in better prose. It is to move each class of claim onto a source that
-already exists and is already gated, and delete what is left.
+The fix has two halves. Tree-wide, each class of claim moves onto a source that already exists
+and is already gated, and what is left over is deleted. On the one page whose organizing frame
+*is* the draining surface, `reference/code-generation-triggers.adoc`, that is not enough: cleaning
+its leaf tables would still leave a reference page about the thing R682 deletes. That page is
+rebuilt around the fact-based chain instead, and this section owns the design of the rebuild.
 
-**The enumerable claims already have gated sources.** Both columns of every variant table do:
+### The replacement page
 
-- The verdict column (SDL pattern to sealed leaf) is the classification corpus.
-  `ClassifiedCorpus` holds 55 examples; `ClassifiedDocTest` renders a corpus example into the page
-  and fails the build on divergence; `VariantCoverageTest.everyOutputFieldAndTypeLeafIsDemonstratedByTheCorpus`
-  reads `coveredLeaves()` alone, so a green run already proves the corpus carries every
-  output-field and type verdict. Only 8 of the 55 examples carry a projection query, which is what
-  makes an example render into the page. The other 47 are tested and invisible, while the tables
-  restate their verdicts in ungated prose beside them. The `classified-corpus` skill already
-  encodes the per-verdict loop, and its own framing is the one this item wants: the corpus is the
-  source of truth, "the `code-generation-triggers` page is a view rendered over it."
-- The generator-output column (leaf to emission path) is
-  `TypeFetcherGenerator.IMPLEMENTED_LEAVES`, `TypeFetcherGenerator.STUBBED_VARIANTS`,
-  `ProjectionCommands.CONTRIBUTION_MINTING_LEAVES` and the not-dispatched set.
-  `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` already gates these four
-  as an exhaustive disjoint partition over every field leaf. The page's "`*Fetchers` Generates"
-  column is a hand transcription of a partition the build computes.
+The page keeps its slug (it is pinned in `ClassifiedDocTest.PAGE_CANDIDATES`,
+`LinkTarget.ARCH_QUADRANT`, xrefs from `index.adoc`, and roadmap items; a rename buys nothing the
+rebuild does not). Its question stays the original one: given a schema pattern, what does
+graphitron generate, and where does each piece land. The answer is organized as the chain the
+pipeline runs, in six sections:
 
-**The rendering mechanism already exists too.** `LeafCoverageReport` parses the sealed leaf
-inventory, joins it against classifier traces, and renders AsciiDoc into
-`docs/manual/_generated/`, carrying a "Generated by ... Never edit by hand." header. This item
-should render into a sibling `docs/architecture/_generated/` and `include::` it, rather than
-inventing a mechanism. One caution, and it is the reason R348 exists: both existing generated
-fragments carry a header promising "Regenerate via the verify-mode CI guard" and no such guard was
-ever wired. A fragment whose guard is a promise is worse than a hand-maintained table, because the
-header tells the reader it is checked. The guard ships in the same slice as the fragment or the
-fragment does not ship.
+1. **The chain**, short, one diagram: capture transcribes the schema into facts, derivation
+   resolves each coordinate's verdict as views over those facts, planning joins verdicts into
+   command rows, the render shell folds each row into a generated unit. Links carry the depth:
+   `explanation/pipeline-overview.adoc` for stage order, `explanation/fact-model.adoc` for the
+   modeling discipline, the generated schema reference for per-relation detail.
+2. **How a coordinate gets its verdict**, the page's closed vocabulary and the successor of the
+   "Classification Vocabulary" and three-axis sections. Independent questions asked of the facts,
+   each naming its `intent_` relation and linking its generated schema-reference page rather than
+   restating it: what the author claimed (`intent_authored_field_claim`,
+   `intent_authored_type_claim`, one arm per claiming directive), which table a type binds
+   (`intent_bound_table`), what the catalog matches (`intent_column_match_claim`), what won
+   (`intent_resolved_field_claim`), and what contradicts (`intent_authored_claim_conflict`, a
+   build error). The old axes survive here as separate facts composed by joins, never as leaf
+   names.
+3. **What one generated thing is**: the command relations, one section rather than the spine. A
+   build-generated table lists each relation with the grain sentence its own javadoc states ("one
+   row per migrated root SELECT coordinate", "one row per projection unit", and so on), and the
+   prose states the closure per relation with the enforcer that actually holds it, disclosing the
+   gaps the gates themselves disclose (the batched polymorphic pair's rows methods are the one
+   decided emitted-and-uncommitted population, per `LauncherRelationClosureTest`'s own javadoc).
+   The single-mint naming rule (`GeneratedUnits`, held by `PackageImportDirectionTest`) is stated
+   here too, since it is what makes a unit name in an outcome block trustworthy.
+4. **Worked examples**, the bulk, where the variant tables dissolve. The corpus stays the source
+   of truth and the page stays a view rendered over it, per the `classified-corpus` skill's own
+   framing. Each example is a minimal pair: the corpus-rendered SDL block, verbatim and
+   drift-guarded by `ClassifiedDocTest` as today, followed by a machine-rendered **outcome block**
+   (design below) stating the coordinate's verdicts and the emitted unit and method names.
+5. **When nothing is generated**: a failing pattern produces diagnostic rows, not command rows,
+   rendered through the same worked-example machinery; links `explanation/typed-rejection.adoc`.
+6. **Where the code lives**: the top-level packages (`command`, `facts`, `plan`, `render`, and
+   `rewrite` marked as draining), replacing the Source Map whose opening claim the survey found
+   false. The map states ownership, not destiny: R682 records `rewrite/derive` as misnamed with
+   its split filed separately, so the map marks it transitional rather than naming a destination.
 
-**The narration has an established home.** `docs/history/` exists, is rendered into the site, and
-states its own precedence rule. Demoting the legacy-divergence section and the change narration
-there is a move the tree already supports.
+### The spine is the verdict layer, not the command relations
 
-**What the gates must cover.** The survey's rot happened in the two habitats nothing scans.
+An earlier draft of this design took the command relations as the page's closed vocabulary, on
+the claim that R682 changes what the plan reads, not what it produces. Both halves of that were
+wrong, and the correction is load-bearing enough to record. The command tier is the narrowest
+view of the model, run-scoped and single-consumer by the fact model's own account, and its
+populations are literally migration-scoped today: `LauncherRelation`'s javadoc says "one row per
+*migrated* root SELECT coordinate", with the membership enforcer landing only with the closing
+slice, and `FetcherEdgeRelation` covers "the covered non-launcher families". And R682 reshapes
+the command tier by name: the fetcher family's per-coordinate command relation is yet to be
+minted, `RoutineChain` is on its retired-vocabulary list, `EmitPlan.produce`'s `GraphitronSchema`
+parameter retires, and the completeness gates re-key onto declared arm sets the relations do not
+carry yet. Organizing the page around that tier would relocate the item's own defect, documenting
+the transitional surface, one tier over. The layer R682 only adds to is the fact and verdict
+layer, so the chain is the page's structure, the verdict layer is its closed vocabulary, and the
+command relations are one honest section of the back half.
+
+### The outcome block
+
+The mechanism this item adds. For each doc example, a renderer runs the fixture through the
+pipeline and renders, beside the SDL block, what came out: the coordinate's verdict rows spelled
+in the `intent_` views' closed verdict vocabularies, and the emitted unit and method names
+(signatures at most, never bodies). A drift guard asserts the block verbatim in the page, the way
+`ClassifiedDocTest` asserts the SDL half today, so the "what gets generated" half of every
+example becomes drift-guarded by construction. Corpus fixtures classify against the standard
+Sakila catalog and capture is total, so the machinery to put a fixture's facts in a store exists;
+what is new is the rendering and the guard.
+
+Two refusals define the block's content, both inherited from R682's gates. It renders no command
+rows: R682 explicitly retired row identity as a shipped obligation (a row diff is a debugging aid
+while converting, never a test), and a doc-guarded verbatim command-row block would reinstate
+that obligation over vocabulary the same item is dismantling. And it renders no generated bodies,
+per the tier rule that code-string assertions on bodies are banned everywhere
+(`LauncherRelationClosureTest`'s "signature structure only" is the precedent). Verdict rows and
+emitted names are both invariant across the R682 cutover by that item's own gates: verdicts land
+in the store as views, and output identity holds. The block is also clean against the oracle
+rule: it compares this run's own output against a checked-in expectation, never a store-derived
+answer against a walk-derived one, so the fact that the walk transitively feeds the plan until
+R682 lands is immaterial to it, and worth exactly one transitional sentence on the page.
+
+One dependency is named now so the doc machinery never blocks the deletion:
+`QueryViewRenderer.render` reaches the schema through `GraphitronSchemaBuilder.buildBundle`, and
+the builder is on R682's terminal-deletion list. The successor is the gatherer's own assembly
+stage (stage 3 of the fact model's five-stage gathering pipeline), and the cutover belongs to
+whichever increment retires the builder; this item only avoids deepening the dependency.
+
+### The command-relation fragment renders itself
+
+The table in the page's section 3 is not hand-written and not enumeration-gated. An enumeration
+meta-test would close membership while the load-bearing columns (what one row asserts, which gate
+holds it) rot silently. The grain sentence is already stated once per relation, in its own
+javadoc, the plan tier's analogue of the DDL's `COMMENT ON`; the fragment renders from the
+relation types and those sentences, in the generated schema reference's shape: generated at
+build, never committed, included by the page. A fragment that is never committed cannot drift and
+needs no verify guard, which sidesteps the R348 trap by construction. The universe comes from the
+types themselves, and one of them keeps the triangle honest: `KeyProjectionRelation` lives in
+`no.sikt.graphitron.command`, not `plan`, so the scan covers both packages rather than assuming
+the geography.
+
+### The narration has an established home
+
+`docs/history/` exists, is rendered into the site, and states its own precedence rule. Demoting
+the legacy-divergence section and the change narration there is a move the tree already supports.
+
+### Ownership boundary with R682
+
+R682's terminal step already claims a doc sweep over this page ("`code-generation-triggers` with
+`index.adoc`'s pointer to it"), so the split is stated here to keep one page from being owned
+twice. This item rebuilds the page onto the surviving vocabulary now, while the walk is live;
+R682's terminal sweep then deletes the page's one transitional sentence and whatever names retire
+with the walk, and restructures nothing. The corpus's own `@classified` three-axis assertions,
+which pin sealed-leaf dimensional verdicts, retire with the zoo under R682, not here; this item's
+obligation is the page-side half of the same pre-deletion rule, applied per example in slice 3.
+
+### What the gates must cover
+
+The survey's rot happened in the two habitats nothing scans.
 `RoadmapReferenceGuardTest` parses Java comment and string-literal regions;
 `TransientCitationCheck` scans `CLAUDE.md` and `.claude/web-environment.md`, and its own javadoc
 notes the habitats it does not reach. `.adoc` under `docs/` is in neither. Likewise
@@ -217,10 +314,11 @@ narration to rather than only deleting it.
 
 ## Implementation
 
-Four slices. The ordering between them is load-bearing in one place only: the gates land before
-the prose cleanup, so the cleanup is verified by the mechanism that will hold it rather than by a
-reviewer reading 3,757 lines. Within that constraint each slice is independently committable and
-independently pushable to trunk.
+Four slices. The ordering between them is load-bearing in two places: the gates land before the
+prose cleanup, so the cleanup is verified by the mechanism that will hold it rather than by a
+reviewer reading 3,757 lines, and the renderers land before the page sections that include their
+output. Within that constraint each slice is independently committable and independently pushable
+to trunk.
 
 ### Slice 1: the gates
 
@@ -246,57 +344,67 @@ the point: a guard that passes on arrival proves nothing.
   shape `VariantCoverageTest.NO_CASE_REQUIRED` already uses) over a clever heuristic, so each
   exemption is a reviewable claim rather than a silent miss.
 
-### Slice 2: the generated leaf appendix
+### Slice 2: the two renderers
 
-- Render the leaf-to-emission-path table from the four sets `GeneratorCoverageTest` already gates
-  as a partition, into `docs/architecture/_generated/`, with the "Never edit by hand" header the
-  manual's fragments use. Prefer extending `LeafCoverageReport` with a mode over standing up a
-  second renderer; it already parses the leaf inventory and already renders AsciiDoc.
-- Wire the verify-mode guard in the same slice, in CI and as a local check. This is the R348
-  lesson and the one place this item must not repeat an existing mistake.
-- Delete the page's hand-maintained "`*Fetchers` Generates" columns and the four-path prose that
-  restates the partition, replacing them with the `include::` and one sentence naming the gate.
+Nothing in this slice deletes prose yet; it ends with the machinery the rebuild consumes.
 
-### Slice 3: promote corpus examples, retire the tables
+- The command-relation fragment: rendered at build from the `*Relation` types (across `plan` and
+  `command`) and their grain javadoc, in the generated schema reference's shape, never committed,
+  included by the page. The earlier draft's leaf-to-emission-path appendix rendered from
+  `GeneratorCoverageTest`'s partition is dropped: it would gate a table about the surface R682
+  deletes, and the closed vocabulary worth rendering is the one that survives.
+- The outcome-block renderer and its drift guard: run a doc example's fixture through the
+  pipeline, render verdict rows plus emitted unit and method names as AsciiDoc, and assert the
+  block verbatim in the page with the same failure UX `ClassifiedDocTest` has (the message prints
+  the exact block to paste).
 
-Per the `classified-corpus` loop, one verdict per commit. This is the bulk of the item's value and
-the slice most likely to want splitting across several sessions.
+### Slice 3: rebuild the page, one example per commit
 
-- For each variant-table row whose verdict a corpus example already covers, add a projection
-  `query` to that example (which is what promotes it to a doc example), paste the rendered block
-  under prose per `ClassifiedDocTest`'s failure message, and delete the row it subsumes. 47 of the
-  55 examples are candidates.
-- Where a row's verdict has no corpus example, author one rather than keeping the row. Where the
+The bulk of the item's value, and the slice most likely to split across sessions. First the
+skeleton: the chain intro, the verdict-layer section, the command-relation section (the fragment
+include plus the per-relation closure prose), the rejection section and the package map land, and
+the "Classification Vocabulary" section (95 lines, self-declared historical) and the Source Map
+are deleted with them. Then the examples, per the `classified-corpus` loop adapted to the new
+assertion. Only 8 of the 55 corpus examples carry a projection `query` today, which is what makes
+an example render; the other 47 are tested and invisible while the tables restate their verdicts
+in ungated prose beside them.
+
+- Promoting an example means, in one commit: add a projection `query` where the example lacks
+  one, paste the rendered SDL and outcome blocks under prose, and delete the leaf-named table
+  rows and prose the example subsumes. The verdict moves onto a surviving vocabulary in the
+  promoting commit, which is this item's instance of R682's pre-deletion obligation (re-key
+  before the last leaf reader moves, never with the deletion commit); prose stating a verdict as
+  a leaf name does not survive the commit that renders its example.
+- Where a row's verdict has no corpus example, author one rather than keeping the row. Where a
   row is not corpus material by the skill's own bucketing (rejection rows, input-side rows, slot
-  assertions), keep it and say on the page which gate holds it, so an ungated-looking table is
-  visibly not ungated.
+  assertions), it is either restated as a rejection worked example (rejection rows render through
+  the same machinery) or kept with its gate named on the page, so an ungated-looking table is
+  visibly not ungated. A verdict with no spelling in a surviving vocabulary yet marks a missing
+  relation, R682's to land, and its row keeps its gate note until then.
 - The DataLoader-category table and the "Implicit Classification Rules" table go through the same
   test: render it or state its gate.
+- The page's archaeology (the survey's list: the three "no longer tombstones" cells, the two
+  merged-leaf-pair sentences, "kept stable from earlier naming", the retired-`LiftedHop` row) and
+  its roadmap-id citations are stripped as the sections carrying them are rebuilt.
 
-### Slice 4: re-orient the prose
+### Slice 4: the rest of the tree
 
-- Delete the "Classification Vocabulary" section (95 lines). It self-declares as the historical
-  framing of a model the next section states canonically, so this is deletion, not migration.
-- Replace the Source Map. Its opening claim is false, and the repair is not a corrected path list
-  but a different map: the five top-level packages (`command`, `facts`, `plan`, `render`,
-  `rewrite`), what each owns, and which are the destination versus draining. `plan` (16 files),
-  `render` (32), `command` (35) and `facts` (18) currently have no section at all.
-- Strip the archaeology named in the survey: the three "no longer tombstones" cells, the two
-  merged-leaf-pair sentences, "kept stable from earlier naming", the retired-`LiftedHop` row, and
-  `dispatch-axes.adoc`'s "the pre-decomposition shape of this chapter is in the git history".
-- Remove the 63 roadmap-id citations. Most are pure decoration and cost nothing to delete:
-  "`AuthorError.TypeConflict` is the fifth `AuthorError` arm, surfacing R190's cross-site
-  `contextArgument` type-agreement check" names both the arm and the check, so the id carries no
-  information. `explanation/typed-rejection.adoc` is the densest page at 16 and also the cheapest.
-  For the few live forward pointers ("UPSERT generation gated pending R145", "covered by a
-  follow-up Mojo configuration item (R192)"), state the limitation as a present-tense fact without
-  the id; a reader needs to know UPSERT is rejected today, not which item will change that.
+- Fix `index.adoc`, which is the entry point and currently routes a reader wanting "the
+  classification taxonomy" at the draining surface while calling it transitional in the same
+  sentence. Lead with `explanation/pipeline-overview.adoc` and the rebuilt triggers page.
 - Move `reference/argument-resolution.adoc`'s "Legacy behavior reference (and intentional
   divergence)" section (roughly 90 lines) to `docs/history/`, leaving the current rule stated in
   present tense plus an xref. Coordinate with R207, which already names this page.
-- Fix `index.adoc`, which is the entry point and currently routes a reader wanting "the
-  classification taxonomy" at the draining surface while calling it transitional in the same
-  sentence. Lead with `explanation/pipeline-overview.adoc`.
+- Remove the remaining roadmap-id citations across the other pages (the survey counts 63 over 8
+  pages). Most are pure decoration and cost nothing to delete: "`AuthorError.TypeConflict` is the
+  fifth `AuthorError` arm, surfacing R190's cross-site `contextArgument` type-agreement check"
+  names both the arm and the check, so the id carries no information.
+  `explanation/typed-rejection.adoc` is the densest page at 16 and also the cheapest. For the few
+  live forward pointers ("UPSERT generation gated pending R145", "covered by a follow-up Mojo
+  configuration item (R192)"), state the limitation as a present-tense fact without the id; a
+  reader needs to know UPSERT is rejected today, not which item will change that.
+- Strip the archaeology the survey names on the other pages, such as `dispatch-axes.adoc`'s "the
+  pre-decomposition shape of this chapter is in the git history".
 - Add the two missing `LinkTarget.ARCH_QUADRANT` entries, `fact-model` and `naming-the-row`. They
   are absent today, so roadmap items linking those slugs render flat; any page move in this item
   touches that map anyway.
@@ -310,20 +418,31 @@ the slice most likely to want splitting across several sessions.
   that resolves passes, a deleted name fails, and an exempted span passes for a stated reason. The
   three names the survey found (`ColumnFetcherClassGenerator`, `InputDirectiveInputTypes`,
   `FetchRelated`) are the natural first fixtures.
-- `ClassifiedDocTest` covers each promoted example with no new test needed; that is the reason to
-  promote rather than to hand-write. `VariantCoverageTest` and
-  `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` already hold the
-  coverage obligations and should need no change.
-- The generated appendix needs a verify-mode check that fails when the checked-in fragment differs
-  from a fresh render, run in CI. Without it this slice adds a page carrying a false promise.
+- The outcome-block guard covers each promoted example the way `ClassifiedDocTest` covers the SDL
+  half, with its own planted regression in both directions: an edited block fails, a matching
+  block passes. `ClassifiedDocTest` itself keeps guarding the SDL blocks unchanged.
+- The command-relation fragment needs no verify guard (never committed), but the docs build must
+  fail when the fragment is absent or the include dangles, and the fragment's own render asserts
+  it found every `*Relation` type its scan claims, so an added relation appears and a renamed one
+  fails the render rather than vanishing.
+- `VariantCoverageTest` and `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`
+  keep their coverage obligations unchanged; this item neither widens nor narrows what the corpus
+  must demonstrate, it changes what the page renders about it.
 - Full `mvn install -Plocal-db`, since `graphitron-docs` renders the tree and a broken xref or a
   markdown-shaped table fails the build.
 
 ## Constraints the plan must respect
 
 - `ClassifiedDocTest.PAGE_CANDIDATES` hardcodes
-  `docs/architecture/reference/code-generation-triggers.adoc`. Splitting or renaming that page
-  moves this list, and the 8 rendered blocks must land on whichever page the list names.
+  `docs/architecture/reference/code-generation-triggers.adoc`. The rebuild keeps that path, and
+  the rendered blocks must land on whichever page the list names.
+- The `command` / `plan` / `render` triangle must be stated correctly on the page that teaches
+  it: `KeyProjectionRelation` lives in `command`, not `plan`, so no prose asserts "the command
+  relations in `plan`".
+- No outcome block asserts command rows or generated bodies; verdict rows and unit and method
+  names are the ceiling (the design's two refusals).
+- The package map marks `rewrite/derive` transitional rather than naming a destination; its split
+  and rename are filed separately.
 - `LinkTarget.ARCH_QUADRANT` is the roadmap tool's private copy of the docs layout, gated by
   `ArchQuadrantBindingTest`. Any page add, move or rename updates it in the same commit.
 - Roadmap items and the changelog xref these pages by slug. `LinkTargetRoundTripTest` pins the
@@ -335,32 +454,40 @@ the slice most likely to want splitting across several sessions.
 
 ## Relation to existing items
 
+- R682 (Planners read facts, emitters read commands) is the item this design leans on, at three
+  points. The spine choice rests on which layer R682 reshapes (the command tier) versus only adds
+  to (facts and verdicts). The per-example re-key in slice 3 is this item's instance of R682's
+  pre-deletion obligation. And R682's terminal step claims a doc sweep over this same page; the
+  ownership split in the design keeps that sweep a deletion of transitional sentences rather than
+  a second restructure. The corpus's `@classified` leaf assertions retire with R682, not here.
 - R207 (Audit design-doc claims for implementation conformance) is adjacent but distinct: it
   covers claims that are *wrong* (doc says X, code does Y). This item covers claims that are
-  *true but about the wrong thing*, plus citation rot.
+  *true but about the wrong thing*, plus citation rot. The overlap is on
+  `reference/argument-resolution.adoc`; whichever runs second reads the other's findings first,
+  since R207 checks whether a claim is true and this item checks whether it is about the current
+  design.
 - R758 (The fact model page never learns the materialization registry) is a specific gap on one of
   the pages this survey found sound. No conflict, but work touching `explanation/fact-model.adoc`
   should check R758's state.
-- R348 (Regenerate and guard the generated supported-schema-shapes migration doc against drift) is
-  the same defect in the manual's generated fragments: a header promising a verify-mode CI guard
-  that was never wired. Slice 2 must not add a third instance. If R348 lands first its guard is
-  the one to extend; if this item lands first, its guard should be written so R348 can adopt it
-  rather than building a second.
-- R207's overlap is on `reference/argument-resolution.adoc`. Whichever runs second reads the
-  other's findings first; the two are complementary, since R207 checks whether a claim is true and
-  this item checks whether it is about the current design.
+- R348 (Regenerate and guard the generated supported-schema-shapes migration doc against drift):
+  this item's fragments sidestep the defect R348 names by being generated at build and never
+  committed, so there is no checked-in copy to drift and no verify guard to forget. If R348 wants
+  the same shape for the manual's fragments, this item's renderer is the precedent; nothing here
+  waits on it.
 
 ## Open forks for the reviewer
 
-Three decisions the plan takes a position on but does not consider settled.
+The original spec's first fork, whether `code-generation-triggers.adoc` stays one page, is
+settled by this revision: it stays one page under its slug, rebuilt around the chain with the
+verdict layer as its closed vocabulary, for the reasons the design states. Three forks remain
+open.
 
-- **Does `code-generation-triggers.adoc` stay one page?** The plan keeps it whole, because the
-  slug is pinned in four places (`ARCH_QUADRANT`, `ClassifiedDocTest.PAGE_CANDIDATES`, xrefs from
-  `index.adoc`, roadmap items) and a rename buys nothing a reorganization does not. The case
-  against: even fully cleaned it is a reference page whose subject is a draining surface, and a
-  reader is better served by "what does the generator do with my schema" (corpus examples, present
-  tense) split from "what leaves exist and what each emits" (the generated appendix). If the
-  reviewer prefers the split, it belongs in Slice 4 and the pinned references move with it.
+- **How much of the verdict layer does an outcome block spell?** The lean form renders the
+  resolved verdict (`intent_resolved_field_claim` and kin) plus the emitted names; the teaching
+  form also renders the authored claims that produced the resolution, which shows the chain but
+  doubles the block. The plan starts lean and lets a worked example that needs the chain (the
+  conflict example, say) opt into the fuller form; a reviewer preferring one form everywhere
+  should say so.
 - **How wide does the symbol gate scan?** The plan scopes it to `docs/architecture/**.adoc`, which
   is where the survey found the rot. `docs/manual/` cites symbols too, and the same guard would
   cover it for nearly free, but the manual is author-facing and cites consumer-visible generated
