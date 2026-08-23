@@ -3895,7 +3895,7 @@ SELECT graph_name, type_name, table_source_name, table_schema, table_name,
                                  WHERE fr.graph_name = f.graph_name
                                    AND fr.type_name = f.type_name
                                    AND fr.field_name = f.field_name))) landing;
-COMMENT ON VIEW intent_routine_return_binding IS 'Which catalog table a type is bound to by being what a @routine chain field returns: intent_field_chain_terminus keyed by the returned type rather than by the field. This is the binding a @routine author writes @table for today, derived instead, so the routine name is written once and the two spellings can no longer disagree. The type read is the named type with its wrappers stripped, taken off graphitron_field_synthesis where a macro rewrote the field''s type expression, so a connection-returning routine field binds its element type and not the wrapper; that is intent_field_column_scope''s named-type rule''s reading and it is stated the same way here rather than differently. OBJECT only, a landing being a row and a row standing for an object type. The population is the chain read seats, and one seat is excluded: the payload carrier, a mutation root''s @routine field carrying no @reference, whose chain rows are not what the field returns but what its data field re-reads post-commit, so a binding there would name a table for a type no table stands for. The exclusion names that seat rather than the carrier because the store holds no carrier fact yet; the seat is the classifier''s own fork, which reaches the carrier resolution exactly when the parent is the mutation root and the chain has a single node, and it narrows to the carrier itself the day a carrier relation lands. The seat exclusion costs the routine write chain nothing, that shape carrying @reference by construction. Keyed on the root operation binding and not on the literal name Mutation, the same intended-rule form the demand rules and intent_field_separate_fetch''s root arm state. Ambiguity is rows, never a decline, on intent_bound_table''s terms: two fields returning one type off different routines are two rows and candidates says so. Nothing here is masked by an author''s @table, a type carrying both being a fact about the schema and not a conflict for this relation to settle; where the two populations meet is intent_resolved_type_binding.';
+COMMENT ON VIEW intent_routine_return_binding IS 'Which catalog table a type is bound to by being what a @routine chain field returns: intent_field_chain_terminus keyed by the returned type rather than by the field. This is the binding a @routine author writes @table for today, derived instead, so the routine name is written once and the two spellings can no longer disagree. The type read is the named type with its wrappers stripped, taken off graphitron_field_synthesis where a macro rewrote the field''s type expression, so a connection-returning routine field binds its element type and not the wrapper; that is intent_field_column_scope''s named-type rule''s reading and it is stated the same way here rather than differently. OBJECT only, a landing being a row and a row standing for an object type. The population is the chain read seats, and one seat is excluded: the payload carrier, a mutation root''s @routine field carrying no @reference, whose chain rows are not what the field returns but what its data field re-reads post-commit, so a binding there would name a table for a type no table stands for. The exclusion names that seat rather than the carrier because the store holds no carrier fact yet; the seat is the classifier''s own fork, which reaches the carrier resolution exactly when the parent is the mutation root and the chain has a single node, and it narrows to the carrier itself the day a carrier relation lands. That day has come and the narrowing is deliberately not taken here: intent_mutation_routine_seat states the same fork as its seat column, so the exclusion could read seat = CARRIER and mean exactly what it means today, but narrowing to the carrier itself means excluding only the seats that hold, which hands a binding to every mutation-root @routine this relation currently keeps out and changes the arity every reader of the reduction sees. That is a change to make on its own evidence, not in passing. The seat exclusion costs the routine write chain nothing, that shape carrying @reference by construction. Keyed on the root operation binding and not on the literal name Mutation, the same intended-rule form the demand rules and intent_field_separate_fetch''s root arm state. Ambiguity is rows, never a decline, on intent_bound_table''s terms: two fields returning one type off different routines are two rows and candidates says so. Nothing here is masked by an author''s @table, a type carrying both being a fact about the schema and not a conflict for this relation to settle; where the two populations meet is intent_resolved_type_binding.';
 COMMENT ON COLUMN intent_routine_return_binding.graph_name IS 'the owning graph''s partition, carried from the chain terminus';
 COMMENT ON COLUMN intent_routine_return_binding.type_name IS 'the type this row binds: the named type of the expression the returning field was written with, its list and non-null wrappers stripped';
 COMMENT ON COLUMN intent_routine_return_binding.table_source_name IS 'the landing table''s catalog partition, the first column of the sql_table key this row names';
@@ -5210,6 +5210,165 @@ COMMENT ON COLUMN intent_carrier_routine_hop.to_source_name IS 'the arriving tab
 COMMENT ON COLUMN intent_carrier_routine_hop.to_schema IS 'the arriving table''s SQL schema';
 COMMENT ON COLUMN intent_carrier_routine_hop.to_table IS 'the arriving table''s SQL name, the row the write committed and the re-read fetches. With the two columns above this is the arriving side of the pairing relation''s key';
 COMMENT ON COLUMN intent_carrier_routine_hop.candidates IS 'how many departures this data field''s hop could leave from, this row being one of them; 1 where one mutation field produces the payload. Above 1 is two producing fields naming different routines, which the generator resolves by first-producer-wins without saying so, and which this column says';
+
+CREATE VIEW intent_mutation_routine_seat
+  (graph_name, type_name, field_name, ordinal, seat, verdict, return_type_name,
+   source_name, source_line, source_column) AS
+WITH
+site (graph_name, type_name, field_name, ordinal, routine_applications, seat, return_type_name,
+      source_name, source_line, source_column) AS (
+  SELECT graph_name, type_name, field_name, ordinal, routine_applications, seat, return_type_name,
+         source_name, source_line, source_column
+    FROM (SELECT r.graph_name, r.type_name, r.field_name, r.ordinal,
+                 CAST(COUNT(*) OVER (PARTITION BY r.graph_name, r.type_name, r.field_name)
+                      AS INT) AS routine_applications,
+                 CAST(MAX(r.ordinal) OVER (PARTITION BY r.graph_name, r.type_name, r.field_name)
+                      AS INT) AS last_ordinal,
+                 CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference fr
+                                    WHERE fr.graph_name = r.graph_name
+                                      AND fr.type_name = r.type_name
+                                      AND fr.field_name = r.field_name)
+                      THEN 'CHAIN' ELSE 'CARRIER' END AS seat,
+                 COALESCE(
+                   REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''), '!', ''),
+                   f.named_type) AS return_type_name,
+                 r.source_name, r.source_line, r.source_column
+            FROM graphitron_routine r
+            JOIN graphql_root_operation ro
+              ON ro.graph_name = r.graph_name AND ro.type_name = r.type_name
+             AND ro.operation = 'MUTATION'
+            JOIN graphql_field f
+              ON f.graph_name = r.graph_name AND f.type_name = r.type_name
+             AND f.field_name = r.field_name
+            LEFT JOIN graphitron_field_synthesis fs
+              ON fs.graph_name = r.graph_name AND fs.type_name = r.type_name
+             AND fs.field_name = r.field_name) app
+   WHERE app.ordinal = app.last_ordinal
+)
+SELECT s.graph_name, s.type_name, s.field_name, s.ordinal, s.seat,
+       CASE
+         WHEN s.routine_applications > 1 THEN 'MULTIPLE_ROUTINE_NODES'
+         WHEN s.seat = 'CHAIN'
+          AND EXISTS (SELECT 1 FROM graphitron_field_reference fr
+                       WHERE fr.graph_name = s.graph_name AND fr.type_name = s.type_name
+                         AND fr.field_name = s.field_name
+                         AND fr.source_name = s.source_name
+                         AND (fr.source_line < s.source_line
+                              OR (fr.source_line = s.source_line
+                                  AND fr.source_column < s.source_column)))
+           THEN 'CHAIN_HEAD_NOT_ROUTINE'
+         WHEN EXISTS (SELECT 1 FROM graphql_field_directive d
+                       WHERE d.graph_name = s.graph_name AND d.type_name = s.type_name
+                         AND d.field_name = s.field_name AND d.directive_name = 'condition')
+           OR EXISTS (SELECT 1 FROM graphql_argument_directive ad
+                       WHERE ad.graph_name = s.graph_name AND ad.type_name = s.type_name
+                         AND ad.field_name = s.field_name
+                         AND ad.directive_name IN ('condition', 'orderBy'))
+           THEN 'READ_SURFACE_ON_WRITE'
+         WHEN s.seat = 'CHAIN' THEN
+           CASE
+             WHEN NOT EXISTS (SELECT 1 FROM intent_bound_table b
+                               WHERE b.graph_name = s.graph_name
+                                 AND b.type_name = s.return_type_name)
+              AND EXISTS (SELECT 1 FROM intent_carrier_data_field c
+                           WHERE c.graph_name = s.graph_name
+                             AND c.type_name = s.return_type_name
+                             AND c.family = 'ROUTINE' AND c.data_fields = 1)
+               THEN 'REFERENCE_ON_CARRIER_RETURN'
+             WHEN EXISTS (SELECT 1 FROM graphitron_field_synthesis cs
+                           WHERE cs.graph_name = s.graph_name AND cs.type_name = s.type_name
+                             AND cs.field_name = s.field_name AND cs.macro = 'CONNECTION')
+               THEN 'CONNECTION_RETURN'
+             WHEN NOT EXISTS (SELECT 1 FROM intent_field_chain_terminus ct
+                               WHERE ct.graph_name = s.graph_name AND ct.type_name = s.type_name
+                                 AND ct.field_name = s.field_name AND ct.candidates = 1)
+               THEN 'CHAIN_UNRESOLVED'
+             WHEN EXISTS (SELECT 1 FROM intent_field_chain_node n
+                          JOIN graphitron_field_reference_step st
+                            ON st.graph_name = n.graph_name AND st.type_name = n.type_name
+                           AND st.field_name = n.field_name AND st.ordinal = n.ordinal
+                           AND st.position = n.position
+                          WHERE n.graph_name = s.graph_name AND n.type_name = s.type_name
+                            AND n.field_name = s.field_name AND n.seq = 1
+                            AND st.class_name IS NOT NULL)
+               THEN 'UNANCHORED_FIRST_HOP'
+             WHEN EXISTS (SELECT 1 FROM intent_bound_table b
+                           WHERE b.graph_name = s.graph_name
+                             AND b.type_name = s.return_type_name)
+              AND NOT EXISTS (SELECT 1 FROM intent_bound_table b
+                              JOIN intent_field_chain_terminus ct
+                                ON ct.graph_name = b.graph_name
+                               AND ct.table_source_name = b.table_source_name
+                               AND ct.table_schema = b.table_schema
+                               AND ct.table_name = b.table_name
+                              WHERE b.graph_name = s.graph_name
+                                AND b.type_name = s.return_type_name AND b.candidates = 1
+                                AND ct.type_name = s.type_name AND ct.field_name = s.field_name
+                                AND ct.candidates = 1)
+               THEN 'TERMINUS_NOT_RETURN_TABLE'
+             ELSE 'ADMITTED' END
+         ELSE
+           CASE
+             WHEN EXISTS (SELECT 1 FROM intent_bound_table b
+                           WHERE b.graph_name = s.graph_name
+                             AND b.type_name = s.return_type_name)
+               THEN 'TABLE_BOUND_RETURN'
+             WHEN NOT EXISTS (SELECT 1 FROM intent_carrier_data_field c
+                               WHERE c.graph_name = s.graph_name
+                                 AND c.type_name = s.return_type_name
+                                 AND c.family = 'ROUTINE' AND c.data_fields = 1)
+               THEN 'NO_CARRIER'
+             WHEN NOT EXISTS (SELECT 1 FROM intent_carrier_data_field c
+                               WHERE c.graph_name = s.graph_name
+                                 AND c.type_name = s.return_type_name
+                                 AND c.family = 'ROUTINE' AND c.data_fields = 1
+                                 AND c.element_kind = 'TABLE')
+               THEN 'CARRIER_ELEMENT_NOT_TABLE'
+             WHEN EXISTS (SELECT 1 FROM intent_carrier_data_field c
+                          JOIN graphql_field df
+                            ON df.graph_name = c.graph_name AND df.type_name = c.type_name
+                           AND df.field_name = c.field_name
+                          WHERE c.graph_name = s.graph_name
+                            AND c.type_name = s.return_type_name
+                            AND c.family = 'ROUTINE' AND c.data_fields = 1
+                            AND NOT df.is_list AND df.non_null)
+               THEN 'CARRIER_DATA_FIELD_NON_NULL'
+             WHEN NOT EXISTS (SELECT 1 FROM intent_carrier_data_field c
+                              JOIN intent_carrier_routine_hop h
+                                ON h.graph_name = c.graph_name AND h.type_name = c.type_name
+                               AND h.field_name = c.field_name
+                              JOIN intent_field_chain_start cst
+                                ON cst.graph_name = s.graph_name AND cst.type_name = s.type_name
+                               AND cst.field_name = s.field_name
+                               AND cst.table_source_name = h.from_source_name
+                               AND cst.table_schema = h.from_schema
+                               AND cst.table_name = h.from_table
+                              JOIN intent_name_matched_key_pair p
+                                ON p.from_source_name = h.from_source_name
+                               AND p.from_schema = h.from_schema
+                               AND p.from_table = h.from_table
+                               AND p.to_source_name = h.to_source_name
+                               AND p.to_schema = h.to_schema AND p.to_table = h.to_table
+                               AND p.unmatched_columns = 0
+                              WHERE c.graph_name = s.graph_name
+                                AND c.type_name = s.return_type_name
+                                AND c.family = 'ROUTINE' AND c.data_fields = 1)
+               THEN 'CARRIER_HOP_UNRESOLVED'
+             ELSE 'ADMITTED' END
+       END,
+       s.return_type_name, s.source_name, s.source_line, s.source_column
+  FROM site s;
+COMMENT ON VIEW intent_mutation_routine_seat IS 'Which seat a mutation root''s @routine occupies, and where it occupies none, which precondition stopped it. A @routine on a mutation root is a write, and there are exactly two shapes the write can take: the chain seat, where @reference elements after the routine say where the committed row is re-read from, and the carrier seat, where the field returns a payload whose one data field re-reads it by the routine result''s name-matched keys. Which of the two the author wrote for is the seat, and whether that seat holds is the verdict, and they are separate columns because a refused coordinate still has a seat and a diagnostic about it has to name the shape the author was aiming at. Population: every mutation-root field carrying @routine, at the application that defines the chain. Total over that population and exactly one row per coordinate, which is the property the whole relation is for: there is no default arm and no coordinate with no row, so a shape this vocabulary cannot name is a build failure here rather than a silent non-member somewhere downstream. A reduction over sibling relations rather than a rule of its own: every fact it turns on is already a relation, intent_field_chain_terminus and intent_field_chain_node for where the chain goes, intent_carrier_data_field and intent_carrier_routine_hop for what the payload is and where its re-read departs from, intent_bound_table for what the author wrote @table for, and the captured directive rows for what was written. What this relation adds is the seat fork and the precedence, and nothing else; a verdict that needed a fact no relation states would be a rule wearing a reduction''s name, and the two the walk distinguishes that no relation states are disclosed below rather than fabricated here. One pass with the verdict picked by a CASE rather than one UNION ALL arm per verdict, which is intent_node_id_decode_defect''s rule for the same reason and additionally for this one: exactly-one-verdict-per-coordinate is what a reader trusts, and one driving row gives it by construction where a union would have to rank arms to get it back. The nesting is the seat fork, so the two seats'' arms cannot reach each other. Precedence is this relation''s own and not a transcription of any evaluation order: a coordinate with two defects gets the more fundamental one, the count of routine nodes before the chain''s head, the head before the surface written on it, the surface before anything about the return, and the return''s shape before where the chain lands. There is no message column, on intent_node_id_decode_defect''s settled terms: the closed vocabulary plus the coordinate and the return type are the fact base, and the prose that renders a verdict as a sentence an author can act on belongs with the consumer that composes it. Nor a severity column, which would be a function of the verdict and nothing else; which verdicts are the author''s to fix and which are shapes the generator owes an emitter is stated per value below. The terminus rule reads intent_bound_table and not intent_resolved_type_binding, and the choice is load-bearing rather than inherited: the reduction''s other arm is intent_routine_return_binding, which binds a chain field''s return type to that same chain''s terminus, so comparing the terminus against the reduction would be comparing a value with itself. What the rule is actually about is whether the table the author wrote @table for is where the chain lands, which is the @table population''s question alone; this is intent_inferred_node_type''s reason for standing on that arm too. A return type carrying no @table therefore draws no disagreement, the derived binding governing there, which is the shipped behaviour and not an omission. Two silences are disclosed rather than closed. A first hop that joins by an authored condition alone resolves to no hop row at all, so it reads here as CHAIN_UNRESOLVED where the classification walk calls it a shape owed an emitter; separating them needs the stalled step named, and the tail a chain walks is intent_field_chain_node''s own and not a relation. And a payload whose data field is the ID scalar draws no intent_carrier_data_field row at all, that relation refusing an ID element for the ROUTINE family outright, so it reads as NO_CARRIER and CARRIER_ELEMENT_NOT_TABLE names the record element alone.';
+COMMENT ON COLUMN intent_mutation_routine_seat.graph_name IS 'the owning graph''s partition, carried from the @routine application';
+COMMENT ON COLUMN intent_mutation_routine_seat.type_name IS 'the mutation root type the field sits on, bound by graphql_root_operation at MUTATION rather than by the literal name Mutation, on the demand rules'' terms';
+COMMENT ON COLUMN intent_mutation_routine_seat.field_name IS 'the mutation field the @routine is written on; with the type above, the coordinate the write runs at and a located refusal attaches to';
+COMMENT ON COLUMN intent_mutation_routine_seat.ordinal IS 'the chain-defining @routine application''s own ordinal, which is the greatest on the field; joins back to graphitron_routine on it. The selection is intent_field_chain_start''s rule reached without its resolution, spelled again here for a reason that relation cannot serve: this population must hold a row where a routine name resolves to nothing, and there it has none';
+COMMENT ON COLUMN intent_mutation_routine_seat.seat IS 'which shape the field''s applications were written for, a closed two-value domain. CHAIN: the field carries at least one @reference, so the routine call is the write and the chain''s terminus is where the post-commit re-read runs. CARRIER: it carries none, so the return is a payload type whose data field owns the re-read and the hop out of the routine result is inferred rather than written. Decided by the presence of an @reference application and by nothing else, which is why it is a fact about the coordinate rather than a verdict: a refused coordinate has a seat too, and the two seats'' verdicts are disjoint vocabularies below the three shared ones';
+COMMENT ON COLUMN intent_mutation_routine_seat.verdict IS 'whether the seat holds, and where it does not, which precondition stopped it, in a closed vocabulary of fourteen. ADMITTED is the one emitting value and means the seat''s whole predicate holds; what such a coordinate emits is the seat column''s to say. Three refusals are shared by both seats. MULTIPLE_ROUTINE_NODES: more than one @routine is written on the field, which is a shape owed the multi-lateral emit; it precedes every other verdict because the rules below are stated about the chain''s one routine and there is no one routine here. CHAIN_HEAD_NOT_ROUTINE: an @reference is written before the routine, so the chain would depart from something other than the function result, which at a root there is nothing to be. READ_SURFACE_ON_WRITE: the field or one of its arguments carries @condition or @orderBy, and neither write seat has a filter or an ordering to resolve them against, so admitting the coordinate would classify the directives clean and then silently do nothing. Five are the chain seat''s. REFERENCE_ON_CARRIER_RETURN: the return carries no @table and is a routine payload carrier, so the path is the right fact at the wrong grain and its seat is the payload''s data field. CONNECTION_RETURN: @asConnection rewrote the field''s type expression, and the write''s re-read is keyed by the captured routine columns rather than paginated. CHAIN_UNRESOLVED: the chain does not land on exactly one table, which covers a routine name resolving to no function result, a walk that stopped short of the written tail, and a step reaching its destination by more than one route; which of the three it is is readable on intent_field_chain_node at this row''s own coordinate. UNANCHORED_FIRST_HOP: the first hop out of the routine result carries an authored condition, whose predicate names the routine alias and so cannot appear in the follow-up query, leaving the re-read no anchor. TERMINUS_NOT_RETURN_TABLE: the return type''s @table names a table the chain does not land on, or names one ambiguously. Five are the carrier seat''s. TABLE_BOUND_RETURN: the return is @table-bound with no @reference to walk, which is the chain shape minus its chain and has no re-read anchor either. NO_CARRIER: the return is neither table-bound nor a payload declaring exactly one data channel of the routine family, which is intent_carrier_data_field''s arity and its whole set of refusals reported as one. CARRIER_ELEMENT_NOT_TABLE: the one data channel is a record element, and a routine write re-reads its committed row from a catalog table. CARRIER_DATA_FIELD_NON_NULL: the data channel is a non-null single, so a re-read a read policy legitimately returns no row for would null the whole payload through non-null propagation and destroy the errors list beside it. CARRIER_HOP_UNRESOLVED: no hop runs from this field''s own routine result to the data field''s table, or one does and the pairing it would key on comes up short of the arrival''s key, which is intent_name_matched_key_pair''s shortfall stated as rows and demanded here as the reader''s own gate, intent_carrier_routine_hop naming the two ends and never claiming they can be keyed. Of the fourteen, the ones an author fixes in their own schema are CHAIN_HEAD_NOT_ROUTINE, REFERENCE_ON_CARRIER_RETURN, TERMINUS_NOT_RETURN_TABLE, CARRIER_ELEMENT_NOT_TABLE, CARRIER_DATA_FIELD_NON_NULL and CARRIER_HOP_UNRESOLVED; MULTIPLE_ROUTINE_NODES, READ_SURFACE_ON_WRITE, CONNECTION_RETURN, UNANCHORED_FIRST_HOP and TABLE_BOUND_RETURN are shapes the generator owes an emitter; CHAIN_UNRESOLVED and NO_CARRIER are each of both kinds and the witness relation tells them apart';
+COMMENT ON COLUMN intent_mutation_routine_seat.return_type_name IS 'the named type the field returns, its list and non-null wrappers stripped, read off graphitron_field_synthesis where a macro rewrote the type expression so a connection-returning field names its element. On a CHAIN row this is the type the chain''s terminus stands for; on a CARRIER row it is the payload, and the key into intent_carrier_data_field for the data channel this seat''s re-read runs at. Never the table: what table stands for the type is intent_bound_table''s and intent_field_chain_terminus''s to say, and repeating it here would be a denormalisation of facts this row''s own columns already reach';
+COMMENT ON COLUMN intent_mutation_routine_seat.source_name IS 'the schema document the @routine application is written in, carried from graphitron_routine so a located refusal needs no join back to the population';
+COMMENT ON COLUMN intent_mutation_routine_seat.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN intent_mutation_routine_seat.source_column IS 'source column, 1-based per the graphql-java convention. With the line and the document name, the site a refusal points an author at, which is the directive and not the field, every verdict here being about what the @routine composes with';
 
 CREATE VIEW intent_field_separate_fetch (graph_name, type_name, field_name, rule) AS
 SELECT s.graph_name, s.type_name, s.field_name, 'SPLIT_QUERY'

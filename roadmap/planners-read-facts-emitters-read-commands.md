@@ -838,12 +838,41 @@ deliverable) applies three times over. In order:
   over sibling relations*, most of which exist (the carrier arm is largely
   `intent_carrier_data_field` at `family='ROUTINE'` joined with `intent_carrier_routine_hop`;
   the chain arm reads the new hop relation), with a closed verdict vocabulary whose refusal arms
-  carry message, location and severity. **The refusal arms land in the DDL with the relation,
+  carry location. **The refusal arms land in the DDL with the relation,
   even though slice one reads only the emitting arms.** That is the slice's validator-tier
   deliverable: the admit and refuse halves of one predicate get one home from the start, instead
   of the admit half in SQL and the refuse half still in `FieldBuilder` with nothing binding
   them. The validator half's later routine-write check then reads rows that already exist. A
   smaller slice one omits *reading* the refusal arms; it does not omit stating them.
+
+  Delivered as `intent_mutation_routine_seat`. Four decisions the draft above did not settle, each
+  taken against a rule the schema already states rather than invented here. **No message column
+  and no severity column**, against the draft's own wording: `intent_node_id_decode_defect` settled
+  that a derived verdict relation carries the closed vocabulary plus its witnesses and the prose
+  belongs with the consumer that composes it, and a `message` column in the model appears only in
+  the transcription families, where the walk authored the string and the store is copying it down.
+  Severity would additionally be a function of the verdict and of nothing else, so which verdicts
+  are the author's to fix and which are shapes the generator owes an emitter is stated per value in
+  the column comment instead of denormalised into a column. **Seat and verdict are two columns, not
+  one fourteen-value vocabulary crossing both.** Which shape the author wrote for is decided by one
+  predicate (is an `@reference` written) and holds whether or not the seat holds, so a refused
+  coordinate still names the shape it was aiming at, which is what a diagnostic about it needs.
+  **One pass with a CASE rather than one UNION arm per verdict**, which is that same relation's rule
+  for the same reason and one more that matters here: exactly one verdict per coordinate is the
+  whole contract, and one driving row gives it by construction where a union has to rank arms to get
+  it back. **The terminus rule reads `intent_bound_table` and not the reduction**, on
+  `intent_inferred_node_type`'s stated grounds: the reduction's other arm is
+  `intent_routine_return_binding`, which binds a chain field's return type to that same chain's
+  terminus, so comparing the terminus against the reduction compares a value with itself.
+
+  Two silences are disclosed on the relation rather than closed. A first hop joining by an authored
+  condition *alone* resolves to no hop row at all, so it reads as `CHAIN_UNRESOLVED` where the walk
+  calls it a shape owed an emitter; separating them needs the stalled step named, and the tail a
+  chain walks is `intent_field_chain_node`'s own and not a relation. And an `ID`-element payload
+  draws no `intent_carrier_data_field` row at all, that relation refusing an ID element for the
+  routine family outright, so it reads as `NO_CARRIER`. The anchor is `MutationRoutineSeatTest`,
+  17 pipeline-tier cases: one per verdict, plus the population edge (a `@routine` on a Query field
+  is a read and draws nothing) and a totality case over a graph holding one coordinate of each seat.
 * **Command vocabulary: the tenancy acquisition axis, decided once for two families.** The one
   leaf read left in `renderRoutineWrite` is the coordinate's `TenantBinding`, resolved through
   `TenantDslEmitter` into two `CodeBlock` fragments the shell injects into

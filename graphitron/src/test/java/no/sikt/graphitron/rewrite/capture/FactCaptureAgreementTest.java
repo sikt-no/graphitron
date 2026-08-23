@@ -466,6 +466,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_error_channel", Arm.DERIVED);
         registrations.put("intent_carrier_data_field", Arm.DERIVED);
         registrations.put("intent_carrier_routine_hop", Arm.DERIVED);
+        registrations.put("intent_mutation_routine_seat", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);
         registrations.put("intent_field_column_scope", Arm.DERIVED);
         registrations.put("intent_field_column_table", Arm.DERIVED);
