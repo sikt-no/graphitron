@@ -239,6 +239,61 @@ none of them is responsible for finishing, which is how the counts sat where the
 relocation is precisely what the tertiary counter's comment says the instrument exists to make
 visible.
 
+### What the counters can and cannot see, and the two numbers that bind
+
+The four pins are trend telemetry, not the target. They are regexes over source text:
+
+```
+Pattern.compile("instanceof " + LEAF_HIERARCHIES + "[.A-Za-z]*")
+Pattern.compile("case " + LEAF_HIERARCHIES + "[.A-Za-z]*")
+```
+
+So they count spelling. The instrument's own javadoc records a sixteen-point rise and explains it as
+arms that started naming their leaves in import-short form "where the previous fully-qualified
+spellings sat outside it; same dispatch, then visible to the count". Movement with no behaviour
+change, in both directions: merging two `case` arms into one lowers the count and relocates nothing.
+
+The deeper limit is the one "What deleted, not migrated forbids" sets up. Leaf dispatch inside
+`plan/` is scaffolding that disappears by construction when the leaves are deleted, so the count is
+a leading indicator of an event the terminal deletion guarantees anyway. Keep the pins for the one
+thing they are good at, which is making a *stalled* relocation visible as a flat line across
+several slices. Do not read a single slice's movement as progress or regress, and do not gate on
+them.
+
+Two numbers actually bind, and the first already exists at scale.
+
+**Behaviour holds.** The gate this item opened with, byte-identical generated output and identical
+message, location and severity. It is instrumented by 3794 tests in the generator module alone,
+across 213 unit-tier and 177 pipeline-tier classes, the compilation and execution tiers above them,
+and `graphitron-sakila-example` compiling emitted sources at Java 17 and running them against a real
+database. Every slice runs the whole of it. Nothing else this item does is worth anything if that
+goes red, and no leaf count substitutes for it.
+
+**The condemned types become deletable.** For each type in the seven hierarchies, how many files
+outside the condemned tree still name it. That is one grep, it cannot be moved by spelling, it only
+falls, and reaching zero *is* the type being deletable rather than a proxy for it. Live at the time
+of writing:
+
+[cols="3,1"]
+|===
+| Condemned type | Files in `plan/` + `command/` + `render/` still naming it
+
+| `GraphitronField`
+| 6
+
+| `ChildField`
+| 4
+
+| `MutationField`
+| 3
+
+| `QueryField`
+| 2
+|===
+
+That census is what "The closer" should ratchet, and it is what a slice's reflection should report.
+A slice that leaves it unchanged relocated nothing, whatever the leaf counters did.
+
 ## Why the plan is the narrow waist, and why the emitters still have to follow
 
 The plan is where conversion buys the most. Commands are complete rows: the render shell folds over
@@ -391,6 +446,25 @@ keeps what is neither: the store detections (`AuthoredClaimConflicts`,
 retire. Under that rule `StoreNodeTables` and `ResolvedKeyProjections` get revisited by the
 increment that fixes their read shape (named in the planner half): their content is schema-grain
 fact assembly, so most of it becomes views.
+
+The heading says `derive/` shrinks, and it does, but it does not empty, which is worth stating
+because the name invites the opposite reading. Classified by what each file does, the package today
+is 1078 lines projecting a view's closed `verdict` vocabulary into located rejections with their
+prose, 420 lines reading the store into value objects, 392 lines of capture-cadence writers running
+a fixpoint, and 351 lines of support records. The largest file is 439 lines of which 187 are
+comments, and its only branching is a switch over the view's verdict plus a helper choosing "a" or
+"an" by first letter. None of it is derivation that could have been SQL and was not.
+
+Two of those jobs are permanent. Projecting a verdict into a message is rendering, and prose is not
+a captured fact. A fixpoint writer exists because the closure is over a cyclic graph and H2 has no
+safe recursive view for one, so the rule stays in the joins and only the loop is in Java. What
+leaves is the third job, the store reads named above.
+
+So the package is misnamed rather than misused, and the name is an attractor: call something
+`derive` and the next contributor with derivation to place will reach for it, which is the exact
+mistake the strategy section forbids. It also fuses two permanent jobs and one departing one under a
+word that describes none of them. Splitting and renaming it is not this item's work and is filed
+separately; what this item owes is not adding to it, and the rule above already says so.
 
 Two consequences are named now because the dial would otherwise discover them late:
 
@@ -909,7 +983,10 @@ inherits.
   sites, not 29, and the plan side sums to 147. Slice one's own arithmetic is unaffected, the
   routine-write producer being untouched at 11 sites and 134 lines, but it now lands the pin at 136
   rather than 127, and the reflection's "how far did one vertical move the number" is read against
-  the new base. What the nine references actually are matters more than the count. The producer now
+  the new base. That reading is now the weaker half of the reflection rather than its subject, per
+  the counters' own limits stated above: what slice one is answerable for is the deletable-types
+  census, and the pin landing at 136 is telemetry recorded beside it. What the nine references
+  actually are matters more than the count. The producer now
   narrows a type to the table-interface leaf, filters its fields to the child-field leaf, and
   recurses through nesting splices to find the participants' spliced subtrees: a tree walk
   performed by a planner, over the schema, which is the one shape this item says a planner must not
