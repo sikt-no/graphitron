@@ -409,3 +409,93 @@ stores is build time. So the honest boundary is that the two do not overlap in w
 do overlap in what they spend, which is why the cost paragraph above is part of this plan and why the
 implementation reports the wall clock it added when it lands. If that number is large enough to matter
 to R733, R733 is the item that decides what to do about it.
+
+## Reviewer findings (Spec → Ready gate, 2026-08-23)
+
+Independent reviewer session `session_01LQgCxRoQLiBENLLV6mgseJ`, status stays `Spec`. Two findings.
+The first is on question 1, the viability half: the plan's outcome is not reachable as specified,
+because part of the gate's own domain cannot be measured. The second is on question 2: one leg of the
+cost argument names a mechanism that does not govern the module the plan puts the test in. Both live
+in the plan's cost reasoning, which is otherwise the section that carries the most weight here, since
+the gate's whole viability rests on it. Everything else checked out, including every symbol, relation
+and test the spec names; the verification list is in the commit message.
+
+1. **The gate's domain contains cells whose unregistered shape the register itself records as not
+   completing, and the plan takes no position on them.** The claim is comparative ("the registered
+   shape costs no more scans than the unregistered shape") and the instrument is the `scanCount` H2
+   annotates an `EXPLAIN ANALYZE` plan node with, which the plan correctly notes executes the
+   statement rather than estimating it. So every cell needs its unregistered side to *finish*. At
+   least one cell cannot. `meta_materialize`'s own reason for the hop-column registration says of the
+   unregistered shape: "the walk accumulates around twenty rows, and the walk does not finish inside
+   a two-minute timeout, while the same walk over these rows as a table is a little over three
+   seconds for the whole reader." That walk is `intent_node_id_decode_column`, which names
+   `intent_node_id_decode_hop_column` directly and is named in turn by `intent_node_id_decode`, so
+   the pair sits inside the exact family this item prices and the reachability restriction does not
+   exclude it: the reachability axis is what *puts* it in the domain. The same territory holds the
+   item's own primary control, `intent_resolved_type_binding`, whose reason records a read over the
+   unregistered shape that "did not finish inside a five-minute timeout".
+
+   The three decisions the cost paragraph offers do not reach this. Reachability shrinks the matrix
+   but keeps this cell. A stated cell count prices a cell that terminates. "Fewer relations in the
+   domain" is the one that would work and it is barred by the plan's own strongest property, that
+   both axes come off the booted store and never a hand-kept list; carving out the cells that hang
+   reintroduces exactly the hand list the plan rules out. Nor does the equality-pinned set cover it:
+   that set is for pairs where materializing costs *more*, and a non-terminating unregistered shape
+   is the strongest possible pass, just an unobservable one. The result is that an implementer
+   reaches this on the first cell they run and has to invent the semantics.
+
+   What would satisfy the question: a stated position on a cell whose unregistered side cannot be
+   evaluated, decided here rather than in implementation, because it changes what the assertion
+   means. `ReadBudget.Bounded` already exists to bound a read in this tree and would give the clean
+   shape, an exhausted budget on the unregistered side passing the cell by construction with the
+   reason recorded; that is a pass-on-timeout arm on the gate and it needs the author's argument, not
+   the implementer's guess. Whatever the answer, it wants to say what the gate does when the
+   unregistered side does not answer, and it wants to hold for the population the plan already knows
+   about rather than for the one cell above.
+
+2. **`ThreadConfinedStore`'s boot budget does not govern `graphitron`'s test tree, and cannot be read
+   from it, so the leg that turns the cell count from discovered into checked is not there.** The
+   cost paragraph offers three bounding decisions "rather than hopes", and the second is that "each
+   store counts against `ThreadConfinedStore`'s boot budget, so the cell count is a number the plan
+   states and the implementation checks against that budget rather than one it discovers". Three
+   things in the tree contradict that. `ThreadConfinedStore` is a package-private `final class` in
+   `no.sikt.graphitron.model.test` and its `bootBudget()` accessor is package-private too, so
+   `DerivedReadCostTest` in `graphitron`'s test tree cannot name either. `verifyBootBudget` fires
+   only on a funnel call, that is, from inside that class, in `graphitron-model`'s own surefire run.
+   And most decisively, `BOOT_BUDGET`'s javadoc scopes itself deliberately away from this test's
+   module: it is "stated here rather than on `FactStores` even though it is that counter's budget,
+   because the harness is reached from four modules and only this one has adopted the funnel. The
+   others boot per case by design and in the hundreds, so a number enforced down there would be this
+   module's claim imposed on theirs. When one of them adopts a funnel it states its own."
+   `graphitron` is one of those others, and `CapturedStore` takes `FactStores.inMemory()` per capture
+   by design.
+
+   This matters for question 2 rather than being a stale reference, because it is the leg that makes
+   the matrix a checked number. Removing it leaves the plan's cost claim resting on reachability plus
+   an unenforced assertion in prose, and the sentence that says the implementation "checks against
+   that budget" directs an implementer at a mechanism they will find inaccessible on day one and then
+   have to replace with a decision the plan says it already made. The `BOOT_BUDGET` javadoc names the
+   shape of that decision precisely, that a module adopting a funnel states its own number, so it is
+   a real choice with a figure attached and it belongs to the author.
+
+   The same paragraph carries a smaller inconsistency worth settling in the same pass, because it
+   changes the number: the cost is priced as "one store per (registration, size) cell plus a
+   baseline", while the control section says "one store per registration plus a baseline". A size
+   axis appears nowhere else in the plan and the gate does not seem to need one; the two-size
+   discipline `SurfaceScanCountTest` runs exists to tell a bounded constant from the low end of a
+   superlinear curve, which a directional comparison does not ask. As written the phrase doubles the
+   matrix the plan claims to own.
+
+### Non-blocking
+
+* Two commit hashes cited in the measurement sections are not valid objects in this repository:
+  `200fd26`, the baseline row of the "What was measured" table, and `272ef13`, the first of the three
+  candidate commits in "What was not established". Rebases will do that. Nothing the implementer
+  builds turns on either, the plan replacing the three-commit suspect list with the reachability walk
+  on day one and the control being per-registration rather than per-commit, but a reader trying to
+  reproduce the 5054-6090 ms baseline cannot get to the tree it was taken on. Worth a note in the
+  table saying the hashes are pre-rebase, or re-resolving them.
+* "`ThreadConfinedStore`'s clear would truncate one" reads as the clear succeeding. It refuses:
+  `RunawayRelation`'s javadoc has H2 "declining to truncate" a name the DDL has turned into a view.
+  The plan's conclusion, that the store is spent either way, is the same one that javadoc draws, so
+  this is wording rather than substance.
