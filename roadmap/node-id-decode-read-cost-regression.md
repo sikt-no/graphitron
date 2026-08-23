@@ -402,6 +402,22 @@ the fallback than its cost as an extension of the parse walk. If the binding's c
 excusing structurally too, the property that covers them has to be found rather than assumed; until
 then they are the budget's business and, when they exhaust it, the pinned set's.
 
+The shape that property would have is worth naming, so that the search starts from the register's own
+account rather than from scratch. What the two cases share is not recursion, it is *position*: a
+relation evaluated once per row of something else. A recursive term is one such position, per
+accumulated row. An expression-keyed join is the other, per driving row, and that is precisely what
+the binding's registration says about itself, a `COUNT(*) OVER` that no outer predicate prunes plus a
+reader joining it on an expression rather than a column. The fact model carries the two as separate
+rules for that reason.
+
+What splits them is detection cost, and that is why this stays the fallback rather than becoming the
+answer. Finding a recursive term is a partition of a parsed definition on its first top-level `UNION`.
+Deciding that a join meets a relation on an expression means tracing a comparison's operands back to
+their source relations through aliases, subqueries and CTEs, which is the predicate-analysis layer
+R801 already scopes as the last and hardest of its three, over the same parsed definitions. So the
+property that would cover the binding is not a small extension of this item's walk, and an implementer
+who needs it should reach for that item's machinery rather than grow a second copy here.
+
 ### What the gate costs
 
 The cost of the gate is real and this plan owns it rather than discovering it in review. Each
@@ -702,6 +718,30 @@ only because settling it requires a choice I am not the one to make.
    safe-in-one-direction argument changed. An implementer who disagrees with the narrowing should
    treat it as reviewer prose that no third session has read as a draft, which is the risk the split
    exists to price.
+
+   *Author, same day:* the finding is right, the narrowing is accepted as written, and I checked the
+   claim rather than taking it: in `intent_field_reference_step_target` the binding is joined at the
+   seed's `FROM`, above the `UNION`, and the recursive term below it reads `chain` and
+   `intent_field_reference_step_hop` and nothing else. My round-1 sentence was half true and stated as
+   though it were whole, which is the worse failure of the two. The demotion of the binding's
+   five-minute figure is right too: that reason describes a census-driven join inside the drain's own
+   statement, so it is a Java reader's cost and not a cell of this gate.
+
+   What I have added rather than changed: the paragraph now names the shape the missing property would
+   have, because leaving it as "find one" starts the next reader from nothing. The two cases share a
+   position rather than recursion, a relation evaluated once per row of something else, and the
+   binding's own registration already says which position it occupies, an unprunable `COUNT(*) OVER`
+   met on an expression rather than a column. The asymmetry that keeps the fallback narrow is then
+   detection cost rather than taste: a recursive term is a partition on the first top-level `UNION`,
+   while tracing a join's operands to their source relations through aliases, subqueries and CTEs is
+   the predicate-analysis layer R801 already owns. So an implementer needing that property reaches for
+   that item rather than growing a second copy here.
+
+   On the process note: taking the narrowing was the right call and the risk it prices is real, so this
+   response is the draft-reading the split asks for. I read the edit as the author, checked its factual
+   claim against the DDL, and accept it. The repointed citation is correct as well; the cross-machine
+   argument is `RunawayRelation`'s and the tier-guarantee argument is `ReadBudget`'s, and the plan now
+   cites each where it belongs.
 
 ### Round 2 non-blocking
 
