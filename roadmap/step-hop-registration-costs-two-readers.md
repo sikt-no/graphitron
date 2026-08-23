@@ -177,3 +177,59 @@ populated by this schema and excepts only the defect relations. Either the fixtu
 shape that populates it, in which case the gate covers six registrations and not seven and should say
 so, or it should be made to. Small, and adjacent enough to belong here rather than in an item of its
 own.
+
+## Reviewer findings
+
+### Round 1, Spec -> Ready
+
+Revisions requested. Two findings, one against each gate question. The measurement work behind this
+spec holds up: the seven unkeyed tables are exactly the seven materialized targets and exactly the
+tables in the schema with no key, the other 145 declare a primary key, the two targets named as
+accepting one are the only two whose every column is `NOT NULL`, nothing in the tree runs `ANALYZE`,
+the quoted `fact-model.adoc` passage is verbatim, the pinned pairs and the twelve-unit fixture are as
+described, and every symbol the spec names exists under that name. The findings are about what the
+spec claims for a consumer and about where the second task lands, not about the numbers.
+
+**Question 1, the consumer claim.** `intent_node_id_decode` is presented as one of "the ones a person
+waits on" and as "the relation the editor's node-id diagnostics reach". Nothing reads it. There is no
+reader of it in `graphitron-lsp`, no reader in any main source, and no other view in the schema names
+it; the only readers in the tree are three tests. Its own view comment says so directly: "It carries
+no registration of its own because nothing on the build path reads it yet; the sibling that is read
+there is `intent_node_id_decode_defect`". So the largest of the two figures the section rests its
+user-visible case on, 9543 scans to 6551, reaches nobody today, and a reader working from this spec
+would believe an editor surface gets faster when it does not.
+
+The item is not sunk by this. `intent_node_id_decode_defect` genuinely is on the build path through
+`NodeIdDecodeDefects.detect`, and the LSP surfaces `SurfaceScanCountTest` bounds genuinely read these
+targets, which is why task 4 exists. What would satisfy the finding is restating the section against
+the surfaces that actually reach the targets: keep the decode figure if it is worth keeping, as a
+schema-internal measurement with no consumer attached and a note that a future reader inherits the
+win, and let the build path and the LSP surfaces carry the consumer claim on their own.
+
+**Question 2, the fit of task 2, and a smaller fork in task 3.** Task 2 places `ANALYZE` at the end of
+`Materializations.refresh`. That is one of two refill entry points. `Materializations.refreshAll` is
+the other, and `DevMojo` calls it on session open with a comment saying it exists precisely so the
+language server and MCP are not served stale materialized rows. Since the spec's own second mechanism
+is that a refill puts the statistics back, `ANALYZE` in `refresh` alone leaves the dev-loop store's
+statistics stale for exactly the surfaces task 4 re-measures, and an implementer reading the plan
+literally would ship that. The cost argument the task gives, "it runs inside capture's transaction, on
+every capture, for every consumer", is the capture path's cost; `refreshAll`'s is a different one, paid
+once per dev session rather than per capture, and it is the cheaper of the two to argue. Naming both
+paths and saying which gets `ANALYZE`, with the cost stated per path, is what would satisfy this.
+
+The smaller fork is in task 3. The gate claim as worded is that a registered target carries an index,
+while task 1 says every index wants a reader to justify it and expects `intent_argmapping_pair` and
+`intent_node_id_decode_hop_column` may end up with none. Those two cannot both hold. The implementer
+would have to either index a target no reader justifies or add an exemption roster the spec does not
+mention, and `MaterializeRegistryGateTest`'s own `HAND_WRITTEN` set is the precedent sitting right
+there for the second. Say which, since it decides whether the mechanism that stops the defect
+returning is satisfiable as stated.
+
+**Non-blocking, noted rather than asked for.** "What this does not touch" says the recursive-view read
+per conflict row in `AuthoredClaimConflicts.fieldGrain` "is recorded on the class". It is not: the
+per-row read is real, and `intent_authored_field_claim` is indeed a recursive view, but no javadoc or
+comment in `AuthoredClaimConflicts` mentions the cost. So that defect is currently recorded nowhere at
+all rather than recorded and unfiled. Nothing here needs to change in the plan; it may be worth a
+Backlog stub.
+
+Status stays Spec.
