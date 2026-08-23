@@ -3,7 +3,7 @@ id: R801
 title: "View-read census and closure of the declared family bridges"
 status: Backlog
 bucket: architecture
-depends-on: [family-page-introductions]
+depends-on: []
 created: 2026-08-21
 last-updated: 2026-08-22
 ---
