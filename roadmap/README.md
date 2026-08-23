@@ -30,12 +30,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
 | `R687` | A DML carrier payload with an errors field loses its return-derived write target | Spec | 2026-08-20 <sub>created 2026-08-17</sub> | [plan](dml-carrier-errors-field-blocks-return-derived-table.md) |
-| `R804` | Composed columns are atomic and key-dependent: state the discipline in the explanation articles | Spec | 2026-08-23 <sub>created 2026-08-22</sub> | [plan](rendering-is-a-query-time-construct.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R797` | Pull diagnostics, so a client can ask, cancel, and be told to ask again | Spec | 2026-08-21 | [plan](pull-diagnostics-so-a-client-can-ask-and-cancel.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
+| `R804` | Composed columns are atomic and key-dependent: state the discipline in the explanation articles | Ready | 2026-08-23 <sub>created 2026-08-22</sub> | [plan](rendering-is-a-query-time-construct.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R724` | The stated key-column match spends its ambiguity silently; make it state its arity | Ready | 2026-08-19 | [plan](stated-key-column-match-states-its-arity.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
@@ -586,7 +586,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R758` [**The fact model page never learns the materialization registry**](fact-model-page-learns-the-registry.md) — Backlog, dx
 - `R635` [**The schema drift guard covers the prefix-less relations too**](schema-drift-guard-covers-prefixless-relations.md) — Backlog, cleanup
 - `R614` [**lookupKey.adoc claims a per-input-field shape the Query side rejects**](lookupkey-per-input-field-doc-claim.md) — Backlog, docs
-- `R804` [**Composed columns are atomic and key-dependent: state the discipline in the explanation articles**](rendering-is-a-query-time-construct.md) — Spec, docs
+- `R804` [**Composed columns are atomic and key-dependent: state the discipline in the explanation articles**](rendering-is-a-query-time-construct.md) — Ready, docs
 - `R636` [**The generated schema reference tells the truth about view columns**](schema-reference-view-column-fidelity.md) — Backlog, cleanup
 - `R530` [**Manual how-to: serve your schema over HTTP (the GraphitronApplication SPI adapter)**](manual-howto-serve-schema-over-http.md) — Backlog, cleanup
 - `R498` [**Restore or repoint the missing getting-started quieting-warnings doc referenced by the RAG dev-warm hint**](rag-log-quieting-getting-started-doc.md) — Backlog, docs

@@ -1,7 +1,7 @@
 ---
 id: R804
 title: "Composed columns are atomic and key-dependent: state the discipline in the explanation articles"
-status: Spec
+status: Ready
 bucket: docs
 priority: 5
 theme: docs
