@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.schema.FieldCoordinates;
+import no.sikt.graphitron.plan.GeneratedUnits;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
@@ -98,7 +99,7 @@ public final class MappingsConstantNameDedup {
                 for (var hashEntry : byHash.entrySet()) {
                     String name = first
                         ? bare
-                        : bare + "_" + hashEntry.getKey().substring(0, 8).toUpperCase();
+                        : GeneratedUnits.disambiguatedMappingsConstant(bare, hashEntry.getKey());
                     first = false;
                     for (var ch : hashEntry.getValue()) resolved.put(ch, name);
                 }
@@ -218,7 +219,13 @@ public final class MappingsConstantNameDedup {
     }
 
     /**
-     * Canonicalises a channel's flattened handler list and returns the SHA-256 hex digest. The
+     * Canonicalises a channel's flattened handler list and returns the SHA-256 hex digest: the
+     * fingerprint two channels sharing a constant name must agree on. Public because the
+     * agreement has two consumers and one spelling: this pass suffixes on it when a group holds
+     * more than one shape, and {@code ErrorMappingsClassGenerator} compares on it when it groups
+     * the resolved names back up. A second flattening at the second site could disagree with this
+     * one about what counts as the same shape, and the disagreement would surface as an emitted
+     * constant holding the wrong dispatch table rather than as a failure. The
      * canonical form walks {@code mappedErrorTypes} in source order; for each {@link ErrorType}
      * walks {@code handlers} in source order, writing one fingerprint line per handler with the
      * variant tag, the {@code @error} type name, the criteria and the optional matches. Identical
@@ -230,7 +237,7 @@ public final class MappingsConstantNameDedup {
      * name-keyed map), so two channels whose lines differ only in a description are not
      * constructible and including it could never change a digest, a suffix, or an emitted name.
      */
-    private static String canonicalHash(ErrorChannel channel) {
+    public static String canonicalHash(ErrorChannel channel) {
         var sb = new StringBuilder();
         for (var et : channel.mappedErrorTypes()) {
             for (var h : et.handlers()) {

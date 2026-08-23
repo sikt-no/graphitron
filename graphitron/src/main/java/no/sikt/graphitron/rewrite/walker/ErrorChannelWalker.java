@@ -62,25 +62,8 @@ public final class ErrorChannelWalker {
             return new WalkerResult.Err<>(errors);
         }
 
-        String mappingsConstantName = toScreamingSnake(outcomeTypeName);
+        String mappingsConstantName =
+            no.sikt.graphitron.plan.GeneratedUnits.mappingsConstant(outcomeTypeName);
         return new WalkerResult.Ok<>(new ErrorChannel.Mapped(mapped, mappingsConstantName));
-    }
-
-    /**
-     * CamelCase to SCREAMING_SNAKE_CASE (e.g. {@code FilmPayload} -&gt; {@code FILM_PAYLOAD}).
-     * Same transform as {@code BuildContext.toScreamingSnake}, kept here so the walker has no
-     * package-private dependency on {@code BuildContext}.
-     */
-    private static String toScreamingSnake(String s) {
-        if (s == null || s.isEmpty()) return s;
-        var sb = new StringBuilder(s.length() + 4);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (i > 0 && Character.isUpperCase(c) && !Character.isUpperCase(s.charAt(i - 1))) {
-                sb.append('_');
-            }
-            sb.append(Character.toUpperCase(c));
-        }
-        return sb.toString();
     }
 }

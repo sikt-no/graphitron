@@ -8,6 +8,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.GeneratedUnits;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.MappingsConstantNameDedup;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage;
@@ -19,7 +20,6 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.VendorCodeHandl
 import no.sikt.graphitron.rewrite.model.WithErrorChannel;
 
 import javax.lang.model.element.Modifier;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -96,16 +96,7 @@ public final class ErrorMappingsClassGenerator {
      * {@code ErrorTypeFetcherClassGenerator}.
      */
     public static String byTypeConstantName(String errorTypeName) {
-        if (errorTypeName == null || errorTypeName.isEmpty()) return errorTypeName;
-        var sb = new StringBuilder(errorTypeName.length() + 4);
-        for (int i = 0; i < errorTypeName.length(); i++) {
-            char c = errorTypeName.charAt(i);
-            if (i > 0 && Character.isUpperCase(c) && !Character.isUpperCase(errorTypeName.charAt(i - 1))) {
-                sb.append('_');
-            }
-            sb.append(Character.toUpperCase(c));
-        }
-        return sb.toString();
+        return GeneratedUnits.screamingSnake(errorTypeName);
     }
 
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
@@ -371,39 +362,14 @@ public final class ErrorMappingsClassGenerator {
     }
 
     /**
-     * Two channels collide on the same {@code mappingsConstantName} only legitimately when their
-     * flattened handler list contents (per-handler variant + discriminator + matches) match.
-     * Order matters because mapping dispatch is source-order-first-match. The authored
-     * {@code description:} is deliberately absent from the fingerprint: both lines also carry the
-     * {@code @error} type name, and a type name determines its whole handler list, so two
-     * channels differing only in a description are not constructible.
+     * Whether two channels declare the same handler list, decided on the fingerprint the dedup
+     * pass suffixes with rather than on a flattening of this file's own. One spelling of what
+     * counts as the same shape is what makes the check below meaningful: a second one could call
+     * two channels equal that the dedup pass had already separated, and the disagreement would
+     * emit a constant holding the wrong dispatch table instead of failing here.
      */
     private static boolean sameHandlerShape(ErrorChannel a, ErrorChannel b) {
-        return flattenHandlers(a).equals(flattenHandlers(b));
-    }
-
-    private static List<HandlerKey> flattenHandlers(ErrorChannel channel) {
-        var keys = new ArrayList<HandlerKey>();
-        for (var et : channel.mappedErrorTypes()) {
-            for (var h : et.handlers()) {
-                keys.add(HandlerKey.of(et.name(), h));
-            }
-        }
-        return keys;
-    }
-
-    private record HandlerKey(String variant, String errorTypeName, String discriminator,
-                              String matches) {
-        static HandlerKey of(String errorTypeName, Handler h) {
-            return switch (h) {
-                case ExceptionHandler eh -> new HandlerKey("E", errorTypeName,
-                    eh.exceptionClassName(), eh.matches().orElse(null));
-                case SqlStateHandler sh -> new HandlerKey("S", errorTypeName,
-                    sh.sqlState(), sh.matches().orElse(null));
-                case VendorCodeHandler vh -> new HandlerKey("V", errorTypeName,
-                    vh.vendorCode(), vh.matches().orElse(null));
-                case ValidationHandler ignored -> new HandlerKey("L", errorTypeName, "", null);
-            };
-        }
+        return MappingsConstantNameDedup.canonicalHash(a)
+            .equals(MappingsConstantNameDedup.canonicalHash(b));
     }
 }

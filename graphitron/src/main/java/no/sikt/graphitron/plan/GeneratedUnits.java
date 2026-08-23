@@ -146,6 +146,58 @@ public final class GeneratedUnits {
     }
 
     /**
+     * The bare name of the {@code Mapping[]} constant on {@link #errorMappings()} that holds one
+     * error channel's dispatch table: {@code SCREAMING_SNAKE} of the name the channel mints from.
+     * Which name that is belongs to the channel's transport and not to this formula: the payload
+     * class's simple name where the catch arm constructs one, and the payload's own SDL type name
+     * where it does not, both of which the store carries as columns beside the channel so no
+     * caller has to re-derive which applies.
+     *
+     * <p>Bare because two channels can arrive at the same one; the disambiguation is
+     * {@link #disambiguatedMappingsConstant} and it applies there rather than at the call site.
+     */
+    public static String mappingsConstant(String mintedFrom) {
+        return screamingSnake(mintedFrom);
+    }
+
+    /**
+     * The name of the {@code Mapping[]} constant for a channel that had to be disambiguated:
+     * a {@link #mappingsConstant} with a suffix derived from {@code fingerprint}, the digest over
+     * the channel's canonicalised handler list. Two channels minting from the same name but
+     * declaring different mappings cannot share a constant; the one that keeps the bare name is
+     * the first classified, and every later shape passes its own fingerprint here.
+     *
+     * <p>The suffix is the fingerprint's first eight hex characters, uppercased. Distinct shapes
+     * that collide on those eight characters would collide on the whole digest and therefore be
+     * one shape, so the suffix cannot manufacture a collision the grouping did not already have.
+     *
+     * @param bareConstant the already-folded bare name, as {@link #mappingsConstant} produced it
+     * @param fingerprint  a hex digest, at least eight characters
+     */
+    public static String disambiguatedMappingsConstant(String bareConstant, String fingerprint) {
+        return bareConstant + "_" + fingerprint.substring(0, 8).toUpperCase(java.util.Locale.ROOT);
+    }
+
+    /**
+     * {@code CamelCase} to {@code SCREAMING_SNAKE_CASE}: {@code FilmPayload} becomes
+     * {@code FILM_PAYLOAD}. The one spelling of the fold, which the error-channel constant and
+     * the per-{@code @error}-type holder constant both mint through; before it landed here the
+     * same loop was written out at four sites, three of which could not see each other.
+     */
+    public static String screamingSnake(String s) {
+        if (s == null || s.isEmpty()) return s;
+        var sb = new StringBuilder(s.length() + 4);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (i > 0 && Character.isUpperCase(c) && !Character.isUpperCase(s.charAt(i - 1))) {
+                sb.append('_');
+            }
+            sb.append(Character.toUpperCase(c));
+        }
+        return sb.toString();
+    }
+
+    /**
      * {@code <Parent>Fetchers#rows<Field>}: a batched child coordinate's launcher unit, the
      * DataLoader-backed rows method taking the batch keys. Same formula as the root launcher's
      * scheme and deliberately a separate method: the two populations join the relation from

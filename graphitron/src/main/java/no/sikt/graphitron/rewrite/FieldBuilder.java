@@ -3970,7 +3970,8 @@ class FieldBuilder {
         // (JLS-legal) rather than the binary Outer$Nested that bestGuess would emit verbatim and
         // that javac cannot resolve; payloadCls is already loaded above.
         var payloadClassName = ClassName.get(payloadCls);
-        String mappingsConstantName = toScreamingSnake(payloadCls.getSimpleName());
+        String mappingsConstantName =
+            no.sikt.graphitron.plan.GeneratedUnits.mappingsConstant(payloadCls.getSimpleName());
 
         return switch (shape) {
             case no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor afc ->
@@ -4331,25 +4332,6 @@ class FieldBuilder {
         if (rawType == float.class) return "0.0f";
         if (rawType == double.class) return "0.0";
         return "0";  // byte / short / int
-    }
-
-    /**
-     * Converts a Java identifier (e.g. a class's simple name) to {@code SCREAMING_SNAKE_CASE}.
-     * {@code FilmPayload} → {@code FILM_PAYLOAD}, {@code BehandleSakPayload} →
-     * {@code BEHANDLE_SAK_PAYLOAD}. Produces the unsuffixed base name; it does not dedup
-     * colliding shapes.
-     */
-    private static String toScreamingSnake(String s) {
-        if (s == null || s.isEmpty()) return s;
-        var sb = new StringBuilder(s.length() + 4);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (i > 0 && Character.isUpperCase(c) && !Character.isUpperCase(s.charAt(i - 1))) {
-                sb.append('_');
-            }
-            sb.append(Character.toUpperCase(c));
-        }
-        return sb.toString();
     }
 
     /**
@@ -4811,7 +4793,8 @@ class FieldBuilder {
                     "errors-shaped carrier field '" + f.getName() + "': " + duplicateMatchCriteria);
             }
             return new StructuralDmlErrorChannel.Present(
-                new ErrorChannel.LocalContext(errorTypes, BuildContext.toScreamingSnake(payloadSdlName)));
+                new ErrorChannel.LocalContext(errorTypes,
+                    no.sikt.graphitron.plan.GeneratedUnits.mappingsConstant(payloadSdlName)));
         }
         return new StructuralDmlErrorChannel.None();
     }

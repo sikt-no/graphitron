@@ -1121,25 +1121,6 @@ class BuildContext {
         return errorTypes;
     }
 
-    /**
-     * Converts a CamelCase identifier to SCREAMING_SNAKE_CASE. Used by
-     * {@code FieldBuilder.detectStructuralDmlErrorChannel} to derive
-     * {@code ErrorChannel.LocalContext.mappingsConstantName} from the wrapper SDL type name
-     * (e.g. {@code FilmPayload} -&gt; {@code FILM_PAYLOAD}).
-     */
-    static String toScreamingSnake(String s) {
-        if (s == null || s.isEmpty()) return s;
-        var sb = new StringBuilder(s.length() + 4);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (i > 0 && Character.isUpperCase(c) && !Character.isUpperCase(s.charAt(i - 1))) {
-                sb.append('_');
-            }
-            sb.append(Character.toUpperCase(c));
-        }
-        return sb.toString();
-    }
-
     // ===== Error-message helpers =====
 
     /**
