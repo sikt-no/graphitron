@@ -1,7 +1,7 @@
 ---
 id: R815
 title: "Index the materialized targets, the only unkeyed tables in a keyed schema"
-status: Spec
+status: Ready
 bucket: store
 priority: 2
 theme: nodeid
@@ -333,3 +333,40 @@ asserted by equality.
 *Non-blocking note.* Confirmed and corrected in place; the only "cost" in `AuthoredClaimConflicts` is
 about emitted source. The sentence now says the defect is recorded nowhere and wants its own stub,
 which is filed separately rather than folded into this item.
+
+### Round 2, Spec -> Ready
+
+Signed off. Both findings are answered, and the answer to the first is a better spec than the one that
+would have satisfied the finding as written.
+
+The consumer claim now names readers that exist and is checkable at every step.
+`intent_field_reference_step_target` is read from main source in exactly the two places the section
+names: `ClaimFacts` in `graphitron-lsp`, reached from `DeclarationHovers.fieldArms`, so the hover
+framing is literal rather than a gloss; and `SchemaQueries` in `graphitron-mcp`. Both filter on
+`(graph_name, type_name, field_name)` and nothing else, which is what makes the coordinate measurement
+the right one to have taken. The mechanism correction that came out of it holds against the doc's own
+text: `fact-model.adoc` already states, in the derived-read section, that "a derived view carrying a
+window function or a recursive term cannot be pruned by a predicate applied outside it", and
+`intent_field_reference_step_target` is a `WITH RECURSIVE` carrying `COUNT(*) OVER` and
+`MAX(...) OVER`. So the doc contradicts itself between that rule and the depth-rule passage task 5
+rewrites, and the revision found that rather than merely restating the consumer list. The item is
+better for the round.
+
+The rest of the section is now accurate where it was not. `intent_node_id_decode` is stated as
+consumer-less, matching the view's own comment and the tree. `intent_field_column_scope_live` and
+`intent_argument_scope_table_live` are stated as having no main-source reader, which is correct: no
+Java file outside generated sources names either.
+
+Task 2 names both refill paths, orders them by which cost is easier to argue, and makes declining
+`ANALYZE` on the capture path a legitimate outcome with the reason attached. Task 3's fork is resolved
+toward the roster rather than the bare claim; `HAND_WRITTEN` is the right precedent to have reached
+for, and that test already ratchets it from both sides, so an index-or-stated-reason roster asserted
+by equality sits inside a shape the family has. Nothing here stands a parallel mechanism beside an
+existing one: the indexes make the seven targets look like the other 145 tables, the gate extends a
+test that already reads `INFORMATION_SCHEMA` over a booted store, and `ANALYZE` goes into the two
+refill functions that already exist.
+
+The decisions the spec leaves open (whether an index is also `UNIQUE`, whether the capture path earns
+`ANALYZE`, whether the two residual pairs are the instrument's floor or real cost) are each stated
+with the evidence required to settle them, which is the right way to leave a decision to an
+implementer. Status Spec -> Ready.
