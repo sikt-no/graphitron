@@ -200,6 +200,47 @@ class MaterializationOrderTest {
         register(dsl, "scratch_d_live", "scratch_d");
     }
 
+    /**
+     * The same walk asked the other way round. {@link MaterializeDependencies#populate} needs only the
+     * registrations a registered source view reaches; the reach a cost gate ranges over is every
+     * view's, so this pins the answer for the fixture whose subtree is known by inspection here:
+     * {@code scratch_d_live} reads the prerequisite's target through an unregistered intermediate view,
+     * and the intermediate view reaches it directly.
+     *
+     * <p>A walk stops at a registered target, which is the property worth pinning rather than
+     * inferring: {@code scratch_p_live}, sitting below both, reaches nothing, so a reader meeting a
+     * materialized table is not charged for what fills it. And an unregistered view is answered in its
+     * own right rather than only as a step of somebody's walk, which is what a cost gate needs of it.
+     */
+    @Test
+    @DisplayName("the reach walk answers every view, stopping at a registered target")
+    void theReachWalkAnswersEveryViewAndStopsAtRegisteredTargets() {
+        withStore(dsl -> {
+            prerequisite(dsl);
+            dsl.execute("CREATE VIEW scratch_mid AS SELECT v FROM scratch_p");
+            dsl.execute("CREATE VIEW scratch_t_live AS SELECT v FROM scratch_mid");
+            dsl.execute("CREATE TABLE scratch_t (v INT)");
+            register(dsl, "scratch_t_live", "scratch_t");
+
+            var reached = MaterializeDependencies.registrationsReachedByView(dsl);
+
+            assertThat(reached.get("scratch_t_live"))
+                .as("the registered source view reaches the prerequisite through the intermediate")
+                .containsExactly("scratch_p_live");
+            assertThat(reached.get("scratch_mid"))
+                .as("an unregistered view is answered in its own right, which is the reach a cost"
+                    + " claim over that view ranges over")
+                .containsExactly("scratch_p_live");
+            assertThat(reached.get("scratch_p_live"))
+                .as("the prerequisite reads a base table alone and so reaches no registration")
+                .isEmpty();
+            assertThat(reached.keySet())
+                .as("every view in the store is a key, base tables are not")
+                .contains("scratch_t_live", "scratch_mid", "scratch_p_live")
+                .doesNotContain("scratch_src", "scratch_p", "scratch_t");
+        });
+    }
+
     private static void register(DSLContext dsl, String sourceViewName, String targetTableName) {
         dsl.insertInto(META_MATERIALIZE,
                 META_MATERIALIZE.SOURCE_VIEW_NAME,

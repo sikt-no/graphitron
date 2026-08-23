@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 
 import static org.jooq.impl.DSL.field;
@@ -39,6 +40,12 @@ import static org.jooq.impl.DSL.table;
  * gates read the rows without ever re-parsing. The rewrite is idempotent and inserts in a fixed
  * order, so two runs over one store write byte-identical rows and the relation is deterministic
  * run to run.
+ *
+ * <p>The walk answers a second question the rows do not carry, which
+ * {@link #registrationsReachedByView} exposes: not the order refreshes must run in, but which
+ * registrations are in a given view's subtree at all. That is the reach a cost claim ranges over,
+ * a registration being able to change only what its own readers evaluate, and it is the same walk
+ * rather than a second one so the two answers cannot come to disagree about what reads what.
  *
  * <p>Collection leans on a property of H2's stored definitions: every real relation reference is
  * normalized to its schema-qualified spelling ({@code "PUBLIC"."NAME"}), while aliases, common
@@ -77,31 +84,23 @@ public final class MaterializeDependencies {
         registrations.forEach(r -> registrationOfTarget.put(r.targetTableName(), r.sourceViewName()));
 
         Set<Edge> edges = new TreeSet<>();
+        Map<String, Set<String>> reads = new HashMap<>();
         for (Materializations.Registration registration : registrations) {
-            var walked = new HashSet<String>();
-            var frontier = new ArrayDeque<String>();
-            frontier.add(registration.sourceViewName().toLowerCase(Locale.ROOT));
-            while (!frontier.isEmpty()) {
-                String view = frontier.poll();
-                if (!walked.add(view)) {
-                    continue;
+            var reached = registrationsReachedFrom(dsl, registration.sourceViewName(), kinds,
+                registrationOfTarget, reads);
+            for (Map.Entry<String, String> hit : reached.entrySet()) {
+                String prerequisite = hit.getKey();
+                if (prerequisite.equals(registration.sourceViewName())) {
+                    String through = hit.getValue();
+                    throw new IllegalStateException("the source view "
+                        + registration.sourceViewName() + " reads its own target "
+                        + registration.targetTableName()
+                        + (through.equals(registration.sourceViewName().toLowerCase(Locale.ROOT))
+                            ? "" : " (through " + through + ")")
+                        + ", so no refresh could make the target equal the view;"
+                        + " the registration itself must change");
                 }
-                for (String read : relationsReadBy(dsl, view)) {
-                    String prerequisite = registrationOfTarget.get(read);
-                    if (prerequisite != null) {
-                        if (prerequisite.equals(registration.sourceViewName())) {
-                            throw new IllegalStateException("the source view "
-                                + registration.sourceViewName() + " reads its own target " + read
-                                + (view.equals(registration.sourceViewName().toLowerCase(Locale.ROOT))
-                                    ? "" : " (through " + view + ")")
-                                + ", so no refresh could make the target equal the view;"
-                                + " the registration itself must change");
-                        }
-                        edges.add(new Edge(registration.sourceViewName(), prerequisite));
-                    } else if ("VIEW".equals(kinds.get(read))) {
-                        frontier.add(read);
-                    }
-                }
+                edges.add(new Edge(registration.sourceViewName(), prerequisite));
             }
         }
 
@@ -116,6 +115,78 @@ public final class MaterializeDependencies {
                     .execute();
             }
         });
+    }
+
+    /**
+     * For every view in the store, the registrations whose target its derivation reaches: the pairs
+     * where materializing one relation can change what evaluating another costs.
+     *
+     * <p>The same walk {@link #populate} runs, asked the other way round. There it starts at each
+     * registered source view and the answer is a refresh order; here it starts at every view and the
+     * answer is which registrations are in that view's subtree at all. A registration can only
+     * change what a relation costs if the relation's derivation names its target, so a cost claim
+     * over the pairs this returns is a claim over every pair that could hold and no pair that
+     * could not.
+     *
+     * <p>Both axes come off the booted store rather than a copy of the DDL, which is the rule the
+     * dependency rows are already built on: a view added to the schema puts its own cells in the
+     * domain with nothing to keep in step by hand.
+     *
+     * <p>A walk stops at a registered target, so a target's own subtree is absent from the answer.
+     * That is the cost question stated correctly rather than a simplification: a reader meeting a
+     * registered target reads a table, so what fills that table is not evaluated during the read
+     * and the registrations beneath it cost that reader nothing.
+     *
+     * @return each view, lowercased, mapped to the source-view names of the registrations it
+     *         reaches; a view reaching none maps to an empty set
+     */
+    public static Map<String, Set<String>> registrationsReachedByView(DSLContext dsl) {
+        Map<String, String> kinds = relationKinds(dsl);
+        Map<String, String> registrationOfTarget = new HashMap<>();
+        Materializations.registrations(dsl)
+            .forEach(r -> registrationOfTarget.put(r.targetTableName(), r.sourceViewName()));
+        Map<String, Set<String>> reads = new HashMap<>();
+        Map<String, Set<String>> reached = new TreeMap<>();
+        kinds.forEach((relation, kind) -> {
+            if ("VIEW".equals(kind)) {
+                reached.put(relation, new TreeSet<>(registrationsReachedFrom(
+                    dsl, relation, kinds, registrationOfTarget, reads).keySet()));
+            }
+        });
+        return reached;
+    }
+
+    /**
+     * The registrations whose target a walk from {@code start} meets, each mapped to the view in the
+     * walk that read it, which is what lets a caller say where a reach came from. Reads of
+     * unregistered views recurse; reads of registered targets and of base tables end that branch.
+     *
+     * <p>{@code reads} memoizes {@link #relationsReadBy} across calls. A view's stored definition is
+     * a function of the catalog alone, so one parse per view serves every walk that reaches it, and
+     * a caller walking from many starts pays one parse per view rather than one per visit.
+     */
+    private static Map<String, String> registrationsReachedFrom(
+            DSLContext dsl, String start, Map<String, String> kinds,
+            Map<String, String> registrationOfTarget, Map<String, Set<String>> reads) {
+        Map<String, String> reached = new TreeMap<>();
+        var walked = new HashSet<String>();
+        var frontier = new ArrayDeque<String>();
+        frontier.add(start.toLowerCase(Locale.ROOT));
+        while (!frontier.isEmpty()) {
+            String view = frontier.poll();
+            if (!walked.add(view)) {
+                continue;
+            }
+            for (String read : reads.computeIfAbsent(view, v -> relationsReadBy(dsl, v))) {
+                String registration = registrationOfTarget.get(read);
+                if (registration != null) {
+                    reached.putIfAbsent(registration, view);
+                } else if ("VIEW".equals(kinds.get(read))) {
+                    frontier.add(read);
+                }
+            }
+        }
+        return reached;
     }
 
     /**

@@ -523,6 +523,72 @@ do overlap in what they spend, which is why the cost paragraph above is part of 
 implementation reports the wall clock it added when it lands. If that number is large enough to matter
 to R733, R733 is the item that decides what to do about it.
 
+## What the control found
+
+Recorded here because the item dies at Done and these are the numbers the lever item inherits. The
+controls that refuted are below the one that survived, per the plan's own instruction.
+
+**The gate discriminates, and what it caught is not what this item suspected.** Six of 102 cells are
+non-monotonic. The item's leading suspect, `intent_resolved_type_binding` against the decode family,
+is *not* among them: un-registering the binding makes the decode family cheaper by nothing worth
+naming, and the binding's one real cell is against `intent_argument_scope_table_live` at 2.3x. The
+two large findings belong to `intent_field_reference_step_hop`, the registration this item was found
+*alongside* and credited with recovering most of the decode's gap: it costs
+`intent_field_reference_step_target` 32x and `intent_field_column_scope_live` 10x, both growing with
+the schema. Filed as R815 with the figures.
+
+**The remaining three pairs are the instrument's floor, not a cost.** H2 charges a table visit at
+least one scan per naming where a view whose evaluation short-circuits is charged none, so a relation
+naming an empty or nearly empty target reads a few scans dearer while doing strictly less work. The
+delta is constant in the fixture's size: measured at 3 scans on both a 60-type and a 240-type schema
+while the totals went 471 to 10197. Pinned rather than tolerated, a tolerance being the number this
+gate is built without.
+
+**The fixture the plan specified would have measured nothing, and this is the finding that changed
+the work.** A scaled schema of `@table`-bound types carrying one scalar field, which is the shape the
+scaled fixtures elsewhere in the reactor use, leaves four of the seven registered targets and 41 of
+the 46 readers empty. Every cell then measures the per-naming floor above and the gate passes while
+seeing nothing, which is the exact failure the plan warned against under its own cost section without
+noticing that its stated fixture was an instance of it. Nodehood was the missing declaration:
+`implements Node` with `@table` is not enough, `@node(keyColumns:)` is what populates the decode
+family. With that plus reference chains, a routine `argMapping` and the mutations, all seven targets
+populate and the empty readers fall to 16, of which the defect relations are correctly empty on a
+well-formed schema.
+
+**Refuted: that the swap needed a `FactStores` fallback.** The plan's day-one risk was H2 holding a
+compiled reference so that dependent views would not see a renamed relation. It does hold one, but
+per session: a view already evaluated on the connection that performs the rename goes on reading the
+renamed table for that connection's life, while every other session resolves the canonical name to
+the swapped-in view. Since `GraphitronModelStore.reader` mints a connection per call and pools
+nothing, a reader taken after the swap sees the unregistered shape and the fallback is unnecessary.
+The one-line consequence is a contract rather than a mechanism, and it is stated on
+`UnregisteredRelation`: measure through a minted reader, never through the writer surface that
+installed the swap.
+
+**Refuted: that the non-monotonic set would have one row, this item's own pair.** It has six, none of
+them this item's pair. Also refuted: that the set is a property of the schema alone. It is
+scale-dependent below four fixture units, reporting eleven pairs at one unit and the same six at four
+and at twelve, which is why the gate pins its fixture size and says why.
+
+**Not established: which commit made the decode ten times more expensive.** The gate answers a
+different question than the attribution did, and answers it better: it prices what a registration
+costs per pair rather than what a tree cost in total, so it needed neither of the two lost hashes.
+The attribution itself remains open, and the honest reason is that the two trees that carried the
+5.5-second and 50-second figures are gone from the repository and the control that would have
+separated them was per commit where this instrument is per registration. What replaced the question
+is a gate that fails the next such change at the moment it lands, which is the outcome this item was
+filed for.
+
+**What a consumer's build pays.** All seven registrations refresh together in about 106 ms per graph
+per capture. `intent_node_id_decode_defect`, the one relation in this family with a reader on the
+build path, costs single-digit milliseconds at the gate's fixture where the decode itself costs about
+270, so the sibling did not inherit the decode's cost and R815 is filed as a latent cost rather than
+a live regression.
+
+**What the gate costs.** 33 seconds of pipeline-tier wall clock for eight captures and 148 relation
+evaluations under `EXPLAIN ANALYZE`. Reported here because the plan owed R733 that number; it is
+large enough to notice and, on the reading that item owns, not large enough to act on.
+
 ## Reviewer findings (Spec → Ready gate, 2026-08-23)
 
 Independent reviewer session `session_01LQgCxRoQLiBENLLV6mgseJ`, status stays `Spec`. Two findings.
