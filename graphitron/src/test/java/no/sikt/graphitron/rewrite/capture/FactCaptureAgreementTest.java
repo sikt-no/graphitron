@@ -425,6 +425,8 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_reference_step_target", Arm.DERIVED);
         registrations.put("intent_argument_reference_step_hop", Arm.DERIVED);
         registrations.put("intent_argument_reference_step_target", Arm.DERIVED);
+        registrations.put("intent_field_chain_start", Arm.DERIVED);
+        registrations.put("intent_field_chain_node", Arm.DERIVED);
         registrations.put("intent_field_chain_terminus", Arm.DERIVED);
         registrations.put("intent_field_reference_discovery", Arm.DERIVED);
         registrations.put("intent_routine_return_binding", Arm.DERIVED);
@@ -450,6 +452,8 @@ class FactCaptureAgreementTest {
         registrations.put("intent_node_id_decode_hop_column_live", Arm.DERIVED);
         registrations.put("intent_resolved_type_binding_live", Arm.DERIVED);
         registrations.put("intent_field_column_scope_live", Arm.DERIVED);
+        registrations.put("intent_field_reference_step_hop_live", Arm.DERIVED);
+        registrations.put("intent_field_chain_node_live", Arm.DERIVED);
         registrations.put("intent_argmapping_segment_binding", Arm.DERIVED);
         registrations.put("intent_argmapping_binding_leaf", Arm.DERIVED);
         registrations.put("intent_argmapping_bound_parameter_type", Arm.DERIVED);

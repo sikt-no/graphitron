@@ -30,8 +30,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * succeeds and the one to {@code actor} does not.
  *
  * <p>The name-matched hop is asserted through the chain wherever the chain can see it, which is the
- * hop view's own doctrine. The one case reading the hop view directly is the one about the columns
- * the chain deliberately drops: a terminus is a place and carries no route.
+ * hop relation's own doctrine. The one case reading that relation directly is the one about the
+ * columns a terminus does not carry, a terminus being a place and not a route. Those columns are no
+ * longer lost on the way, {@code intent_field_chain_node} carrying the route into every node it
+ * walks; what the terminus omits it omits because a landing has no use for it.
  */
 @PipelineTier
 class ChainTerminusTest {
@@ -201,7 +203,8 @@ class ChainTerminusTest {
     // ===== The name-matched hop's own columns =====
 
     /**
-     * What the name-matched arm carries, read at the hop view because the chain drops it. No foreign
+     * What the name-matched arm carries, read at the hop relation because the terminus over it does
+     * not carry a route. No foreign
      * key is involved, so the two foreign-key columns are null rather than borrowed; the constraint
      * such a hop does key by is the arrival's primary key, which the arriving triple already reaches
      * through {@code sql_primary_key} and which carrying here would only duplicate.
