@@ -49,8 +49,11 @@ import java.util.function.Consumer;
  * it would double the set to say nothing.
  *
  * <p>Owns the store's lifetime so a test can query after capture, which is the one thing
- * {@link FactCapture#run} deliberately does not allow: in the pipeline the store dies with the pass,
- * because nothing is meant to read it yet. The store itself comes from
+ * {@link FactCapture#run} deliberately does not allow: that arm captures and closes, having no
+ * reader to hand the store to. The pipeline's own window is
+ * {@link FactCapture#runAndRead}, which keeps the store open across the phases that question it;
+ * what this handle adds over that is a lifetime a test controls step by step rather than one
+ * continuation's. The store itself comes from
  * {@link FactStores#inMemory()} rather than being booted here, so the module that declares the
  * schema is also the module that says how it is stood up.
  */

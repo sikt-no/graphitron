@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.capture;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.derive.Materializations;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects;
@@ -46,6 +47,12 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
  * does not fit records raw and located rather than throwing. Capture is total, with no
  * reachability pruning; a primary-key violation on any base relation is therefore a capture bug,
  * never something an author's schema can provoke.
+ *
+ * <p>The store's window is the caller's, not this class's. {@link #runAndRead} keeps the store
+ * open across whatever the caller does next and hands it a {@link StoreHandle}, which is what lets
+ * the build pipeline validate and then plan against the same open store the capture just filled;
+ * {@link #runWithDetections} is the same thing for a caller that reads nothing further. Capture
+ * decides only that its own writes and the detections happen first.
  *
  * <p>The store has readers: {@link #runWithDetections} runs every store-backed rule family over
  * the freshly captured rows and returns the {@link StoreDetections} product they share (the
@@ -250,7 +257,22 @@ public final class FactCapture {
                            SdlVerdicts verdicts, Map<String, SchemaInput> attribution,
                            JooqCatalog jooq, List<CompletionData.ExternalReference> extensions) {
         runInternal(storeDirectory, graph, config, registry, assembly, verdicts, attribution, jooq,
-            extensions, ClassifiedRun.absent());
+            extensions, ClassifiedRun.absent(), (store, detections) -> null);
+    }
+
+    /**
+     * What a caller does with the captured store while it is still open: the detection product
+     * every family writes into, plus the {@link StoreHandle} the same store answers reads through.
+     *
+     * <p>The handle is the whole reason this is a continuation rather than a return value. A store
+     * closes when the capture window does, so a phase that wants to ask it something has to run
+     * inside the window or reopen the store to ask; the pipeline's plan tier reads facts and
+     * therefore runs here. What the pipeline does with it stays the pipeline's own business,
+     * capture neither knowing nor deciding the order of what follows it.
+     */
+    @FunctionalInterface
+    public interface AfterCapture<T> {
+        T read(StoreHandle store, StoreDetections detections);
     }
 
     /**
@@ -260,9 +282,12 @@ public final class FactCapture {
      * {@link StoreDetections#violations() violations} for the error stream, and
      * the LSP/MCP snapshot path additionally reads its
      * {@link StoreDetections#fieldConflicts() field conflicts} for the
-     * {@code Conflicted} projection overlay; the store handle never escapes. The detections run
+     * {@code Conflicted} projection overlay. The detections run
      * against whichever store the capture landed in, shared file and in-memory fallback alike,
      * so a cache demotion changes cost and never verdicts.
+     *
+     * <p>The arm for a caller that reads nothing else off the store; the handle stays inside the
+     * window here, and {@link #runAndRead} is the arm for a caller whose later phases read it.
      */
     public static StoreDetections runWithDetections(Path storeDirectory, GraphIdentity graph,
                                                           SubjectConfig config,
@@ -273,18 +298,45 @@ public final class FactCapture {
                                                           JooqCatalog jooq,
                                                           List<CompletionData.ExternalReference> extensions,
                                                           ClassifiedRun classified) {
-        Objects.requireNonNull(classified, "classified");
-        return runInternal(storeDirectory, graph, config, registry, assembly, verdicts, attribution,
-            jooq, extensions, classified);
+        return runAndRead(storeDirectory, graph, config, registry, assembly, verdicts, attribution,
+            jooq, extensions, classified, (store, detections) -> detections);
     }
 
-    private static StoreDetections runInternal(Path storeDirectory, GraphIdentity graph,
+    /**
+     * {@link #runWithDetections}, with the caller's own reads running inside the same window
+     * before the store closes. This is what store ownership hoisting out of the capture pass buys
+     * the pipeline: one open store serves the capture, the detections and every later phase that
+     * questions the facts, so a producer reading a relation costs no second open.
+     *
+     * <p>The order stays the caller's. Capture and detection are done before {@code after} runs,
+     * which is the only sequencing this method imposes; that the build pipeline validates before
+     * it plans is the pipeline's rule and is stated there, because producing a plan for a schema
+     * validation would have rejected is a mistake capture cannot see.
+     */
+    public static <T> T runAndRead(Path storeDirectory, GraphIdentity graph,
+                                   SubjectConfig config,
+                                   TypeDefinitionRegistry registry,
+                                   SchemaAssembly assembly,
+                                   SdlVerdicts verdicts,
+                                   Map<String, SchemaInput> attribution,
+                                   JooqCatalog jooq,
+                                   List<CompletionData.ExternalReference> extensions,
+                                   ClassifiedRun classified,
+                                   AfterCapture<T> after) {
+        Objects.requireNonNull(classified, "classified");
+        Objects.requireNonNull(after, "after");
+        return runInternal(storeDirectory, graph, config, registry, assembly, verdicts, attribution,
+            jooq, extensions, classified, after);
+    }
+
+    private static <T> T runInternal(Path storeDirectory, GraphIdentity graph,
                                                      SubjectConfig config,
                                                      TypeDefinitionRegistry registry,
                                                      SchemaAssembly assembly, SdlVerdicts verdicts,
                                                      Map<String, SchemaInput> attribution, JooqCatalog jooq,
                                                      List<CompletionData.ExternalReference> extensions,
-                                                     ClassifiedRun classified) {
+                                                     ClassifiedRun classified,
+                                                     AfterCapture<T> after) {
         if (storeDirectory != null) {
             try (GraphitronModelStore store = GraphitronModelStore.openAt(storeDirectory)) {
                 if (store.location().isEmpty()) {
@@ -295,12 +347,12 @@ public final class FactCapture {
                     LOG.warn(DEMOTED_TO_MEMORY);
                     capture(store.dsl(), false, graph, config, registry, assembly, verdicts,
                         attribution, jooq, extensions);
-                    return detect(store.dsl(), graph, classified);
+                    return read(store.dsl(), graph, classified, after);
                 }
                 if (!store.warm() || ownsGraph(store.dsl(), graph)) {
                     if (captureWithRetry(store, graph, config, registry, assembly, verdicts,
                             attribution, jooq, extensions)) {
-                        return detect(store.dsl(), graph, classified);
+                        return read(store.dsl(), graph, classified, after);
                     }
                 }
             }
@@ -308,8 +360,18 @@ public final class FactCapture {
         try (GraphitronModelStore store = GraphitronModelStore.open()) {
             capture(store.dsl(), false, graph, config, registry, assembly, verdicts, attribution,
                 jooq, extensions);
-            return detect(store.dsl(), graph, classified);
+            return read(store.dsl(), graph, classified, after);
         }
+    }
+
+    /**
+     * The detections, then the caller's own reads, both against the store this arm landed in. One
+     * method so the three arms above each state the window once rather than pairing a detection
+     * call with a continuation call and leaving an arm free to run one without the other.
+     */
+    private static <T> T read(DSLContext dsl, GraphIdentity graph, ClassifiedRun classified,
+                              AfterCapture<T> after) {
+        return after.read(new StoreHandle(dsl, graph.name()), detect(dsl, graph, classified));
     }
 
     /**
@@ -324,9 +386,10 @@ public final class FactCapture {
      * cadence), so its accept line is a fact of the store rather than of the walk's reach.
      *
      * <p>Beside the detections the pass reads the {@code argMapping} family's positive half,
-     * {@link ResolvedKeyProjections}, which the plan emits from. It is read here for the reason the
-     * detections are: the store handle is this method's, and a phase that wanted the fact later would
-     * have to reopen the store to ask.
+     * {@link ResolvedKeyProjections}, which the plan emits from. It is read here because it was
+     * written when this pass was the store's only window; with the window now the caller's, a
+     * producer that wants the fact can ask for it directly, and this read is a value the plan is
+     * handed rather than a question it puts.
      *
      * <p>The two {@code @nodeId} families read only SDL facts and the classpath census, and share the
      * classified-run arm anyway: a run with no classified model is a run whose verdict has already

@@ -422,7 +422,29 @@ public class GraphQLRewriteGenerator {
     private StoreDetections captureFactsAndDetect(
             AttributedRegistry attributed, ReadSchema read, GraphitronSchema schema,
             JooqCatalog jooq, List<CompletionData.ExternalReference> extensions) {
-        return FactCapture.runWithDetections(ctx.storeDirectory(),
+        return captureAndRead(attributed, read, schema, jooq, extensions,
+            (store, detections) -> detections);
+    }
+
+    /** {@link #captureAndRead} for a build path that builds its own catalog and classpath scan. */
+    private <T> T captureAndRead(AttributedRegistry attributed, ReadSchema read,
+            GraphitronSchema schema, FactCapture.AfterCapture<T> after) {
+        return captureAndRead(attributed, read, schema,
+            new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()),
+            CatalogBuilder.buildExternalReferences(ctx), after);
+    }
+
+    /**
+     * {@link #captureFactsAndDetect} with the caller's own reads running inside the capture's
+     * window, which is what the build pipeline takes: the store stays open past the detections so
+     * the plan can question the same facts the capture just wrote, instead of a producer reopening
+     * the store or being handed a value someone else read for it.
+     */
+    private <T> T captureAndRead(
+            AttributedRegistry attributed, ReadSchema read, GraphitronSchema schema,
+            JooqCatalog jooq, List<CompletionData.ExternalReference> extensions,
+            FactCapture.AfterCapture<T> after) {
+        return FactCapture.runAndRead(ctx.storeDirectory(),
             graphIdentity(),
             subjectConfig(),
             attributed.preSynthesisRegistry(),
@@ -431,7 +453,8 @@ public class GraphQLRewriteGenerator {
             SchemaInputAttribution.build(ctx.schemaInputs()),
             jooq,
             extensions,
-            ClassifiedRun.of(schema));
+            ClassifiedRun.of(schema),
+            after);
     }
 
     /**
@@ -482,22 +505,30 @@ public class GraphQLRewriteGenerator {
 
         logWarnings(withLintFindings(schema, attributed));
 
-        // Capture runs ahead of validation: the store-backed detections feed the error stream,
-        // so the store has to be filled before the verdict is pronounced. The product is kept
-        // rather than consumed inline, its key projections being the plan's one store-side input.
-        var storeFacts = captureFactsAndDetect(attributed, read, schema);
-        var errors = validateAndLogErrors(schema, storeFacts.violations());
-        if (!errors.isEmpty()) {
-            throw new ValidationFailedException(errors);
-        }
-
         String outputPackage = ctx.outputPackage();
 
-        // The plan is produced before the per-type generators run: the launcher relation's rows
-        // are read by the fetcher generator (a root coordinate with a row gets the launcher
-        // emission, one without falls through to its legacy builder).
-        var plan = EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), outputPackage,
-            storeFacts.keyProjections());
+        // Capture, validate and plan share one open store, and the order between them is this
+        // method's to state. Capture runs ahead of validation because the store-backed detections
+        // feed the error stream, so the store has to be filled before the verdict is pronounced;
+        // the plan runs after it because a producer reads what this run emits, and there is no
+        // emission for a schema validation rejected. The plan is also produced before the per-type
+        // generators run: the launcher relation's rows are read by the fetcher generator (a root
+        // coordinate with a row gets the launcher emission, one without falls through to its
+        // legacy builder), and those generators need no store, so the window closes here.
+        var plan = captureAndRead(attributed, read, schema,
+            (store, storeFacts) -> {
+                // The handle is what the window exists to hand over, and the plan tier is what
+                // will hold it: the producers convert onto the store one family at a time, and
+                // each conversion is then a parameter change rather than a lifecycle one. Until
+                // the first of them lands, the plan is still produced from the walk and the
+                // handle's only reader is the test that pins the window open.
+                var errors = validateAndLogErrors(schema, storeFacts.violations());
+                if (!errors.isEmpty()) {
+                    throw new ValidationFailedException(errors);
+                }
+                return EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), outputPackage,
+                    storeFacts.keyProjections());
+            });
 
         var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage,
             plan.launchers(), plan.typeUnits().fetchers(), plan.typeUnits().errorFetchers(),
