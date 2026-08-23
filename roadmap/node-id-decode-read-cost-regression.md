@@ -625,3 +625,65 @@ note in the measurement section saying they are pre-rebase. Keeping them is deli
 once named a tree is the honest provenance of a figure taken on it, and substituting a nearby
 resolvable one would make the provenance false rather than stale. The note also says why nothing
 downstream needs those trees.
+
+### Round 2 (Spec → Ready gate, 2026-08-23)
+
+Same reviewer session `session_01LQgCxRoQLiBENLLV6mgseJ`, status stays `Spec`. Both round-1 findings
+are properly answered and I am not reopening either. The design question I raised is settled: I
+checked the mechanism the new arm rests on and it is reachable, `GraphitronModelStore.reader` being
+public and taking a `ReadBudget`, readers minting per budget with nothing pooled, and
+`StoreAnswer.OutOfBudget` giving the arm the clean signal it needs; `Bounded`'s constructor refusing a
+non-positive figure is also exactly why the stated floor is needed, so that detail is right. The
+safe-in-one-direction argument is the strongest thing added in this pass and it holds.
+
+One finding, on question 2, and it is a factual repair rather than a design reopening. It is blocking
+only because settling it requires a choice I am not the one to make.
+
+1. **The structural fallback's stated property does not hold for the binding, which is this item's own
+   primary control: the binding is named in a recursive view's *seed*, and in no recursive term
+   anywhere in the schema.** The fallback paragraph says "both non-terminating cases in the register
+   are relations named inside another view's *recursive term*, which is the shape whose whole cost is
+   being re-evaluated per accumulated row", and offers that as a property derivable from the parsed
+   definitions. Half of it holds and half does not. `intent_node_id_decode_hop_column` really is in
+   the recursive term of `intent_node_id_decode_column`, so the hop-column case is covered.
+   `intent_resolved_type_binding` is not: its one appearance in a recursive view is the seed of
+   `intent_field_reference_step_target`, before the `UNION`, and that view's own comment states it in
+   those words, "The seed reads intent_resolved_type_binding and not the @table population alone". I
+   partitioned every `WITH RECURSIVE` view in the DDL on its first top-level `UNION` to check whether
+   some other view names it in a recursive term; none does.
+
+   The rationale is where this bites rather than the label. A seed is evaluated once, so "the shape
+   whose whole cost is being re-evaluated per accumulated row" is not a description of the binding's
+   position at all, and a predicate written to that property would exclude the hop-column cell while
+   leaving the binding's in. That is the wrong way round for this item, the binding being the
+   relation the whole attribution is aimed at. An implementer who reaches for the fallback because
+   the ratio proved unstable derives the predicate, finds it does not cover the case they came for,
+   and is back at a design question.
+
+   What would satisfy it: either narrow the fallback to the population it actually covers, saying
+   that the recursive-term shape reaches the hop-column case and that the binding's needs something
+   else, or name a property that covers both. I am not choosing between those, because the second is
+   a different predicate over the parse walk and the first changes what the escape hatch promises.
+
+   Related and worth fixing in the same pass, since it is the same sentence's premise: the paragraph
+   above it reads the register as recording two non-terminating *cells*. It records one. The
+   hop-column reason's two-minute timeout is relation-to-relation and is genuinely a cell of this
+   gate. The binding's five-minute timeout is a read "through the diagnostics drain", a
+   census-driven join in that surface's own statement, so it is a Java reader's cost and not a view
+   named by another view. The arm's known population at landing is one cell, not two. That does not
+   weaken the arm, and the Acceptance criterion asking it to fire on a real cell rather than a
+   hypothetical one is still satisfiable, the decode family supplying that cell; it only means the
+   plan should not present the binding as the second instance of the same thing.
+
+### Round 2 non-blocking
+
+* The relative budget's motivating citation is pointed at the wrong javadoc. `ReadBudget`'s own
+  objection to a bare number is that "a figure large enough to be safe" is "a wall-clock threshold
+  smuggled into a test tier that refuses to fail for slowness", which is an argument about what may
+  decide a build, not about machines. The cross-machine argument the plan attributes to it, a
+  threshold "large enough to be safe on one machine is a flake on another", is `RunawayRelation`'s,
+  which says a threshold "small enough to be reliable on one machine is a flake on another". Both
+  texts are in the tree and both support making the budget relative, so nothing about the decision
+  changes; only the attribution is off. Worth noting that the plan's *other* use of the type, that
+  asserting no duration keeps "the tier guarantee `ReadBudget`'s two arms exist to protect", reads
+  that javadoc correctly, so this is one citation to repoint rather than a misreading of the type.
