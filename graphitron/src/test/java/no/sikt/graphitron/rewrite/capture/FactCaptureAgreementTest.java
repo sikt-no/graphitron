@@ -462,6 +462,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_payload_producer", Arm.DERIVED);
         registrations.put("intent_poly_member", Arm.DERIVED);
         registrations.put("intent_errors_field", Arm.DERIVED);
+        registrations.put("intent_errors_field_live", Arm.DERIVED);
         registrations.put("intent_errors_field_member", Arm.DERIVED);
         registrations.put("intent_field_error_channel", Arm.DERIVED);
         registrations.put("intent_carrier_data_field", Arm.DERIVED);

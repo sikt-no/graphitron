@@ -136,8 +136,8 @@ public final class Materializations {
 
     /**
      * Gathers statistics on every registered target, so the planner uses the indexes declared
-     * beside them. Idempotent, and cheap enough not to need a cadence argument of its own: seven
-     * statements over seven tables of the size a fact store holds.
+     * beside them. Idempotent, and cheap enough not to need a cadence argument of its own: one
+     * statement per registered target, over tables of the size a fact store holds.
      *
      * <p>Needed at all because H2 gathers none on its own here. Its automatic analysis fires after
      * a table has taken more changes than {@code ANALYZE_AUTO} allows, which is two thousand by

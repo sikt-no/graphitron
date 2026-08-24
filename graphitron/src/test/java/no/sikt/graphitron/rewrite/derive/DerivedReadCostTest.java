@@ -57,7 +57,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link MaterializeDependencies#registrationsReachedByView}. A hand-kept list of either would rot
  * as views are added, and the reachability walk is also what keeps the matrix small: a registration
  * can only change what a relation costs if that relation's derivation names its target, so most of
- * the {@value #READERS_IN_SCHEMA} views times seven registrations do not exist as cells.
+ * the {@value #READERS_IN_SCHEMA} views times {@code meta_materialize}'s registrations do not
+ * exist as cells.
  *
  * <p><b>Two pinned sets, both asserted by equality rather than as ceilings or allowlists.</b>
  * Equality is what gives the ratchet: adding a pair fails the build, and so does removing one, so the
@@ -83,9 +84,15 @@ class DerivedReadCostTest {
      * now for two of them, because what this size buys is scale-dependent on both of the gate's
      * pinned sets.
      *
-     * <p>{@link #KNOWN_NON_MONOTONIC} is empty at one unit, where the gate would see nothing at all,
-     * and is the same three pairs at four units and at twelve. Twelve is taken rather than four to sit
-     * clear of that boundary, at the cost of wall clock this test's own javadoc owns.
+     * <p>{@link #KNOWN_NON_MONOTONIC} is scale-dependent, and not monotonically: it is empty at one
+     * unit, where the gate would see nothing at all, the same four pairs at four units and at eight
+     * (the floor trio plus the parameter-type reader), and the six above at twelve, where two
+     * borderline cells' plans flip against the statistics that size implies. Both twelve-only pairs
+     * were answered as index questions and declined on measurement, per the set's own javadoc, so
+     * what twelve adds is visibility rather than noise. Twelve is kept because it is the size that
+     * ships and the fixture may grow and may not shrink; the set is pinned at the size the gate
+     * actually runs, and the two smaller sizes are recorded here so the next re-pin knows the
+     * boundary moved before and can move again.
      *
      * <p>The fixture may grow and may not shrink. A smaller one is the single change that would make
      * this gate pass while seeing nothing, the registrations existing precisely because a rule is
@@ -97,14 +104,14 @@ class DerivedReadCostTest {
     private static final int READERS_IN_SCHEMA = 83;
 
     /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 46;
+    private static final int READERS_WITH_CELLS = 47;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
      * cannot grow silently as views are added; a new view that puts new cells in the domain fails this
      * figure until somebody has looked at what it costs.
      */
-    private static final int CELLS = 102;
+    private static final int CELLS = 107;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -150,14 +157,24 @@ class DerivedReadCostTest {
      * The pairs where the registered shape costs more, {@code registration|reader}, each one a finding
      * rather than a tolerance.
      *
-     * <p>All three are the instrument's floor rather than a cost, and the set holds nothing else. H2
-     * charges a table visit at least one scan per naming where a view whose evaluation short-circuits
-     * is charged none, so a relation named a few times can read a few scans dearer while doing
-     * strictly less work. They are pinned rather than tolerated because a tolerance would be a number,
-     * and a number here is the one thing this gate is built without.
+     * <p>Two mechanisms, both answered by measurement, and the set holds nothing else. The scope-table
+     * trio is the instrument's floor: H2 charges a table visit at least one scan per naming where a
+     * view whose evaluation short-circuits is charged none, so a relation named a few times can read a
+     * few scans dearer while doing strictly less work. The other three are the pruning an inlined view
+     * body offered and a table cannot: the argmapping readers' site-literal arms pruned the pair
+     * view's union to one arm apiece and now visit the whole table per arm (815 scans registered
+     * against 357 for the parameter-type reader, 433 against 391 for the segment binding), and the
+     * errors-field member view drives from the whole relation, whose inlined predicates let the fused
+     * plan skip rows the plain table join visits (916 against 713). Each was answered the way the
+     * paragraph below demands, as an index question first: every index shape tried on either target
+     * (site-leading and coordinate shapes on the pair table, the probing coordinate on the errors
+     * field) moved no reader at all or made a dear one worse, so the scans are the readers' own cost
+     * of standing on a table, sub-millisecond against the seconds each registration buys. They are
+     * pinned rather than tolerated because a tolerance would be a number, and a number here is the one
+     * thing this gate is built without.
      *
      * <p>Three larger pairs stood here until the targets were indexed, and how they left is worth
-     * knowing before adding a fourth. They were not the registrations' fault and no reader had to be
+     * knowing before adding more. They were not the registrations' fault and no reader had to be
      * restructured: a materialized target was the only kind of table in this schema with no key on it,
      * so a registered view's join against one was a full scan of it, per driving row where the reader
      * correlates and per iteration where it recurses. Indexes on the targets and current statistics
@@ -169,7 +186,11 @@ class DerivedReadCostTest {
         // Small, and flat: the per-naming floor of the instrument.
         "intent_argument_scope_table|intent_node_id_encode",
         "intent_argument_scope_table|intent_node_id_decode_defect",
-        "intent_argument_scope_table|intent_node_id_decode_slot");
+        "intent_argument_scope_table|intent_node_id_decode_slot",
+        // The pruning an inlined body offered and a table cannot; measured index-free above.
+        "intent_argmapping_pair|intent_argmapping_bound_parameter_type",
+        "intent_argmapping_pair|intent_argmapping_segment_binding",
+        "intent_errors_field|intent_errors_field_member");
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather
@@ -370,14 +391,25 @@ class DerivedReadCostTest {
 
     /**
      * The fixture: {@code units} repetitions of a film/language/inventory/store cluster of node types
-     * over real catalog keys, plus one routine field and the mutations, so that nodehood, reference
-     * chains, node-id decoding and argument mapping all have rows.
+     * over real catalog keys, plus one routine field, the mutations, and a routine-carrier cluster
+     * per unit, so that nodehood, reference chains, node-id decoding, argument mapping and the
+     * carrier family all have rows.
+     *
+     * <p>The routine-carrier cluster is a mutation-root {@code @routine} field per unit returning a
+     * payload type that wraps one nullable data field beside an errors channel, the channel a union
+     * whose one member carries {@code @error}. That shape is what populates
+     * {@code intent_errors_field} and the relations over it ({@code intent_carrier_data_field},
+     * {@code intent_field_error_channel}, {@code intent_mutation_routine_seat},
+     * {@code intent_carrier_routine_hop}), all of which held no rows here before it: the fixture's
+     * only other {@code @routine} sits on the Query root, so the seat relation was empty, and
+     * {@code Film0}'s {@code @reference} fields disqualify it from the carrier view. Scaled with the
+     * units so those targets hold rows proportional to schema size, like everything else here.
      *
      * <p>Every registered target is populated by this schema and so is every reader this gate prices
      * except the defect relations, which hold rows only on a schema with the defect in it and whose
      * emptiness here is the fixture being well-formed rather than being thin. A schema of
      * {@code @table}-bound types with a single scalar field, which is what the scaled fixtures
-     * elsewhere in the reactor use, leaves four of the seven targets and forty-one of the
+     * elsewhere in the reactor use, leaves much of {@code meta_materialize}'s roster and most of the
      * {@value #READERS_WITH_CELLS} readers empty, and a gate over empty relations measures the
      * instrument's floor and nothing else.
      *
@@ -390,7 +422,7 @@ class DerivedReadCostTest {
      * no hop. Returning inventory instead gives the one key inventory declares on film. Without this
      * arm the hop-column target holds no rows at any size and its cell in this gate is a comparison
      * between two readings of an empty table, which is the state that made this test's own claim about
-     * a populated fixture untrue of the seventh registration. With it, that cell is the widest ratio
+     * a populated fixture untrue of the hop-column registration. With it, that cell is the widest ratio
      * in the matrix by wall clock, tens of milliseconds registered against seconds unregistered, which
      * is the shape that registration's own registry reason describes.
      */
@@ -400,12 +432,32 @@ class DerivedReadCostTest {
             input FilmInput { title: String }
             input FilmKeyInput { filmId: Int! @field(name: "film_id") }
             type Rental @table(name: "rental") { rentalId: Int @field(name: "rental_id") }
-            type Mutation {
+            """);
+        sdl.append("type Mutation {\n").append("""
               createFilm(in: FilmInput!): Film0 @mutation(typeName: INSERT)
               createFilms(in: [FilmInput!]!): [Film0!]! @mutation(typeName: INSERT)
               deleteFilm(in: FilmKeyInput!): ID @mutation(typeName: DELETE, table: "film")
-            }
             """);
+        IntStream.range(0, units).forEach(i -> sdl.append("""
+              rentFilm%1$d(inventoryId: Int!, customerId: Int!): RentFilmPayload%1$d
+                @routine(name: "rent_film",
+                         argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+            """.formatted(i)));
+        sdl.append("}\n");
+        IntStream.range(0, units).forEach(i -> sdl.append("""
+            type RentFilmFailed%1$d @error(handlers: [{
+                handler: GENERIC,
+                className: "org.jooq.exception.IntegrityConstraintViolationException"
+              }]) {
+              path: [String!]!
+              message: String!
+            }
+            union RentFilmError%1$d = RentFilmFailed%1$d
+            type RentFilmPayload%1$d {
+              rental: Rental
+              errors: [RentFilmError%1$d]
+            }
+            """.formatted(i)));
         IntStream.range(0, units).forEach(i -> sdl.append("""
             type Film%1$d implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
               id: ID! @nodeId

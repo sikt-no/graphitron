@@ -55,8 +55,8 @@ class MaterializeRegistryGateTest {
      * surviving as an exemption nobody revisits.
      *
      * <p>A roster rather than a bare "every target carries an index", because an index is a cost
-     * on every refresh and wants a reader to justify it, and these two have none that a
-     * measurement supports. Both were measured as several index shapes each, over every view whose
+     * on every refresh and wants a reader to justify it, and these have none that a
+     * measurement supports. Each was measured as several index shapes, over every view whose
      * derivation reaches the target, with statistics current on both sides so the figure is the
      * index's own:
      *
@@ -72,11 +72,19 @@ class MaterializeRegistryGateTest {
      *   <li>{@code intent_field_column_scope}: on the field coordinate its three readers join,
      *   with or without {@code basis}, it takes {@code intent_field_reference_discovery} from 148
      *   scans to 246 and returns 59 elsewhere. Nothing to weigh.</li>
+     *   <li>{@code intent_errors_field}: on the coordinate its two probing readers join (graph,
+     *   type and field, the carrier scan's {@code NOT EXISTS} and the error channel's join with
+     *   its correlated minimum), no reader improves: the three cheap readers move within the
+     *   instrument's noise, and the two dear ones get worse, {@code intent_carrier_routine_hop}
+     *   from 3876 scans to 8136 and {@code intent_mutation_routine_seat} from 28857 to 33117,
+     *   the planner preferring a seek into a relation of a dozen rows over the plan it picks
+     *   unaided. Nothing to weigh.</li>
      * </ul>
      */
     private static final Set<String> NO_INDEX = Set.of(
         "intent_resolved_type_binding",
-        "intent_field_column_scope");
+        "intent_field_column_scope",
+        "intent_errors_field");
 
     @Test
     @DisplayName("every registered source is a view and every registered target is a table")
@@ -203,8 +211,8 @@ class MaterializeRegistryGateTest {
      * why not, and the roster holds nothing else.
      *
      * <p>The claim this adds to the four above is that a target is a table in a keyed schema and
-     * not a heap. Where the other 145 tables in this file declare a primary key, five of the seven
-     * grains here include a meaningfully nullable column and H2 refuses a primary key over one, so
+     * not a heap. Where the other tables in this file declare a primary key, most of the grains
+     * here include a meaningfully nullable column and H2 refuses a primary key over one, so
      * the index cannot come from the key and has to be declared. What its absence costs lands
      * inside the derivations that read the target rather than on any reader's own predicate, which
      * is why no reader's own budget would catch it and why the claim belongs beside the register.

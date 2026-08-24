@@ -311,3 +311,83 @@ this spec cannot rot against a name its dependency never promised.
    Progress and will land first in the expected order, leaving this item to grow the fixture once
    with both clusters' needs; isolating the fixture edit in a third item would put a shared test
    asset behind a gate nobody asked for.
+
+## Implementation notes
+
+### Slice 1 landed as specced, and the index the checklist demanded was measured and declined
+
+The registration is exactly the checklist's: the rule keeps its text in
+`intent_errors_field_live`, the table takes the canonical name with the full documentation and a
+"Materialized:" sentence, the registry row states the multiplicity and the measurements, and
+`FactCaptureAgreementTest` carries the `_live` row. The census prose was rewritten to cite the
+register without a number in five places rather than the two the spec counted: the two it named
+(`docs/architecture/explanation/fact-model.adoc`, `DerivedReadCostTest`'s javadoc), plus
+`Materializations.analyse`'s javadoc, `MaterializeRegistryGateTest`'s grain sentence and the
+model DDL's header, all of which said "seven" too.
+
+The index-or-roster decision went to the roster. On the grown read-cost fixture with statistics
+current, an index on the coordinate the two probing readers join (graph, type, field) improves no
+reader: the three cheap readers move within the instrument's noise, and the two dear ones get
+worse, `intent_carrier_routine_hop` from 3876 scans to 8136 and `intent_mutation_routine_seat`
+from 28857 to 33117, the planner preferring a seek into a fifteen-row relation over the plan it
+picks unaided. The row is in the gate's no-index roster with those figures.
+
+### The grown fixture surfaced two pairs on a shipped registration, and both were answered
+
+The routine-carrier cluster (one mutation-root `@routine` field per unit returning a payload
+wrapping one nullable data field beside a union-of-`@error` errors channel) populates all five
+carrier-family relations proportionally to schema size. The domain re-pins: 83 views unchanged,
+47 with cells (was 46, the member view's first cells), 107 cells (was 102, the five readers of
+the new target).
+
+Growing the fixture also made two pre-existing shapes visible on `intent_argmapping_pair`, whose
+site-literal reader arms pruned the pair view's union to one arm apiece and now visit the whole
+table per arm: `intent_argmapping_bound_parameter_type` reads 815 scans registered against 357
+unregistered, `intent_argmapping_segment_binding` 433 against 391. Both were answered as the
+gate's doctrine demands, index first: a site-leading shape and a coordinate shape were both
+measured and the planner ignored both, every reader unmoved to the scan. The same holds for the
+new registration's own pair (`intent_errors_field_member`, 916 against 713, the fused inlined
+plan skipping rows a plain table join visits). All three are pinned in `KNOWN_NON_MONOTONIC` with
+the mechanism stated; the wall clock either way is sub-millisecond against the seconds the
+registrations buy.
+
+### The fixture size was re-justified at three sizes, and the boundary moved
+
+The old justification (same pinned set at four units and twelve) does not survive the grown
+fixture: the set is empty at one unit, the floor trio plus the parameter-type pair at four units
+and at eight, and the six pairs above at twelve, where two borderline cells' plans flip against
+the statistics that size implies. Twelve is kept because it is the size that ships and the
+fixture may not shrink; the test's javadoc records all three sizes so the next re-pin knows the
+boundary has moved before.
+
+### Slice 1 re-measured on the sakila example, per the probe methodology
+
+Same capture shape as the opening table (`CapturedStore.ofCatalog`, the example's schema over the
+sakila catalog), on the post-slice-1 tree, which also carries the target-index item's indexes:
+
+| relation | rows | before, ms | after, ms |
+|---|---|---|---|
+| `intent_carrier_data_field` | 15 | 48569 | 6570 |
+| `intent_mutation_routine_seat` | 5 | 43311 | 7840 |
+| `intent_carrier_routine_hop` | 2 | 10291 | 1923 |
+| `intent_field_error_channel` | 19 | 5299 | 615 |
+| `intent_errors_field` (read) | 15 | 16 | 9 |
+| `intent_errors_field_live` (the refresh) | 15 | - | 10 |
+
+### Slice 2: declined, and the numbers are these
+
+The conviction did not survive slice 1, as the spec anticipated it might not. On the post-slice-1
+tree every remaining per-read namer of `intent_poly_member` reads at the store's floor, and the
+spec's own control confirms there is nothing to move: with the relation snapshotted into a plain
+table on the same capture, `intent_errors_field_member`'s body goes from 5 ms to 2 and the
+errors-field rule (the refresh's one evaluation) from 18 ms to 8. Single-digit milliseconds on
+both sides; a registration here would buy a refresh and a priced gate row forever to save less
+than the instrument's jitter. Declined.
+
+### The decode observation dissolves
+
+The non-goal probe ran in the same session and store as the slice-1 re-measurement:
+`intent_node_id_decode` reads 43 rows in 8505 ms, under the roughly thirteen seconds the decode
+regression item recorded on its own tree. The 24.4-second reading in this item's opening
+measurements does not reproduce on a tree carrying the target indexes, so no same-fixture pair
+convicts anything and no item is filed.
