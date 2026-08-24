@@ -110,6 +110,15 @@ class DerivedReadCostTest {
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
      * cannot grow silently as views are added; a new view that puts new cells in the domain fails this
      * figure until somebody has looked at what it costs.
+     *
+     * <p>It moves down as well as up, and a registration is what moves it both ways at once. The
+     * reachability walk records a registration when it meets that registration's target and stops
+     * there rather than descending, so registering a relation cuts every reader's reach at it: each
+     * reader that reached a registration only through the newly registered relation loses that cell,
+     * while the new registration and its {@code _live} view add cells of their own. Registering
+     * {@code intent_node_id_instruction} was the first change to make the figure fall, from 107 to
+     * this one. So a drop here is not the matrix quietly seeing less; it is cost moving off a reader
+     * and onto a refresh, and the refresh is a view in this domain and priced like any other.
      */
     private static final int CELLS = 110;
 
@@ -157,10 +166,8 @@ class DerivedReadCostTest {
      * The pairs where the registered shape costs more, {@code registration|reader}, each one a finding
      * rather than a tolerance.
      *
-     * <p>Three mechanisms, each answered by measurement, and the set holds nothing else. The
-     * scope-table trio is the instrument's floor: H2 charges a table visit at least one scan per
-     * naming where a view whose evaluation short-circuits is charged none, so a relation named a few
-     * times can read a few scans dearer while doing strictly less work. The next three are the pruning
+     * <p>Two mechanisms, each answered by measurement, and the set holds nothing else. The first
+     * three are the pruning
      * an inlined view body offered and a table cannot: the argmapping readers' site-literal arms
      * pruned the pair view's union to one arm apiece and now visit the whole table per arm (815 scans
      * registered against 357 for the parameter-type reader, 433 against 391 for the segment binding),
@@ -199,12 +206,24 @@ class DerivedReadCostTest {
      * after each refill answered all three, and the registrations they were charged to are unchanged.
      * So a new large pair here is a question about the target's index before it is a question about
      * the registration.
+     *
+     * <p>A trio left a second way, which is worth knowing because nothing was measured to send it.
+     * Three readers of {@code intent_node_id_instruction} stood here charged to
+     * {@code intent_argument_scope_table}: the encode, the decode slot, and the decode defect above
+     * it. All three were small and flat, the instrument's own floor rather than work, H2 charging a
+     * table visit at least one scan per naming where a view whose evaluation short-circuits is
+     * charged none. Registering {@code intent_node_id_instruction} removed them by removing their
+     * cells: none of the three names the scope table itself, all three reached that registration
+     * through the instruction rule, and the walk now stops at the instruction's own target instead of
+     * descending into what the rule reads. The cost did not evaporate, it moved: the rule still reads
+     * the scope table, once per capture, in the refresh of
+     * {@code intent_node_id_instruction_live}, which is a view in this domain and holds its own cell
+     * against that registration monotonically. Read that as the shape to check the next time a
+     * registration deletes rows here: a pair that leaves because its reader got cheaper and a pair
+     * that leaves because its reader stopped reaching are different facts, and only the first is
+     * about the registration it was charged to.
      */
     private static final Set<String> KNOWN_NON_MONOTONIC = Set.of(
-        // Small, and flat: the per-naming floor of the instrument.
-        "intent_argument_scope_table|intent_node_id_encode",
-        "intent_argument_scope_table|intent_node_id_decode_defect",
-        "intent_argument_scope_table|intent_node_id_decode_slot",
         // The pruning an inlined body offered and a table cannot; measured index-free above.
         "intent_argmapping_pair|intent_argmapping_bound_parameter_type",
         "intent_argmapping_pair|intent_argmapping_segment_binding",

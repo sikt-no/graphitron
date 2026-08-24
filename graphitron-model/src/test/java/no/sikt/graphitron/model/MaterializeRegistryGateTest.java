@@ -49,16 +49,23 @@ class MaterializeRegistryGateTest {
         "intent_input_occurrence_path_step");
 
     /**
-     * The registered targets carrying no index, each with the measurement that says why. A roster
+     * The registered targets carrying no index, each with the argument that says why. A roster
      * on {@link #HAND_WRITTEN}'s model and asserted the same way, by equality in both directions,
      * so a target that later earns an index fails this test until its row goes rather than the row
      * surviving as an exemption nobody revisits.
      *
      * <p>A roster rather than a bare "every target carries an index", because an index is a cost
-     * on every refresh and wants a reader to justify it, and these have none that a
-     * measurement supports. Each was measured as several index shapes, over every view whose
-     * derivation reaches the target, with statistics current on both sides so the figure is the
-     * index's own:
+     * on every refresh and wants a reader to justify it, and these have none.
+     *
+     * <p>The arguments come in two kinds, and the difference is worth keeping visible. Most were
+     * measured as several index shapes, over every view whose derivation reaches the target, with
+     * statistics current on both sides so the figure is the index's own: a lever existed and was
+     * declined on what it cost. {@code intent_node_id_instruction}'s row has no measurement because
+     * it has no candidate to measure, every reader reaching the target by scanning it whole rather
+     * than by probing a coordinate. A row of that kind is falsified by a new reader rather than by
+     * a new figure, so it is the reader roster that wants re-reading when one is added, not the
+     * scan counts. Named rather than counted, because the roster gains rows from concurrent work
+     * and a count in this paragraph is stale the moment one lands:
      *
      * <ul>
      *   <li>{@code intent_resolved_type_binding}: every shape tried buys more than it costs in
@@ -92,6 +99,15 @@ class MaterializeRegistryGateTest {
      *   drives from it, first in its own FROM clause, so there is no per-row seek for an index to
      *   serve. Nothing to weigh, and the field-site sibling above declines for its own reasons at
      *   the same position in the same pair.</li>
+     *   <li>{@code intent_node_id_instruction}: no index shape is a candidate, so there is nothing
+     *   to measure. Its three readers are {@code intent_node_id_decode_endpoint},
+     *   {@code intent_node_id_decode_slot} and {@code intent_node_id_encode}, and each names the
+     *   target in its own driving {@code FROM} and joins outward from it; the slot reaches it
+     *   through a local alias that is itself the driving side of both its union arms. Nothing
+     *   probes in, so there is no coordinate an index could serve. That follows from what the
+     *   relation is rather than from a shape somebody chose: it is the population those three
+     *   views each partition, and a reader whose grain is one row per instruction drives from the
+     *   instructions.</li>
      * </ul>
      */
     private static final Set<String> NO_INDEX = Set.of(
@@ -99,7 +115,8 @@ class MaterializeRegistryGateTest {
         "intent_field_column_scope",
         "intent_argument_column_scope",
         "intent_errors_field",
-        "intent_carrier_data_field");
+        "intent_carrier_data_field",
+        "intent_node_id_instruction");
 
     @Test
     @DisplayName("every registered source is a view and every registered target is a table")
