@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-20
+last-updated: 2026-08-24
 ---
 
 # Planners read facts, emitters read commands: dissolve the walk and the leaf zoo
@@ -271,25 +271,49 @@ goes red, and no leaf count substitutes for it.
 
 **The condemned types become deletable.** For each type in the seven hierarchies, how many files
 outside the condemned tree still name it. That is one grep, it cannot be moved by spelling, it only
-falls, and reaching zero *is* the type being deletable rather than a proxy for it. Live at the time
-of writing:
+falls, and reaching zero *is* the type being deletable rather than a proxy for it. All seven rows,
+corrected: an earlier printing of this table listed the four largest and read as though the other
+three were zero, when each was nonzero at the same reading and two of them still are.
 
-[cols="3,1"]
+[cols="3,1,1"]
 |===
-| Condemned type | Files in `plan/` + `command/` + `render/` still naming it
+| Condemned type | Files at slice one's pickup | After slice one
 
 | `GraphitronField`
 | 6
+| 5
 
 | `ChildField`
 | 4
+| 4
+
+| `GraphitronType`
+| 3
+| 3
 
 | `MutationField`
 | 3
+| 2
 
 | `QueryField`
 | 2
+| 2
+
+| `OutputField`
+| 2
+| 2
+
+| `InputField`
+| 1
+| 1
+
+| *Total*
+| *21*
+| *19*
 |===
+
+Both readings are `grep -rlw <type> plan command render --include=*.java`, the pickup column taken
+at `ed6964d1` and reproducing at `102181cc` and `200fd26` unchanged.
 
 That census is what "The closer" should ratchet, and it is what a slice's reflection should report.
 A slice that leaves it unchanged relocated nothing, whatever the leaf counters did.
@@ -1126,6 +1150,144 @@ invisible. The plan is not shaped that way. Each producer takes its inputs as pa
 one relation, so "conditions and projections read the store, launchers do not yet" is a state the
 signatures state plainly and a reviewer can see. The all-or-nothing argument does not transfer, and
 pretending it does would make a 5000-line change land in one commit for no gain.
+
+### Slice one, measured
+
+The reflection slice one stops at. Every figure is from the slice rather than estimated, and the
+question order is the one "Then stop" set.
+
+**What one vertical cost.** Eighteen commits between `ed6964d1` (Ready to In Progress, 2026-08-20)
+and `9c31133` (the statement-count pin, 2026-08-24), four calendar days; fourteen of them touch the
+tree and four amend the plan alone. 4,388 lines of Java added against 997 removed, and 505 lines of
+DDL against 176. Of the Java, 2,146 added and 428 removed are test source, so the main-source figure
+is 2,242 added against 569 removed and the tests are very nearly half of everything written.
+Exactly one of the fourteen tree commits is net negative: `4b9ddce`,
+the one that made the producer read the store, at +342 and -622. Every commit before it is pure
+addition. So the shape of a conversion is not "replace old code with new" but ten commits of
+scaffolding paying for one commit that deletes 280 net lines, and a reader who expects the diff to
+shrink at any point before the last one will conclude the work is going badly.
+
+Review cost is only half measurable. The Spec gate took one review round (`3a9024bd` found the
+inversion census a site short and a carve-out unsettled, `102181cc` signed off), and the
+implementation half has not been reviewed yet, so no figure for it exists to report. What the slice
+can report instead is self-correction: four commits in the window amend the plan rather than the
+tree, one of them (`bc39ce5e`) writing down what "deleted, not migrated" forbids because the slice
+nearly got it wrong. A rule that has to be written down mid-slice is a review round that happened
+without a reviewer.
+
+**Statements, and whether the grain rule held.** It held. `RoutineWriteCommands.produce` issues
+three statements at three grains: the coordinate, the chain hop's pairing, and the carrier's
+captured pairing. Three is constant across a one-coordinate graph, a graph where every fan-out axis
+the coordinate statement's correlated `MULTISET`s cross is populated more than once, and a graph
+that writes through no routine at all, which is the case that catches a producer skipping a grain
+because an earlier one came back empty. `RoutineWriteProducerStatementCountTest` pins it at the
+producer's grain rather than the facts pass's, so the two folds that stay on the classified schema
+are also held to costing the store nothing.
+
+**Output identity, and what surfaced instead.** Emitted output stayed byte-identical throughout,
+and the execution tier covers that claim rather than a string comparison standing in for it. No
+walk bug surfaced in what the generator emits. Three pieces of walk vocabulary turned out to be
+unreachable or inert once the same facts were stated relationally: a hop's join basis has no
+lateral arm, so the renderer's refusal of one became a total switch with no throw; a routine
+argument has one binding arm, because a routine write sits at a mutation root whose chain head has
+no previous node; and the command-tier routine argument's resolved `PathExpr` carried per-segment
+list-lifting that decided nothing at either of its two readers. None of the three changes output.
+All three are the walk representing distinctions the facts show cannot occur.
+
+What did surface, four times, is read cost. R811 and R819 were both filed as regressions found
+beside this slice; the routine-write hop pairing joined a window-carrying relation on a `CASE` and
+had to be fixed at `c702da2`; and R824 exists because none of it was visible until trunk had run
+eleven consecutive green builds at four times its normal wall clock. The slice found no defect in
+what the generator emits and four in what the store costs to read. That is the finding that should
+reorder the programme: the risk in this conversion is not correctness, it is that a producer moving
+from a walk to a store read moves from a cost nobody measures to a cost nobody measures either, and
+only one of those two has a fifteen-minute floor.
+
+**Per relation.** 261 lines of view body across four relations, and an aggregate would mispredict
+in both directions exactly as the plan warned.
+
+[cols="3,1,3"]
+|===
+| Relation | View body | What it is
+
+| `intent_field_chain_start`
+| 17
+| New derivation, small. A resolution through `intent_spelled_table` plus a FUNCTION-type
+requirement plus a max-ordinal window. No refusal arms; absence is the refusal.
+
+| `intent_field_chain_node`
+| 69
+| Relocation, not new derivation. The recursive walk moved out of `intent_field_chain_terminus`,
+which became an eleven-line selection over it at `seq = last_seq`. Near-zero net derivation added;
+what it bought is one home for the walk.
+
+| `intent_field_error_channel`
+| 28
+| Reduction. Joins `intent_errors_field` and `intent_carrier_data_field`, both already standing.
+No refusal arms.
+
+| `intent_mutation_routine_seat`
+| 147
+| Reduction by the plan's definition, since every fact it turns on is an existing relation, and
+still more than half the view body the slice added, on its own.
+|===
+
+The refusal question has one answer and it is the seat's. Its verdict vocabulary is fourteen
+values: thirteen refusals and one admission. The producer reads exactly one of them. Of the
+110-line verdict `CASE`, the two `ELSE 'ADMITTED'` clauses are two lines and the other 108 are
+refusal predicates, and `MutationRoutineSeatTest`'s seventeen cases include thirteen for verdicts
+nothing yet reads. Stating the refusals with the admissions was the right call and this is what it
+costs: three quarters of the dearest relation in the slice, written for a validator that has not
+been built.
+
+It is not only lines. Thirteen refusals is thirteen correlated `EXISTS` subqueries evaluated per
+driving row, and `intent_mutation_routine_seat` is now the most-scanned relation in the store by a
+wide margin: 28,857 scans where `intent_carrier_routine_hop` takes 3,876 and
+`intent_node_id_decode_defect` 1,901 (figures from `MaterializeRegistryGateTest`'s index roster,
+which measured them for a different purpose). It is still an unregistered view read from the
+generate path. The next slice that states a verdict relation should price the refusal arms as a
+read cost when it writes them, not after trunk slows down.
+
+**Is `rowFor` the right emitter seam.** The shape is right and the implementation is not, and slice
+one is where the implementation became a fork. `RoutineWriteRelation.rowFor` and
+`LauncherRelation.rowFor` are now the same three lines, a linear
+`rows.stream().filter(...).findFirst()`, and `LauncherRelation` additionally carries
+`byCoordinate()`, which rebuilds a `LinkedHashMap` on every call. Two lookup shapes for one
+question, wrong in opposite directions: the scan is linear per call, the map is linear per call and
+allocates. `TypeFetcherGenerator` calls `launchers.rowFor` at eight sites, each inside a
+per-coordinate emission, so the emitter is quadratic in coordinates and has stayed cheap only
+because the relations are small.
+
+The seam also drifted in its own javadoc within one slice. `RoutineWriteRelation.rowFor` says the
+fetcher generator dispatches on its presence rather than restating the producer's membership
+predicate; `renderRoutineWrite` calls `orElseThrow`, and the presence dispatch lives in
+`EmitPlan.requireEveryProjectionIsReachable`. The sentence is true of `LauncherRelation`, whose
+copy it is, and was inherited without the behaviour. So the answer is that the cutover wanted one
+memoized coordinate-keyed lookup declared once on a shared carrier, not a method copied per
+relation with its reasons attached. Two copies is a coincidence; the third family makes it a
+pattern, and the third family is next.
+
+**Multiplied by what remains.** The corrected census leaves nineteen references in six files:
+`LauncherCommands` (5 types), `FetcherEdgeCommands` (4), `ConditionCommands` (3),
+`ProjectionCommands` (3), `TypeUnitCommands` (2), `EmitPlan` (1). Five producers plus the plan
+assembler, whose one `GraphitronType` reference no producer conversion removes; it goes with the
+terminal deletion. Nineteen is not nineteen units of equal size, and the multiplication that
+matters is not by references but by files: slice one converted the file naming two of the seven
+types and spent about 4,000 lines doing it, and `LauncherCommands` names five.
+
+Three things make the naive five-times-4,000 an overestimate. The chain relations are shared, so
+the next family needing a chain reads one rather than promoting one; `TenantAcquisition` was built
+for two families by design and the second pays nothing; and the seat's refusal arms are a one-off
+for the routine-write vocabulary rather than a per-family tax. Two things make it an underestimate.
+`LauncherCommands` is the largest file and names the most types, so it is last in difficulty as
+well as in the order; and nothing in slice one paid down the read-cost problem it discovered, which
+on current evidence costs a full item per family rather than a paragraph.
+
+The programme has a credible shape. It does not have the shape the inventory above assumes, which
+is a sequence of conversions punctuated by instruments. It is a sequence of conversions each of
+which is likely to spawn a read-cost item, and the sequencing question the next slice should settle
+is whether the store's read cost gets its own workstream instead of being discovered once per
+family.
 
 ### Emitter half: family by family
 
