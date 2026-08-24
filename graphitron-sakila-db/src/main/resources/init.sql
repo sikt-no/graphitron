@@ -967,6 +967,59 @@ INSERT INTO email (mailbox_id, message_no, in_reply_to_no, subject) VALUES
     (9, 1, NULL, 'root-in-9');
 
 -- ===========================
+-- Straddling cross-table @nodeId reference fixture
+-- ===========================
+--
+-- The neutral form of a consumer shape found migrating from Graphitron 9: a table whose primary key
+-- and whose foreign key to another table share a qualifying column. catalogue_item's PK is
+-- (tenant_id, item_no); its FK to catalogue is (tenant_id, catalog_code), because a catalogue code
+-- is only unique within a tenant and an item's catalogue must belong to the item's own tenant.
+--
+-- An UPDATE input carrying `id: ID!` (the item's own global id, covering the PK) plus
+-- `catalogueId: ID! @nodeId(typeName: "Catalogue")` therefore has one input field whose lifted
+-- columns fall on both sides of the WHERE/SET boundary: tenant_id is already in the WHERE, and
+-- catalog_code is not. The wanted statement re-points the item within its tenant:
+--   UPDATE catalogue_item SET catalog_code = ? WHERE tenant_id = ? AND item_no = ?
+-- with the two tenant_id values agreement-checked before anything is written.
+--
+-- The pair is deliberately hostile to positional slot inference. The Catalogue decode record is
+-- (tenant_id, catalog_code), so the straddler's single SET column sits at the SECOND decode slot; a
+-- reader recovering the slot from the column's position in the one-element SET partition would emit
+-- value1() and write the decoded tenant id into catalog_code. Reversing the constraint's column
+-- order would move the hazard to the other column, which is the point: the slot has to be carried.
+--
+-- Two tenants with two catalogues each, so a cross-tenant re-point is expressible and must fail.
+CREATE TABLE catalogue (
+    tenant_id      int NOT NULL,
+    catalog_code   varchar(20) NOT NULL,
+    catalogue_name varchar(100),
+    PRIMARY KEY (tenant_id, catalog_code)
+);
+
+CREATE TABLE catalogue_item (
+    tenant_id    int NOT NULL,
+    item_no      int NOT NULL,
+    catalog_code varchar(20) NOT NULL,
+    item_name    varchar(100),
+    PRIMARY KEY (tenant_id, item_no),
+    CONSTRAINT catalogue_item_catalogue_fk
+        FOREIGN KEY (tenant_id, catalog_code)
+        REFERENCES catalogue (tenant_id, catalog_code)
+);
+
+INSERT INTO catalogue (tenant_id, catalog_code, catalogue_name) VALUES
+    (1, 'BOOKS', 'Books, tenant 1'),
+    (1, 'MEDIA', 'Media, tenant 1'),
+    (2, 'BOOKS', 'Books, tenant 2'),
+    (2, 'TOOLS', 'Tools, tenant 2');
+
+INSERT INTO catalogue_item (tenant_id, item_no, catalog_code, item_name) VALUES
+    (1, 1, 'BOOKS', 'tenant-1 item-1'),
+    (1, 2, 'MEDIA', 'tenant-1 item-2'),
+    (2, 1, 'BOOKS', 'tenant-2 item-1'),
+    (2, 2, 'TOOLS', 'tenant-2 item-2');
+
+-- ===========================
 -- R413 converter-domain fixture
 -- ===========================
 --

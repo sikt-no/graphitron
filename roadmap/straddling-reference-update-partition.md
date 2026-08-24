@@ -1,13 +1,13 @@
 ---
 id: R784
 title: "Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 2
 theme: mutation-write
 depends-on: []
 created: 2026-08-21
-last-updated: 2026-08-21
+last-updated: 2026-08-24
 ---
 
 # Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it
@@ -156,8 +156,20 @@ The pair is deliberately slot-hostile: the `Catalogue` decode record is `(tenant
 - `docs/manual/reference/directives/nodeId.adoc`: the cross-table FK reference bullet gains the UPDATE straddle behaviour and the immutability rule for the in-key half.
 - `docs/architecture/explanation/typed-rejection.adoc`: the `MixedCarrierKeyMembership` paragraph narrows a second time (own-columns only); the new arm gets its paragraph and its roll-call entry.
 
-## Open points for implementation
+## Open points, answered during implementation
 
-- Verify whether the UPSERT arm shares `UpdateRowsWalker`'s partition (its `ON CONFLICT` is keyed on the matched key). If it does, decide there: either the same per-column admit extends to it with coverage, or the straddle stays rejected on that arm with an explicit test pinning the rejection.
-- Verify whether the payload-returning UPDATE arms can receive a self-FK overlap today. If they can, the absent agreement check there is a pre-existing gap this item closes; land its execution case with stage 3.
-- `AgreementObligation` is a name proposal; if the tree already carries better vocabulary for a two-sided obligation row, rename before emitting.
+- **UPSERT does not share the walker.** Only two call sites run `UpdateRowsWalker`, both in `FieldBuilder`, and both are UPDATE. The UPSERT arm rides `OperationMember.Write.Upsert` with a `TableInputArg`, so this item's partition change cannot reach it and no per-arm decision is needed.
+- **Both payload-returning UPDATE arms could receive a self-FK overlap, and neither checked it.** `buildCarrierUpdateChainSingle` and `buildCarrierBulkPerRowUpdateBody` called `emitSetMapPuts` plus `buildLookupWhereSingleRow` with no agreement preamble at all: not a missing new case, a missing shipped one. Both now consume the carrier's obligations, which is the concrete payoff of making the fact a carrier component rather than a per-emitter derivation.
+- **`AgreementObligation` kept its proposed name.** The tree's existing vocabulary for this is "agreement" (`requireColumnAgreement`, `emitKeySetAgreementPreamble`, `ColumnOverlap`), and nothing already names a two-sided obligation row.
+
+## Deviations from the Spec, and why
+
+**The fused `keyGroupsOf` discriminator is dissolved by carrying the slot on `MapBinding`, not by re-routing one-column decoded groups to `DecodedRecordGroup`.** The Spec's fix is not byte-identical, and byte-identity is stage 1's own exit gate: the `MapGroup` arm of `buildLookupWhereSingleRow` emits `t.col.eq(DSL.val(rec.value1(), t.col.getDataType()))` while the `DecodedRecordGroup` arm emits `t.col.eq(rec.value1())` with no `DSL.val` wrap, so any existing arity-1 decoded key column would move between the two shapes and land in the diff. The gate would then no longer distinguish a slot-threading bug from the reshuffle, which is the whole reason the Spec made the lift its own stage.
+
+Carrying `decodeSlot` on `InputColumnBinding.MapBinding` removes the same defect the Spec is aiming at, and removes it at all four readers rather than one: `appendMapBindingValueExpr`, `emitLookupKeyCellAdds`, `appendBulkRowCells` and `emitBulkKeySetAgreement` stop hardcoding `value1()` and read `value<decodeSlot + 1>()`. What the group shape means is then honestly "how many columns this partition received", which no longer implies anything about the decode record's arity. Every binding in the tree today is slot 0, so the emitted bytes are unchanged. The cost is one component on a record with four construction sites, three of which take a convenience constructor that defaults the slot.
+
+**`render/LookupRows.slotValueExpr` needed no change.** The Spec lists it among the positional readers to route through the carried slot, but it already reads an explicit `DecodeBinding.index()`; the lookup path was never inferring the slot from list position.
+
+## Scope deliberately not widened
+
+The two payload-returning arms are also missing `emitSetAgreementPreamble`, the *within*-SET value agreement for two decode writers on one SET column. That is a different fact from an `AgreementObligation` (it is not a WHERE/SET overlap) and closing it is a behaviour change with its own execution coverage, so it is filed separately rather than folded in here.

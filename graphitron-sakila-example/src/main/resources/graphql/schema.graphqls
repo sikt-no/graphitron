@@ -3483,6 +3483,32 @@ input UpdateEmailReplyInput {
     inReplyTo: ID @nodeId(typeName: "Email") @reference(path: [{key: "email_in_reply_to_fk"}])
 }
 
+# Execution-tier fixture for a straddling cross-table @nodeId reference: the neutral form of a
+# consumer shape where a table's primary key and its foreign key share a qualifying column.
+# catalogue_item's PK is (tenant_id, item_no); its FK catalogue_item_catalogue_fk lifts
+# (tenant_id, catalog_code). An UPDATE input carrying the item's own id plus a Catalogue reference
+# therefore has one field whose columns fall on both sides of the WHERE/SET boundary.
+#
+# The reference is spelled ID! deliberately, and the build requires it: the in-key half of a
+# straddling reference is the row's identity, so the reference can be re-pointed within a tenant but
+# never cleared. A nullable spelling would let an explicit null write NULL into catalog_code while
+# leaving tenant_id populated, which MATCH SIMPLE accepts as a satisfied foreign key.
+type Catalogue implements Node @table(name: "catalogue") @node {
+    id: ID! @nodeId
+    catalogueName: String @field(name: "catalogue_name")
+}
+type CatalogueItem implements Node @table(name: "catalogue_item") @node {
+    id: ID! @nodeId
+    itemNo: Int @field(name: "item_no")
+    itemName: String @field(name: "item_name")
+    catalogCode: String @field(name: "catalog_code")
+}
+input UpdateCatalogueItemInput {
+    id: ID! @nodeId(typeName: "CatalogueItem")
+    itemName: String @field(name: "item_name")
+    catalogueId: ID! @nodeId(typeName: "Catalogue")
+}
+
 # Single-record DML carrier payload type. The SDL author authors no Java class —
 # the classifier binds the type to its RETURNING table's JooqTableRecordType; the data field
 # classifies as a record-sourced ChildField.BatchedTableField; the mutation classifies as
@@ -4148,6 +4174,21 @@ type Mutation {
     # match before the DML. Agree → repoint in_reply_to_no (mailbox_id SET a no-op); disagree → throw per row,
     # batch rolls back; inReplyTo omitted on a row → that row updates subject only.
     updateEmailReplies(in: [UpdateEmailReplyInput!]!): [Email!]! @mutation(typeName: UPDATE)
+
+    # Straddling cross-table @nodeId reference on a single-row UPDATE. `id` pins the item by its own PK
+    # (tenant_id, item_no) → WHERE. `catalogueId` lifts the FK child columns (tenant_id, catalog_code),
+    # which fall on BOTH sides of the boundary: tenant_id is in the key, catalog_code is not. The
+    # reference partitions per column. catalog_code is the only SET write, tenant_id stays identity and
+    # is checked against `id`'s decoded tenant before the UPDATE runs. Same tenant → re-point;
+    # different tenant → throw, nothing written. catalog_code sits at the SECOND slot of the Catalogue
+    # decode record, so a positional read of the one-column SET partition would write the tenant id into
+    # it.
+    updateCatalogueItem(in: UpdateCatalogueItemInput!): CatalogueItem @mutation(typeName: UPDATE)
+
+    # The bulk (list-input) sibling. tenant_id reaches the v-table once from the WHERE side; the
+    # straddler's checked column never enters the derived table at all (it is neither a key group nor a
+    # set group), so the v(...) alias names each column once by construction.
+    updateCatalogueItems(in: [UpdateCatalogueItemInput!]!): [CatalogueItem!]! @mutation(typeName: UPDATE)
 
     # R315 D4 execution pin: a nullable same-table identity (addressId: ID @nodeId(typeName: "Address"))
     # on a jOOQ AddressRecord @service param, resolving to the record's own serial PK (address_id).

@@ -81,6 +81,8 @@ When a `@service` method parameter is a generated jOOQ `TableRecord` (singular o
 
 * *Same-table identity.* When the `@nodeId` type's xref:table.adoc[`@table`] is the param record's own table, the decoded key loads into the record's own key columns.
 * *Cross-table FK reference.* When the `@nodeId` type is a *different* table (the common status / history / junction-row shape), the decoded key loads into the foreign-key child columns on the record, resolved through the FK constraint between the two tables. The FK is deduced when exactly one connects them; when several do, name it with xref:reference.adoc[`@reference`]`(path: [{key: "<fk-name>"}])`. A record may carry several such FK-reference `@nodeId` fields.
++
+On an xref:mutation.adoc[`@mutation`]`(typeName: UPDATE)` input those child columns can overlap the row's own key, which happens whenever the two tables share a qualifying column such as a tenant or institution number. The field then partitions per column: the columns outside the matched key are written, and the ones inside it are the row's identity, never written and checked against whatever else supplies them before the statement runs. Because that in-key half is identity, the reference can be re-pointed only within the same key value and can never be cleared, so it must be spelled `ID!`; the build rejects the nullable form where it straddles.
 
 [source,graphql]
 ----

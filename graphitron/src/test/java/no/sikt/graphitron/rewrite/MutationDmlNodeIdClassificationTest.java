@@ -848,6 +848,123 @@ class MutationDmlNodeIdClassificationTest {
         assertThat(updateRows.setColumns()).anyMatch(s -> s.targetColumn().sqlName().equals("mailbox_id"));
     }
 
+    // ===== straddling cross-table @nodeId reference on @mutation UPDATE inputs =====
+
+    /**
+     * The SDL every straddle case classifies from: {@code catalogue_item} keyed
+     * {@code (tenant_id, item_no)} with a foreign key {@code (tenant_id, catalog_code)} to
+     * {@code catalogue}, so {@code catalogueId} lifts one column into the matched key and one
+     * outside it. {@code payloadTypes} and {@code mutations} are spliced in so all four
+     * carrier-consuming emit shapes (direct-return and payload-returning, single-row and bulk)
+     * classify from one input type.
+     */
+    private static String straddleSchema(String payloadTypes, String mutations) {
+        return """
+            type Catalogue implements Node @table(name: "catalogue") @node { id: ID! @nodeId }
+            type CatalogueItem implements Node @table(name: "catalogue_item") @node {
+                id: ID! @nodeId
+                itemName: String @field(name: "item_name")
+            }
+            input UpdateCatalogueItemInput {
+                id: ID! @nodeId(typeName: "CatalogueItem")
+                itemName: String @field(name: "item_name")
+                catalogueId: ID! @nodeId(typeName: "Catalogue")
+            }
+            %s
+            type Query { x: String }
+            type Mutation {
+            %s
+            }
+            """.formatted(payloadTypes, mutations);
+    }
+
+    /** The partition and obligation facts every carrier-consuming emit shape must see. */
+    private static void assertStraddlePartition(no.sikt.graphitron.rewrite.model.UpdateRows.Identified updateRows) {
+        // WHERE: the item's own PK, both columns from `id`. The straddler pins neither.
+        assertThat(updateRows.keyColumns()).extracting(k -> k.sdlFieldName() + ":" + k.targetColumn().sqlName())
+            .containsExactlyInAnyOrder("id:tenant_id", "id:item_no");
+        // SET: item_name plus the straddler's out-of-key column only. tenant_id is not written.
+        assertThat(updateRows.setColumns()).extracting(s -> s.sdlFieldName() + ":" + s.targetColumn().sqlName())
+            .containsExactlyInAnyOrder("itemName:item_name", "catalogueId:catalog_code");
+        // The slot-hostile bit: catalog_code is the SECOND column of the Catalogue decode record,
+        // so a positional read of the one-column SET partition would emit value1() and write the
+        // decoded tenant id into catalog_code.
+        assertThat(updateRows.setColumns()).filteredOn(s -> s.sdlFieldName().equals("catalogueId"))
+            .singleElement().satisfies(s -> assertThat(s.decodeSlot()).isEqualTo(1));
+        // tenant_id is decoded by both fields, so it carries an agreement obligation naming both.
+        assertThat(updateRows.agreementObligations()).singleElement().satisfies(ob -> {
+            assertThat(ob.column().sqlName()).isEqualTo("tenant_id");
+            assertThat(ob.keySide().sdlFieldName()).isEqualTo("id");
+            assertThat(ob.keySide().decodeSlot()).isEqualTo(0);
+            assertThat(ob.referenceSide().sdlFieldName()).isEqualTo("catalogueId");
+            assertThat(ob.referenceSide().decodeSlot()).isEqualTo(0);
+        });
+    }
+
+    @Test
+    void straddlingReference_update_allFourCarrierConsumers_seeTheSamePartitionAndObligations() {
+        // The carrier has four emit consumers, and only two of them used to intersect the partitions
+        // for themselves; the other two shipped with no cross-partition agreement check at all. A
+        // component a consumer can silently drop is exactly what this pins, so every shape is
+        // classified and asserted against the same expectation.
+        var schema = TestSchemaHelper.buildSchema(straddleSchema(
+            """
+            type CatalogueItemPayload { item: CatalogueItem }
+            type CatalogueItemsPayload { items: [CatalogueItem!] }
+            """,
+            """
+                updateCatalogueItem(in: UpdateCatalogueItemInput!): CatalogueItem @mutation(typeName: UPDATE)
+                updateCatalogueItems(in: [UpdateCatalogueItemInput!]!): [CatalogueItem!]! @mutation(typeName: UPDATE)
+                updateCatalogueItemPayload(in: UpdateCatalogueItemInput!): CatalogueItemPayload @mutation(typeName: UPDATE)
+                updateCatalogueItemsPayload(in: [UpdateCatalogueItemInput!]!): CatalogueItemsPayload @mutation(typeName: UPDATE)
+            """));
+
+        assertThat(schema.diagnostics()).isEmpty();
+
+        // Direct-return, single-row and bulk.
+        assertStraddlePartition((no.sikt.graphitron.rewrite.model.UpdateRows.Identified)
+            updateRowsOf((MutationField.DmlTableField) schema.field("Mutation", "updateCatalogueItem")));
+        assertStraddlePartition((no.sikt.graphitron.rewrite.model.UpdateRows.Identified)
+            updateRowsOf((MutationField.DmlTableField) schema.field("Mutation", "updateCatalogueItems")));
+
+        // Payload-returning, single-row and bulk.
+        var singlePayload = (MutationField.MutationDmlRecordField)
+            schema.field("Mutation", "updateCatalogueItemPayload");
+        assertStraddlePartition((no.sikt.graphitron.rewrite.model.UpdateRows.Identified)
+            ((no.sikt.graphitron.rewrite.model.OperationMember.Write.Update) singlePayload.write()).updateRows());
+        var bulkPayload = (MutationField.MutationBulkDmlRecordField)
+            schema.field("Mutation", "updateCatalogueItemsPayload");
+        assertStraddlePartition((no.sikt.graphitron.rewrite.model.UpdateRows.Identified)
+            ((no.sikt.graphitron.rewrite.model.OperationMember.Write.Update) bulkPayload.write()).updateRows());
+    }
+
+    @Test
+    void nullableStraddlingReference_update_rejectsAtBuildTime() {
+        // The nullable spelling of the admitted shape. Rejected because an explicit null would write
+        // NULL into catalog_code and leave tenant_id populated, which MATCH SIMPLE accepts.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Catalogue implements Node @table(name: "catalogue") @node { id: ID! @nodeId }
+            type CatalogueItem implements Node @table(name: "catalogue_item") @node {
+                id: ID! @nodeId
+                itemName: String @field(name: "item_name")
+            }
+            input UpdateCatalogueItemInput {
+                id: ID! @nodeId(typeName: "CatalogueItem")
+                itemName: String @field(name: "item_name")
+                catalogueId: ID @nodeId(typeName: "Catalogue")
+            }
+            type Query { x: String }
+            type Mutation { updateCatalogueItem(in: UpdateCatalogueItemInput!): CatalogueItem @mutation(typeName: UPDATE) }
+            """);
+
+        var f = (UnclassifiedField) schema.field("Mutation", "updateCatalogueItem");
+        assertThat(f.reason())
+            .contains("nullable cross-table @nodeId reference")
+            .contains("catalogueId")
+            .contains("catalog_code")
+            .contains("ID!");
+    }
+
     @Test
     void deleteIdCarrier_inputTableNotNodeBacked_rejects() {
         // Implicit Id recognition needs the input @table to be @node-backed. Qux carries no

@@ -373,11 +373,22 @@ class RejectionSeverityCoverageTest {
                     "film_pkey"));
         }
         if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.MixedCarrierKeyMembership.class) {
-            // Models a cross-table FK reference whose lifted columns straddle the matched key — the
-            // only carrier shape that still reaches this arm now that a self-FK reference routes
-            // wholly to SET instead of straddling the matched key.
+            // Models an own-columns carrier whose lifted columns straddle the matched key: the only
+            // carrier shape that still reaches this arm. A self-FK reference routes wholly to SET,
+            // and a cross-table FK reference partitions per column.
             return new no.sikt.graphitron.rewrite.model.UpdateRowsError.MixedCarrierKeyMembership(
-                "ref",
+                "ownKey",
+                List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")),
+                List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("last_update", "LAST_UPDATE", "java.time.LocalDateTime")));
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.NullableStraddlingReference.class) {
+            // Models the nullable spelling of an admitted straddling cross-table FK reference.
+            return new no.sikt.graphitron.rewrite.model.UpdateRowsError.NullableStraddlingReference(
+                "ref", new SourceLocation(1, 1), "film_actor",
+                new no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey(
+                    List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"),
+                        new no.sikt.graphitron.rewrite.model.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
+                    "film_actor_pkey"),
                 List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")),
                 List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("last_update", "LAST_UPDATE", "java.time.LocalDateTime")));
         }

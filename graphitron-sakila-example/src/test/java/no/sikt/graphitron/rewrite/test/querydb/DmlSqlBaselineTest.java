@@ -60,6 +60,15 @@ class DmlSqlBaselineTest {
     private static final int MAILBOX_BOB = 9;
 
     /**
+     * The tenant and {@code catalogue_item.item_no} band the straddling-reference pins own.
+     * {@code StraddlingReferenceUpdateExecutionTest} writes the same table under the 100 band, so the
+     * two classes' cleanups cannot reach each other's rows.
+     */
+    private static final int CATALOGUE_TENANT = 1;
+    private static final int CATALOGUE_ITEM_BAND_START = 700;
+    private static final int CATALOGUE_ITEM_BAND_END = 799;
+
+    /**
      * This class's {@code email.message_no} band, and the range its cleanup deletes. Four classes in
      * this module write {@code email}; each owns a hundred-wide band so that one class's cleanup
      * cannot reach another's rows while both are running.
@@ -115,6 +124,13 @@ class DmlSqlBaselineTest {
             .execute();
         dsl.deleteFrom(DSL.table("film"))
             .where(DSL.field("title", String.class).like("PIN %"))
+            .execute();
+        // The straddle pins seed their own catalogue_item rows in this class's band under tenant 1;
+        // StraddlingReferenceUpdateExecutionTest owns the 100 band, so the two cannot collide.
+        dsl.deleteFrom(DSL.table("catalogue_item"))
+            .where(DSL.field("tenant_id", Integer.class).eq(CATALOGUE_TENANT))
+            .and(DSL.field("item_no", Integer.class)
+                .between(CATALOGUE_ITEM_BAND_START, CATALOGUE_ITEM_BAND_END))
             .execute();
     }
 
@@ -220,6 +236,61 @@ class DmlSqlBaselineTest {
     }
 
     @Test
+    void straddlingReferenceSingleUpdate_setsOnlyTheOutOfKeyHalf() {
+        // The statement the straddle contract names: exactly one SET column (the reference's
+        // out-of-key half), and each key column named once in the WHERE. tenant_id is decoded by both
+        // `id` and `catalogueId` but is identity, so it filters and is never set.
+        seedCatalogueItem(700, "BOOKS");
+        SQL_LOG.clear();
+        String id = NodeIdEncoder.encode("CatalogueItem", CATALOGUE_TENANT, 700);
+        String catalogue = NodeIdEncoder.encode("Catalogue", CATALOGUE_TENANT, "MEDIA");
+        execute("mutation { updateCatalogueItem(in: {id: \"" + id + "\", catalogueId: \"" + catalogue
+            + "\"}) { itemNo catalogCode } }");
+        assertThat(SQL_LOG)
+            .as("straddling cross-table reference, single row: one SET column, each key column once")
+            .containsExactly(
+                "update \"public\".\"catalogue_item\" set \"catalog_code\" = ? "
+                    + "where (\"public\".\"catalogue_item\".\"tenant_id\" = ? "
+                    + "and \"public\".\"catalogue_item\".\"item_no\" = ?) "
+                    + "returning \"public\".\"catalogue_item\".\"tenant_id\", \"public\".\"catalogue_item\".\"item_no\"",
+                "select \"public\".\"catalogue_item\".\"catalog_code\", \"public\".\"catalogue_item\".\"item_no\" "
+                    + "from \"public\".\"catalogue_item\" "
+                    + "where (\"public\".\"catalogue_item\".\"tenant_id\", \"public\".\"catalogue_item\".\"item_no\") = (?, ?)");
+    }
+
+    @Test
+    void straddlingReferenceBulkUpdate_valuesAliasNamesEachColumnOnce() {
+        // The bulk arm's derived-table alias is where a doubled contributor would not merely be
+        // redundant but would fail to run. tenant_id reaches v once from the WHERE side; the
+        // reference's checked column is neither a key group nor a set group and never enters v.
+        seedCatalogueItem(710, "BOOKS");
+        seedCatalogueItem(711, "BOOKS");
+        SQL_LOG.clear();
+        String idA = NodeIdEncoder.encode("CatalogueItem", CATALOGUE_TENANT, 710);
+        String idB = NodeIdEncoder.encode("CatalogueItem", CATALOGUE_TENANT, 711);
+        String catalogue = NodeIdEncoder.encode("Catalogue", CATALOGUE_TENANT, "MEDIA");
+        execute("mutation { updateCatalogueItems(in: ["
+            + "{id: \"" + idA + "\", catalogueId: \"" + catalogue + "\"}, "
+            + "{id: \"" + idB + "\", catalogueId: \"" + catalogue + "\"}"
+            + "]) { itemNo catalogCode } }");
+        assertThat(SQL_LOG)
+            .as("straddling cross-table reference, bulk: v(...) names tenant_id, item_no and "
+                + "catalog_code exactly once each")
+            .containsExactly(
+                "update \"public\".\"catalogue_item\" set \"catalog_code\" = \"v\".\"catalog_code\" "
+                    + "from (values (?, ?, ?), (?, ?, ?)) as \"v\" (\"tenant_id\", \"item_no\", \"catalog_code\") "
+                    + "where (\"public\".\"catalogue_item\".\"tenant_id\" = \"v\".\"tenant_id\" "
+                    + "and \"public\".\"catalogue_item\".\"item_no\" = \"v\".\"item_no\") "
+                    + "returning \"public\".\"catalogue_item\".\"tenant_id\", \"public\".\"catalogue_item\".\"item_no\"",
+                "select \"public\".\"catalogue_item\".\"catalog_code\", \"public\".\"catalogue_item\".\"item_no\" "
+                    + "from \"public\".\"catalogue_item\" "
+                    + "join (values (?, ?, ?), (?, ?, ?)) as \"keysinput\" (\"idx\", \"tenant_id\", \"item_no\") "
+                    + "on (\"public\".\"catalogue_item\".\"tenant_id\" = \"keysinput\".\"tenant_id\" "
+                    + "and \"public\".\"catalogue_item\".\"item_no\" = \"keysinput\".\"item_no\") "
+                    + "order by \"keysinput\".\"idx\"");
+    }
+
+    @Test
     void compositeKeyListUpdate_multiColumnValuesRowsCompanion() {
         seedEmail(700, "before A");
         seedEmail(701, "before B");
@@ -317,6 +388,14 @@ class DmlSqlBaselineTest {
         dsl.insertInto(DSL.table("email"),
                 DSL.field("mailbox_id"), DSL.field("message_no"), DSL.field("subject"))
             .values(MAILBOX_BOB, msgNo, subject)
+            .execute();
+    }
+
+    private static void seedCatalogueItem(int itemNo, String catalogCode) {
+        dsl.insertInto(DSL.table("catalogue_item"),
+                DSL.field("tenant_id"), DSL.field("item_no"),
+                DSL.field("catalog_code"), DSL.field("item_name"))
+            .values(CATALOGUE_TENANT, itemNo, catalogCode, "PIN ITEM " + itemNo)
             .execute();
     }
 }

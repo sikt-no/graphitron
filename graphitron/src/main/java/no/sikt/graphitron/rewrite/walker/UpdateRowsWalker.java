@@ -101,7 +101,7 @@ public final class UpdateRowsWalker {
      * is the producer's promise, not this walker's: for a lifted FK-target carrier the tuple comes
      * from {@link no.sikt.graphitron.rewrite.model.FilterBinding.Local#ownTableColumns()}, which
      * {@link no.sikt.graphitron.rewrite.NodeIdLeafResolver.Resolved.FkTarget.DirectFk#liftedSourceColumns()}
-     * documents as "where each key position landed, in {@code keyColumns} order" — the same order
+     * documents as "where each key position landed, in {@code keyColumns} order", which is the same order
      * {@link no.sikt.graphitron.rewrite.model.HelperRef.Decode#outputColumnShape()} states for the
      * returned {@code Record<N>}. The type system cannot carry that alignment, which is why stage 6
      * reads the index off this list once and hands every downstream row an explicit slot rather than
@@ -274,8 +274,6 @@ public final class UpdateRowsWalker {
         // the SET partition itself is built in, so an input with only self-FK overlaps produces
         // exactly the pairs and the sequence the emitters used to derive.
         var obligations = new ArrayList<AgreementObligation>();
-        var setSqlNames = new LinkedHashSet<String>();
-        for (var sc : setColumns) setSqlNames.add(sc.targetColumn().sqlName());
         for (var c : contributions) {
             for (int slot = 0; slot < c.columns().size(); slot++) {
                 var col = c.columns().get(slot);
@@ -283,7 +281,12 @@ public final class UpdateRowsWalker {
                 if (keySide == null || keySide.sdlFieldName().equals(c.sdlFieldName())) {
                     continue; // not a key column, or this field is the one pinning it
                 }
-                boolean writesIt = c.role() instanceof CarrierRole.SelfFk && setSqlNames.contains(col.sqlName());
+                // A self-FK routed every column to SET, so a key column among them is written and
+                // checked. A straddler's in-key column is checked and nothing else, and it is a
+                // claim rather than a KeyColumn precisely because something else pins it. Every
+                // other carrier that reaches a key column here is one whose whole tuple is the key,
+                // and it is either the pinning field itself or a duplicate the WHERE already carries.
+                boolean writesIt = c.role() instanceof CarrierRole.SelfFk;
                 boolean checksOnly = c.role() instanceof CarrierRole.CrossTableFk
                     && identityClaims.stream().anyMatch(cl -> cl.owner() == c && cl.column().sqlName().equals(col.sqlName()));
                 if (!writesIt && !checksOnly) {
