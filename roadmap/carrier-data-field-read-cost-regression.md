@@ -1,11 +1,11 @@
 ---
 id: R819
 title: "The carrier data field read tripled and the seat put it on every generation"
-status: Backlog
+status: Spec
 bucket: store
 priority: 2
 theme: mutation-write
-depends-on: []
+depends-on: [step-hop-registration-costs-two-readers]
 created: 2026-08-24
 last-updated: 2026-08-24
 ---
@@ -14,9 +14,11 @@ last-updated: 2026-08-24
 
 Reading `intent_carrier_data_field` against a real capture costs about half a minute, and the
 R682 slice-one commits multiplied that cost onto the build's hot paths: the new
-`intent_mutation_routine_seat` names it four times and costs about 43 seconds per read,
-`intent_carrier_routine_hop` drives from it (about 10 seconds), and `RoutineWriteCommands`
-reads the seat relation once per generation, so the sakila example's generation and every
+`intent_mutation_routine_seat` names it five times (once per carrier-facing verdict arm) and
+costs about 43 seconds per read,
+`intent_carrier_routine_hop` drives from it (about 10 seconds), and `RoutineWriteFacts`
+reads the seat family once per generation (its three statements name the seat four times and
+join the carrier relation twice more directly), so the sakila example's generation, and every
 routine-carrying pipeline test now pay these reads. The relation answers 15 rows in every
 measurement below; this is a cost regression, not an answer change.
 
@@ -73,15 +75,173 @@ Same-fixture controls on `intent_carrier_data_field`'s body (one store, one run,
 13 s on `37c5814`. Different session, so per the store-performance discipline the pair is
 suggestive, not evidence; whether something after `37c5814` regressed the decode read is open.
 
-## Candidate levers, in the registry's order
+## The plan
 
-1. Register `intent_errors_field` in `meta_materialize`: refresh is one 16 ms evaluation per
-   graph, it has four naming view bodies plus the LSP, and the control above prices the win
-   (32 s to 9.6 s on the carrier read alone, before its effect on the seat, hop and error
-   channel reads).
-2. Consider registering `intent_poly_member` beside it (10 ms refresh, three readers, and it
-   is the window-carrying term the errors view multiplies through).
-3. The residual 8.5 s is the `data_channel` four-fold expansion inside
-   `intent_carrier_data_field`; whether that earns the relation its own registration (seven
-   naming bodies plus two runtime readers) or a restructure is this item's design question,
-   and the answer decides what `intent_mutation_routine_seat` costs.
+Vocabulary first, because the whole item moves along one axis. A *registration* is a row in
+`meta_materialize`: the rule keeps its text in a view renamed to `<name>_live`, a table of the
+same shape takes the canonical name every reader already spells, and the materializer refills
+that table from the view once per graph inside each capture transaction. No reader is edited
+and no answer changes; what changes is that a relation named N times per read is evaluated
+once per capture instead of N times per read. The doctrine that admits a registration, the
+depth rule, and the shared-investment gate are in
+`docs/architecture/explanation/fact-model.adoc`; the mechanics are `Materializations` and the
+registry gates in `graphitron-model`.
+
+This item depends on the target-index item (`depends-on` above), and the ordering is
+load-bearing rather than administrative: that item indexes the existing registered targets,
+adds `ANALYZE` after every refill, and gates that each target carries an index or a measured
+roster row arguing why not. Registering new targets before it lands would create exactly the
+unkeyed heaps it identified as the source of every non-monotonic pair in the read-cost gate,
+manufacturing pinned findings it would immediately un-pin.
+
+Three slices, each ending in a re-measurement with the probe methodology above, so the next
+slice decides on fresh numbers rather than on this item's opening ones. Each conditional
+branch states its control and the disposition each outcome produces.
+
+### Slice 1: register `intent_errors_field`
+
+The convicted term, and the control has already priced the win: the carrier body falls from
+32 s to 9.6 s, before the effect propagates to the seat, hop and error-channel reads that
+inline the carrier body. Refresh is one 16 ms evaluation per graph. The case is view-body
+multiplicity alone, and it is sufficient: four namings across three view bodies
+(`intent_carrier_data_field`, `intent_errors_field_member`, `intent_field_error_channel`
+twice) multiply it today. No Java reader names this relation, so the registration makes no
+consumer claim; the consumer-facing wins are inherited by the relations above it.
+
+### Slice 2 (conditional): `intent_poly_member`
+
+The window-carrying term the errors view multiplies through: its interface arm carries a
+`ROW_NUMBER() OVER`, so no outer predicate prunes it and every correlated probe evaluates it
+whole. But slice 1 moves those probes onto the refresh cadence, where they run once per
+capture, so the conviction may not survive slice 1.
+
+The control is the same-fixture shape this item already used: on the post-slice-1 tree,
+snapshot `intent_poly_member` into a plain table and re-read every relation that names it
+(`intent_errors_field_member` is its remaining per-read namer, plus slice 1's own refresh).
+Dispositions:
+
+- The snapshot moves nothing meaningful: decline, and record the numbers here. Declining is
+  a real outcome; every registration costs a refresh per capture and a row of priced cells in
+  `DerivedReadCostTest` forever, so one admitted on suspicion is doctrine debt.
+- The snapshot convicts the term: before registering, weigh the reshape one rung up. The
+  derived interface-arm ordinal is the entire reason the window exists, and the view's own
+  comment says the ordinal matters to exactly one reader, the mapping-constant fingerprint.
+  Moving the ordinal into a sibling relation leaves a prunable membership relation with no
+  refresh to buy at all, which changes what the relation is rather than how it is named, the
+  class of change the fact-model page records as the one that pays. Registration is the
+  fallback if the reshape loses on measurement or on shape.
+
+### Slice 3: register `intent_carrier_data_field`, and restructure its body in the same slice
+
+After slices 1-2 the carrier body's own tail remains: the windowed `data_channel` CTE named
+four times inside `intent_carrier_data_field` (8.5 s in the both-snapshotted control). The
+recommendation is to register the relation, and the depth rule is satisfied rather than
+excepted: after slice 1, this is the deepest relation whose materialization removes
+re-evaluation for every expensive reader left, namely the seat's five namings, the hop's one,
+`intent_field_error_channel`'s per-producer-row probe, and the two runtime readers
+(`RoutineWriteFacts` joins the carrier relation twice per generation beside its four seat
+namings; the LSP's `CarrierDataField` reads it per `$source` completion).
+
+The registration also carries a consumer claim the multiplication argument does not need but
+the LSP makes literal: the body is a windowed view, so `CarrierDataField.admitsSigil`'s
+coordinate filter prunes nothing and one completion at a `$source` site pays the whole
+derivation. Measure it the way the target-index item did: the coordinate-filtered read
+against the whole-relation read, in scans, before and after registration. If they match
+before and diverge after, the reason row states a person-waits-on claim.
+
+What the registration installs is a refresh: one full evaluation of the body per graph per
+capture, and the body drives from every OBJECT-type field before the producer join narrows
+it, so a capture with no mutation-root routine and no carrier pays it in full and reads
+nothing back. At 8.5 s that refresh is five to five hundred times every shipped
+registration's, and no reason row could honestly absorb it as a disclosure. So the
+restructure is not a deferred optimization; it is the only lever on the number the
+registration creates, and it lands in the same slice:
+
+- Drive the three `NOT EXISTS` disqualification arms off `graphql_field` (plus the errors
+  exclusion) directly rather than off the windowed CTE, so the window is evaluated once for
+  the join and the CTE's four-fold expansion goes.
+- Price the refresh explicitly on two captures, the sakila example (carrier-bearing) and a
+  carrier-free schema, and state both numbers in the reason row. The carrier-free number is
+  the one every consumer with no routines pays.
+- If the restructured refresh still lands far above the shipped registrations' range, the
+  reason row discloses it on the hop-column registration's model (the registration made in
+  the increment that adds the reader, with the cost stated), and the Spec review weighs it.
+
+Decide on slice 3 only after re-measuring the seat, hop and generation-path reads on the
+post-slice-1 tree: if slice 1 alone already takes the seat read to the floor the other
+relations sit at, the registration case weakens and the re-measurement will say so.
+
+## What one registration touches
+
+The checklist, assembled from the two precedent commits (the chain-walk registration and the
+target-index item):
+
+- `graphitron-model.sql`: rename the view to `<name>_live` and give it the short
+  points-at-the-table comment (the `intent_spelled_table_live` pattern); `CREATE TABLE` under
+  the canonical name with a column list matching the view name-for-name in order (gated);
+  move the full relation and column documentation onto the table; add the registry row whose
+  `reason` states the measurements. Each new target arrives with the index-or-roster decision
+  the target-index item's gate demands, measured the way that item measures: an index chosen
+  over the readers' join coordinates, or a `MaterializeRegistryGateTest.NO_INDEX` row whose
+  measurements argue the absence.
+- `FactCaptureAgreementTest`: one `<name>_live` row in the `DERIVED` arm per registration.
+- `DerivedReadCostTest`: re-pin `READERS_WITH_CELLS` and `CELLS` (the reachability walk adds
+  cells for every relation reaching a new target), and revisit `KNOWN_NON_MONOTONIC`; a new
+  pair there is a finding to answer, not a tolerance to record.
+- The registration census is counted in prose in two places
+  (`docs/architecture/explanation/fact-model.adoc`, `DerivedReadCostTest`'s javadoc, both
+  saying "seven"). Rather than bumping an unguarded inventory again, rewrite those sentences
+  to cite the register without a number; `meta_materialize` is the live roster and its gate
+  already closes it.
+- The LSP ceiling that can move is `DiagnosticsStatementCountTest.DRAIN_SCAN_CEILING`: the
+  diagnostics drain reads `intent_carrier_data_field` through `DiagnosticFacts.sigilSiteArm`.
+  `SurfaceScanCountTest`'s ceilings sit over the inlay-hint surface and should not move; the
+  completion path through `CarrierDataField.admitsSigil` has no scan ceiling at all, which is
+  a fact about coverage this item states and does not fix.
+- `meta_materialize_dependency` needs nothing: the edges are derived from the stored view
+  definitions at boot, so slice 3's read of slice 1's target orders itself.
+
+## The fixture gap
+
+`DerivedReadCostTest`'s scaled fixture populates none of `intent_errors_field`,
+`intent_carrier_data_field` or `intent_mutation_routine_seat`: it has no mutation-root
+`@routine` and no `@error` union payload, so every new cell would price the instrument's
+floor and the gate would pass while seeing nothing. The fixture may grow and may not shrink,
+so this item grows it: a routine-carrier cluster (a mutation-root `@routine` field returning
+a payload type wrapping one data field beside an errors channel, the channel a union whose
+members all carry `@error`), scaled with the existing units so the new targets hold rows
+proportional to schema size.
+
+Two consequences of growing it in shape rather than only in scale:
+
+- `UNITS = 12` is justified in the test's own javadoc by a scale-dependence boundary
+  established over the node cluster, and that argument does not transfer to a fixture with a
+  new cluster in it. Re-run the check at two sizes on the grown fixture and re-state the
+  justification in the same terms, rather than only re-pinning the cell counts.
+- The target-index item records that `intent_node_id_decode_hop_column` holds no rows on this
+  fixture either, the same defect one relation over. The two fixture edits want to be one;
+  coordinate with that item rather than growing the fixture twice.
+
+## Non-goals
+
+- The `intent_node_id_decode` observation above stays unestablished here. Re-run that probe
+  once, same session as the slice-1 re-measurement, purely to get a same-fixture pair; if the
+  regression is real it becomes its own item with its own controls, not a fourth slice. It
+  cannot ride this one in any case: nothing reads that relation yet, so it carries no
+  consumer claim for a registration to rest on.
+- No tuning of generated SQL, and no JVM or build-clock work.
+
+## Open questions for the Spec review
+
+1. Slice 3 prices the refresh it installs and restructures the body to shrink it, but the
+   spec names no acceptance threshold. Is "within the shipped registrations' range after the
+   restructure" the bar, or does the reviewer accept a disclosed outlier on the hop-column
+   registration's model if the restructure falls short?
+2. If slice 2's control convicts `intent_poly_member`, the reshape (moving the derived
+   interface-arm ordinal into a sibling relation, leaving a prunable membership relation)
+   changes a relation's shape and touches its readers, where a registration touches none. Is
+   that reshape in this item's scope, or does conviction spawn its own item and this one
+   registers as the interim?
+3. The fixture growth overlaps the target-index item's own fixture loose end. One combined
+   edit in whichever item lands second, or does the reviewer want the fixture change isolated
+   in one of them?
