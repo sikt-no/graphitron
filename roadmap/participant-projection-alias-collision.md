@@ -193,29 +193,42 @@ namespace and the promise split part 1 creates: *declaration*-time divergence on
 interface-declared name is a build error, *query*-time divergence on one stays a runtime client
 error, and where the field is declared decides which half applies.
 
-## Standing work
+## Round 2: the argument pin now stands on the relaxation
 
-**The argument half of the promise split needs a pin that tests it.** Round 1 found
-`divergingArgumentsDoNotRaiseTheConsistencyError` asserting nothing about the property it names, and
-the fan fixture unable to express it: the only argument-carrying field on `FanItem` was the
-interface-declared `details`, so the relaxation was unobservable on the participant-local fields,
-which carry no arguments. Closing it needs the fixture to grow a same-named participant-local field
-that carries one:
+Round 1 found `divergingArgumentsDoNotRaiseTheConsistencyError` asserting nothing about the property
+it names, and the fan fixture unable to express it: the only argument-carrying field on `FanItem` was
+the interface-declared `details`, whose arm keeps every occurrence by construction, while the
+participant-local `target` and `targetLoaded` carry no arguments, so the guard was never emitted into
+their arm at all. Closed by giving the fixture a same-named participant-local field that carries one.
 
-* `fan_mark`, one child table reached over two FKs into `fan_base` (`alpha_base_id`,
-  `beta_base_id`), so each participant declares its own `marks` path, exactly as each declares its
-  own `target`. `marks(first: Int): [FanMark!]!` is participant-local, so its alias and therefore its
-  occurrence bucket are per type, and a paginated list, so `readsSelectedFieldArguments` emits the
-  argument guard into its arm. Per-participant row counts are unequal (three for the ALPHA row, three
-  for the BETA row, one each for the second pair), so a `first: 1` / `first: 2` divergence resolves
-  two page sizes no other reading produces.
-* The pin asserts that `... on FanAlpha { marks(first: 1) } ... on FanBeta { marks(first: 2) }`
-  raises no `GraphitronClientException` and that each type reads its own page. On the pre-change tree
-  both occurrences share one bucket and the query raises, so the pin fails there, which is what the
-  round-1 finding was about.
+`fan_mark` is one child table reached over two FKs into `fan_base` (`alpha_base_id`, `beta_base_id`),
+so each participant declares its own `marks` path exactly as each declares its own `target`.
+`marks(first: Int): [FanMark!]!` is participant-local, so its alias and therefore its occurrence
+bucket are per type, and a paginated list, so `readsSelectedFieldArguments` returns true and the arm
+both carries `requireConsistentArguments` and serves the runtime `first` off the canonical
+occurrence. Per-participant row counts are three and three, so a `first: 1` against a `first: 2`
+resolves two page sizes that neither the sibling's argument nor a dropped limit reproduces.
 
-Also owed to round 1: this collapse of the plan body itself, and a full green
-`mvn install -Plocal-db`.
+What the pin now asserts, and why each half is load-bearing. That the divergence raises no client
+error is the relaxation itself. That the ALPHA row returns exactly its own one row and the BETA row
+exactly its own two is the stronger half: per-type page sizes are reachable only if each arm read its
+own occurrence's arguments, so the assertion pins the property rather than the absence of an error.
+Merged, as before this item, the canonical occurrence's `first` would be served to both types and the
+counts would agree with each other instead.
+
+Verified in the emitted tree rather than assumed, which is what round 1's finding was about: the fold
+emits `Set.of("marks", "target")` as its per-type restriction, so `marks` is stamped participant-local
+alongside `target`; each participant's `marks` arm carries `requireConsistentArguments`, reads
+`sf.getArguments().get("first")`, correlates on its own FK column, and aliases
+`"__rk_Fan<Alpha|Beta>$"`; and each participant's fetcher reads back the alias its own arm wrote. The
+matched control is the unchanged `interfaceDeclaredKey_divergingArgumentsStillRaiseTheConsistencyError`:
+the same guard on the same shape, differing only in that an interface-declared key is not restricted,
+and it still raises.
+
+Also settled in this round, both from round 1's bookkeeping: this collapse of the plan body, with the
+four deviations folded into the parts they belong to rather than left as an appendix to reconcile; and
+the `code-generation-triggers.adoc` paragraph on the mixed-participation deferral, which now states
+that no schema reaches it today so a reader stops looking for one.
 
 ## Related
 
@@ -259,9 +272,11 @@ Also owed to round 1: this collapse of the plan body itself, and a full green
   the shared set makes a shared alias over per-type occurrence sets unrepresentable by
   construction.
 * A *participant-local* key that carries an argument, selected with divergent per-type arguments,
-  raises no client error and resolves each type's own page. The pin stands on the relaxation
-  itself: it fails on the pre-change tree, and its fixture field is participant-local and
-  paginated, so the arm it exercises actually carries the argument guard.
+  raises no client error *and* resolves each type's own page size. The second half is what makes
+  the pin stand on the property rather than on the absence of an error: per-type page sizes are
+  reachable only if each arm read its own occurrence's arguments. Its fixture field is
+  participant-local and paginated, so the arm it exercises does carry the argument guard, and the
+  interface-declared control raises on the same guard.
 * A coordinate the joined route serves bare while its stamped owner is qualified (a type
   `TableBound` in one discriminated interface, `JoinedTableBound` in another, with a
   `__rk_`-family reference the joined route re-projects) fails the build as a deferred rejection;
