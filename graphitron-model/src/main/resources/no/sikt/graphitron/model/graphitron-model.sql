@@ -43,6 +43,27 @@
 -- name every reader already spells becomes a table of the same shape, and the materializer
 -- refills the table from the view inside the capture transaction. The registry's reason column
 -- is where the second answer lives, so a stored reduction always states which of the two it is.
+--
+-- A registered target is a table like any other here and wants an index for the same reason the
+-- rest do, which is a rule this file's other tables state by declaring a primary key and these
+-- cannot: five of the seven grains include a column that is nullable and meaningfully so, and H2
+-- refuses a primary key over one. So the index is an index, and where it exists it is declared
+-- beside the target it serves, on the columns a named reader joins that target on, with the
+-- reader named in the comment. What the absence of one costs is not what it looks like from the
+-- reader's side: the loss lands inside the derivation, on the joins a registered view performs
+-- against the target, and not on the reader's own predicate. The rule a materialization replaced
+-- reached keyed base relations, so those joins were seeks; against an unkeyed target the same
+-- join is a full scan of the whole target, once per driving row where the reader is correlated
+-- and once per iteration where it is recursive. That is why the cost is invisible at the call
+-- site and why a reader that never pruned anything still gets an order of magnitude cheaper.
+-- A target with no index is a target whose readers were measured and did not want one; the
+-- roster in no.sikt.graphitron.model.MaterializeRegistryGateTest holds those and says why, so
+-- that a target which later earns an index fails a build until its row goes.
+--
+-- The planner also needs statistics to use these indexes fully, and H2 gathers none on its own
+-- at this scale. no.sikt.graphitron.model.derive.Materializations.analyse is what supplies them
+-- after a refill, and its javadoc carries the one placement constraint: H2's ANALYZE commits, so
+-- it cannot run inside the capture transaction the refresh runs in.
 
 -- ==== Store bookkeeping ===========================================================
 -- The store's own family: the record of what it read, what it was built from, and which graphs
@@ -3298,6 +3319,9 @@ COMMENT ON COLUMN intent_spelled_table.table_schema IS 'the resolved table''s SQ
 COMMENT ON COLUMN intent_spelled_table.table_name IS 'the resolved table''s SQL name. With the two columns above this is sql_table''s full key';
 COMMENT ON COLUMN intent_spelled_table.candidates IS 'how many tables the spelling resolves to, this row being one of them; 1 on an unambiguous spelling';
 
+CREATE INDEX ix_spelled_table_spelling ON intent_spelled_table (graph_name, spelling);
+COMMENT ON INDEX ix_spelled_table_spelling IS 'Serves the resolution key itself, which is the only way any reader reaches this relation: nine namings across seven view bodies (intent_bound_table, intent_field_reference_step_hop_live, intent_argument_reference_step_hop, intent_field_chain_start, intent_argument_scope_table_live, intent_field_routine_method, intent_carrier_routine_hop) all join on the graph and the spelling and nothing else, one of them adding candidates = 1. The index this relation''s own comment already anticipated in arguing that both sides of both comparisons are stored folded columns, so the match is an equality an index can serve. Measured on the read-cost gate''s twelve-unit fixture with statistics current: intent_field_separate_fetch costs 11957 scans without it and 669 with it, intent_bound_table 357 against 198, intent_node_id_decode_defect 1901 against 1419. Not UNIQUE, and the one target here where that is a statement about the answer rather than about the key: a spelling two schemas both declare is several rows and candidates says so, ambiguity being rows and never a decline.';
+
 CREATE VIEW intent_bound_table
   (graph_name, type_name, table_source_name, table_schema, table_name, candidates) AS
 SELECT t.graph_name, t.type_name,
@@ -3626,6 +3650,11 @@ COMMENT ON COLUMN intent_field_reference_step_hop.to_schema IS 'the arriving tab
 COMMENT ON COLUMN intent_field_reference_step_hop.to_table IS 'the arriving table''s SQL name';
 COMMENT ON COLUMN intent_field_reference_step_hop.constraint_name IS 'the foreign key the hop joins on, named or discovered. Its own sql_referential_constraint key is this name under whichever endpoint declares it, which fk_on_from says. NULL on a NAME_MATCH hop, which joins on no foreign key. The constraint such a hop does key by is the arriving table''s primary key, and that is left to the join rather than carried: sql_primary_key is keyed by the table, so the arriving triple this row already carries reaches it directly, and repeating it here would be the denormalisation the referenced-side discipline declines';
 COMMENT ON COLUMN intent_field_reference_step_hop.fk_on_from IS 'TRUE when the departing table declares the foreign key, FALSE when the arriving one does; the hop''s direction, and what completes the constraint''s key from the two endpoint triples. NULL on a NAME_MATCH hop, where there is no foreign key to sit on either side and the direction is fixed by the arms themselves, a function result being always the departure';
+
+CREATE INDEX ix_field_reference_step_hop_step ON intent_field_reference_step_hop
+  (graph_name, type_name, field_name, ordinal, position,
+   from_source_name, from_schema, from_table);
+COMMENT ON INDEX ix_field_reference_step_hop_step IS 'Serves the recursive step in intent_field_reference_step_target, which joins this relation on exactly these eight columns once per accumulated row, and the same join in intent_field_chain_node. The largest of the indexes in this file by what it removes. Measured on the read-cost gate''s twelve-unit fixture with statistics current: reading intent_field_reference_step_target whole costs 18308 scans without it and 523 with it, and intent_field_column_scope_live 19839 against 2054. The reader that pays this is not one that lost a pushdown, and the identity that says so is worth keeping: intent_field_reference_step_target filtered to one (graph_name, type_name, field_name) coordinate, which is how the language server''s hover on a field carrying a reference and the MCP tool that reports its path both read it, costs the same number of scans as the unfiltered read in both shapes, to the scan. A recursive term is not prunable from outside it whatever the target underneath it is, so what this index changes is the step''s own join, from a scan of the whole relation per iteration to a seek. Not UNIQUE and not the grain: a hop at one position from one table may reach several tables, which is the ambiguity the to_ columns carry.';
 
 CREATE VIEW intent_argument_reference_step_hop
   (graph_name, type_name, field_name, argument_name, ordinal, position, via, key_matched_by,
@@ -4008,6 +4037,10 @@ COMMENT ON COLUMN intent_argument_scope_table.basis IS 'which rung answered, in 
 COMMENT ON COLUMN intent_argument_scope_table.table_source_name IS 'the scope table''s catalog partition, the first column of the sql_table key this row names';
 COMMENT ON COLUMN intent_argument_scope_table.table_schema IS 'the scope table''s SQL schema';
 COMMENT ON COLUMN intent_argument_scope_table.table_name IS 'the scope table''s SQL name; with the two columns above this is sql_table''s full key, so the table''s own columns and constraints are one join away';
+
+CREATE INDEX ix_argument_scope_table_coordinate ON intent_argument_scope_table
+  (graph_name, type_name, field_name, argument_name);
+COMMENT ON INDEX ix_argument_scope_table_coordinate IS 'Serves the argument coordinate its three readers all join on: intent_node_id_instruction in three arms, intent_node_id_decode_endpoint, and intent_argument_reference_step_target, which adds the resolved table''s own three columns after these four. Measured on the read-cost gate''s twelve-unit fixture with statistics current: intent_node_id_decode_endpoint costs 5439 scans without it and 3120 with it, intent_node_id_decode_hop 5824 against 3293, intent_argument_reference_step_target 114 against 8. Not UNIQUE and not the grain: basis discriminates two rows this key cannot tell apart, an argument whose scope is its own field''s binding and one whose scope a reference path fixed.';
 
 CREATE VIEW intent_resolved_node_key_column
   (graph_name, type_name, position, column_name, tier) AS
@@ -5871,6 +5904,10 @@ COMMENT ON COLUMN intent_argmapping_pair.source_name IS 'the SDL file the owning
 COMMENT ON COLUMN intent_argmapping_pair.source_line IS 'source line of the owning directive application, 1-based per the graphql-java convention; NULL exactly where source_name is';
 COMMENT ON COLUMN intent_argmapping_pair.source_column IS 'source column of the owning directive application, 1-based per the graphql-java convention; NULL exactly where source_name is';
 
+CREATE INDEX ix_argmapping_pair_use_site ON intent_argmapping_pair
+  (graph_name, site, use_site, position);
+COMMENT ON INDEX ix_argmapping_pair_use_site IS 'Serves the use-site coordinate every reader of a pair''s resolution departs from: intent_argmapping_projection_defect joins this relation on these four columns in six of its arms, intent_node_id_decode_slot in one, and both reach it through readers of their own. Measured on the read-cost gate''s twelve-unit fixture with statistics current: intent_argmapping_projection_defect costs 33794 scans without it and 21394 with it, intent_argmapping_key_column_candidate 8273 against 5248, intent_resolved_node_key_projection 8274 against 5249. The other coordinate a reader spells here, the routine parameter name intent_argmapping_bound_parameter_type''s NOT EXISTS matches on, was measured as a second index and bought ten scans on a sixty-nine scan relation, which is the instrument''s per-naming floor rather than a cost, so it was not declared. Not UNIQUE: the site literal and the use-site key are a discriminated coordinate rather than this relation''s grain, whose tail is the pair''s own position and parameter.';
+
 CREATE VIEW intent_argmapping_bound_parameter_type
   (graph_name, site, use_site, position, param_name, java_type, candidates) AS
 WITH hosted (graph_name, site, use_site, position, param_name, class_name, method) AS (
@@ -6746,6 +6783,10 @@ COMMENT ON COLUMN intent_node_id_decode_hop_column.pair_position IS 'the 0-based
 COMMENT ON COLUMN intent_node_id_decode_hop_column.from_column_name IS 'the column on the table this hop departs: the key''s own column where the departing table declares it, the column it references where the arriving table does';
 COMMENT ON COLUMN intent_node_id_decode_hop_column.to_column_name IS 'the column on the table this hop arrives at, the other half of the pair. What the next hop''s departing column is matched against, and at the terminal hop what a node key column is matched against';
 COMMENT ON COLUMN intent_node_id_decode_hop_column.last_position IS 'the greatest position the path reached, carried from the hop; the terminal hop is the one whose position equals this';
+
+CREATE INDEX ix_node_id_decode_hop_column_step ON intent_node_id_decode_hop_column
+  (graph_name, use_site, position);
+COMMENT ON INDEX ix_node_id_decode_hop_column_step IS 'Serves intent_node_id_decode_column, whose recursive lifted term joins this relation on these three columns once per accumulated row, and whose base term filters position = 0. The fourth conjunct of that join folds a column and no index serves it; these three are what an index can carry. Measured on the read-cost gate''s twelve-unit fixture with statistics current: intent_node_id_decode_column costs 6268 scans without this index and 6124 with it, and intent_node_id_decode 9851 against 9707. The smallest gain of the five indexes here, and it is claimed on the shape rather than the figure: the walk this serves accumulates one row per hop on that fixture, so the per-iteration saving is charged once, where a schema whose node-id arguments navigate further charges it per hop. Not UNIQUE and not the grain: pair_position discriminates two rows this key cannot tell apart, one per column of a composite key.';
 
 CREATE VIEW intent_node_id_decode_column
   (graph_name, site, type_name, field_name, argument_name, path, use_site, node_type_name,

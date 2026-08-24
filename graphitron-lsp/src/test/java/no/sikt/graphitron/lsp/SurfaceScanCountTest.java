@@ -73,11 +73,35 @@ import static org.jooq.impl.DSL.select;
  * a tree with the fix removed. So a ceiling added here for a new surface is not finished when it
  * passes; it is finished when it has been seen to fail.
  *
+ * <p>Re-measured whole, both shapes, with the two registrations the inlay read depends on
+ * ({@code intent_spelled_table} and {@code intent_field_column_scope}) removed for the guarded
+ * side. Every ceiling below is between its pair: goto-definition on a type at 122 against 288,
+ * on a member at 567 against 1490, hover at 172 against 421, the whole-file inlay at 482 against
+ * 1744, diagnostics at 219 against 1426. Which corrects a claim this paragraph's neighbour used to
+ * make, that the five surfaces other than the inlay had only the net because their ceilings passed
+ * on the unregistered tree too. They do not pass it; each of the five discriminates today. The
+ * inlay is still the one with a second assertion beside its ceiling, and the reason for that
+ * remains the one below, that a fixed small fixture is blind to a term that grows with the schema
+ * however well its ceiling is placed.
+ *
  * <p>The ceilings alone would not have caught the defect that prompted them, though: it cost a
  * declaration read 121 extra scans at this fixture's size, which is 15% of one of the numbers below
  * and no ceiling anybody would defend. What makes it visible is that the excess *grows with the
  * schema*, and that is {@link #theCensusLookupDoesNotTrackTheSchemasSize}, which states the arm's
  * invariant directly and at two sizes. Those tests are the sharp ones; the ceilings are the net.
+ *
+ * <h2>What the fixture's size does to these numbers</h2>
+ *
+ * <p>Worth knowing before reading a re-measurement as a regression or as a win. The five ceilings
+ * measured against {@link #SDL} are held over three types and thirteen catalog tables, so every
+ * materialized target in the store holds a handful of rows, and a change to how those targets are
+ * stored moves these figures by nothing at all. Indexing the targets, which took the deepest
+ * derivation over them from five figures of scans to three on a schema of real size, left all five
+ * of these numbers identical to the scan. The two properties that build their own sixty- and
+ * two-hundred-and-forty-type schemas are where such a change shows: the same work moved
+ * {@link #theInlayReadCostsABoundedAmountPerDeclaration}'s pair from 42 and 41 to 40 and 39. So a
+ * lever that plainly helps a consumer can leave every ceiling here untouched, and that is the
+ * fixture's size rather than the lever being imaginary.
  *
  * <p>{@link #theInlayReadCostsABoundedAmountPerDeclaration} is the second of them, and the reason it
  * exists is worth stating because the same reason will apply to the next surface. A fixed small
@@ -85,10 +109,8 @@ import static org.jooq.impl.DSL.select;
  * where such a term is smallest: the shape that made the inlay read answer nothing at all on a real
  * schema cost 1544 scans over the three types below and 561851 over sakila's 239. A retuned ceiling
  * catches that one defect and says nothing about the next, which will be a term invisible at three
- * types and dominant at three hundred. So the two live together by design. The five other surfaces
- * here still have only the net, and that gap is real rather than overlooked: each of their ceilings
- * passes on the unregistered tree too. What the helpers below are shaped for is that a second
- * surface is one more assertion rather than a second mechanism.
+ * types and dominant at three hundred. So the two live together by design. What the helpers below
+ * are shaped for is that a second surface is one more assertion rather than a second mechanism.
  */
 class SurfaceScanCountTest {
 
@@ -97,10 +119,10 @@ class SurfaceScanCountTest {
 
     /**
      * The inlay ceiling, placed between two measured shapes rather than above one. The read costs
-     * 482 scans on this fixture as the store stands, and 1544 with the two {@code meta_materialize}
+     * 482 scans on this fixture as the store stands, and 1744 with the two {@code meta_materialize}
      * registrations it depends on removed; that unregistered shape is not a hypothetical, it is what
      * the surface cost on a real schema until those rows landed for another surface's sake, and at
-     * sakila's size it answered nothing at all. 800 leaves a factor of 1.66 below and 1.93 above.
+     * sakila's size it answered nothing at all. 800 leaves a factor of 1.66 below and 2.18 above.
      *
      * <p>So this is a number whose whole value is that it discriminates, and it cannot be raised on
      * the strength of the current cost alone. Raising it because a new arm pushed today's figure up
@@ -114,13 +136,25 @@ class SurfaceScanCountTest {
      * property the ceiling above is structurally blind to, for the reason this class's own
      * documentation gives.
      *
-     * <p>Asserted as a level rather than as a growth ratio, for a measured reason. Both shapes are
-     * flat in the schema, 42 then 41 per declaration as the store stands and 150 then 141
-     * unregistered across a fourfold schema, so a ratio reads about 1 either way and separates
-     * nothing. What separates them is the size of the constant, and 80 sits between the two with a
-     * factor of 1.9 below and 1.76 above the worse of the guarded pair. Two sizes rather than one
-     * because a single size cannot tell a bounded constant from the low end of a superlinear curve,
-     * and flatness across the pair is what says the constant is the whole story.
+     * <p>Asserted as a level rather than as a growth ratio, for a measured reason. The guarded shape
+     * is not flat and the shipping one is: 40 then 39 per declaration as the store stands, against
+     * 157 then 330 unregistered across a fourfold schema. So the two are separated by the size of
+     * the constant on the smaller schema and by growth as well on the larger, and the level is what
+     * both sizes can be held to. Two sizes rather than one because a single size cannot tell a
+     * bounded constant from the low end of a superlinear curve, and it is the guarded side's rise
+     * from 157 to 330 that shows this fixture reaches a size where that difference is visible.
+     *
+     * <p>80 is placed between the pair by the rule that placed it originally, roughly the geometric
+     * mean of the shipping figure and the nearer guarded one, which is 79 on today's measurement. It
+     * stayed at 80 through the work that indexed the materialized targets, and the arithmetic is why
+     * rather than inattention: that work took the shipping pair from 42 and 41 to 40 and 39, a five
+     * percent gain at this surface, and moved the guarded pair up rather than down, so the window
+     * this number sits in got wider at both ends and the same rule reproduces the same number.
+     *
+     * <p>So this is a number whose whole value is that it discriminates, and the discipline on
+     * {@link #INLAY_CEILING} applies here too: re-measure both shapes before touching it, and if a
+     * new arm has pushed the shipping figure up, say what the window is rather than picking a number
+     * above it.
      */
     private static final long INLAY_PER_DECLARATION_CEILING = 80;
 

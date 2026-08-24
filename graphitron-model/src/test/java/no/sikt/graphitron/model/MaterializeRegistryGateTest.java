@@ -48,6 +48,36 @@ class MaterializeRegistryGateTest {
         "intent_input_occurrence_path",
         "intent_input_occurrence_path_step");
 
+    /**
+     * The registered targets carrying no index, each with the measurement that says why. A roster
+     * on {@link #HAND_WRITTEN}'s model and asserted the same way, by equality in both directions,
+     * so a target that later earns an index fails this test until its row goes rather than the row
+     * surviving as an exemption nobody revisits.
+     *
+     * <p>A roster rather than a bare "every target carries an index", because an index is a cost
+     * on every refresh and wants a reader to justify it, and these two have none that a
+     * measurement supports. Both were measured as several index shapes each, over every view whose
+     * derivation reaches the target, with statistics current on both sides so the figure is the
+     * index's own:
+     *
+     * <ul>
+     *   <li>{@code intent_resolved_type_binding}: every shape tried buys more than it costs in
+     *   total and none is free of a reader it makes dearer. On the coordinate its thirteen readers
+     *   join, with or without the {@code candidates} column, {@code intent_argument_scope_table}'s
+     *   own source view goes from 559 scans to 952; on the full grain, which is the one target
+     *   here whose columns would also admit a unique index, that reader is spared and
+     *   {@code intent_node_id_decode_defect} instead goes from 1901 to 2381 with two more beside
+     *   it. Declining it leaves the largest single total gain on the table, which is the honest
+     *   cost of the rule that a shared investment may not make another reader worse.</li>
+     *   <li>{@code intent_field_column_scope}: on the field coordinate its three readers join,
+     *   with or without {@code basis}, it takes {@code intent_field_reference_discovery} from 148
+     *   scans to 246 and returns 59 elsewhere. Nothing to weigh.</li>
+     * </ul>
+     */
+    private static final Set<String> NO_INDEX = Set.of(
+        "intent_resolved_type_binding",
+        "intent_field_column_scope");
+
     @Test
     @DisplayName("every registered source is a view and every registered target is a table")
     void registeredRelationsExistInTheKindsTheRegistryClaims() {
@@ -168,7 +198,91 @@ class MaterializeRegistryGateTest {
         });
     }
 
+    /**
+     * Every registered target either carries an index or has a row in {@link #NO_INDEX} saying
+     * why not, and the roster holds nothing else.
+     *
+     * <p>The claim this adds to the four above is that a target is a table in a keyed schema and
+     * not a heap. Where the other 145 tables in this file declare a primary key, five of the seven
+     * grains here include a meaningfully nullable column and H2 refuses a primary key over one, so
+     * the index cannot come from the key and has to be declared. What its absence costs lands
+     * inside the derivations that read the target rather than on any reader's own predicate, which
+     * is why no reader's own budget would catch it and why the claim belongs beside the register.
+     *
+     * <p>Read from {@code INFORMATION_SCHEMA} over a booted store like the rest of this class, and
+     * counting only indexes the DDL declares: H2 backs each foreign key with an index of its own,
+     * and every one of these targets has a {@code graph_name} key, so a scan that counted those
+     * would report every target as indexed and assert nothing.
+     */
+    @Test
+    @DisplayName("every registered target carries an index or a roster row saying why not")
+    void everyTargetIsIndexedOrStatesWhyNot() {
+        withStore(dsl -> {
+            var unindexed = new java.util.TreeSet<String>();
+            for (var registration : Materializations.registrations(dsl)) {
+                if (declaredIndexesOf(dsl, registration.targetTableName()).isEmpty()) {
+                    unindexed.add(registration.targetTableName());
+                }
+            }
+            assertThat(unindexed)
+                .as("registered targets with no declared index. Equality both ways: a target that"
+                    + " has lost its index is a reader nobody measured, and a target that has"
+                    + " gained one is a roster row to delete")
+                .containsExactlyInAnyOrderElementsOf(NO_INDEX);
+        });
+    }
+
+    /**
+     * Every declared index on a registered target states which reader it serves, in its own
+     * {@code COMMENT ON INDEX}. The same discipline the tables and columns in this file are held
+     * to, and it matters more here than on a column: an index nothing names is an index nobody can
+     * decide is still wanted, and the refresh goes on paying for it.
+     */
+    @Test
+    @DisplayName("every index on a registered target names the reader that justifies it")
+    void everyIndexOnATargetStatesItsReader() {
+        withStore(dsl -> {
+            var silent = new ArrayList<String>();
+            for (var registration : Materializations.registrations(dsl)) {
+                for (String index : declaredIndexesOf(dsl, registration.targetTableName())) {
+                    String remark = remarkOn(dsl, index);
+                    if (remark == null || remark.isBlank()) {
+                        silent.add(index + " on " + registration.targetTableName());
+                    }
+                }
+            }
+            assertThat(silent)
+                .as("indexes on a materialized target carrying no comment naming their reader")
+                .isEmpty();
+        });
+    }
+
     // ===== Reading the observed schema =====
+
+    /**
+     * The indexes the DDL declares on {@code relationName}: {@code IS_GENERATED} is what separates
+     * an authored {@code CREATE INDEX} from the one H2 raises to back a constraint, and the
+     * distinction is load-bearing rather than tidy. Every target here carries a {@code graph_name}
+     * foreign key, whose backing index H2 reports under the same {@code INDEX} type as an authored
+     * one, so a scan without this predicate reports every target as indexed and asserts nothing.
+     */
+    private static List<String> declaredIndexesOf(DSLContext dsl, String relationName) {
+        return dsl.selectDistinct(field(name("INDEX_NAME"), String.class))
+            .from(table(name("INFORMATION_SCHEMA", "INDEXES")))
+            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+            .and(field(name("TABLE_NAME"), String.class).eq(fold(relationName)))
+            .and(field(name("IS_GENERATED"), Boolean.class).isFalse())
+            .orderBy(field(name("INDEX_NAME")))
+            .fetch(0, String.class);
+    }
+
+    private static String remarkOn(DSLContext dsl, String indexName) {
+        return dsl.select(field(name("REMARKS"), String.class))
+            .from(table(name("INFORMATION_SCHEMA", "INDEXES")))
+            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+            .and(field(name("INDEX_NAME"), String.class).eq(indexName))
+            .fetchAny(0, String.class);
+    }
 
     private static void withStore(java.util.function.Consumer<DSLContext> body) {
         try (var store = FactStores.inMemory()) {

@@ -63,6 +63,10 @@ import static org.jooq.impl.DSL.table;
  * opens a store without capturing into it (the language server, the MCP server, a warm start that
  * skipped capture because nothing changed) calls {@link #refreshAll}, which assumes nothing about
  * whether a capture ran.
+ *
+ * <p>Both cadences owe the planner statistics on what they just wrote, which is {@link #analyse},
+ * and the two reach it differently for a reason stated there rather than here: a refresh may run
+ * inside a transaction and an analysis may not.
  */
 public final class Materializations {
 
@@ -103,6 +107,10 @@ public final class Materializations {
      * whole. The entry point for a reader that opens a store it did not capture into: it is correct
      * whether or not a capture ever ran, and idempotent, so calling it on open costs one evaluation
      * of each registered view and cannot leave a target stale.
+     *
+     * <p>Analyses the targets it refilled, which it may do inline where {@link #refresh} may not:
+     * this path holds no transaction of its own, and its readers are exactly the surfaces a person
+     * waits on, so the statistics {@link #analyse} supplies are worth more here than anywhere.
      */
     public static void refreshAll(DSLContext dsl) {
         List<Registration> registrations = refreshOrder(dsl).registrations();
@@ -121,6 +129,41 @@ public final class Materializations {
             } else {
                 refreshWhole(dsl, registration);
             }
+        }
+        analyse(dsl);
+    }
+
+    /**
+     * Gathers statistics on every registered target, so the planner uses the indexes declared
+     * beside them. Idempotent, and cheap enough not to need a cadence argument of its own: seven
+     * statements over seven tables of the size a fact store holds.
+     *
+     * <p>Needed at all because H2 gathers none on its own here. Its automatic analysis fires after
+     * a table has taken more changes than {@code ANALYZE_AUTO} allows, which is two thousand by
+     * default, and a target refilled from a schema of real size takes a few hundred; so absent
+     * this call the planner reads every target as having the row count and selectivity it assumes
+     * for a table it has never looked at. The difference is most of the gain the indexes exist
+     * for. On the read-cost gate's twelve-unit fixture the deepest reader over the reference-step
+     * hop table costs 8880 scans with the index and no statistics, and 523 with both.
+     *
+     * <p><b>Must not run inside a transaction, which is why this is a call of its own rather than
+     * a step of {@link #refresh}.</b> H2 commits the current transaction as a side effect of
+     * {@code ANALYZE}, verified by inserting a row, analysing, and rolling back: the row survives.
+     * Capture's refresh runs inside capture's transaction precisely so that no reader observes an
+     * emptied target, and an implicit commit between the delete and the rest of the capture would
+     * publish exactly that state. So the capture path analyses after its transaction closes, from
+     * the caller that owns the transaction, and {@link #refreshAll} analyses inline, holding none.
+     *
+     * <p>Scoped to the registered targets rather than the whole database, for a measured reason
+     * and not only a modest one. A bare {@code ANALYZE} also restates statistics for the hundred
+     * and forty-five captured tables, which are keyed and which nothing here just rewrote, and on
+     * the same fixture it left one reader dearer than the targeted form did. The materializer
+     * states statistics for what the materializer wrote.
+     */
+    public static void analyse(DSLContext dsl) {
+        for (Registration registration : registrations(dsl)) {
+            dsl.execute("ANALYZE TABLE "
+                + dsl.render(table(relation(registration.targetTableName()))));
         }
     }
 

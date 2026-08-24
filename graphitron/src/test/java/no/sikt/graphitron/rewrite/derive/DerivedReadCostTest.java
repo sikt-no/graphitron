@@ -79,12 +79,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DerivedReadCostTest {
 
     /**
-     * Repetitions of the fixture's node cluster. Chosen for a stated reason rather than by taste: the
-     * set of non-monotonic pairs is <em>scale-dependent below this size</em>. One unit reports eleven
-     * pairs, all of them the step-hop registration and all of them the artifact described on
-     * {@link #KNOWN_NON_MONOTONIC}; four units and twelve units report the same six. Twelve is taken
-     * rather than four to sit clear of that boundary, at the cost of wall clock this test's own
-     * javadoc owns.
+     * Repetitions of the fixture's node cluster. Chosen for a stated reason rather than by taste, and
+     * now for two of them, because what this size buys is scale-dependent on both of the gate's
+     * pinned sets.
+     *
+     * <p>{@link #KNOWN_NON_MONOTONIC} is empty at one unit, where the gate would see nothing at all,
+     * and is the same three pairs at four units and at twelve. Twelve is taken rather than four to sit
+     * clear of that boundary, at the cost of wall clock this test's own javadoc owns.
      *
      * <p>The fixture may grow and may not shrink. A smaller one is the single change that would make
      * this gate pass while seeing nothing, the registrations existing precisely because a rule is
@@ -120,32 +121,51 @@ class DerivedReadCostTest {
      * Floor under {@link #BUDGET_MULTIPLE}, in milliseconds, for the cells whose registered side is
      * a millisecond or two: fifty times nearly nothing is nearly nothing, and
      * {@link ReadBudget.Bounded} refuses a non-positive figure outright.
+     *
+     * <p>Generous on purpose, and the direction is what makes that safe: a larger floor compares
+     * more cells and can only make this gate stricter, never more permissive, because a cell inside
+     * its budget is asserted on and a cell outside it is merely recorded. The figure is set from the
+     * slowest unregistered side that finishes, which is under seven seconds on this fixture, so that
+     * every cell is compared and {@link #KNOWN_EXHAUSTED} stays empty on a machine of any speed.
+     *
+     * <p>It was two seconds, and two seconds was too tight to be a fact about the code. Two cells'
+     * unregistered sides land within a factor of two of that figure, so which of them appeared in
+     * {@link #KNOWN_EXHAUSTED} varied from run to run on one machine, and an equality-pinned set
+     * whose contents depend on load is a flake wearing a ratchet's clothes. The distinction
+     * {@link #BUDGET_MULTIPLE} exists to draw is seconds against never; a three-second read against
+     * a three-second budget is not that distinction.
      */
-    private static final long BUDGET_FLOOR_MILLIS = 2_000;
+    private static final long BUDGET_FLOOR_MILLIS = 30_000;
+
+    /**
+     * The budget {@link #aCellThatCannotAnswerIsRecordedRatherThanFailed} gives its own cell, which
+     * is small where {@link #BUDGET_FLOOR_MILLIS} is generous and for the reason that makes both
+     * right. That cell's relation cannot terminate by construction, so no budget lets it finish and
+     * the only thing a larger one buys is waiting; every other cell's relation does terminate, and
+     * there the budget must be clear of how long that takes.
+     */
+    private static final long RUNAWAY_BUDGET_MILLIS = 2_000;
 
     /**
      * The pairs where the registered shape costs more, {@code registration|reader}, each one a finding
-     * rather than a tolerance. Three of these are large and grow with the schema, which is what
-     * distinguishes them from a fixture artifact: the delta at four units and at twelve differ by
-     * roughly the ratio of the schemas.
+     * rather than a tolerance.
      *
-     * <p>The step-hop pairs are the item to answer first. That registration was made to take a
-     * node-id decode read from about fifty seconds to about thirteen, and it does; what it also does
-     * is make these two relations visit an order of magnitude more rows, because reading the
-     * materialized target is a full scan charged once per naming while the rule it replaced is a cheap
-     * join these two readers were pruning. The binding pair is the same shape one order down.
+     * <p>All three are the instrument's floor rather than a cost, and the set holds nothing else. H2
+     * charges a table visit at least one scan per naming where a view whose evaluation short-circuits
+     * is charged none, so a relation named a few times can read a few scans dearer while doing
+     * strictly less work. They are pinned rather than tolerated because a tolerance would be a number,
+     * and a number here is the one thing this gate is built without.
      *
-     * <p>The three small pairs are the instrument's floor rather than a cost: H2 charges a table visit
-     * at least one scan per naming where a view whose evaluation short-circuits is charged none, so a
-     * relation named a few times can read a few scans dearer while doing strictly less work. They are
-     * pinned rather than tolerated because a tolerance would be a number, and a number here is the one
-     * thing this gate is built without.
+     * <p>Three larger pairs stood here until the targets were indexed, and how they left is worth
+     * knowing before adding a fourth. They were not the registrations' fault and no reader had to be
+     * restructured: a materialized target was the only kind of table in this schema with no key on it,
+     * so a registered view's join against one was a full scan of it, per driving row where the reader
+     * correlates and per iteration where it recurses. Indexes on the targets and current statistics
+     * after each refill answered all three, and the registrations they were charged to are unchanged.
+     * So a new large pair here is a question about the target's index before it is a question about
+     * the registration.
      */
     private static final Set<String> KNOWN_NON_MONOTONIC = Set.of(
-        // Large, and growing with the schema: the lever item's own subject.
-        "intent_field_reference_step_hop|intent_field_reference_step_target",
-        "intent_field_reference_step_hop|intent_field_column_scope_live",
-        "intent_resolved_type_binding|intent_argument_scope_table_live",
         // Small, and flat: the per-naming floor of the instrument.
         "intent_argument_scope_table|intent_node_id_encode",
         "intent_argument_scope_table|intent_node_id_decode_defect",
@@ -153,10 +173,15 @@ class DerivedReadCostTest {
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather
-     * than compared. Empty on this fixture, and that is a fact about its size rather than about the
-     * arm: the walk the register describes as not finishing inside two minutes does finish here.
-     * {@link #aCellThatCannotAnswerIsRecordedRatherThanFailed} is what shows the arm working, over a
-     * relation made non-terminating by construction rather than by being slow.
+     * than compared. Empty, and kept empty deliberately rather than observed to be: every cell's
+     * unregistered side terminates on this fixture, and {@link #BUDGET_FLOOR_MILLIS} is set clear of
+     * the slowest of them so that which cells appear here is a fact about the code and not about how
+     * loaded the machine was. A row appearing here is therefore a relation that stopped terminating,
+     * which is worth a look rather than a number to raise.
+     *
+     * <p>{@link #aCellThatCannotAnswerIsRecordedRatherThanFailed} is what shows the arm working, over
+     * a relation made non-terminating by construction rather than by being slow, because a cell that
+     * is merely slow could stop being so on a faster machine.
      */
     private static final Set<String> KNOWN_EXHAUSTED = Set.of();
 
@@ -288,7 +313,7 @@ class DerivedReadCostTest {
             UnregisteredRelation.install(store.dsl(), registration);
             RunawayRelation.install(store.dsl(), "intent_bound_table");
             var timed = scans(store, "intent_resolved_type_binding",
-                new ReadBudget.Bounded(BUDGET_FLOOR_MILLIS));
+                new ReadBudget.Bounded(RUNAWAY_BUDGET_MILLIS));
             assertThat(timed.exhausted())
                 .as("a cell whose unregistered side cannot terminate is recorded, not compared")
                 .isTrue();
@@ -355,6 +380,19 @@ class DerivedReadCostTest {
      * elsewhere in the reactor use, leaves four of the seven targets and forty-one of the
      * {@value #READERS_WITH_CELLS} readers empty, and a gate over empty relations measures the
      * instrument's floor and nothing else.
+     *
+     * <p>{@code inventoryForFilm} is in that list for one target's sake and is the arm to understand
+     * before touching it. A node-id argument populates the decode walk's hop relations only where the
+     * argument's own scope table differs from the node type's table <em>and</em> exactly one foreign
+     * key joins the two, which is what the endpoint view's {@code DISCOVERED_KEY} arm requires. The
+     * {@code storeForFilm} arm above looks like it should qualify and does not: film reaches store
+     * through inventory rather than directly, so no single key joins them and the endpoint contributes
+     * no hop. Returning inventory instead gives the one key inventory declares on film. Without this
+     * arm the hop-column target holds no rows at any size and its cell in this gate is a comparison
+     * between two readings of an empty table, which is the state that made this test's own claim about
+     * a populated fixture untrue of the seventh registration. With it, that cell is the widest ratio
+     * in the matrix by wall clock, tens of milliseconds registered against seconds unregistered, which
+     * is the shape that registration's own registry reason describes.
      */
     private static String scaledSdl(int units) {
         var sdl = new StringBuilder("""
@@ -404,6 +442,7 @@ class DerivedReadCostTest {
                 {key: "inventory_film_id_fkey"},
                 {key: "inventory_store_id_fkey"}
               ])
+              inventoryForFilm%1$d(id: ID! @nodeId(typeName: "Film%1$d")): [Inventory%1$d!]!
             """.formatted(i)));
         return sdl.append("}\n").toString();
     }

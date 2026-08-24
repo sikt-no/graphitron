@@ -580,6 +580,14 @@ public final class FactCapture {
             Materializations.refresh(txDsl, graph.name());
             sources.commitStamps(txDsl);
         });
+        // Statistics on what the refresh above just rewrote, so the planner uses the indexes
+        // declared beside the materialized targets. Outside the transaction and not inside it,
+        // which Materializations.analyse states the reason for: H2's ANALYZE commits, and a commit
+        // between this capture's delete and its inserts would publish the emptied partition the
+        // one-transaction contract above exists to prevent. After the commit the store is settled,
+        // so analysing here is exactly as safe as the dev session's own call and reaches the
+        // readers a captured store has, the build path's diagnostics among them.
+        Materializations.analyse(dsl);
     }
 
     /** SDL-only capture, for callers with no catalog in hand. */
