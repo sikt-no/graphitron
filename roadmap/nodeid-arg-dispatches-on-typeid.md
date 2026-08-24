@@ -1,13 +1,13 @@
 ---
 id: R673
 title: "A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId"
-status: In Review
+status: Ready
 bucket: bug
 priority: 3
 theme: nodeid
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-21
+last-updated: 2026-08-24
 ---
 
 # A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId
@@ -149,3 +149,55 @@ check. What shipped, against the plan:
 * Tests: five new pipeline-tier cases in `MultiTableFilterLoweringTest` (including the scope-cut enforcer for the single-base-table arm), one unit-tier case in `CompositeDecodeHelperRegistryTest`, ten execution-tier cases in `MultiTableFilterExecutionTest`, and the sakila fixtures the Tests section names.
 
 Full `mvn install -Plocal-db` green.
+
+## Reviewer findings
+
+**In Review -> Done, 2026-08-24: rework, one finding.** The implementation is the change this spec
+approved and the goal is demonstrably delivered; the finding is a test-tier one, and the fix is one
+test plus one line of this spec.
+
+*What was checked.* Every decision D1 to D7 is present in the delivered tree and traceable:
+`CallSiteExtraction.PruneOnMismatch` beside `ThrowOnMismatch` with `decodeCall` an exhaustive switch
+(D1); `FieldBuilder.resolveNodeIdArgTargets` as the single producer returning the sealed
+`SharedTarget` / `PerParticipant` verdict, reaching the field through one
+`ParticipantFilterField.nodeIdArgDispatches()` accessor (D2); the three trichotomy cells in
+`ConditionGlueRenderer.appendPruningAnd` (D3); `MultiTablePolymorphicEmitter.nodeIdDispatchGuard`
+emitted in both root fetchers (D4); the nested-leaf rejection falling out of the same producer (D5);
+the `NodeIdLeafResolver` / `CallSiteExtraction` / `LookupRows` javadoc and the two user-manual edits
+(D6/D7). Both in-scope arms are wired identically: `QueryInterfaceField` and `QueryUnionField` call
+the same `lowerParticipantFilters` and carry the fact into the same shared emitter, so the reported
+interface shape inherits the union fixtures' behaviour by construction. The one deviation from the
+plan's literal shape (`SequencedMap` rather than `Map`) is stated in the body with its reason, which
+is the right handling. The user-facing-doc check passes (no roadmap-internal markers in either
+`.adoc`); the retirement sweep does not apply (no `Retired vocabulary` section). Full
+`mvn install -Plocal-db` green on the delivered tree.
+
+*The finding, against question 2.* The unit-tier case this spec's Tests section asked for,
+`CompositeDecodeHelperRegistryTest.emit_listSkipHelper_answersNullForAnEmptyWireList`, asserts
+`.contains("nodeIds.isEmpty()")` against `MethodSpec.code().toString()`. That is a code-string
+assertion on a generated method body, which
+`docs/architecture/principles/development-principles.adoc` bans at every tier: it tests
+implementation rather than behaviour, and the compile and execution tiers are meant to replace it.
+The surrounding file is built on the same pattern, which explains the choice but does not make the
+new assertion compliant, and the spec asked for it, so the Tests section is part of what needs
+correcting.
+
+It bears on question 2 rather than on style. Every other D3 cell has an execution pin
+(`dispatch_nullableArgumentAbsent_leavesTheFieldUnfiltered`,
+`dispatch_nullableArgumentPresent_prunesTheNonMatchingBranch`,
+`dispatch_idsOfOneParticipantOnly_prunesTheOtherBranch`). The empty-wire-list cell has none: its only
+test is the string match, so the one behaviour the prune-mode list helper's new contract exists to
+produce is unpinned at the tier that would catch a regression in it.
+
+*What would satisfy it.* Replace the unit-tier assertion with an execution-tier case in
+`MultiTableFilterExecutionTest`: `occupantsByIds(ids: [])` returns all seven occupants, unfiltered.
+Amend this spec's Tests section to name that case instead of the unit-tier one. The reviewer
+confirmed the behaviour is already correct, so this is a tier move and not a bug fix: the delivered
+`QueryConditions.decodeCustomerKeys` returns `null` for an absent *or* empty wire list and the glue
+renders `if (ids != null) condition = condition.and(ids.isEmpty() ? DSL.falseCondition() : ...)`, so
+the new case should pass as written.
+
+*Not blocking, no action asked.* The dispatch fixtures are all unions
+(`AddressOccupant = Customer | Staff`), while the reported repro is an interface. The two arms
+provably share the producer and the emitter, and the spec named union fixtures, so this is noted
+rather than raised.
