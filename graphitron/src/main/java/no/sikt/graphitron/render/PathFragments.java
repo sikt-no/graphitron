@@ -214,14 +214,18 @@ public final class PathFragments {
      *
      * <p>Both the projection rail ({@link #correlationWhere}'s
      * {@link ParentCorrelation.OnParentJoin} arm) and the filter rail's correlated {@code EXISTS}
-     * come through here, so a future {@code On} arm has exactly one place to land.
+     * come through here, so a future {@code On} arm has exactly one place to land. The lateral arm
+     * throws rather than naming either caller: both of them reject a lateral hop at construction
+     * ({@code ParentCorrelation.OnParentJoin}'s compact constructor and {@code ReachPath}'s), so
+     * this is the backstop under two guards rather than a reachable diagnostic.
      */
     public static CodeBlock hopZeroCorrelation(JoinStep.Hop hop, String firstAlias, String parentLocal) {
         return switch (hop.on()) {
             case On.ColumnPairs cp -> JoinFragments.emitCorrelationWhere(cp, firstAlias, parentLocal);
             case On.Predicate pred -> emitTwoArgMethodCall(pred.condition(), parentLocal, firstAlias);
             case On.Lateral ignored -> throw new IllegalStateException(
-                "ParentCorrelation.OnParentJoin cannot wrap a lateral hop");
+                "a lateral routine hop cannot correlate a subquery back to its parent; its "
+                + "correlation rides the call arguments, so it never reaches this dispatch");
         };
     }
 

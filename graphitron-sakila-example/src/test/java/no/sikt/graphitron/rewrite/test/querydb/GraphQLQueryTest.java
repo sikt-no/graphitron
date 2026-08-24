@@ -2703,7 +2703,7 @@ class GraphQLQueryTest {
     void referenceFilter_fkThenConditionBridge_matchesEachParentOnce() {
         // Both dispatch points in one path: an FK hop-0 correlation, then a bridging join whose ON
         // is the developer's predicate. Actor 1 plays in films 1, 2 and 3, and film 1 has two
-        // actors, so the EXISTS must return film 1 exactly once — no row multiplication however
+        // actors, so the EXISTS must return film 1 exactly once: no row multiplication however
         // many junction rows the path reaches.
         Map<String, Object> data = execute(
             "{ filmsByBridgedActorFirstName(firstName: \"PENELOPE\") { filmId } }");
