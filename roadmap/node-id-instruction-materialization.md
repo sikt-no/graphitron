@@ -1,7 +1,7 @@
 ---
 id: R826
 title: "intent_node_id_instruction costs 26 seconds per evaluation, and the fix is stranded on a quickfix branch"
-status: Spec
+status: Ready
 bucket: model
 priority: 2
 theme: model-cleanup
@@ -201,4 +201,43 @@ tells a reader not to reach for it.
 3. **Is priority 2 right?** The failure mode is a consumer build that does not finish, which reads
    more urgent than the priority-2 neighbours. Step 3 is the part with unknown cost; if that is
    what holds the item, the third commit is independent and could land on its own first.
+
+## Reviewer findings
+
+### Round 1, Spec -> Ready, sign off
+
+Reviewer session `session_01PXfXUgERb8cqaWW1QKuCUM`, 2026-08-24.
+
+No findings on either gate question. Both are answered, and every claim the plan makes about code
+was checked against the tree rather than taken on the plan's word. Recorded here only because the
+plan asked the reviewer three questions, and a Ready spec carrying three unsettled forks is not
+handed off. The answers are the reviewer's, not plan prose; the implementer is free to reopen the
+item if any of them turns out wrong under the measurement.
+
+**Open question 1, the index exemption: exempt, and no follow-up item.** The alternative reading
+does not survive contact with the three readers. Each of `intent_node_id_decode_endpoint`,
+`intent_node_id_decode_slot` and `intent_node_id_encode` names this relation in its own driving
+`FROM` and joins outward from it; the slot reaches it through the `rooted` local alias, which is
+where its second evaluation comes from, and that alias is itself the driving side of both its
+union arms. So there is no outer relation probing in, and no coordinate an index could serve. That
+is a property of what the relation is, the population those three views each partition, rather than
+a shape somebody chose and could choose differently: a reader whose grain is one row per instruction
+drives from the instructions. Write the argument as the plan states it.
+
+**Open question 2, does the re-measurement gate the port: gate it, as written.** The registry's
+comments are the only record of why each registration exists, and this one would be shipping figures
+taken before `ix_argument_scope_table_coordinate` was declared, whose own comment names this
+relation as a reader in three arms. Figures from before that index are figures about a different
+tree, and a comment that states them as fact is worse than one that states fewer. The speed argument
+is already answered inside the plan: the third commit is independent, applies clean, and can land
+first, so the fix that is not waiting on a measurement does not wait on one.
+
+**Open question 3, priority: 2 is right, leave it.** Priority 2 is the top of the band anything is
+actually worked in here. The three priority-1 items on the roadmap are all Backlog, so promoting
+this one would place it beside work nobody has started and buy no ordering it does not already have.
+It is the highest priority carried by anything in Spec today.
+
+**Non-blocking, no response wanted.** The merge base is 105 trunk commits back rather than the 100
+the plan states. The number is making a point about distance and drifts every time trunk moves, so
+it is better left round than pinned.
 
