@@ -1,7 +1,7 @@
 ---
 id: R818
 title: "textDocument/references: find every SDL site that uses a name"
-status: Spec
+status: Ready
 bucket: feature
 priority: 4
 theme: lsp
@@ -198,7 +198,7 @@ this", full stop.
 Add source position to the `graphql_*_directive_arg` relations and populate it in
 capture, then narrow every Slice B result from the application to the value span.
 Independently useful: diagnostics on directive argument values want the same
-column, and it removes the open-versus-closed precision question entirely.
+column.
 
 ## User documentation (first-client check)
 
@@ -340,4 +340,54 @@ option (1) needs no join back to `graphql_*_directive` at all;
 `graphitron_field_reference_step` is the one exception and inherits its position
 from `graphitron_field_reference`. That makes the recommended arm cheaper than the
 spec's framing suggests.
+
+### Round 2: Spec → Ready, signed off
+
+Reviewer session `session_01BodkET7NMt4McBLg1C55Dg`, 2026-08-24. Same reviewer as
+round 1, per the workflow's preference for the next pass.
+
+All three findings are answered, and the freshness one is answered better than the
+finding asked for. Splitting freshness from precision was the structural fix, and
+the argument for captured-uniformly is now the plan's own rather than inherited:
+the buffer holds the whole answer for a single declaration and only a fraction of
+it for a fan-out, so refreshing the open fraction buys a list that is partly live
+and still missing rows. Naming the escalation as a capture-cadence question rather
+than a position question puts the lever where the row set is, which is the right
+place. The cost note is accurate: `DeclarationKind.findDefinition` resolves a type
+name to a declaration node, and the existing direction elsewhere is node to
+coordinate (`InlayHints` walks the tree and derives coordinates from nodes), so a
+buffer-refreshed arm would indeed be building a new primitive. The user-docs draft
+discloses the skew to the author in two plain sentences, which is what makes the
+decision honest rather than merely decided.
+
+The matrix paragraph now states both guards as they behave, and closing both seams
+inside Slice A rather than leaving them to review discipline is the stronger
+answer. The docs section found a fourth prose spelling I had missed
+(`docs/architecture/how-to/dev-loop-internals.adoc` line 12) plus the
+store-resolving list at line 51; all four verified in place.
+
+Answering the two remaining open questions rather than passing them on:
+
+1. **The interactive door.** Recommend `answering`. The concern behind the
+   question does not bite: the handle that door hands back is graph-scoped
+   (`new StoreHandle(dsl, graphName)`), not scoped to the document whose
+   `sourceName` was passed, so the document only selects which graph answers and a
+   workspace-wide fan-out is expressible there. `IntraSchemaDefinitions` already
+   reads workspace-wide declarations through that same door. `StoreAccess`'s own
+   javadoc settles the grain: "every surface an editor blocks a cursor on comes
+   through here", and Find Usages blocks a cursor. If the fan-out overruns the
+   interactive budget, `StoreRead.REFERENCES` names it in the warning, which is
+   the measurement that would justify moving it, and moving it then is a smaller
+   change than starting on the wrong grain.
+2. **The scope cut is right.** Field-name and enum-value declaration names stay
+   out of Slice A and B. They are a different question (a field name is not
+   referenced by other SDL the way a type name is; what "uses" it are the
+   directive payloads Slice B already reaches from the other direction), and
+   folding them in would widen Slice B while the surface is still unproven. A
+   follow-up Backlog item is the place for them if they turn out to be wanted.
+
+Verdict: **Ready.** One editorial correction made in the sign-off commit, no
+design content touched: Slice C claimed to remove "the open-versus-closed
+precision question", which the freshness decision above had already retired, so
+the clause is gone and the diagnostics-reuse justification stands.
 
