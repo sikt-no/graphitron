@@ -14,7 +14,8 @@ import java.util.Optional;
  * The launcher command relation of one generation run: one row per migrated root SELECT
  * coordinate, keyed by the coordinate alone. "Exactly one launcher per covered coordinate" is
  * the relation's key rather than a property a test hunts for; a producer minting two rows for
- * one coordinate fails here. The key is the coordinate because the launch is the dispatch
+ * one coordinate fails at construction, in the {@link CoordinateIndex} every coordinate-keyed
+ * relation holds. The key is the coordinate because the launch is the dispatch
  * target a coordinate's operation member set renders into (one query unit hosting select,
  * condition, orderBy and paginate members composed into one SELECT; the reentry rows host the
  * member set's keyed re-select), so a member is never a second key column here. The write
@@ -38,18 +39,18 @@ import java.util.Optional;
  * launcher-method census is the authored-schema mirror, so an authored collision fails
  * validation with a located error before production runs.
  */
-public record LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl) {
+public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDsl carrierDsl) {
+
+    /** The relation over {@code rows}, indexed on the coordinate key it is declared to have. */
+    public LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl) {
+        this(CoordinateIndex.of(rows, LauncherCommand::coordinate, "launcher"), carrierDsl);
+    }
 
     public LauncherRelation {
-        rows = List.copyOf(rows);
+        Objects.requireNonNull(index, "index");
         Objects.requireNonNull(carrierDsl, "carrierDsl");
-        long distinctKeys = rows.stream().map(LauncherCommand::coordinate).distinct().count();
-        if (distinctKeys != rows.size()) {
-            throw new IllegalArgumentException(
-                "the launcher relation is keyed by coordinate; a coordinate appeared twice");
-        }
         var byFoldedMethod = new LinkedHashMap<String, LauncherCommand>();
-        for (var row : rows) {
+        for (var row : index.rows()) {
             var key = (row.unit().owner().fqcn() + "#" + row.unit().methodName())
                 .toLowerCase(java.util.Locale.ROOT);
             var existing = byFoldedMethod.putIfAbsent(key, row);
@@ -64,13 +65,14 @@ public record LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl
         }
     }
 
+    /** The rows in producer order. */
+    public List<LauncherCommand> rows() {
+        return index.rows();
+    }
+
     /** The rows by coordinate, for per-coordinate reads. */
     public Map<FieldCoordinates, LauncherCommand> byCoordinate() {
-        var map = new LinkedHashMap<FieldCoordinates, LauncherCommand>();
-        for (var row : rows) {
-            map.put(row.coordinate(), row);
-        }
-        return map;
+        return index.byCoordinate();
     }
 
     /**
@@ -81,7 +83,6 @@ public record LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl
      * decides.
      */
     public Optional<LauncherCommand> rowFor(String parentTypeName, String fieldName) {
-        var coordinate = FieldCoordinates.coordinates(parentTypeName, fieldName);
-        return rows.stream().filter(r -> r.coordinate().equals(coordinate)).findFirst();
+        return index.rowFor(parentTypeName, fieldName);
     }
 }

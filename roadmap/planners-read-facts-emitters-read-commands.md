@@ -1554,6 +1554,47 @@ once the first is done. `EmitPlan`'s single reference still goes with the termin
 The dial says the same thing arithmetically: conditions 3, fetcher edges 5, type units 2,
 projections 3, launchers 5, `EmitPlan` 1. The order above takes 8 of the 19 in its first two steps.
 
+### The `rowFor` seam, unified
+
+Delivered. The replan called this the second deliverable and said it lands while there are two
+copies rather than three. Reading the tree to do it found the third was already there, which makes
+the argument stronger than the one that justified the work: the duplication is not the lookup, it is
+the *key*, and three relations were each restating it.
+
+`LauncherRelation`, `RoutineWriteRelation` and `FetcherEdgeRelation` are keyed by the coordinate
+alone, and each carried its own compact-constructor loop rejecting a coordinate that appeared twice,
+in three near-identical spellings with three different messages. Two of them additionally carried a
+linear `rowFor` scan and one of those a `byCoordinate()` that rebuilt a `LinkedHashMap` per call.
+All of it now lives on `CoordinateIndex`, the row set a coordinate-keyed relation holds: the rows in
+producer order, the rejection (which now names the offending coordinate, where none of the three did),
+the lookup, and the coordinate list. The relations keep the invariants that are actually theirs,
+which is the useful division the change surfaced: the launcher's case-folded method-name census and
+the routine-write relation's tenancy-coverage check stay where they are, because neither is a
+statement about the key.
+
+`ConditionRelation` deliberately stays out. Its key is `(coordinate, table)`, so a coordinate maps to
+several of its rows, and this index's contract is that it maps to at most one. That is the boundary
+to hold when the conditions conversion lands: what that family wants is a coordinate-to-rows
+multimap, not this.
+
+Two things were fixed rather than moved. `RoutineWriteRelation.rowFor`'s javadoc claimed the fetcher
+generator dispatches on its presence; it does not, `renderRoutineWrite` reads the row with
+`orElseThrow` and the one presence read is `EmitPlan`'s key-projection reachability check. The
+sentence was true of the launcher relation's twin and had been copied. And the seam is now pinned by
+a test of its own rather than through three relations' delegation, including the ordering guarantee,
+which is load-bearing: consumers fold these rows into emitted files, so a map reading out in hash
+order would make generated output depend on coordinate names.
+
+On the performance bar: this is better or equal by construction and not by measurement. A map read
+replaces a scan and a per-call map rebuild goes away, against one map built per relation at
+construction, which the key rejection already had to build. No claim beyond that is made here, and
+none was measured, which is the discipline the reverted hop-pairing patch bought.
+
+One thing the reading turned up and this change does not address, recorded for the family that
+inherits it: both `LauncherCommands.conditionRowOf` and `FetcherEdgeCommands.addConditionGlueTargets`
+scan the whole condition relation once per coordinate. That is the multimap above, and it belongs
+with the conditions conversion rather than here.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the

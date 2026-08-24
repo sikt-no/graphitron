@@ -1,6 +1,5 @@
 package no.sikt.graphitron.plan;
 
-import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.RoutineWriteCommand;
 import no.sikt.graphitron.command.TenantRouting;
 
@@ -12,7 +11,8 @@ import java.util.Optional;
  * The routine-write command relation of one generation run: one row per {@code @routine}-writing
  * mutation coordinate, keyed by the coordinate alone. "Exactly one entry point per covered
  * coordinate" is the relation's key rather than a property a test hunts for; a producer minting
- * two rows for one coordinate fails here.
+ * two rows for one coordinate fails at construction, in the {@link CoordinateIndex} every
+ * coordinate-keyed relation holds.
  *
  * <p>The relation covers both routine-write shapes, so unlike the launcher relation it carries no
  * migration dial: the producer's membership is the classifier's two leaves and nothing narrower.
@@ -33,18 +33,18 @@ import java.util.Optional;
  * coordinate carries an arm, checked below, because a routine write reaching emission with no
  * stated acquisition would acquire the default source in a build where that is the wrong tenant.
  */
-public record RoutineWriteRelation(List<RoutineWriteCommand> rows, TenantRouting tenancy) {
+public record RoutineWriteRelation(CoordinateIndex<RoutineWriteCommand> index, TenantRouting tenancy) {
+
+    /** The relation over {@code rows}, indexed on the coordinate key it is declared to have. */
+    public RoutineWriteRelation(List<RoutineWriteCommand> rows, TenantRouting tenancy) {
+        this(CoordinateIndex.of(rows, RoutineWriteCommand::coordinate, "routine-write"), tenancy);
+    }
 
     public RoutineWriteRelation {
-        rows = List.copyOf(rows);
+        Objects.requireNonNull(index, "index");
         Objects.requireNonNull(tenancy, "tenancy");
-        long distinctKeys = rows.stream().map(RoutineWriteCommand::coordinate).distinct().count();
-        if (distinctKeys != rows.size()) {
-            throw new IllegalArgumentException(
-                "the routine-write relation is keyed by coordinate; a coordinate appeared twice");
-        }
         if (tenancy instanceof TenantRouting.Routed routed) {
-            for (var row : rows) {
+            for (var row : index.rows()) {
                 if (!routed.byCoordinate().containsKey(row.coordinate())) {
                     throw new IllegalArgumentException(
                         "the routine-write coordinate " + row.coordinate() + " has no tenancy"
@@ -61,13 +61,19 @@ public record RoutineWriteRelation(List<RoutineWriteCommand> rows, TenantRouting
         return new RoutineWriteRelation(rows, new TenantRouting.Unrouted());
     }
 
+    /** The rows in producer order. */
+    public List<RoutineWriteCommand> rows() {
+        return index.rows();
+    }
+
     /**
-     * The row for one coordinate, empty when the coordinate writes through no routine. The
-     * fetcher generator dispatches on this presence rather than restating the producer's
-     * membership predicate, so the two ends cannot drift.
+     * The row for one coordinate, empty when the coordinate writes through no routine. Unlike
+     * the launcher relation's twin this is not a dispatch seam: the fetcher generator reaches it
+     * only where the classification already routed a routine write, so it reads the row with
+     * {@code orElseThrow} and an absence there is a producer bug rather than a fall-through. The
+     * one presence read is {@link EmitPlan}'s, asking whether a key projection was reached.
      */
     public Optional<RoutineWriteCommand> rowFor(String parentTypeName, String fieldName) {
-        var coordinate = FieldCoordinates.coordinates(parentTypeName, fieldName);
-        return rows.stream().filter(r -> r.coordinate().equals(coordinate)).findFirst();
+        return index.rowFor(parentTypeName, fieldName);
     }
 }
