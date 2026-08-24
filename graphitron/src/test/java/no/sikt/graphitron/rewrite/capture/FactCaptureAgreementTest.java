@@ -453,6 +453,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_resolved_type_binding_live", Arm.DERIVED);
         registrations.put("intent_field_column_scope_live", Arm.DERIVED);
         registrations.put("intent_field_reference_step_hop_live", Arm.DERIVED);
+        registrations.put("intent_type_data_channel_live", Arm.DERIVED);
         registrations.put("intent_argmapping_segment_binding", Arm.DERIVED);
         registrations.put("intent_argmapping_binding_leaf", Arm.DERIVED);
         registrations.put("intent_argmapping_bound_parameter_type", Arm.DERIVED);
@@ -464,6 +465,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_errors_field", Arm.DERIVED);
         registrations.put("intent_errors_field_member", Arm.DERIVED);
         registrations.put("intent_field_error_channel", Arm.DERIVED);
+        registrations.put("intent_type_data_channel", Arm.DERIVED);
         registrations.put("intent_carrier_data_field", Arm.DERIVED);
         registrations.put("intent_carrier_routine_hop", Arm.DERIVED);
         registrations.put("intent_mutation_routine_seat", Arm.DERIVED);

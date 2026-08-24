@@ -5064,29 +5064,56 @@ COMMENT ON COLUMN intent_errors_field_member.field_name IS 'the errors field the
 COMMENT ON COLUMN intent_errors_field_member.position IS 'source order within the container, carried from intent_poly_member; authored on a union and derived from declaration sites on an interface, which that relation states the consequence of';
 COMMENT ON COLUMN intent_errors_field_member.error_type_name IS 'the @error type at this position; always a captured type carrying @error, the parent relation admitting no field whose container holds anything else';
 
+CREATE VIEW intent_type_data_channel_live
+  (graph_name, type_name, field_name, element_kind, is_list, item_non_null, data_fields) AS
+SELECT f.graph_name, f.type_name, f.field_name,
+       CASE WHEN EXISTS (SELECT 1 FROM intent_bound_table b
+                          WHERE b.graph_name = f.graph_name AND b.type_name = f.named_type
+                            AND b.candidates = 1) THEN 'TABLE'
+            WHEN EXISTS (SELECT 1 FROM intent_type_backing tb
+                          WHERE tb.graph_name = f.graph_name AND tb.type_name = f.named_type
+                            AND tb.declared_via = 'BACKING_CLOSURE') THEN 'RECORD'
+            WHEN f.named_type = 'ID' THEN 'ID'
+            ELSE NULL END,
+       f.is_list, f.item_non_null,
+       CAST(COUNT(*) OVER (PARTITION BY f.graph_name, f.type_name) AS INT)
+  FROM graphql_field f
+  JOIN graphql_type t
+    ON t.graph_name = f.graph_name AND t.type_name = f.type_name AND t.kind = 'OBJECT'
+ WHERE NOT EXISTS (SELECT 1 FROM intent_errors_field e
+                    WHERE e.graph_name = f.graph_name AND e.type_name = f.type_name
+                      AND e.field_name = f.field_name);
+COMMENT ON VIEW intent_type_data_channel_live IS 'This states the rule and is evaluated on demand. The canonical name intent_type_data_channel beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_type_data_channel.';
+COMMENT ON COLUMN intent_type_data_channel_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_type_data_channel.graph_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_type_data_channel_live.type_name IS 'the type_name of a row of this rule, materialized into intent_type_data_channel.type_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_type_data_channel_live.field_name IS 'the field_name of a row of this rule, materialized into intent_type_data_channel.field_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_type_data_channel_live.element_kind IS 'the element_kind of a row of this rule, materialized into intent_type_data_channel.element_kind, whose comment carries what the value means';
+COMMENT ON COLUMN intent_type_data_channel_live.is_list IS 'the is_list of a row of this rule, materialized into intent_type_data_channel.is_list, whose comment carries what the value means';
+COMMENT ON COLUMN intent_type_data_channel_live.item_non_null IS 'the item_non_null of a row of this rule, materialized into intent_type_data_channel.item_non_null, whose comment carries what the value means';
+COMMENT ON COLUMN intent_type_data_channel_live.data_fields IS 'the data_fields of a row of this rule, materialized into intent_type_data_channel.data_fields, whose comment carries what the value means';
+
+CREATE TABLE intent_type_data_channel (
+  graph_name    VARCHAR NOT NULL,
+  type_name     VARCHAR,
+  field_name    VARCHAR,
+  element_kind  VARCHAR,
+  is_list       BOOLEAN,
+  item_non_null BOOLEAN,
+  data_fields   INTEGER,
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE intent_type_data_channel IS 'What an OBJECT type''s data channels are, before anyone asks who returns the type: one row per field of an OBJECT type that is not an errors channel, with what the field''s element resolves to, the wrapper it declares, and how many such fields the type has. Keyed on the coordinate, and shaped by the type alone: nothing here reads a producer, so a type nobody returns has its channels named exactly as a mutation payload''s are, which is what lets the relation state a fact rather than one reader''s question. Which fields are errors channels is intent_errors_field''s to say and is subtracted here rather than re-derived, so the arity below counts what is left. What an element resolves to is one of three kinds tried in the walk''s own order: a named type bound unambiguously to a table is TABLE, a named type the backing closure reaches is RECORD, and the ID scalar is ID. The closure arm is read on declared_via so a @table type''s own record class cannot answer here, that population being the first arm''s and an ambiguous binding being no binding at all. An element of no recognized kind is a row with a null kind and not an absent row, which is the difference that makes this relation usable as a rejection''s input: a reader refusing a type for having an unrecognized channel needs the channel to be present and unresolved, where an absent row would read as a type with fewer channels. This was the data_channel CTE inside intent_carrier_data_field, promoted for the reason the registration in meta_materialize states: that view names the shape four times, three of them in correlated NOT EXISTS arms, and a CTE H2 inlines per naming cannot be registered while it has no name. The promotion is not a second reading of the carrier''s rule, which is what makes it a relation rather than a refactor: the carrier scan asks which of a payload''s channels admit the carrier mold, and this asks what the channels are, and the two are separated exactly where a producer enters. Materialized: this relation is a table refilled from intent_type_data_channel_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
+COMMENT ON COLUMN intent_type_data_channel.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN intent_type_data_channel.type_name IS 'the OBJECT type declaring the field; every object type in the graph, not only the ones a producer returns';
+COMMENT ON COLUMN intent_type_data_channel.field_name IS 'the channel''s field name within its type; with the type, the coordinate this row is about';
+COMMENT ON COLUMN intent_type_data_channel.element_kind IS 'what the channel''s element resolves to: TABLE (the named type is bound to one catalog table), RECORD (the backing closure reaches a class for it), ID (the ID scalar). NULL where the element is none of the three, which is a channel present and unresolved rather than a channel absent, and is what a reader refusing the whole type tests for';
+COMMENT ON COLUMN intent_type_data_channel.is_list IS 'whether the field declares a list wrapper, carried from graphql_field; one half of the wrapper a family''s own ID refusal reads';
+COMMENT ON COLUMN intent_type_data_channel.item_non_null IS 'whether a list''s element is non-null, carried from graphql_field; NULL off a list rather than false, being a property of the element and not of the field. NULL-tolerant lists are what the DML family''s [ID] refusal turns on';
+COMMENT ON COLUMN intent_type_data_channel.data_fields IS 'how many data channels the type declares, this row being one of them. The errors channels are subtracted before the count, the filter applying ahead of the window, so this is the arity a reader demanding exactly one channel tests and not the type''s field count';
+
 CREATE VIEW intent_carrier_data_field
   (graph_name, type_name, field_name, family, element_kind, data_fields) AS
 WITH
-data_channel (graph_name, type_name, field_name, element_kind,
-              is_list, item_non_null, data_fields) AS (
-  SELECT f.graph_name, f.type_name, f.field_name,
-         CASE WHEN EXISTS (SELECT 1 FROM intent_bound_table b
-                            WHERE b.graph_name = f.graph_name AND b.type_name = f.named_type
-                              AND b.candidates = 1) THEN 'TABLE'
-              WHEN EXISTS (SELECT 1 FROM intent_type_backing tb
-                            WHERE tb.graph_name = f.graph_name AND tb.type_name = f.named_type
-                              AND tb.declared_via = 'BACKING_CLOSURE') THEN 'RECORD'
-              WHEN f.named_type = 'ID' THEN 'ID'
-              ELSE NULL END,
-         f.is_list, f.item_non_null,
-         CAST(COUNT(*) OVER (PARTITION BY f.graph_name, f.type_name) AS INT)
-    FROM graphql_field f
-    JOIN graphql_type t
-      ON t.graph_name = f.graph_name AND t.type_name = f.type_name AND t.kind = 'OBJECT'
-   WHERE NOT EXISTS (SELECT 1 FROM intent_errors_field e
-                      WHERE e.graph_name = f.graph_name AND e.type_name = f.type_name
-                        AND e.field_name = f.field_name)
-),
 producer (graph_name, payload_type_name, family) AS (
   SELECT DISTINCT graph_name, payload_type_name, family
     FROM intent_field_payload_producer
@@ -5094,12 +5121,12 @@ producer (graph_name, payload_type_name, family) AS (
 )
 SELECT p.graph_name, d.type_name, d.field_name, p.family, d.element_kind, d.data_fields
   FROM producer p
-  JOIN data_channel d
+  JOIN intent_type_data_channel d
     ON d.graph_name = p.graph_name AND d.type_name = p.payload_type_name
- WHERE NOT EXISTS (SELECT 1 FROM data_channel u
+ WHERE NOT EXISTS (SELECT 1 FROM intent_type_data_channel u
                     WHERE u.graph_name = d.graph_name AND u.type_name = d.type_name
                       AND u.element_kind IS NULL)
-   AND NOT EXISTS (SELECT 1 FROM data_channel u
+   AND NOT EXISTS (SELECT 1 FROM intent_type_data_channel u
                     JOIN graphql_field_directive fd
                       ON fd.graph_name = u.graph_name AND fd.type_name = u.type_name
                      AND fd.field_name = u.field_name
@@ -5108,12 +5135,12 @@ SELECT p.graph_name, d.type_name, d.field_name, p.family, d.element_kind, d.data
                             'splitQuery', 'externalField', 'condition', 'lookupKey', 'notGenerated',
                             'defaultOrder', 'orderBy', 'multitableReference')
                       AND NOT (fd.directive_name = 'splitQuery' AND p.family = 'SERVICE'))
-   AND NOT EXISTS (SELECT 1 FROM data_channel u
+   AND NOT EXISTS (SELECT 1 FROM intent_type_data_channel u
                     WHERE u.graph_name = d.graph_name AND u.type_name = d.type_name
                       AND u.element_kind = 'ID'
                       AND (p.family = 'ROUTINE'
                            OR (p.family = 'DML' AND u.is_list AND NOT u.item_non_null)));
-COMMENT ON VIEW intent_carrier_data_field IS 'Where a mutation payload''s data arrives: for each OBJECT type a mutation-root write field returns, that type''s data channels, with the shape each element declares and how many channels the type has. A carrier is a payload whose whole job is to wrap one produced value beside an error channel, and the coordinate this relation names is where that value lands, which is what a surface offering or judging the $source sigil is asking about. The producing directive decides the family and the family decides two policies, so it is a column and not a filter this view applies for one reader: @service on a mutation-root field is SERVICE, @mutation is DML, @routine is ROUTINE, and a payload two families both return is a row per family rather than a pick. Errors-shaped fields are not data channels and never counted as one, and which fields those are is intent_errors_field''s to say rather than a condition spelled here: this relation is that one''s second reader, which is what promoted the shape out of a CTE inside this view and into a relation of its own. What a data channel''s element declares is one of three kinds, tried in the walk''s own order: a named type bound unambiguously to a table is TABLE, a named type the backing closure reaches is RECORD, and the ID scalar is ID. The closure arm is read on declared_via so a @table type''s own record class cannot answer here, that population being the first arm''s and an ambiguous binding being no binding at all. That arm inherits the closure''s own stated departure, and it costs this relation the two-level carrier: where a payload wraps a result type the producer''s class stands for, the closure backs the wrapper and the walk reaches past it, so the element resolves to no kind and the payload names nothing. The departure is the closure''s to close, not a second reading of it here. An element of any other kind is not a payload shape the generator admits, and it rejects the whole payload rather than just its own coordinate, so a type carrying one contributes nothing; the same holds for a data-channel directive that routes the type out of the carrier mold, and for the two ID-element refusals that are a family''s own (a routine write has no PK-echo shape, so ROUTINE admits no ID element at any wrapper, and a DELETE echo cannot have a nullable slot, so DML refuses [ID]). The arity is a column and the refusal is the reader''s, as on the discovery view: a payload declaring two data channels is two rows counting two, which is the coordinate the generator rejects for having no single data field, and a reader demanding data_fields = 1 transcribes that refusal without re-counting. Absence covers several things and none of them is "this payload has no data": no mutation-root field returns the type, or the type is not an OBJECT, or one of the rejections above dropped it. Element kind and family are columns for the same reason the arity is: which rows admit a given surface is that surface''s rule, and the $source sigil''s reader demands SERVICE and a TABLE or ID element, those being the producer the user manual names and the two elements the carrier classification encodes the upstream value onto.';
+COMMENT ON VIEW intent_carrier_data_field IS 'Where a mutation payload''s data arrives: for each OBJECT type a mutation-root write field returns, that type''s data channels, with the shape each element declares and how many channels the type has. A carrier is a payload whose whole job is to wrap one produced value beside an error channel, and the coordinate this relation names is where that value lands, which is what a surface offering or judging the $source sigil is asking about. The producing directive decides the family and the family decides two policies, so it is a column and not a filter this view applies for one reader: @service on a mutation-root field is SERVICE, @mutation is DML, @routine is ROUTINE, and a payload two families both return is a row per family rather than a pick. What a type''s data channels are, errors channels already subtracted and each element already resolved to a kind, is intent_type_data_channel''s and not spelled here: that relation was the data_channel CTE inside this view and is now a registered one of its own, which is what lets this view name it four times without evaluating it four times. What this view adds over it is the producer, and that is the whole of the difference: these rows are the channels of a type some mutation-root write field returns, under the family that returned it, with the three rejections below applied. The element kinds and their order are documented there. The RECORD arm inherits the backing closure''s own stated departure, and it costs this relation the two-level carrier: where a payload wraps a result type the producer''s class stands for, the closure backs the wrapper and the walk reaches past it, so the element resolves to no kind and the payload names nothing. The departure is the closure''s to close, not a second reading of it here. An element of any other kind is not a payload shape the generator admits, and it rejects the whole payload rather than just its own coordinate, so a type carrying one contributes nothing; the same holds for a data-channel directive that routes the type out of the carrier mold, and for the two ID-element refusals that are a family''s own (a routine write has no PK-echo shape, so ROUTINE admits no ID element at any wrapper, and a DELETE echo cannot have a nullable slot, so DML refuses [ID]). The arity is a column and the refusal is the reader''s, as on the discovery view: a payload declaring two data channels is two rows counting two, which is the coordinate the generator rejects for having no single data field, and a reader demanding data_fields = 1 transcribes that refusal without re-counting. Absence covers several things and none of them is "this payload has no data": no mutation-root field returns the type, or the type is not an OBJECT, or one of the rejections above dropped it. Element kind and family are columns for the same reason the arity is: which rows admit a given surface is that surface''s rule, and the $source sigil''s reader demands SERVICE and a TABLE or ID element, those being the producer the user manual names and the two elements the carrier classification encodes the upstream value onto.';
 COMMENT ON COLUMN intent_carrier_data_field.graph_name IS 'the owning graph''s partition, carried from the producing field';
 COMMENT ON COLUMN intent_carrier_data_field.type_name IS 'the payload type the producing field returns; the type whose data channels these rows are';
 COMMENT ON COLUMN intent_carrier_data_field.field_name IS 'the data channel''s field name within the payload type; the coordinate an author''s cursor sits on';
@@ -7372,6 +7399,8 @@ INSERT INTO meta_materialize VALUES
    'Three view bodies name it, one of them twice plus once per row in a correlated NOT EXISTS, and the column-match classifier joins it per coordinate. The rule is a plain prunable union on purpose, and the cost still multiplies: its own evaluation is about 170 ms on a real schema once the binding beneath it is a table, and the correlated reader was re-evaluating it once per authored reference step, which is where intent_field_column_table''s ten seconds came from after the binding registration removed the first fifty. Cheap to compute once per capture and ruinous to compute per row, which is the registration case.'),
   ('intent_node_id_decode_hop_column_live', 'intent_node_id_decode_hop_column',
    'One reader, and it is a recursive walk over these very rows, which is a shape no other registration here has. A recursive term joins its own accumulated output against this relation once per accumulated row, so a relation named in the step is evaluated as many times as the walk has rows rather than once, and inlining it makes the whole hop chain under it the thing being re-evaluated. Measured against a real schema: this relation is one and a half seconds on its own, the walk accumulates around twenty rows, and the walk does not finish inside a two-minute timeout, while the same walk over these rows as a table is a little over three seconds for the whole reader. Collapsing the walk''s six-column coordinate key onto the use site was tried first, on the theory that four null-safe disjunctions were what stopped the step from being planned; it is a real simplification and it is kept, and it moved the timeout not at all, which is what says the cost is the re-evaluation rather than the predicate. Refresh is not free here, the source reading the whole hop chain each time, so this registration is a claim that something reads the relation often and it is made in the increment that adds that reader.'),
+  ('intent_type_data_channel_live', 'intent_type_data_channel',
+   'One reader and four namings of it, which is the inverse of the breadth case every other row here makes: intent_carrier_data_field drives from this relation once and then tests it in three correlated NOT EXISTS arms, so a read of that view evaluates this rule once per driving row and not once per naming. The relation carries a COUNT(*) OVER on the type partition, so no outer predicate prunes it and each correlated probe evaluates it whole. Measured against a real schema, with every row count unchanged on both sides: this relation is 44 ms for 698 rows as one evaluation, and against that single refresh per graph, intent_carrier_data_field falls from about 31 s to under 70 ms, intent_mutation_routine_seat from about 36 s to about 50 ms, intent_carrier_routine_hop from about 9 s to about 40 ms and intent_field_error_channel from about 2.8 s to about 110 ms. The three downstream figures are the point: none of those relations names this one, they name the carrier view, and the carrier''s cost was this rule re-derived per row inside it. Which of the four namings is the term was measured rather than assumed, and the obvious reading was wrong: substituting a table for what the driving join reads, leaving the arms on the inlined rule, changed nothing at all, while substituting one for what the arms read collapsed the relation. So this is the correlated-reader shape and not the plain inlining shape the rows above describe, and it wants this lever rather than a wider one. Registering the carrier view itself was the alternative considered and declined: its refresh would have been the 31 s this registration removes, and it would have left the re-derivation in place one level down. De-correlating the arms by grouping this relation per type into the flags they test is the rewrite that would cost no refresh at all; nothing has been run in that shape and a rewrite nobody has timed is not a measured option, so it stays available rather than chosen.'),
   ('intent_field_reference_step_hop_live', 'intent_field_reference_step_hop',
    'Two readers and both are recursive walks over these very rows, which is the shape the decode hop-column registration above also has. A recursive term joins its own accumulated output against this relation once per accumulated row, and a view is inlined afresh at every naming, so the deep derivations over it reach it dozens of times in one read. Measured against a real schema, with every row count unchanged: this relation answers in around thirty milliseconds as a view and in under one as a table, intent_node_id_decode falls from about fifty seconds to about thirteen, and intent_field_reference_step_target from around thirty milliseconds to three. Refresh is one evaluation of the source view per graph, which is that same thirty milliseconds, set against re-evaluations counted in dozens per read. Breadth alone would not have carried it, and that is why this reason states timings: only two view bodies name this relation, and intent_field_chain_terminus costing a dozen milliseconds at forty-eight inlined instantiations of it is what says a multiplicity ranks suspects rather than pricing them.');
 

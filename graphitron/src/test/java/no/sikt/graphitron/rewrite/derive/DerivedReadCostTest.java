@@ -93,17 +93,17 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 83;
+    private static final int READERS_IN_SCHEMA = 84;
 
     /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 46;
+    private static final int READERS_WITH_CELLS = 47;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
      * cannot grow silently as views are added; a new view that puts new cells in the domain fails this
      * figure until somebody has looked at what it costs.
      */
-    private static final int CELLS = 102;
+    private static final int CELLS = 105;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -153,12 +153,24 @@ class DerivedReadCostTest {
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather
-     * than compared. Empty on this fixture, and that is a fact about its size rather than about the
-     * arm: the walk the register describes as not finishing inside two minutes does finish here.
-     * {@link #aCellThatCannotAnswerIsRecordedRatherThanFailed} is what shows the arm working, over a
-     * relation made non-terminating by construction rather than by being slow.
+     * than compared. One row, and it is the strongest form of the claim this gate makes rather than a
+     * gap in it: the carrier relation names the data-channel rule four times, three of them in
+     * correlated {@code NOT EXISTS} arms, so reversing that registration puts the rule back to being
+     * re-derived per driving row and the read no longer lands inside a budget fifty times its
+     * registered side. The registry row carries the timings.
+     *
+     * <p>Only the direct reader is here. The three relations that read the carrier
+     * ({@code intent_mutation_routine_seat}, {@code intent_carrier_routine_hop},
+     * {@code intent_field_error_channel}) are cells of the same registration and each answers inside
+     * its budget, because the budget is relative to that reader's own registered figure and those are
+     * larger than the carrier's.
+     *
+     * <p>{@link #aCellThatCannotAnswerIsRecordedRatherThanFailed} is still what shows the arm working
+     * on a relation made non-terminating by construction rather than by being slow; this row is the
+     * arm firing on a relation that is merely very slow, which is the case it was written for.
      */
-    private static final Set<String> KNOWN_EXHAUSTED = Set.of();
+    private static final Set<String> KNOWN_EXHAUSTED = Set.of(
+        "intent_type_data_channel|intent_carrier_data_field");
 
     @TempDir
     static Path tmp;
