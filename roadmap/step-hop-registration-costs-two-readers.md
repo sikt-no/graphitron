@@ -1,7 +1,7 @@
 ---
 id: R815
 title: "Index the materialized targets, the only unkeyed tables in a keyed schema"
-status: In Progress
+status: In Review
 bucket: store
 priority: 2
 theme: nodeid
