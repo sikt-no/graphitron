@@ -1,7 +1,7 @@
 ---
 id: R784
 title: "Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 2
 theme: mutation-write

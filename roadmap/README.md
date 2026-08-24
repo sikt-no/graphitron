@@ -15,8 +15,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
-| `R784` | Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it | In Progress | 2026-08-24 <sub>created 2026-08-21</sub> | [plan](straddling-reference-update-partition.md) |
 | `R815` | Index the materialized targets, the only unkeyed tables in a keyed schema | In Review | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](step-hop-registration-costs-two-readers.md) |
+| `R784` | Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it | In Review | 2026-08-24 <sub>created 2026-08-21</sub> | [plan](straddling-reference-update-partition.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
@@ -471,7 +471,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutation-write
 
-- `R784` [**Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it**](straddling-reference-update-partition.md) — In Progress, feature
+- `R784` [**Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it**](straddling-reference-update-partition.md) — In Review, feature
 - `R820` [**An authored index on the field census named-type coordinate**](graphql-field-named-type-index.md) — Backlog, store
 - `R821` [**The payload-returning UPDATE arms emit no within-SET value-agreement check**](payload-update-within-set-agreement.md) — Backlog, bug
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
