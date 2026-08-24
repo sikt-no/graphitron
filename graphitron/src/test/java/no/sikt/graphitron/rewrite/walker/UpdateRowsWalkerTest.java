@@ -115,14 +115,99 @@ class UpdateRowsWalkerTest {
     }
 
     @Test
-    void compositeReferenceStraddlesKey_crossTableFk_rejectsWithMixedCarrierKeyMembership() {
-        // A CROSS-table FK reference (selfReference = false) whose lifted columns straddle the
-        // (actor_id, film_id) PK still rejects: a cross-table FK's lifted column can
-        // legitimately be the row's own identity, so it partitions by membership and a straddle is
-        // unexpressible. (A self-FK with the same shape instead routes wholly to SET — see
-        // selfFkReference_* below.)
+    void compositeReferenceStraddlesKey_crossTableFk_partitionsPerColumn() {
+        // A CROSS-table FK reference whose lifted columns straddle the (actor_id, film_id) PK is
+        // admitted and partitions PER COLUMN. actor_id is in the key and `actorId` already pins it,
+        // so the reference contributes only an agreement obligation there: it neither filters nor
+        // writes that column. last_update is outside the key, so it is a SET write. Both rows keep
+        // the decode slot they sit at in the reference's own record.
         var result = walker.walk(null, table("film_actor"), List.of(
+            columnField("actorId", col(PUBLIC, "film_actor", "actor_id")),
+            columnField("filmId", col(PUBLIC, "film_actor", "film_id")),
             compositeReferenceField("straddle", List.of(
+                col(PUBLIC, "film_actor", "actor_id"),
+                col(PUBLIC, "film_actor", "last_update")))
+        ), PUBLIC, "input");
+
+        var carrier = ok(result);
+        // WHERE: the two PK columns, both from the plain identity fields. The straddler supplies none.
+        assertThat(carrier.keyColumns()).extracting(k -> k.sdlFieldName() + ":" + k.targetColumn().sqlName())
+            .containsExactlyInAnyOrder("actorId:actor_id", "filmId:film_id");
+        // SET: only the straddler's out-of-key column, at its own decode slot (1, not 0).
+        assertThat(carrier.setColumns()).extracting(s -> s.sdlFieldName() + ":" + s.targetColumn().sqlName())
+            .containsExactly("straddle:last_update");
+        assertThat(carrier.setColumns().get(0).decodeSlot())
+            .as("last_update is the second column of the reference's decode record")
+            .isEqualTo(1);
+        // The in-key column becomes an agreement obligation naming both contributing fields.
+        assertThat(carrier.agreementObligations()).singleElement().satisfies(ob -> {
+            assertThat(ob.column().sqlName()).isEqualTo("actor_id");
+            assertThat(ob.keySide().sdlFieldName()).isEqualTo("actorId");
+            assertThat(ob.keySide().decodeSlot()).isEqualTo(0);
+            assertThat(ob.referenceSide().sdlFieldName()).isEqualTo("straddle");
+            assertThat(ob.referenceSide().decodeSlot())
+                .as("actor_id is the first column of the reference's decode record")
+                .isEqualTo(0);
+        });
+    }
+
+    @Test
+    void straddlingReference_soleIdentityContributor_suppliesTheKeyColumnItself() {
+        // Nothing else pins actor_id, so the straddler's in-key column IS the WHERE predicate rather
+        // than an obligation: there is no second value to check it against. It keeps its decode slot,
+        // which is what lets the emitter read the right half of the reference's record.
+        var result = walker.walk(null, table("film_actor"), List.of(
+            columnField("filmId", col(PUBLIC, "film_actor", "film_id")),
+            compositeReferenceField("straddle", List.of(
+                col(PUBLIC, "film_actor", "actor_id"),
+                col(PUBLIC, "film_actor", "last_update")))
+        ), PUBLIC, "input");
+
+        var carrier = ok(result);
+        assertThat(carrier.keyColumns()).extracting(k -> k.sdlFieldName() + ":" + k.targetColumn().sqlName())
+            .containsExactlyInAnyOrder("filmId:film_id", "straddle:actor_id");
+        assertThat(carrier.keyColumns()).filteredOn(k -> k.sdlFieldName().equals("straddle"))
+            .singleElement().satisfies(k -> assertThat(k.decodeSlot()).isEqualTo(0));
+        assertThat(carrier.setColumns()).extracting(s -> s.targetColumn().sqlName())
+            .containsExactly("last_update");
+        assertThat(carrier.agreementObligations())
+            .as("a sole contributor has nothing to disagree with")
+            .isEmpty();
+    }
+
+    @Test
+    void nullableStraddlingReference_rejectsWithCarriedKeyAndWriteTarget() {
+        // The nullable spelling of the admitted shape. An explicit null would write NULL into
+        // last_update and leave actor_id alone, and MATCH SIMPLE would accept that half-null tuple,
+        // so the reference is rejected at build time rather than half-cleared at runtime. The arm
+        // carries the matched key and table because the same field is legal where the key does not
+        // intersect the foreign key.
+        var result = walker.walk(null, table("film_actor"), List.of(
+            columnField("actorId", col(PUBLIC, "film_actor", "actor_id")),
+            columnField("filmId", col(PUBLIC, "film_actor", "film_id")),
+            nullableCompositeReferenceField("straddle", List.of(
+                col(PUBLIC, "film_actor", "actor_id"),
+                col(PUBLIC, "film_actor", "last_update")))
+        ), PUBLIC, "input");
+
+        var err = only(result);
+        assertThat(err).isInstanceOf(UpdateRowsError.NullableStraddlingReference.class);
+        var nullable = (UpdateRowsError.NullableStraddlingReference) err;
+        assertThat(nullable.fieldName()).isEqualTo("straddle");
+        assertThat(nullable.table()).isEqualTo("film_actor");
+        assertThat(sqlNames(nullable.matchedKey().columns())).containsExactlyInAnyOrder("actor_id", "film_id");
+        assertThat(sqlNames(nullable.columnsInKey())).containsExactly("actor_id");
+        assertThat(sqlNames(nullable.columnsOutsideKey())).containsExactly("last_update");
+        assertThat(nullable.lspCode()).isEqualTo("graphitron.update-rows.nullable-straddling-reference");
+    }
+
+    @Test
+    void ownColumnsStraddleKey_stillRejectsWithMixedCarrierKeyMembership() {
+        // MixedCarrierKeyMembership survives, narrowed to the own-columns carrier: a same-table
+        // composite @nodeId whose OWN columns span the key. Writing half of them would move the row,
+        // which is a different act from re-pointing a sibling reference.
+        var result = walker.walk(null, table("film_actor"), List.of(
+            compositeColumnField("straddle", List.of(
                 col(PUBLIC, "film_actor", "actor_id"),
                 col(PUBLIC, "film_actor", "last_update"))),
             columnField("filmId", col(PUBLIC, "film_actor", "film_id"))
@@ -134,6 +219,77 @@ class UpdateRowsWalkerTest {
         assertThat(mixed.fieldName()).isEqualTo("straddle");
         assertThat(sqlNames(mixed.columnsInKey())).containsExactly("actor_id");
         assertThat(sqlNames(mixed.columnsOutsideKey())).containsExactly("last_update");
+    }
+
+    @Test
+    void twoStraddlersSharingAnInKeyColumn_firstInInputOrderPinsIt() {
+        // Deterministic tiebreak: the first straddler in input-field order supplies the WHERE
+        // predicate, the second contributes an obligation against it. The agreement check makes the
+        // choice observationally irrelevant for well-formed input; being deterministic is the point.
+        var result = walker.walk(null, table("film_actor"), List.of(
+            columnField("filmId", col(PUBLIC, "film_actor", "film_id")),
+            compositeReferenceField("first", List.of(
+                col(PUBLIC, "film_actor", "actor_id"),
+                col(PUBLIC, "film_actor", "last_update"))),
+            compositeReferenceField("second", List.of(
+                col(PUBLIC, "film_actor", "actor_id"),
+                col(PUBLIC, "film_actor", "last_update")))
+        ), PUBLIC, "input");
+
+        var carrier = ok(result);
+        assertThat(carrier.keyColumns()).filteredOn(k -> k.targetColumn().sqlName().equals("actor_id"))
+            .singleElement()
+            .satisfies(k -> assertThat(k.sdlFieldName()).isEqualTo("first"));
+        assertThat(carrier.agreementObligations()).singleElement().satisfies(ob -> {
+            assertThat(ob.column().sqlName()).isEqualTo("actor_id");
+            assertThat(ob.keySide().sdlFieldName()).isEqualTo("first");
+            assertThat(ob.referenceSide().sdlFieldName()).isEqualTo("second");
+        });
+    }
+
+    @Test
+    void selfFkOverlap_isCarriedAsAnAgreementObligation() {
+        // The self-FK overlap rides the same component, so the emitters fold over one fact instead
+        // of each intersecting the partitions. mailbox_id is written by the self-FK and pinned by
+        // `id`, and the obligation names both sides with the slot each reads.
+        var result = walker.walk(null, table("email"), List.of(
+            compositeColumnField("id", List.of(
+                col(PUBLIC, "email", "mailbox_id"),
+                col(PUBLIC, "email", "message_no"))),
+            selfReferenceField("inReplyTo", List.of(
+                col(PUBLIC, "email", "mailbox_id"),
+                col(PUBLIC, "email", "in_reply_to_no"))),
+            columnField("subject", col(PUBLIC, "email", "subject"))
+        ), PUBLIC, "input");
+
+        var carrier = ok(result);
+        assertThat(carrier.agreementObligations()).singleElement().satisfies(ob -> {
+            assertThat(ob.column().sqlName()).isEqualTo("mailbox_id");
+            assertThat(ob.keySide().sdlFieldName()).isEqualTo("id");
+            assertThat(ob.keySide().decodeSlot()).isEqualTo(0);
+            assertThat(ob.referenceSide().sdlFieldName()).isEqualTo("inReplyTo");
+            assertThat(ob.referenceSide().decodeSlot()).isEqualTo(0);
+        });
+        // The self-FK still writes the shared column: unlike a straddler, its columns are wholly SET.
+        assertThat(carrier.setColumns()).extracting(s -> s.targetColumn().sqlName())
+            .contains("mailbox_id");
+    }
+
+    @Test
+    void nullableCrossTableReference_notStraddling_isAdmitted() {
+        // The nullability rule is scoped to the straddle. A nullable cross-table reference whose
+        // columns all sit outside the matched key clears cleanly (the whole FK tuple is on the SET
+        // side), so it stays admitted; this is what the rejection message means when it says the same
+        // spelling is fine elsewhere.
+        var result = walker.walk(null, table("film"), List.of(
+            columnField("filmId", col(PUBLIC, "film", "film_id")),
+            nullableColumnReferenceField("languageRef", List.of(col(PUBLIC, "film", "language_id")))
+        ), PUBLIC, "input");
+
+        var carrier = ok(result);
+        assertThat(carrier.setColumns()).extracting(s -> s.targetColumn().sqlName())
+            .containsExactly("language_id");
+        assertThat(carrier.agreementObligations()).isEmpty();
     }
 
     @Test
@@ -371,9 +527,25 @@ class UpdateRowsWalkerTest {
     }
 
     private static InputField.ColumnBackedReferenceField compositeReferenceField(String name, List<ColumnRef> lifted) {
-        // Cross-table FK reference (selfReference = false): a genuine straddle still rejects.
+        // Non-null cross-table FK reference (selfReference = false): partitions per column, and a
+        // straddle is admitted.
         return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", true, false,
             lifted, List.of(), new FilterBinding.Local(lifted), false, Optional.empty(), dummyDecode(lifted));
+    }
+
+    /** The nullable spelling of {@link #compositeReferenceField}: rejected where it straddles. */
+    private static InputField.ColumnBackedReferenceField nullableCompositeReferenceField(
+            String name, List<ColumnRef> lifted) {
+        return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", false, false,
+            lifted, List.of(), new FilterBinding.Local(lifted), false, Optional.empty(), dummyDecode(lifted));
+    }
+
+    /** A nullable single-column cross-table FK reference: nothing to straddle, so always admitted. */
+    private static InputField.ColumnBackedReferenceField nullableColumnReferenceField(
+            String name, List<ColumnRef> lifted) {
+        return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", false, false,
+            List.of(lifted.getFirst()), List.of(), new FilterBinding.Local(lifted), false,
+            Optional.empty(), dummyDecode(lifted));
     }
 
     private static InputField.ColumnBackedReferenceField selfReferenceField(String name, List<ColumnRef> lifted) {

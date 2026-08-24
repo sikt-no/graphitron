@@ -43,7 +43,8 @@ class UpdateMutationValidationTest {
                     List.of(new no.sikt.graphitron.rewrite.model.KeyColumn(
                         "filmId",
                         new no.sikt.graphitron.rewrite.model.ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
-                        new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(), 0)))),
+                        new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(), 0)),
+                    List.of())),
                 Optional.empty()),
             List.of());
 

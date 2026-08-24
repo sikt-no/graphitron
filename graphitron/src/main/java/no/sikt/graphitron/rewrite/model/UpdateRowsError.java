@@ -21,6 +21,7 @@ public sealed interface UpdateRowsError extends Rejection.AuthorError permits
     UpdateRowsError.NoUniqueKeyCoverage,
     UpdateRowsError.NoSetFields,
     UpdateRowsError.MixedCarrierKeyMembership,
+    UpdateRowsError.NullableStraddlingReference,
     UpdateRowsError.UnsupportedInputFieldShape,
     UpdateRowsError.OverrideConditionNotSupported,
     UpdateRowsError.PlainColumnCollision
@@ -88,9 +89,16 @@ public sealed interface UpdateRowsError extends Rejection.AuthorError permits
     }
 
     /**
-     * A single input field's lifted columns straddle the matched key: some are in the key, some
-     * are outside it. Only possible on composite-reference shapes whose lifted source columns span
-     * more than one column.
+     * A same-table composite {@code @nodeId} carrier's own columns straddle the matched key: some
+     * are in the key, some are outside it.
+     *
+     * <p>Narrowed to the own-columns carrier. A carrier's own columns <em>are</em> this row's
+     * identity, so writing half of them means moving the row, which is a different act from
+     * re-pointing a sibling reference and is not what an UPDATE input asks for. Reference carriers
+     * no longer reach this arm: a self-FK routes wholly to SET (its columns point at a sibling row,
+     * never identity), and a cross-table FK partitions per column, its in-key half staying identity
+     * and its out-of-key half becoming a SET write. The one cross-table shape still rejected is the
+     * nullable one, under {@link NullableStraddlingReference}.
      */
     record MixedCarrierKeyMembership(
         String fieldName,
@@ -103,11 +111,63 @@ public sealed interface UpdateRowsError extends Rejection.AuthorError permits
         }
         @Override public String message() {
             return "@mutation(typeName: UPDATE) input field '" + fieldName
-                + "' lifts columns that straddle the matched key: " + sqlNames(columnsInKey)
+                + "' lifts its own key columns across the matched key: " + sqlNames(columnsInKey)
                 + " are in the key but " + sqlNames(columnsOutsideKey)
-                + " are not. A single input field cannot span the WHERE and SET partitions.";
+                + " are not. These columns are this row's own identity, so writing only some of them"
+                + " would move the row rather than update it. Split the field, or point it at a"
+                + " foreign key with @reference so it re-points a sibling row instead.";
         }
         @Override public String lspCode() { return "graphitron.update-rows.mixed-carrier-key-membership"; }
+    }
+
+    /**
+     * A <em>nullable</em> cross-table {@code @nodeId} reference field whose lifted foreign-key
+     * columns straddle the matched key. The non-null spelling of the same field is admitted and
+     * partitions per column.
+     *
+     * <p>The hazard is clearing. An explicit {@code null} on such a field would write {@code NULL}
+     * into the out-of-key half of the foreign key and leave the in-key half alone, because that half
+     * is the row's own identity and is never written. PostgreSQL's default {@code MATCH SIMPLE}
+     * treats a partially-null foreign key as satisfied, so the constraint does not catch it and the
+     * row keeps a dangling half-key. The coherent rule is that the in-key half of a straddling
+     * reference <em>is</em> row identity: the reference can be re-pointed only within the same key
+     * value, and can never be cleared.
+     *
+     * <p>This is a build-time reject rather than a runtime throw because the hazard is knowable from
+     * the schema alone. It is a separate permit from {@link MixedCarrierKeyMembership} rather than a
+     * widening of it, because {@link #lspCode()} is what downstream tooling switches on and "don't
+     * straddle your own key" and "make this reference non-null" are different fixes.
+     *
+     * <p>Carries the matched key and write target as well as the field, because the rejection is not
+     * a property of the field alone: the same nullable reference is legal on a field whose matched
+     * key does not intersect the foreign key, so the message has to be able to say why the same
+     * spelling is fine elsewhere.
+     */
+    record NullableStraddlingReference(
+        String fieldName,
+        SourceLocation location,
+        String table,
+        MatchedKey matchedKey,
+        List<ColumnRef> columnsInKey,
+        List<ColumnRef> columnsOutsideKey
+    ) implements UpdateRowsError {
+        public NullableStraddlingReference {
+            columnsInKey = List.copyOf(columnsInKey);
+            columnsOutsideKey = List.copyOf(columnsOutsideKey);
+        }
+        @Override public String message() {
+            return "@mutation(typeName: UPDATE) input field '" + fieldName + "' on table '" + table
+                + "' is a nullable cross-table @nodeId reference whose foreign-key columns straddle "
+                + describeKey(matchedKey) + ": " + sqlNames(columnsInKey) + " are in the key but "
+                + sqlNames(columnsOutsideKey) + " are not. The in-key half is this row's identity and"
+                + " is never written, so an explicit null would write NULL into "
+                + sqlNames(columnsOutsideKey) + " and leave the rest of the foreign key populated;"
+                + " MATCH SIMPLE accepts that half-null tuple, so the row would keep a dangling"
+                + " reference. Such a reference can be re-pointed but never cleared: spell the field"
+                + " non-null (ID!). (The same nullable field is fine where the matched key does not"
+                + " intersect the foreign key, since then nothing about it is identity.)";
+        }
+        @Override public String lspCode() { return "graphitron.update-rows.nullable-straddling-reference"; }
     }
 
     /**

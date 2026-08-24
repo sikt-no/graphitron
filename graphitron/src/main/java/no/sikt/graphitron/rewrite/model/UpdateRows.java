@@ -5,7 +5,8 @@ import java.util.List;
 /**
  * The UPDATE-shape walker carrier. Holds the matched key identity plus the SET and WHERE
  * column partitions {@code UpdateRowsWalker} derived from the DML input and the jOOQ
- * catalog. Rides the {@link OperationMember.Write.Update} arm alongside the slim {@link InputArgRef} arg surface.
+ * catalog, and the value-agreement obligations the two partitions' overlap produces.
+ * Rides the {@link OperationMember.Write.Update} arm alongside the slim {@link InputArgRef} arg surface.
  *
  * <p>The family is sealed with one arm today ({@link Identified}); keeping it sealed rather than
  * collapsing to a bare record leaves room for a future UPDATE shape without reworking consumers.
@@ -22,10 +23,18 @@ public sealed interface UpdateRows permits UpdateRows.Identified {
 
     List<KeyColumn> keyColumns();
 
+    /**
+     * The columns two input fields both decode a value for, each to be checked equal before the DML
+     * runs. Empty for the common shape, where no reference carrier lands on a matched-key column.
+     * See {@link AgreementObligation} for which carriers produce a row.
+     */
+    List<AgreementObligation> agreementObligations();
+
     record Identified(
         MatchedKey matchedKey,
         List<SetColumn> setColumns,
-        List<KeyColumn> keyColumns
+        List<KeyColumn> keyColumns,
+        List<AgreementObligation> agreementObligations
     ) implements UpdateRows {
         public Identified {
             if (matchedKey == null) {
@@ -33,6 +42,7 @@ public sealed interface UpdateRows permits UpdateRows.Identified {
             }
             setColumns = List.copyOf(setColumns);
             keyColumns = List.copyOf(keyColumns);
+            agreementObligations = List.copyOf(agreementObligations);
             if (setColumns.isEmpty()) {
                 throw new IllegalArgumentException(
                     "Identified.setColumns cannot be empty; the walker rejects empty-SET inputs "

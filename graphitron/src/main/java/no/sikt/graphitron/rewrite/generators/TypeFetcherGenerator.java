@@ -39,6 +39,7 @@ import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
+import no.sikt.graphitron.rewrite.model.AgreementObligation;
 import no.sikt.graphitron.rewrite.model.ColumnOverlap;
 import no.sikt.graphitron.rewrite.model.ColumnOverlap.OverlapColumn;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -2978,57 +2979,52 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Cross-partition (WHERE∩SET) value-agreement preamble for the single-row UPDATE. A
-     * self-FK {@code @reference} routes its lifted columns wholly to SET ({@code UpdateRowsWalker})
-     * while the row identity comes from the WHERE (matched-key) partition, so a column the self-FK
-     * shares with the identity field (e.g. {@code email.mailbox_id}: the FK
-     * {@code email_in_reply_to_fk} shares {@code mailbox_id} with the PK) appears in BOTH partitions.
-     * The FK constraint forces the two equal for any well-formed input, but a malformed input could
-     * disagree, so this checks agreement before the DML runs. Intersecting two partitions is a
-     * different operation from {@link #emitSetAgreementPreamble}'s within-clause grouping, so it
-     * stays a named sibling: it adopts the shared {@link SetGroupWriter} leaf view and the
-     * value-read seam ({@link #emitAgreementDecodeLocal} / {@link #appendAgreementValue}) but keeps
-     * its bespoke intersection walk; a single site with no drift partner does not earn an
-     * extracted {@code intersectByColumn} primitive.
+     * Cross-partition value-agreement preamble for the single-row UPDATE, one check per
+     * {@link AgreementObligation} the walker recorded. Two carriers produce obligations: a self-FK
+     * {@code @reference}, whose lifted columns route wholly to SET so a column it shares with the
+     * identity field (e.g. {@code email.mailbox_id}: the FK {@code email_in_reply_to_fk} shares
+     * {@code mailbox_id} with the PK) is written and checked; and a straddling cross-table
+     * reference, whose in-key column another field already pins, so it is checked and neither
+     * filtered nor written. The FK constraint forces the two values equal for any well-formed input,
+     * but both arrive on the wire and a malformed input can disagree, so this runs before the DML.
      *
-     * <p>For each column present in both a key group and a set group: each side is re-decoded into a
-     * self-contained preamble-local record (presence-guarded; a present-but-mismatched id decodes to
-     * {@code null} and is skipped here, the WHERE/SET decode locals surfacing the throw), the present
-     * values gathered into a {@code List} and pairwise-checked through {@code requireColumnAgreement}
-     * (coerced via the column {@code DataType}). The throw names both contributing input fields (the
-     * identity field and the self-FK field), mirroring {@link #emitInsertAgreementPrep}'s label. Emits
-     * nothing (byte-identical) when there is no key∩set overlap, so a non-self-FK UPDATE is untouched.
+     * <p>The obligations are the walker's finished decision, so this emitter no longer intersects
+     * the two partitions for itself. That matters beyond tidiness: the carrier has four emit
+     * consumers and a re-derived intersection is something a consumer can silently omit, which is
+     * how the two payload-returning arms came to ship without this check at all. It still adapts
+     * both sides into the shared {@link SetGroupWriter} leaf view to reach the value-read seam
+     * ({@link #emitAgreementDecodeLocal} / {@link #appendAgreementValue}); what it reads off the
+     * obligation is which pair to check and at which decode slot on each side.
+     *
+     * <p>Per obligation: each side is re-decoded into a self-contained preamble-local record
+     * (presence-guarded; a present-but-mismatched id decodes to {@code null} and is skipped here, the
+     * WHERE/SET decode locals surfacing the throw), the present values gathered into a {@code List}
+     * and pairwise-checked through {@code requireColumnAgreement} (coerced via the column
+     * {@code DataType}). The throw names both contributing input fields, mirroring
+     * {@link #emitInsertAgreementPrep}'s label. Emits nothing when there are no obligations, so an
+     * UPDATE with no overlap is untouched.
      */
     private static void emitKeySetAgreementPreamble(
             CodeBlock.Builder block, List<SetGroup> keyGroups, List<SetGroup> setGroups,
+            List<AgreementObligation> obligations,
             String mapLocal, String decodeLocalPrefix,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
-        // Both partitions adapt into the shared SetGroupWriter leaf view; the bespoke intersection
-        // then reads each view's wrapped group / index. The first key contributor per column.
-        record KeyHit(SetGroupWriter writer, int slot) {}
-        var keyWriters = setGroupWriters(keyGroups);
-        var keyByColumn = new java.util.LinkedHashMap<String, KeyHit>();
-        for (var kw : keyWriters) {
-            for (var sc : kw.group().columns()) {
-                keyByColumn.putIfAbsent(sc.column().sqlName(), new KeyHit(kw, sc.slot()));
-            }
-        }
-        // shared columns: a set-group column that is also a key column, carrying its key contributor and
-        // its set contributor (the view + slot on each side) and the resolved column.
-        record SharedHit(KeyHit key, SetGroupWriter setWriter, int setSlot, ColumnRef column) {}
-        var shared = new ArrayList<SharedHit>();
+        if (obligations.isEmpty()) return;
+        // Each side names an input field; its group is the one emitting that field's decode local,
+        // found by the wire access path both are keyed on.
+        var keyByPath = groupIndexByAccessPath(keyGroups);
+        var setByPath = groupIndexByAccessPath(setGroups);
+        record Sides(int keyGroupIndex, int refGroupIndex) {}
+        var sides = new ArrayList<Sides>(obligations.size());
         var keyDecodeGroups = new LinkedHashSet<Integer>();
         var setDecodeGroups = new LinkedHashSet<Integer>();
-        for (var sw : setGroupWriters(setGroups)) {
-            for (var sc : sw.group().columns()) {
-                var kh = keyByColumn.get(sc.column().sqlName());
-                if (kh == null) continue;
-                shared.add(new SharedHit(kh, sw, sc.slot(), sc.column()));
-                if (kh.writer().group().nidk() != null) keyDecodeGroups.add(kh.writer().index());
-                if (sw.group().nidk() != null) setDecodeGroups.add(sw.index());
-            }
+        for (var ob : obligations) {
+            int kgi = requireGroup(keyByPath, ob.keySide(), "WHERE");
+            int rgi = requireGroup(setByPath, ob.referenceSide(), "SET");
+            sides.add(new Sides(kgi, rgi));
+            if (keyGroups.get(kgi).nidk() != null) keyDecodeGroups.add(kgi);
+            if (setGroups.get(rgi).nidk() != null) setDecodeGroups.add(rgi);
         }
-        if (shared.isEmpty()) return;
 
         var listCn = ClassName.get("java.util", "List");
         var arrayListCn = ClassName.get("java.util", "ArrayList");
@@ -3039,31 +3035,76 @@ public class TypeFetcherGenerator {
         for (int gi : setDecodeGroups) {
             emitAgreementDecodeLocal(block, setGroups.get(gi), mapLocal, decodeLocalPrefix + "AgreeS_" + gi, "ksaS" + gi);
         }
-        for (int ci = 0; ci < shared.size(); ci++) {
-            var sh = shared.get(ci);
-            var keyGroup = sh.key().writer().group();
-            var setGroup = sh.setWriter().group();
-            var col = sh.column();
+        for (int ci = 0; ci < obligations.size(); ci++) {
+            var ob = obligations.get(ci);
+            var keyGroup = keyGroups.get(sides.get(ci).keyGroupIndex());
+            var refGroup = setGroups.get(sides.get(ci).refGroupIndex());
+            var col = ob.column();
             String listName = decodeLocalPrefix + "Agree" + ci;
             String label = "input fields '" + String.join(".", keyGroup.accessPath()) + "', '"
-                + String.join(".", setGroup.accessPath()) + "'";
-            // The self-FK SET side always carries a @nodeId decode, so an encoder class is available;
-            // fall back to the key side defensively if only it decodes.
-            ClassName encoderClass = setGroup.nidk() != null
-                ? setGroup.nidk().decodeMethod().encoderClass()
-                : keyGroup.nidk().decodeMethod().encoderClass();
+                + String.join(".", refGroup.accessPath()) + "'";
             block.addStatement("$T<$T> $L = new $T<>()", listCn, Object.class, listName, arrayListCn);
-            appendAgreementValue(block, keyGroup, sh.key().slot(), mapLocal,
-                decodeLocalPrefix + "AgreeK_" + sh.key().writer().index(), listName, "ksaK" + ci);
-            appendAgreementValue(block, setGroup, sh.setSlot(), mapLocal,
-                decodeLocalPrefix + "AgreeS_" + sh.setWriter().index(), listName, "ksaS" + ci);
+            appendAgreementValue(block, keyGroup, ob.keySide().decodeSlot(), mapLocal,
+                decodeLocalPrefix + "AgreeK_" + sides.get(ci).keyGroupIndex(), listName, "ksaK" + ci);
+            appendAgreementValue(block, refGroup, ob.referenceSide().decodeSlot(), mapLocal,
+                decodeLocalPrefix + "AgreeS_" + sides.get(ci).refGroupIndex(), listName, "ksaS" + ci);
             String idx = listName + "Idx";
             block.beginControlFlow("for (int $L = 1; $L < $L.size(); $L++)", idx, idx, listName, idx)
                 .addStatement("$T.requireColumnAgreement($S, $T.$L.$L.getDataType(), $L.get(0), $L.get($L))",
-                    encoderClass, label, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                    agreementEncoder(ob, refGroup, keyGroup), label,
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
                     listName, listName, idx)
                 .endControlFlow();
         }
+    }
+
+    /**
+     * The WHERE partition projected into the {@link SetGroup} shape, so the agreement preamble reads
+     * a key side and a reference side through one accessor set. Only the access path and the decode
+     * extraction are consulted there, both of which a {@link KeyColumn} already carries.
+     */
+    private static List<SetGroup> keyColumnsAsSetGroups(List<KeyColumn> keyColumns) {
+        return setGroupsOf(keyColumns.stream()
+            .map(kc -> new SetColumn(kc.sdlFieldName(), kc.targetColumn(), kc.extraction(), kc.decodeSlot()))
+            .toList());
+    }
+
+    /** Position of each {@link SetGroup} in {@code groups}, keyed by its wire access path. */
+    private static Map<List<String>, Integer> groupIndexByAccessPath(List<SetGroup> groups) {
+        var out = new java.util.LinkedHashMap<List<String>, Integer>();
+        for (int gi = 0; gi < groups.size(); gi++) {
+            out.putIfAbsent(groups.get(gi).accessPath(), gi);
+        }
+        return out;
+    }
+
+    /** The group emitting {@code side}'s decode local. An obligation names input fields the walker
+     *  read off the same partitions these groups project, so a miss is a walker/emitter disagreement
+     *  rather than an authoring error; fail loudly instead of skipping the check. */
+    private static int requireGroup(Map<List<String>, Integer> byPath, AgreementObligation.Side side,
+                                    String partitionName) {
+        var path = accessPathOf(side.sdlFieldName(), side.extraction());
+        var gi = byPath.get(path);
+        if (gi == null) {
+            throw new IllegalStateException("agreement obligation names input field '"
+                + String.join(".", path) + "' on the " + partitionName
+                + " side, but that partition carries no group for it");
+        }
+        return gi;
+    }
+
+    /** The {@code NodeIdEncoder} class hosting {@code requireColumnAgreement} for an obligation. The
+     *  reference side is a {@code @nodeId} carrier by construction, so its encoder is the one to use;
+     *  the key side answers only if a future carrier shape makes the reference side plain. */
+    private static ClassName agreementEncoder(AgreementObligation ob, SetGroup refGroup, SetGroup keyGroup) {
+        if (refGroup.nidk() != null) {
+            return refGroup.nidk().decodeMethod().encoderClass();
+        }
+        if (keyGroup.nidk() != null) {
+            return keyGroup.nidk().decodeMethod().encoderClass();
+        }
+        throw new IllegalStateException("agreement obligation on column '" + ob.column().sqlName()
+            + "' has no @nodeId decode on either side; nothing to decode means nothing to disagree");
     }
 
     /** Re-decode a key/set group's {@code @nodeId} wire value into a preamble-local record,
@@ -3347,80 +3388,89 @@ public class TypeFetcherGenerator {
     }
 
     /**
- * The bulk-path WHERE∩SET value-agreement, the per-row analogue of the single-row
-     * {@link #emitKeySetAgreementPreamble}. A self-FK {@code @reference} routes its lifted columns wholly
-     * to SET while the row identity comes from the WHERE key, so a column the self-FK shares with the
-     * identity field (e.g. {@code email.mailbox_id}) sits in both partitions. The shared column reaches
-     * {@code v} once from the WHERE side (the SET emitters skip it), is SET to that joined value (a no-op),
-     * and this check asserts the two writers agreed before the DML — the FK forces them equal, a malformed
-     * input could disagree.
+ * The bulk-path cross-partition value-agreement, the per-row analogue of the single-row
+     * {@link #emitKeySetAgreementPreamble}, and driven by the same {@link AgreementObligation} rows.
+     * A self-FK {@code @reference} routes its lifted columns wholly to SET while the row identity
+     * comes from the WHERE key, so a column it shares with the identity field (e.g.
+     * {@code email.mailbox_id}) sits in both partitions: it reaches {@code v} once from the WHERE
+     * side (the SET emitters skip it), is SET to that joined value (a no-op), and this check asserts
+     * the two writers agreed. A straddling cross-table reference produces the same obligation for an
+     * in-key column another field pins, except that its column never enters {@code v} at all: it is
+     * neither a key group nor a set group, so the derived-table alias stays duplicate-free by
+     * construction rather than by the {@code lookupSqlNames} skip.
      *
      * <p>Unlike the single-row preamble, this re-uses the per-row decode locals already emitted in the row
      * loop — the WHERE-side {@code bulkKey<gi>} / {@code bulkKey<gi>_<bi>} ({@link #emitLookupKeyDecodeLocals})
      * and the SET-side {@code <decodeLocalPrefix>_<gi>} ({@link #emitBulkSetDecodeLocals}) — rather than
      * re-decoding, so the generated row body decodes each id once. Both locals are non-null by the time
      * this runs (their declarations throw on a present-but-mismatched id), so the check is a single
-     * {@code requireColumnAgreement} call gated on the self-FK field's first-row presence; an omitted
-     * nullable self-FK skips it. Emits nothing (byte-identical) when there is no WHERE∩SET overlap.
+     * {@code requireColumnAgreement} call gated on the reference field's first-row presence; an omitted
+     * nullable self-FK skips it. Emits nothing when there are no obligations.
      */
     private static void emitBulkKeySetAgreement(
             CodeBlock.Builder block,
             List<InputColumnBindingGroup> keyGroups,
             List<SetGroup> setGroups,
+            List<AgreementObligation> obligations,
             String keyDecodeLocalPrefix,
             String setDecodeLocalPrefix,
             GeneratorUtils.ResolvedTableNames tablesOnly,
             TableRef tableRef) {
-        // WHERE-side value expression + source field name per key-column sqlName, reading the per-row
-        // decode locals emitLookupKeyDecodeLocals declared (mirrors emitLookupKeyCellAdds' value read).
-        record KeySide(CodeBlock value, String fieldName, CallSiteExtraction.NodeIdDecodeKeys nidk) {}
-        var keyByColumn = new java.util.LinkedHashMap<String, KeySide>();
+        if (obligations.isEmpty()) return;
+        // How to read one WHERE-side field's value at a given decode slot, off the per-row locals
+        // emitLookupKeyDecodeLocals declared (mirroring emitLookupKeyCellAdds' value read). Keyed by
+        // wire access path, which is what an obligation's side names; the walker already decided
+        // which column pairs with which field, so there is no per-column intersection here.
+        record KeyReader(String recordLocal, List<String> accessPath) {
+            CodeBlock valueAt(int slot) {
+                return recordLocal != null
+                    ? CodeBlock.of("$L.value$L()", recordLocal, slot + 1)
+                    : ArgCallEmitter.nestedMapValueExpr("row", accessPath);
+            }
+        }
+        var keyByPath = new java.util.LinkedHashMap<List<String>, KeyReader>();
         for (int gi = 0; gi < keyGroups.size(); gi++) {
             switch (keyGroups.get(gi)) {
                 case InputColumnBindingGroup.MapGroup mg -> {
                     for (int bi = 0; bi < mg.bindings().size(); bi++) {
                         var binding = mg.bindings().get(bi);
-                        var leaf = leafExtractionOf(binding.extraction());
-                        CodeBlock value = leaf instanceof CallSiteExtraction.NodeIdDecodeKeys
-                            ? CodeBlock.of("$L_$L.value$L()", keyDecodeLocalPrefix + gi, bi, binding.decodeSlot() + 1)
-                            : ArgCallEmitter.nestedMapValueExpr("row", accessPathOf(binding.fieldName(), binding.extraction()));
-                        keyByColumn.putIfAbsent(binding.targetColumn().sqlName(),
-                            new KeySide(value, binding.fieldName(),
-                                leaf instanceof CallSiteExtraction.NodeIdDecodeKeys n ? n : null));
+                        var path = accessPathOf(binding.fieldName(), binding.extraction());
+                        boolean decoded = leafExtractionOf(binding.extraction())
+                            instanceof CallSiteExtraction.NodeIdDecodeKeys;
+                        keyByPath.putIfAbsent(path, new KeyReader(
+                            decoded ? keyDecodeLocalPrefix + gi + "_" + bi : null, path));
                     }
                 }
-                case InputColumnBindingGroup.DecodedRecordGroup drg -> {
-                    for (var binding : drg.bindings()) {
-                        keyByColumn.putIfAbsent(binding.targetColumn().sqlName(),
-                            new KeySide(CodeBlock.of("$L.value$L()", keyDecodeLocalPrefix + gi, binding.index() + 1),
-                                drg.sourceFieldName(), drg.extraction()));
-                    }
-                }
+                case InputColumnBindingGroup.DecodedRecordGroup drg ->
+                    keyByPath.putIfAbsent(drg.accessPath(),
+                        new KeyReader(keyDecodeLocalPrefix + gi, drg.accessPath()));
             }
         }
-        for (int gi = 0; gi < setGroups.size(); gi++) {
-            var sg = setGroups.get(gi);
-            for (var sc : sg.columns()) {
-                var col = sc.column();
-                int s = sc.slot();
-                var keySide = keyByColumn.get(col.sqlName());
-                if (keySide == null) continue; // not a WHERE∩SET column.
-                CodeBlock setValue = sg.nidk() != null
-                    ? CodeBlock.of("$L_$L.value$L()", setDecodeLocalPrefix, gi, s + 1)
-                    : ArgCallEmitter.nestedMapValueExpr("row", sg.accessPath());
-                // A WHERE∩SET column always carries a @nodeId decode on at least one side (a self-FK SET
-                // reference; the key field is typically a @nodeId too), so an encoder class is available.
-                ClassName encoderClass = sg.nidk() != null
-                    ? sg.nidk().decodeMethod().encoderClass()
-                    : keySide.nidk().decodeMethod().encoderClass();
-                String label = "input fields '" + keySide.fieldName() + "', '"
-                    + String.join(".", sg.accessPath()) + "'";
-                block.beginControlFlow("if ($L)", firstRowSetPresenceExpr(sg.accessPath(), "ksa" + gi + "_" + s));
-                block.addStatement("$T.requireColumnAgreement($S, $T.$L.$L.getDataType(), $L, $L)",
-                    encoderClass, label, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
-                    keySide.value(), setValue);
-                block.endControlFlow();
+        var setByPath = groupIndexByAccessPath(setGroups);
+        for (var ob : obligations) {
+            var keyPath = accessPathOf(ob.keySide().sdlFieldName(), ob.keySide().extraction());
+            var keyReader = keyByPath.get(keyPath);
+            if (keyReader == null) {
+                throw new IllegalStateException("agreement obligation names input field '"
+                    + String.join(".", keyPath) + "' on the WHERE side, but the bulk lookup key"
+                    + " carries no binding for it");
             }
+            int rgi = requireGroup(setByPath, ob.referenceSide(), "SET");
+            var refGroup = setGroups.get(rgi);
+            var col = ob.column();
+            int refSlot = ob.referenceSide().decodeSlot();
+            CodeBlock refValue = refGroup.nidk() != null
+                ? CodeBlock.of("$L_$L.value$L()", setDecodeLocalPrefix, rgi, refSlot + 1)
+                : ArgCallEmitter.nestedMapValueExpr("row", refGroup.accessPath());
+            String label = "input fields '" + String.join(".", keyPath) + "', '"
+                + String.join(".", refGroup.accessPath()) + "'";
+            block.beginControlFlow("if ($L)",
+                firstRowSetPresenceExpr(refGroup.accessPath(), "ksa" + rgi + "_" + refSlot));
+            block.addStatement("$T.requireColumnAgreement($S, $T.$L.$L.getDataType(), $L, $L)",
+                agreementEncoder(ob, refGroup, refGroup), label,
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                keyReader.valueAt(ob.keySide().decodeSlot()), refValue);
+            block.endControlFlow();
         }
     }
 
@@ -3454,7 +3504,7 @@ public class TypeFetcherGenerator {
 
         if (inputArg.list()) {
             return buildBulkUpdateFetcher(ctx, f, outputPackage, inputArg, tableRef, tablesOnly, tableLocal,
-                setGroups, keyGroups, row, carrierDsl);
+                setGroups, keyGroups, w.updateRows().agreementObligations(), row, carrierDsl);
         }
 
         // Single-row UPDATE: build the SET clause dynamically from the present-key set so absent
@@ -3475,10 +3525,9 @@ public class TypeFetcherGenerator {
         // forces them equal, this checks it before the DML. Key-side groups are projected into the
         // SetGroup shape (by access path, nidk peeled) so the preamble reads each side's slot uniformly.
         // No-op (byte-identical) when there is no key∩set overlap.
-        var keySetGroups = setGroupsOf(w.updateRows().keyColumns().stream()
-            .map(kc -> new SetColumn(kc.sdlFieldName(), kc.targetColumn(), kc.extraction(), kc.decodeSlot()))
-            .toList());
-        emitKeySetAgreementPreamble(postInGuard, keySetGroups, setGroups, "in", "keySet", tablesOnly, tableRef);
+        var keySetGroups = keyColumnsAsSetGroups(w.updateRows().keyColumns());
+        emitKeySetAgreementPreamble(postInGuard, keySetGroups, setGroups,
+            w.updateRows().agreementObligations(), "in", "keySet", tablesOnly, tableRef);
         emitSetMapPuts(postInGuard, setGroups, "sets", "in", "in",
             "setKey", tablesOnly, tableRef);
         // Runtime PATCH guard: the carrier guarantees the schema has at least one settable column,
@@ -3528,6 +3577,7 @@ public class TypeFetcherGenerator {
                                                      String tableLocal,
                                                      List<SetGroup> setGroups,
                                                      List<InputColumnBindingGroup> keyGroups,
+                                                     List<AgreementObligation> agreementObligations,
                                                      no.sikt.graphitron.command.LauncherCommand row,
                                                      no.sikt.graphitron.command.CarrierDsl carrierDsl) {
         var fieldClass = ClassName.get("org.jooq", "Field");
@@ -3590,7 +3640,8 @@ public class TypeFetcherGenerator {
         emitSetBulkCellAdds(postInGuard, setGroups, lookupSqlNames, "bulkSetKey", tablesOnly, tableRef);
         // WHERE∩SET per-row value agreement (self-FK shared column), reusing the bulkKey / bulkSetKey
         // decode locals declared above this in the loop body. No-op when there is no cross-partition overlap.
-        emitBulkKeySetAgreement(postInGuard, groups, setGroups, "bulkKey", "bulkSetKey", tablesOnly, tableRef);
+        emitBulkKeySetAgreement(postInGuard, groups, setGroups, agreementObligations,
+            "bulkKey", "bulkSetKey", tablesOnly, tableRef);
         postInGuard.addStatement("vRows.add($T.row(cells.toArray(new $T<?>[0])))", DSL, fieldClass);
         postInGuard.endControlFlow();
         postInGuard.addStatement("$T<?> v = $T.values(vRows.toArray(new $T[0])).as($S, vColNames.toArray(new String[0]))",
@@ -4848,10 +4899,13 @@ public class TypeFetcherGenerator {
             case OperationMember.Write.Update w -> {
                 var setGroups = setGroupsOf(w.updateRows().setColumns());
                 var keyGroups = keyGroupsOf(w.updateRows().keyColumns());
+                var keySetGroups = keyColumnsAsSetGroups(w.updateRows().keyColumns());
+                var obligations = w.updateRows().agreementObligations();
                 yield buildSingleRecordTwoStepFetcher(
                     ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.qualifiedName(),
                     (tablesOnly, tableLocal) -> buildCarrierUpdateChainSingle(
-                        setGroups, keyGroups, w.inputArg().table(), tablesOnly, tableLocal),
+                        setGroups, keyGroups, keySetGroups, obligations,
+                        w.inputArg().table(), tablesOnly, tableLocal),
                     outputPackage);
             }
             case OperationMember.Write.Delete w -> {
@@ -4953,11 +5007,18 @@ public class TypeFetcherGenerator {
      */
     private static DmlChainAndGuards buildCarrierUpdateChainSingle(
             List<SetGroup> setGroups, List<InputColumnBindingGroup> keyGroups,
+            List<SetGroup> keySetGroups, List<AgreementObligation> agreementObligations,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {
         var fieldClass = ClassName.get("org.jooq", "Field");
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var preGuard = CodeBlock.builder();
         preGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
+        // Cross-partition value agreement, the same check the direct-return single-row body runs.
+        // This arm shipped without it: it re-derived nothing and simply omitted the intersection, so
+        // a self-FK overlap reaching a payload-returning UPDATE went unchecked. Consuming the
+        // walker's obligations is what makes the omission impossible rather than merely fixed.
+        emitKeySetAgreementPreamble(preGuard, keySetGroups, setGroups, agreementObligations,
+            "in", "keySet", tablesOnly, tableRef);
         emitSetMapPuts(preGuard, setGroups, "sets", "in", "in", "setKey", tablesOnly, tableRef);
         // Runtime PATCH guard: the carrier guarantees the schema has at least one settable column,
         // but a caller may omit every set-field value (sending only key columns); fail with a
@@ -5160,7 +5221,9 @@ public class TypeFetcherGenerator {
                 yield buildBulkRecordTwoStepFetcher(
                     ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.qualifiedName(),
                     (tablesOnly, tableLocal, pkCols, recordRowType) -> buildCarrierBulkPerRowUpdateBody(
-                        setGroups, keyGroups, w.inputArg().table(), tablesOnly, tableLocal, pkCols, recordRowType),
+                        setGroups, keyGroups, keyColumnsAsSetGroups(w.updateRows().keyColumns()),
+                        w.updateRows().agreementObligations(),
+                        w.inputArg().table(), tablesOnly, tableLocal, pkCols, recordRowType),
                     outputPackage);
             }
             case OperationMember.Write.Delete w -> {
@@ -5266,12 +5329,18 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock buildCarrierBulkPerRowUpdateBody(
             List<SetGroup> setGroups, List<InputColumnBindingGroup> keyGroups,
+            List<SetGroup> keySetGroups, List<AgreementObligation> agreementObligations,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal,
             List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols, TypeName recordRowType) {
         var fieldClass = ClassName.get("org.jooq", "Field");
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var body = CodeBlock.builder();
         body.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
+        // Per-row cross-partition agreement. This arm is a loop of single-row UPDATEs rather than
+        // the VALUES-join shape, so it takes the single-row preamble with the per-row map local; like
+        // its single-payload sibling it shipped without any such check.
+        emitKeySetAgreementPreamble(body, keySetGroups, setGroups, agreementObligations,
+            "row", "keySet", tablesOnly, tableRef);
         emitSetMapPuts(body, setGroups, "sets", "row", "row", "setKey", tablesOnly, tableRef);
         body.beginControlFlow("if (sets.isEmpty())")
             .addStatement("throw new $T($S)", IllegalArgumentException.class,
