@@ -1585,10 +1585,16 @@ a test of its own rather than through three relations' delegation, including the
 which is load-bearing: consumers fold these rows into emitted files, so a map reading out in hash
 order would make generated output depend on coordinate names.
 
-On the performance bar: this is better or equal by construction and not by measurement. A map read
-replaces a scan and a per-call map rebuild goes away, against one map built per relation at
-construction, which the key rejection already had to build. No claim beyond that is made here, and
-none was measured, which is the discipline the reverted hop-pairing patch bought.
+This change makes no performance claim, and the first version of this section made one it should not
+have: that it was "better or equal by construction". Better or equal is a measurement, and there is no
+honest instrument here for it. The relations hold dozens of rows, the repo has no microbenchmark
+harness, and reactor wall-clock is not evidence. A map read replacing a scan and a per-call map
+rebuild going away are descriptions of the diff, not results; the reason to make the change was that
+three relations were restating one key, which is an argument about duplication and stands on its own.
+
+The Java-side cost here that *is* measurable is the one deferred below: two producers scanning the
+whole condition relation once per coordinate. That is the same shape the store's own comments warn
+about, a relation re-evaluated per driving row, and it gets measured in the increment that fixes it.
 
 One thing the reading turned up and this change does not address, recorded for the family that
 inherits it: both `LauncherCommands.conditionRowOf` and `FetcherEdgeCommands.addConditionGlueTargets`
@@ -1598,8 +1604,8 @@ with the conditions conversion rather than here.
 ### Conditions, first increment: the argument-site column resolution
 
 The availability check named one genuinely new classifier arm across all five remaining producers,
-and this is it. Landed as store work alone: two views, no producer converted yet, which keeps the
-modelling question separate from the conversion that will consume it.
+and this is it. Landed as store work alone: two relations and one registration, no producer converted
+yet, which keeps the modelling question separate from the conversion that will consume it.
 
 **What was missing, precisely.** A generated condition filter is one predicate per column-backed
 argument. `intent_argument_scope_table` already answered which table an argument's content binds
@@ -1648,17 +1654,67 @@ a computed one. `FactWrites` exists for exactly this and already documented it; 
 have a written statement there. The build found this rather than review did, which is the write path's
 gate working as intended.
 
-**Read cost, measured rather than assumed.** The derived read-cost gate prices every
-(registration, reaching view) pair, and the two new views put four new cells in that matrix: each
-reaches `intent_argument_scope_table` and `intent_spelled_table`. All four are monotonic, so neither
-view joins the pinned non-monotonic set and neither wants an index on this evidence. The domain pin
-moves 83 to 85 views, 47 to 49 with cells, 107 to 111 cells.
+**Read cost, measured.** The first version of this section claimed the read cost was measured when
+what had run was the monotonicity gate, which prices existing registrations against their readers and
+had priced these two views only as readers. It said nothing about what they cost, and the decision not
+to register them was an argument about reader count. Performance is measured here, so it was measured.
 
-Neither view is registered in `meta_materialize`, and that is a decision rather than an omission.
-Registration is the lever for a rule re-evaluated many times over a schema of real size, which is why
-the field-site scope carries one: several views join it per coordinate. These two have one prospective
-reader between them and it reads the relation whole, once per generation run. The day a second reader
-appears, or a per-coordinate read does, the question reopens with evidence behind it.
+The shared read-cost fixture could not answer it: its arguments are node-id keys and routine
+parameters, so it barely reaches the shape these relations exist for. The instrument is the same one
+that gate uses, `EXPLAIN ANALYZE` with the `scanCount` annotations summed, pointed at a filter-heavy
+fixture over the sakila catalog.
+
+[cols="4,1,1,1"]
+|===
+| | 44 args | 132 args | 264 args
+
+| `intent_argument_column_scope` as a view
+| 234
+| 2010
+| 4002
+
+| `intent_argument_column_match` as a view
+| 1056
+| 4472
+| 8924
+
+| either, read as a table
+| 45
+| 133
+| 265
+|===
+
+Linear at scale, 15.2 and 33.8 scans per argument. Two controls decided the rest.
+
+*Same fixture with and without an argument-site `@reference`.* The scope falls 4002 to 491, and
+`intent_argument_reference_step_target` alone falls 3371 to 8. So 84% of the scope's headline is the
+recursive walk it reads, a relation the store already had and which no reader had until now; the arm
+authored here costs about two scans per argument.
+
+*The registered field-site siblings, on the same store.* `intent_field_column_scope_live` costs 1052
+over 48 field sites (22 per site) and `intent_column_match_claim` 1419 (30 per site), against this
+pair's 15 and 34. The same order per site, and the field site registered its scope and left its match
+a plain view.
+
+*So register the scope, and measure that too.* With `intent_argument_column_scope` swapped for a table
+in place: its own read falls 4002 to 265, and the match falls 8924 to 5187, 27 milliseconds to 5. The
+no-reference control shows what that is: with no walk to re-derive, the match moves only 5125 to 4875.
+The 3737 saved *is* the walk, derived once at refresh instead of once per reader. Refresh is one
+evaluation per graph, the 4002 a single read already paid, and the fill measured 18 milliseconds.
+
+The reader count was the other thing stated wrongly. "One prospective reader between them" counted
+only the future producer, and missed that `intent_argument_column_match` reads the scope today, in the
+store. That is the reader the registration is for, and the doctrine's requirement that a registration
+be made in the increment carrying its reader is satisfied by it rather than by the producer to come.
+
+Both index shapes the registry roster demands be tried were tried: the argument coordinate, and the
+resolved-table triple. Neither moves any reader at all, to the scan. The one reader drives from the
+relation first in its own FROM clause, so there is no per-row seek for an index to serve. That is a
+roster row now, with the numbers in it.
+
+The domain pin moves 83 to 85 views and 47 to 49 with cells; cells go 107 to 110 rather than to 111,
+which is its own small confirmation: registering the scope cut the match's transitive reach through it,
+the same mechanism the scan counts show from the other side.
 
 **What the conditions conversion still owes.** Two of the three relations the availability check
 named: the condition membership fold and the facets, the latter being one of the five captured

@@ -85,11 +85,19 @@ class MaterializeRegistryGateTest {
      *   read are identical with either shape declared and with none. The table is a dozen rows
      *   and its readers arrive through joins the planner already orders correctly. Nothing to
      *   weigh.</li>
+     *   <li>{@code intent_argument_column_scope}: on the argument coordinate its one reader is
+     *   keyed by, and on the resolved-table triple that reader could in principle seek, no reader
+     *   moves at all, to the scan: {@code intent_argument_column_match} reads 5187 scans with
+     *   either shape declared and with none, and the target's own read stays 265. Its one reader
+     *   drives from it, first in its own FROM clause, so there is no per-row seek for an index to
+     *   serve. Nothing to weigh, and the field-site sibling above declines for its own reasons at
+     *   the same position in the same pair.</li>
      * </ul>
      */
     private static final Set<String> NO_INDEX = Set.of(
         "intent_resolved_type_binding",
         "intent_field_column_scope",
+        "intent_argument_column_scope",
         "intent_errors_field",
         "intent_carrier_data_field");
 

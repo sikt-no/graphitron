@@ -111,7 +111,7 @@ class DerivedReadCostTest {
      * cannot grow silently as views are added; a new view that puts new cells in the domain fails this
      * figure until somebody has looked at what it costs.
      */
-    private static final int CELLS = 111;
+    private static final int CELLS = 110;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
