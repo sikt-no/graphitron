@@ -1,7 +1,7 @@
 ---
 id: R826
 title: "intent_node_id_instruction costs 26 seconds per evaluation, and the fix is stranded on a quickfix branch"
-status: Ready
+status: In Progress
 bucket: model
 priority: 2
 theme: model-cleanup
