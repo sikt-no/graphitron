@@ -2011,8 +2011,10 @@ class FieldBuilder {
         // @nodeId takes; what differs is only where the value comes from (a wire scalar here, a
         // decoded node key there). Read the path before the local findColumn so the column never
         // mis-binds against the field's own table. An element-less path is the degenerate case and
-        // binds Local; see the construction site below. FK-derived paths only; a condition-join hop
-        // rejects (mirrors the condition glue renderer's reach emission).
+        // binds Local; see the construction site below. Every hop kind the path parser mints is
+        // admitted: the reach emission dispatches per hop on the On seal, so a developer-supplied
+        // predicate hop correlates through its two-argument call exactly as an FK hop correlates
+        // through its column pairs.
         if (arg.hasAppliedDirective(DIR_REFERENCE)) {
             // @reference is repeatable, so field-level applications compose the table
             // chain; order-composition has no meaning on an argument, so repetition here is a
@@ -2028,10 +2030,6 @@ class FieldBuilder {
             if (refPath.hasError()) {
                 return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                     Rejection.structural("argument '" + name + "': " + refPath.errorMessage()));
-            }
-            if (refPath.elements().stream().anyMatch(h -> !(h instanceof JoinStep.Hop hh && hh.on() instanceof On.ColumnPairs))) {
-                return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                    Rejection.structural(referenceFilterConditionJoinRejection(name)));
             }
             String refColumnName = argString(arg, DIR_FIELD, ARG_NAME).orElse(name);
             var refCol = svc.resolveColumnForReference(refColumnName, refPath.elements(), rt);
@@ -2164,18 +2162,6 @@ class FieldBuilder {
         var bindings = enumMappingResolver.buildLookupBindings(resolvedFields, errors);
         return ArgumentRef.InputTypeArg.TableInputArg.of(
             name, typeName, nonNull, list, rt, bindings, argCondition, resolvedFields);
-    }
-
-    /**
-     * Shared rejection text for a scalar {@code @reference} filter path that traverses a
-     * non-foreign-key (condition-join) hop: reference filters emit the correlated EXISTS through
-     * FK hops only, so a filter path through a condition hop is rejected at validate time.
-     * Mirrored by the validator.
-     */
-    static String referenceFilterConditionJoinRejection(String argName) {
-        return "argument '" + argName + "': @reference filter path traverses a condition-join "
-            + "(non-foreign-key) hop, which is not yet supported; reference filters emit a "
-            + "foreign-key correlated subquery and require every hop to resolve to a foreign key";
     }
 
     private ArgumentRef classifyOrderByArg(GraphQLArgument arg, String name, String typeName,
@@ -8174,8 +8160,7 @@ class FieldBuilder {
             Optional<ColumnRef> column = svc.resolveColumnForReference(columnName, refPath.elements(), tableType);
             if (column.isEmpty()) {
                 List<String> candidates = svc.terminalTableForReference(refPath.elements(), tableType.table())
-                    .map(t -> t.allColumns().stream().map(ColumnRef::javaName).toList())
-                    .orElse(List.of());
+                    .allColumns().stream().map(ColumnRef::javaName).toList();
                 return new UnclassifiedField(parentTypeName, name, location, Rejection.unknownColumn(
                     "column '" + columnName + "' could not be resolved in the jOOQ table",
                     columnName, candidates));

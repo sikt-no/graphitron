@@ -196,12 +196,8 @@ public final class PathFragments {
         return switch (correlation) {
             case ParentCorrelation.OnFkSlots fk ->
                 JoinFragments.emitCorrelationWhere(fk.slots(), firstAlias, parentLocal);
-            case ParentCorrelation.OnParentJoin pj -> switch (pj.firstHop().on()) {
-                case On.ColumnPairs cp -> JoinFragments.emitCorrelationWhere(cp, firstAlias, parentLocal);
-                case On.Predicate pred -> emitTwoArgMethodCall(pred.condition(), parentLocal, firstAlias);
-                case On.Lateral ignored -> throw new IllegalStateException(
-                    "ParentCorrelation.OnParentJoin cannot wrap a lateral hop");
-            };
+            case ParentCorrelation.OnParentJoin pj ->
+                hopZeroCorrelation(pj.firstHop(), firstAlias, parentLocal);
             case ParentCorrelation.OnLateralArgs ignored -> CodeBlock.of("$T.noCondition()", DSL);
             case ParentCorrelation.OnLiftedSlots ignored -> throw new IllegalStateException(
                 "ParentCorrelation.OnLiftedSlots never reaches a " + pathKindLabel + " projection "
@@ -209,8 +205,32 @@ public final class PathFragments {
         };
     }
 
-    /** Per-hop {@code filter()} condition-method calls appended to the enclosing WHERE. */
-    public static void appendHopFilters(CodeBlock.Builder where, List<JoinStep> path,
+    /**
+     * The hop-0 correlation of a path walked back to its first hop: an exhaustive dispatch on the
+     * hop's {@link On}, tying the first hop's alias back to the enclosing statement's parent
+     * local. Column pairs correlate on the FK slots; a developer-supplied predicate correlates
+     * through its two-argument call, {@code (parentLocal, firstAlias)}, the same
+     * {@code (source, target)} convention {@link #appendHopFilters} and the bridging arms emit.
+     *
+     * <p>Both the projection rail ({@link #correlationWhere}'s
+     * {@link ParentCorrelation.OnParentJoin} arm) and the filter rail's correlated {@code EXISTS}
+     * come through here, so a future {@code On} arm has exactly one place to land.
+     */
+    public static CodeBlock hopZeroCorrelation(JoinStep.Hop hop, String firstAlias, String parentLocal) {
+        return switch (hop.on()) {
+            case On.ColumnPairs cp -> JoinFragments.emitCorrelationWhere(cp, firstAlias, parentLocal);
+            case On.Predicate pred -> emitTwoArgMethodCall(pred.condition(), parentLocal, firstAlias);
+            case On.Lateral ignored -> throw new IllegalStateException(
+                "ParentCorrelation.OnParentJoin cannot wrap a lateral hop");
+        };
+    }
+
+    /**
+     * Per-hop {@code filter()} condition-method calls appended to the enclosing WHERE. Takes the
+     * path at the sealed root so both the projection rail's {@code List<JoinStep>} and the filter
+     * rail's hop-typed reach can hand it their own list unchanged.
+     */
+    public static void appendHopFilters(CodeBlock.Builder where, List<? extends JoinStep> path,
             List<String> aliases, String parentLocal, String andFormat) {
         for (int i = 0; i < path.size(); i++) {
             if (path.get(i) instanceof JoinStep.Hop hop && hop.filter() != null) {

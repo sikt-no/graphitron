@@ -1,13 +1,15 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.command.Predicate;
+import no.sikt.graphitron.command.ReachPath;
+import no.sikt.graphitron.plan.ConditionCommands;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
-import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -35,8 +37,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * design principles; the EXISTS body shape itself is locked at the unit tier in
  * the glue renderer's per-arm tests, and semantic correctness at the execution tier in
  * {@code GraphQLQueryTest}. The discrimination guard (a <em>direct</em> nodeId FK-target stays
- * local), the element-less {@code path: []} degenerate case on both surfaces, and the
- * condition-join-path rejection round out the matrix.
+ * local), the element-less {@code path: []} degenerate case on both surfaces, and condition-join
+ * hops in every position (hop 0, terminal, and mixed with FK hops in both orders) round out the
+ * matrix. The condition-hop cases are the enforcers of the widened contract: neither surface
+ * carries a shape check for those paths any more, and its absence is what they pin.
  */
 @PipelineTier
 class ReferenceFilterRemoteColumnPipelineTest {
@@ -241,15 +245,15 @@ class ReferenceFilterRemoteColumnPipelineTest {
         assertThat(((BodyParam.Eq) bodyParams.get(0)).column().sqlName()).isEqualTo("title");
     }
 
-    // ===== Condition-join reference-filter path: clean rejection =====
+    // ===== Condition-join reference-filter paths: accepted on both surfaces =====
 
     @Test
-    void surface2_conditionJoinPath_isRejected() {
-        // v1 supports Fk-join reference-filter paths only; a {condition:} hop is deferred and must
-        // surface as a clean (typed) rejection rather than an emitter IllegalStateException. Uses a
-        // resolvable *intermediate* condition hop (film -> film_actor) with an FK terminal so the
-        // path parses to a condition-join step and the classifier's foreign-key-only guard fires.
-        var f = field("""
+    void surface2_conditionJoinPath_lowersToRemotePredicate() {
+        // A {condition:} hop in a filter path is a reach hop like any other: the reach emission
+        // dispatches per hop on the On seal, so the developer's predicate becomes the hop's ON
+        // inside the same correlated EXISTS an FK hop's column pairs produce. This case was the
+        // only rejection pin either surface had; it is now the acceptance pin.
+        var schema = TestSchemaHelper.buildSchema("""
             type Actor @table(name: "actor") { firstName: String }
             type Film @table(name: "film") { title: String }
             type Query {
@@ -260,17 +264,104 @@ class ReferenceFilterRemoteColumnPipelineTest {
                     ]) @field(name: "first_name")
                 ): [Film!]!
             }
-            """.formatted(STUB), "Query", "films");
-        assertThat(f).isInstanceOf(GraphitronField.UnclassifiedField.class);
-        assertThat(((GraphitronField.UnclassifiedField) f).reason())
-            .contains("condition-join")
-            .contains("foreign key");
+            """.formatted(STUB));
+
+        var remote = onlyRemotePredicate(schema, "films");
+        assertThat(remote.joinPath()).hasSize(2);
+        assertThat(remote.joinPath().get(0)).matches(TestFixtures::isConditionHop, "condition-join hop");
+        assertThat(remote.joinPath().get(1)).matches(TestFixtures::isFkHop, "FK-derived hop");
+        assertThat(((BodyParam.Eq) remote.inner()).column().sqlName()).isEqualTo("first_name");
+        assertThat(reachOf(schema, "films").hops()).hasSize(2);
+    }
+
+    @Test
+    void surface1_inputFilterField_conditionJoinPath_lowersToRemotePredicate() {
+        // The input-field surface's first condition-hop case, and its first enforcement in either
+        // direction: the retired validator mirror was never test-asserted here.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") { title: String }
+            input FilmFilter {
+                actorFirstName: String @field(name: "first_name") @reference(path: [
+                    {condition: {className: "%s", method: "intermediate"}},
+                    {table: "actor"}
+                ])
+            }
+            type Query { films(filter: FilmFilter): [Film!]! }
+            """.formatted(STUB));
+
+        var remote = onlyRemotePredicate(schema, "films");
+        assertThat(remote.joinPath()).hasSize(2);
+        assertThat(remote.joinPath().get(0)).matches(TestFixtures::isConditionHop, "condition-join hop");
+        assertThat(((BodyParam.Eq) remote.inner()).column().sqlName()).isEqualTo("first_name");
+        assertThat(reachOf(schema, "films").hops()).hasSize(2);
+    }
+
+    @Test
+    void surface2_conditionThenKeyPath_lowersInAuthoredHopOrder() {
+        // Mixed path, condition first: the reach carries the hops in authored order, so the
+        // renderer's walk-back and its hop-0 correlation land on the hops the author named.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films(
+                    actorFirstName: String @field(name: "first_name") @reference(path: [
+                        {condition: {className: "%s", method: "intermediate"}},
+                        {key: "film_actor_actor_id_fkey"}
+                    ])
+                ): [Film!]!
+            }
+            """.formatted(STUB));
+
+        var reach = reachOf(schema, "films");
+        assertThat(reach.hop(0).on()).isInstanceOf(On.Predicate.class);
+        assertThat(reach.hop(1).on()).isInstanceOf(On.ColumnPairs.class);
+        assertThat(reach.hop(1).targetTable().tableName()).isEqualToIgnoringCase("actor");
+    }
+
+    @Test
+    void surface2_keyThenConditionPath_lowersInAuthoredHopOrder() {
+        // The other order: an FK hop-0 correlation with a terminal condition hop, which is the
+        // bridging shape the output rail already executes. Both orders matter because hop 0 and
+        // the interior hops go through different dispatch points.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films(
+                    actorFirstName: String @field(name: "first_name") @reference(path: [
+                        {key: "film_actor_film_id_fkey"},
+                        {condition: {className: "%s", method: "junctionToActor"}}
+                    ])
+                ): [Film!]!
+            }
+            """.formatted(STUB));
+
+        var reach = reachOf(schema, "films");
+        assertThat(reach.hop(0).on()).isInstanceOf(On.ColumnPairs.class);
+        assertThat(reach.hop(1).on()).isInstanceOf(On.Predicate.class);
+        assertThat(reach.hop(1).targetTable().tableName()).isEqualToIgnoringCase("actor");
     }
 
     // ===== helpers =====
 
-    private static GraphitronField field(String sdl, String type, String name) {
-        return TestSchemaHelper.buildSchema(sdl).field(type, name);
+    /**
+     * The lowered reach of the coordinate's single remote term: the command-tier view of the
+     * classified path, which is what the renderer consumes. Asserting it here rather than the
+     * generated body keeps this tier's grain (rows, not code strings).
+     */
+    private static ReachPath reachOf(GraphitronSchema schema, String queryFieldName) {
+        var rows = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE).rows();
+        var row = rows.stream()
+            .filter(r -> r.coordinate().getFieldName().equals(queryFieldName))
+            .findFirst().orElseThrow(() -> new AssertionError("no condition row for " + queryFieldName));
+        var generated = row.predicates().stream()
+            .filter(Predicate.Generated.class::isInstance)
+            .map(Predicate.Generated.class::cast)
+            .findFirst().orElseThrow(() -> new AssertionError("no generated predicate on " + queryFieldName));
+        assertThat(generated.terms()).hasSize(1);
+        return generated.terms().get(0).reach();
     }
 
     private static List<BodyParam> bodyParams(GraphitronSchema schema, String queryFieldName) {

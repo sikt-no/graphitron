@@ -9,8 +9,9 @@ import no.sikt.graphitron.rewrite.model.CallParam;
  * name is the producer's decision, qualified and collision-free within its method, so no
  * generated parameter list exists to collide on bare input-field names.
  *
- * <p>This pairs a borrowed ref with producer data, like {@link FkHop}; it is not the cut
- * {@code Binding} type from the item's earlier draft (which copied the extraction vocabulary).
+ * <p>This pairs a borrowed ref with producer data, like {@link ReachPath} (borrowed model hops
+ * plus the producer's one narrowing); it is not a cut {@code Binding} type that would copy the
+ * extraction vocabulary.
  */
 public record ArgBinding(CallParam param, String localName) {
 

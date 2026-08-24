@@ -10,10 +10,10 @@ import java.util.List;
  * {@link #nonNull} is the presence-gating fact (the resolved call-site nullability conjunction,
  * {@code BodyParam.nonNull()} today): {@code false} means the rendered term is guarded on the
  * bound value. {@link #reach} empty means the term binds this row's own table; non-empty means a
- * correlated {@code EXISTS} over the proven FK hop path, with the comparison against the terminal
- * hop's alias. Reach sits per-term on the generated arm because the producer routes each binding
- * locally or remotely on its own, so one row routinely mixes a local equality with a remote
- * membership.
+ * correlated {@code EXISTS} over the {@link ReachPath}'s hops, with the comparison against the
+ * terminal hop's alias. Reach sits per-term on the generated arm because the producer routes each
+ * binding locally or remotely on its own, so one row routinely mixes a local equality with a
+ * remote membership.
  *
  * <p>The term carries its own {@link ArgBinding}: a comparison without the value it compares
  * against is unrepresentable, and no renderer indexes parallel term and binding lists in
@@ -24,7 +24,7 @@ public record ColumnTerm(
     MatchKind match,
     boolean nonNull,
     ArgBinding binding,
-    List<FkHop> reach
+    ReachPath reach
 ) {
 
     public ColumnTerm {
@@ -38,6 +38,6 @@ public record ColumnTerm(
         if (binding == null) {
             throw new IllegalArgumentException("a column term carries the binding it compares against");
         }
-        reach = reach == null ? List.of() : List.copyOf(reach);
+        reach = reach == null ? ReachPath.none() : reach;
     }
 }

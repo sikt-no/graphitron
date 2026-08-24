@@ -1669,10 +1669,10 @@ class BuildContext {
      * running across the whole chain — {@code stepIndexBase} carries the offset when the caller
      * walks a chain segment-by-segment (0 when the element list is the whole chain).
      *
-     * <p>{@code endsChain} narrows terminal treatment (a {@code {condition:}}-only terminal
-     * element resolves its target from the field's return {@code @table}) to the element that
-     * truly ends the field's chain: a segment followed by further chain nodes passes
-     * {@code false} so none of its elements read the return table.
+     * <p>{@code endsChain} narrows which element may read a declared target (the field's return
+     * {@code @table}, which a {@code {condition:}}-only element prefers over reflecting on its
+     * method signature) to the element that truly ends the field's chain: a segment followed by
+     * further chain nodes passes {@code false} so none of its elements read the return table.
      */
     private void resolvePathElements(List<?> elements, String fieldName, String startSqlTableName,
             String targetSqlTableName, boolean isList, int stepIndexBase, boolean endsChain,
@@ -1759,9 +1759,12 @@ class BuildContext {
      *       "where this hop lands" for both terminal {@code {table:}} and terminal {@code {key:}}
      *       elements, so this single comparison subsumes both author forms.</li>
      *   <li>Condition-join {@link JoinStep.Hop} — {@link TerminalTargetVerdict.Match} by
-     *       construction: {@code resolveConditionJoinTarget}'s terminal branch builds the target
-     *       from the return {@code @table}, so the comparison is tautological. The terminal
-     *       hop's method parameters are validated by Check 2, not here.</li>
+     *       construction: this gate returns {@link TerminalTargetVerdict.NotApplicable} unless
+     *       {@code returnTableRef} is non-null, and every call site passing one passes that same
+     *       table's name as the declared target, which {@code resolveConditionJoinTarget} prefers.
+     *       So wherever this arm compares, the declared target is what built the hop and the
+     *       comparison is tautological. The hop's method parameters are validated by Check 2,
+     *       not here.</li>
      *   <li>{@link JoinStep.LiftedHop} — unreachable; {@code @reference} path parsing never
      *       produces a {@code LiftedHop} (single-hop terminal only, from the {@code @sourceRow}
      *       leaf-PK arm, which passes a null start and so never reaches this gate).</li>
@@ -1792,8 +1795,8 @@ class BuildContext {
                 case On.ColumnPairs ignored -> hop.targetTable().denotesSameTableAs(returnTableRef)
                     ? new TerminalTargetVerdict.Match()
                     : new TerminalTargetVerdict.Mismatch(fieldName, hop.targetTable().tableName(), returnSqlTableName);
-                // Match by construction: resolveConditionJoinTarget's terminal branch builds
-                // the target from the return @table, so the comparison is tautological.
+                // Match by construction: wherever this gate compares at all, the declared target
+                // was available and resolveConditionJoinTarget prefers it, so it built this hop.
                 case On.Predicate ignored -> new TerminalTargetVerdict.Match();
                 // @reference path parsing never mints a lateral routine hop; routine
                 // chains are landed by FieldBuilder's chain interception, whose terminus
@@ -2206,7 +2209,13 @@ class BuildContext {
                 case ConditionResolution.Unresolved u ->
                     errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
                 case ConditionResolution.Resolved cr -> {
-                    var targetResolution = resolveConditionJoinTarget(cr.ref(), isTerminal, terminalTargetSqlName);
+                    // The positional rule stays here, at the call site: `declaredTarget` is *this
+                    // hop's* declared target, and only a chain-ending element has one. Handing it
+                    // to every element uniformly would resolve an intermediate condition hop to
+                    // the carrier field's return table instead of reflecting on the method's
+                    // second parameter.
+                    var targetResolution = resolveConditionJoinTarget(cr.ref(),
+                        isTerminal ? declaredTargetRef(terminalTargetSqlName) : null);
                     switch (targetResolution) {
                         case ConditionJoinTargetResolution.Resolved r -> {
                             // originTable is kept mechanically on every hop (pre-resolved over
@@ -2222,10 +2231,10 @@ class BuildContext {
                                 new On.Predicate(new JoinConditionRef(cr.ref())),
                                 conditionOrigin, null, alias));
                             // Check 2: the ON-clause method is called method(sourceAlias, targetAlias).
-                            // Source is the table entering this hop; target is the resolved condition-join
-                            // target (return table for a terminal hop, second-parameter-resolved otherwise).
-                            // Thread the resolved TableRefs: conditionOrigin is null when the source
-                            // is not table-backed (the existing skip), r.target() is already a TableRef.
+                            // Source is the table entering this hop; target is the resolved
+                            // condition-join target, whichever source resolved it. Thread the
+                            // resolved TableRefs: conditionOrigin is null when the source is not
+                            // table-backed (the existing skip), r.target() is already a TableRef.
                             validateConditionParamTables(cr.ref(), conditionOrigin, r.target(), errors);
                         }
                         case ConditionJoinTargetResolution.AuthorError e -> errors.add(e.message());
@@ -2343,41 +2352,56 @@ class BuildContext {
     }
 
     /**
-     * Resolves the target table for a {@code {condition:}}-only path element. The terminal-hop
-     * arm reads the carrier field's return-type {@code @table} binding (passed in via
-     * {@code terminalTargetSqlName}); the intermediate-hop arm reflects on the condition method's
-     * second parameter type via {@link JooqCatalog#findTableByClass}. Both unresolvable cases
-     * surface as {@link ConditionJoinTargetResolution.AuthorError}; {@link TableExpr.Catalog}'s
-     * non-null table guard (behind {@link JoinStep.Hop}'s non-null target check) is the
-     * structural safety net for pre-resolution.
+     * The declared target a chain-ending path element may read: the carrier field's return-type
+     * {@code @table} name resolved to a {@link TableRef}, or {@code null} when the site has no
+     * such binding (every filter site) or the name is not in the catalog. Nullable rather than
+     * {@link Optional} because it feeds {@link #resolveConditionJoinTarget}'s nullable parameter,
+     * whose absent case is a resolution route rather than a failure.
+     */
+    private TableRef declaredTargetRef(String targetSqlTableName) {
+        if (targetSqlTableName == null) return null;
+        return catalog.findTable(targetSqlTableName).asEntry()
+            .map(e -> e.toTableRef(targetSqlTableName))
+            .orElse(null);
+    }
+
+    /**
+     * Resolves the target table for a {@code {condition:}}-only path element. One rule, keyed on
+     * the source available rather than on the hop's position: prefer {@code declaredTarget} (the
+     * carrier field's return-type {@code @table} binding, which only a chain-ending element has,
+     * so the caller passes {@code null} for every other element), otherwise reflect on the
+     * condition method's second parameter type via {@link JooqCatalog#findTableByClass}. The
+     * same authored element therefore resolves the same way wherever it is read from: a filter
+     * site, which never carries a declared target, always resolves through the method signature.
+     * Unresolvable cases surface as {@link ConditionJoinTargetResolution.AuthorError};
+     * {@link TableExpr.Catalog}'s non-null table guard (behind {@link JoinStep.Hop}'s non-null
+     * target check) is the structural safety net for pre-resolution.
      *
-     * <p>Wildcard parameter types ({@code Table<?>}) are supported on the terminal-hop arm
-     * (resolution does not consult the method signature there); the intermediate-hop arm
-     * requires a concrete generated jOOQ table class.
+     * <p>The preference direction is load-bearing rather than arbitrary. Preferring the declared
+     * target is what keeps a concrete second parameter that disagrees with it a
+     * {@link #validateConditionParamTables} finding, an author-facing type mismatch on a hop that
+     * did resolve, instead of collapsing into a resolution failure.
+     *
+     * <p>Wildcard parameter types ({@code Table<?>}) resolve nothing, so they are tolerated only
+     * where a declared target answers the question; reflection requires a concrete generated jOOQ
+     * table class.
      */
     private ConditionJoinTargetResolution resolveConditionJoinTarget(
-            MethodRef methodRef, boolean isTerminal, String terminalTargetSqlName) {
-        if (isTerminal) {
-            if (terminalTargetSqlName != null) {
-                var entry = catalog.findTable(terminalTargetSqlName).asEntry();
-                if (entry.isPresent()) {
-                    return new ConditionJoinTargetResolution.Resolved(
-                        entry.get().toTableRef(terminalTargetSqlName));
-                }
-            }
-            return new ConditionJoinTargetResolution.AuthorError(
-                "condition-only `@reference` path: cannot resolve target table because the "
-                + "carrier field's return type has no `@table` binding. Add `@table(name: …)` "
-                + "to the return type, or rewrite the path to include `{table:}` or `{key:}`.");
+            MethodRef methodRef, TableRef declaredTarget) {
+        if (declaredTarget != null) {
+            return new ConditionJoinTargetResolution.Resolved(declaredTarget);
         }
+        // The one sentence every rejection below shares: what the parser is reading, and why.
+        String source = "no return-type `@table` binding is available for this hop, so the target "
+            + "is read from the method's second parameter, which must be a concrete generated "
+            + "jOOQ table class";
         var params = methodRef.params();
         if (params.size() < 2) {
             return new ConditionJoinTargetResolution.AuthorError(
-                "intermediate-hop `@condition` method '" + methodRef.className() + "."
-                + methodRef.methodName() + "' has fewer than two parameters; the parser cannot "
-                + "infer a target table for this hop. Change the method signature to "
-                + "(srcTable, tgtTable) with concrete jOOQ table types, or rewrite the path to "
-                + "use `{table:}` or `{key:}` for this hop.");
+                "`@condition` method '" + methodRef.className() + "." + methodRef.methodName()
+                + "' has fewer than two parameters; " + source + ". Change the method signature "
+                + "to (srcTable, tgtTable) with concrete jOOQ table types, or rewrite the path "
+                + "to use `{table:}` or `{key:}` for this hop.");
         }
         var p1 = params.get(1);
         String typeName = p1.typeName();
@@ -2385,9 +2409,8 @@ class BuildContext {
         // specific target table; reject with the wildcard-specific message.
         if (typeName.contains("<?>") || typeName.equals("org.jooq.Table")) {
             return new ConditionJoinTargetResolution.AuthorError(
-                "intermediate-hop `@condition` method '" + methodRef.className() + "."
-                + methodRef.methodName() + "' has wildcard target parameter `Table<?>`; the "
-                + "parser cannot infer the target table for this hop. Change the second "
+                "`@condition` method '" + methodRef.className() + "." + methodRef.methodName()
+                + "' has wildcard target parameter `Table<?>`; " + source + ". Change the second "
                 + "parameter to the concrete jOOQ table type, or rewrite the path to use "
                 + "`{table:}` or `{key:}` for this hop.");
         }
@@ -2405,11 +2428,10 @@ class BuildContext {
             // classloader, so the parameter type cannot map to a catalog entry.
         }
         return new ConditionJoinTargetResolution.AuthorError(
-            "intermediate-hop `@condition` method '" + methodRef.className() + "."
-            + methodRef.methodName() + "' second parameter type '" + typeName + "' does not "
-            + "resolve to a generated jOOQ table class. Change the second parameter to a "
-            + "concrete jOOQ table type, or rewrite the path to use `{table:}` or `{key:}` "
-            + "for this hop.");
+            "`@condition` method '" + methodRef.className() + "." + methodRef.methodName()
+            + "' second parameter type '" + typeName + "' does not resolve to a generated jOOQ "
+            + "table class; " + source + ". Change the second parameter to a concrete jOOQ table "
+            + "type, or rewrite the path to use `{table:}` or `{key:}` for this hop.");
     }
 
     /**
@@ -2827,9 +2849,8 @@ class BuildContext {
                     columnName,
                     // The candidate space is the path's terminal table, which is where the author's
                     // column was looked for; the resolving table is only the walk's start.
-                    svc.terminalTableForReference(path.elements(), resolvedTable)
-                        .map(t -> catalog.columnJavaNamesOf(t.tableName()))
-                        .orElseGet(List::of))));
+                    catalog.columnJavaNamesOf(
+                        svc.terminalTableForReference(path.elements(), resolvedTable).tableName()))));
         }
         // Nesting: field type is an input object. @table on it is deprecated and inert, so it does
         // not gate the descent; a nested @table grouping input flattens exactly as its

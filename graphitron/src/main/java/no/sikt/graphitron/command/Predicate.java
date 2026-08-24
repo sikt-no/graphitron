@@ -32,17 +32,17 @@ public sealed interface Predicate {
     /**
      * Developer {@code @condition} method: an opaque external call. {@link #reach} empty means
      * the method receives this row's own table; non-empty means the whole call wraps in a
-     * correlated {@code EXISTS} over the proven FK hop path and the method receives the terminal
-     * hop's alias (the FK-target form). Reach sits per-predicate here because the wrap covers the
-     * whole call, unlike the generated arm's per-term grain.
+     * correlated {@code EXISTS} over the {@link ReachPath}'s hops and the method receives the
+     * terminal hop's alias (the FK-target form). Reach sits per-predicate here because the wrap
+     * covers the whole call, unlike the generated arm's per-term grain.
      */
-    record Authored(MethodRef method, List<ArgBinding> bindings, List<FkHop> reach) implements Predicate {
+    record Authored(MethodRef method, List<ArgBinding> bindings, ReachPath reach) implements Predicate {
         public Authored {
             if (method == null) {
                 throw new IllegalArgumentException("an authored predicate names the developer method it calls");
             }
             bindings = bindings == null ? List.of() : List.copyOf(bindings);
-            reach = reach == null ? List.of() : List.copyOf(reach);
+            reach = reach == null ? ReachPath.none() : reach;
         }
     }
 }

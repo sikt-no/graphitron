@@ -323,11 +323,14 @@ class GraphitronSchemaBuilderTest {
                     .contains("no GraphQL arguments are in scope");
             }),
 
-        // Condition-only @reference on a scalar return type (no @table to anchor the
-        // terminal hop) AUTHOR_ERRORs at parse time. BuildContext.resolveConditionJoinTarget
-        // returns AuthorError for the terminal hop because terminalTargetSqlName is null.
-        CONDITION_ONLY_NO_RETURN_TYPE_TABLE_REJECTED(
-            "@reference with {condition:}-only path on a scalar return type → UnclassifiedField with no-binding message",
+        // A scalar-leaf carrier supplies no declared target (its return type is a scalar), so
+        // BuildContext.resolveConditionJoinTarget reads the target off the condition method's
+        // second parameter. `join`'s is `Table<?>`, which resolves nothing, so the wildcard
+        // message fires. Pairs with the acceptance sibling below: the distinction being pinned is
+        // resolvable-versus-unresolvable, and one row can only show one side of it.
+        CONDITION_ONLY_WILDCARD_PARAM_NO_DECLARED_TARGET_REJECTED(
+            "@reference with {condition:}-only path on a scalar field, condition method taking "
+                + "Table<?> → UnclassifiedField with the wildcard-parameter message",
             """
             type Film @table(name: "film") {
               actorName: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}}])
@@ -338,8 +341,33 @@ class GraphitronSchemaBuilderTest {
                 var f = schema.field("Film", "actorName");
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
-                    .contains("cannot resolve target table")
-                    .contains("no `@table` binding");
+                    .contains("wildcard target parameter")
+                    .contains("no return-type `@table` binding is available");
+            }),
+
+        // The acceptance side of the pair above, and the output-side scalar-leaf unlock: the same
+        // carrier shape with a concrete-typed condition method resolves its terminal by
+        // reflection (film -> film_actor) and finds the column there. Before the walker became
+        // total this failed with a generic unknown-column rejection.
+        CONDITION_ONLY_CONCRETE_PARAM_RESOLVES_TERMINAL_COLUMN(
+            "@reference with {condition:}-only path on a scalar field, condition method taking "
+                + "concrete jOOQ tables → column resolved on the reflected terminal table",
+            """
+            type Film @table(name: "film") {
+              junctionActorId: Int @field(name: "actor_id")
+                  @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "intermediate"}}])
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var ref = (ColumnBackedReferenceField) schema.field("Film", "junctionActorId");
+                assertThat(ref.joinPath()).hasSize(1);
+                assertThat(ref.joinPath().get(0)).matches(TestFixtures::isConditionHop, "condition-join hop");
+                assertThat(TestFixtures.conditionHop(ref.joinPath().get(0)).targetTable().tableName())
+                    .as("terminal resolved from the condition method's second parameter type")
+                    .isEqualToIgnoringCase("film_actor");
+                assertThat(ref.columns().get(0).sqlName()).isEqualTo("actor_id");
+                assertThat(ref.parentCorrelation()).isInstanceOf(ParentCorrelation.OnParentJoin.class);
             });
 
         final String sdl;
@@ -1190,9 +1218,9 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.orderBy()).isInstanceOf(OrderBySpec.None.class);
             }),
 
-        // Condition-only @reference path resolves its target table from the carrier
-        // field's return-type @table binding (terminal-hop arm of
-        // BuildContext.resolveConditionJoinTarget).
+        // Condition-only @reference path resolves its target table from the carrier field's
+        // return-type @table binding: a chain-ending element is handed that binding as its
+        // declared target, which BuildContext.resolveConditionJoinTarget prefers over reflection.
         CONDITION_ONLY_TERMINAL_RESOLVES_TARGET_FROM_RETURN_TYPE(
             "condition-only path on a TableField — the hop's targetTable resolved from "
             + "the return-type @table binding (terminal hop)",
@@ -3963,6 +3991,36 @@ class GraphitronSchemaBuilderTest {
                 var nif = (CallSiteExtraction.NestedInputField) bp.extraction();
                 assertThat(nif.outerArgName()).isEqualTo("filter");
                 assertThat(nif.path()).containsExactly("inner", "filmId");
+            }),
+
+        // Filter-position condition hop, argument surface: the carrier classifies and binds
+        // Remote, so the predicate goes through the correlated EXISTS the same way an FK hop's
+        // does. The reach emission dispatches per hop on the On seal, which is what makes a
+        // developer-supplied predicate hop admissible here.
+        ARG_REFERENCE_CONDITION_HOP_BINDS_REMOTE(
+            "scalar arg @reference through a {condition:} hop → ColumnBackedArg binding Remote "
+                + "with the condition-join hop on its join path",
+            """
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films(
+                    actorFirstName: String @field(name: "first_name") @reference(path: [
+                        {condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "intermediate"}},
+                        {table: "actor"}
+                    ])
+                ): [Film!]!
+            }
+            """,
+            schema -> {
+                var f = (SqlGeneratingField) schema.field("Query", "films");
+                var gcf = (GeneratedConditionFilter) f.filters().stream()
+                    .filter(GeneratedConditionFilter.class::isInstance).findFirst().orElseThrow();
+                var remote = (BodyParam.RemoteColumnPredicate) gcf.bodyParams().get(0);
+                assertThat(remote.joinPath()).hasSize(2);
+                assertThat(remote.joinPath().get(0)).matches(TestFixtures::isConditionHop, "condition-join hop");
+                assertThat(remote.joinPath().get(1)).matches(TestFixtures::isFkHop, "FK-derived hop");
+                assertThat(((BodyParam.Eq) remote.inner()).column().sqlName()).isEqualTo("first_name");
             });
 
         final String sdl;
@@ -5018,6 +5076,38 @@ class GraphitronSchemaBuilderTest {
                 assertThat(TestFixtures.fkHop(remote.joinPath().get(0)).targetTable().tableName())
                     .isEqualToIgnoringCase("language");
                 assertThat(((BodyParam.Eq) remote.inner()).column().javaName()).isEqualTo("NAME");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnBackedReferenceField.class); }
+        },
+
+        // Filter-position condition hop, input-field surface: the sibling of the FK row above.
+        // The validator has no shape check for this and its absence is the contract, so this row
+        // and its argument-surface twin in ArgumentParsingCase are the enforcers.
+        COLUMN_REFERENCE_FIELD_CONDITION_HOP(
+            "@reference on an input field through a {condition:} hop → RemoteColumnPredicate "
+                + "carrying the condition-join hop and the terminal column",
+            """
+            input FilmInput {
+              actorFirstName: String @field(name: "first_name") @reference(path: [
+                {condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "intermediate"}},
+                {table: "actor"}
+              ])
+            }
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(in: FilmInput): [Film!]! }
+            """,
+            schema -> {
+                var qf = (QueryField.QueryTableField) schema.field("Query", "films");
+                var gcf = (GeneratedConditionFilter) qf.filters().get(0);
+                var remote = (BodyParam.RemoteColumnPredicate) gcf.bodyParams().get(0);
+                assertThat(remote.name()).isEqualTo("actorFirstName");
+                assertThat(remote.joinPath()).hasSize(2);
+                assertThat(remote.joinPath().get(0)).matches(TestFixtures::isConditionHop, "condition-join hop");
+                assertThat(TestFixtures.conditionHop(remote.joinPath().get(0)).targetTable().tableName())
+                    .isEqualToIgnoringCase("film_actor");
+                assertThat(remote.joinPath().get(1)).matches(TestFixtures::isFkHop, "FK-derived hop");
+                assertThat(((BodyParam.Eq) remote.inner()).column().sqlName()).isEqualTo("first_name");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnBackedReferenceField.class); }
         },

@@ -3,10 +3,10 @@ package no.sikt.graphitron.render;
 import no.sikt.graphitron.command.ArgBinding;
 import no.sikt.graphitron.command.ColumnTerm;
 import no.sikt.graphitron.command.ConditionCommand;
-import no.sikt.graphitron.command.FkHop;
 import no.sikt.graphitron.command.MatchKind;
 import no.sikt.graphitron.command.OuterLift;
 import no.sikt.graphitron.command.Predicate;
+import no.sikt.graphitron.command.ReachPath;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
@@ -45,7 +45,10 @@ import java.util.Map;
  * {@code graphitronContext(env)} helper ({@link RequestContextHelper}), and the fork is
  * row-grained so a coordinate's glue method and facet fragments agree.
  *
- * <p>Reach renders as a correlated {@code EXISTS} over the row's proven FK hops. SQL aliases are
+ * <p>Reach renders as a correlated {@code EXISTS} over the row's {@link ReachPath} hops, whose
+ * {@link no.sikt.graphitron.rewrite.model.On} arms this class does not switch on itself: both the
+ * hop-0 correlation and the walk-back bridging joins dispatch through {@link PathFragments}, the
+ * same arms the projection rail uses. SQL aliases are
  * runtime-prefixed on the base table's name ({@code table.getName() + "_fkt0_0"}): glue methods
  * are per-coordinate scopes, but two glue methods can land in one query (a polymorphic root's
  * participant branches), so a static alias could collide across branches; one convention beats
@@ -194,25 +197,28 @@ public final class ConditionGlueRenderer {
 
     /**
      * Declares one aliased jOOQ table local per hop of every reach path in the method, keyed by
-     * the reach list's identity. Java locals are static per method scope
+     * the {@link ReachPath} instance's identity. Java locals are static per method scope
      * ({@code table_fkt<p>_<h>}); the SQL alias rides the base table's runtime name so two glue
-     * calls in one query cannot collide.
+     * calls in one query cannot collide. Identity, not value: locals are minted per reach
+     * occurrence, so two structurally equal reaches on different terms keep their own aliases (see
+     * {@link ReachPath}). {@code reachIndex} is this loop's own emission-scoped numbering and stays
+     * here rather than riding the carrier.
      */
-    private static Map<List<FkHop>, List<String>> declareReachAliases(
+    private static Map<ReachPath, List<String>> declareReachAliases(
             MethodSpec.Builder builder, List<Predicate> predicates) {
-        var aliases = new java.util.IdentityHashMap<List<FkHop>, List<String>>();
+        var aliases = new java.util.IdentityHashMap<ReachPath, List<String>>();
         int reachIndex = 0;
         for (var predicate : predicates) {
             var reaches = switch (predicate) {
                 case Predicate.Generated generated ->
                     generated.terms().stream().map(ColumnTerm::reach).filter(r -> !r.isEmpty()).toList();
                 case Predicate.Authored authored ->
-                    authored.reach().isEmpty() ? List.<List<FkHop>>of() : List.of(authored.reach());
+                    authored.reach().isEmpty() ? List.<ReachPath>of() : List.of(authored.reach());
             };
             for (var reach : reaches) {
                 var hopLocals = new ArrayList<String>(reach.size());
                 for (int h = 0; h < reach.size(); h++) {
-                    var target = reach.get(h).hop().targetTable();
+                    var target = reach.hop(h).targetTable();
                     String local = "table_fkt" + reachIndex + "_" + h;
                     builder.addStatement("$T $L = $T.$L.as(table.getName() + $S)",
                         target.tableClass(), local,
@@ -229,20 +235,31 @@ public final class ConditionGlueRenderer {
 
     /**
      * The correlated {@code EXISTS} every non-empty reach renders:
-     * {@code DSL.exists(DSL.selectOne().from(terminal)<walk-back joins>.where(<correlation>.and(<inner>)))}.
-     * Shared by both arms; only the inner expression differs (a column term against the terminal
-     * alias, or the developer call receiving it).
+     * {@code DSL.exists(DSL.selectOne().from(terminal)<walk-back joins>.where(<correlation>
+     * .and(<hop filters>).and(<inner>)))}. Shared by both arms; only the inner expression differs
+     * (a column term against the terminal alias, or the developer call receiving it).
+     *
+     * <p>Every {@code On} arm is dispatched by {@link PathFragments}, hop by hop: the walk-back
+     * joins through {@link PathFragments#emitBackwardBridging} and the hop-0 correlation through
+     * {@link PathFragments#hopZeroCorrelation}. A hop's own {@code filter()} predicate (the
+     * {@code {key:, condition:}} author form, which folds its condition onto the hop rather than
+     * becoming the hop's {@code ON}) rides the same {@link PathFragments#appendHopFilters} call
+     * the projection rail's scalar subselect makes; omitting it would emit a filter wider than the
+     * schema declares.
      */
-    private static CodeBlock reachExists(List<FkHop> reach, List<String> hopAliases, CodeBlock inner) {
+    static CodeBlock reachExists(ReachPath reach, List<String> hopAliases, CodeBlock inner) {
         var sel = CodeBlock.builder();
         sel.add("$T.selectOne()", DSL);
         sel.add("\n        .from($L)", hopAliases.get(hopAliases.size() - 1));
         for (int i = reach.size() - 1; i >= 1; i--) {
-            sel.add("\n        $L",
-                JoinFragments.emitBridgingJoin(reach.get(i).pairs(), hopAliases.get(i - 1), hopAliases.get(i)));
+            sel.add("\n        $L", PathFragments.emitBackwardBridging(
+                reach.hop(i), hopAliases.get(i - 1), hopAliases.get(i), "condition-reach"));
         }
-        var correlation = JoinFragments.emitCorrelationWhere(reach.get(0).pairs(), hopAliases.get(0), "table");
-        sel.add("\n        .where($L.and($L))", correlation, inner);
+        var where = CodeBlock.builder();
+        where.add("$L", PathFragments.hopZeroCorrelation(reach.hop(0), hopAliases.get(0), "table"));
+        PathFragments.appendHopFilters(where, reach.hops(), hopAliases, "table", ".and($L)");
+        where.add(".and($L)", inner);
+        sel.add("\n        .where($L)", where.build());
         return CodeBlock.of("$T.exists($L)", DSL, sel.build());
     }
 
@@ -250,7 +267,7 @@ public final class ConditionGlueRenderer {
     // Terms and authored calls
     // ------------------------------------------------------------------------------------------
 
-    private static CodeBlock termExpr(ColumnTerm term, Map<List<FkHop>, List<String>> aliasesByReach) {
+    private static CodeBlock termExpr(ColumnTerm term, Map<ReachPath, List<String>> aliasesByReach) {
         if (term.reach().isEmpty()) {
             return columnCompare(term, "table");
         }
@@ -362,7 +379,7 @@ public final class ConditionGlueRenderer {
         return CodeBlock.of("args.get($S)", param.name());
     }
 
-    private static CodeBlock authoredExpr(Predicate.Authored authored, Map<List<FkHop>, List<String>> aliasesByReach) {
+    private static CodeBlock authoredExpr(Predicate.Authored authored, Map<ReachPath, List<String>> aliasesByReach) {
         if (authored.reach().isEmpty()) {
             return authoredCall(authored.method(), "table", authored.bindings());
         }

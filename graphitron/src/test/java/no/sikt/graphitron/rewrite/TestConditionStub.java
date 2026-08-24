@@ -188,9 +188,9 @@ class TestConditionStub {
     }
 
     /**
-     * Fixture: intermediate-hop {@code @condition} method with concrete jOOQ table
-     * parameters. {@link no.sikt.graphitron.rewrite.BuildContext#resolveConditionJoinTarget}
-     * resolves the target table by reflecting on the second parameter type and looking it up
+     * Fixture: a {@code @condition} method with concrete jOOQ table parameters, for hops with no
+     * declared target. {@link no.sikt.graphitron.rewrite.BuildContext#resolveConditionJoinTarget}
+     * then resolves the target table by reflecting on the second parameter type and looking it up
      * via {@link no.sikt.graphitron.rewrite.JooqCatalog#findTableByClass}. Source is
      * {@code film}; target is {@code film_actor}, so a subsequent {@code {table: "actor"}}
      * step derives the FilmActor → Actor FK.
@@ -202,7 +202,19 @@ class TestConditionStub {
     }
 
     /**
-     * Check 2 fixture: an intermediate-hop ON-clause condition whose <em>first</em> (source)
+     * Fixture: a <em>terminal</em>-hop condition on a filter path, where no return-type
+     * {@code @table} binding exists, so the target is read off this signature: source is the
+     * {@code film_actor} junction the previous FK hop landed on, target is {@code actor}. Pairs
+     * with {@link #intermediate} to give filter paths a condition hop in either position.
+     */
+    public static Condition junctionToActor(
+            no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor src,
+            no.sikt.graphitron.rewrite.test.jooq.tables.Actor tgt) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Check 2 fixture: an ON-clause condition whose <em>first</em> (source)
      * parameter is a concrete table ({@code Actor}) other than the hop's actual source table
      * ({@code film}). The emitter passes the source alias positionally into parameter 0, so a
      * concretely-mistyped source parameter would compile to {@code aCondition(filmAlias, …)}
@@ -216,12 +228,13 @@ class TestConditionStub {
     }
 
     /**
-     * Check 2 fixture: a <em>terminal</em>-hop condition whose <em>second</em> (target)
-     * parameter is a concrete table ({@code Film}) other than the carrier field's return
-     * {@code @table}. The terminal branch of {@code resolveConditionJoinTarget} builds the target
-     * from the return type and never reads this parameter, so without Check 2 the mistyped target
-     * parameter slips through to javac. The source parameter ({@code City}) is correct so only the
-     * target-side mismatch fires.
+     * Check 2 fixture: a chain-ending condition hop whose <em>second</em> (target) parameter is a
+     * concrete table ({@code Film}) other than the carrier field's return {@code @table}.
+     * {@code resolveConditionJoinTarget} prefers the declared target, so it never reads this
+     * parameter and without Check 2 the mistyped target parameter slips through to javac. That
+     * preference direction is exactly why this stays a Check 2 finding rather than a resolution
+     * failure. The source parameter ({@code City}) is correct so only the target-side mismatch
+     * fires.
      */
     public static Condition terminalWrongTarget(
             no.sikt.graphitron.rewrite.test.jooq.tables.City src,
@@ -230,7 +243,7 @@ class TestConditionStub {
     }
 
     /**
-     * Happy-path fixture: a terminal-hop condition whose concrete source ({@code City}) and
+     * Happy-path fixture: a chain-ending condition hop whose concrete source ({@code City}) and
      * target ({@code Actor}) parameters both match the aliases the emitter passes (source = the
      * {@code City} carrier's table, target = the {@code Actor} return {@code @table}). Asserts the
      * concrete-parameter check does not reject a correctly-typed signature.

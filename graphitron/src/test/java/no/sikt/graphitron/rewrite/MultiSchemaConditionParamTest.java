@@ -93,8 +93,8 @@ class MultiSchemaConditionParamTest {
 
     // ===== Terminal ON-clause condition: target operand carries the qualified @table echo =====
     //
-    // A terminal condition hop resolves its target from the return type's @table echo
-    // (resolveConditionJoinTarget's terminal branch), so the target operand carries the qualified
+    // A chain-ending condition hop is handed the return type's @table echo as its declared
+    // target, which resolveConditionJoinTarget prefers, so the target operand carries the qualified
     // "multischema_a.event" name independently of the method parameter. The where-filter path
     // cannot supply target-side coverage here: its FK-derived target endpoint resolves through
     // synthesizeFkJoin's bare-name catalog lookup, which is ambiguous for the colliding "event"

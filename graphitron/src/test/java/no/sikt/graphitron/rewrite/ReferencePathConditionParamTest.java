@@ -53,9 +53,9 @@ class ReferencePathConditionParamTest {
 
     @Test
     void conditionOnClause_terminalConcreteTargetParamMismatch_isRejected() {
-        // Terminal ON-clause condition: target is the return @table `actor`, but the method's
-        // parameter 1 is concretely typed `Film`. The terminal branch builds the target from the
-        // return type and never reads the parameter, so without Check 2 this reaches javac.
+        // Chain-ending ON-clause condition: target is the return @table `actor`, but the method's
+        // parameter 1 is concretely typed `Film`. The declared target is preferred, so resolution
+        // never reads the parameter and without Check 2 this reaches javac.
         var f = field("""
             type Actor @table(name: "actor") { firstName: String }
             type City @table(name: "city") {

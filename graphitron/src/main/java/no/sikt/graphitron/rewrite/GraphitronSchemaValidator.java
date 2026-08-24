@@ -1807,44 +1807,31 @@ public class GraphitronSchemaValidator {
     }
     private static void validateInputColumnBackedReferenceField(no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField field, List<ValidationError> errors) {
         // Column and join path resolution is guaranteed by the builder (unresolved → UnclassifiedType).
-        // An FK-target @nodeId field carrying a @condition emits a correlated EXISTS over the
-        // join path (the glue renderer's reach EXISTS) whose correlation ANDs every
-        // composite-FK slot (JoinPathEmitter.emitCorrelationWhere walks all slots), so the rule is
-        // arity-uniform: every hop must be a resolved FK-derived hop. Mirror that emitter
-        // precondition here so a non-FK / unresolved hop fails at validate time with a directed
-        // message rather than as an emitter IllegalStateException.
+        //
+        // A plain @reference filter path may carry any hop kind the path parser mints: the reach
+        // emission dispatches per hop on the On seal, so a developer-supplied predicate hop
+        // correlates through its two-argument call. There is no check for that shape here, and its
+        // absence is the contract; the pipeline cases on both filter surfaces are its enforcer.
+        //
+        // What stays closed is the FK-target @nodeId + @condition shape below. This is a policy
+        // deferral, not an emitter precondition: that carrier binds *decoded id columns* to the
+        // path's FK slots, a different mechanism from a wire value compared against a terminal
+        // column, and nobody has designed what a predicate hop means for it. So it is stated as a
+        // deferral and the pinned validator case stands on its own rather than riding an
+        // FK-only-reach invariant the emitter no longer has.
         if (field.condition().isPresent() && !field.joinPath().isEmpty()
                 && field.joinPath().stream().anyMatch(h -> !(h instanceof no.sikt.graphitron.rewrite.model.JoinStep.Hop hh && hh.on() instanceof no.sikt.graphitron.rewrite.model.On.ColumnPairs))) {
             errors.add(new ValidationError(
                 field.qualifiedName(),
-                Rejection.structural("Input field '" + field.qualifiedName()
+                Rejection.deferred("Input field '" + field.qualifiedName()
                     + "': @condition on " + (field.isComposite()
                         ? "a composite-key FK-target @nodeId field"
                         : "an FK-target @nodeId field")
-                    + " requires a foreign-key join path; "
-                    + "the resolved path contains a non-foreign-key hop, which is not supported"),
-                field.location()
-            ));
-        }
-        // A plain @reference (Direct extraction, single-column by the record's constructor
-        // invariant) implicit-predicate field whose terminal column lives on a joined table emits
-        // a correlated EXISTS over the path (the glue renderer's reach emission), which
-        // requires every hop to be a resolved FK-derived. Mirror that emitter precondition so a
-        // non-FK / condition-join hop fails at validate time with a directed message rather than
-        // as an emitter IllegalStateException. (Today the builder cannot resolve a terminal
-        // column through a non-FK hop, so this is a defensive mirror against future
-        // path-resolution changes; the v1 deferral of condition-join reference filters is the
-        // same posture the condition glue renderer takes.)
-        if (field.condition().isEmpty()
-                && field.extraction() instanceof no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct
-                && !field.joinPath().isEmpty()
-                && field.joinPath().stream().anyMatch(h -> !(h instanceof no.sikt.graphitron.rewrite.model.JoinStep.Hop hh && hh.on() instanceof no.sikt.graphitron.rewrite.model.On.ColumnPairs))) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-                Rejection.structural("Input field '" + field.qualifiedName()
-                    + "': @reference filter path traverses a condition-join (non-foreign-key) hop, "
-                    + "which is not yet supported; reference filters emit a foreign-key correlated "
-                    + "subquery and require every hop to resolve to a foreign key"),
+                    + " requires a foreign-key join path; the resolved path contains a "
+                    + "non-foreign-key hop, which is not yet supported for this carrier. The "
+                    + "decoded id columns bind to the path's foreign-key slots, so a "
+                    + "developer-supplied predicate hop has nothing to bind them to; a plain "
+                    + "`@reference` filter on the same path is supported."),
                 field.location()
             ));
         }

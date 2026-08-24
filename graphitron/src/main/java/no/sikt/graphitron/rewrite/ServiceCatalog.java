@@ -101,28 +101,48 @@ class ServiceCatalog {
     }
 
     /**
-     * Resolves a column at the terminal of an FK {@code @reference} path. The terminal is the
+     * Resolves a column at the terminal of a {@code @reference} path. The terminal is the
      * identity-resolved {@link TableRef} the path's hops carry, never a bare SQL name re-resolved
      * through the catalog: a bare-name lookup is ambiguous when the terminal table name collides
      * across generated schemas.
+     *
+     * <p>The empty result means exactly one thing, no such column on the terminal table. Path
+     * shape is not a second, unnamed rejection channel here: {@link #terminalTableForReference}
+     * is total over every path a {@code @reference} can carry, so a caller reading the empty case
+     * knows which failure it saw and can render the terminal table's candidate columns.
      */
     Optional<ColumnRef> resolveColumnForReference(String columnName, List<JoinStep> path, TableRef start) {
-        return terminalTableForReference(path, start).flatMap(t -> t.column(columnName));
+        return terminalTableForReference(path, start).column(columnName);
     }
 
     /**
-     * Walks the FK join path from {@code start} and returns the terminal table's
-     * identity-resolved {@link TableRef}; an empty path yields {@code start}. Empty when any
-     * step is not FK-derived (a condition-only step's target table is unknown at build time).
+     * Walks the join path from {@code start} and returns the terminal table's identity-resolved
+     * {@link TableRef}; an empty path yields {@code start}. Total over both hop kinds a
+     * {@code @reference} path can carry: {@link JoinStep.Hop#targetTable()} resolves off the hop's
+     * target table expression, never off its {@code on()} arm, so a condition-join hop advances
+     * the walk exactly as a foreign-key one does. The path parser's condition arm resolves that
+     * target and stores it as a {@link no.sikt.graphitron.rewrite.model.TableExpr.Catalog}, which
+     * is what makes the two kinds indistinguishable here.
+     *
+     * <p>A lateral routine hop throws rather than resolving, mirroring
+     * {@code PathFragments.emitBackwardBridging}'s posture on a shape its callers cannot legally
+     * hold: {@code @reference} path parsing never mints one, and every caller here walks a parsed
+     * {@code @reference} path.
      */
-    Optional<TableRef> terminalTableForReference(List<JoinStep> path, TableRef start) {
+    TableRef terminalTableForReference(List<JoinStep> path, TableRef start) {
         TableRef current = start;
         for (var step : path) {
-            if (!(step instanceof JoinStep.Hop hop
-                    && hop.on() instanceof On.ColumnPairs)) return Optional.empty();
-            current = hop.targetTable();
+            current = switch (step) {
+                case JoinStep.Hop hop -> switch (hop.on()) {
+                    case On.ColumnPairs ignored -> hop.targetTable();
+                    case On.Predicate ignored -> hop.targetTable();
+                    case On.Lateral ignored -> throw new IllegalStateException(
+                        "a lateral routine hop cannot appear in a @reference path; routine chains "
+                        + "are landed by FieldBuilder's chain interception and never reach this walk");
+                };
+            };
         }
-        return Optional.of(current);
+        return current;
     }
 
     Optional<ColumnRef> resolveColumnInTable(String columnName, String tableSqlName) {

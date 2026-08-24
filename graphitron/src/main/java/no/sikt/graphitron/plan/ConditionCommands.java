@@ -5,10 +5,10 @@ import no.sikt.graphitron.command.ArgBinding;
 import no.sikt.graphitron.command.ColumnTerm;
 import no.sikt.graphitron.command.ConditionCommand;
 import no.sikt.graphitron.command.FacetFragment;
-import no.sikt.graphitron.command.FkHop;
 import no.sikt.graphitron.command.MatchKind;
 import no.sikt.graphitron.command.OuterLift;
 import no.sikt.graphitron.command.Predicate;
+import no.sikt.graphitron.command.ReachPath;
 import no.sikt.graphitron.command.UnitMethodRef;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.BodyParam;
@@ -165,10 +165,13 @@ public final class ConditionCommands {
         return switch (filter) {
             case GeneratedConditionFilter gcf -> new Predicate.Generated(termsOf(gcf, localNames, fieldName));
             case ConditionFilter cf ->
-                new Predicate.Authored(cf, bindingsFor(cf.callParams(), localNames), List.of());
+                new Predicate.Authored(cf, bindingsFor(cf.callParams(), localNames), ReachPath.none());
+            // The FK-target @nodeId + @condition reach keeps its FK-only guarantee upstream, at
+            // the validator's deferral of a non-FK path for that carrier, not through this type.
             case FkTargetConditionFilter fk ->
                 new Predicate.Authored(fk.delegate(), bindingsFor(fk.callParams(), localNames),
-                    narrowPath(fk.joinPath(), fieldName + "'s FK-target @condition '" + fk.methodName() + "'"));
+                    ReachPath.narrow(fk.joinPath(),
+                        fieldName + "'s FK-target @condition '" + fk.methodName() + "'"));
         };
     }
 
@@ -204,27 +207,20 @@ public final class ConditionCommands {
     private static ColumnTerm termOf(BodyParam bp, ArgBinding binding, String fieldName) {
         return switch (bp) {
             case BodyParam.Eq eq ->
-                new ColumnTerm(List.of(eq.column()), MatchKind.EQUALITY, eq.nonNull(), binding, List.of());
+                new ColumnTerm(List.of(eq.column()), MatchKind.EQUALITY, eq.nonNull(), binding, ReachPath.none());
             case BodyParam.In in ->
-                new ColumnTerm(List.of(in.column()), MatchKind.MEMBERSHIP, in.nonNull(), binding, List.of());
+                new ColumnTerm(List.of(in.column()), MatchKind.MEMBERSHIP, in.nonNull(), binding, ReachPath.none());
             case BodyParam.RowEq req ->
-                new ColumnTerm(req.columns(), MatchKind.EQUALITY, req.nonNull(), binding, List.of());
+                new ColumnTerm(req.columns(), MatchKind.EQUALITY, req.nonNull(), binding, ReachPath.none());
             case BodyParam.RowIn rin ->
-                new ColumnTerm(rin.columns(), MatchKind.MEMBERSHIP, rin.nonNull(), binding, List.of());
+                new ColumnTerm(rin.columns(), MatchKind.MEMBERSHIP, rin.nonNull(), binding, ReachPath.none());
             case BodyParam.RemoteColumnPredicate r -> {
                 var inner = termOf(r.inner(), binding, fieldName);
                 yield new ColumnTerm(inner.columns(), inner.match(), inner.nonNull(), binding,
-                    narrowPath(r.joinPath(), fieldName + "'s reference filter '" + r.name() + "'"));
+                    ReachPath.narrow(r.joinPath(),
+                        fieldName + "'s reference filter '" + r.name() + "'"));
             }
         };
-    }
-
-    private static List<FkHop> narrowPath(List<JoinStep> path, String context) {
-        var hops = new ArrayList<FkHop>(path.size());
-        for (var step : path) {
-            hops.add(FkHop.narrow(step, context));
-        }
-        return hops;
     }
 
     private static List<ArgBinding> bindingsFor(List<CallParam> callParams, LocalNames localNames) {

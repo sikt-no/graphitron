@@ -57,11 +57,11 @@ class ConditionCommandsPipelineTest {
         var term = generated.terms().get(0);
         assertThat(term.match()).isEqualTo(MatchKind.EQUALITY);
         assertThat(term.columns()).hasSize(1);
-        assertThat(term.reach()).isEmpty();
+        assertThat(term.reach().hops()).isEmpty();
         assertThat(term.binding().localName()).isEqualTo("cityNames");
         var authored = (Predicate.Authored) row.predicates().get(1);
         assertThat(authored.method().methodName()).isEqualTo("argCondition");
-        assertThat(authored.reach()).isEmpty();
+        assertThat(authored.reach().hops()).isEmpty();
         assertThat(authored.bindings()).extracting(b -> b.localName()).containsExactly("cityNames");
 
         // Glue is total and minted from the naming vocabulary; the relation's landing addresses
