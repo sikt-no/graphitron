@@ -729,11 +729,11 @@ The six in between. Sites counted under `CommandSeamRatchetTest`'s own rule so t
 inventory of the work, **not** a conversion order; what
 actually constrains the order is the section after it, and the two are different:
 
-1. **Conditions** (`ConditionCommands`, 403 lines, 3 dispatch sites). The smallest surface, and the
+1. **Conditions** (`ConditionCommands`, 399 lines, 3 dispatch sites). The smallest surface, and the
    one every other relation references by glue row. That reference is why an earlier draft put it
    first; the next section explains why it does not have to be.
 2. **Projections** (`ProjectionCommands`, 731 lines, 38 sites).
-3. **Launchers** (`LauncherCommands`, 1,114 lines, 17 sites). The largest producer, and the one whose
+3. **Launchers** (`LauncherCommands`, 1,181 lines, 17 sites). The largest producer, and the one whose
    rows the fetcher generator reads to decide between the launcher emission and the legacy builder.
 4. **Fetcher edges** (`FetcherEdgeCommands`, 280 lines, 48 sites). The densest dispatch in the
    package by a wide margin: 280 lines carrying just over a third of the plan-side pin, which makes
@@ -1394,6 +1394,165 @@ Then launchers, largest, naming the most condemned types, and carrying `discrimi
 The census is the progress dial for all of it: nineteen references in six files, falling only when a
 whole file stops naming the model. A second-half increment that leaves it unchanged relocated
 nothing, whatever else it moved.
+
+The check has since been run, and the order above is superseded from its second step onward; see
+"The five availability checks, run" below.
+
+### The five availability checks, run
+
+Run 2026-08-24 against trunk `1e105c45`, by slice one's method: enumerate the facts the producer
+reads, then ask of each whether the store states it, states it inside another view's CTE, or does
+not state it at all. Absence below is a reading rather than a failure of recall. Every captured
+population reported as underived was checked by scanning all 83 view bodies for a reader of it, and
+every relation reported as present was read in the DDL.
+
+[cols="3,1,1,4"]
+|===
+| Producer | Dispatch sites | Relations to author | What has to be authored
+
+| `FetcherEdgeCommands`
+| 48
+| 0
+| nothing
+
+| `TypeUnitCommands`
+| 29
+| 2
+| nesting reach, connection synthesis; both shared
+
+| `ConditionCommands`
+| 3
+| 3
+| argument column resolution, the condition membership fold, facets
+
+| `ProjectionCommands`
+| 38
+| 5
+| operation members, nesting reach, pivot resolution, ordering, connection synthesis
+
+| `LauncherCommands`
+| 17
+| 5
+| operation members, delivery's third trigger, tenancy, ordering, connection synthesis
+|===
+
+**The two columns do not merely fail to correlate; over these five they invert.** The producer with
+the densest dispatch in the package needs no new relation, and the producer with the thinnest needs
+a classifier arm. Slice one showed the inventory's column predicted the wrong half of the work.
+This shows it predicts the wrong half in the wrong direction, which is worth more than the first
+finding: it means an order taken off the inventory would have started with the family that costs
+the most and ended with the one that costs the least.
+
+**The finding underneath all five: the claim stratum is eight arms, not seventy-two.**
+`intent_authored_field_claim` carries seven claim literals (`EXTERNAL_FIELD`, `INPUT_OBJECT`,
+`LOOKUP_KEY`, `MUTATION`, `NODE_ID`, `ROUTINE`, `SERVICE`), `intent_resolved_field_claim` two
+resolution arms, `intent_authored_type_claim` two (`ERROR`, `TABLE`), and the structural
+`intent_column_match_claim` one verdict over five match tiers. The taxonomy these producers dispatch
+over is 72 leaves. So the stratum this item has been calling "the expensive population, and it is
+there" does not state a leaf kind and was never going to: a leaf is a *composition* of a claim, a
+delivery arm, a wrapper, a binding and a polymorphic shape, and the store states the components.
+That is not a gap. It is the reason the conversions are possible at all, because a producer needs
+the answer its switch computes and not the name of the branch it took. But it means "are this
+producer's facts relations?" cannot be answered by looking for the leaves, which is what makes the
+question per-producer and why the five answers below differ as much as they do.
+
+**Fetcher edges reads three facts, and the store states all three.** The 48 sites resolve to four
+target shapes, and the producer's whole input is: the table-bound participants of a polymorphic
+coordinate (`intent_poly_member` joined to `intent_bound_table`, the joined-table and unbound arms
+contributing no target), the return type name of a routine write (`graphql_field.named_type`), and
+the coordinate's glue classes, which it derives from the condition relation and not from the schema
+at all. Nothing else. The 48 sites are a switch whose arms are overwhelmingly `null`, which is to
+say they are the *declaration* that a family is outside the relation, and a declaration costs
+emitter work rather than store work. This producer is the clean confirmation of the replan's
+predictor claim, from the extreme end.
+
+**Type units is second-readiest, and one of its two halves collapses on contact.** The schema-shape
+kind dispatches over all 18 type permits to pick one of five graphql-java forms, and the mapping is
+`graphql_type.kind` verbatim: object permits to `OBJECT`, both interface permits to `INTERFACE`,
+union to `UNION`, input to `INPUT`, enum to `ENUM`, with two exclusions the store also states
+(scalars, which register off a resolved constant, and `_`-prefixed federation internals). The
+18-arm switch is a re-derivation of a captured column. The input-record half is already a relation
+and nobody noticed: `argumentReachableInputs` is the transitive closure of input types reached from
+field arguments, and `intent_input_occurrence_path`'s population is that walk keyed by occurrence,
+so the fold is that relation's type projection. The `@error` population is
+`intent_field_error_channel` and `intent_errors_field_member`, which slice one landed for the
+routine-write family and which serve this one for free. What remains is the nesting reach fold and
+the connection pair, both shared with projections.
+
+**Conditions is small and carries the one genuinely new classifier arm.** Its authored half is
+comprehensively there: the `@condition` capture with its context args and argMapping pairs,
+normalised across sites by `intent_argmapping_pair`, resolved by `intent_argmapping_segment_binding`
+and `intent_argmapping_bound_parameter_type`, with the method identity on
+`intent_field_producer_method`; the input-surface expansion and its override cascade on
+`intent_input_occurrence_path` and `intent_input_occurrence_override`; the FK-target reach on the
+reference-step relations. The generated half is not. A generated condition filter is one predicate
+per column-backed argument, and while `intent_argument_scope_table` answers which table an
+argument's content binds against, nothing answers which *column* it resolves to. No view in the
+store joins `graphql_argument` to `sql_column`. The relation to author is the argument-site twin of
+`intent_column_match_claim`, and the pairing is already written down in the store's own comments:
+`intent_argument_scope_table`'s comment calls itself "the argument-site counterpart of the reading
+`intent_field_column_scope` makes at a field site", and the column half of that pair was never
+built. This is modelling work of the seat verdict's kind, not a fold.
+
+One thing dissolves here. The producer recurses into nesting fields because a nested coordinate has
+no `fieldsOf` entry, deduplicates the rows a nesting type reused across parents produces, and fails
+hard if two reuse sites disagree. In the store a nested coordinate is a coordinate: `graphql_field`
+holds it once, the reuse multiplicity never arises, and the recursion, the dedup and the divergence
+throw all go. The walk was paying for a shape the relation does not have.
+
+**Projections and launchers are the expensive pair, and they are expensive together.** Four of the
+five relations each needs are the same four. Both need the operation-member fold (projections read
+the `SERVICE_CALL` and `LOOKUP` arms to pick a contribution; launchers join members with anchor-hood
+to reach a verdict at all), both need connection synthesis, and launchers additionally need ordering
+and tenancy, which projections need through the launcher rows they call into. Converting either one
+first pays for most of the other's store work. Their own halves are in good shape: the correlated
+chain's source facts, the reference paths and their foreign-key pairs, the column resolution for
+column-backed fields, and the routine chain relations slice one landed are all present.
+
+**Delivery is two thirds of a relation, and the missing third is documented.** This is the check's
+one partial finding, and it is the shape slice one's chain deliverable had.
+`intent_field_separate_fetch` states which fields are fetched by a statement of their own, in five
+rule arms, and two of `DeliveryFact.Batched`'s three triggers are among them: the authored markers
+(`@splitQuery`, `@tenantFanOut`) are the view's two marker arms, and the record-handing parent is
+its own arm. The third trigger, the list-valued polymorphic fan-in, has no arm, and `DeliveryFact`'s
+own javadoc says why: that trigger "was surfaced by this fact's materialization", after the view was
+written. The view's remaining two arms (a non-root `@service`, a root operation field) are not
+batched delivery at all, which is the reader-side care this promotion needs. So the deliverable is
+an arm plus a projection, not a relation.
+
+**Five captured populations have no derivation over them at all.** This is the cross-cutting result,
+and it is a better statement of the gap than "four relation-shaped folds have no home in the store
+yet", which is what this item has been saying. Ordering (`graphitron_order`, `graphitron_order_by`,
+`graphitron_order_field`, and the two default-order relations) is read by no view. So are the facets
+(`graphitron_facet`) and the tenant column (`store_graph_tenant_column`). The connection registry
+(`graphitron_connection`) is read by exactly one view, and only to exempt connection types from
+classification demand. `graphitron_pivot` is read by one view, and only as a column-scope input,
+never resolved as a pivot. Each of these is captured, complete, and inert, and each is needed by
+more than one of the five remaining producers. They are the shared cost, and they are what makes
+projections and launchers a pair rather than two increments.
+
+**The fold count is eight, not four.** `GraphitronSchema` carries `arrivals`,
+`reachableSourceShapes`, `tenantScopes`, `tenantBindings`, `argumentReachableInputs`,
+`connectionSynthesis`, `operationMembers` and `deliveryFacts`: eight post-walk folds, computed once
+after the walk and read by the emit side, which is the exact shape of a derived relation living in
+Java. The item named four. Of the eight, one is already a store relation
+(`argumentReachableInputs`), one is two thirds of one (`deliveryFacts`), and two were never named
+here at all (`arrivals`, `reachableSourceShapes`). Any future statement of what the store still owes
+this item should count from this list.
+
+**What this does to the order.** The proposal above stands on its first step and changes after it.
+Conditions still goes first: it is the parameter three other producers take, it is the cheapest
+place to prove the unified `rowFor` seam on a second family, and it owns the one new classifier arm,
+which is better paid early while the family paying it is small. Fetcher edges then moves from
+fourth to second, on the strength of needing nothing: it takes the condition relation as its only
+non-store input, so conditions unblocks it completely, and it retires five of the census's nineteen
+references, the largest single drop available. Type units third, smaller than the inventory
+suggests. Then projections and launchers last, taken as one increment or as two adjacent ones,
+because four of their five missing relations are shared and the pair's second half is nearly free
+once the first is done. `EmitPlan`'s single reference still goes with the terminal deletion.
+
+The dial says the same thing arithmetically: conditions 3, fetcher edges 5, type units 2,
+projections 3, launchers 5, `EmitPlan` 1. The order above takes 8 of the 19 in its first two steps.
 
 ### Emitter half: family by family
 
