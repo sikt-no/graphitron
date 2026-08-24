@@ -85,7 +85,15 @@ class DevExecuteExecutionTest {
 
     @Test
     void query_throughTheExecutor_matchesDirectInAppExecution() throws Exception {
-        String query = "{ films { filmId castMembers { actorId actor { firstName } } } }";
+        // Keyed on films this class can name, not on what the film table holds. The subject is
+        // byte-equality between the two execution paths, which an unfiltered root field states no
+        // better: on the local-db path every class in this module shares one PostgreSQL instance
+        // and classes run concurrently, so a sibling's rolled-back insert is visible to one of the
+        // two reads below and not the other, and the failure lands here on rows this class never
+        // wrote. The module's junit-platform.properties states that hazard and this is the reader
+        // half of its remedy.
+        String query = "{ filmById(film_id: [\"1\", \"2\", \"3\"]) "
+            + "{ filmId castMembers { actorId actor { firstName } } } }";
 
         String devResult;
         try (Connection connection = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword)) {
