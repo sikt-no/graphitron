@@ -15,8 +15,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
-| `R819` | The carrier data field read tripled and the seat put it on every generation <sub>blocked by: [step-hop-registration-costs-two-readers](step-hop-registration-costs-two-readers.md)</sub> | Spec | 2026-08-24 | [plan](carrier-data-field-read-cost-regression.md) |
 | `R784` | Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it | Ready | 2026-08-21 | [plan](straddling-reference-update-partition.md) |
+| `R819` | The carrier data field read tripled and the seat put it on every generation <sub>blocked by: [step-hop-registration-costs-two-readers](step-hop-registration-costs-two-readers.md)</sub> | Ready | 2026-08-24 | [plan](carrier-data-field-read-cost-regression.md) |
 | `R815` | Index the materialized targets, the only unkeyed tables in a keyed schema | In Progress | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](step-hop-registration-costs-two-readers.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
@@ -471,7 +471,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### mutation-write
 
 - `R784` [**Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it**](straddling-reference-update-partition.md) — Ready, feature
-- `R819` [**The carrier data field read tripled and the seat put it on every generation**](carrier-data-field-read-cost-regression.md) — Spec, store, blocked by [step-hop-registration-costs-two-readers](step-hop-registration-costs-two-readers.md)
+- `R819` [**The carrier data field read tripled and the seat put it on every generation**](carrier-data-field-read-cost-regression.md) — Ready, store, blocked by [step-hop-registration-costs-two-readers](step-hop-registration-costs-two-readers.md)
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R687` [**A DML carrier payload with an errors field loses its return-derived write target**](dml-carrier-errors-field-blocks-return-derived-table.md) — Spec, structural
 - `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture

@@ -1,7 +1,7 @@
 ---
 id: R819
 title: "The carrier data field read tripled and the seat put it on every generation"
-status: Spec
+status: Ready
 bucket: store
 priority: 2
 theme: mutation-write
@@ -182,8 +182,9 @@ target-index item):
   move the full relation and column documentation onto the table; add the registry row whose
   `reason` states the measurements. Each new target arrives with the index-or-roster decision
   the target-index item's gate demands, measured the way that item measures: an index chosen
-  over the readers' join coordinates, or a `MaterializeRegistryGateTest.NO_INDEX` row whose
-  measurements argue the absence.
+  over the readers' join coordinates, or a row in the pinned no-index roster that item's gate
+  installs in `MaterializeRegistryGateTest`, whose measurements argue the absence. (The roster's
+  constant name is that item's to mint; its spec commits to the roster, not to a name.)
 - `FactCaptureAgreementTest`: one `<name>_live` row in the `DERIVED` arm per registration.
 - `DerivedReadCostTest`: re-pin `READERS_WITH_CELLS` and `CELLS` (the reachability walk adds
   cells for every relation reaching a new target), and revisit `KNOWN_NON_MONOTONIC`; a new
@@ -245,3 +246,68 @@ Two consequences of growing it in shape rather than only in scale:
 3. The fixture growth overlaps the target-index item's own fixture loose end. One combined
    edit in whichever item lands second, or does the reviewer want the fixture change isolated
    in one of them?
+
+## Reviewer findings
+
+### Round 1, Spec -> Ready
+
+Sign-off. Both gate questions pass; this round records what was checked, one correction made under
+the reviewer's stale-symbol license, and the answers to the three open questions the spec poses to
+this review.
+
+**Question 1, the goal.** In this reviewer's words: no answer and no generated output changes; the
+item registers up to two expensive derived views (and restructures one body) so that relations H2
+currently re-evaluates once per naming are evaluated once per capture, taking the carrier-family
+reads from tens of seconds back toward the store's floor. The consumers who feel it are every
+routine-carrying generation (`RoutineWriteFacts` reads the seat family once per generation), the
+pipeline tests that pay those generations, the diagnostics drain, and the `$source` completion.
+That is communicable without the phase list, and it is reachable: the registration mechanism
+exists with seven shipped precedents, and slice 1's win is already priced by a same-fixture
+control. The structural claims that generate the cost were all verified against trunk
+(`e40993854`): the seat body names `intent_carrier_data_field` exactly five times, all on
+carrier-facing verdict arms; `intent_carrier_routine_hop` drives from it; `intent_errors_field` is
+named four times across the three view bodies the spec lists, probes `intent_poly_member` per
+driving row, and has no main-source Java reader; `intent_poly_member`'s interface arm carries the
+`ROW_NUMBER() OVER` and its comment does say the ordinal matters to exactly one reader; the
+carrier body's `data_channel` CTE is named four times (one join, three `NOT EXISTS`) and drives
+from every OBJECT-type field before the producer join narrows it; `RoutineWriteFacts` is three
+statements naming the seat four times and joining the carrier relation twice. The fixture-gap
+claim also holds: the `DerivedReadCostTest` fixture's one `@routine` sits on the Query root, so
+the seat relation is empty, and `Film0`'s `@reference` fields disqualify it from the carrier view,
+so all three named relations hold no rows there. The timing figures themselves are the authoring
+session's measurements and were not re-run; the shapes that explain them are all in the tree.
+
+**Question 2, the fit.** The plan extends the registration shape exactly as shipped: rename to
+`_live`, table under the canonical name, registry row whose `reason` states measurements,
+`FactCaptureAgreementTest` `_live` row (the canonical name keeps its own row, per the seven
+precedents), `DerivedReadCostTest` re-pin, census prose rewritten to cite the register. The
+depends-on ordering is argued rather than asserted, and the deference to that item's index gate
+avoids duplicating a mechanism mid-flight. Slice dispositions include declining, which is the
+doctrine's honest outcome. No parallel mechanism anywhere. Hand-to-implementer: yes.
+
+**One correction, made in this commit.** The checklist named `MaterializeRegistryGateTest.NO_INDEX`,
+a constant that exists nowhere: the depends-on item's spec commits to "a row in a pinned roster"
+and mints no name for it. The sentence now points at the roster without pinning the constant, so
+this spec cannot rot against a name its dependency never promised.
+
+**Answers to the open questions.**
+
+1. No fixed numeric bar. The doctrine's own gate is directional and carries no number, and a range
+   test would be false precision. The bar is the slice's stated procedure honestly executed: the
+   restructure lands first, both captures are priced, and the reason row must be able to state the
+   carrier-free number as something a consumer with no routines pays for nothing. A disclosed
+   outlier on the hop-column model is acceptable if the restructured carrier-free refresh is a
+   number the reason row can carry with a straight face and `DerivedReadCostTest` holds; if it
+   remains a magnitude above every shipped registration, declining and recording the numbers is
+   the disposition, symmetric with slice 2's.
+
+2. In scope, on conviction. The slice already carries the control, both dispositions, and the
+   registration fallback; the reshape's stated blast radius is one derived ordinal with one reader
+   plus the carried position column, and a separate item would duplicate this item's measurement
+   context to buy no isolation. If implementation finds the radius larger than the comment claims,
+   that is a real fork to bring back, not one to pre-arm a second item for.
+
+3. One combined edit in whichever item lands second, the spec's own lean. The dependency is In
+   Progress and will land first in the expected order, leaving this item to grow the fixture once
+   with both clusters' needs; isolating the fixture edit in a third item would put a shared test
+   asset behind a gate nobody asked for.
