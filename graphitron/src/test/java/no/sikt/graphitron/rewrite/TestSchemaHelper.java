@@ -146,7 +146,7 @@ public final class TestSchemaHelper {
      * classes' own root: what a rule reading a class's declared form states is only worth
      * something when the classes it read are real ones.
      */
-    private static java.util.List<no.sikt.graphitron.rewrite.catalog.CompletionData.ExternalReference>
+    public static java.util.List<no.sikt.graphitron.rewrite.catalog.CompletionData.ExternalReference>
             classpathCensus(RewriteContext ctx) {
         try {
             var root = java.nio.file.Path.of(TestSchemaHelper.class.getProtectionDomain()

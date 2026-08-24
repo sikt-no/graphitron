@@ -730,9 +730,11 @@ public class TypeFetcherGenerator {
                 }
                 case MutationField.DmlTableField f -> builder.addMethod(buildDmlTableFetcher(ctx, f, outputPackage,
                     launchers.rowFor(f.parentTypeName(), f.name()).orElse(null), launchers.carrierDsl()));
-                // Both @routine-writing shapes render wholly from their command row; the two
-                // fragments handed in beside it are the tenancy binding's declaration form and
-                // its localContext rider, classification-side emission no command holds.
+                // Both @routine-writing shapes render wholly from their command row and the
+                // relation's own tenancy axis. What still rides beside them are per-class
+                // collectors (the arg-path helpers, the projected-key host, the request-context
+                // seam), which are drains rather than decisions: an emitted call and the helper
+                // it names have to land on one class together.
                 case MutationField.MutationRoutineWriteField f ->
                     builder.addMethod(renderRoutineWrite(ctx, f, routineWrites));
                 case MutationField.MutationRoutineWriteRecordField f ->
