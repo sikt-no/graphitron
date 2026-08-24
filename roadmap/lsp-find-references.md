@@ -168,3 +168,100 @@ column, and it removes the open-versus-closed precision question entirely.
    subjects (who uses this field?) are deferred out of Slice A and B. Confirm
    that is the right cut, or fold the field case into Slice B.
 
+## Reviewer findings
+
+### Round 1: Spec → Ready, revisions requested
+
+Reviewer session `session_01BodkET7NMt4McBLg1C55Dg`, 2026-08-24.
+
+The goal reads clearly and the naming section earns its place: an author with the
+language server attached gets Find Usages on SDL names, so before renaming a
+table binding or retiring a `@service` class they can see every schema site that
+uses it instead of grepping for a word that a description might also contain.
+Every symbol, relation and column the spec names exists as named, the matrix
+really has 21 rows, there really are five `graphql_*_directive_arg` relations
+carrying `value_sdl` and no position, and the plan extends existing shapes (a new
+`LspSurface` constant, a new `StoreRead` constant, readers under `facts/`, one
+override on the text document service) rather than standing a parallel mechanism.
+Three findings, in descending weight.
+
+**Finding 1 (question 2, architectural fit): Slice A has no freshness policy,
+and the section that would have set one rests on a false premise.**
+
+"The one asymmetry the facts impose" says "Definition never met this, because it
+reads positions out of the *target's* `.java` parse, not out of SDL." That is true
+of `Definitions` and false of `IntraSchemaDefinitions`, which is the provider
+Slice A calls itself the reverse of. `IntraSchemaDefinitions` reads SDL positions
+and its javadoc states the policy explicitly: "The open-buffer scan stays first
+and authoritative: a type being edited resolves to its live tree-sitter span, not
+the position the last capture recorded", with `SdlDeclarations`' captured sites as
+the fallback. The reason is in `Workspace`'s own javadoc: the store rides the
+capture cadence, not the keystroke, so "what a buffer shows between captures is
+the last capture's judgement of it".
+
+Slice A builds its entire result list out of `graphql_field`, `graphql_argument`,
+`graphql_implements` and `graphql_union_member` captured `source_line` /
+`source_column`. Between captures, every result in a file the author has edited
+points at a stale line. That is the load-bearing failure mode for find-usages
+ahead of a rename, and it is a different failure from the one the position fork
+discusses: the fork weighs *precision* (application position versus value span)
+while this is *freshness* (captured line versus live buffer line). Collapsing the
+two into one section is what lets the recommendation argue against buffer
+awareness on precision grounds without noticing that the neighbouring provider
+already adopted it on freshness grounds. The same question applies to Slice B,
+whose positions come from the same captured columns.
+
+What would satisfy this: state a freshness policy for Slice A and Slice B, as its
+own decision separate from the precision fork. Accepting captured positions
+uniformly is a defensible answer (diagnostics accept exactly that skew), but it
+has to be argued rather than inherited, because a wrong squiggle in the file you
+are looking at costs less than a jump to the wrong line in a file you are not.
+Whichever arm is chosen, drop or repair the "Definition never met this" sentence,
+since the position fork's recommendation currently leans on it.
+
+**Finding 2 (question 1, a checkable claim that does not hold): the dispatch
+matrix trap is real but not the trap the spec describes.**
+
+Slice A says adding the enum constant alone "would silently record 'declines
+everything' for all 21 rows without failing a single test."
+`TriggerDispatchMatrixTest.everySurfaceAnswersSomething` ("no registered surface
+is inert") iterates `LspSurface.values()` and asserts `answeredBy(surface).size()`
+is positive for each, so a `REFERENCES` constant with no row naming it fails the
+build on the first run. The genuinely unguarded hazard is narrower: once *one*
+row names `REFERENCES` that test goes green, and the remaining 20 rows default to
+`NO_ANSWER` unreviewed. There is a second unguarded seam the spec does not
+mention: `theCursorAndSweepAxesDoNotCross` hand-lists
+`cursorSurfaces = Set.of(COMPLETION, HOVER, DEFINITION)`, so a cursor-keyed
+`REFERENCES` sits outside that guard until somebody adds it by hand.
+
+This is a finding rather than a nit because open question 2 asks the Ready gate to
+decide whether to tighten `Reach` on the strength of the claim, and the claim is
+what makes the choice look urgent. Answering question 2 as reviewer: yes, tighten
+it, and derive the cursor-surface set rather than listing it. But the hazard
+paragraph needs restating first so the guard is justified by the case it actually
+closes.
+
+**Finding 3 (question 1, lightest): no user-documentation draft, and three
+sentences already in the manual go stale.**
+
+`roadmap/workflow.adoc`, "Item file conventions", requires a plan with a
+user-visible surface to carry a user-docs draft as the first client of the design,
+and names the LSP plan's own `## User documentation (first-client check)` section
+as the canonical example. A new registered editor capability is such a surface,
+and the observable behaviour has author-facing choices in it (what
+`includeDeclaration` does, whether a result lands on the directive application or
+the value, what an empty list means). Concretely,
+`docs/manual/how-to/dev-loop.adoc` enumerates the surfaces in prose three times
+("diagnostics, hover, completion, and go-to-definition", lines 25, 94 and 146);
+each becomes wrong when this ships. A short draft section naming the new surface
+and where those sentences change is enough.
+
+**Non-blocking, for the author's use rather than a gate condition.** The decoded
+`graphitron_` relations already carry their own `source_name` / `source_line` /
+`source_column` (`graphitron_table`, `graphitron_field_binding`,
+`graphitron_service`, `graphitron_external_field`, `graphitron_enum`), so position
+option (1) needs no join back to `graphql_*_directive` at all;
+`graphitron_field_reference_step` is the one exception and inherits its position
+from `graphitron_field_reference`. That makes the recommended arm cheaper than the
+spec's framing suggests.
+
