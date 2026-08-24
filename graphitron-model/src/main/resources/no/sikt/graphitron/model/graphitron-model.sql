@@ -415,6 +415,7 @@ CREATE TABLE graphql_argument (
   source_name       VARCHAR,
   source_line       INT,
   source_column     INT,
+  argument_name_upper VARCHAR GENERATED ALWAYS AS (UPPER(argument_name)),
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
     REFERENCES graphql_argument_coordinate (graph_name, type_name, field_name, argument_name),
@@ -436,6 +437,7 @@ COMMENT ON COLUMN graphql_argument.description IS 'SDL description string, when 
 COMMENT ON COLUMN graphql_argument.source_name IS 'the SDL file the row was captured from';
 COMMENT ON COLUMN graphql_argument.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_argument.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_argument.argument_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_column''s column_name_upper and jooq_name_upper where @field(name:) was omitted and the argument name stands in as a column spelling. Generated, so nothing writes it and nothing can. The argument-site counterpart of graphql_field.field_name_upper, folded for the same one crossing and for no other: nothing compares one argument name to another case-insensitively';
 
 CREATE TABLE graphql_enum_value (
   graph_name          VARCHAR NOT NULL,
@@ -981,6 +983,7 @@ CREATE TABLE graphitron_argument_binding (
   source_line   INT,
   source_column INT,
   name_ref      VARCHAR NOT NULL,
+  name_ref_upper VARCHAR GENERATED ALWAYS AS (UPPER(name_ref)),
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
     REFERENCES graphql_argument_coordinate (graph_name, type_name, field_name, argument_name)
@@ -994,6 +997,7 @@ COMMENT ON COLUMN graphitron_argument_binding.source_name IS 'the SDL file the r
 COMMENT ON COLUMN graphitron_argument_binding.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_argument_binding.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_argument_binding.name_ref IS 'the name argument as written';
+COMMENT ON COLUMN graphitron_argument_binding.name_ref_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_column''s column_name_upper and jooq_name_upper. Generated, so nothing writes it and nothing can. It exists for the reason its field-site twin does: an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 
 CREATE TABLE graphitron_enum_value_binding (
   graph_name    VARCHAR NOT NULL,
@@ -4419,6 +4423,104 @@ COMMENT ON COLUMN intent_column_match_claim.column_name IS 'witness: the matched
 COMMENT ON COLUMN intent_column_match_claim.source_name IS 'the claimed field''s own declaration file; the position a diagnostic would carry';
 COMMENT ON COLUMN intent_column_match_claim.source_line IS 'source line of the field declaration, 1-based';
 COMMENT ON COLUMN intent_column_match_claim.source_column IS 'source column of the field declaration, 1-based';
+
+CREATE VIEW intent_argument_column_scope
+  (graph_name, type_name, field_name, argument_name, basis,
+   table_source_name, table_schema, table_name) AS
+SELECT DISTINCT tg.graph_name, tg.type_name, tg.field_name, tg.argument_name,
+       'PATH_TERMINAL',
+       tg.to_source_name, tg.to_schema, tg.to_table
+  FROM intent_argument_reference_step_target tg
+  JOIN (SELECT graph_name, type_name, field_name, argument_name, COUNT(*) AS applications
+          FROM graphitron_argument_reference
+         GROUP BY graph_name, type_name, field_name, argument_name) only_application
+    ON only_application.graph_name = tg.graph_name
+   AND only_application.type_name = tg.type_name
+   AND only_application.field_name = tg.field_name
+   AND only_application.argument_name = tg.argument_name
+   AND only_application.applications = 1
+  JOIN (SELECT graph_name, type_name, field_name, argument_name, ordinal,
+               MAX(position) AS position
+          FROM graphitron_argument_reference_step
+         GROUP BY graph_name, type_name, field_name, argument_name, ordinal) last_element
+    ON last_element.graph_name = tg.graph_name
+   AND last_element.type_name = tg.type_name
+   AND last_element.field_name = tg.field_name
+   AND last_element.argument_name = tg.argument_name
+   AND last_element.ordinal = tg.ordinal
+   AND last_element.position = tg.position
+ WHERE tg.targets = 1
+UNION ALL
+SELECT sc.graph_name, sc.type_name, sc.field_name, sc.argument_name,
+       'ARGUMENT_SCOPE',
+       sc.table_source_name, sc.table_schema, sc.table_name
+  FROM intent_argument_scope_table sc
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_argument_reference_step s
+                    WHERE s.graph_name = sc.graph_name
+                      AND s.type_name = sc.type_name
+                      AND s.field_name = sc.field_name
+                      AND s.argument_name = sc.argument_name);
+COMMENT ON VIEW intent_argument_column_scope IS 'Which table the column name written at an argument''s site resolves against: the argument''s own navigation, answered at every site where such a name resolves at all. The argument-site twin of intent_field_column_scope, and a second relation for the reason intent_argument_reference_step_target is one rather than that view with a column added: the departure differs. A field''s names resolve in the navigation off its own parent''s row, an argument''s in the navigation off the table its content binds against, which intent_argument_scope_table answers and which the argument of a root field has where the field-site rule would give it none. Two rules, disjoint rather than ranked, so this relation is a plain union with no windowed collapse over it and carries the one-row-per-site property its twin stands on. An authored @reference path resolves to its terminal element''s table, demanding the terminal reach exactly one table rather than exactly one row, so an element joining two tables by three keys still names its destination; an element that resolved to several rows all reaching one table is one row here, the arm taking DISTINCT over a projection that keeps only the table. An argument with no path element resolves in its own scope table, read from intent_argument_scope_table rather than restated, so the two spellings of that precedence cannot drift and the demands it makes hold here unchanged. One thing this relation does not inherit from its twin, and the difference belongs to the site rather than being a choice made here: repetition. A repeated @reference on a field composes an ordered chain and the field-site rule takes the first application. Repeated on an argument it is a conflict the resolver rejects outright, order composition having no meaning on an argument, so there is no first application to prefer and a site carrying two has no row here at all. The count is over the applications and not over their elements, so an author writing an empty one beside a real one is a conflict here too, which is the resolver''s own reading of that pair. Declining says "no answer", which is what a site the validator must reject deserves, where preferring one would encode a precedence the site does not have. An element-less @reference(path: []) is legal SDL and inert, and this relation reads it as the resolver does: the anti-join is on the path''s elements and never on the directive''s presence, so such a site takes the scope rule and resolves against the argument''s own table, which is the bare predicate a directive-less argument would have produced. Nothing here says the argument''s content is column-shaped, which is intent_argument_scope_table''s stance and holds one rung up: this relation answers where a name would resolve if one is written, and which arguments write one is each consumer''s own question. Two consumers ask different halves of that. intent_argument_column_match asks which column the name reaches; a predicate binding asks whether the resolved table is the one the field already selects from or somewhere a join away, which is basis read directly. Deriving the navigation once is what stops those two disagreeing at a path reaching two tables, where a presence test over the captured elements says "moved" and the resolution says "nowhere".';
+COMMENT ON COLUMN intent_argument_column_scope.graph_name IS 'the owning graph''s partition, carried from both rules'' base relations';
+COMMENT ON COLUMN intent_argument_column_scope.type_name IS 'the type owning the field the argument sits on. Not the type whose binding started the navigation, which is the field''s named type: the difference from the field-site twin, where the two are one';
+COMMENT ON COLUMN intent_argument_column_scope.field_name IS 'the field the argument sits on';
+COMMENT ON COLUMN intent_argument_column_scope.argument_name IS 'the argument whose site this row resolves; the grain, so two arguments of one field each get their own row and neither reader has to know they agree';
+COMMENT ON COLUMN intent_argument_column_scope.basis IS 'which rule resolved this site, in a closed vocabulary of two disjoint rules: PATH_TERMINAL (an authored argument-site @reference path''s terminal element), ARGUMENT_SCOPE (the argument''s own scope table, no path element written). Also the fork a predicate binding takes, PATH_TERMINAL being exactly the case where the resolved table is not the one the field already selects from. Which rung answered underneath ARGUMENT_SCOPE is intent_argument_scope_table''s own basis and is deliberately not restated here, a reader wanting it joining the relation that states it';
+COMMENT ON COLUMN intent_argument_column_scope.table_source_name IS 'the resolved table''s catalog partition, the first column of the sql_table key this row names';
+COMMENT ON COLUMN intent_argument_column_scope.table_schema IS 'the resolved table''s SQL schema';
+COMMENT ON COLUMN intent_argument_column_scope.table_name IS 'the resolved table''s SQL name. With the two columns above this is sql_table''s full key, so the table''s columns are one join away';
+
+CREATE VIEW intent_argument_column_match
+  (graph_name, type_name, field_name, argument_name, matched_name, matched_by,
+   table_source_name, table_schema, table_name, column_name,
+   source_name, source_line, source_column) AS
+SELECT graph_name, type_name, field_name, argument_name, matched_name, matched_by,
+       table_source_name, table_schema, table_name, column_name,
+       source_name, source_line, source_column
+  FROM (SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
+               COALESCE(ab.name_ref, a.argument_name) AS matched_name,
+               CASE WHEN c.jooq_name_upper
+                         = COALESCE(ab.name_ref_upper, a.argument_name_upper)
+                    THEN 'JOOQ_NAME' ELSE 'SQL_NAME' END AS matched_by,
+               sc.table_source_name, sc.table_schema, sc.table_name,
+               c.column_name,
+               a.source_name, a.source_line, a.source_column,
+               ROW_NUMBER() OVER (
+                 PARTITION BY a.graph_name, a.type_name, a.field_name, a.argument_name
+                 ORDER BY CASE WHEN c.jooq_name_upper
+                                    = COALESCE(ab.name_ref_upper, a.argument_name_upper)
+                               THEN 0 ELSE 1 END, c.ordinal) AS rn
+          FROM intent_argument_column_scope sc
+          JOIN graphql_argument a
+            ON a.graph_name = sc.graph_name AND a.type_name = sc.type_name
+           AND a.field_name = sc.field_name AND a.argument_name = sc.argument_name
+          JOIN graphql_type leaf
+            ON leaf.graph_name = a.graph_name AND leaf.type_name = a.named_type
+           AND leaf.kind IN ('SCALAR', 'ENUM')
+          LEFT JOIN graphitron_argument_binding ab
+            ON ab.graph_name = a.graph_name AND ab.type_name = a.type_name
+           AND ab.field_name = a.field_name AND ab.argument_name = a.argument_name
+          JOIN sql_column c
+            ON c.source_name = sc.table_source_name AND c.table_schema = sc.table_schema
+           AND c.table_name = sc.table_name
+           AND (c.jooq_name_upper = COALESCE(ab.name_ref_upper, a.argument_name_upper)
+                OR c.column_name_upper
+                   = COALESCE(ab.name_ref_upper, a.argument_name_upper))) matched
+ WHERE rn = 1;
+COMMENT ON VIEW intent_argument_column_match IS 'Which column an argument''s own name resolves to on the table its site navigates to: the column a filter predicate built from that argument compares against. The argument-site counterpart of intent_column_match_claim, and deliberately not a claim. A claim view states a classification some coordinate is claimed by and unions with its siblings at the classifier grain, and no classifier vocabulary reaches an argument; what an argument gets from a resolved column is a predicate and not a kind, so these rows carry no classifier column and nothing reduces them. Everything else is the twin''s reading transcribed to this site. The argument''s named type has kind SCALAR or ENUM, which is the resolver''s own gate rather than an addition: an input-object argument expands into input fields that resolve at their own sites, so a name match against the argument itself would be a row no consumer asked for. The site resolves against exactly one table, which is intent_argument_column_scope''s resolution, so every decline that relation makes is a silence here and this view adds none of its own. The effective name is the @field(name:) binding where one was written, else the argument name, which is the resolver''s COALESCE, and the arm needs no undecoded-presence fallback for the reason the field-site view needs none: a declined decode leaves the COALESCE on the argument name, which is the fallback anyway. The match is two-tier, the generated Java name before the SQL name, both case-insensitive, collapsed to the first match in tier-then-ordinal order. The scope drives the join and that is load-bearing rather than stylistic, on the measurement intent_column_match_claim''s comment carries: H2 re-evaluates a joined derived relation once per outer row, so reading the scope from underneath graphql_argument would cost the whole relation once per candidate argument, and every argument in the graph is a candidate. Absence is where a written name reaches no column on the resolved table, which is the resolver''s own unbound-argument rejection, and it is equally the ordinary answer for an argument whose content is not column-shaped at all. Nothing here tells those two apart, and what would is a defect relation over this one rather than a column on it.';
+COMMENT ON COLUMN intent_argument_column_match.graph_name IS 'the owning graph''s partition, carried from graphql_argument';
+COMMENT ON COLUMN intent_argument_column_match.type_name IS 'the type owning the field the resolved argument sits on';
+COMMENT ON COLUMN intent_argument_column_match.field_name IS 'the field the resolved argument sits on';
+COMMENT ON COLUMN intent_argument_column_match.argument_name IS 'the resolved argument''s name within the owning field; the grain';
+COMMENT ON COLUMN intent_argument_column_match.matched_name IS 'the effective name this resolved: the @field(name:) binding where one decoded, else the argument name. What the author wrote, so a diagnostic naming the unresolved spelling reads it here rather than deciding which of the two applied';
+COMMENT ON COLUMN intent_argument_column_match.matched_by IS 'which tier matched: JOOQ_NAME (the generated Java field name) or SQL_NAME. Makes the two-tier precedence observable rather than only its outcome';
+COMMENT ON COLUMN intent_argument_column_match.table_source_name IS 'witness: the resolved table''s catalog partition, the first column of the sql_column key this row names';
+COMMENT ON COLUMN intent_argument_column_match.table_schema IS 'witness: the resolved table''s SQL schema';
+COMMENT ON COLUMN intent_argument_column_match.table_name IS 'witness: the resolved table''s SQL name. Which navigation reached it is intent_argument_column_scope''s basis, and a consumer emitting the predicate needs both';
+COMMENT ON COLUMN intent_argument_column_match.column_name IS 'witness: the matched column''s SQL name. With the three columns above this is sql_column''s full key, so the column''s type and nullability are one join away';
+COMMENT ON COLUMN intent_argument_column_match.source_name IS 'the argument''s own declaration file; the position a diagnostic would carry';
+COMMENT ON COLUMN intent_argument_column_match.source_line IS 'source line of the argument declaration, 1-based';
+COMMENT ON COLUMN intent_argument_column_match.source_column IS 'source column of the argument declaration, 1-based';
 
 CREATE VIEW intent_resolved_field_claim
   (graph_name, type_name, field_name, classifier, tier) AS

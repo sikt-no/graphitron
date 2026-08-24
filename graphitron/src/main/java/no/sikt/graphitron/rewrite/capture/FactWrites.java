@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_PATH_SEGMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
@@ -17,6 +18,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
@@ -78,12 +80,14 @@ final class FactWrites {
         Map<Table<?>, RelationWriter> writers = new HashMap<>();
         writers.put(GRAPHITRON_TABLE, FactWrites::graphitronTable);
         writers.put(GRAPHITRON_FIELD_BINDING, FactWrites::graphitronFieldBinding);
+        writers.put(GRAPHITRON_ARGUMENT_BINDING, FactWrites::graphitronArgumentBinding);
         writers.put(GRAPHITRON_FIELD_REFERENCE_STEP, FactWrites::graphitronFieldReferenceStep);
         writers.put(GRAPHITRON_ARGUMENT_REFERENCE_STEP, FactWrites::graphitronArgumentReferenceStep);
         writers.put(GRAPHITRON_REFERENCE_FOR_STEP, FactWrites::graphitronReferenceForStep);
         writers.put(GRAPHITRON_MUTATION, FactWrites::graphitronMutation);
         writers.put(GRAPHITRON_ROUTINE, FactWrites::graphitronRoutine);
         writers.put(GRAPHQL_FIELD, FactWrites::graphqlField);
+        writers.put(GRAPHQL_ARGUMENT, FactWrites::graphqlArgument);
         writers.put(SQL_TABLE, FactWrites::sqlTable);
         writers.put(SQL_CONSTRAINT, FactWrites::sqlConstraint);
         writers.put(SQL_COLUMN, FactWrites::sqlColumn);
@@ -135,6 +139,31 @@ final class FactWrites {
             batch = batch.bind(row.get(t.GRAPH_NAME),
                                row.get(t.TYPE_NAME),
                                row.get(t.FIELD_NAME),
+                               row.get(t.SOURCE_NAME),
+                               row.get(t.SOURCE_LINE),
+                               row.get(t.SOURCE_COLUMN),
+                               row.get(t.NAME_REF));
+        }
+        batch.execute();
+    }
+
+    private static void graphitronArgumentBinding(DSLContext dsl, List<TableRecord<?>> rows) {
+        var t = GRAPHITRON_ARGUMENT_BINDING;
+        var batch = dsl.batch(dsl.insertInto(t)
+                .columns(t.GRAPH_NAME,
+                         t.TYPE_NAME,
+                         t.FIELD_NAME,
+                         t.ARGUMENT_NAME,
+                         t.SOURCE_NAME,
+                         t.SOURCE_LINE,
+                         t.SOURCE_COLUMN,
+                         t.NAME_REF)
+                .values(markers(8)));
+        for (TableRecord<?> row : rows) {
+            batch = batch.bind(row.get(t.GRAPH_NAME),
+                               row.get(t.TYPE_NAME),
+                               row.get(t.FIELD_NAME),
+                               row.get(t.ARGUMENT_NAME),
                                row.get(t.SOURCE_NAME),
                                row.get(t.SOURCE_LINE),
                                row.get(t.SOURCE_COLUMN),
@@ -347,6 +376,45 @@ final class FactWrites {
                                row.get(t.ORDINAL),
                                row.get(t.DECLARATION_LINE),
                                row.get(t.DECLARATION_COLUMN),
+                               row.get(t.TYPE_SDL),
+                               row.get(t.NAMED_TYPE),
+                               row.get(t.NON_NULL),
+                               row.get(t.IS_LIST),
+                               row.get(t.ITEM_NON_NULL),
+                               row.get(t.DEFAULT_VALUE_SDL),
+                               row.get(t.DESCRIPTION),
+                               row.get(t.SOURCE_NAME),
+                               row.get(t.SOURCE_LINE),
+                               row.get(t.SOURCE_COLUMN));
+        }
+        batch.execute();
+    }
+
+    private static void graphqlArgument(DSLContext dsl, List<TableRecord<?>> rows) {
+        var t = GRAPHQL_ARGUMENT;
+        var batch = dsl.batch(dsl.insertInto(t)
+                .columns(t.GRAPH_NAME,
+                         t.TYPE_NAME,
+                         t.FIELD_NAME,
+                         t.ARGUMENT_NAME,
+                         t.ORDINAL,
+                         t.TYPE_SDL,
+                         t.NAMED_TYPE,
+                         t.NON_NULL,
+                         t.IS_LIST,
+                         t.ITEM_NON_NULL,
+                         t.DEFAULT_VALUE_SDL,
+                         t.DESCRIPTION,
+                         t.SOURCE_NAME,
+                         t.SOURCE_LINE,
+                         t.SOURCE_COLUMN)
+                .values(markers(15)));
+        for (TableRecord<?> row : rows) {
+            batch = batch.bind(row.get(t.GRAPH_NAME),
+                               row.get(t.TYPE_NAME),
+                               row.get(t.FIELD_NAME),
+                               row.get(t.ARGUMENT_NAME),
+                               row.get(t.ORDINAL),
                                row.get(t.TYPE_SDL),
                                row.get(t.NAMED_TYPE),
                                row.get(t.NON_NULL),

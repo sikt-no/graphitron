@@ -101,17 +101,17 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 83;
+    private static final int READERS_IN_SCHEMA = 85;
 
     /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 47;
+    private static final int READERS_WITH_CELLS = 49;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
      * cannot grow silently as views are added; a new view that puts new cells in the domain fails this
      * figure until somebody has looked at what it costs.
      */
-    private static final int CELLS = 107;
+    private static final int CELLS = 111;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the

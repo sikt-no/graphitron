@@ -9,6 +9,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY;
@@ -447,6 +448,26 @@ public final class SeededStore {
             .set(GRAPHITRON_FIELD_BINDING.SOURCE_LINE, 2)
             .set(GRAPHITRON_FIELD_BINDING.SOURCE_COLUMN, 3)
             .set(GRAPHITRON_FIELD_BINDING.NAME_REF, nameRef)
+            .execute();
+    }
+
+    /**
+     * A {@code @field} application on an argument: the column name the argument binds to, as the
+     * author wrote it. The argument-site twin of {@link #seedFieldBinding}, and it states the same
+     * thing about resolution: a spelling matching no column is an ordinary row here, the relation
+     * that resolves it being the one that declines.
+     */
+    public static void seedArgumentBinding(DSLContext dsl, String graphName, String typeName,
+                                           String fieldName, String argumentName, String nameRef) {
+        dsl.insertInto(GRAPHITRON_ARGUMENT_BINDING)
+            .set(GRAPHITRON_ARGUMENT_BINDING.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_BINDING.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_BINDING.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_BINDING.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_BINDING.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ARGUMENT_BINDING.SOURCE_LINE, 2)
+            .set(GRAPHITRON_ARGUMENT_BINDING.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_ARGUMENT_BINDING.NAME_REF, nameRef)
             .execute();
     }
 

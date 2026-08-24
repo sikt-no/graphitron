@@ -1595,6 +1595,77 @@ inherits it: both `LauncherCommands.conditionRowOf` and `FetcherEdgeCommands.add
 scan the whole condition relation once per coordinate. That is the multimap above, and it belongs
 with the conditions conversion rather than here.
 
+### Conditions, first increment: the argument-site column resolution
+
+The availability check named one genuinely new classifier arm across all five remaining producers,
+and this is it. Landed as store work alone: two views, no producer converted yet, which keeps the
+modelling question separate from the conversion that will consume it.
+
+**What was missing, precisely.** A generated condition filter is one predicate per column-backed
+argument. `intent_argument_scope_table` already answered which table an argument's content binds
+against, and its own comment called itself "the argument-site counterpart of the reading
+`intent_field_column_scope` makes at a field site". The column half of that pair had never been
+built: no view in the store joined `graphql_argument` to `sql_column`, so the store could say where
+an argument's predicate lands but not what it compares.
+
+**Two relations, not one, and the layering is the field site's.** `intent_argument_column_scope`
+resolves which table a column name written at an argument's site resolves against;
+`intent_argument_column_match` resolves which column the name reaches on it. That is exactly the
+`intent_field_column_scope` / `intent_column_match_claim` split, and it is warranted here for the
+reason that split states: two consumers ask for the navigation. The match asks which column, and the
+predicate binding asks whether the resolved table is the one the field already selects from or
+somewhere a join away, which is the scope's `basis` read directly. Deriving the navigation once is
+what stops those two disagreeing at a path that reaches two tables, where a presence test over the
+captured elements says "moved" and the resolution says "nowhere".
+
+The scope relation could not simply be a third rung on `intent_argument_scope_table`: that relation
+is the *departure* `intent_argument_reference_step_target` walks from, so a path-terminal rung inside
+it would close a cycle. Departure, landing, resolution, match is four relations in a line, and each
+one is read by the next.
+
+**One rule differs from the field site, and the difference belongs to the site.** A repeated
+`@reference` on a field composes an ordered chain and the field-site scope takes the first
+application. Repeated on an argument it is a conflict the resolver rejects outright, order
+composition having no meaning there, so there is no first application to prefer and a site carrying
+two resolves to nothing. Declining is what a site the validator must reject deserves; preferring one
+would encode a precedence the site does not have. The count is over the applications rather than
+their elements, so an empty `@reference(path: [])` written beside a real one is the same conflict,
+which is the resolver's own reading of that pair. Everything else transcribes: the terminal must
+reach exactly one table rather than exactly one row, an element-less application alone is inert and
+leaves the scope rule standing, and the two rules are disjoint rather than ranked so the relation is
+a plain union with no windowed collapse over it.
+
+The match view carries the resolver's own gate on the argument's named type being `SCALAR` or `ENUM`.
+An input-object argument expands into input fields that resolve at their own sites, and its name
+collides with a column often enough that a spurious row here would be one a consumer acted on.
+
+**The write path was the part that had to be found rather than designed.** The two-tier name match
+compares folded spellings, so `graphql_argument` and `graphitron_argument_binding` needed the
+`argument_name_upper` / `name_ref_upper` generated columns their field-site twins already carry. That
+is what a generated column costs in this store: `FactSink.flush` renders a relation's insert from
+`table.fields()`, which asserts every column writable, and H2 rejects an insert that so much as names
+a computed one. `FactWrites` exists for exactly this and already documented it; both relations now
+have a written statement there. The build found this rather than review did, which is the write path's
+gate working as intended.
+
+**Read cost, measured rather than assumed.** The derived read-cost gate prices every
+(registration, reaching view) pair, and the two new views put four new cells in that matrix: each
+reaches `intent_argument_scope_table` and `intent_spelled_table`. All four are monotonic, so neither
+view joins the pinned non-monotonic set and neither wants an index on this evidence. The domain pin
+moves 83 to 85 views, 47 to 49 with cells, 107 to 111 cells.
+
+Neither view is registered in `meta_materialize`, and that is a decision rather than an omission.
+Registration is the lever for a rule re-evaluated many times over a schema of real size, which is why
+the field-site scope carries one: several views join it per coordinate. These two have one prospective
+reader between them and it reads the relation whole, once per generation run. The day a second reader
+appears, or a per-coordinate read does, the question reopens with evidence behind it.
+
+**What the conditions conversion still owes.** Two of the three relations the availability check
+named: the condition membership fold and the facets, the latter being one of the five captured
+populations with no derivation over it at all. Plus the coordinate-to-rows multimap the `rowFor`
+section handed forward, and the producer conversion itself, which is where the three leaf references
+in `ConditionCommands` go.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the
