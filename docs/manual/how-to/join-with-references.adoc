@@ -2,7 +2,7 @@
 :description: Pin foreign-key paths between table-bound types so the generator emits a JOIN, including the implicit-FK shortcut, multi-hop chains, junction tables, the `table:` short form, inline column references, and the input-field variant.
 :!toc:
 
-xref:../reference/directives/reference.adoc[`@reference`] declares a foreign-key path between the field's parent table and its target table. The generator threads the path through jOOQ's catalog and emits a JOIN whenever the field is selected. The reference page covers signature and constraints; this recipe walks the variants the directive surface supports: when you can omit it entirely, multi-hop chains and junction-table traversals, the two ways to pin a hop (by `key:` or by `table:`), inline cross-table column references, the input-field position, and the current state of the `condition:` form.
+xref:../reference/directives/reference.adoc[`@reference`] declares a foreign-key path between the field's parent table and its target table. The generator threads the path through jOOQ's catalog and emits a JOIN whenever the field is selected. The reference page covers signature and constraints; this recipe walks the variants the directive surface supports: when you can omit it entirely, multi-hop chains and junction-table traversals, the two ways to pin a hop (by `key:` or by `table:`), inline cross-table column references, the input-field position, and the `condition:` form for relationships the catalog does not declare.
 
 include::../_generator-internals-note.adoc[]
 
@@ -133,12 +133,12 @@ Each `ReferenceElement` carries three optional fields. They are not independent 
 | `key:` alone | The explicit form. `table:` is inferred from the FK target. Always unambiguous; this is what a multi-FK pair must use.
 | `table:` alone | The catalog-driven shortcut. `key:` is inferred when exactly one FK exists between the source and destination tables; an ambiguous pair classifies as `UnclassifiedField` and the build rejects with the candidate FKs listed.
 | `key:` + `table:` | Allowed but redundant. The generator validates the two agree and fails if they do not.
-| `condition:` alone | Treated as the join `ON` predicate: the generator joins the field's target table and applies the returned `org.jooq.Condition` as the join condition. *Classify-only today* (see <<condition-form>>): the schema validates but the field throws at request time.
-| `condition:` + `key:`/`table:` | `condition:` acts as an *extra* constraint on the hop joined via the FK, not as the `ON` predicate. Mixed paths that combine an FK hop with a `condition:`-only terminal hop are reserved; treat as not-yet-supported.
-| none of the three | Not a valid hop. `path:` must be non-empty and each element must pin its hop somehow.
+| `condition:` alone | Treated as the join `ON` predicate: the generator joins the hop's target table and applies the returned `org.jooq.Condition` as the join condition. See <<condition-form>> for how the target table is worked out, which differs by position.
+| `condition:` + `key:`/`table:` | `condition:` acts as an *extra* constraint on the hop joined via the FK, not as the `ON` predicate. The predicate is emitted wherever the hop is: inside the projecting subselect for an output field, inside the filter's `EXISTS` for a filter.
+| none of the three | Not a valid hop. Each element must pin its hop somehow. (An `@reference(path: [])` with no elements at all is a different case; see <<pitfalls>>.)
 |===
 
-The `condition:`-bearing rows describe the intended contract; the runtime arm has not shipped. See the `condition:` section below before relying on either.
+Paths mix the three forms freely, in any order and at any position.
 
 == Inline cross-table columns
 
@@ -171,6 +171,7 @@ type Customer @table(name: "customer") {
 
 Same shape as a multi-hop object reference; the only difference is the parent type's projection list at SQL time, which gets `staff.first_name` aliased to `storeManagerName`.
 
+[#filter-references]
 == Filter references
 
 `@reference` also applies to filter inputs: both `INPUT_FIELD_DEFINITION` (a field inside a `filter:` input object) and `ARGUMENT_DEFINITION` (a direct scalar argument). In both cases the directive lets a filter value resolve through a foreign-key path to a column on a *joined* table, instead of a column on the field's own table.
@@ -234,16 +235,34 @@ type Query {
 
 A reference filter behaves exactly like a local-column filter for absent values: a null scalar argument, or an empty list, contributes no predicate at all (the whole `EXISTS` term is guarded), so the query is unfiltered rather than matching zero rows. A list-valued reference filter emits `IN (...)` against the terminal column inside the `EXISTS`.
 
-=== Foreign-key hops only
+=== Condition hops in a filter path
 
-A reference filter requires every hop to resolve to a foreign key (the `{key:}` and `{table:}` forms, including single-FK auto-discovery). A `{condition:}` hop (see <<condition-form>> below) is *not* supported in a filter path and is rejected at build time; reference filters are emitted as a foreign-key correlated subquery, so a non-FK hop has nothing to correlate on.
+Every hop form works in a filter path, at any position, mixed freely: `{key:}`, `{table:}`, and `{condition:}`. The `EXISTS` joins the path hop by hop, and each hop contributes whichever kind of join it declares. A `{condition:}` hop's method becomes that join's `ON`; at hop 0 it becomes the correlation back to the filtered row, receiving the filtered table and the hop's own alias:
+
+[source,sql]
+----
+EXISTS (
+    SELECT 1
+    FROM address
+    WHERE customerToAddress(customer, address)   -- the developer's predicate, correlating
+      AND address.district = ?                   -- predicate on the terminal column
+)
+----
+
+A hop that carries `condition:` *beside* a `key:` or `table:` is the other case: the predicate is an extra constraint on the FK-joined hop rather than its `ON`, and it is emitted inside the same `EXISTS`, ANDed with the correlation. A filter through such a hop matches only rows the author's predicate admits.
+
+One difference from an output field: a filter site has no return type to read a table from, so a `{condition:}` hop there always works its target table out from the method's signature. The second parameter must be a concrete generated jOOQ table class; a `Table<?>` resolves nothing and the build rejects it, naming the parameter. See <<condition-form>>.
+
+When the relationship a `{condition:}` hop expresses really is a key equality that simply is not declared in the database, declaring it is the better fix: add a jOOQ `<syntheticObjects>` `<foreignKey>` entry and switch the path to `{key:}`. That makes the relationship a catalog fact once instead of restating the predicate at every filter field, and it unlocks auto-discovery, `{table:}` paths, multi-hop `@nodeId` chains and editor completions along with it. The `condition:` form is for predicates with no key to declare: range overlaps, prefix matches, anything computed.
+
+Filter references are a read-side feature, and condition hops change nothing about that. `@lookupKey` and the three write rails (insert, update, delete) each accept only a filter whose columns live on the row itself, so any path that leaves the table is refused there, foreign-key and condition hops alike.
 
 The full set of input-field directives (`@field`, `@condition`, `@reference`) interoperate; see xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] for the input-carrier rules and how the override cascade interacts with the per-field directives.
 
 [#condition-form]
-== The `condition:` form (classify-only today)
+== The `condition:` form
 
-`ReferenceElement` has a third option: `condition:` is an `ExternalCodeReference` to a Java method that returns a `org.jooq.Condition` to use as the join predicate. The classifier accepts it, but the generator's emitter for condition-join paths is currently a runtime-throwing stub:
+`ReferenceElement` has a third option: `condition:` is an `ExternalCodeReference` to a Java method that returns an `org.jooq.Condition` to use as the join predicate. Use it for a relationship that is not a declared foreign key and has no key equality to declare: range overlaps, prefix matches, anything computed.
 
 [source,graphql]
 ----
@@ -264,9 +283,22 @@ public static Condition sameNamePrefix(Table<?> src, Table<?> tgt) {
 }
 ----
 
-The classifier resolves the join step with the condition method as its join predicate and the schema validates, but selecting `Category.similar` at request time throws `UnsupportedOperationException` until the emitter ships a real body. This shape is reserved for non-FK joins: catalog-derived predicates (e.g. "category whose name shares a prefix with this one"), date-range overlaps, computed predicates with no FK constraint to anchor against. Today, treat the schema as a placeholder; production schemas should not include `condition:`-only references.
+The calling convention is `(source, target)`: the source is the table the path enters the hop from (the field's own table at hop 0, the previous hop's alias after that) and the target is the hop's own alias. The generator emits the returned `Condition` as that join's `ON`, or, at hop 0 of a correlated subquery, as the correlation back to the outer row. Argument order matters and is worth typing concretely, because concrete parameters make a reversed pair a compile error in the generated code rather than silently wrong SQL.
 
-When the runtime arm lands, the contract will be: the method receives the source and target table aliases (both as `Table<?>`) and returns the `Condition` to use on the JOIN's `ON` clause. The framework wraps that into the JOIN at SQL emit time. Mixed paths that combine a `key:` hop with a `condition:`-only terminal hop are also reserved.
+=== Which table the hop lands on
+
+A `{condition:}` hop names no table, so the generator has to work one out. It prefers a target the schema declares, and reads the method signature when there is none:
+
+* If the hop *ends the field's reference chain* and the field's return type carries `@table`, that table is the target. The method's parameters are then free to be `Table<?>`.
+* Otherwise, including every hop in a filter path and every hop that has further hops after it, the target is the class of the method's *second* parameter. It must be a concrete generated jOOQ table class; `Table<?>` resolves nothing and the build rejects it, naming the parameter and saying what it is being read for.
+
+Either way the parameter types are checked against the tables the generator will actually pass, so a concrete parameter naming the wrong table is a build error rather than a compile error in generated code.
+
+=== Where condition hops work
+
+Everywhere a `@reference` path works: object-typed output fields, inline scalar columns, and filter paths on both filter surfaces (see <<filter-references>>). Positions mix freely with `{key:}` and `{table:}` hops.
+
+Prefer a declared foreign key when one is available or declarable. A `{condition:}` hop restates its predicate at every field that uses it, and it opts out of what the catalog gives you for free: FK auto-discovery, `{table:}` short forms, multi-hop `@nodeId` chains, editor completions.
 
 == `@splitQuery` on a referenced field
 
@@ -286,14 +318,16 @@ type Customer @table(name: "customer") {
 
 The choice is operational, not semantic; xref:split-vs-inline.adoc[How-to: When to split queries] covers when round-trip cost beats fan-out cost (typically: deep paths, many sibling parents, large parent projections). The path itself is identical.
 
+[#pitfalls]
 == Pitfalls
 
-* *`path:` must be non-empty.* `@reference(path: [])` fails graphql-java parsing. Every reference declares at least one hop.
+* *An empty `path:` says nothing.* `@reference(path: [])` is legal SDL, and on a filter it is inert rather than an error: with no hops there is nothing to leave the table for, so the column resolves against the field's own table and the filter is the plain local comparison a directive-less field would have produced. If you meant to reach a joined column, the path needs at least one hop.
 * *Multi-FK pairs require explicit `key:` or `table:`.* When more than one FK exists between two tables for a given hop, the build fails with an ambiguous-reference diagnostic. Pick one with `key:` (preferred when the FK has a stable name) or `table:` (preferred when the FK is unique-but-unnamed in your conventions, and the destination disambiguates).
 * *`table:` requires unique-FK-between-the-pair.* Otherwise the field classifies as `UnclassifiedField` and the build rejects. The diagnostic spells out the candidate FKs; switch to `key:` to disambiguate.
 * *Implicit references work only when one FK exists.* The example schema's `Store.customers` works without `@reference` because `customer ↔ store` has exactly one FK; `Store.manager` cannot omit `@reference` because `store ↔ staff` has two FKs.
 * *Inline column references join the linked table.* `languageName: String @field(name: "name") @reference(...)` adds a JOIN to `language` whenever `languageName` is selected. If the schema also exposes `Film.language { name }` and clients tend to select via the nested form, the inline shortcut is redundant cost.
-* *`condition:`-only paths classify but throw at request time today.* Use only as a placeholder pending the runtime arm; production schemas should stick to `key:` and `table:` forms.
+* *A `condition:` hop needs concrete parameter types wherever no return type declares its target.* That is every hop of a filter path and every non-final hop of an output field's path. A `Table<?>` second parameter resolves no target table and the build rejects it. See <<condition-form>>.
+* *Prefer a declared foreign key when the relationship is one.* If a `{condition:}` hop is really a key equality the database does not declare, declare it as a jOOQ synthetic foreign key and switch to `{key:}`. The predicate form restates itself at every field and forgoes auto-discovery, `{table:}` short forms, `@nodeId` chains and completions.
 * *Junction tables are path-only, never types.* The `film_actor` join table is two FKs in sequence; it does not appear as a GraphQL type. Adding it as a `@table`-bound type would be valid (FilmActor exists in the example schema for `@nodeId` purposes), but client-facing many-to-many fields use the path form.
 * *FK constraint names are catalog-bound.* A migration that renames a constraint without updating the schema's `key:` value breaks the build. The `table:` form is more migration-resilient when the FK pair stays unique; the `key:` form is more explicit when constraint names are the contract.
 

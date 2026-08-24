@@ -280,6 +280,23 @@ class ConditionSqlBaselineTest {
                     + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\")");
     }
 
+    @Test
+    void conditionHopFilterCoordinate_theExistsEmbedsTheTwoArgumentCall() {
+        execute("{ customersByConditionDistrict(district: \"Alberta\") { customerId } }");
+        assertThat(SQL_LOG)
+            .as("condition-hop reference filter: the correlated EXISTS is the same shape the FK "
+                + "case builds, with the developer's two-argument call standing exactly where the "
+                + "FK slot equality stands. Compare fkTargetCoordinate above: same envelope, same "
+                + "runtime-prefixed alias, and the operands here are in the author's order "
+                + "(parent first) because the call receives (source, target)")
+            .containsExactly(
+                "select \"public\".\"customer\".\"customer_id\" from \"public\".\"customer\" "
+                    + "where exists (select 1 as \"one\" from \"public\".\"address\" as \"customer_fkt0_0\" "
+                    + "where (\"public\".\"customer\".\"address_id\" = \"customer_fkt0_0\".\"address_id\" "
+                    + "and \"customer_fkt0_0\".\"district\" = ?)) "
+                    + "order by \"public\".\"customer\".\"customer_id\" asc");
+    }
+
     private Map<String, Object> execute(String query) {
         var input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build();
         var result = graphql.execute(input);

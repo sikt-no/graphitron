@@ -19,9 +19,9 @@ import java.util.List;
  * developer-supplied predicate hop correlates through its two-argument call exactly as a
  * foreign-key hop correlates through its column pairs.
  *
- * <p>A lateral routine hop is rejected here, at production, which is where the retired
- * {@code FkHop.narrow} used to throw. {@code @reference} path parsing never mints one, so this is
- * the backstop for the day that changes rather than a reachable author-facing failure.
+ * <p>A lateral routine hop is rejected here, at production. {@code @reference} path parsing never
+ * mints one, so this is the backstop for the day that changes rather than a reachable
+ * author-facing failure.
  *
  * <p>Renderers mint one aliased table local per hop, per reach <em>occurrence</em>: two
  * structurally identical reaches on different terms get their own locals, so the alias map is

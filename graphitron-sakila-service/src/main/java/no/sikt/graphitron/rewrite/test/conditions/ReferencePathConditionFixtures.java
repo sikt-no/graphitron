@@ -1,6 +1,9 @@
 package no.sikt.graphitron.rewrite.test.conditions;
 
 import no.sikt.graphitron.rewrite.test.jooq.tables.Actor;
+import no.sikt.graphitron.rewrite.test.jooq.tables.Address;
+import no.sikt.graphitron.rewrite.test.jooq.tables.Customer;
+import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
 import no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor;
 import no.sikt.graphitron.rewrite.test.jooq.tables.SplitFilterParent;
 import no.sikt.graphitron.rewrite.test.jooq.tables.SplitFilterTarget;
@@ -17,6 +20,12 @@ import org.jooq.impl.DSL;
  * the FK-equivalent navigation. Sakila's natural FKs are the source of truth; these methods are
  * intentionally non-novel so the execution-tier asserts the SQL shape itself (parent + condition
  * + parentInput JOIN; correlated subquery in the inline shape) rather than the predicate.
+ *
+ * <p>Parameter typing splits the class in two, and which half a fixture belongs to is decided by
+ * where the path is read, not by taste. An output field's chain-ending hop is handed its return
+ * type's {@code @table} binding as a declared target, so a {@code Table<?>} signature is enough
+ * there. A filter path never has one, so its target is read off the method's second parameter and
+ * the signature must name concrete generated jOOQ tables.
  */
 public final class ReferencePathConditionFixtures {
 
@@ -68,6 +77,28 @@ public final class ReferencePathConditionFixtures {
      */
     public static Condition filmActorJunctionToActor(FilmActor filmActor, Actor actor) {
         return filmActor.ACTOR_ID.eq(actor.ACTOR_ID);
+    }
+
+    /**
+     * Filter-path fixture: the natural {@code customer.address_id = address.address_id} FK as a
+     * predicate, with <em>concrete</em> parameter types. A filter site carries no return-type
+     * {@code @table} binding, so the target table is read off this signature; the wildcard-typed
+     * {@link #customerToAddress} above cannot be used there. Reaching a joined column from a
+     * filter is the same relationship the inline fixture navigates, expressed for the position
+     * that has to reflect.
+     */
+    public static Condition customerToAddressConcrete(Customer customer, Address address) {
+        return customer.ADDRESS_ID.eq(address.ADDRESS_ID);
+    }
+
+    /**
+     * Filter-path fixture: {@code film -> film_actor} on the junction's own FK column, concrete
+     * parameters for the same reason as {@link #customerToAddressConcrete}. One film reaches many
+     * junction rows, so a filter through this hop is the grain proof: the correlated
+     * {@code EXISTS} must return each film once however many junction rows match.
+     */
+    public static Condition filmToFilmActor(Film film, FilmActor filmActor) {
+        return film.FILM_ID.eq(filmActor.FILM_ID);
     }
 
     /**

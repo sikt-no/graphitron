@@ -953,6 +953,57 @@ type Query {
     # Surface 1 (input-object filter field — the motivating utdanningsregisteret bug shape):
     # a filter input field whose @reference reaches a column on a joined table.
     citiesByCountryFilter(filter: CityCountryFilter): [City!]!
+
+    # Condition-join hops in filter paths. The reach EXISTS dispatches per hop on the join's
+    # kind, so a developer-supplied predicate becomes the hop's ON exactly where an FK hop's
+    # column pairs go. The four shapes below are hop 0 alone, an FK-then-condition bridge, a
+    # reverse-direction FK hop, and a hop carrying its own predicate beside its key.
+    #
+    # Single terminal condition hop: filter Customer by address.district, correlating through
+    # customerToAddressConcrete instead of the customer_address_id_fkey slots. Same rows as
+    # customersByAddressDistrict reaches through the FK.
+    customersByConditionDistrict(
+        district: String @field(name: "district") @reference(path: [{condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+            method: "customerToAddressConcrete"
+        }}])
+    ): [Customer!]!
+    # FK-then-condition bridge: an FK first hop to the film_actor junction, then a terminal
+    # condition hop to actor. Hop 0 correlates on the FK slots and the bridging join dispatches
+    # the predicate, so both dispatch points fire in one path. One film reaches many actors, so
+    # this is also the no-row-multiplication proof: film 1 has two actors and comes back once.
+    filmsByBridgedActorFirstName(
+        firstName: String @field(name: "first_name") @reference(path: [
+            {key: "film_actor_film_id_fkey"},
+            {condition: {
+                className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+                method: "filmActorJunctionToActor"
+            }}
+        ])
+    ): [Film!]!
+    # Reverse-direction FK hop in a filter path: film reaching into its children's columns
+    # (film_actor holds the FK). Nothing pinned this grain before, and the motivation for
+    # admitting condition hops leans on it: EXISTS over a one-to-many path already matches many
+    # rows and returns each parent once, so foreign-key-ness was never buying uniqueness here.
+    filmsByJunctionActorId(
+        actorId: Int @field(name: "actor_id") @reference(path: [{key: "film_actor_film_id_fkey"}])
+    ): [Film!]!
+    # A hop carrying both a key and its own condition: the predicate folds onto the hop rather
+    # than becoming its ON, and it must be emitted inside the filter's EXISTS. Both
+    # split_filter_parent rows reach the one target row through the FK, so filtering on the
+    # target's label matches both on the FK slot alone; the hop's predicate reads the parent's
+    # own `include` column and excludes parent 2. Omitting it emits a filter wider than the
+    # schema declares. Mirrors SplitFilterParent.targetSplit / targetInline, which prove the same
+    # semantic on the projection side.
+    splitFilterParentsByTargetLabel(
+        label: String @field(name: "label") @reference(path: [{
+            key: "split_filter_parent_target_id_fkey",
+            condition: {
+                className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+                method: "splitFilterParentIncluded"
+            }
+        }])
+    ): [SplitFilterParent!]!
 }
 
 # Surface 1 fixture: a filter input whose countryName field references country.country through the
@@ -1318,6 +1369,19 @@ type Customer implements Node @table(name: "customer") @node {
     # FK as a two-arg Java predicate; the emitter routes step-0 correlation through the
     # condition method instead of FK slots. End-to-end coverage of the inline emission path
     # (DSL.multiset(...) wrapping a correlated SELECT whose WHERE is the condition).
+    # Scalar-leaf output field reaching a joined column through a condition hop. The sibling
+    # above pulls the whole Address object; this pulls one column into the customer's own shape,
+    # through a capped correlated subselect. It used to fail with a generic unknown-column
+    # rejection, because the walker that resolves the terminal table refused to advance through a
+    # condition hop even though the hop already carried its resolved target. The condition method
+    # is concrete-typed: a scalar return type supplies no declared target, so the terminal is
+    # read off the signature.
+    districtByCondition: String @field(name: "district") @reference(path: [{
+        condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+            method: "customerToAddressConcrete"
+        }
+    }])
     addressByCondition: Address @reference(path: [{
         condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
@@ -1851,6 +1915,19 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # multi-table fetcher can return either through the shared interface contract.
     name:        String!      @field(name: "TITLE")
     description: String       @field(name: "DESCRIPTION")
+    # Scalar-leaf output field whose condition hop is INTERIOR rather than terminal: the hop
+    # reaches film_actor by reflecting on the method's second parameter, then an FK hop lands on
+    # actor and the column resolves there. Its sibling on Customer covers the condition-only
+    # terminal shape, which fails one step earlier (at target resolution) rather than at the
+    # terminal-table walk, so both are pinned. The subselect is capped at one row, so this is
+    # queried on a single-actor film.
+    soleActorFirstName: String @field(name: "first_name") @reference(path: [
+        {condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+            method: "filmToFilmActor"
+        }},
+        {table: "actor"}
+    ])
     # R503 mixed-source nested type fixture (nesting edge): FilmBlurb projected off the film row.
     blurb: FilmBlurb
     # @pivot fixtures: discriminator-keyed aggregate projections over the film_translation /

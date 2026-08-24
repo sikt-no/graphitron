@@ -2687,6 +2687,102 @@ class GraphQLQueryTest {
 
     @SuppressWarnings("unchecked")
     @Test
+    void referenceFilter_terminalConditionHop_filtersThroughTheDevelopersPredicate() {
+        // Hop 0 is a condition hop, so the correlation back to the filtered customer row is the
+        // developer's method rather than the FK slots. Same answer as reaching address.district
+        // through customer_address_id_fkey: customers 1, 3 and 4 live in Alberta.
+        Map<String, Object> data = execute(
+            "{ customersByConditionDistrict(district: \"Alberta\") { customerId } }");
+        assertThat(data).extractingByKey("customersByConditionDistrict", as(list(Map.class)))
+            .extracting(c -> c.get("customerId"))
+            .containsExactlyInAnyOrder(1, 3, 4);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void referenceFilter_fkThenConditionBridge_matchesEachParentOnce() {
+        // Both dispatch points in one path: an FK hop-0 correlation, then a bridging join whose ON
+        // is the developer's predicate. Actor 1 plays in films 1, 2 and 3, and film 1 has two
+        // actors, so the EXISTS must return film 1 exactly once — no row multiplication however
+        // many junction rows the path reaches.
+        Map<String, Object> data = execute(
+            "{ filmsByBridgedActorFirstName(firstName: \"PENELOPE\") { filmId } }");
+        assertThat(data).extractingByKey("filmsByBridgedActorFirstName", as(list(Map.class)))
+            .extracting(f -> f.get("filmId"))
+            .containsExactly(1, 2, 3);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void referenceFilter_conditionHopNonMatch_dropsTheParentEntirely() {
+        // The other half of the grain: a value nothing matches yields no rows rather than
+        // unfiltered rows. An EXISTS whose correlation never holds excludes the parent, which is
+        // what makes the condition hop's predicate a filter and not a projection.
+        Map<String, Object> data = execute(
+            "{ filmsByBridgedActorFirstName(firstName: \"NOBODY\") { filmId } }");
+        assertThat(data).extractingByKey("filmsByBridgedActorFirstName", as(list(Map.class))).isEmpty();
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void referenceFilter_reverseDirectionFkHop_matchesEachParentOnce() {
+        // A reverse-direction FK hop: film reaches into film_actor, which holds the key, so the
+        // path matches many rows per parent. Nothing pinned this grain, and the case for admitting
+        // condition hops rests on it: foreign-key-ness was never buying at-most-one-row here
+        // either. Actor 1 plays in films 1, 2 and 3, each returned once.
+        Map<String, Object> data = execute("{ filmsByJunctionActorId(actorId: 1) { filmId } }");
+        assertThat(data).extractingByKey("filmsByJunctionActorId", as(list(Map.class)))
+            .extracting(f -> f.get("filmId"))
+            .containsExactly(1, 2, 3);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void referenceFilter_hopCarryingItsOwnCondition_excludesRowsTheKeyAloneWouldMatch() {
+        // The hop-filter acceptance row. Both split_filter_parent rows point at target 1, so
+        // filtering on that target's label matches both on the FK slot alone. The hop's own
+        // predicate reads the parent's `include` column, which is true for parent 1 and false for
+        // parent 2. Before the reach emitted its hops' filters this returned both parents: a
+        // filter silently wider than the schema declares.
+        Map<String, Object> data = execute(
+            "{ splitFilterParentsByTargetLabel(label: \"shared-target\") { parentId } }");
+        assertThat(data).extractingByKey("splitFilterParentsByTargetLabel", as(list(Map.class)))
+            .extracting(p -> p.get("parentId"))
+            .as("parent 2's include is false, so the hop's predicate excludes it")
+            .containsExactly(1);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void scalarLeafReference_terminalConditionHop_projectsTheJoinedColumn() {
+        // The output-side scalar-leaf unlock, condition-only terminal shape. A scalar return type
+        // declares no target table, so the terminal is read off the method signature; before the
+        // terminal-table walk admitted condition hops this failed as an unknown column. The value
+        // must agree with the same column reached through the FK.
+        Map<String, Object> data = execute(
+            "{ customers { customerId districtByCondition address { district } } }");
+        for (var c : (List<Map<String, Object>>) data.get("customers")) {
+            assertThat(c.get("districtByCondition"))
+                .as("customer %s: condition-hop scalar leaf agrees with the FK-reached column",
+                    c.get("customerId"))
+                .isEqualTo(((Map<String, Object>) c.get("address")).get("district"));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void scalarLeafReference_interiorConditionHop_projectsThroughTheBridge() {
+        // The other scalar-leaf shape: the condition hop is interior (film -> film_actor) and an
+        // FK hop lands on actor, where the column lives. Film 3 has exactly one actor, so the
+        // subselect's one-row cap is deterministic here.
+        Map<String, Object> data = execute("{ filmById(film_id: [\"3\"]) { filmId soleActorFirstName } }");
+        assertThat(data).extractingByKey("filmById", as(list(Map.class)))
+            .singleElement(as(map(String.class, Object.class)))
+            .extractingByKey("soleActorFirstName").isEqualTo("PENELOPE");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
     void referenceFilter_absentArgument_returnsAllRows() {
         // Null arg contributes no predicate (the EXISTS term is guarded by the null check), so an
         // omitted countryName returns every city — proof the null/empty-list semantics carry through.

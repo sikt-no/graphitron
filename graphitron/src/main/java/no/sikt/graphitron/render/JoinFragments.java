@@ -5,7 +5,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.model.On;
 
 /**
- * The proven-FK join fragments condition rendering composes: the keyed join of a reach-path hop
+ * The keyed join fragments condition rendering composes: the keyed join of a reach-path hop
  * and the correlation {@code WHERE} tying the first hop's alias back to the outer row. These
  * moved here from the legacy join emitter when the condition glue renderer became their first
  * render-side consumer; {@code JoinPathEmitter} delegates to them, so the emission keeps one
