@@ -241,6 +241,155 @@ shape that populates it, in which case the gate covers six registrations and not
 so, or it should be made to. Small, and adjacent enough to belong here rather than in an item of its
 own.
 
+## Implementation notes
+
+What landed, and the four places the measurement corrected the plan. Each figure below is on the
+gate's twelve-unit fixture with statistics current, which is the shape the spec's own table was
+measured in.
+
+### Five indexes, not seven, and chosen by measurement rather than by reading joins
+
+Task 1 said the probe's seven indexes across five targets were "a starting point and not a result".
+They were not the result. Every candidate shape was measured against *every* view whose derivation
+reaches the target, using `MaterializeDependencies.registrationsReachedByView` as the reader axis so
+the list could not be hand-kept, with the same statistics on both sides so the figure is the index's
+own and not `ANALYZE`'s.
+
+What shipped is the largest set under which all 36 readers improve and none gets dearer:
+
+[cols="3,3"]
+|===
+| Target | Index
+
+| `intent_field_reference_step_hop`
+| `(graph_name, type_name, field_name, ordinal, position, from_source_name, from_schema, from_table)`
+
+| `intent_spelled_table`
+| `(graph_name, spelling)`
+
+| `intent_argument_scope_table`
+| `(graph_name, type_name, field_name, argument_name)`
+
+| `intent_argmapping_pair`
+| `(graph_name, site, use_site, position)`
+
+| `intent_node_id_decode_hop_column`
+| `(graph_name, use_site, position)`
+|===
+
+Two targets are on the gate's roster instead, and this is where the plan's expectation inverted. It
+expected `intent_argmapping_pair` and `intent_node_id_decode_hop_column` to be the two with no
+reader to justify an index; both turned out to have one, and the two that ended up on the roster are
+`intent_resolved_type_binding` and `intent_field_column_scope`, which the probe had indexed. Neither
+can be indexed without making some reader dearer. On the coordinate its thirteen readers join,
+`intent_resolved_type_binding` takes `intent_argument_scope_table_live` from 559 scans to 952; on
+its full grain, which is one of the two grains that would also admit a unique index, that reader is
+spared and `intent_node_id_decode_defect` goes from 1901 to 2381 with two more beside it. It is the
+single largest total gain available and declining it is the honest cost of the rule this item exists
+to enforce, that a shared investment may not make another reader worse.
+`intent_field_column_scope` is smaller and simpler: any shape costs
+`intent_field_reference_discovery` 98 scans to return 59.
+
+A second index on `intent_argmapping_pair`, for the routine-parameter coordinate
+`intent_argmapping_bound_parameter_type` matches on, was measured and declined: two scans against the
+rest of the set, twelve measured on its own, on a sixty-nine scan relation. That is the instrument's
+per-naming floor rather than a cost.
+
+The use-site index on that same target is the thinnest claim that did ship, and worth naming as such
+rather than letting the set's figure carry it. Its readers fall a long way across the five indexes
+together, `intent_argmapping_projection_defect` from 33794 scans to 21394, but almost all of that is
+the spelling index; this one is worth 620 of it. Three per cent, on four readers, with no reader
+dearer. It ships on the shape as much as the figure, the coordinate being the one every reader of a
+pair's resolution departs from, and a reviewer who wants it on the roster instead would be making a
+reasonable call.
+
+### Nothing is UNIQUE, and the reason is not the one the spec anticipated
+
+The spec left the unique question open per target, framed around nullability: five grains carry a
+nullable column, so a unique index there would document the grain without wholly enforcing it. The
+question turned out not to arise, because *the columns a reader joins are not the grain*. Every one
+of the five indexes is a coordinate prefix with the grain's discriminating tail missing: a hop may
+reach several tables, a spelling may resolve to several, `basis` tells two argument scopes apart,
+`pair_position` two hop columns. A unique index on any of them would be false.
+
+The one target where grain and index could have coincided is `intent_resolved_type_binding`, whose
+columns are all `NOT NULL`, and that shape was measured directly against the plain coordinate one:
+it is *worse* for readers, not better. So the finding is that an index here serves readers or it
+serves nothing, and documenting the grain is not a job it can also do.
+
+### `ANALYZE` cannot go in `refresh`, and the reason is correctness rather than cost
+
+Task 2 asked for `ANALYZE` on both refill paths, with the capture path's per-capture cost to be
+measured and legitimately declinable. The cost is not what decides it. **H2 commits the current
+transaction as a side effect of `ANALYZE`**, verified directly: insert a row, analyse, roll back,
+and the row is still there. `Materializations.refresh` runs inside capture's transaction precisely
+so that no reader observes an emptied target, and an implicit commit between the delete and the rest
+of the capture publishes exactly that state.
+
+So the placement moved rather than the path being declined. `Materializations.analyse` is its own
+call with that constraint in its javadoc; `refreshAll` calls it inline, holding no transaction, and
+`FactCapture.capture` calls it immediately after its transaction closes, where the store is settled
+and it is exactly as safe as the dev session's own call. Both paths' readers get the statistics, the
+build path's diagnostics among them. The cost is two milliseconds for all seven targets against a
+refresh of a few hundred, which is below what the refresh's own run-to-run spread can resolve.
+
+Scoped to the seven targets rather than a bare `ANALYZE`, for a measured reason and not only a
+modest one: a whole-database analysis also restates statistics for the 145 captured tables that
+nothing here just rewrote, and on the same fixture it left `intent_field_column_scope_live` dearer
+than the targeted form did.
+
+The spec's second mechanism, that a refill puts the statistics back, did not reproduce. Statistics
+survive a refill at this scale; what they do not survive is never having been gathered, which is the
+state every store was in.
+
+### The gate's pinned set: all three large pairs go, not one
+
+The spec predicted the binding pair would go and the other two would remain at about 1.2x, and told
+the implementer not to reclassify them by assertion. No reclassification was needed. With the
+indexes and current statistics all three are gone:
+
+* `intent_field_reference_step_hop|intent_field_reference_step_target`
+* `intent_field_reference_step_hop|intent_field_column_scope_live`
+* `intent_resolved_type_binding|intent_argument_scope_table_live`
+
+The three remaining pairs are the ones already classified as the instrument's per-naming floor, and
+they are unchanged. The set is empty at one unit and the same three at four and at twelve, which is
+what still justifies twelve.
+
+Two further changes to that gate, both provoked by this work:
+
+*The fixture now populates the seventh registered target.* This is the "loose end worth an answer",
+and the answer is that the fixture did not reach the shape. A `@nodeId` argument populates the decode
+walk's hop relations only where the argument's scope table differs from the node type's table *and*
+exactly one foreign key joins the two. The existing `storeForFilm` arm looks like it qualifies and
+does not, film reaching store through inventory rather than directly. One field returning inventory
+instead gives the one key inventory declares on film. That target now holds rows, its cell is a real
+comparison, and it is the widest wall-clock ratio in the matrix.
+
+*The budget floor moves from two seconds to thirty.* Not a change this item went looking for. With the
+fixture populated, two cells' unregistered sides land within a factor of two of the old two-second
+floor, and which of them appeared in the equality-pinned exhausted set varied between runs on one
+machine. An equality-pinned set whose contents depend on load is a flake wearing a ratchet's clothes.
+The floor is now set clear of the slowest side that terminates, under seven seconds, so every cell is
+compared and the exhausted set is empty and stays empty; the direction is safe because a larger floor
+compares more cells and can only make the gate stricter.
+
+### Task 4 found little to re-tighten, and the reason is worth keeping
+
+Only one figure in `SurfaceScanCountTest` moved: the inlay per-declaration pair, 42 and 41 to 40 and
+39. The five ceilings held over the three-type fixture are identical to the scan, because at three
+types and thirteen catalog tables every materialized target holds a handful of rows and an index on a
+handful of rows saves nothing. The properties that build their own sixty- and two-hundred-and-forty
+type schemas are the only ones where this work shows. That is now written on the class, so the next
+re-measurement does not read an unmoved ceiling as a lever that did nothing.
+
+The one ceiling with a moved figure stays at 80: the guarded shape it is placed against rose rather
+than fell, to 157 and 330, so the window widened at both ends and the rule that placed the number
+reproduces it at 79. What did need correcting was a stale claim in that class, that five of the
+ceilings pass on the unregistered tree and therefore have only the net. Re-measured with the two
+registrations removed, each of the five discriminates: 122 against 288, 567 against 1490, 172 against
+421, 482 against 1744, 219 against 1426.
+
 ## Reviewer findings
 
 ### Round 1, Spec -> Ready

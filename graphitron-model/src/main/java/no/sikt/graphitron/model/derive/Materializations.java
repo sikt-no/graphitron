@@ -2,6 +2,9 @@ package no.sikt.graphitron.model.derive;
 
 import org.jooq.DSLContext;
 import org.jooq.Name;
+import org.jooq.exception.DataAccessException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -69,6 +72,8 @@ import static org.jooq.impl.DSL.table;
  * inside a transaction and an analysis may not.
  */
 public final class Materializations {
+
+    private static final Logger LOG = LoggerFactory.getLogger(Materializations.class);
 
     /** One {@code meta_materialize} row: the view stating a rule, and the table holding its rows. */
     public record Registration(String sourceViewName, String targetTableName) {}
@@ -159,11 +164,25 @@ public final class Materializations {
      * and forty-five captured tables, which are keyed and which nothing here just rewrote, and on
      * the same fixture it left one reader dearer than the targeted form did. The materializer
      * states statistics for what the materializer wrote.
+     *
+     * <p>Best-effort, and that is this store's standing posture rather than a special case for this
+     * call: the fact store is a cache shared by every module of a workspace, and
+     * {@code FactCapture}'s fallback to a private in-memory store says outright that warmth is the
+     * only thing a cache is ever allowed to cost. Statistics are an optimisation on top of that
+     * warmth. A registered target is a table another writer may hold at the moment this runs, and
+     * failing a build to state a selectivity would be the wrong trade by an order of magnitude, so a
+     * database refusal here leaves the planner on whatever it had. Only a database refusal: anything
+     * that is not a {@link DataAccessException} is a programming error and propagates.
      */
     public static void analyse(DSLContext dsl) {
         for (Registration registration : registrations(dsl)) {
-            dsl.execute("ANALYZE TABLE "
-                + dsl.render(table(relation(registration.targetTableName()))));
+            String target = dsl.render(table(relation(registration.targetTableName())));
+            try {
+                dsl.execute("ANALYZE TABLE " + target);
+            } catch (DataAccessException e) {
+                LOG.debug("could not gather statistics on {}; reads of it plan on whatever the"
+                    + " planner already had", target, e);
+            }
         }
     }
 
