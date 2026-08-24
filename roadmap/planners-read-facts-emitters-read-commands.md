@@ -1199,9 +1199,13 @@ beside this slice; the routine-write hop pairing joined a window-carrying relati
 had to be fixed at `c702da2`; and R824 exists because none of it was visible until trunk had run
 eleven consecutive green builds at four times its normal wall clock. The slice found no defect in
 what the generator emits and four in what the store costs to read. That is the finding that should
-reorder the programme: the risk in this conversion is not correctness, it is that a producer moving
-from a walk to a store read moves from a cost nobody measures to a cost nobody measures either, and
-only one of those two has a fifteen-minute floor.
+reorder the programme: the risk in this conversion is not correctness, it is read cost, and the
+gates around read cost are narrower than they look. `DerivedReadCostTest` holds a registration
+monotonic against its readers and `MaterializeRegistryGateTest` holds an index to a stated reader,
+both of which are claims about a *registration*. A newly authored relation that is never registered
+is inside neither, so a producer moving from a walk to a store read moves from a cost nothing
+measures to a cost nothing measures until somebody registers it, and only one of those two has a
+fifteen-minute floor.
 
 **Per relation.** 261 lines of view body across four relations, and an aggregate would mispredict
 in both directions exactly as the plan warned.
@@ -1240,13 +1244,23 @@ nothing yet reads. Stating the refusals with the admissions was the right call a
 costs: three quarters of the dearest relation in the slice, written for a validator that has not
 been built.
 
-It is not only lines. Thirteen refusals is thirteen correlated `EXISTS` subqueries evaluated per
-driving row, and `intent_mutation_routine_seat` is now the most-scanned relation in the store by a
-wide margin: 28,857 scans where `intent_carrier_routine_hop` takes 3,876 and
-`intent_node_id_decode_defect` 1,901 (figures from `MaterializeRegistryGateTest`'s index roster,
-which measured them for a different purpose). It is still an unregistered view read from the
-generate path. The next slice that states a verdict relation should price the refusal arms as a
-read cost when it writes them, not after trunk slows down.
+It is not only lines, but it is less than the line count suggests, and the check is worth recording
+because the first reading of it was wrong. Thirteen refusals is thirteen correlated `EXISTS`
+evaluated per driving row and the seat's scan count is high accordingly, which invites the
+conclusion that the refusal arms are a live cost problem. They are not. `DerivedReadCostTest` times
+the registered read in milliseconds, and the static inline-multiplicity report ranks the seat
+thirteenth rather than first, the node-id decode family and the argmapping projection defect being
+the broad relations. Registering the seat would be the wrong lever besides: no view reads it, so a
+registration would buy a single Java reader a refresh it has no use for, against the rule that a
+registration is a shared investment.
+
+Where the seat does cost something is a mechanism it did not introduce and does not own. It joins
+the field census on a coordinate no key serves, which it shares with three sibling relations, and
+that shows up in `DerivedReadCostTest`'s pinned findings rather than in anything slice one wrote.
+R820 carries the lever and the measurements. The rule to hand forward is therefore narrower than
+"price the refusal arms": state them, and put the relation through the read-cost gate in the same
+increment, rather than reading a scan count out of a test that measured it for something else. Both
+halves of that sentence are this slice's own error, made and caught here.
 
 **Is `rowFor` the right emitter seam.** The shape is right and the implementation is not, and slice
 one is where the implementation became a fork. `RoutineWriteRelation.rowFor` and
