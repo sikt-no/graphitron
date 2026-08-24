@@ -15,8 +15,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
-| `R815` | Index the materialized targets, the only unkeyed tables in a keyed schema | Ready | 2026-08-23 | [plan](step-hop-registration-costs-two-readers.md) |
 | `R784` | Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it | Ready | 2026-08-21 | [plan](straddling-reference-update-partition.md) |
+| `R815` | Index the materialized targets, the only unkeyed tables in a keyed schema | In Progress | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](step-hop-registration-costs-two-readers.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
@@ -421,7 +421,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
-- `R815` [**Index the materialized targets, the only unkeyed tables in a keyed schema**](step-hop-registration-costs-two-readers.md) — Ready, store
+- `R815` [**Index the materialized targets, the only unkeyed tables in a keyed schema**](step-hop-registration-costs-two-readers.md) — In Progress, store
 - `R615` [**init.sql documents the live idreffixture DDL as serving deleted shim tests**](idreffixture-purpose-comment-stale.md) — Backlog, tech-debt
 - `R673` [**A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId**](nodeid-arg-dispatches-on-typeid.md) — In Review, bug
 - `R676` [**A @nodeId filter input on a multitable query cannot state a per-participant join path**](nodeid-filter-per-participant-paths.md) — Spec, bug

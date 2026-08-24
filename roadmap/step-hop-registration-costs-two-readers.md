@@ -1,13 +1,13 @@
 ---
 id: R815
 title: "Index the materialized targets, the only unkeyed tables in a keyed schema"
-status: Ready
+status: In Progress
 bucket: store
 priority: 2
 theme: nodeid
 depends-on: []
 created: 2026-08-23
-last-updated: 2026-08-23
+last-updated: 2026-08-24
 ---
 
 # Index the materialized targets, the only unkeyed tables in a keyed schema
