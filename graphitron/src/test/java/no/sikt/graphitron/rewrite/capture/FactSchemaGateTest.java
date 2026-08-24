@@ -130,6 +130,26 @@ class FactSchemaGateTest {
             @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
         }
 
+        type Mutation {
+          actorFilms(actorId: ID!, minLength: Int): ActorFilmsPayload
+            @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+        }
+
+        type ActorFilmsFailed @error(handlers: [{
+            handler: GENERIC,
+            className: "org.jooq.exception.IntegrityConstraintViolationException"
+          }]) {
+          path: [String!]!
+          message: String!
+        }
+
+        union ActorFilmsError = ActorFilmsFailed
+
+        type ActorFilmsPayload {
+          films: [Film]
+          errors: [ActorFilmsError]
+        }
+
         type Film @table(name: "film") @node {
           filmId: ID! @field(name: "film_id")
           title: String
