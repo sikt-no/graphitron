@@ -1,0 +1,8 @@
+[NOTE]
+====
+*Names from inside the generator.* This page names types from graphitron's own classification
+model. They are accurate today, and worth knowing when a rejection message quotes one back at you,
+but they are not part of the authoring contract: the classification walk that produces them is
+being drained, and these names retire with it. What stays stable is the schema you write, the
+directive reference that describes it, and the diagnostics glossary.
+====

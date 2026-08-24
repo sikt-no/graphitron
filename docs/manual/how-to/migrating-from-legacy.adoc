@@ -4,6 +4,8 @@
 
 The rewrite generator (`graphitron-rewrite`) is directive-compatible with the legacy generator (`graphitron-codegen-parent`): the same `@table`, `@field`, `@service`, `@reference`, `@asConnection`, `@nodeId`, `@condition` directives all do approximately the same thing on the rewrite, and a schema authored against the legacy generator's directive surface will mostly compile under the rewrite without changes. The "mostly" is what this recipe covers: the hard removals (build fails until you remove the directive, or, in one case, resolves differently with no error at all), the locations that still warn today and will fail later, the deprecated arguments (build succeeds with a deprecation notice from graphql-java), and the one behavior divergence the rewrite intentionally preserves over legacy semantics.
 
+include::../_generator-internals-note.adoc[]
+
 This recipe is organised by *what changes for you*, not by which directive each topic touches. Run through the sections in order; each lands a class of migration steps before the next one introduces a new shape.
 
 [#supported-surface]

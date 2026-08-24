@@ -4,6 +4,8 @@
 
 xref:../reference/directives/condition.adoc[`@condition`] is the escape hatch for SQL predicates the catalog can't infer: regex, ranges, date arithmetic, vendor-specific shapes, multi-column boolean expressions. By default the explicit predicate is `AND`-ed with the implicit `column = ?` predicates the rewrite would have emitted on its own; `override: true` flips that to "explicit only". The `override:` flag interacts with field-level vs argument-level placement and with how nested input types pass values down. This recipe walks through the cascade end-to-end, names the input-carrier choices that make nested `@condition` flow correctly, and pins the rewrite's intentional divergence from the legacy generator's "outer owns everything" semantics.
 
+include::../_generator-internals-note.adoc[]
+
 For the directive's signature, parameter list, and canonical examples, see xref:../reference/directives/condition.adoc[`@condition`]. This recipe assumes you've read it.
 
 == The default: stack, don't replace

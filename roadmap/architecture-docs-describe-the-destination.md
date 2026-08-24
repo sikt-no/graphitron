@@ -564,6 +564,24 @@ claim that the manual cited nothing from `roadmap/`, which was half right: no pa
 three ids. The rule does not weaken across the seam, since both trees render to the same public
 site where the `roadmap/` directory is not the reader's to search.
 
+Slice 0's marking followed the citation gate into the manual, at the owner's direction. Eleven
+author-facing pages name graphitron's own classification taxonomy in their own prose
+(`TableField`, `BatchedTableField`, `NodeType`, `GraphitronType.ResultType` and kin), and
+`how-to/result-types.adoc` enumerated the sealed hierarchy's permits with source line numbers.
+Each now carries one shared note, included from `docs/manual/_generator-internals-note.adoc`: the
+names are accurate today and worth knowing when a rejection message quotes one, but they are not
+part of the authoring contract, and they retire with the walk. One partial rather than eleven
+admonitions, so the statement has one edit point.
+
+The boundary is deliberate. Pages naming the diagnostics closed set (`AuthorError`,
+`NotAScalarType` and kin) are not marked: the glossary exists to publish those, so a reader is
+meant to rely on them. Nor are pages naming jOOQ's `TableRecord` or the user-facing
+`SortDirection`. The note is unenforced, on the precedent R810 sets for its own markers: the
+population was found by resolving backticked spans against the walk's model package on the
+classpath, but the same rule run as a gate fires on 65 of 65 manual pages, because that package
+declares types called `Query`, `Table`, `Field` and `On`. A gate that cannot tell those from
+`BatchedTableField` would be suppressed rather than obeyed.
+
 The sibling symbol gate stays on `docs/architecture` alone, and measurement now backs the reason
 the plan's second open fork gave rather than only asserting it. The manual cites 257 distinct
 type-shaped spans, 96 of which resolve to nothing, against 65 of 495 for the architecture tree,

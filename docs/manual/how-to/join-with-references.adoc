@@ -4,6 +4,8 @@
 
 xref:../reference/directives/reference.adoc[`@reference`] declares a foreign-key path between the field's parent table and its target table. The generator threads the path through jOOQ's catalog and emits a JOIN whenever the field is selected. The reference page covers signature and constraints; this recipe walks the variants the directive surface supports: when you can omit it entirely, multi-hop chains and junction-table traversals, the two ways to pin a hop (by `key:` or by `table:`), inline cross-table column references, the input-field position, and the current state of the `condition:` form.
 
+include::../_generator-internals-note.adoc[]
+
 For the surrounding question of "when does the join fire vs DataLoader-batch instead of inline", see xref:split-vs-inline.adoc[How-to: When to split queries]. This recipe assumes the field is inline-joinable (no `@splitQuery`); the path mechanics are the same either way.
 
 == Single-hop FK references

@@ -4,6 +4,8 @@
 
 xref:../reference/directives/splitQuery.adoc[`@splitQuery`] turns a child field into a `DataLoader`-batched fetch instead of an inline correlated subquery. The reference page lists the canonical shapes and the classifier rejections; this recipe addresses the operational question the directive raises: when to inline (default), when to split, and what the DataLoader's caching contract actually looks like.
 
+include::../_generator-internals-note.adoc[]
+
 == Two emission shapes
 
 The classifier picks between two emission shapes for an `@reference`-pathed `@table`-typed child:

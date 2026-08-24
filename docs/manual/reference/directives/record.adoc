@@ -7,6 +7,8 @@
 `@record` is *deprecated and ignored*. The rewrite no longer reads it to bind a type to a backing Java class. The directive is still declared in `directives.graphqls` so existing schemas keep parsing, but it drives no behaviour. Leaving it on a reachable type produces a build warning that tells you to remove it. *Remove `@record` from your schema.*
 ====
 
+include::../../_generator-internals-note.adoc[]
+
 == What replaced it
 
 A GraphQL `OBJECT` or `INPUT_OBJECT` is still backed by a Java class when it carries one; the rewrite just derives the class differently. Instead of reading `@record(record: {className: ...})`, the rewrite *reflects on the field that produces the type* and takes the backing class from that field's Java signature:

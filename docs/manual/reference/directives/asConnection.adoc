@@ -4,6 +4,8 @@
 
 Marks a list field as a https://relay.dev/graphql/connections.htm[Relay cursor connection]. The schema-transform stage rewrites the field's return type from `[T!]!` to a synthesized `TConnection` carrying `edges`, `nodes`, `pageInfo`, and `totalCount`; the generator emits keyset-based `seek/limit` SQL with `ROW_NUMBER() OVER (PARTITION BY ...)` for batched per-parent pagination. If the field doesn't already declare pagination arguments, forward-pagination args (`first: Int`, `after: String`) are added automatically; backward (`last`/`before`) and dynamic xref:orderBy.adoc[`@orderBy`] arguments coexist when present.
 
+include::../../_generator-internals-note.adoc[]
+
 `@asConnection` works on three field shapes that the rewrite recognises distinctly: bare list fields on `@table` parents (inline pagination), `@reference`-driven child lists (per-parent paginated children), and union/interface lists (multi-table polymorphic pagination). It also composes with xref:splitQuery.adoc[`@splitQuery`] to dispatch each parent's connection through a `DataLoader`.
 
 == SDL signature

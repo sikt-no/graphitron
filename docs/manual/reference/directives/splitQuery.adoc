@@ -4,6 +4,8 @@
 
 Splits the annotated field's resolution out of the surrounding parent SELECT into a separate, batched query. The rewrite emits a `DataLoader`-backed fetcher: per request, sibling parents' keys are gathered, one batched `SELECT` runs against the child table with a `VALUES`-keyed join, and rows scatter back to their original parent positions.
 
+include::../../_generator-internals-note.adoc[]
+
 `@splitQuery` is the directive that decouples query depth from query *breadth*. Without it, child references inline into the parent SELECT (one round-trip, joined SQL). With it, each `@splitQuery` boundary becomes a deferred `DataLoader` call (more round-trips, narrower SQL, batched across parents). It composes with xref:reference.adoc[`@reference`], xref:lookupKey.adoc[`@lookupKey`], xref:asConnection.adoc[`@asConnection`], and xref:service.adoc[`@service`].
 
 == SDL signature

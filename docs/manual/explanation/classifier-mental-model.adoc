@@ -4,6 +4,8 @@
 
 The build doesn't blindly emit a fetcher for every field; it first sorts each field into a category based on its directives, its parent, and its return type. The sorting is the *classification* step, and most of the build's user-visible behaviour (rejection messages, directive interaction rules, batched-vs-correlated query shapes) traces back to it. This page explains the model in user terms; xref:../../architecture/reference/code-generation-triggers.adoc[Code Generation Triggers] covers the contributor-facing detail.
 
+include::../_generator-internals-note.adoc[]
+
 == Two axes describe every field
 
 Two independent properties decide what a field becomes:

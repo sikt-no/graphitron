@@ -4,6 +4,8 @@
 
 Attaches a developer-supplied predicate to a field, an argument, or an input field. The reflected static method takes the surrounding table and the relevant scalar values, and returns a jOOQ `Condition`. The rewrite folds that `Condition` into the generated `WHERE` clause: by default *in addition to* the implicit `column = ?` predicates the rewrite would otherwise emit, or *replacing them* when `override: true`.
 
+include::../../_generator-internals-note.adoc[]
+
 `@condition` is the escape hatch for predicates Graphitron can't infer from the catalog: regex matches, range filters, date arithmetic, joins through correlated subqueries, vendor-specific predicates, multi-column boolean shapes. It also drives the dynamic `enclosingOverride` cascade at field level: an outer field-level `@condition(override: true)` suppresses the implicit-column predicates from an input-typed argument, but inner argument-level `@condition` annotations *still fire*. (The rewrite preserves inner explicit conditions, the legacy generator dropped them, see `filmsOuterOverrideFilterInput` in the example schema for the test that pins this divergence.)
 
 == SDL signature

@@ -4,6 +4,8 @@
 
 A class-backed GraphQL output or input type is bound to an existing Java class. The binding is derived by reflection from the type's producer: for an output type, the producing field's return type (a `@service` method return or a parent-accessor chain); for an input type, the method parameter the input flows into. The reflected class's shape determines which sealed result-type variant the rewrite picks and, for child `@table` fields on free-form parents, whether the classifier can auto-derive a batch key from a typed accessor. This recipe walks the decision tree and the operational consequences for each variant.
 
+include::../_generator-internals-note.adoc[]
+
 == The four output variants
 
 The sealed `GraphitronType.ResultType` hierarchy has four permits (`GraphitronType.java:89-141`). The classifier picks among them by reflecting on the backing class the producer yields (`TypeBuilder.buildResultType:513-546`):

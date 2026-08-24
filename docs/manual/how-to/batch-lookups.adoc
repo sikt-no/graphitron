@@ -4,6 +4,8 @@
 
 xref:../reference/directives/lookupKey.adoc[`@lookupKey`] turns a query into a Relay https://graphql.org/learn/global-object-identification/[plural identifying root field]: the client sends a list of key values, the server returns a list of results in the same positions, and unmatched keys surface as `null` at the corresponding output index. The reference page covers the directive's signature and the four canonical shapes; this recipe walks the operational variations: correlated multi-arg keys, composite keys behind an input type, NodeId-encoded keys and the failure-mode split they imply, the `@splitQuery` interaction (per-parent narrowed batches), and the constraints that bite when keys are too many, the wrong shape, or paired with the wrong directive.
 
+include::../_generator-internals-note.adoc[]
+
 == The positional contract
 
 Every `@lookupKey` shape compiles around the same join: a `VALUES(idx, key1, key2, ...)` derived table joined against the target table on the key columns. What that join delivers depends on where the field sits, and the contract this section describes is the *root* field's.
