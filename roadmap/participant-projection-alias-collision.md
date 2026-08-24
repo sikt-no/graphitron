@@ -1,13 +1,13 @@
 ---
 id: R749
 title: "Same-named fields on two participants of one discriminated interface collide on the __rk_ alias, and one join path is silently dropped"
-status: In Review
+status: Ready
 bucket: bug
 priority: 8
 theme: codegen-correctness
 depends-on: []
 created: 2026-08-20
-last-updated: 2026-08-21
+last-updated: 2026-08-24
 ---
 
 # Same-named fields on two participants of one discriminated interface collide on the __rk_ alias, and one join path is silently dropped
@@ -682,3 +682,79 @@ the command.
 * The owner fact is asserted as model data at the pipeline tier, and the write/read enforcer
   holds: both emitted halves spell the one stamped owner.
 * Full `mvn install -Plocal-db` green.
+
+## Reviewer findings
+
+### Round 1 (In Review -> Ready)
+
+Question 1 (is the implementation correct, and is it the change the spec approved) passes. The
+alias-owner fact is stamped once in `FieldBuilder.aliasOwnerOf` off the
+`BuildContext.aliasOwnerByParticipant` index that `TypeBuilder`'s existing discriminated-interface
+scan builds, so the `TableBound` / `JoinedTableBound` fork is the real participant classification
+rather than a second SDL derivation; `ReservedAliases.resultKeyPrefix` is the single mint both the
+write side (`ProjectionUnitRenderer`) and the read side (`FetcherEmitter`) compose from; all four
+`DiscriminatedTable` mint sites carry the restriction, including the
+`TypeFetcherGenerator.buildTableInterfaceReprojection` delegate; and the three census arms land where
+their terms are minted. The four deviations in `## Implementation notes` are all defensible, and the
+inverted restriction polarity in particular is a better answer than the spec's: transmitting the
+per-type names rather than the shared ones keeps "a shared alias requires a shared occurrence set"
+true over the spliced-unit population too, which the spec's polarity would have broken.
+
+Question 2 (how do we know the item is complete) is where this goes back.
+
+**One of the spec's six named execution pins does not test what it is named for, and the fixture
+cannot express it.** The `## Tests` section lists "per-type argument divergence not raising the
+consistent-arguments client error" as an execution pin, and adds, specifically: "The per-type
+`requireConsistentArguments` behaviour change is its own pin (execution tier), not a rider on the
+correctness cases." The delivered
+`GraphQLQueryTest.fanItems_sameNamedParticipantFields_divergingArgumentsDoNotRaiseTheConsistencyError`
+selects `details(first: 1)` on `FanAlpha` and `target` on `FanBeta`: two different field names, one
+occurrence each, and its only assertion is `hasSize(4)`. Nothing in it can raise
+`requireConsistentArguments` before or after this item, so it would pass just as well on the
+pre-change tree.
+
+The fixture cannot express the case as drafted. On `FanItem` the only argument-carrying field is
+`details`, which the interface declares, so its owner is `QualifiedBy("FanItem")` and every arm still
+merges every occurrence: that is the *other* half of the split, and it is pinned correctly by
+`fanItems_interfaceDeclaredKey_divergingArgumentsStillRaiseTheConsistencyError`. The participant-local
+fields (`target`, `targetLoaded`) carry no arguments, so `readsSelectedFieldArguments` never emits the
+guard into their arm and the relaxation is unobservable on them.
+
+This is not a naming quibble, for two reasons. First, the relaxation is now an author-facing promise:
+the `code-generation-triggers.adoc` table this item added states that a query selecting "a
+participant-declared field with different arguments or sub-selections per type" resolves per type. The
+sub-selections half is pinned (`...divergingSubSelectionsResolvePerType`); the arguments half is
+documented and unguarded. Second, a test carrying the property's name while asserting nothing about it
+is worse than no test: it reads as coverage to the next person who touches the restriction.
+
+To fix: give both participants a same-named participant-local field that carries an argument (a
+paginated `@reference` off `fan_base` not declared on `FanItem`), then assert that
+`... on FanAlpha { <field>(first: 1) { ... } } ... on FanBeta { <field>(first: 2) { ... } }` returns
+both types' rows rather than raising `GraphitronClientException`. If the relaxation turns out not to
+hold, that is the more valuable finding and belongs in the body.
+
+### Bookkeeping, to settle in the same round
+
+The plan body is still written in the future tense throughout parts 1-3 and the Implementation and
+Tests sections, with `## Implementation notes` appended rather than the shipped prose collapsed.
+`roadmap/workflow.adoc` ("Publishing", step 3) has the implementer "update the plan (remove shipped,
+keep pending)". Reading forward through a full design argument to find out what actually landed, then
+reconciling it against a four-item deviation appendix, is most of the cost of this gate. Collapse the
+shipped parts to `shipped at <sha>` notes and leave standing only the remaining work (the pin above)
+before the next handoff.
+
+### Non-blocking notes, no action required
+
+* `CommandSeamRatchetTest.PLAN_LEAF_REFERENCES` goes 138 -> 147. The javadoc justifies all nine and
+  four of them are the projection-identity switch, which is genuinely the point. Worth naming only
+  because the ratchet is meant to trend down.
+* The new `RootLauncherRendererTest` cases assert on emitted body strings
+  (`java.util.Set<java.lang.String> perTypeFields = java.util.Set.of("target")`), which
+  `development-principles.adoc` bans "at every tier". The file already does this in fourteen places,
+  the spec named these pins explicitly and they were signed off at Spec -> Ready, and the behaviour is
+  independently pinned at the SQL-baseline and execution tiers, so this is the file's pre-existing
+  norm rather than a regression introduced here. Not a reason to hold the gate.
+* The `code-generation-triggers.adoc` closing paragraph presents the mixed-participation deferral as a
+  shape an author can hit, while `## Implementation notes` item 2 establishes that the arm has no
+  reachable population. True as written (the backstop does defer if reached), but a reader will look
+  for a schema that triggers it and not find one.
