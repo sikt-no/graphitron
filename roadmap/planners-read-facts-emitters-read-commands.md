@@ -1285,7 +1285,7 @@ relation with its reasons attached. Two copies is a coincidence; the third famil
 pattern, and the third family is next.
 
 **Multiplied by what remains.** The corrected census leaves nineteen references in six files:
-`LauncherCommands` (5 types), `FetcherEdgeCommands` (4), `ConditionCommands` (3),
+`LauncherCommands` (5 types), `FetcherEdgeCommands` (5), `ConditionCommands` (3),
 `ProjectionCommands` (3), `TypeUnitCommands` (2), `EmitPlan` (1). Five producers plus the plan
 assembler, whose one `GraphitronType` reference no producer conversion removes; it goes with the
 terminal deletion. Nineteen is not nineteen units of equal size, and the multiplication that
@@ -1305,6 +1305,95 @@ is a sequence of conversions punctuated by instruments. It is a sequence of conv
 which is likely to spawn a read-cost item, and the sequencing question the next slice should settle
 is whether the store's read cost gets its own workstream instead of being discovered once per
 family.
+
+### The second half, replanned against slice one's numbers
+
+Slice one earned the right to plan the rest, and this is that plan. It changes three things and
+confirms one.
+
+**Confirmed: the ordering constraint is still a phantom.** Routine-write converted against nothing.
+No producer waited on it and it waited on no producer, the `ConditionRelation` parameter never came
+up, and the `produceWithoutSchema` inversion dissolved exactly as "What actually constrains the
+order" predicted it would. That section stands unedited. Any producer still converts whenever its
+facts are relations.
+
+**Changed: the size predictor was the wrong column.** The inventory sizes the six remaining
+producers by dispatch sites, and slice one says that column predicts the wrong half of the work.
+Routine-write carried 11 sites, under a twelfth of the plan-side pin, and the conversion itself was
+one commit at +342 and -622. The other 4,000 lines were the three facts that had no relation.
+Dispatch sites predict *emitter* work; missing relations predict *store* work; and in slice one the
+store work was 2,484 added lines (the three relations plus the facts reader) against the producer's
+own 342, a ratio above seven to one. So `FetcherEdgeCommands` at 48 sites is
+not therefore the largest increment, and `ConditionCommands` at 3 is not therefore the smallest.
+Neither is knowable from the inventory at all.
+
+**Therefore the first deliverable of the second half is the availability check, run five times.**
+Slice one opened by running one for the routine-write family, and its findings "replace the
+optimism" in the words of the section that records them: three facts turned out to have no relation
+where the draft had assumed the family was ready. Five unconverted producers is five such
+optimisms. Run the check for conditions, projections, fetcher edges, type units and the schema-level
+globals, and report per producer which of its inputs are relations, which are derivable from
+relations, and which need one authored. Only then commit an order. The check is cheap, it is the
+only thing that has ever moved this item's cost estimates, and doing it once for all five is
+strictly cheaper than discovering the answer a producer at a time.
+
+**Second deliverable, and it comes before any third family: unify the `rowFor` seam.**
+`RoutineWriteRelation` and `LauncherRelation` now carry the same linear scan, one of them beside a
+`byCoordinate()` that rebuilds its map per call, read from eight per-coordinate emission sites in
+`TypeFetcherGenerator`. Two copies is a coincidence and the third makes it the pattern every later
+family copies, so this lands while there are two. One memoized coordinate-keyed lookup, declared
+once on a carrier both relations hold, and the javadoc drift goes with it: the sentence about
+dispatching on presence is true of the launcher relation and false of the routine-write one, whose
+caller throws and whose presence dispatch lives in `EmitPlan`. Small, fully evidenced, and it is the
+seam every remaining producer will be read through.
+
+**Third: read cost is a per-increment obligation, not a workstream.** The reflection left this open
+and the evidence closes it against a separate workstream, in both directions. The three read-cost
+findings slice one spawned were each about one relation and each was cheap once measured; what was
+expensive was measuring them late, after trunk had run eleven consecutive green builds at four
+times its normal wall clock. And the fourth candidate was expensive in the opposite way: the hop
+pairing's `CASE` join was patched, shipped, cited in this item's own reflection, and reverted once
+somebody ran a same-fixture control and found the producer costing the same either way. Diagnosing
+late and diagnosing without a control are the same failure wearing two faces, and a workstream
+inherits both by construction, since it runs behind the increment that authored the relation and
+arrives after the shape is already in the tree.
+
+So the obligation attaches to the authoring increment instead: **an increment that authors a
+derived relation puts it through the read-cost gate before it ships, and records what it measured
+on the relation's own comment.** This is narrow on purpose. It is not a budget and not a number; it
+is the requirement that somebody looked, by the procedure the `store-performance` skill sets out,
+at the time the relation was written. That procedure's control step is the load-bearing half:
+between them, the reverted patch and this reflection's own retracted paragraph about the seat cost
+two sessions and two commits, and both were hypotheses that a control on the same fixture would
+have refused before either was written down.
+
+It is worth naming why this cannot be delegated to the gates that exist. `DerivedReadCostTest`
+holds a registration monotonic against its readers and `MaterializeRegistryGateTest` holds an index
+to a stated reader; both are claims about a *registration*, and a newly authored relation that is
+never registered is inside neither. Slice one authored four relations, registered none of them, and
+walked through that gap without any gate noticing. The obligation above is what covers it until
+something mechanical does.
+
+**Fourth: `discriminatedBranches` gets an owner.** "What actually constrains the order" names
+`TypeFetcherGenerator.buildTableInterfaceReprojection` as a production-path inversion invisible to
+every pin, and says the family that owns it should name it as a deliverable. It is the launcher
+family's: what retires it is the branch list arriving on a command row, and the branch list is
+`LauncherCommands.discriminatedBranches`. It lands with the launcher conversion and not before, and
+the launcher increment is now the one that carries it.
+
+**A proposed order, revisable by the check above.** Conditions first, not for the dependency reason
+an earlier draft gave and this item already refuted, but because it has the smallest dispatch
+surface of the five and its relation is the parameter three other producers take: converting it
+first means the remaining three convert against a parameter that is already a store read, and it is
+the cheapest place to prove the unified seam on a second family. Then projections and type units in
+whichever order the availability check ranks readier. Then fetcher edges, whose 48 sites make it the
+step most exposed to a mechanical read-by-read transcription violating one statement per grain.
+Then launchers, largest, naming the most condemned types, and carrying `discriminatedBranches`.
+`EmitPlan`'s single reference is not a producer conversion and goes with the terminal deletion.
+
+The census is the progress dial for all of it: nineteen references in six files, falling only when a
+whole file stops naming the model. A second-half increment that leaves it unchanged relocated
+nothing, whatever else it moved.
 
 ### Emitter half: family by family
 
