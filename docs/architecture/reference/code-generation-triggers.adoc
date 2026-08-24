@@ -689,8 +689,12 @@ applies:
 |===
 
 A participant that also participates in a *joined-table* interface is the one shape left out: its
-inherited references are projected off the base under the unqualified alias, which its qualified read
-cannot address, so that coordinate is a deferred rejection rather than a silent miss.
+inherited references would be projected off the base under the unqualified alias, which its qualified
+read cannot address, so that coordinate is a deferred rejection rather than a silent miss. No schema
+reaches it today: a single-hop `@reference` off a discriminated base is claimed as a cross-table
+participant field, which projects under its own fixed `<TypeName>_<fieldName>` alias and so never
+enters the result-key namespace at all. The rejection is a backstop against a future change that
+moves such a coordinate back into that namespace, not a shape to write a schema against.
 
 === Reading the generator-output column
 

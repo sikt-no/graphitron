@@ -520,6 +520,31 @@ INSERT INTO fan_detail (fan_base_id, note) VALUES
     (1, 'alpha-note-1'), (1, 'alpha-note-2'), (1, 'alpha-note-3'),
     (2, 'beta-note-1'),  (2, 'beta-note-2');
 
+-- fan_mark is fan_target's argument-carrying counterpart: a participant-local field that is a
+-- paginated LIST, so its emitted arm reads the runtime 'first' off the canonical SelectedField and
+-- the occurrence bucket carries an argument consistency guard. One child table reached over two
+-- FKs, so each participant declares its own 'marks' path out of fan_base, exactly as each declares
+-- its own 'target'. The interface-declared 'details' cannot carry this shape: every arm merges
+-- every occurrence of an interface-declared key, so per-type argument divergence there stays a
+-- client error, and only a participant-local key can show the relaxation.
+--
+-- Row counts are per participant and deliberately unequal (3 for the ALPHA row, 3 for the BETA
+-- row, one each for the second pair) so a query asking 'first: 1' on one type and 'first: 2' on
+-- the other resolves two different page sizes: an arm serving the sibling's argument, or dropping
+-- the limit, reads a count no other reading produces. The labels name their own participant, so a
+-- cross-participant read is visibly wrong rather than merely short.
+CREATE TABLE fan_mark (
+    fan_mark_id   serial      PRIMARY KEY,
+    alpha_base_id integer     REFERENCES fan_base(fan_base_id),
+    beta_base_id  integer     REFERENCES fan_base(fan_base_id),
+    mark_label    varchar(50) NOT NULL
+);
+INSERT INTO fan_mark (alpha_base_id, beta_base_id, mark_label) VALUES
+    (1, NULL, 'alpha-mark-1'), (1, NULL, 'alpha-mark-2'), (1, NULL, 'alpha-mark-3'),
+    (3, NULL, 'alpha-mark-4'),
+    (NULL, 2, 'beta-mark-1'),  (NULL, 2, 'beta-mark-2'),  (NULL, 2, 'beta-mark-3'),
+    (NULL, 4, 'beta-mark-4');
+
 -- R36 item 1 fixture: composite-PK participants in @asConnection multi-table polymorphic.
 -- paged_a + paged_b share a (Integer, Integer) composite PK shape so the polymorphic emitter
 -- can project DSL.jsonbArray(k1, k2) as the synthetic __sort__ column and type it as JSONB;

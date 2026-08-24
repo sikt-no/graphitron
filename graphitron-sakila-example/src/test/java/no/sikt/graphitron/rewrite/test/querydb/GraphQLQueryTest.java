@@ -4936,14 +4936,33 @@ class GraphQLQueryTest {
         // to every occurrence in its bucket. With the bucket scoped per participant there is
         // nothing to serve across types, so per-type argument divergence on a participant-local
         // key is no longer a client error.
+        //
+        // 'marks' is the field that can show it: participant-local, so its alias and therefore its
+        // occurrence bucket are per type, and a paginated list, so its arm reads the runtime
+        // 'first' off the canonical occurrence and carries the guard. On the pre-change tree both
+        // occurrences share one bucket and this query raises GraphitronClientException; execute()
+        // asserting no errors is the pin on the relaxation. 'details' cannot stand in: the
+        // interface declares it, so every arm keeps every occurrence by construction and the
+        // divergence stays an error there, which the boundary test below pins.
         Map<String, Object> data = execute("""
             { allFanItems {
                 fanBaseId
-                ... on FanAlpha { details(first: 1) { note } }
-                ... on FanBeta  { target { targetLabel } }
+                ... on FanAlpha { marks(first: 1) { markLabel } }
+                ... on FanBeta  { marks(first: 2) { markLabel } }
             } }
             """);
-        assertThat(allFanItems(data)).hasSize(4);
+        var items = allFanItems(data);
+        // The counts are what separate a per-type page from the two ways of getting it wrong: an
+        // arm served the sibling's argument reads the other's page size, and an arm that lost the
+        // limit reads all three of its own rows.
+        assertThat(marks(items, 1))
+            .as("the ALPHA row resolves its own first: 1, out of three alpha marks")
+            .extracting(m -> m.get("markLabel"))
+            .containsExactly("alpha-mark-1");
+        assertThat(marks(items, 2))
+            .as("and the BETA row its own first: 2, out of three beta marks off its own FK")
+            .extracting(m -> m.get("markLabel"))
+            .containsExactly("beta-mark-1", "beta-mark-2");
     }
 
     @Test
@@ -5046,6 +5065,12 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> details(List<Map<String, Object>> items, int fanBaseId) {
         return (List<Map<String, Object>>) byFanBaseId(items, fanBaseId).get("details");
+    }
+
+    /** The {@code marks} payload of the {@code allFanItems} row with this base PK. */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> marks(List<Map<String, Object>> items, int fanBaseId) {
+        return (List<Map<String, Object>>) byFanBaseId(items, fanBaseId).get("marks");
     }
 
     @SuppressWarnings("unchecked")

@@ -3088,6 +3088,12 @@ type FanAlpha implements FanItem @table(name: "fan_base") @discriminator(value: 
     # the consumer workaround for the inline shape.
     targetLoaded: FanTarget
         @splitQuery @reference(path: [{key: "fan_base_alpha_target_id_fkey"}])
+    # The argument-carrying same-named pair: participant-local like 'target', but a paginated list,
+    # so its arm reads the runtime 'first' and its occurrence bucket is argument-guarded. With the
+    # bucket scoped per participant there is nothing to serve across types, so the two types may
+    # ask for different pages of their own path.
+    marks(first: Int): [FanMark!]!
+        @reference(path: [{key: "fan_mark_alpha_base_id_fkey"}]) @defaultOrder(primaryKey: true)
     details(first: Int): [FanDetail!]!
         @reference(path: [{key: "fan_detail_fan_base_id_fkey"}]) @defaultOrder(primaryKey: true)
 }
@@ -3098,6 +3104,8 @@ type FanBeta implements FanItem @table(name: "fan_base") @discriminator(value: "
     target:    FanTarget @reference(path: [{key: "fan_base_beta_target_id_fkey"}])
     targetLoaded: FanTarget
         @splitQuery @reference(path: [{key: "fan_base_beta_target_id_fkey"}])
+    marks(first: Int): [FanMark!]!
+        @reference(path: [{key: "fan_mark_beta_base_id_fkey"}]) @defaultOrder(primaryKey: true)
     details(first: Int): [FanDetail!]!
         @reference(path: [{key: "fan_detail_fan_base_id_fkey"}]) @defaultOrder(primaryKey: true)
 }
@@ -3106,6 +3114,14 @@ type FanBeta implements FanItem @table(name: "fan_base") @discriminator(value: "
 type FanTarget @table(name: "fan_target") {
     fanTargetId: Int!    @field(name: "fan_target_id")
     targetLabel: String! @field(name: "target_label")
+}
+
+# The two participants' 'marks' element, one table reached over two different FKs. Unlike
+# 'target' this field is a list and takes 'first', which is what puts an argument consistency
+# guard on its occurrence bucket.
+type FanMark @table(name: "fan_mark") {
+    fanMarkId: Int!   @field(name: "fan_mark_id")
+    markLabel: String! @field(name: "mark_label")
 }
 
 # The interface-declared 'details' element: one table, one projection, every participant agreeing.
