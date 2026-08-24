@@ -7,7 +7,7 @@ priority: 5
 theme: mutation-write
 depends-on: []
 created: 2026-08-17
-last-updated: 2026-08-20
+last-updated: 2026-08-24
 ---
 
 # A DML carrier payload with an errors field loses its return-derived write target
@@ -409,3 +409,76 @@ Pipeline tier, in `SingleRecordPayloadPipelineTest`:
   is enough: the same record-element payload *with* `@mutation(table:)` still grounds and still
   gets the per-verb record-element rejection, which is what keeps that live rejection from
   being deleted as dead code later.
+
+## Reviewer findings
+
+**Spec -> Ready, 2026-08-24: revisions, two findings.** Both are against question 1: the plan makes
+checkable claims about code that exists, and two of them do not hold. The diagnosis, the ordering
+move, the memo write-gate and the recognizer-publishes-the-fact design all check out against the
+tree, so question 2 is answered; the findings are in the Implementation section, which is the part
+an implementer executes literally.
+
+*What was checked.* Every symbol the spec names exists under the name it gives. The causal chain
+reproduces by reading: `ctx.errors` is initialised to `ErrorIndex.EMPTY` (`BuildContext:211`),
+`detectErrorsFieldShape` resolves each union member through `errors.forName` and returns null when
+the index is empty (`BuildContext:1113`), `scanStructuralPayload` then falls past its errors `continue`
+into the data-field dispatch and counts the field as a second data channel, and
+`prepareForWalk` calls `bindings.resolveAll()` at line 220 against `buildClassificationIndices()` at
+232 and `groundRoutineCarriers()` at 236, with the trailing `lookAheadMemo.clear()` at 251. The
+safety argument for the move holds at every step: `groundDmlMutationField` writes nothing but
+`dmlEmittedMemo.putIfAbsent`, `dmlEmittedBinding` is read only from `TypeBuilder.carrierBinding` and
+field-classify time, the `recordBackingClasses` pump reads `resolveResult` / `resolveInput` only,
+`buildClassificationIndices` drives membership off `classifyType`, and neither
+`emitDirectiveIgnoredWarning` nor `surfaceMultiProducerRejections` reaches `lookAheadVerdict`.
+`scanStructuralPayload` does probe `lookAheadVerdict` directly at `BuildContext:1020`, so the
+grounding passes are transitive probes as stated. The scalar arm of `validateReturnType` carries
+exactly the two carrier-adjacent cases the spec describes before the quoted generic message, and its
+six call sites are all in `FieldBuilder`, two per verb. `DmlPayloadScan.Admit` and the three
+`DmlElementKind` arms have the shapes the "what the arm carries" section reasons from. All five
+`NotACarrier`-sensitive read sites exist and behave as described, `orphanServiceCarrierReason`
+included. In the test class, the three named fixtures exist, all three pass `tableArg = true`, and
+they are indeed every errors-bearing `tableArg = true` fixture, the other two being the `alsoFilms`
+and `description` broken shapes. The manual documents return-derivation with two rungs and no
+errors-field carve-out, so "docs need no change" holds.
+
+*Finding 1: the split's compile-time enforcement does not exist as described.* The Design section
+says the enforcement is "the sealed subtype keeping `instanceof NotACarrier` true, plus the one
+forced `switch` edit", and Implementation says "only the `switch` breaks at compile time". It does
+not break. `TypeBuilder.carrierVerdict`'s switch reads `case CarrierBinding.NotACarrier ignored ->
+null;`, a type pattern on the third of `CarrierBinding`'s three permitted subtypes. Turning
+`NotACarrier` into a sealed interface over two arms leaves that pattern matching the whole subtree,
+so the switch stays exhaustive and compiles untouched. The one place that stops compiling is the
+single construction site, `new CarrierBinding.NotACarrier()` at `TypeBuilder:388`, which is the only
+producer of the value and therefore forces the author to choose an arm exactly where the fact is
+made. That is better enforcement than the claimed one, but the plan as written sends the implementer
+looking for a compiler signal that never arrives, and anchors its "walk all five read sites by hand"
+instruction on a break that will not happen.
+
+What would satisfy it: state the construction site as the forced edit and say plainly that no read
+site breaks, so the hand-walk of all five is the whole of the enforcement rather than a supplement to
+a switch error. The nested-over-sibling choice itself survives unchanged; it is the enforcement
+sentence that is wrong, not the design.
+
+*Finding 2: the phantom-rung sweep still under-enumerates, and the prescribed grep cannot find the
+remainder.* The Implementation section pins the count at six sites and prescribes driving the sweep
+off "a grep for the bridge". Two further sites spell the same phantom rung, and neither contains the
+word "bridge":
+
+* `FieldBuilder.java:5768`, in `classifyUpdatePayloadField`: "the rung-1-vs-rung-3 table match (the
+  payload's `@table`-element table vs the input's deprecated `@table`) is owned by
+  `resolveUpdateWriteTarget`".
+* `FieldBuilder.java:6335`, javadoc on `classifyInsertPayloadField`: "`resolveInsertWriteTarget`,
+  which owns the rung-1-vs-rung-3 table-match check".
+
+Both name a rung 3 that `resolveDmlWriteTableRef` does not have, and both attribute a
+rung-1-vs-rung-3 cross-check to a resolver whose own javadoc states the check correctly:
+`resolveReturnCapableWriteTarget` locates it at rung 1 against rung 2. They are the sharper version
+of the same defect the six carry, because a rung number is a harder claim than the prose form, and
+they sit on the two payload classifiers an implementer of this item reads anyway.
+
+This is the second consecutive round on this enumeration, which is the argument for changing its
+form rather than its number. What would satisfy it: state the invariant the sweep enforces
+(`resolveDmlWriteTableRef` has two rungs, so no comment may name a third or an input-`@table` rung),
+give a grep that reaches every spelling of it (`rung.3`, `bridge`, `input's {@code @table}`), and
+keep the site list as worked examples of what the grep finds rather than as the closed set the
+implementer is measured against. `resolveInsertWriteTarget`'s javadoc stays the wording template.
