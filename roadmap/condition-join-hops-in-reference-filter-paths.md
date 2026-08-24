@@ -609,6 +609,31 @@ just moves to `ReachPath`'s constructor and `PathFragments`' per-hop dispatch.
   recurses on `remote.inner()` and never reads the join path, so it is hop-kind-agnostic. Recorded
   so the audit does not spend a pass on it.
 
+## Implementation notes
+
+Four places the landed diff departs from the plan text, none of them a design change.
+
+* **Where the filter-position truth-table rows landed.** Item 10 asked for them "beside the
+  existing output-side condition-hop rows". Neither `ArgumentParsingCase` nor
+  `InputFieldResolutionCase` had any `@reference`-filter row to sit beside on the argument
+  surface, so the argument-surface verdict is a new row at the end of `ArgumentParsingCase` and
+  the input-field one sits directly after `InputFieldResolutionCase.COLUMN_REFERENCE_FIELD`, its
+  FK sibling. The two output-side rows are in `ColumnReferenceFieldCase` as written.
+* **`PathFragments.appendHopFilters` takes `List<? extends JoinStep>`.** Item 5 needs the filter
+  rail to call it with `ReachPath`'s hop-typed list, and Java generics are invariant. This is a
+  parameter widening that accepts everything it accepted before, not one of the component type
+  lifts Review resolution A dropped: no declared component changed, and every existing caller
+  passes the same `List<JoinStep>` unchanged.
+* **`declaredTargetRef` is a named helper.** Item 2 puts the positional test at the call site;
+  the call site needs a `TableRef` and held only the SQL name, so the name-to-ref resolution is a
+  one-line private helper in `BuildContext` rather than inlined into the condition arm. The
+  positional rule itself is at the call site as specified.
+* **Two new fixtures rather than one.** Item 10 asked for methods on
+  `ReferencePathConditionFixtures`; the filter rows needed two, `customerToAddressConcrete` and
+  `filmToFilmActor`, because a filter site reflects and the existing wildcard-typed fixtures
+  cannot be reused there. `TestConditionStub` also gained `junctionToActor` for the pipeline
+  tier's key-then-condition ordering case.
+
 ## Non-goals
 
 * `@condition` on an FK-target `@nodeId` field keeps requiring an FK path (the surviving validator
