@@ -1194,18 +1194,21 @@ no previous node; and the command-tier routine argument's resolved `PathExpr` ca
 list-lifting that decided nothing at either of its two readers. None of the three changes output.
 All three are the walk representing distinctions the facts show cannot occur.
 
-What did surface, four times, is read cost. R811 and R819 were both filed as regressions found
-beside this slice; the routine-write hop pairing joined a window-carrying relation on a `CASE` and
-had to be fixed at `c702da2`; and R824 exists because none of it was visible until trunk had run
-eleven consecutive green builds at four times its normal wall clock. The slice found no defect in
-what the generator emits and four in what the store costs to read. That is the finding that should
-reorder the programme: the risk in this conversion is not correctness, it is read cost, and the
-gates around read cost are narrower than they look. `DerivedReadCostTest` holds a registration
-monotonic against its readers and `MaterializeRegistryGateTest` holds an index to a stated reader,
-both of which are claims about a *registration*. A newly authored relation that is never registered
-is inside neither, so a producer moving from a walk to a store read moves from a cost nothing
-measures to a cost nothing measures until somebody registers it, and only one of those two has a
-fifteen-minute floor.
+What did surface, three times, is read cost. R811 and R819 were both filed as regressions found
+beside this slice; and R733's guardrail case is what none of it being visible until trunk had run
+eleven consecutive green builds at four times its normal wall clock argues for. The routine-write
+hop pairing's `CASE` join against a window-carrying relation was a fourth candidate and is not one:
+patched at `c702da2` on a thread dump of a stalled generate, it was reverted once measured, the
+producer costing the same over the sakila schema with the patch and without it. The stall was
+R819's regression rather than this join's, and the join's hazard is R765's to answer. The slice
+found no defect in what the generator emits and three in what the store costs to read. That is the
+finding that should reorder the programme: the risk in this conversion is not correctness, it is
+read cost, and the gates around read cost are narrower than they look. `DerivedReadCostTest` holds
+a registration monotonic against its readers and `MaterializeRegistryGateTest` holds an index to a
+stated reader, both of which are claims about a *registration*. A newly authored relation that is
+never registered is inside neither, so a producer moving from a walk to a store read moves from a
+cost nothing measures to a cost nothing measures until somebody registers it, and only one of those
+two has a fifteen-minute floor.
 
 **Per relation.** 261 lines of view body across four relations, and an aggregate would mispredict
 in both directions exactly as the plan warned.

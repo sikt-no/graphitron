@@ -391,53 +391,6 @@ public final class RoutineWriteFacts {
         return when(fkOnFrom.isTrue(), onFrom).otherwise(onTo);
     }
 
-    /**
-     * The three columns naming the table whose foreign key a hop travels, projected by
-     * {@link #keyedHops} so that {@link #hopPairs} can join on columns rather than on the
-     * {@link #keySide} expression that computes them.
-     *
-     * <p>Which of a hop's two endpoints declares the key is a per-row answer, so the join key is a
-     * {@code CASE} unless something projects it first. Named fields rather than inline
-     * {@code .as(...)} calls so the projection and the three joins that read it cannot drift.
-     */
-    private static final Field<String> KEY_SOURCE_NAME = field("key_source_name", String.class);
-    private static final Field<String> KEY_SCHEMA = field("key_schema", String.class);
-    private static final Field<String> KEY_TABLE = field("key_table", String.class);
-
-    /**
-     * The admitted key-matched hops with the key's own table resolved into three plain columns.
-     *
-     * <p>An extraction that projects an expression <em>as a column</em>, which is the shape
-     * {@code docs/architecture/explanation/fact-model.adoc} prices under its rule that a derived
-     * relation joined on an expression rather than on a column is evaluated once per driving row.
-     * The distinction that rule insists on is load-bearing here rather than tidiness: extracting
-     * this relation without projecting the key side would leave the {@code CASE} in the key of
-     * whatever named the extraction and buy nothing, and a non-recursive {@code WITH} would be
-     * inlined by H2 exactly as a view is. {@code intent_argument_scope_table_live}'s inner derived
-     * table is the same move in the schema, and its comment calls itself load-bearing for this
-     * reason.
-     *
-     * <p>What it costs to get wrong is not proportional to the shape. {@code intent_field_chain_node}
-     * carries a window function, so no outer predicate prunes it and every evaluation is the whole
-     * relation; joined on the expression, H2 probes it once per driving row and the read does not
-     * finish, which is what this projection removes. The predicates stay inside the projection for
-     * the same reason they would anywhere: they decide how many rows leave it, not whether the view
-     * beneath is pruned.
-     */
-    private static Select<? extends Record> keyedHops(
-            StoreHandle store, no.sikt.graphitron.model.tables.IntentFieldChainNode n) {
-        return select(n.TYPE_NAME, n.FIELD_NAME, n.SEQ, n.CONSTRAINT_NAME, n.FK_ON_FROM,
-                n.FROM_SOURCE_NAME, n.FROM_SCHEMA, n.FROM_TABLE,
-                n.TO_SOURCE_NAME, n.TO_SCHEMA, n.TO_TABLE,
-                keySide(n.FK_ON_FROM, n.FROM_SOURCE_NAME, n.TO_SOURCE_NAME).as(KEY_SOURCE_NAME),
-                keySide(n.FK_ON_FROM, n.FROM_SCHEMA, n.TO_SCHEMA).as(KEY_SCHEMA),
-                keySide(n.FK_ON_FROM, n.FROM_TABLE, n.TO_TABLE).as(KEY_TABLE))
-            .from(n)
-            .where(n.GRAPH_NAME.eq(store.graphName()), n.SEQ.ge(1), n.CANDIDATES.eq(1),
-                n.STEP_VIA.in("KEY", "TABLE"),
-                org.jooq.impl.DSL.row(n.TYPE_NAME, n.FIELD_NAME).in(admittedCoordinates(store)));
-    }
-
     // -------------------------------------------------------------------------------------
     // Statement two: the chain hop's column pairing.
     // -------------------------------------------------------------------------------------
@@ -463,27 +416,25 @@ public final class RoutineWriteFacts {
         var src = SQL_COLUMN.as("source_column");
         var tgt = SQL_COLUMN.as("target_column");
         var byKey = new LinkedHashMap<HopKey, List<KeyPair>>();
-        var hop = keyedHops(store, n).asTable("hop");
         store.dsl()
-            .select(hop.field(n.TYPE_NAME), hop.field(n.FIELD_NAME), hop.field(n.SEQ), fk.POSITION,
+            .select(n.TYPE_NAME, n.FIELD_NAME, n.SEQ, fk.POSITION,
                 src.COLUMN_NAME, src.JOOQ_NAME, src.BINDING_TYPE,
                 tgt.COLUMN_NAME, tgt.JOOQ_NAME, tgt.BINDING_TYPE)
-            .from(hop)
+            .from(n)
             .join(fk).on(
-                fk.SOURCE_NAME.eq(hop.field(KEY_SOURCE_NAME)),
-                fk.TABLE_SCHEMA.eq(hop.field(KEY_SCHEMA)),
-                fk.TABLE_NAME.eq(hop.field(KEY_TABLE)),
-                fk.CONSTRAINT_NAME.eq(hop.field(n.CONSTRAINT_NAME)))
-            .join(src).on(src.SOURCE_NAME.eq(hop.field(n.FROM_SOURCE_NAME)),
-                src.TABLE_SCHEMA.eq(hop.field(n.FROM_SCHEMA)),
-                src.TABLE_NAME.eq(hop.field(n.FROM_TABLE)),
-                src.COLUMN_NAME.eq(keySide(hop.field(n.FK_ON_FROM),
-                    fk.COLUMN_NAME, fk.REFERENCED_COLUMN_NAME)))
-            .join(tgt).on(tgt.SOURCE_NAME.eq(hop.field(n.TO_SOURCE_NAME)),
-                tgt.TABLE_SCHEMA.eq(hop.field(n.TO_SCHEMA)),
-                tgt.TABLE_NAME.eq(hop.field(n.TO_TABLE)),
-                tgt.COLUMN_NAME.eq(keySide(hop.field(n.FK_ON_FROM),
-                    fk.REFERENCED_COLUMN_NAME, fk.COLUMN_NAME)))
+                fk.SOURCE_NAME.eq(keySide(n.FK_ON_FROM, n.FROM_SOURCE_NAME, n.TO_SOURCE_NAME)),
+                fk.TABLE_SCHEMA.eq(keySide(n.FK_ON_FROM, n.FROM_SCHEMA, n.TO_SCHEMA)),
+                fk.TABLE_NAME.eq(keySide(n.FK_ON_FROM, n.FROM_TABLE, n.TO_TABLE)),
+                fk.CONSTRAINT_NAME.eq(n.CONSTRAINT_NAME))
+            .join(src).on(src.SOURCE_NAME.eq(n.FROM_SOURCE_NAME),
+                src.TABLE_SCHEMA.eq(n.FROM_SCHEMA), src.TABLE_NAME.eq(n.FROM_TABLE),
+                src.COLUMN_NAME.eq(keySide(n.FK_ON_FROM, fk.COLUMN_NAME, fk.REFERENCED_COLUMN_NAME)))
+            .join(tgt).on(tgt.SOURCE_NAME.eq(n.TO_SOURCE_NAME),
+                tgt.TABLE_SCHEMA.eq(n.TO_SCHEMA), tgt.TABLE_NAME.eq(n.TO_TABLE),
+                tgt.COLUMN_NAME.eq(keySide(n.FK_ON_FROM, fk.REFERENCED_COLUMN_NAME, fk.COLUMN_NAME)))
+            .where(n.GRAPH_NAME.eq(store.graphName()), n.SEQ.ge(1), n.CANDIDATES.eq(1),
+                n.STEP_VIA.in("KEY", "TABLE"),
+                org.jooq.impl.DSL.row(n.TYPE_NAME, n.FIELD_NAME).in(admittedCoordinates(store)))
             .unionAll(store.dsl()
                 .select(n.TYPE_NAME, n.FIELD_NAME, n.SEQ, nm.POSITION,
                     src.COLUMN_NAME, src.JOOQ_NAME, src.BINDING_TYPE,
