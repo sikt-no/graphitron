@@ -157,21 +157,39 @@ class DerivedReadCostTest {
      * The pairs where the registered shape costs more, {@code registration|reader}, each one a finding
      * rather than a tolerance.
      *
-     * <p>Two mechanisms, both answered by measurement, and the set holds nothing else. The scope-table
-     * trio is the instrument's floor: H2 charges a table visit at least one scan per naming where a
-     * view whose evaluation short-circuits is charged none, so a relation named a few times can read a
-     * few scans dearer while doing strictly less work. The other three are the pruning an inlined view
-     * body offered and a table cannot: the argmapping readers' site-literal arms pruned the pair
-     * view's union to one arm apiece and now visit the whole table per arm (815 scans registered
-     * against 357 for the parameter-type reader, 433 against 391 for the segment binding), and the
-     * errors-field member view drives from the whole relation, whose inlined predicates let the fused
-     * plan skip rows the plain table join visits (916 against 713). Each was answered the way the
-     * paragraph below demands, as an index question first: every index shape tried on either target
-     * (site-leading and coordinate shapes on the pair table, the probing coordinate on the errors
-     * field) moved no reader at all or made a dear one worse, so the scans are the readers' own cost
-     * of standing on a table, sub-millisecond against the seconds each registration buys. They are
-     * pinned rather than tolerated because a tolerance would be a number, and a number here is the one
-     * thing this gate is built without.
+     * <p>Three mechanisms, each answered by measurement, and the set holds nothing else. The
+     * scope-table trio is the instrument's floor: H2 charges a table visit at least one scan per
+     * naming where a view whose evaluation short-circuits is charged none, so a relation named a few
+     * times can read a few scans dearer while doing strictly less work. The next three are the pruning
+     * an inlined view body offered and a table cannot: the argmapping readers' site-literal arms
+     * pruned the pair view's union to one arm apiece and now visit the whole table per arm (815 scans
+     * registered against 357 for the parameter-type reader, 433 against 391 for the segment binding),
+     * and the errors-field member view drives from the whole relation, whose inlined predicates let
+     * the fused plan skip rows the plain table join visits (916 against 713). Each was answered as an
+     * index question first: every index shape tried on either target moved no reader at all or made a
+     * dear one worse, so the scans are the readers' own cost of standing on a table, sub-millisecond
+     * against the seconds each registration buys.
+     *
+     * <p>The last four share one mechanism and one named lever. Registering the carrier relation
+     * changed the planner's join order in the hop and the seat: both now reach {@code graphql_field}
+     * through a join on its {@code named_type} column, which no key serves (the primary key leads
+     * with the field's own coordinate), so one plan node seeks by graph alone and visits the whole
+     * field census per driving row. The hop reads 19619 scans registered against 6820 with the
+     * carrier unregistered and 1570 with the spelled table unregistered; the seat 27531 against 26255
+     * and 11043. The wall clocks are one and ten milliseconds respectively, against the tens of
+     * seconds per generation the carrier registration buys on a real schema. Every lever inside the
+     * registration's own scope was measured and moved nothing: index shapes on the carrier target
+     * (identical to the scan), a FROM-order restructure of the hop (H2 reorders base-table join
+     * graphs freely), and driving the hop from the payload-producer relation instead of the reverse
+     * named-type probe (equal answers, 17003 scans). The lever that works is a declared index on
+     * {@code graphql_field}'s named-type coordinate, measured at 2137 / 10049 scans for hop and seat
+     * and clearing three of these four rows, but an authored index on a captured base table is a
+     * schema-wide discipline question (its reader axis is the whole derived stratum, its cost is on
+     * every capture's write path, and the index-comment gate does not reach it), so it is filed on
+     * the roadmap with these measurements rather than shipped on four readers' evidence. These rows
+     * are pinned rather than tolerated because a tolerance would be a number, and a number here is
+     * the one thing this gate is built without; the day that index lands, the equality assertion
+     * deletes them.
      *
      * <p>Three larger pairs stood here until the targets were indexed, and how they left is worth
      * knowing before adding more. They were not the registrations' fault and no reader had to be
@@ -190,7 +208,12 @@ class DerivedReadCostTest {
         // The pruning an inlined body offered and a table cannot; measured index-free above.
         "intent_argmapping_pair|intent_argmapping_bound_parameter_type",
         "intent_argmapping_pair|intent_argmapping_segment_binding",
-        "intent_errors_field|intent_errors_field_member");
+        "intent_errors_field|intent_errors_field_member",
+        // The unindexed named-type join; the lever is filed on the roadmap, measured above.
+        "intent_carrier_data_field|intent_carrier_routine_hop",
+        "intent_carrier_data_field|intent_mutation_routine_seat",
+        "intent_spelled_table|intent_carrier_routine_hop",
+        "intent_spelled_table|intent_mutation_routine_seat");
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather

@@ -386,8 +386,55 @@ than the instrument's jitter. Declined.
 
 ### The decode observation dissolves
 
-The non-goal probe ran in the same session and store as the slice-1 re-measurement:
-`intent_node_id_decode` reads 43 rows in 8505 ms, under the roughly thirteen seconds the decode
-regression item recorded on its own tree. The 24.4-second reading in this item's opening
-measurements does not reproduce on a tree carrying the target indexes, so no same-fixture pair
-convicts anything and no item is filed.
+The non-goal probe ran three times in this session's stores: `intent_node_id_decode` reads 43
+rows in 8.5, 12.0 and 13.0 seconds across runs of the same capture shape. The spread says the
+read's wall clock is noisy at this scale, and every reading sits at or under the roughly thirteen
+seconds the decode regression item recorded on its own tree; the 24.4-second reading in this
+item's opening measurements does not reproduce on a tree carrying the target indexes. No
+same-fixture pair convicts anything and no item is filed.
+
+### Slice 3: restructured and registered, and the restructure carried most of the win
+
+The body restructure landed first, alone, with an answer-equality control on both fixtures: the
+old body and the new one return identical rows on the sakila capture (15) and on the grown
+read-cost fixture (12). Two changes, both inside the rule: the three `NOT EXISTS`
+disqualification arms stand on `graphql_field` and `graphql_field_directive` directly instead of
+on the windowed CTE (so the CTE is named once, by the join, and the four-fold expansion goes),
+and the CTE itself narrows to producer payload types before classifying (the window partitions by
+type, and the filter drops whole types, so the counts within kept types are untouched). The
+restructure alone took the carrier read on the sakila capture from 6.6 seconds to 173 ms, and it
+is the whole answer to the carrier-free question the spec priced the slice on: a capture with no
+mutation-root routine and no carrier evaluates the rule in 12 ms and reads nothing back, so the
+refresh the registration installs sits inside the shipped registrations' range on both captures
+(about 170 ms carrier-bearing, 12 ms carrier-free) and no disclosed-outlier path was needed.
+
+The registration then followed the checklist. Post-registration, the whole family sits at the
+store's floor on the sakila capture: the carrier read is a table read (under a millisecond for
+15 rows), the seat 17 ms (from 43.3 s at this item's opening), the hop 53 ms (from 10.3 s), the
+error channel 12 ms (from 5.3 s). The index-or-roster decision went to the roster again: on both
+coordinates its readers spell (the error channel's family coordinate, the sigil surface's field
+coordinate) no reader moves at all, to the scan. The sigil consumer claim measured as the spec
+asked: a coordinate-filtered read of the rule prunes nothing (2510 scans against 2551 whole), and
+the same filter against the table is 13 scans, so one `$source` completion falls from paying the
+whole derivation to reading a table; the completion path still has no scan ceiling, which this
+item states and does not fix, per its own spec.
+
+### The gate flagged four pairs on the registration, and the lever is filed rather than shipped
+
+Registering the carrier changed the planner's join order in the hop and the seat: both now reach
+`graphql_field` through its `named_type` column, which no key serves, and
+`DerivedReadCostTest` flagged four non-monotonic pairs (the hop and the seat, against this
+registration and against the spelled-table one; 1.3k to 18k scans, wall clocks 1 and 10 ms on
+the fixture). Every lever inside the registration's own scope was measured and moved nothing:
+index shapes on the carrier target, a FROM-order restructure of the hop (H2 reorders base-table
+join graphs freely, 19606 against 19619), and driving the hop from
+`intent_field_payload_producer` instead of the reverse named-type probe (equal answers, 17003
+scans). The lever that works is `CREATE INDEX ON graphql_field (graph_name, named_type)`,
+measured at 2137 and 10049 scans for the hop and seat and clearing three of the four pairs, but
+that is the first authored index on a captured base table, and a principles consult placed what
+this item's evidence does not cover: the reader axis is the whole derived stratum (the gate is
+blind to a base-table index by construction), the cost lands on every capture's write path, the
+index-comment gate does not reach outside the register, and two doc sentences would need
+amending. So the index is R820 (`graphql-field-named-type-index`), filed with the measurements
+and those tasks, and the four pairs are pinned with the mechanism and the lever named; the
+equality assertion deletes the rows the day it lands.

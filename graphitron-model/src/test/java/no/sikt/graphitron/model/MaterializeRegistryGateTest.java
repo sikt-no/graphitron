@@ -79,12 +79,19 @@ class MaterializeRegistryGateTest {
      *   from 3876 scans to 8136 and {@code intent_mutation_routine_seat} from 28857 to 33117,
      *   the planner preferring a seek into a relation of a dozen rows over the plan it picks
      *   unaided. Nothing to weigh.</li>
+     *   <li>{@code intent_carrier_data_field}: on the two coordinates its readers spell (the
+     *   error channel's graph, type and family; the sigil surface's graph, type and field), no
+     *   reader moves at all, to the scan: the seat, the hop, the error channel and the whole
+     *   read are identical with either shape declared and with none. The table is a dozen rows
+     *   and its readers arrive through joins the planner already orders correctly. Nothing to
+     *   weigh.</li>
      * </ul>
      */
     private static final Set<String> NO_INDEX = Set.of(
         "intent_resolved_type_binding",
         "intent_field_column_scope",
-        "intent_errors_field");
+        "intent_errors_field",
+        "intent_carrier_data_field");
 
     @Test
     @DisplayName("every registered source is a view and every registered target is a table")
