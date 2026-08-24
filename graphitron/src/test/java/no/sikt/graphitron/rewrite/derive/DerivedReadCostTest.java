@@ -121,7 +121,7 @@ class DerivedReadCostTest {
      * So a drop here is not the matrix quietly seeing less; it is cost moving off a reader and onto
      * a refresh, and the refresh is a view in this domain and priced like any other.
      */
-    private static final int CELLS = 110;
+    private static final int CELLS = 105;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
