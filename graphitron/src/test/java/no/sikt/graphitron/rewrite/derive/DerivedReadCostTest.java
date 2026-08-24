@@ -116,9 +116,10 @@ class DerivedReadCostTest {
      * there rather than descending, so registering a relation cuts every reader's reach at it: each
      * reader that reached a registration only through the newly registered relation loses that cell,
      * while the new registration and its {@code _live} view add cells of their own. Registering
-     * {@code intent_node_id_instruction} was the first change to make the figure fall, from 107 to
-     * this one. So a drop here is not the matrix quietly seeing less; it is cost moving off a reader
-     * and onto a refresh, and the refresh is a view in this domain and priced like any other.
+     * {@code intent_node_id_instruction} was the first change to make the figure fall, by five on
+     * net, and a delta rather than a pair of absolutes because every new view moves the baseline.
+     * So a drop here is not the matrix quietly seeing less; it is cost moving off a reader and onto
+     * a refresh, and the refresh is a view in this domain and priced like any other.
      */
     private static final int CELLS = 110;
 

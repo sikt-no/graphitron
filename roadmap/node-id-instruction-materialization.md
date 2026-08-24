@@ -52,8 +52,9 @@ All four steps shipped. Landed at `31bd5f4ef` (execution-tier fix), `38f4b5473` 
    confirmed. The roster's javadoc now separates the two kinds of argument it holds: four that
    declined a lever on measurement, and this one, which has no candidate to measure. A row of the
    second kind is falsified by a new reader rather than by a new figure.
-3. **The matrix was re-priced, and it moved the opposite way from the prediction.** `CELLS` went
-   107 to 102, down rather than up. The reachability walk records a registration when it meets that
+3. **The matrix was re-priced, and it moved the opposite way from the prediction.** `CELLS` fell by
+   five, down rather than up (107 to 102 when measured, 111 to 106 after a rebase brought in a
+   concurrent item's own re-pin, the delta holding across both). The reachability walk records a registration when it meets that
    registration's target and stops there instead of descending, so registering a relation cuts
    every reader's reach at it. Three pinned rows charged to `intent_argument_scope_table` went with
    it, one of them the decode-slot row this plan predicted would go, but not for the predicted
