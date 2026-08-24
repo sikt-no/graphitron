@@ -1,7 +1,7 @@
 ---
 id: R705
 title: "A condition-join hop in a reference filter path is rejected, though the emitter it needs already ships"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 3
 theme: classification-model
