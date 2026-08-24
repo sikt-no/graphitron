@@ -55,6 +55,17 @@ public final class UpdateRowsWalker {
      * input's own table, the extraction shape the emitter reuses, and whether the carrier is a
      * self-FK reference. A self-FK carrier's columns route wholly to the SET partition and
      * never count toward WHERE-key coverage; every other carrier partitions by key membership.
+     *
+     * <p>{@code columns} is positionally aligned with the decode record the carrier's
+     * {@code @nodeId} produces, so a column's index here <em>is</em> its decode slot. The alignment
+     * is the producer's promise, not this walker's: for a lifted FK-target carrier the tuple comes
+     * from {@link no.sikt.graphitron.rewrite.model.FilterBinding.Local#ownTableColumns()}, which
+     * {@link no.sikt.graphitron.rewrite.NodeIdLeafResolver.Resolved.FkTarget.DirectFk#liftedSourceColumns()}
+     * documents as "where each key position landed, in {@code keyColumns} order" — the same order
+     * {@link no.sikt.graphitron.rewrite.model.HelperRef.Decode#outputColumnShape()} states for the
+     * returned {@code Record<N>}. The type system cannot carry that alignment, which is why stage 6
+     * reads the index off this list once and hands every downstream row an explicit slot rather than
+     * letting each emitter re-derive one from its own partition's ordering.
      */
     private record Contribution(String sdlFieldName, List<ColumnRef> columns, CallSiteExtraction extraction,
                                 boolean selfReference) {}
@@ -123,13 +134,18 @@ public final class UpdateRowsWalker {
         // value, agreement-checked at emit). Every other carrier partitions by membership; a
         // genuine straddle (a cross-table FK reference whose lifted columns span the key boundary)
         // rejects with MixedCarrierKeyMembership.
+        //
+        // Each flattened row carries its decode slot, read off the contribution's column index (see
+        // Contribution). This is the one place the index is available as the decode slot; once a
+        // carrier's columns are split across the two partitions, neither partition's ordering
+        // recovers it.
         var keySqlNames = sqlNameSet(matchedKey.columns());
         var setColumns = new ArrayList<SetColumn>();
         var keyColumns = new ArrayList<KeyColumn>();
         for (var c : contributions) {
             if (c.selfReference()) {
-                for (var col : c.columns()) {
-                    setColumns.add(new SetColumn(c.sdlFieldName(), col, c.extraction()));
+                for (int slot = 0; slot < c.columns().size(); slot++) {
+                    setColumns.add(new SetColumn(c.sdlFieldName(), c.columns().get(slot), c.extraction(), slot));
                 }
                 continue;
             }
@@ -143,12 +159,12 @@ public final class UpdateRowsWalker {
                 continue;
             }
             if (outsideKey.isEmpty()) {
-                for (var col : c.columns()) {
-                    keyColumns.add(new KeyColumn(c.sdlFieldName(), col, c.extraction()));
+                for (int slot = 0; slot < c.columns().size(); slot++) {
+                    keyColumns.add(new KeyColumn(c.sdlFieldName(), c.columns().get(slot), c.extraction(), slot));
                 }
             } else {
-                for (var col : c.columns()) {
-                    setColumns.add(new SetColumn(c.sdlFieldName(), col, c.extraction()));
+                for (int slot = 0; slot < c.columns().size(); slot++) {
+                    setColumns.add(new SetColumn(c.sdlFieldName(), c.columns().get(slot), c.extraction(), slot));
                 }
             }
         }

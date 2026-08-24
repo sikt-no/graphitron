@@ -554,7 +554,7 @@ final class MutationInputResolver {
      * reject-message label. The same grouping the emitters trigger value-agreement on yields the
      * all-plain collision the validator rejects on, so reject and agreement read one fold.
      */
-    private record InputFieldWriter(List<ColumnRef> targetColumns, boolean decode, String label)
+    private record InputFieldWriter(List<ColumnOverlap.SlotColumn> targetColumns, boolean decode, String label)
             implements ColumnOverlap.ColumnWriter {}
 
     /**
@@ -598,7 +598,10 @@ final class MutationInputResolver {
             }
             var dotted = new ArrayList<>(prefix);
             dotted.add(f.name());
-            writers.add(new InputFieldWriter(columns, decode, String.join(".", dotted)));
+            // An INSERT-side carrier hands its whole decode record to one consumer, so its slots
+            // are the column positions; only the UPDATE partition splits a record across sides.
+            writers.add(new InputFieldWriter(
+                ColumnOverlap.SlotColumn.contiguous(columns), decode, String.join(".", dotted)));
         }
     }
 }

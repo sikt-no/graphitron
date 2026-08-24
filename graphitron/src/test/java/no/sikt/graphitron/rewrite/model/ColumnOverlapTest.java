@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Structural invariant tests for the {@link ColumnOverlap#groupByColumn} primitive, the one
@@ -25,16 +26,25 @@ class ColumnOverlapTest {
         return new ColumnRef(sqlName, sqlName.toUpperCase(), "java.lang.Integer");
     }
 
-    /** A test writer over a fixed column list; {@code decode} flags whether it is a {@code @nodeId} decode. */
-    private record TestWriter(List<ColumnRef> targetColumns, boolean decode, String label)
+    /** A test writer over a fixed slot-bearing column list; {@code decode} flags whether it is a
+     *  {@code @nodeId} decode. */
+    private record TestWriter(List<ColumnOverlap.SlotColumn> targetColumns, boolean decode, String label)
             implements ColumnWriter {}
 
     private static TestWriter plain(String sqlName) {
-        return new TestWriter(List.of(col(sqlName)), false, sqlName);
+        return new TestWriter(List.of(new ColumnOverlap.SlotColumn(0, col(sqlName))), false, sqlName);
     }
 
+    /** A decode whose columns are one whole record: slot i for the column at position i. */
     private static TestWriter decode(String label, String... sqlNames) {
-        return new TestWriter(List.of(sqlNames).stream().map(ColumnOverlapTest::col).toList(), true, label);
+        return new TestWriter(ColumnOverlap.SlotColumn.contiguous(
+            List.of(sqlNames).stream().map(ColumnOverlapTest::col).toList()), true, label);
+    }
+
+    /** A decode handed only <em>part</em> of its record: the partitioned shape, where a column's
+     *  position in the writer's list is no longer its decode slot. */
+    private static TestWriter partialDecode(String label, int slot, String sqlName) {
+        return new TestWriter(List.of(new ColumnOverlap.SlotColumn(slot, col(sqlName))), true, label);
     }
 
     @Test
@@ -72,10 +82,10 @@ class ColumnOverlapTest {
     }
 
     @Test
-    void compositeDecodeContributors_carrySlotsIndexingTargetColumnsInRecordOrder() {
-        // The load-bearing invariant: a composite decode's contributors carry slots that index its
-        // targetColumns() in decode-record order. A second decode shares the second column (mailbox_id),
-        // so its slot there must read back the right Record<N> position.
+    void compositeDecodeContributors_carryTheSlotsTheWriterStated() {
+        // A composite decode handed its whole record states contiguous slots, so a contributor's
+        // slot reads back the right Record<N> position. A second decode shares the second column
+        // (mailbox_id) at a different slot of its own tuple.
         var primary = decode("primary", "address_id", "mailbox_id"); // slots 0, 1
         var sibling = decode("sibling", "mailbox_id");                // slot 0 on its own tuple
         var plan = ColumnOverlap.groupByColumn(List.of(primary, sibling));
@@ -93,5 +103,30 @@ class ColumnOverlapTest {
             .as("mailbox_id is slot 1 of primary's tuple and slot 0 of sibling's, in writer order")
             .extracting(c -> c.writer().label() + ":" + c.slot())
             .containsExactly("primary:1", "sibling:0");
+    }
+
+    @Test
+    void partitionedDecodeContributor_keepsItsStatedSlot_notItsListPosition() {
+        // The case the stated slot exists for. A straddling cross-table @nodeId reference hands the
+        // SET partition one column of a two-column decode record, the one at slot 1. The writer's
+        // list has that column at position 0, so a fold that read the position would emit
+        // value1() and write the other key column's decoded value into this column.
+        var straddler = partialDecode("catalogueId", 1, "catalog_code");
+        var plan = ColumnOverlap.groupByColumn(List.of(straddler));
+
+        assertThat(plan).singleElement()
+            .satisfies(oc -> assertThat(oc.contributors()).singleElement()
+                .satisfies(c -> assertThat(c.slot())
+                    .as("the slot is the one the writer stated, not the column's position in its list")
+                    .isEqualTo(1)));
+    }
+
+    @Test
+    void slotColumn_rejectsNegativeSlot() {
+        // A negative slot would emit value0(), which does not exist on any jOOQ Record<N>; fail
+        // where the fact is minted rather than in the generated source.
+        assertThatThrownBy(() -> new ColumnOverlap.SlotColumn(-1, col("film_id")))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("slot cannot be negative");
     }
 }

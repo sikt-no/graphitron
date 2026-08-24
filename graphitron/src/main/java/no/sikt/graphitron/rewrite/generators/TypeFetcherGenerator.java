@@ -2458,7 +2458,8 @@ public class TypeFetcherGenerator {
                 continue;
             }
             out.add(new SetGroupWriter(fi,
-                new SetGroup(sf.name(), setFieldColumns(sf), setFieldNodeIdExtraction(sf), path)));
+                new SetGroup(sf.name(), ColumnOverlap.SlotColumn.contiguous(setFieldColumns(sf)),
+                    setFieldNodeIdExtraction(sf), path)));
         }
         return out;
     }
@@ -2596,7 +2597,7 @@ public class TypeFetcherGenerator {
      * byte-identical to the non-nested case) or a multi-segment path for a leaf in a nested grouping input
      * (the emit descends the wire map, honoring absent-vs-null at every layer).
      */
-    private record SetGroup(String name, List<ColumnRef> columns,
+    private record SetGroup(String name, List<ColumnOverlap.SlotColumn> columns,
                             CallSiteExtraction.NodeIdDecodeKeys nidk, List<String> accessPath) {}
 
     /**
@@ -2606,11 +2607,11 @@ public class TypeFetcherGenerator {
      * {@link ColumnOverlap#groupByColumn} / the value-read seam. The emission downcasts
      * {@code Contributor.writer()} back to this view to reach the wrapped {@link SetGroup} (for the
      * value-read seam, which takes a {@code SetGroup}) and the {@code index} (the decode-local suffix). The
-     * {@code columns()} order is the decode-record slot order, satisfying the {@link ColumnOverlap.ColumnWriter}
-     * invariant.
+     * group's columns already carry their decode slots, so the
+     * {@link ColumnOverlap.ColumnWriter} view passes them through unchanged.
      */
     private record SetGroupWriter(int index, SetGroup group) implements ColumnOverlap.ColumnWriter {
-        @Override public List<ColumnRef> targetColumns() { return group.columns(); }
+        @Override public List<ColumnOverlap.SlotColumn> targetColumns() { return group.columns(); }
         @Override public boolean decode() { return group.nidk() != null; }
         @Override public String label() { return String.join(".", group.accessPath()); }
     }
@@ -2634,7 +2635,8 @@ public class TypeFetcherGenerator {
     private static List<SetGroup> setGroupsOfFields(List<InputField.SetField> setFields) {
         var out = new ArrayList<SetGroup>();
         for (var sf : setFields) {
-            out.add(new SetGroup(sf.name(), setFieldColumns(sf), setFieldNodeIdExtraction(sf), List.of(sf.name())));
+            out.add(new SetGroup(sf.name(), ColumnOverlap.SlotColumn.contiguous(setFieldColumns(sf)),
+                setFieldNodeIdExtraction(sf), List.of(sf.name())));
         }
         return out;
     }
@@ -2773,7 +2775,12 @@ public class TypeFetcherGenerator {
         var out = new ArrayList<SetGroup>();
         for (var e : byPath.entrySet()) {
             var path = e.getKey();
-            var cols = e.getValue().stream().map(SetColumn::targetColumn).toList();
+            // The carrier states each column's decode slot; a straddling reference gives this
+            // partition a non-contiguous slice of its decode record, so the slots are carried
+            // rather than taken from the group's own ordering.
+            var cols = e.getValue().stream()
+                .map(sc -> new ColumnOverlap.SlotColumn(sc.decodeSlot(), sc.targetColumn()))
+                .toList();
             var leafExtraction = leafExtractionOf(e.getValue().get(0).extraction());
             var nidk = leafExtraction instanceof CallSiteExtraction.NodeIdDecodeKeys n ? n : null;
             out.add(new SetGroup(path.get(path.size() - 1), cols, nidk, path));
@@ -2784,11 +2791,18 @@ public class TypeFetcherGenerator {
     /**
  * Project the UPDATE carrier's flat {@link KeyColumn} list into the
      * {@link InputColumnBindingGroup}s the lookup-WHERE emitters consume, grouping by wire access
-     * path in encounter order. A single-column field becomes a {@code MapGroup} (carrying its
-     * extraction so an arity-1 NodeId still routes through the decode local); a multi-column field
-     * becomes a {@code DecodedRecordGroup} whose positional {@code RecordBinding}s mirror the decode
-     * {@code Record<N>} slots. This reconstructs exactly the {@code fieldBindings()} shape the legacy
-     * {@code TableInputArg} produced for the WHERE half.
+     * path in encounter order. A field contributing one column to this partition becomes a
+     * {@code MapGroup} (carrying its extraction so a NodeId still routes through the decode local);
+     * a field contributing several becomes a {@code DecodedRecordGroup}. This reconstructs exactly
+     * the {@code fieldBindings()} shape the legacy {@code TableInputArg} produced for the WHERE half.
+     *
+     * <p>The group shape says how many columns this <em>partition</em> received, and nothing about
+     * the decode record's arity. Those were the same number only while a carrier landed in one
+     * partition whole, and a straddling cross-table reference breaks that: it can hand the WHERE
+     * side a single column sitting at slot 1 of an arity-2 record. Both binding kinds therefore
+     * carry the slot the carrier stated ({@code MapBinding.decodeSlot} /
+     * {@code RecordBinding.index}) rather than letting a reader infer it, which is what retires the
+     * {@code value1()} the single-binding readers used to hardcode.
      *
  * <p>Grouping is by access path (same rationale as {@link #setGroupsOf}). A
      * {@code MapGroup}'s binding keeps the full extraction (the value-read emitter peels the path);
@@ -2807,11 +2821,12 @@ public class TypeFetcherGenerator {
             if (group.size() == 1) {
                 var kc = group.get(0);
                 out.add(new InputColumnBindingGroup.MapGroup(List.of(
-                    new InputColumnBinding.MapBinding(kc.sdlFieldName(), kc.targetColumn(), kc.extraction()))));
+                    new InputColumnBinding.MapBinding(
+                        kc.sdlFieldName(), kc.targetColumn(), kc.extraction(), kc.decodeSlot()))));
             } else {
                 var bindings = new ArrayList<InputColumnBinding.RecordBinding>();
-                for (int i = 0; i < group.size(); i++) {
-                    bindings.add(new InputColumnBinding.RecordBinding(i, group.get(i).targetColumn()));
+                for (var kc : group) {
+                    bindings.add(new InputColumnBinding.RecordBinding(kc.decodeSlot(), kc.targetColumn()));
                 }
                 out.add(new InputColumnBindingGroup.DecodedRecordGroup(
                     path.get(path.size() - 1),
@@ -2872,14 +2887,14 @@ public class TypeFetcherGenerator {
                     if (nidk != null) {
                         appendDecodeLocal(block, recLocal, nidk, innerMap, leafKey);
                     }
-                    for (int ci = 0; ci < cols.size(); ci++) {
-                        var col = cols.get(ci);
+                    for (var sc : cols) {
+                        var col = sc.column();
                         if (nidk != null) {
                             block.addStatement(
                                 "$L.put($T.$L.$L, $T.val($L.value$L(), $T.$L.$L.getDataType()))",
                                 setsLocal,
                                 tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
-                                DSL, recLocal, ci + 1,
+                                DSL, recLocal, sc.slot() + 1,
                                 tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
                         } else {
                             block.addStatement(
@@ -2994,9 +3009,8 @@ public class TypeFetcherGenerator {
         var keyWriters = setGroupWriters(keyGroups);
         var keyByColumn = new java.util.LinkedHashMap<String, KeyHit>();
         for (var kw : keyWriters) {
-            var cols = kw.group().columns();
-            for (int s = 0; s < cols.size(); s++) {
-                keyByColumn.putIfAbsent(cols.get(s).sqlName(), new KeyHit(kw, s));
+            for (var sc : kw.group().columns()) {
+                keyByColumn.putIfAbsent(sc.column().sqlName(), new KeyHit(kw, sc.slot()));
             }
         }
         // shared columns: a set-group column that is also a key column, carrying its key contributor and
@@ -3006,11 +3020,10 @@ public class TypeFetcherGenerator {
         var keyDecodeGroups = new LinkedHashSet<Integer>();
         var setDecodeGroups = new LinkedHashSet<Integer>();
         for (var sw : setGroupWriters(setGroups)) {
-            var cols = sw.group().columns();
-            for (int setSlot = 0; setSlot < cols.size(); setSlot++) {
-                var kh = keyByColumn.get(cols.get(setSlot).sqlName());
+            for (var sc : sw.group().columns()) {
+                var kh = keyByColumn.get(sc.column().sqlName());
                 if (kh == null) continue;
-                shared.add(new SharedHit(kh, sw, setSlot, cols.get(setSlot)));
+                shared.add(new SharedHit(kh, sw, sc.slot(), sc.column()));
                 if (kh.writer().group().nidk() != null) keyDecodeGroups.add(kh.writer().index());
                 if (sw.group().nidk() != null) setDecodeGroups.add(sw.index());
             }
@@ -3369,7 +3382,7 @@ public class TypeFetcherGenerator {
                         var binding = mg.bindings().get(bi);
                         var leaf = leafExtractionOf(binding.extraction());
                         CodeBlock value = leaf instanceof CallSiteExtraction.NodeIdDecodeKeys
-                            ? CodeBlock.of("$L_$L.value1()", keyDecodeLocalPrefix + gi, bi)
+                            ? CodeBlock.of("$L_$L.value$L()", keyDecodeLocalPrefix + gi, bi, binding.decodeSlot() + 1)
                             : ArgCallEmitter.nestedMapValueExpr("row", accessPathOf(binding.fieldName(), binding.extraction()));
                         keyByColumn.putIfAbsent(binding.targetColumn().sqlName(),
                             new KeySide(value, binding.fieldName(),
@@ -3387,8 +3400,9 @@ public class TypeFetcherGenerator {
         }
         for (int gi = 0; gi < setGroups.size(); gi++) {
             var sg = setGroups.get(gi);
-            for (int s = 0; s < sg.columns().size(); s++) {
-                var col = sg.columns().get(s);
+            for (var sc : sg.columns()) {
+                var col = sc.column();
+                int s = sc.slot();
                 var keySide = keyByColumn.get(col.sqlName());
                 if (keySide == null) continue; // not a WHERE∩SET column.
                 CodeBlock setValue = sg.nidk() != null
@@ -3462,7 +3476,7 @@ public class TypeFetcherGenerator {
         // SetGroup shape (by access path, nidk peeled) so the preamble reads each side's slot uniformly.
         // No-op (byte-identical) when there is no key∩set overlap.
         var keySetGroups = setGroupsOf(w.updateRows().keyColumns().stream()
-            .map(kc -> new SetColumn(kc.sdlFieldName(), kc.targetColumn(), kc.extraction()))
+            .map(kc -> new SetColumn(kc.sdlFieldName(), kc.targetColumn(), kc.extraction(), kc.decodeSlot()))
             .toList());
         emitKeySetAgreementPreamble(postInGuard, keySetGroups, setGroups, "in", "keySet", tablesOnly, tableRef);
         emitSetMapPuts(postInGuard, setGroups, "sets", "in", "in",
@@ -3970,8 +3984,8 @@ public class TypeFetcherGenerator {
         if (leafExtractionOf(binding.extraction()) instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
             String recLocal = "lookupKey" + groupIndex;
             appendDecodeLocal(locals, recLocal, nidk, wireValue, binding.fieldName());
-            whereExpr.add("$T.val($L.value1(), $T.$L.$L.getDataType())",
-                DSL, recLocal,
+            whereExpr.add("$T.val($L.value$L(), $T.$L.$L.getDataType())",
+                DSL, recLocal, binding.decodeSlot() + 1,
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
         } else {
             whereExpr.add("$T.val($L, $T.$L.$L.getDataType())",
@@ -4073,8 +4087,8 @@ public class TypeFetcherGenerator {
                     var binding = mg.bindings().get(bi);
                     if (leafExtractionOf(binding.extraction()) instanceof CallSiteExtraction.NodeIdDecodeKeys) {
                         String recLocal = "bulkKey" + groupIndex + "_" + bi;
-                        block.addStatement("cells.add($T.val($L.value1(), $T.$L.$L.getDataType()))",
-                            DSL, recLocal,
+                        block.addStatement("cells.add($T.val($L.value$L(), $T.$L.$L.getDataType()))",
+                            DSL, recLocal, binding.decodeSlot() + 1,
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
                     } else {
                         var path = accessPathOf(binding.fieldName(), binding.extraction());
@@ -4210,8 +4224,8 @@ public class TypeFetcherGenerator {
                     first = false;
                     if (leafExtractionOf(binding.extraction()) instanceof CallSiteExtraction.NodeIdDecodeKeys) {
                         String recLocal = "bulkKey" + groupIndex + "_" + bi;
-                        b.add("$T.val($L.value1(), $T.$L.$L.getDataType())",
-                            DSL, recLocal,
+                        b.add("$T.val($L.value$L(), $T.$L.$L.getDataType())",
+                            DSL, recLocal, binding.decodeSlot() + 1,
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
                     } else {
                         var path = accessPathOf(binding.fieldName(), binding.extraction());

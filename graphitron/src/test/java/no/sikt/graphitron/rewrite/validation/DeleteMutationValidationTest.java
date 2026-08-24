@@ -48,7 +48,7 @@ class DeleteMutationValidationTest {
                         List.of(new KeyColumn(
                             "filmId",
                             new ColumnRef("film_id", "FILM_ID", "java.lang.Long"),
-                            new CallSiteExtraction.Direct())))),
+                            new CallSiteExtraction.Direct(), 0)))),
                 Optional.empty()),
             List.of());
 

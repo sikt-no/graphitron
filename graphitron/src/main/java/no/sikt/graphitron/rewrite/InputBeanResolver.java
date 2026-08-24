@@ -361,16 +361,20 @@ final class InputBeanResolver {
     /** Adapts a gathered {@link PlainLeaf} into the shared per-column grouping view: one column, no
      *  decode, the dotted access path as the label. The fold downcasts back to reach the leaf. */
     private record PlainLeafWriter(PlainLeaf leaf) implements ColumnOverlap.ColumnWriter {
-        @Override public List<ColumnRef> targetColumns() { return List.of(leaf.column()); }
+        @Override public List<ColumnOverlap.SlotColumn> targetColumns() {
+            return List.of(new ColumnOverlap.SlotColumn(0, leaf.column()));
+        }
         @Override public boolean decode() { return false; }
         @Override public String label() { return dottedPath(leaf.path()); }
     }
 
     /** Adapts a {@link CallSiteExtraction.RecordKeyDecode} into the shared per-column grouping view:
-     *  its resolved target columns in decode-record slot order, flagged as a decode. */
+     *  its resolved target columns, which are one whole decode record, so the slots are contiguous. */
     private record KeyDecodeWriter(CallSiteExtraction.RecordKeyDecode keyDecode)
             implements ColumnOverlap.ColumnWriter {
-        @Override public List<ColumnRef> targetColumns() { return keyDecode.targetColumns(); }
+        @Override public List<ColumnOverlap.SlotColumn> targetColumns() {
+            return ColumnOverlap.SlotColumn.contiguous(keyDecode.targetColumns());
+        }
         @Override public boolean decode() { return true; }
         @Override public String label() { return dottedPath(keyDecode.path()); }
     }

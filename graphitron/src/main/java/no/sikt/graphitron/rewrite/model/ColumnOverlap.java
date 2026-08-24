@@ -32,23 +32,55 @@ public final class ColumnOverlap {
     private ColumnOverlap() {}
 
     /**
-     * A minimal read-only view of one writer of a record / SET clause: the target columns it writes,
-     * whether it involves a {@code @nodeId} decode, and a dotted access-path label used only for the
-     * agreement / reject message. Each of the three carrier families (the {@code @service}
-     * {@code Writer}, the INSERT {@code SetField} leaves, the UPDATE-SET {@code SetGroup}s) adapts
-     * into this view at its site; the private carrier records do not implement it, so no shared base
-     * class is forced onto them. Every consumer reads all three accessors, so the view carries no
-     * dead field per consumer.
+     * One target column paired with the decode-record slot the writer reads its value from: the
+     * 0-based position of the column in the {@code Record<N>} the writer's {@code @nodeId} decode
+     * returns, or {@code 0} for a plain writer that performs no decode.
      *
-     * <p><strong>Load-bearing invariant:</strong> the order of {@link #targetColumns()} <em>is</em>
-     * the decode-record slot order. A {@link Contributor}'s {@code slot} indexes into this list, and
-     * the agreement emit reads it back as {@code value<slot+1>()} off a decode {@code Record<N>}. An
-     * adapter that returned columns in a different order than its decode-record slots would silently
-     * misread the wrong slot.
+     * <p>The pairing is the contract, and it replaces a prose invariant that said the order of a
+     * writer's column list <em>was</em> its decode-record slot order. That invariant held only while
+     * a carrier handed its columns to one consumer whole. The UPDATE partition can now give a
+     * cross-table {@code @nodeId} reference's in-key column to the WHERE side and its out-of-key
+     * column to the SET side, leaving each side a non-contiguous slice of one decode record; a
+     * reader recovering the slot from list position would then read the wrong slot and silently
+     * write one decoded key column's value into another column. Stating the slot makes that a
+     * compile-time obligation on every adapter instead of a comment.
+     */
+    public record SlotColumn(int slot, ColumnRef column) {
+        public SlotColumn {
+            if (slot < 0) {
+                throw new IllegalArgumentException("decode-record slot cannot be negative: " + slot);
+            }
+        }
+
+        /**
+         * The slot pairing for a writer whose columns <em>are</em> one whole decode record, in
+         * order: slot {@code i} for the column at position {@code i}. The adapters whose carrier
+         * never splits a decode record across consumers (the {@code @service} jOOQ-record writers,
+         * the INSERT leaves, a plain single-column field) build their pairing with this; the UPDATE
+         * partition, which does split, carries a stated slot on each column instead.
+         */
+        public static List<SlotColumn> contiguous(List<ColumnRef> columns) {
+            var out = new ArrayList<SlotColumn>(columns.size());
+            for (int i = 0; i < columns.size(); i++) {
+                out.add(new SlotColumn(i, columns.get(i)));
+            }
+            return List.copyOf(out);
+        }
+    }
+
+    /**
+     * A minimal read-only view of one writer of a record / SET clause: the target columns it writes
+     * with the decode slot each reads from, whether it involves a {@code @nodeId} decode, and a
+     * dotted access-path label used only for the agreement / reject message. Each of the three
+     * carrier families (the {@code @service} {@code Writer}, the INSERT {@code SetField} leaves, the
+     * UPDATE-SET {@code SetGroup}s) adapts into this view at its site; the private carrier records do
+     * not implement it, so no shared base class is forced onto them. Every consumer reads all three
+     * accessors, so the view carries no dead field per consumer.
      */
     public interface ColumnWriter {
-        /** The target columns this writer writes, in decode-record slot order (see the invariant above). */
-        List<ColumnRef> targetColumns();
+        /** The target columns this writer writes, each paired with the decode-record slot it reads
+         *  ({@link SlotColumn#contiguous} for a writer whose columns are one whole decode record). */
+        List<SlotColumn> targetColumns();
 
         /** Whether this writer involves a {@code @nodeId} decode (a composite / reference carrier, or a
          *  {@code ColumnField} whose extraction is {@code NodeIdDecodeKeys}). A decode-involving overlap
@@ -62,11 +94,10 @@ public final class ColumnOverlap {
     }
 
     /**
-     * One writer's contribution to one column: the {@code slot} index of the column within the
-     * writer's {@link ColumnWriter#targetColumns()} (always 0 for a single-column plain field) and
-     * the resolved {@link ColumnRef}. Generalizes the per-site contributor records the six sites
-     * hand-rolled ({@code SlotRef}, {@code InsertColWriter}, {@code SetColWriter}, the raw
-     * {@code int[]{groupIndex, slot}} tuples).
+     * One writer's contribution to one column: the {@code slot} the writer reads the column's value
+     * from in its decode record (see {@link SlotColumn}) and the resolved {@link ColumnRef}.
+     * Generalizes the per-site contributor records the six sites hand-rolled ({@code SlotRef},
+     * {@code InsertColWriter}, {@code SetColWriter}, the raw {@code int[]{groupIndex, slot}} tuples).
      */
     public record Contributor(ColumnWriter writer, int slot, ColumnRef column) {}
 
@@ -86,9 +117,9 @@ public final class ColumnOverlap {
     /**
      * Groups {@code writers} by backing-column {@link ColumnRef#sqlName()} into per-column
      * {@link OverlapColumn}s, keyed in writer-encounter order. A writer contributes one
-     * {@link Contributor} per target column (carrying that column's slot index); a single-column
-     * plain field contributes one at slot 0. <em>Every</em> column is kept, size-one included, so
-     * each consumer filters by the predicate it forks on ({@code shared()} /
+     * {@link Contributor} per target column, carrying that column's stated decode slot; a
+     * single-column plain field contributes one at slot 0. <em>Every</em> column is kept, size-one
+     * included, so each consumer filters by the predicate it forks on ({@code shared()} /
      * {@code shared() && allPlain()}) rather than the primitive pre-filtering. The
      * {@code OverlapColumn}'s {@link ColumnRef} is the first contributor's, so two writers landing on
      * one SQL name (the overlap case) collapse to one column entry.
@@ -96,10 +127,9 @@ public final class ColumnOverlap {
     public static List<OverlapColumn> groupByColumn(List<? extends ColumnWriter> writers) {
         var byColumn = new LinkedHashMap<String, List<Contributor>>();
         for (var w : writers) {
-            var cols = w.targetColumns();
-            for (int s = 0; s < cols.size(); s++) {
-                byColumn.computeIfAbsent(cols.get(s).sqlName(), k -> new ArrayList<>())
-                    .add(new Contributor(w, s, cols.get(s)));
+            for (var sc : w.targetColumns()) {
+                byColumn.computeIfAbsent(sc.column().sqlName(), k -> new ArrayList<>())
+                    .add(new Contributor(w, sc.slot(), sc.column()));
             }
         }
         var out = new ArrayList<OverlapColumn>();

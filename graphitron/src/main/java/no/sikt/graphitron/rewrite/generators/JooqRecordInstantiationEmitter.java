@@ -285,14 +285,16 @@ final class JooqRecordInstantiationEmitter {
 
     /** Adapts a {@link Writer} into the shared {@link ColumnOverlap.ColumnWriter} view so the
      *  per-column overlap grouping is the {@link ColumnOverlap#groupByColumn} the DML write-path
-     *  sites share. A plain field's single column or a decode's target columns (already in decode-record
-     *  slot order); the label is the dotted <em>primary</em> access path, so a merged alias group names
-     *  its live field in the agreement message rather than listing every alias. The emission downcasts
-     *  {@code Contributor.writer()} back to this view to reach the wrapped {@link Writer} (its base
-     *  local and decode shape). */
+     *  sites share. A plain field's single column, or a decode's target columns, which are one whole
+     *  decode record and so carry contiguous slots; the label is the dotted <em>primary</em> access
+     *  path, so a merged alias group names its live field in the agreement message rather than
+     *  listing every alias. The emission downcasts {@code Contributor.writer()} back to this view to
+     *  reach the wrapped {@link Writer} (its base local and decode shape). */
     private record WriterView(Writer w) implements ColumnOverlap.ColumnWriter {
-        @Override public List<ColumnRef> targetColumns() {
-            return w.isDecode() ? w.decode().targetColumns() : List.of(w.plain().column());
+        @Override public List<ColumnOverlap.SlotColumn> targetColumns() {
+            return w.isDecode()
+                ? ColumnOverlap.SlotColumn.contiguous(w.decode().targetColumns())
+                : List.of(new ColumnOverlap.SlotColumn(0, w.plain().column()));
         }
         @Override public boolean decode() { return w.isDecode(); }
         @Override public String label() { return dottedPath(w.path()); }

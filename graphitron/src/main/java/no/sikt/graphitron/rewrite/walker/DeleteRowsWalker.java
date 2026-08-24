@@ -70,12 +70,15 @@ public final class DeleteRowsWalker {
         var inputColumns = new ArrayList<ColumnRef>();
         var inputColumnSqlNames = new LinkedHashSet<String>();
         var whereColumns = new ArrayList<KeyColumn>();
+        // DELETE never splits a carrier: every column of every contribution is a WHERE filter, so a
+        // column's index in its contribution is also its decode slot, and the rows are contiguous.
         for (var c : contributions) {
-            for (var col : c.columns()) {
+            for (int slot = 0; slot < c.columns().size(); slot++) {
+                var col = c.columns().get(slot);
                 if (inputColumnSqlNames.add(col.sqlName())) {
                     inputColumns.add(col);
                 }
-                whereColumns.add(new KeyColumn(c.sdlFieldName(), col, c.extraction()));
+                whereColumns.add(new KeyColumn(c.sdlFieldName(), col, c.extraction(), slot));
             }
         }
 
