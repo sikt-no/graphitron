@@ -3,8 +3,6 @@ package no.sikt.graphitron.model.derive;
 import org.jooq.DSLContext;
 import org.jooq.Name;
 import org.jooq.exception.DataAccessException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -72,8 +70,6 @@ import static org.jooq.impl.DSL.table;
  * inside a transaction and an analysis may not.
  */
 public final class Materializations {
-
-    private static final Logger LOG = LoggerFactory.getLogger(Materializations.class);
 
     /** One {@code meta_materialize} row: the view stating a rule, and the table holding its rows. */
     public record Registration(String sourceViewName, String targetTableName) {}
@@ -173,17 +169,31 @@ public final class Materializations {
      * failing a build to state a selectivity would be the wrong trade by an order of magnitude, so a
      * database refusal here leaves the planner on whatever it had. Only a database refusal: anything
      * that is not a {@link DataAccessException} is a programming error and propagates.
+     *
+     * <p>Returning the count rather than logging the refusals is what keeps best-effort from
+     * meaning unobserved. A swallowed exception is only safe while the thing being swallowed is
+     * rare and incidental, and the failure that would break that is a malformed statement, which
+     * would refuse on every target of every store and show up as nothing at all. The count makes
+     * that case assertable, and {@code MaterializeRegistryGateTest} asserts it: on a healthy store
+     * every registration is analysed. This module carries jOOQ and H2 and no logging framework, so
+     * a return value is also the only signal available without adding one for a line nobody reads.
+     *
+     * @return how many of the registered targets were analysed, which is all of them on a store
+     *     nothing else is holding
      */
-    public static void analyse(DSLContext dsl) {
+    public static int analyse(DSLContext dsl) {
+        int analysed = 0;
         for (Registration registration : registrations(dsl)) {
-            String target = dsl.render(table(relation(registration.targetTableName())));
             try {
-                dsl.execute("ANALYZE TABLE " + target);
-            } catch (DataAccessException e) {
-                LOG.debug("could not gather statistics on {}; reads of it plan on whatever the"
-                    + " planner already had", target, e);
+                dsl.execute("ANALYZE TABLE "
+                    + dsl.render(table(relation(registration.targetTableName()))));
+                analysed++;
+            } catch (DataAccessException refused) {
+                // Left uncounted rather than rethrown, per the paragraph above; the caller's own
+                // reads go on planning against whatever statistics the target already carried.
             }
         }
+        return analysed;
     }
 
     /**

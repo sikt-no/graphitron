@@ -257,6 +257,22 @@ class MaterializeRegistryGateTest {
         });
     }
 
+    /**
+     * Analysing a healthy store analyses every registered target. The assertion that keeps
+     * {@link Materializations#analyse}'s best-effort catch from meaning unobserved: it swallows a
+     * database refusal because a target may be held by another writer and statistics are not worth
+     * a failed build, and the failure that would abuse that tolerance is a statement malformed for
+     * every target of every store, which would otherwise present as silence.
+     */
+    @Test
+    @DisplayName("analysing a store nothing else holds analyses every registered target")
+    void analysingAHealthyStoreReachesEveryTarget() {
+        withStore(dsl -> assertThat(Materializations.analyse(dsl))
+            .as("targets analysed on a store with no competing writer; fewer than all of them"
+                + " means the statement was refused rather than merely unlucky")
+            .isEqualTo(Materializations.registrations(dsl).size()));
+    }
+
     // ===== Reading the observed schema =====
 
     /**
