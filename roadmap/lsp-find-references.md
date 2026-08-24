@@ -70,31 +70,66 @@ locations, `List<Location>` rather than `Optional<Location>`.
 
 So the work is a surface and a set of reverse-direction reads, not new facts.
 
-## The one asymmetry the facts impose
+## Two questions about positions, and they are not the same question
+
+Every result this surface returns is a position in an SDL file, and positions
+here come off the store, which rides the capture cadence rather than the
+keystroke. That raises two separate questions, and an earlier draft of this spec
+ran them together. **Freshness** asks which cadence a result's line number rides.
+**Precision** asks which span within that line a result points at. They have
+different answers and are settled separately below.
+
+### Freshness: the whole answer rides the capture cadence, and says so
+
+Decision: **captured positions uniformly, in Slice A and Slice B alike.** No
+buffer refresh. The consequence is stated rather than hidden: this surface
+answers with the last capture's view of the schema. A usage typed since the last
+capture is absent from the list, and a site in a buffer edited since the last
+capture reports the line it was captured at.
+
+`IntraSchemaDefinitions` made the opposite call for its own SDL positions, and
+its javadoc is explicit that the open-buffer scan is first and authoritative. That
+choice does not carry here, and the difference is the argument. There, the buffer
+holds the *whole* answer: one declaration, and if it sits in an open buffer the
+live parse knows everything the store would have said and more. Here the buffer
+holds a *fraction* of the answer, because usages are spread across the workspace
+and most of them sit in files nobody has open. Refreshing the fraction that
+happens to be open produces a list that is partly live and still missing rows,
+which is harder to explain than a list that is uniformly the last capture's. One
+cadence, one sentence in the docs.
+
+If the skew proves painful in practice, the escalation is a fresher answer, not
+fresher positions: that is a capture-cadence question, and it improves the row
+set and the line numbers together. Buffer-refreshed positions remain available as
+a narrower fallback, and it is worth knowing the cost before choosing it, since
+no coordinate-to-live-node primitive exists today. `DeclarationKind.findDefinition`
+resolves a type name to its declaration node and nothing resolves a field,
+argument, or directive application, so that arm builds a new primitive rather
+than reusing one.
+
+### Precision: which span, and one relation short of an answer
 
 `graphql_*_directive_arg` carries `value_sdl` but **no** source position; the
 position lives on the owning `graphql_*_directive` application row. The store can
 therefore say "this `@table` application at line 42 binds `film`" but not "the
-`film` literal spans columns 19 to 25". Definition never met this, because it
-reads positions out of the *target's* `.java` parse, not out of SDL.
+`film` literal spans columns 19 to 25". `Definitions` never met this, because it
+reads positions out of the *target's* `.java` parse rather than out of SDL. This
+is a fact about `Definitions` alone: `IntraSchemaDefinitions` reads SDL positions
+and did meet the neighbouring freshness question, which is why the two are
+separated above.
 
-Two ways to close it, and the choice is the item's main fork:
+For Slice B this is cheaper than the paragraph above suggests, because the
+decoded relations do not need the join at all: `graphitron_table`,
+`graphitron_field_binding`, `graphitron_service`, `graphitron_external_field` and
+`graphitron_enum` each carry their own `source_name` / `source_line` /
+`source_column`. `graphitron_field_reference_step` is the one exception and
+inherits its position from `graphitron_field_reference`.
 
-1. **Point at the application.** Every result is the directive application's
-   position, uniformly, open buffer or not. Editors highlight the line and the
-   author sees the site.
-2. **Refine from the buffer.** Where the file is an open buffer, re-read the
-   tree-sitter parse for the exact argument-value span, and fall back to the
-   application position otherwise.
-
-Recommendation: ship (1) first. (2) makes the same site report a different range
-depending on whether the author happens to have the file open, which is a skew a
-reader cannot explain, and the open-buffer-authoritative pattern
-`IntraSchemaDefinitions` uses is justified there by buffers being *fresher* than
-the store, not more precise than it. The honest fix for precision is capture-side:
-give the `_directive_arg` relations their own source position, which upgrades
-every result including closed files. That is Slice C, deliberately last, because
-it is a model change across five relations and the surface is useful without it.
+Decision: **Slice A and Slice B point at the site the store positions**, which is
+the declaration row for the type population and the decoded row (or, for a
+reference step, its parent) for the directive population. Growing a value-level
+position in capture is Slice C, deliberately last, because it is a model change
+across five relations and the surface is useful without it.
 
 ## Slices
 
@@ -112,14 +147,23 @@ The reverse of `IntraSchemaDefinitions`, and the arm that needs no new facts.
   `StoreAccess` door it goes through (interactive or bulk) is a Slice A decision,
   not an afterthought.
 - New `LspSurface.REFERENCES`, and reach stated for it in every
-  `TriggerDispatch.MATRIX` row. **Note the trap:** the matrix's guard pins the
-  trigger *leaf* set, and any surface a row does not name defaults to
-  `NO_ANSWER`, so adding the enum constant alone would silently record "declines
-  everything" for all 21 rows without failing a single test. Every row is
-  reviewed in this slice, and the Spec review checks that all 21 were considered
-  rather than defaulted. If reviewers would rather have a mechanical guard, the
-  cheaper version is making `Reach` require every surface to be named, which
-  turns each omission into a build failure; worth deciding at the Ready gate.
+  `TriggerDispatch.MATRIX` row. Two existing guards catch part of this and it is
+  worth being exact about which part, because the gap decides the work:
+  - `TriggerDispatchMatrixTest.everySurfaceAnswersSomething` iterates
+    `LspSurface.values()` and requires a positive answered count, so a
+    `REFERENCES` constant named in *no* row fails the build immediately.
+  - The unguarded seam is narrower: once **one** row names `REFERENCES` that test
+    goes green, and the remaining 20 rows default to `NO_ANSWER` unreviewed. A
+    surface that declines 20 of 21 triggers is indistinguishable, to the build,
+    from one that meant to.
+  - A second seam: `theCursorAndSweepAxesDoNotCross` hand-lists
+    `cursorSurfaces = Set.of(COMPLETION, HOVER, DEFINITION)`, so a cursor-keyed
+    `REFERENCES` sits outside that guard until somebody adds it by hand.
+
+  Both are closed in this slice rather than left to review discipline. `Reach`
+  requires every surface to be named, so an omitted cell is a build failure; and
+  the cursor-surface set is derived rather than listed, so a new cursor-keyed
+  surface joins that guard on declaration.
 - The arm itself: cursor on a type declaration name (`type Film`) or on a type
   reference (`films: [Film!]!`) yields every field and argument whose
   `named_type` is `Film`, every `implements` naming it, and every union member.
@@ -156,17 +200,49 @@ capture, then narrow every Slice B result from the application to the value span
 Independently useful: diagnostics on directive argument values want the same
 column, and it removes the open-versus-closed precision question entirely.
 
+## User documentation (first-client check)
+
+Draft of what the manual says when this ships, written first because a surface
+whose behaviour does not read simply is a surface designed wrong.
+
+> **Find usages.** With the language server attached, ask your editor for
+> references (Find Usages) on a name in a `.graphqls` file and it lists every
+> other site in the schema that uses it. On a type name you get every field and
+> argument declared with that type, every `implements`, and every union member.
+> On a directive value you get every coordinate bound to the same thing: the
+> other types mapped to a table, the other fields bound to a column, every
+> coordinate naming a service class or method.
+>
+> Two things to know about the answer. It is the last capture's view of your
+> schema, so a usage you typed a moment ago appears once `graphitron:dev` has
+> picked the file up, and a result in a file you have been editing points at the
+> line it was captured at. And a result lands on the directive application rather
+> than on the value inside it, so the editor highlights `@table(name: "film")`
+> and not the word `film`.
+
+Where this lands, and the sentences that go stale on the way.
+`docs/manual/how-to/dev-loop.adoc` spells the surface list out three times, once
+per context (client setup, why to attach an editor at all, and the IntelliJ
+walkthrough), each reading "diagnostics, hover, completion, and
+go-to-definition"; all three become wrong when this ships.
+`docs/architecture/how-to/dev-loop-internals.adoc` carries the same list once in
+its LSP-server bullet, and separately names the surfaces that resolve through the
+store, which the new one joins. Grep the phrase rather than trusting these
+locations; the point is that the list is spelled out in prose in four places and
+none of them is generated.
+
 ## Open questions for the Spec review
 
-1. Position fork above: uniform application positions (recommended), or
-   buffer-refined spans?
-2. Should `Reach` be tightened to require every surface to be named per row, so
-   a future surface cannot default into silence?
-3. Does a references answer belong on the interactive `StoreAccess` door, given
+1. Does a references answer belong on the interactive `StoreAccess` door, given
    it fans out over more relations than any other cursor-keyed read?
-4. Scope check: field-name and enum-value declaration names as reference
+2. Scope check: field-name and enum-value declaration names as reference
    subjects (who uses this field?) are deferred out of Slice A and B. Confirm
    that is the right cut, or fold the field case into Slice B.
+
+Two questions the first review round settled, recorded here so they are not
+reopened: the freshness and precision decisions above, and tightening `Reach`
+plus deriving the cursor-surface set, which are now Slice A work rather than a
+Ready-gate choice.
 
 ## Reviewer findings
 
