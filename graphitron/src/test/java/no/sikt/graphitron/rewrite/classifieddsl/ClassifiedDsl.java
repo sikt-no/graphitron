@@ -55,8 +55,28 @@ public final class ClassifiedDsl {
     public static final String COMMITS = "commits";
 
     /**
-     * The test-only directive and enum declarations, prepended to every corpus fixture before the
-     * classifier runs. The {@code TypeVerdict} value list mirrors the non-failure leaves of
+     * The test-only directive and enum declarations plus the base schema, prepended to every corpus
+     * fixture before the classifier runs.
+     *
+     * <p><b>Why a base schema lives here.</b> A GraphQL document is only a schema if it has a query
+     * root, so a fixture about mutations alone used to carry a throwaway {@code Query} of its own.
+     * The cheapest throwaway, a {@code String}-returning field, is itself an author error, so those
+     * fixtures classified but could not be assembled for generation, and the documentation page
+     * rendered from them reported that a plain INSERT generates nothing. Declaring the root once
+     * here removes the need for a throwaway: a fixture contributes its own roots with
+     * {@code extend type Query} and a fixture with no roots of its own declares nothing.
+     *
+     * <p>The same reasoning puts {@code Node} here. It was previously injected by
+     * {@code TestSchemaHelper} only when a fixture did not declare it, and only on the classification
+     * path, so a fixture could say {@code implements Node} without declaring the interface and pass
+     * classification while failing assembly. One declaration on the one path every reader shares is
+     * what keeps the two halves of an example talking about the same schema.
+     *
+     * <p>{@code CorpusAnchor} binds {@code category}, deliberately a table no fixture uses: the
+     * anchor is present in every fixture, so a table any fixture reached would change that fixture's
+     * arrival fold by existing.
+     *
+     * <p>The {@code TypeVerdict} value list mirrors the non-failure leaves of
      * {@code GraphitronType}: {@link ClassifiedHarness#typeVerdictEnumConstants()} (this list) is
      * checked against {@link ClassifiedHarness#graphitronTypeNonFailureLeafNames()} (the live leaf
      * set) by {@code ClassifiedDslTest#typeVerdictMirrorsGraphitronTypeLeaves()}, which fails the
@@ -110,5 +130,11 @@ public final class ClassifiedDsl {
         directive @synthesises(mints: [Mint!]!) on FIELD_DEFINITION
 
         directive @commits(source: LauncherSource!, result: LauncherResult!) on FIELD_DEFINITION
+
+        interface Node { id: ID! }
+
+        type Query { corpusAnchor: CorpusAnchor }
+
+        type CorpusAnchor @table(name: "category") { name: String }
         """;
 }

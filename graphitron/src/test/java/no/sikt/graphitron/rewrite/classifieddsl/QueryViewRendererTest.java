@@ -30,7 +30,7 @@ class QueryViewRendererTest {
     }
 
     private static final String FIXTURE = """
-        type Query {
+        extend type Query {
           film: Film @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
           actor: Actor @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
         }

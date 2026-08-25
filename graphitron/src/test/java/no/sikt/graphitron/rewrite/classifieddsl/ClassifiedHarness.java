@@ -121,7 +121,17 @@ public final class ClassifiedHarness {
         var synthesises = new ArrayList<SynthesisCase>();
         var commits = new ArrayList<CommitDeclaration>();
 
-        for (TypeDefinition<?> def : registry.types().values()) {
+        // Definitions and their `extend` blocks alike. A fixture contributes its roots with
+        // `extend type Query`, because the base schema in the prelude declares the root once, and
+        // graphql-java files an extension outside types(); walking definitions alone would drop
+        // every root-coordinate assertion in the corpus silently, which is the one failure a
+        // spec-by-example harness must not have.
+        @SuppressWarnings("rawtypes") // registry.types() is a raw-valued map; the loop reads TypeDefinition<?>
+        var carriers = new ArrayList<TypeDefinition>(registry.types().values());
+        registry.objectTypeExtensions().values().forEach(carriers::addAll);
+        registry.interfaceTypeExtensions().values().forEach(carriers::addAll);
+
+        for (TypeDefinition<?> def : carriers) {
             List<FieldDefinition> fieldDefs = switch (def) {
                 case ObjectTypeDefinition o -> o.getFieldDefinitions();
                 case InterfaceTypeDefinition i -> i.getFieldDefinitions();

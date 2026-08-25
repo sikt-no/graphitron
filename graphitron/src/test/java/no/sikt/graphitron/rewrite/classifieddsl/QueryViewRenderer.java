@@ -48,6 +48,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * The query-as-view renderer. Prose embeds a GraphQL <em>query</em> (or a fragment {@code on Type})
@@ -140,7 +141,7 @@ public final class QueryViewRenderer {
         var sb = new StringBuilder();
         // 1. Output field containers, pruned to the selected fields.
         for (var entry : touched.fieldsByParent.entrySet()) {
-            TypeDefinition<?> def = registry.getTypeOrNull(entry.getKey());
+            TypeDefinition<?> def = merged(registry, entry.getKey());
             if (def != null) {
                 append(sb, prune(def, entry.getValue(), touched));
             }
@@ -148,7 +149,7 @@ public final class QueryViewRenderer {
         // 2. Abstract output types referenced but not field-selected (unions; interfaces reached only via fragments).
         for (String name : touched.abstractTypes) {
             if (!touched.fieldsByParent.containsKey(name)) {
-                TypeDefinition<?> def = registry.getTypeOrNull(name);
+                TypeDefinition<?> def = merged(registry, name);
                 if (def != null) {
                     append(sb, stripInternalDirectives(def, touched));
                 }
@@ -156,7 +157,7 @@ public final class QueryViewRenderer {
         }
         // 3. Input-object closure reached from the kept fields' arguments.
         for (String name : touched.inputTypes) {
-            TypeDefinition<?> def = registry.getTypeOrNull(name);
+            TypeDefinition<?> def = merged(registry, name);
             if (def != null) {
                 append(sb, stripInternalDirectives(def, touched));
             }
@@ -293,6 +294,40 @@ public final class QueryViewRenderer {
                 out.typeDescriptions.put(typeName, description);
             }
         }
+    }
+
+    /**
+     * The type named {@code name}, with its {@code extend} blocks folded into it.
+     *
+     * <p>graphql-java keeps a type's extensions beside its definition rather than in it. A fixture
+     * contributes its roots with {@code extend type Query}, because the base schema in
+     * {@link ClassifiedDsl#PRELUDE} declares the root once for every fixture, so reading the
+     * definition alone would render the base schema's {@code Query} and none of the fields the
+     * example is about. Folding here also keeps {@code extend} out of the rendered block: the page
+     * shows the reader the schema they would write, not how the corpus assembles it.
+     */
+    private static TypeDefinition<?> merged(TypeDefinitionRegistry registry, String name) {
+        TypeDefinition<?> def = registry.getTypeOrNull(name);
+        if (def == null) return null;
+        return switch (def) {
+            case ObjectTypeDefinition o -> {
+                List<FieldDefinition> extra = registry.objectTypeExtensions()
+                    .getOrDefault(name, List.of()).stream()
+                    .flatMap(e -> e.getFieldDefinitions().stream())
+                    .toList();
+                yield extra.isEmpty() ? o : o.transform(b -> b.fieldDefinitions(
+                    Stream.concat(o.getFieldDefinitions().stream(), extra.stream()).toList()));
+            }
+            case InterfaceTypeDefinition i -> {
+                List<FieldDefinition> extra = registry.interfaceTypeExtensions()
+                    .getOrDefault(name, List.of()).stream()
+                    .flatMap(e -> e.getFieldDefinitions().stream())
+                    .toList();
+                yield extra.isEmpty() ? i : i.transform(b -> b.definitions(
+                    Stream.concat(i.getFieldDefinitions().stream(), extra.stream()).toList()));
+            }
+            default -> def;
+        };
     }
 
     /** Keeps only the touched fields of {@code def} and strips the internal directives from what remains. */

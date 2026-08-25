@@ -48,7 +48,7 @@ public final class ClassifiedCorpus {
     private static final List<Example> EXAMPLES = List.of(
         /* Catalog side: a root query, a Relay connection, an inline column, and a TableType. */
         new Example("catalog", """
-            type Query @classifiedType(as: RootType) {
+            extend type Query @classifiedType(as: RootType) {
               film: Film @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
                 @commits(source: AnchorTable, result: SingleRecord)
               films: [Film!]! @asConnection @classified(source: Query, operations: [OrderBy, Paginate, Select], target: Single, targetShape: Connection)
@@ -81,7 +81,7 @@ public final class ClassifiedCorpus {
             type Film @table(name: "film") {
               rating: Rating @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
             }
-            type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+            extend type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
             """,
             """
             {
@@ -110,7 +110,7 @@ public final class ClassifiedCorpus {
                 @commits(source: CorrelatedChain, result: SingleRecord)
             }
 
-            type Query {
+            extend type Query {
               city: City @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
                 @commits(source: AnchorTable, result: SingleRecord)
             }
@@ -131,7 +131,7 @@ public final class ClassifiedCorpus {
                 @classified(source: OnlyChild, operations: [Join, Lookup, OrderBy, Select], target: List, targetShape: Table)
                 @commits(source: CorrelatedLookupChain, result: RecordList)
             }
-            type Query { store: Store @commits(source: AnchorTable, result: SingleRecord) }
+            extend type Query { store: Store @commits(source: AnchorTable, result: SingleRecord) }
             """),
 
         /*
@@ -159,7 +159,7 @@ public final class ClassifiedCorpus {
               details: FilmDetails
             }
 
-            type Query {
+            extend type Query {
               film: Film @commits(source: AnchorTable, result: SingleRecord)
               prodFilmDetails: FilmDetails
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRecord"})
@@ -195,7 +195,7 @@ public final class ClassifiedCorpus {
               details: FilmDetails
             }
 
-            type Query {
+            extend type Query {
               film: Film @commits(source: AnchorTable, result: SingleRecord)
               prodFilmDetails: FilmDetails
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
@@ -228,7 +228,7 @@ public final class ClassifiedCorpus {
                 @commits(source: ServiceTableLift, result: LoaderDelegated)
             }
 
-            type Query {
+            extend type Query {
               film: Film
               prodFilmDetails: FilmDetails
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDetailsProps"})
@@ -248,7 +248,7 @@ public final class ClassifiedCorpus {
          */
         new Example("query-service-record", """
             type FilmDetails { title: String }
-            type Query {
+            extend type Query {
               filmDetails: FilmDetails
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getDetails"})
                 @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Record)
@@ -273,7 +273,7 @@ public final class ClassifiedCorpus {
                 @classified(source: OnlyChild, operations: [Reentry, ServiceCall], target: List, targetShape: Table)
                 @commits(source: ServiceTableLift, result: LoaderDelegated)
             }
-            type Query { language: Language @commits(source: AnchorTable, result: SingleRecord) }
+            extend type Query { language: Language @commits(source: AnchorTable, result: SingleRecord) }
             """,
             """
             {
@@ -301,7 +301,7 @@ public final class ClassifiedCorpus {
                 @classified(source: OnlyChild, operations: [ServiceCall], target: Single, targetShape: Record)
                 @commits(source: ServiceCall, result: LoaderDelegated)
             }
-            type Query { language: Language @commits(source: AnchorTable, result: SingleRecord) }
+            extend type Query { language: Language @commits(source: AnchorTable, result: SingleRecord) }
             """,
             """
             {
@@ -335,7 +335,7 @@ public final class ClassifiedCorpus {
                 @classified(source: OnlyChild, operations: [Reentry, ServiceCall], target: List, targetShape: Table, sourceShape: Record)
                 @commits(source: ServiceTableLift, result: LoaderDelegated)
             }
-            type Query {
+            extend type Query {
               aggregated: Aggregated
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeLanguageKeyed"})
                 @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Record)
@@ -358,7 +358,7 @@ public final class ClassifiedCorpus {
               name: String @classified(source: OnlyChild, operations: [], target: Single, targetShape: Field, sourceShape: Record)
             }
             type JooqTableRecordBacked @classifiedType(as: JooqTableRecordType) { id: ID }
-            type Query {
+            extend type Query {
               pojo: PojoBacked
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
               javaRecord: JavaRecordBacked
@@ -382,7 +382,7 @@ public final class ClassifiedCorpus {
               path: [String!]! @classified(source: OnlyChild, operations: [], target: List, targetShape: Field, sourceShape: Record)
               message: String! @classified(source: OnlyChild, operations: [], target: Single, targetShape: Field, sourceShape: Record)
             }
-            type Query { err: MyError }
+            extend type Query { err: MyError }
             """),
 
         /*
@@ -402,7 +402,7 @@ public final class ClassifiedCorpus {
               message: String!
               severity: Severity!
             }
-            type Query { err: ExtraFieldError }
+            extend type Query { err: ExtraFieldError }
             """),
 
         /*
@@ -417,7 +417,7 @@ public final class ClassifiedCorpus {
             type Film @table(name: "film") {
               details: FilmDetails @classified(source: OnlyChild, operations: [], target: Single, targetShape: Table)
             }
-            type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+            extend type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
             """,
             """
             {
@@ -467,7 +467,7 @@ public final class ClassifiedCorpus {
                 @classified(source: OnlyChild, operations: [Join, Pivot], target: Single, targetShape: Record)
                 @commits(source: PivotAggregate, result: SingleRecord)
             }
-            type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+            extend type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
             """,
             """
             {
@@ -519,7 +519,7 @@ public final class ClassifiedCorpus {
             type City @table(name: "city") {
               namedPlaces: [Named!]! @classified(source: OnlyChild, operations: [Select], target: List, targetShape: Interface)
             }
-            type Query {
+            extend type Query {
               customer: Customer @commits(source: AnchorTable, result: SingleRecord)
               city: City @commits(source: AnchorTable, result: SingleRecord)
               anyNamed: Named @classified(source: Query, operations: [Select], target: Single, targetShape: Interface)
@@ -535,7 +535,7 @@ public final class ClassifiedCorpus {
               related: FilmOrActor @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Union)
               relatedList: [FilmOrActor!]! @classified(source: OnlyChild, operations: [Select], target: List, targetShape: Union)
             }
-            type Query {
+            extend type Query {
               filmActor: FilmActor @commits(source: AnchorTable, result: SingleRecord)
               search: FilmOrActor @classified(source: Query, operations: [Select], target: Single, targetShape: Union)
             }
@@ -554,7 +554,7 @@ public final class ClassifiedCorpus {
             type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
             type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
             union Person @classifiedType(as: UnionType) = Customer | Staff
-            type Query {
+            extend type Query {
               people(firstName: [String!] @field(name: "first_name")): [Person!]!
                 @classified(source: Query, operations: [OnParticipant, OnParticipant, Select], target: List, targetShape: Union)
             }
@@ -573,7 +573,7 @@ public final class ClassifiedCorpus {
             interface Searchable @classifiedType(as: InterfaceType) { name: String }
             type Film implements Searchable @table(name: "film") { name: String @field(name: "TITLE") }
             type Actor implements Searchable @table(name: "actor") { name: String @field(name: "FIRST_NAME") }
-            type Query {
+            extend type Query {
               searchService: Searchable
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
                 @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Interface)
@@ -591,7 +591,7 @@ public final class ClassifiedCorpus {
             interface Searchable @classifiedType(as: InterfaceType) { name: String }
             type Film implements Searchable @table(name: "film") { name: String @field(name: "TITLE") }
             type Actor implements Searchable @table(name: "actor") { name: String @field(name: "FIRST_NAME") }
-            type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+            extend type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
             type Mutation {
               doSearch: [Searchable]
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
@@ -611,7 +611,7 @@ public final class ClassifiedCorpus {
         new Example("query-service-table-interface", """
             interface MediaItem @table(name: "film") @discriminate(on: "text_rating") @classifiedType(as: TableInterfaceType) { title: String }
             type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
-            type Query {
+            extend type Query {
               mediaService: MediaItem
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
                 @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Interface)
@@ -626,7 +626,7 @@ public final class ClassifiedCorpus {
         new Example("mutation-service-table-interface", """
             interface MediaItem @table(name: "film") @discriminate(on: "text_rating") @classifiedType(as: TableInterfaceType) { title: String }
             type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
-            type Query { film: FilmItem @commits(source: AnchorTable, result: SingleRecord) }
+            extend type Query { film: FilmItem @commits(source: AnchorTable, result: SingleRecord) }
             type Mutation {
               mediaSearch: [MediaItem]
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
@@ -658,7 +658,7 @@ public final class ClassifiedCorpus {
                 @classified(source: OnlyChild, operations: [Join, OrderBy, Paginate, Select], target: Single, targetShape: Connection)
                 @commits(source: DiscriminatedCorrelatedChain, result: Connection)
             }
-            type Query {
+            extend type Query {
               inventory: Inventory @commits(source: AnchorTable, result: SingleRecord)
               language: Language @commits(source: AnchorTable, result: SingleRecord)
               topMedia: MediaItem @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
@@ -689,7 +689,7 @@ public final class ClassifiedCorpus {
               displayName: String! @reference(path: [{key: "party_company_party_id_fkey"}]) @field(name: "display_name")
               orgNumber: String @field(name: "org_number")
             }
-            type Query {
+            extend type Query {
               allParties: [Party!]! @classified(source: Query, operations: [OrderBy, Select], target: List, targetShape: Table)
                 @commits(source: DiscriminatedTable, result: RecordList)
             }
@@ -716,7 +716,7 @@ public final class ClassifiedCorpus {
               displayName: String! @reference(path: [{key: "party_company_party_id_fkey"}]) @field(name: "display_name")
               orgNumber: String @field(name: "org_number")
             }
-            type Query {
+            extend type Query {
               parties: [Party!]! @asConnection
                 @classified(source: Query, operations: [OrderBy, Paginate, Select], target: Single, targetShape: Connection)
                 @commits(source: DiscriminatedTable, result: Connection)
@@ -739,9 +739,8 @@ public final class ClassifiedCorpus {
             """),
 
         new Example("relay-node", """
-            interface Node { id: ID! }
             type Film implements Node @table(name: "film") { id: ID! title: String }
-            type Query {
+            extend type Query {
               node(id: ID!): Node @classified(source: Query, operations: [NodeResolve], target: Single, targetShape: Interface)
               nodes(ids: [ID!]!): [Node] @classified(source: Query, operations: [NodeResolve], target: List, targetShape: Interface)
               internalFilmNode(id: ID): Node @classified(source: Query, operations: [NodeResolve], target: Single, targetShape: Interface)
@@ -769,7 +768,7 @@ public final class ClassifiedCorpus {
                 @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
                 @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
             }
-            type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+            extend type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
             """,
             """
             {
@@ -795,7 +794,7 @@ public final class ClassifiedCorpus {
               actors(actor_id: [Int!]! @lookupKey): [Actor!]!
                 @classified(source: OnlyChild, operations: [Join, Lookup, OrderBy, Select], target: List, targetShape: Table)
             }
-            type Query {
+            extend type Query {
               filmActor: FilmActor @commits(source: AnchorTable, result: SingleRecord)
               filmById(film_id: [ID] @lookupKey): [Film]!
                 @classified(source: Query, operations: [Lookup, OrderBy, Select], target: List, targetShape: Table)
@@ -829,7 +828,7 @@ public final class ClassifiedCorpus {
               organisasjonskode: Int
               rollekode: String
             }
-            type Query {
+            extend type Query {
               tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
                 @defaultOrder(fields: [{name: "organisasjonskode"}, {name: "rollekode"}])
@@ -860,7 +859,7 @@ public final class ClassifiedCorpus {
             type Rental @table(name: "rental") {
               rentalId: Int! @field(name: "rental_id")
             }
-            type Query { rental: Rental @commits(source: AnchorTable, result: SingleRecord) }
+            extend type Query { rental: Rental @commits(source: AnchorTable, result: SingleRecord) }
             type Mutation {
               rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
@@ -885,7 +884,7 @@ public final class ClassifiedCorpus {
             type RentFilmPayload {
               rental: Rental @commits(source: CorrelatedChain, result: SingleRecord)
             }
-            type Query { rental: Rental @commits(source: AnchorTable, result: SingleRecord) }
+            extend type Query { rental: Rental @commits(source: AnchorTable, result: SingleRecord) }
             type Mutation {
               rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
@@ -907,7 +906,7 @@ public final class ClassifiedCorpus {
                 @classified(source: Child, operations: [Join, Lookup, Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query {
+            extend type Query {
               film: Film
               prodFilmDetails: FilmDetails
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
@@ -932,7 +931,7 @@ public final class ClassifiedCorpus {
             type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
               contentId: Int! @field(name: "CONTENT_ID")
             }
-            type Query { content: Content @commits(source: DiscriminatedTable, result: SingleRecord) }
+            extend type Query { content: Content @commits(source: DiscriminatedTable, result: SingleRecord) }
             """,
             """
             {
@@ -954,7 +953,7 @@ public final class ClassifiedCorpus {
         new Example("scalar-type", """
             scalar Money @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY")
                 @classifiedType(as: ScalarType)
-            type Query { x: Money }
+            extend type Query { x: Money }
             """),
 
         /*
@@ -972,7 +971,7 @@ public final class ClassifiedCorpus {
             type PageInfo @classifiedType(as: PageInfoType) {
               hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String
             }
-            type Query { films: FilmsConnection @commits(source: AnchorTable, result: Connection) }
+            extend type Query { films: FilmsConnection @commits(source: AnchorTable, result: Connection) }
             """),
 
         /*
@@ -991,7 +990,7 @@ public final class ClassifiedCorpus {
             input FilmFilter {
                 title: [String!] @field(name: "title") @asFacet
             }
-            type Query {
+            extend type Query {
                 films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
                     @classified(source: Query, operations: [OnReturnTable, OrderBy, Paginate, Select], target: Single, targetShape: Connection)
                     @commits(source: AnchorTable, result: Connection)
@@ -1023,7 +1022,7 @@ public final class ClassifiedCorpus {
             input PojoBackedInput @classifiedType(as: PojoInputType) { id: ID }
             input JavaRecordBackedInput @classifiedType(as: JavaRecordInputType) { id: ID }
             input JooqTableRecordBackedInput @classifiedType(as: JooqTableRecordInputType) { id: ID }
-            type Query {
+            extend type Query {
               pojo(in: PojoBackedInput): String
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "consumeDummyRecord"})
               javaRecord(in: JavaRecordBackedInput): String
@@ -1043,7 +1042,7 @@ public final class ClassifiedCorpus {
         new Example("plain-jooq-record-backing", """
             type PlainJooqRecordBacked @classifiedType(as: JooqRecordType) { id: ID }
             input PlainJooqRecordBackedInput @classifiedType(as: JooqRecordInputType) { id: ID }
-            type Query {
+            extend type Query {
               plainRecord: PlainJooqRecordBacked
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makePlainJooqRecord"})
               consumePlainRecord(in: PlainJooqRecordBackedInput): String
@@ -1057,12 +1056,11 @@ public final class ClassifiedCorpus {
          * not a separate dimensional lesson.
          */
         new Example("node-type", """
-            interface Node { id: ID! }
             type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"])
                 @classifiedType(as: NodeType) {
               id: ID! @nodeId
             }
-            type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+            extend type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
             """,
             """
             {
@@ -1081,7 +1079,6 @@ public final class ClassifiedCorpus {
          * on Film's @table; the errors field is the payload's error channel.
          */
         new Example("node-id-carrier", """
-            interface Node { id: ID! }
             type Film implements Node @node @table(name: "film") { id: ID! @nodeId  title: String }
             type FilmErr @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
               path: [String!]!
@@ -1092,7 +1089,6 @@ public final class ClassifiedCorpus {
               filmIds: [ID] @nodeId(typeName: "Film") @classified(source: OnlyChild, operations: [], target: List, targetShape: Column, sourceShape: Record)
               errors: [DeleteFilmsError]
             }
-            type Query { film: Film }
             type Mutation {
               deleteFilms: FilmIdsPayload
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsAsList"})
@@ -1136,7 +1132,6 @@ public final class ClassifiedCorpus {
                 @classified(source: OnlyChild, operations: [], target: List, targetShape: Record, sourceShape: Record)
               errors: [CreateFilmsErr]
             }
-            type Query { film: Film }
             type Mutation {
               createFilms: CreateFilmsPayload
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "createFilmsWithActors"})
@@ -1163,7 +1158,6 @@ public final class ClassifiedCorpus {
             type FilmUpdateBulkPayload { films: [Film!] @commits(source: CorrelatedChain, result: SingleRecord) }
             input FilmCreateInput { title: String }
             input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
-            type Query { film: Film }
             type Mutation {
               createFilmsPayload(in: [FilmCreateInput!]!): FilmInsertBulkPayload
                 @mutation(typeName: INSERT)
@@ -1187,7 +1181,6 @@ public final class ClassifiedCorpus {
         new Example("dml", """
             type Film @table(name: "film") { title: String }
             input FilmInput { title: String }
-            type Query { film: Film }
             type Mutation {
               createFilm(in: FilmInput!): Film
                 @mutation(typeName: INSERT)
@@ -1225,7 +1218,7 @@ public final class ClassifiedCorpus {
               title: String! @field(name: "TITLE")
               contentType: String! @field(name: "CONTENT_TYPE")
             }
-            type Query { content: Content @commits(source: DiscriminatedTable, result: SingleRecord) }
+            extend type Query { content: Content @commits(source: DiscriminatedTable, result: SingleRecord) }
             type Mutation {
               createContent(in: ContentInput!): Content
                 @mutation(typeName: INSERT, table: "content")
@@ -1252,7 +1245,6 @@ public final class ClassifiedCorpus {
          * examples teach.
          */
         new Example("mutation-roots", """
-            interface Node { id: ID! }
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
             type FilmDetails { title: String }
             type FilmPayload { film: Film @classified(source: OnlyChild, operations: [Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
@@ -1261,7 +1253,6 @@ public final class ClassifiedCorpus {
             input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
             input FilmTitleInput { title: String @field(name: "title") }
             input FilmCreateInput { title: String }
-            type Query { film: Film }
             type Mutation {
               updateFilm(in: FilmUpdateInput!): Film
                 @mutation(typeName: UPDATE)
@@ -1307,7 +1298,6 @@ public final class ClassifiedCorpus {
          * (the `reference-and-computed` example) and the composite column form here.
          */
         new Example("composite-node-key", """
-            interface Node { id: ID! }
             type FilmActor implements Node @table(name: "film_actor") @node @classifiedType(as: NodeType) {
               id: ID! @nodeId @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
             }
@@ -1315,7 +1305,7 @@ public final class ClassifiedCorpus {
               note: String @field(name: "note_txt") @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
               filmActorId: ID @nodeId(typeName: "FilmActor") @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
             }
-            type Query {
+            extend type Query {
               filmActor: FilmActor @commits(source: AnchorTable, result: SingleRecord)
               filmActorNote: FilmActorNote @commits(source: AnchorTable, result: SingleRecord)
             }
@@ -1345,7 +1335,6 @@ public final class ClassifiedCorpus {
          * PK, satisfying DELETE's key-coverage admission.
          */
         new Example("dml-delete-payload", """
-            interface Node { id: ID! }
             type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeId }
             input FilmActorRef { id: ID! @nodeId }
             type DeletedFilmActorPayload {
@@ -1354,7 +1343,6 @@ public final class ClassifiedCorpus {
             type DeletedFilmActorsPayload {
               deletedIds: [ID!] @classified(source: OnlyChild, operations: [], target: List, targetShape: Column, sourceShape: Record)
             }
-            type Query { filmActor: FilmActor }
             type Mutation {
               deleteFilmActor(in: FilmActorRef!): DeletedFilmActorPayload
                 @mutation(typeName: DELETE, table: "film_actor")
@@ -1386,7 +1374,7 @@ public final class ClassifiedCorpus {
               language: Language @reference(path: [{key: "film_language_id_fkey"}])
                 @classified(source: OnlyChild, operations: [Join, Select], target: Single, targetShape: Table)
             }
-            type Query {
+            extend type Query {
               film: Film @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
                 @commits(source: AnchorTable, result: SingleRecord)
             }
@@ -1406,7 +1394,7 @@ public final class ClassifiedCorpus {
               language: Language @reference(path: [{key: "film_language_id_fkey"}])
                 @classified(source: Child, operations: [Join, Select], target: Single, targetShape: Table)
             }
-            type Query {
+            extend type Query {
               films: [Film!]! @classified(source: Query, operations: [OrderBy, Select], target: List, targetShape: Table)
                 @commits(source: AnchorTable, result: RecordList)
             }
@@ -1429,7 +1417,7 @@ public final class ClassifiedCorpus {
               originalLanguage: Language @reference(path: [{key: "film_original_language_id_fkey"}])
                 @classified(source: OnlyChild, operations: [Join, Select], target: Single, targetShape: Table)
             }
-            type Query {
+            extend type Query {
               film: Film @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
                 @commits(source: AnchorTable, result: SingleRecord)
             }
@@ -1450,7 +1438,7 @@ public final class ClassifiedCorpus {
               manager: Staff @reference(path: [{key: "store_manager_staff_id_fkey"}])
                 @classified(source: Child, operations: [Join, Select], target: Single, targetShape: Table)
             }
-            type Query {
+            extend type Query {
               store: Store @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
                 @commits(source: AnchorTable, result: SingleRecord)
             }
@@ -1463,13 +1451,12 @@ public final class ClassifiedCorpus {
          * multi-edge and list-ancestor arms above.
          */
         new Example("arrival-node-seeded", """
-            interface Node { id: ID! }
             type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"])
                 @classifiedType(as: NodeType) {
               id: ID! @nodeId
               title: String @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
             }
-            type Query {
+            extend type Query {
               film: Film @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
                 @commits(source: AnchorTable, result: SingleRecord)
             }
@@ -1493,7 +1480,7 @@ public final class ClassifiedCorpus {
             type PageInfo {
               hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String
             }
-            type Query { films: FilmsConnection @commits(source: AnchorTable, result: Connection) }
+            extend type Query { films: FilmsConnection @commits(source: AnchorTable, result: Connection) }
             """),
 
         /*
@@ -1509,7 +1496,6 @@ public final class ClassifiedCorpus {
                 @classified(source: OnlyChild, operations: [Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
                 @commits(source: CorrelatedChain, result: SingleRecord)
             }
-            type Query { film: Film }
             type Mutation {
               runFilm: FilmPayload
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
