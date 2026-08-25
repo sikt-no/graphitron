@@ -2457,6 +2457,69 @@ that has been noticed.
 key it needs, computed over the identity columns the carrier role now admits rather than over every
 admitted column. Then the fold.
 
+### Conditions, ninth increment: the walk the store called unwalkable
+
+The eighth increment shipped a carrier relation and this one replaces its derivation, which is worth
+saying plainly before anything else. The relation was wrong three ways, the third of them the reason
+the increment happened at all, and the answer to it turned out to be one rung lower than either
+increment was looking.
+
+**What was wrong.** It named a carrier at every site a column name would resolve at, which is every
+input field, so a nested input object or an unbound field whose name happens to match a column of the
+table read as a carrier. It could emit one site twice, the node-id instruction being keyed by
+occurrence path where the carrier is keyed by the classification, so a shared input type reached
+under two arguments doubled. And it decided the two foreign-key answers by asking the catalog whether
+some key of the table lifted the node type's key directly, which is a fact about the catalog and not
+about the site: a self-reference short-circuited past the question entirely, so a self-FK through a
+key referencing anything but the node key read as a usable carrier where every write rail refuses it.
+
+**What the resolver actually does**, which is what the relation says now: a same-table node id with no
+reference is own-row identity, and everything else walks the path, one authored or one discovered,
+and is local exactly when every position of the node type's key lands on a column of the departing
+table. That is one relation's subject already, the decode's key-column child, and it is stated there
+per position. So the carrier relation counts two aggregates over it rather than deriving anything of
+its own, and the two cannot disagree about what local means.
+
+**Why that was not available before.** The decode's endpoint relation named a fourth navigation,
+`UNRESOLVED_PATH`, for an input field carrying its own `@reference`: the reference-target views of
+the time departed from a field's own binding and from an argument's scope, and an input field has
+neither, so no relation walked such a path and the value existed to keep that silence apart from a
+chain that legitimately lifted nothing. The fifth increment authored the input-field walk. Nothing
+went back to tell the decode, so the navigation stayed, the hop relation stayed empty for those
+sites, and the carrier relation reached for the catalog because the site-level answer looked
+unavailable. Closing it is one join: the hop relation gains an input-field arm beside its
+argument-site one, each under its own site predicate with the columns read by `COALESCE` over the
+pair, and the navigation drops to three values. The case that pinned the retired value is kept
+pointed at the same seeding and now pins the walk, so what changed reads as a different answer to one
+question rather than as a case that went away.
+
+**A relation authored one increment ago, retired in this one.**
+`intent_foreign_key_node_key_lift` was the per-key approximation of that per-site question, and once
+the site could answer for itself the relation had no reader. It is deleted rather than left standing:
+its rule is real and its grain is honest, and neither is a reason for the store to carry a relation
+nothing asks. The lesson is about which rung a question belongs on. "Could a key of this table carry
+that node type's id?" is a fact about a catalog, and the generator never asks it; it asks where the
+decode this site performs put each position, and a relation keyed by the key cannot answer that
+without a reader supplying the site.
+
+**The cost, which the gate found and a measurement located.** Reading the decode made the carrier
+relation cost about five seconds on the sakila example schema where it had cost tens of milliseconds,
+and `DerivedReadCostTest` said so by refusing to compare one of its cells at all. Bisecting the body
+put the whole of it in one operand: the relation names `intent_input_field_filter_role` from both
+arms and correlates into it, so the nine-arm ranked union is evaluated per driving row rather than
+per naming. Driving from that relation instead and joining the two cheap sides onto it measures the
+same, H2 inlining whichever derived relation lands on the inner side. So the operand is registered,
+which is the documented lever for a rule that is right as a view and only too expensive to evaluate
+repeatedly: the reader falls to about fifty milliseconds and the refresh costs what one naming
+already cost. Two notes for whoever meets this next. The number that mattered was a snapshot of the
+suspect into a table, which prices a registration before you write one, and it took one run. And the
+gate's refusal to compare a cell is not a number to raise: it is the roster whose whole content is
+that it stays empty, and it emptied itself once the registration landed.
+
+**What this increment leaves owing**, unchanged from the eighth except that the substrate under it is
+now the resolver's own: the destination at the column grain, the matched key over the identity
+columns, and then the fold.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the
@@ -2902,6 +2965,10 @@ Provisional; the Done-gate sweep greps for these, and the list grows as incremen
 
 * `EmitPlan.produce`'s `GraphitronSchema` parameter, and the `Bundle` components it threads
   (`federationLink`, `usesOneOf`).
+* Retired already, in the conditions increments: the `intent_foreign_key_node_key_lift` relation and
+  its `ForeignKeyNodeKeyLiftTest`, and the `UNRESOLVED_PATH` value of
+  `intent_node_id_decode_endpoint.navigation`. Both are named here so the Done-gate sweep catches a
+  reader that reappears rather than only a symbol that lingers.
 * With slice one: `RoutineWriteCommands.produceWithoutSchema`, the two tenancy `CodeBlock`
   parameters on `RoutineWriteFetcherRenderer.render`, and `RoutineChain` as a
   `RoutineWriteCommand` component (the type itself retires with the walk).

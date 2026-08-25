@@ -102,10 +102,10 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 98;
+    private static final int READERS_IN_SCHEMA = 97;
 
     /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 59;
+    private static final int READERS_WITH_CELLS = 58;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -122,7 +122,7 @@ class DerivedReadCostTest {
      * So a drop here is not the matrix quietly seeing less; it is cost moving off a reader and onto
      * a refresh, and the refresh is a view in this domain and priced like any other.
      */
-    private static final int CELLS = 133;
+    private static final int CELLS = 138;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -264,8 +264,12 @@ class DerivedReadCostTest {
         "intent_field_reference_step_hop|intent_input_field_reference_step_target",
         "intent_field_reference_step_hop|intent_input_field_column_scope",
         "intent_field_reference_step_hop|intent_input_field_column_match",
-        "intent_field_reference_step_hop|intent_input_field_filter_role",
-        "intent_field_reference_step_hop|intent_input_field_carrier_role");
+        "intent_field_reference_step_hop|intent_input_field_filter_role_live",
+        "intent_field_reference_step_hop|intent_input_field_carrier_role",
+        // The same floor reached through the input-field reference walk, which the decode's hop
+        // child took up when the input-field path stopped being unwalkable.
+        "intent_field_reference_step_hop|intent_node_id_decode_hop",
+        "intent_field_reference_step_hop|intent_node_id_decode_hop_column_live");
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather

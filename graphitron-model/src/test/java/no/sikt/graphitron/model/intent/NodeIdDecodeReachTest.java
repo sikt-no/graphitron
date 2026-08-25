@@ -42,11 +42,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * agreement untested. Each case therefore states both: which navigation answered, and what hops came
  * out of it.
  *
- * <p>The cases are organised by navigation, and two of the four contribute no hops at all. That is the
- * claim most worth pinning here: an empty hop set means own-row identity under one navigation and an
- * unwalkable path under another, and a consumer that read the two alike would route a path nobody
- * resolved to a remote binding and call it resolved. So the silences are asserted with their
- * navigation beside them, never as bare emptiness.
+ * <p>The cases are organised by navigation, and one of the three contributes no hops at all. That is
+ * the claim most worth pinning here: an empty hop set means own-row identity under that navigation
+ * and a chain that stopped under the others, so the silences are asserted with their navigation
+ * beside them, never as bare emptiness. A fourth navigation once named an input field's own
+ * {@code @reference} as unwalkable and is retired; the case that pinned it now pins the walk.
  */
 class NodeIdDecodeReachTest {
 
@@ -193,16 +193,17 @@ class NodeIdDecodeReachTest {
         });
     }
 
-    // ===== UNRESOLVED_PATH =====
+    // ===== An input field's own authored path =====
 
     /**
-     * The one shape no relation walks yet: an input field carrying its own {@code @reference},
-     * whose path departs an input type that binds no table. Stated as a navigation rather than left
-     * as an empty hop set, which is what keeps it apart from a chain that legitimately lifted
-     * nothing.
+     * An input field carrying its own {@code @reference} is walked like any other authored path,
+     * departing from the table its use site binds against rather than from the input type, which
+     * binds nothing. This shape used to be named UNRESOLVED_PATH, a navigation that existed only
+     * because no relation walked such a path; the case is kept pointed at the same seeding so what
+     * changed is visible as a different answer to one question rather than as a case that went away.
      */
     @Test
-    void anInputFieldsOwnPathIsNamedUnresolvedRatherThanWalked() {
+    void anInputFieldsOwnPathIsWalkedFromItsUseSitesTable() {
         withCatalog(dsl -> {
             seedNodeType(dsl, "Category", "category");
             seedTableBinding(dsl, GRAPH, "Film", "film");
@@ -217,9 +218,11 @@ class NodeIdDecodeReachTest {
                 new OccurrenceStep("FilmInput", "inCategory", "ID"));
 
             assertThat(endpoints(dsl)).containsExactly(
-                "INPUT_FIELD Mutation.updateFilm(in)/inCategory Category UNRESOLVED_PATH"
+                "INPUT_FIELD Mutation.updateFilm(in)/inCategory Category AUTHORED_PATH"
                 + " film -> category");
-            assertThat(hops(dsl)).isEmpty();
+            assertThat(hops(dsl)).containsExactly(
+                "Mutation.updateFilm(in)/inCategory 0 KEY film -> film_category"
+                + " film_category_film_id_fkey false");
         });
     }
 

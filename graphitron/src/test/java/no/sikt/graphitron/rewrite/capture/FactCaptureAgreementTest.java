@@ -418,7 +418,6 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_reference_step_hop", Arm.DERIVED);
         registrations.put("intent_name_matched_key_pair", Arm.DERIVED);
         registrations.put("intent_table_key_candidate", Arm.DERIVED);
-        registrations.put("intent_foreign_key_node_key_lift", Arm.DERIVED);
         registrations.put("intent_node_metadata_defect", Arm.DERIVED);
         registrations.put("intent_inferred_node_type", Arm.DERIVED);
         registrations.put("intent_node_type", Arm.DERIVED);
@@ -487,6 +486,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_argument_column_scope_live", Arm.DERIVED);
         registrations.put("intent_argument_column_match", Arm.DERIVED);
         registrations.put("intent_argument_column_match_live", Arm.DERIVED);
+        registrations.put("intent_input_field_filter_role_live", Arm.DERIVED);
         registrations.put("intent_argument_filter_role", Arm.DERIVED);
         registrations.put("intent_facet_binding", Arm.DERIVED);
         registrations.put("intent_connection_facet", Arm.DERIVED);
