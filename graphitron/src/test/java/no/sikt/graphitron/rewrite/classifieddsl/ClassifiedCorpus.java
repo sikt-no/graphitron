@@ -828,6 +828,15 @@ public final class ClassifiedCorpus {
                 @classified(source: Query, operations: [OrderBy, Select], target: List, targetShape: Table)
                 @commits(source: RoutineChain, result: RecordList)
             }
+            """,
+            """
+            {
+              # A table-valued database routine, read like a table.
+              tilganger(env: "test", serviceId: "svc", feideId: "user@example.org") {
+                organisasjonskode
+                rollekode
+              }
+            }
             """),
 
         /*
@@ -984,6 +993,14 @@ public final class ClassifiedCorpus {
                         {name: "QueryFilmsConnectionFacets", as: FacetsType},
                         {name: "StringFacetValue", as: FacetValueType},
                         {name: "PageInfo", as: PageInfoType}])
+            }
+            """,
+            """
+            {
+              # A paginated read whose filter input also yields facet counts.
+              films(filter: {title: ["A"]}) {
+                edges { node { title } }
+              }
             }
             """),
 
@@ -1274,6 +1291,7 @@ public final class ClassifiedCorpus {
          * (the `reference-and-computed` example) and the composite column form here.
          */
         new Example("composite-node-key", """
+            interface Node { id: ID! }
             type FilmActor implements Node @table(name: "film_actor") @node @classifiedType(as: NodeType) {
               id: ID! @nodeId @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
             }
@@ -1284,6 +1302,19 @@ public final class ClassifiedCorpus {
             type Query {
               filmActor: FilmActor @commits(source: AnchorTable, result: SingleRecord)
               filmActorNote: FilmActorNote @commits(source: AnchorTable, result: SingleRecord)
+            }
+            """,
+            """
+            {
+              filmActor {
+                # A global id over a two-column key.
+                id
+              }
+              filmActorNote {
+                note
+                # The same key, encoded from another table that names the target type.
+                filmActorId
+              }
             }
             """),
 

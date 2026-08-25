@@ -188,6 +188,8 @@ class ArchitectureDocSymbolGuardTest {
         exempt.put("FilmOrActor", "schema: worked-example GraphQL union");
         exempt.put("FilmStats", "schema: worked-example GraphQL type");
         exempt.put("MediaItem", "schema: worked-example GraphQL interface");
+        exempt.put("QueryFilmsConnection", "schema: a GraphQL type @asConnection synthesises for a coordinate");
+        exempt.put("QueryFilmsEdge", "schema: a GraphQL type @asConnection synthesises for a coordinate");
         exempt.put("Sprak", "schema: worked-example GraphQL enum naming a pivot vocabulary");
         exempt.put("TranslatedTexts", "schema: worked-example GraphQL type");
         exempt.put("Foo", "schema: placeholder type in a worked example");
