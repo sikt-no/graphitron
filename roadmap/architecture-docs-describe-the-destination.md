@@ -614,10 +614,39 @@ they describe live batching mechanics rather than the superseded axis framing th
 declared historical. "Structural properties" was rewritten as prose stating what `@splitQuery` and
 `@lookupKey` do to the batch, with the leaf names and the archaeology dropped.
 
-**Still to do.** Slice 3, part two: the other 47 corpus examples, one per commit, and the table rows
-each promotion deletes. The three marked leaf-taxonomy sections ("Type Classification", "Field
+**Slice 3, part two: promotion, and why "all 47" is the wrong target.** Twenty-two of the corpus's
+fixtures now render on the page, up from eight. The plan counted the remaining examples and called
+promoting each of them the work. Running the loop showed that count measures the wrong thing, for
+two reasons that are properties of the outcome block rather than of any one fixture.
+
+The first is that the block has three columns, and most fixtures vary something none of them show.
+The `arrival-*` family is the clearest case: it pins the `source` axis, the fold that decides whether
+a coordinate arrives once or batched, and three of its fixtures render blocks that are identical
+except for the root's name. Prose claiming a difference the reader cannot see in the block beside it
+is worse than no example, so those stay corpus-only. The same test rejected `polymorphic-filter`,
+whose lesson is entirely in the SDL half that `union` already carries.
+
+The second is that a fixture earns its corpus place by pinning a verdict, which does not require it
+to generate. That is the fork the owner settled below, and it holds. What it did not anticipate is
+how often "does not generate" was an artifact: seven fixtures shared a `type Query { x: String }`
+filler that is itself an author error, so the page told readers a plain INSERT does not generate.
+Pointing each filler at a real type fixed all seven at once. Promotion also surfaced three fixture
+defects that classification alone cannot see, because assembling a schema for generation checks more
+than classifying one does: two missing `interface Node` declarations, a root lookup returning
+non-null elements, and a column the `actor` table does not have.
+
+The measure that does hold is the closed vocabulary. `intent_authored_field_claim.classifier` admits
+six values for a field, and the page now carries a worked example for each: `TABLE_COLUMN` and
+`SERVICE` and `EXTERNAL_FIELD` and `NODE_ID` and `ROUTINE` and `MUTATION`. `LOOKUP_KEY` was the last,
+and finding its example is what turned up two of the fixture defects. The type-claim vocabulary
+(`TABLE`, `ERROR`) cannot be measured the same way, because the block renders field claims only.
+
+**Still to do.** The three marked leaf-taxonomy sections ("Type Classification", "Field
 Classification", "Implicit Classification Rules") keep their marks until the examples that subsume
-them land.
+them land. Remaining promotions should be chosen by what the block would show that the page does not
+already: the DML payload carriers are the strongest candidates left, since the table gives them three
+rows for a mechanism (a mutation returning a wrapper whose data field owns the post-commit re-read)
+that no worked example shows.
 
 **The outcome block, and the fork the owner settled.** Building it turned up something the plan
 does not cover: **not every doc example generates.** The corpus is a classification corpus, and a
