@@ -1,7 +1,7 @@
 ---
 id: R828
 title: "The store-performance skill hand-rolls timings H2 already collects"
-status: Backlog
+status: Spec
 bucket: dx
 priority: 4
 theme: tooling
@@ -47,7 +47,7 @@ public `interval` and `depth` fields, and it does not ignore `org.h2` frames.
 
 ## Why this is worth doing
 
-Both instruments answer questions the skill currently has a weaker answer for, or no answer for.
+Each of these answers a question the skill currently has a weaker answer for, or no answer for.
 
 The skill's step 3 says to time relations in isolation, one at a time, and its step 5 names "time
 every child in isolation" as the cheapest control there is. Query statistics does that as a side
