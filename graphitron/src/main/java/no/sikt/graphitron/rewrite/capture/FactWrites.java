@@ -463,8 +463,9 @@ final class FactWrites {
                          t.TABLE_NAME,
                          t.CONSTRAINT_NAME,
                          t.CONSTRAINT_TYPE,
-                         t.JOOQ_NAME)
-                .values(markers(6)))
+                         t.JOOQ_NAME,
+                         t.KEY_POSITION)
+                .values(markers(7)))
                 .onDuplicateKeyIgnore());
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.SOURCE_NAME),
@@ -472,7 +473,8 @@ final class FactWrites {
                                row.get(t.TABLE_NAME),
                                row.get(t.CONSTRAINT_NAME),
                                row.get(t.CONSTRAINT_TYPE),
-                               row.get(t.JOOQ_NAME));
+                               row.get(t.JOOQ_NAME),
+                               row.get(t.KEY_POSITION));
         }
         batch.execute();
     }

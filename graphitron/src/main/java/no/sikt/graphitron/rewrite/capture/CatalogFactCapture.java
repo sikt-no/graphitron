@@ -334,6 +334,13 @@ final class CatalogFactCapture {
      * column-set dedup would drop a unique constraint the primary key already covers: that is a
      * projection choice serving the UPDATE key match, and a foreign key referencing the dropped
      * constraint would have nothing to point at here.
+     *
+     * <p>The enumeration index goes on the row so a derived relation can reproduce that projection
+     * instead of re-deriving it: the dedup and the primary-key-first ordering are expressible over
+     * captured rows, but the order among unique keys is this loop's and nothing on a constraint
+     * recovers it. Counted over every enumerated key, including one an earlier source already
+     * claimed, because the position describes the table's enumeration rather than this walk's
+     * writes.
      */
     private static void captureConstraints(FactSink sink, JooqCatalog jooq, Table<?> table,
                                            String source, String schema, String name) {
@@ -344,10 +351,11 @@ final class CatalogFactCapture {
             // is what keeps sql_primary_key's reference resolvable if a model ever separates them.
             keys.add(primary);
         }
+        int keyPosition = 0;
         for (UniqueKey<?> key : keys) {
             writeConstraint(sink, source, schema, name, key.getName(),
                 key.equals(primary) ? PRIMARY_KEY : UNIQUE,
-                jooq.keyJavaConstantName(key).orElse(null),
+                jooq.keyJavaConstantName(key).orElse(null), keyPosition++,
                 key.getFields().stream().map(Field::getName).toList());
         }
         if (primary != null) {
@@ -376,7 +384,7 @@ final class CatalogFactCapture {
                                            Map<String, String> sourceByTable) {
         for (JooqCatalog.ForeignKeyFacts fk : jooq.foreignKeyFactsOf(table)) {
             if (!writeConstraint(sink, source, schema, name, fk.constraintName(), FOREIGN_KEY,
-                fk.jooqName(), fk.columns())) {
+                fk.jooqName(), null, fk.columns())) {
                 continue;
             }
             var referenced = split(fk.targetTable());
@@ -400,10 +408,14 @@ final class CatalogFactCapture {
      * <p>{@code jooqName} is the {@code Keys}-class constant, null when the key resolved to none.
      * Threaded in rather than derived here: it comes from reference identity against the live key,
      * which only the catalog walk holds.
+     *
+     * <p>{@code keyPosition} is the caller's index into the table's uniqueness enumeration, null
+     * for a foreign key, which is not in that enumeration. Threaded in for the same reason as
+     * {@code jooqName}: only the walk knows the order, and nothing on the row recovers it.
      */
     private static boolean writeConstraint(FactSink sink, String source, String schema, String name,
                                            String constraintName, String type, String jooqName,
-                                           List<String> columns) {
+                                           Integer keyPosition, List<String> columns) {
         if (!sink.claim(SQL_CONSTRAINT, source, schema, name, constraintName)) {
             return false;
         }
@@ -414,6 +426,7 @@ final class CatalogFactCapture {
         record.setConstraintName(constraintName);
         record.setConstraintType(type);
         record.setJooqName(jooqName);
+        record.setKeyPosition(keyPosition);
         sink.add(record);
         int position = 0;
         for (String column : columns) {

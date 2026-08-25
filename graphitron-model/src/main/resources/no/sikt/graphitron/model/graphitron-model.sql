@@ -2462,6 +2462,7 @@ CREATE TABLE sql_constraint (
   constraint_name VARCHAR NOT NULL,
   constraint_type VARCHAR NOT NULL,
   jooq_name       VARCHAR,
+  key_position    INT,
   table_schema_upper    VARCHAR GENERATED ALWAYS AS (UPPER(table_schema)),
   constraint_name_upper VARCHAR GENERATED ALWAYS AS (UPPER(constraint_name)),
   jooq_name_upper       VARCHAR GENERATED ALWAYS AS (UPPER(jooq_name)),
@@ -2471,6 +2472,7 @@ CREATE TABLE sql_constraint (
 );
 COMMENT ON TABLE sql_constraint IS 'A named constraint exists on a table. The supertype: one row per constraint whatever its form, discriminated by constraint_type as the standard''s TABLE_CONSTRAINTS is. Filtered to what jOOQ''s generated model carries: PRIMARY KEY, UNIQUE and FOREIGN KEY. CHECK, NOT NULL and deferrability are absent, and arrive as further type values rather than as new relations.';
 COMMENT ON COLUMN sql_constraint.jooq_name IS 'the generated Keys-class constant name for this constraint, which is what an author types in @reference(key:). Resolved by reference identity over the Keys class''s fields rather than by any formula over the constraint name, so a name colliding across schemas cannot mis-resolve; that resolution needs the live key on the codegen classpath and is unrecoverable afterwards. Null when the constraint resolves to no constant, which is a fact and not a failure: a generated model need not carry a Keys class, and a key with no constant is one nobody can name. Nullable where sql_table.jooq_name and sql_column.jooq_name are not, because a table and a column always have a generated Java name and a constraint need not.';
+COMMENT ON COLUMN sql_constraint.key_position IS 'where this constraint sits in the table''s uniqueness enumeration, jOOQ''s Table.getKeys() order with the primary key folded in, counting from zero. Captured rather than derived because the order is the generated model''s and nothing in the constraint''s own name or columns recovers it. It exists because a consumer picking one row-identifying key out of several has to pick the one the generator picks, and the generator walks this enumeration; without the position a relation ranking candidate keys would have to invent a tiebreaker among unique keys, and an invented precedence that happens to agree today is the kind of second answer that diverges silently later. Null on a FOREIGN KEY row, which is not in this enumeration at all: absence here means the constraint identifies no row rather than that its position is unknown.';
 COMMENT ON COLUMN sql_constraint.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_constraint.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_constraint.table_name IS 'SQL table name';
@@ -3408,6 +3410,53 @@ COMMENT ON COLUMN intent_name_matched_key_pair.position IS 'the key column''s po
 COMMENT ON COLUMN intent_name_matched_key_pair.to_column IS 'the arriving table''s primary-key column at this position: the target side of the pair, and the column a diagnostic names when the function does not expose it';
 COMMENT ON COLUMN intent_name_matched_key_pair.from_column IS 'the function result''s column of the same name, spelled as the function spells it, which is the source side of the pair. NULL where the function exposes no column of that name, which is the shortfall this relation states as a row rather than as a missing one';
 COMMENT ON COLUMN intent_name_matched_key_pair.unmatched_columns IS 'how many of the arriving key''s columns this function does not expose; 0 on a pairing a consumer can take whole. Stated as a column rather than left to each reader''s count, for the reason the arity columns elsewhere are: whether the pairing is total decides the reading, a consumer keying a join demanding 0 and a consumer explaining a refusal reading the rows behind a number above it';
+
+CREATE VIEW intent_table_key_candidate
+  (source_name, table_schema, table_name, constraint_name, primary_key, candidate_rank) AS
+WITH uniqueness (source_name, table_schema, table_name, constraint_name,
+                 primary_key, primary_rank, key_position, column_count) AS (
+  SELECT c.source_name, c.table_schema, c.table_name, c.constraint_name,
+         CASE WHEN pk.constraint_name IS NULL THEN FALSE ELSE TRUE END,
+         CASE WHEN pk.constraint_name IS NULL THEN 1 ELSE 0 END,
+         c.key_position,
+         (SELECT COUNT(*) FROM sql_constraint_column cc
+           WHERE cc.source_name = c.source_name AND cc.table_schema = c.table_schema
+             AND cc.table_name = c.table_name AND cc.constraint_name = c.constraint_name)
+    FROM sql_constraint c
+    LEFT JOIN sql_primary_key pk
+      ON pk.source_name = c.source_name AND pk.table_schema = c.table_schema
+     AND pk.table_name = c.table_name AND pk.constraint_name = c.constraint_name
+   WHERE c.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
+)
+SELECT k.source_name, k.table_schema, k.table_name, k.constraint_name, k.primary_key,
+       CAST(ROW_NUMBER() OVER (
+         PARTITION BY k.source_name, k.table_schema, k.table_name
+         ORDER BY k.primary_rank, k.key_position) - 1 AS INT)
+  FROM uniqueness k
+ WHERE (k.primary_rank = 0 OR k.column_count > 0)
+   AND NOT EXISTS (
+     SELECT 1 FROM uniqueness e
+      WHERE e.source_name = k.source_name AND e.table_schema = k.table_schema
+        AND e.table_name = k.table_name
+        AND (e.primary_rank < k.primary_rank
+             OR (e.primary_rank = k.primary_rank AND e.key_position < k.key_position))
+        AND e.column_count = k.column_count
+        AND NOT EXISTS (
+          SELECT 1 FROM sql_constraint_column ce
+           WHERE ce.source_name = e.source_name AND ce.table_schema = e.table_schema
+             AND ce.table_name = e.table_name AND ce.constraint_name = e.constraint_name
+             AND NOT EXISTS (
+               SELECT 1 FROM sql_constraint_column ck
+                WHERE ck.source_name = k.source_name AND ck.table_schema = k.table_schema
+                  AND ck.table_name = k.table_name AND ck.constraint_name = k.constraint_name
+                  AND ck.column_name = ce.column_name)));
+COMMENT ON VIEW intent_table_key_candidate IS 'The keys a consumer may identify a row of a table by, in the order the generator considers them. One row per surviving candidate, ranked, and the rank is the whole point: a write surface handed a set of columns takes the first candidate those columns cover, so a relation that listed the candidates unordered would leave the choice to whoever read it and two readers could disagree. The order is the generated model''s own, the primary key first and the remaining unique keys in the enumeration jOOQ hands out, which is why sql_constraint.key_position is captured rather than derived. Two projections come with that order and both are the generator''s rather than this relation''s. A unique key whose column set an earlier candidate already carries is dropped, so a table whose primary key is also declared unique offers one candidate and not two, and the survivor is the earlier one, which is the primary key whenever the primary key is in the tie. And a unique key resolving no columns at all is dropped, where a primary key in that state is kept: an empty primary key is a fact about a table nothing can identify a row of, and a consumer meets it as a candidate that covers nothing rather than as a table with no candidates. That the columns resolve at all is a property of capture here rather than a case to handle: sql_constraint_column carries a foreign key into sql_column, so a key naming a column the catalog does not have could not have been written. Absence is a table declaring no uniqueness constraint, which is every view and every table nothing identifies a row of, and it is what a write surface needing an identity meets when it finds nothing to cover. The columns themselves are not here. They are sql_constraint_column''s, in its own position order, joined on the constraint name this relation gives; putting them here would make the grain a column and the rank would have to be repeated down every row of a key.';
+COMMENT ON COLUMN intent_table_key_candidate.source_name IS 'the owning catalog partition''s generated-package source, carried from sql_constraint';
+COMMENT ON COLUMN intent_table_key_candidate.table_schema IS 'the table''s SQL schema';
+COMMENT ON COLUMN intent_table_key_candidate.table_name IS 'the table''s SQL name; with the two columns above, sql_table''s key';
+COMMENT ON COLUMN intent_table_key_candidate.constraint_name IS 'the surviving candidate''s constraint name, sql_constraint''s key within the table and what a reader joins sql_constraint_column on to get the key''s columns in position order';
+COMMENT ON COLUMN intent_table_key_candidate.primary_key IS 'whether this candidate is the table''s primary key. Not the rank: a table may declare a primary key and unique keys alike, and the rank already says which comes first, so this says which kind of identity a consumer ended up with when it reports one';
+COMMENT ON COLUMN intent_table_key_candidate.candidate_rank IS 'where this candidate sits among the survivors, counting from zero, in the order a consumer considers them: the primary key first where there is one, then the unique keys in the generated model''s enumeration. A consumer taking the first candidate its columns cover reads this ascending and stops';
 
 CREATE VIEW intent_node_metadata_defect
   (source_name, table_schema, table_name, defect, position) AS

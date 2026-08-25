@@ -417,6 +417,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_spelled_table", Arm.DERIVED);
         registrations.put("intent_field_reference_step_hop", Arm.DERIVED);
         registrations.put("intent_name_matched_key_pair", Arm.DERIVED);
+        registrations.put("intent_table_key_candidate", Arm.DERIVED);
         registrations.put("intent_node_metadata_defect", Arm.DERIVED);
         registrations.put("intent_inferred_node_type", Arm.DERIVED);
         registrations.put("intent_node_type", Arm.DERIVED);
