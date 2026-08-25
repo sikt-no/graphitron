@@ -38,6 +38,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP;
@@ -1339,6 +1340,24 @@ public final class SeededStore {
             .set(GRAPHITRON_CONNECTION.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHITRON_CONNECTION.SOURCE_LINE, 2)
             .set(GRAPHITRON_CONNECTION.SOURCE_COLUMN, 3)
+            .execute();
+    }
+
+    /**
+     * An {@code @orderBy} application on an argument: presence, which is the whole of what the
+     * directive states at this coordinate. What the argument orders by lives on the input type it
+     * names, so a case whose subject is the ordering itself seeds that too.
+     */
+    public static void seedOrderBy(DSLContext dsl, String graphName, String typeName,
+                                   String fieldName, String argumentName) {
+        dsl.insertInto(GRAPHITRON_ORDER_BY)
+            .set(GRAPHITRON_ORDER_BY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ORDER_BY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ORDER_BY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ORDER_BY.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ORDER_BY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ORDER_BY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_ORDER_BY.SOURCE_COLUMN, 3)
             .execute();
     }
 

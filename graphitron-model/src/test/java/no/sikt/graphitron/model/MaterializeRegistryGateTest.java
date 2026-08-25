@@ -99,6 +99,16 @@ class MaterializeRegistryGateTest {
      *   drives from it, first in its own FROM clause, so there is no per-row seek for an index to
      *   serve. Nothing to weigh, and the field-site sibling above declines for its own reasons at
      *   the same position in the same pair.</li>
+     *   <li>{@code intent_argument_column_match}: the first target here whose reader genuinely
+     *   probes in. {@code intent_argument_filter_role} seeks it by argument coordinate once per
+     *   node-id instruction, so unlike the two scope targets above there was a seek for an index
+     *   to serve, and the coordinate it seeks was declared and timed rather than reasoned about:
+     *   on the sakila example schema the reader stays at six milliseconds with
+     *   {@code (graph_name, type_name, field_name, argument_name)} declared and with none, and its
+     *   plan visits the same 4713 rows either way. At this population the probing side is smaller
+     *   than the table, so H2 reads the table whole in both. Worth revisiting where a reader
+     *   probes it from a population larger than the table itself, which is the shape that would
+     *   change the answer.</li>
      *   <li>{@code intent_node_id_instruction}: no index shape is a candidate, so there is nothing
      *   to measure. Its three readers are {@code intent_node_id_decode_endpoint},
      *   {@code intent_node_id_decode_slot} and {@code intent_node_id_encode}, and each names the
@@ -114,6 +124,7 @@ class MaterializeRegistryGateTest {
         "intent_resolved_type_binding",
         "intent_field_column_scope",
         "intent_argument_column_scope",
+        "intent_argument_column_match",
         "intent_errors_field",
         "intent_carrier_data_field",
         "intent_node_id_instruction");

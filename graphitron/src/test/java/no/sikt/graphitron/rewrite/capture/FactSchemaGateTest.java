@@ -124,7 +124,10 @@ class FactSchemaGateTest {
     private static final String MATERIALIZED_FIXTURE = """
         type Query {
           films(sequelTo: ID @nodeId(typeName: "Film")): [Film!]!
-          filmCategories(inCategory: ID @nodeId(typeName: "Category")): [FilmCategory!]!
+          filmCategories(
+            updatedSince: String @field(name: "last_update"),
+            inCategory: ID @nodeId(typeName: "Category")
+          ): [FilmCategory!]!
           categories: [Category!]!
           filmsForActor(actorId: ID!, minLength: Int): [Film!]!
             @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
@@ -760,7 +763,12 @@ class FactSchemaGateTest {
      * is what {@code intent_spelled_table} resolves its table spellings against; the
      * {@code @routine} application is what gives {@code intent_argmapping_pair} an arm that fires;
      * the {@code @node} type with an {@code @nodeId} argument naming it is what puts a row in
-     * {@code intent_node_id_instruction}; and the {@code @reference} whose element names a table a
+     * {@code intent_node_id_instruction}; the {@code updatedSince} argument, whose
+     * {@code @field(name:)} spells a column of the table its field's return type binds, is what puts
+     * one in {@code intent_argument_column_match}, and it sits on {@code filmCategories} rather than
+     * on {@code films} because {@code Film} is bound twice here, by its own {@code @table} and by
+     * being what a {@code @routine} field returns, so the argument scope declines at every argument
+     * of a {@code Film}-returning field; and the {@code @reference} whose element names a table a
      * foreign key reaches is what puts one in {@code intent_field_reference_step_hop}. Without any
      * of them the case above passes over an empty
      * relation, which is exactly what its own non-empty assertion refuses to let happen quietly.

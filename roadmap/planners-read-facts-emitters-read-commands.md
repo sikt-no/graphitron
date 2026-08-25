@@ -1813,10 +1813,109 @@ commitment, and `DerivedReadCostTest` already files that class of change as a di
 to be settled on one reader's evidence. Two instances is not yet a case, but it is a pattern, and the
 third should be taken as one.
 
-**What the conditions conversion still owes.** The condition membership fold, the last of the three
-relations the availability check named. Plus the coordinate-to-rows multimap the `rowFor` section
-handed forward, which is where the deferred quadratic gets measured, and the producer conversion
-itself, which is where the three leaf references in `ConditionCommands` go.
+**What this increment leaves owing.** The condition membership fold, the last of the three relations
+the availability check named, is the next section. The coordinate-to-rows multimap the `rowFor`
+section handed forward and the producer conversion itself are what the section after that still
+lists.
+
+### Conditions, third increment: which rule answers for an argument
+
+The last of the three relations the availability check named is the condition membership fold, and
+reading for it found that the fold cannot be stated before the thing it folds over is. Membership is
+"this coordinate contributes filters against this table", and whether an argument contributes one at
+all is a seven-way ordered fork the classifier runs and no relation stated. So this increment is that
+fork: `intent_argument_filter_role`, one row per argument, saying which rule resolves what it
+contributes.
+
+**A ranked collapse, because the classifier's switch is ranked.** `@orderBy` first, then a
+pagination-role name, then an input-object type, then the node-id decode, then the name match. The
+store prefers disjoint unions and says so in several relation comments, but these arms are not
+disjoint: an argument can carry `@orderBy` and `@lookupKey` and be named for a real column, and a
+union would surface it three times. Transcribing the switch's order is the faithful statement;
+inventing a precedence to make a union work would not be.
+
+Two of the arms turned out not to be arms. `@lookupKey` and the `override` cascade are read *inside*
+several of the classifier's branches rather than instead of them, so they are columns beside the
+role. Folding `lookup_key` into the vocabulary would have split two roles into four, and folding
+`suppressed` in would have been wrong outright: a suppressed argument carrying its own `@condition`
+still contributes that authored filter, so suppression is not absence.
+
+**The first draft restated a rule the store already had, and the anchor cases caught it.** The
+implicit node-id reading, an `ID` argument literally named `id` on a field returning a node type, was
+spelled out here in full: the node-type join, the synthesis-aware named type, the key arity. Four
+cases failed at once, and the reason was that `intent_node_id_instruction` already carries that
+reading as its `TARGET_ID_NAME` basis, at argument sites, with the node-type resolution applied. The
+draft was wrong twice: it duplicated a rule, and its duplicate had narrower reach than the original.
+The arm now reads that relation and the increment is smaller for it.
+
+What this relation does add over the instruction is the *wiring*: an instruction says the decode
+applies at a site, and whether the classifier can build a filter from it is a separate question with
+three exits. A `@field(name:)` beside the directive names two binding axes at once and the site
+resolves to nothing. On the implicit reading only, a column of that name shadows it into nothing, a
+composite key without `@lookupKey` is unwired, and a list at arity one without `@lookupKey` falls
+through to the name match. That last is the one exit landing on another role rather than on silence,
+and it is why two cases here differ in a list wrapper alone.
+
+**Read cost, measured, and one measurement changed the relation.** The first shape named its
+node-id term twice, once to drive the decode arm and once to anti-join the name-match arm. On the
+sakila example schema it cost 12267 scans and, repeatably, about 480 milliseconds, against inputs
+totalling under 2000 scans and one to two milliseconds each. Restructuring so the term is named once,
+by giving the fork an arm that resolves to nothing and letting the ranked collapse consume it, took
+it to 8027 scans and 16 milliseconds.
+
+That gap is worth recording for its own sake. The scan count fell 35% and the wall clock fell
+thirtyfold, so on this shape the scan count badly under-predicted what a second naming costs: what
+the second naming buys is not more rows visited but a whole view tree re-expanded and re-planned. The
+store's own doctrine already says a relation is expensive by being a view something reads many times;
+this is that rule biting inside a single reader, and the instrument that shows it is the clock rather
+than the count. That is the same lesson the `store-performance` skill took from an unrelated
+consumer-schema investigation in the same window, arriving there from the opposite direction: it had
+a plan's largest scan count read as a cost, proposed an index to prune it, and the index changed
+nothing. A scan count is a row count. It says a rule was expanded twice; the clock says what that
+cost.
+
+Then the registration, on the restructured shape:
+
+[cols="4,1,1"]
+|===
+| sakila, 194 argument roles | ms | rows visited
+
+| `intent_argument_filter_role`, both views
+| 15
+| 8027
+
+| with `intent_argument_column_match` registered
+| 6
+| 4713
+
+| `intent_argument_column_match`'s own read, before and after
+| 1 to 0
+| 1728 to 36
+|===
+
+So `intent_argument_column_match` is registered. Refresh is one evaluation per graph, which is the
+1728 a single read already paid and which this reader was paying about twice over. The doctrine's
+requirement that a registration be made in the increment carrying its reader is met exactly: before
+this relation the match had no reader at all, and every refresh would have bought nothing.
+
+The index question has a different answer here than in the two preceding increments, and it is the
+first registration in the store whose reader genuinely probes in: the shadow test seeks the match by
+argument coordinate, once per node-id instruction. So there was a seek for an index to serve, and it
+was declared and measured: 4713 scans with it and 4713 without. At this population the probing side
+is smaller than the table, so H2 reads the whole table either way. The roster row says that, and says
+what would change the answer.
+
+Taken with the facet increment's result, the registration question now has three answers in three
+consecutive increments, all measured: register (the argument scope), do not register (the facet
+binding, where it would have made the reader twelve times worse), and register (the argument match).
+What separates them is not size and not reader count but how the reader reaches the relation, which
+is the thing to measure and not to reason about.
+
+**What the conditions conversion still owes.** The membership fold itself, which is now a reduction
+over this relation and the authored `@condition` population rather than a new rule. Plus the
+coordinate-to-rows multimap the `rowFor` section handed forward, which is where the deferred
+quadratic gets measured, and the producer conversion itself, which is where the three leaf references
+in `ConditionCommands` go.
 
 ### Emitter half: family by family
 

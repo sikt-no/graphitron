@@ -4491,7 +4491,24 @@ COMMENT ON COLUMN intent_argument_column_scope_live.table_source_name IS 'the ta
 COMMENT ON COLUMN intent_argument_column_scope_live.table_schema IS 'the table_schema of a row of this rule, materialized into intent_argument_column_scope.table_schema, whose comment carries what the value means';
 COMMENT ON COLUMN intent_argument_column_scope_live.table_name IS 'the table_name of a row of this rule, materialized into intent_argument_column_scope.table_name, whose comment carries what the value means';
 
-CREATE VIEW intent_argument_column_match
+CREATE TABLE intent_argument_column_match (
+  graph_name        VARCHAR NOT NULL,
+  type_name         VARCHAR NOT NULL,
+  field_name        VARCHAR NOT NULL,
+  argument_name     VARCHAR NOT NULL,
+  matched_name      VARCHAR NOT NULL,
+  matched_by        VARCHAR NOT NULL,
+  table_source_name VARCHAR NOT NULL,
+  table_schema      VARCHAR NOT NULL,
+  table_name        VARCHAR NOT NULL,
+  column_name       VARCHAR NOT NULL,
+  source_name       VARCHAR,
+  source_line       INT,
+  source_column     INT,
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+
+CREATE VIEW intent_argument_column_match_live
   (graph_name, type_name, field_name, argument_name, matched_name, matched_by,
    table_source_name, table_schema, table_name, column_name,
    source_name, source_line, source_column) AS
@@ -4528,7 +4545,22 @@ SELECT graph_name, type_name, field_name, argument_name, matched_name, matched_b
                 OR c.column_name_upper
                    = COALESCE(ab.name_ref_upper, a.argument_name_upper))) matched
  WHERE rn = 1;
-COMMENT ON VIEW intent_argument_column_match IS 'Which column an argument''s own name resolves to on the table its site navigates to: the column a filter predicate built from that argument compares against. The argument-site counterpart of intent_column_match_claim, and deliberately not a claim. A claim view states a classification some coordinate is claimed by and unions with its siblings at the classifier grain, and no classifier vocabulary reaches an argument; what an argument gets from a resolved column is a predicate and not a kind, so these rows carry no classifier column and nothing reduces them. Everything else is the twin''s reading transcribed to this site. The argument''s named type has kind SCALAR or ENUM, which is the resolver''s own gate rather than an addition: an input-object argument expands into input fields that resolve at their own sites, so a name match against the argument itself would be a row no consumer asked for. The site resolves against exactly one table, which is intent_argument_column_scope''s resolution, so every decline that relation makes is a silence here and this view adds none of its own. The effective name is the @field(name:) binding where one was written, else the argument name, which is the resolver''s COALESCE, and the arm needs no undecoded-presence fallback for the reason the field-site view needs none: a declined decode leaves the COALESCE on the argument name, which is the fallback anyway. The match is two-tier, the generated Java name before the SQL name, both case-insensitive, collapsed to the first match in tier-then-ordinal order. The scope drives the join and that is load-bearing rather than stylistic, on the measurement intent_column_match_claim''s comment carries: H2 re-evaluates a joined derived relation once per outer row, so reading the scope from underneath graphql_argument would cost the whole relation once per candidate argument, and every argument in the graph is a candidate. Absence is where a written name reaches no column on the resolved table, which is the resolver''s own unbound-argument rejection, and it is equally the ordinary answer for an argument whose content is not column-shaped at all. Nothing here tells those two apart, and what would is a defect relation over this one rather than a column on it.';
+COMMENT ON VIEW intent_argument_column_match_live IS 'This states the rule and is evaluated on demand. The canonical name intent_argument_column_match beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_argument_column_match.';
+COMMENT ON COLUMN intent_argument_column_match_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_argument_column_match.graph_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.type_name IS 'the type_name of a row of this rule, materialized into intent_argument_column_match.type_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.field_name IS 'the field_name of a row of this rule, materialized into intent_argument_column_match.field_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.argument_name IS 'the argument_name of a row of this rule, materialized into intent_argument_column_match.argument_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.matched_name IS 'the matched_name of a row of this rule, materialized into intent_argument_column_match.matched_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.matched_by IS 'the matched_by of a row of this rule, materialized into intent_argument_column_match.matched_by, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.table_source_name IS 'the table_source_name of a row of this rule, materialized into intent_argument_column_match.table_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.table_schema IS 'the table_schema of a row of this rule, materialized into intent_argument_column_match.table_schema, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.table_name IS 'the table_name of a row of this rule, materialized into intent_argument_column_match.table_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.column_name IS 'the column_name of a row of this rule, materialized into intent_argument_column_match.column_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.source_name IS 'the source_name of a row of this rule, materialized into intent_argument_column_match.source_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.source_line IS 'the source_line of a row of this rule, materialized into intent_argument_column_match.source_line, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.source_column IS 'the source_column of a row of this rule, materialized into intent_argument_column_match.source_column, whose comment carries what the value means';
+COMMENT ON TABLE intent_argument_column_match IS 'Which column an argument''s own name resolves to on the table its site navigates to: the column a filter predicate built from that argument compares against. The argument-site counterpart of intent_column_match_claim, and deliberately not a claim. A claim view states a classification some coordinate is claimed by and unions with its siblings at the classifier grain, and no classifier vocabulary reaches an argument; what an argument gets from a resolved column is a predicate and not a kind, so these rows carry no classifier column and nothing reduces them. Everything else is the twin''s reading transcribed to this site. The argument''s named type has kind SCALAR or ENUM, which is the resolver''s own gate rather than an addition: an input-object argument expands into input fields that resolve at their own sites, so a name match against the argument itself would be a row no consumer asked for. The site resolves against exactly one table, which is intent_argument_column_scope''s resolution, so every decline that relation makes is a silence here and this view adds none of its own. The effective name is the @field(name:) binding where one was written, else the argument name, which is the resolver''s COALESCE, and the arm needs no undecoded-presence fallback for the reason the field-site view needs none: a declined decode leaves the COALESCE on the argument name, which is the fallback anyway. The match is two-tier, the generated Java name before the SQL name, both case-insensitive, collapsed to the first match in tier-then-ordinal order. The scope drives the join and that is load-bearing rather than stylistic, on the measurement intent_column_match_claim''s comment carries: H2 re-evaluates a joined derived relation once per outer row, so reading the scope from underneath graphql_argument would cost the whole relation once per candidate argument, and every argument in the graph is a candidate. Absence is where a written name reaches no column on the resolved table, which is the resolver''s own unbound-argument rejection, and it is equally the ordinary answer for an argument whose content is not column-shaped at all. Nothing here tells those two apart, and what would is a defect relation over this one rather than a column on it. Materialized: this relation is a table refilled from intent_argument_column_match_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
+
 COMMENT ON COLUMN intent_argument_column_match.graph_name IS 'the owning graph''s partition, carried from graphql_argument';
 COMMENT ON COLUMN intent_argument_column_match.type_name IS 'the type owning the field the resolved argument sits on';
 COMMENT ON COLUMN intent_argument_column_match.field_name IS 'the field the resolved argument sits on';
@@ -7328,6 +7360,115 @@ COMMENT ON COLUMN intent_node_id_decode_defect.source_name IS 'the SDL file the 
 COMMENT ON COLUMN intent_node_id_decode_defect.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN intent_node_id_decode_defect.source_column IS 'source column, 1-based per the graphql-java convention';
 
+CREATE VIEW intent_argument_filter_role
+  (graph_name, type_name, field_name, argument_name, role, lookup_key, suppressed,
+   source_name, source_line, source_column) AS
+WITH argument_node_id (graph_name, type_name, field_name, argument_name,
+                       wired, falls_through) AS (
+  SELECT n.graph_name, n.type_name, n.field_name, n.argument_name,
+         n.is_id AND NOT n.has_binding
+           AND (NOT n.implicit
+                OR (NOT n.shadowed
+                    AND NOT (n.arity > 1 AND NOT n.lookup_key)
+                    AND NOT (n.is_list AND n.arity = 1 AND NOT n.lookup_key))),
+         n.implicit
+           AND (n.has_binding
+                OR (n.is_list AND n.arity = 1 AND NOT n.lookup_key))
+    FROM (SELECT DISTINCT i.graph_name, i.type_name, i.field_name, i.argument_name,
+                 CASE WHEN i.basis = 'TARGET_ID_NAME' THEN TRUE ELSE FALSE END AS implicit,
+                 COALESCE(ks.arity, 1) AS arity,
+                 CASE WHEN a.named_type = 'ID' THEN TRUE ELSE FALSE END AS is_id,
+                 a.is_list,
+                 CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument_binding ab
+                                    WHERE ab.graph_name = i.graph_name
+                                      AND ab.type_name = i.type_name
+                                      AND ab.field_name = i.field_name
+                                      AND ab.argument_name = i.argument_name)
+                      THEN TRUE ELSE FALSE END AS has_binding,
+                 CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument_lookup_key lk
+                                    WHERE lk.graph_name = i.graph_name
+                                      AND lk.type_name = i.type_name
+                                      AND lk.field_name = i.field_name
+                                      AND lk.argument_name = i.argument_name)
+                      THEN TRUE ELSE FALSE END AS lookup_key,
+                 CASE WHEN EXISTS (SELECT 1 FROM intent_argument_column_match m
+                                    WHERE m.graph_name = i.graph_name
+                                      AND m.type_name = i.type_name
+                                      AND m.field_name = i.field_name
+                                      AND m.argument_name = i.argument_name)
+                      THEN TRUE ELSE FALSE END AS shadowed
+            FROM intent_node_id_instruction i
+            JOIN graphql_argument a
+              ON a.graph_name = i.graph_name AND a.type_name = i.type_name
+             AND a.field_name = i.field_name AND a.argument_name = i.argument_name
+            LEFT JOIN intent_resolved_node_key_shape ks
+              ON ks.graph_name = i.graph_name AND ks.type_name = i.node_type_name
+           WHERE i.site = 'ARGUMENT') n
+)
+SELECT graph_name, type_name, field_name, argument_name, role, lookup_key, suppressed,
+       source_name, source_line, source_column
+  FROM (SELECT arm.graph_name, arm.type_name, arm.field_name, arm.argument_name, arm.role,
+               CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument_lookup_key lk
+                                  WHERE lk.graph_name = arm.graph_name
+                                    AND lk.type_name = arm.type_name
+                                    AND lk.field_name = arm.field_name
+                                    AND lk.argument_name = arm.argument_name)
+                    THEN TRUE ELSE FALSE END AS lookup_key,
+               CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_condition fc
+                                  WHERE fc.graph_name = arm.graph_name
+                                    AND fc.type_name = arm.type_name
+                                    AND fc.field_name = arm.field_name
+                                    AND fc.override)
+                      OR EXISTS (SELECT 1 FROM graphitron_argument_condition ac
+                                  WHERE ac.graph_name = arm.graph_name
+                                    AND ac.type_name = arm.type_name
+                                    AND ac.field_name = arm.field_name
+                                    AND ac.argument_name = arm.argument_name
+                                    AND ac.override)
+                    THEN TRUE ELSE FALSE END AS suppressed,
+               a.source_name, a.source_line, a.source_column,
+               ROW_NUMBER() OVER (
+                 PARTITION BY arm.graph_name, arm.type_name, arm.field_name, arm.argument_name
+                 ORDER BY arm.precedence) AS rn
+          FROM (SELECT graph_name, type_name, field_name, argument_name,
+                       'ORDER_BY' AS role, 1 AS precedence
+                  FROM graphitron_order_by
+                 UNION ALL
+                SELECT graph_name, type_name, field_name, argument_name, 'PAGINATE', 2
+                  FROM graphql_argument
+                 WHERE argument_name IN ('first', 'last', 'after', 'before')
+                 UNION ALL
+                SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
+                       'INPUT_EXPANSION', 3
+                  FROM graphql_argument a
+                  JOIN graphql_type it
+                    ON it.graph_name = a.graph_name AND it.type_name = a.named_type
+                   AND it.kind = 'INPUT_OBJECT'
+                 UNION ALL
+                SELECT n.graph_name, n.type_name, n.field_name, n.argument_name,
+                       CASE WHEN n.wired THEN 'NODE_ID' ELSE 'NONE' END, 4
+                  FROM argument_node_id n
+                 WHERE NOT n.falls_through
+                 UNION ALL
+                SELECT m.graph_name, m.type_name, m.field_name, m.argument_name,
+                       'NAME_MATCHED', 5
+                  FROM intent_argument_column_match m) arm
+          JOIN graphql_argument a
+            ON a.graph_name = arm.graph_name AND a.type_name = arm.type_name
+           AND a.field_name = arm.field_name AND a.argument_name = arm.argument_name) ranked
+ WHERE rn = 1 AND role <> 'NONE';
+COMMENT ON VIEW intent_argument_filter_role IS 'Which rule resolves what one argument contributes to the filter surface of the field it sits on. The argument-grain counterpart of the field-grain claim stratum, and the relation a consumer building a generated WHERE clause reads before it reads any of the rules'' own relations, because what it needs first is which of them applies. The classifier''s argument switch is an ordered fork rather than a set of disjoint tests, so this is a ranked collapse and not a union: @orderBy first, then a pagination-role name, then an input-object type, then the node-id decode, then the name match. Stating it as a union would let a @lookupKey-marked @orderBy argument surface twice, and picking either row would be a precedence this relation invented; the rank is the switch''s own order transcribed. Absence is where no rule answers, and every one of those sites is a rejection''s population rather than an argument that quietly contributes nothing: an unresolvable name, a repeated @reference, an @asFacet-style misuse. What the roles mean. ORDER_BY and PAGINATE contribute no predicate at all, the ordering and pagination facts consuming those arguments; PAGINATE reads the four reserved names, which is a generator constant rather than a captured fact and so is stated here in the derivation where the capture doctrine puts such things. INPUT_EXPANSION means the contribution is the argument''s input type''s own fields, resolved at their coordinates and not at this one, so a reader following it changes grain. NODE_ID means the predicate''s columns come from the resolved node key rather than from a name, and the whole population is read off intent_node_id_instruction rather than off the directive: that relation already carries both readings, the authored @nodeId and the implicit one at an ID argument literally named id on a field returning a node type, with the node-type resolution and every decline it makes already applied. Restating either rule here was the first draft of this relation and it was wrong twice over, duplicating a rule the store states and getting the implicit one''s reach narrower than the store''s. What this relation adds is the wiring the instruction relation deliberately does not state: an instruction says the decode applies at a site, and whether the classifier can build a filter from it is a separate question with three exits. A @field(name:) binding beside it names two binding axes at once and the site resolves to nothing. On the implicit reading only, a column of that name on the argument''s own scope shadows it into nothing, a composite key without @lookupKey is unwired and resolves to nothing, and a list at arity one without @lookupKey falls through to the name match, which is the one exit that lands on another role rather than on silence. Those three are the implicit reading''s because the authored directive''s equivalents are the decode''s own forks, which intent_node_id_instruction and the decode relations below it already answer. A node type whose key resolves to nothing at all is read here as the single-column shape, which is the shape a node has when nothing says otherwise; such a type is a rejection''s population and no arity this relation could invent would change that. NAME_MATCHED means the predicate compares the column intent_argument_column_match resolved, and it covers the @reference-pathed argument and the plain one alike: the two are one rule here because the column resolution already tells them apart, its scope''s basis saying whether the predicate lands on the field''s own table or a join away. Two columns beside the role are modifiers and not arms, because the classifier treats them that way. lookup_key says the argument is consumed by the keyed lookup instead of the WHERE clause, which it can be on the node-id and name-matched roles alike, so folding it into the vocabulary would have split two roles into four. suppressed says an override cascade suppresses the generated predicate, from @condition(override: true) on the field or on the argument; it is not an absence because a suppressed argument carrying its own @condition still contributes that authored filter, and on an INPUT_EXPANSION row it is the cascade''s starting value for the walk into the input type. What this relation does not state is the predicate itself. Which column, which comparison and which reach are the resolution relations'' answers, read through the role; putting them here would make this a filter-surface relation at the wrong grain, an argument being where the rule is chosen and not where the predicate is assembled.';
+COMMENT ON COLUMN intent_argument_filter_role.graph_name IS 'the owning graph''s partition, carried from graphql_argument';
+COMMENT ON COLUMN intent_argument_filter_role.type_name IS 'the type owning the field the argument sits on';
+COMMENT ON COLUMN intent_argument_filter_role.field_name IS 'the field the argument sits on';
+COMMENT ON COLUMN intent_argument_filter_role.argument_name IS 'the argument''s name within the owning field; the grain, one row per argument any rule answers for';
+COMMENT ON COLUMN intent_argument_filter_role.role IS 'which rule resolves the contribution: ORDER_BY, PAGINATE, INPUT_EXPANSION, NODE_ID or NAME_MATCHED, the winner of the ranked fork. A closed vocabulary, and a new classifier arm is a new value here rather than a silence';
+COMMENT ON COLUMN intent_argument_filter_role.lookup_key IS '@lookupKey on the argument: the value is consumed by the keyed lookup rather than by the WHERE clause. A modifier on the role and not a role, because the classifier reads it inside several arms rather than instead of them';
+COMMENT ON COLUMN intent_argument_filter_role.suppressed IS 'an override cascade suppresses the generated predicate: @condition(override: true) on the field or on the argument. Not an absence, an argument carrying its own @condition still contributing that authored filter; on an INPUT_EXPANSION row it is what the walk into the input type starts from';
+COMMENT ON COLUMN intent_argument_filter_role.source_name IS 'the argument''s own declaration file; the position a diagnostic would carry';
+COMMENT ON COLUMN intent_argument_filter_role.source_line IS 'source line of the argument declaration, 1-based';
+COMMENT ON COLUMN intent_argument_filter_role.source_column IS 'source column of the argument declaration, 1-based';
+
 CREATE TABLE rejection_validation_error (
   graph_name    VARCHAR NOT NULL,
   ordinal       INT     NOT NULL,
@@ -7711,6 +7852,8 @@ INSERT INTO meta_materialize VALUES
    'Three view bodies name it, one of them twice plus once per row in a correlated NOT EXISTS, and the column-match classifier joins it per coordinate. The rule is a plain prunable union on purpose, and the cost still multiplies: its own evaluation is about 170 ms on a real schema once the binding beneath it is a table, and the correlated reader was re-evaluating it once per authored reference step, which is where intent_field_column_table''s ten seconds came from after the binding registration removed the first fifty. Cheap to compute once per capture and ruinous to compute per row, which is the registration case.'),
   ('intent_argument_column_scope_live', 'intent_argument_column_scope',
    'One reader in the store today and it drives from this relation, intent_argument_column_match reading it first in its own FROM clause, with the conditions producer to follow reading it whole once per generation run. Breadth is not the case here and the measurement is, so this reason states it. On a filter-heavy fixture of 264 arguments over the sakila catalog: this rule costs 4002 scans as a view and 265 as a table, and the reader over it falls from 8924 scans to 5187, twenty-seven milliseconds to five. The same fixture with no argument-site @reference anywhere isolates what that buys: the rule costs 491 scans there and the reader falls only from 5125 to 4875, so what a registration removes is the recursive argument-site walk this rule reads, derived once at refresh instead of once per reader. Refresh is one evaluation of the source view per graph, which is the 4002 a single read already paid, and the fill measured eighteen milliseconds. No index is declared on the target: nothing seeks it by coordinate, its one reader scans it whole, and an index without a reader is a claim with no measurement behind it. The field-site pair is configured exactly this way, its scope registered and its match left a view, and this pair reaching the same answer from its own numbers rather than by copying is what the numbers above are here to show.'),
+  ('intent_argument_column_match_live', 'intent_argument_column_match',
+   'One reader in the store today, intent_argument_filter_role, and it names this relation twice: once to drive its name-match arm and once to ask, per node-id instruction, whether a column of that name already resolves at the argument. Two namings of one view is inlining with no common-subexpression elimination, so both namings expand this rule whole. Timed on the sakila example schema, 194 argument roles over 265 arguments: that reader takes fifteen milliseconds with this relation a view and six with it a table, and this relation''s own read goes from one millisecond to under one. The plan shape agrees, 8027 scan nodes'' worth of rows visited falling to 4713 and this relation''s own 1728 to 36, and the shape is what those counts are for: they say the rule was expanded twice, and the clock says what that cost. Refresh is one evaluation of the source view per graph, which is the millisecond a single read already paid and which the reader was paying about twice over. The reader is the increment that registered this, which is the doctrine''s requirement rather than a coincidence: before it this relation had no reader at all and every refresh would have bought nothing. No index is declared on the target. Unlike the argument-scope registration beside it this reader does probe in, once per node-id instruction, so there was a seek for an index to serve and it was declared and timed: the reader stays at six milliseconds and 4713 scans with (graph_name, type_name, field_name, argument_name) and with nothing. At this population the probing side is smaller than the table and H2 reads the table whole either way. The same increment measured a cheaper lever first and took it: naming the reader''s own inlined node-id term once instead of twice took that reader from about 480 milliseconds to sixteen, where its scan count fell only from 12267 to 8027. That pair is worth the sentence it costs, because a scan count is a row count and not a cost, and on that shape it under-predicted the move by an order of magnitude. This registration is argued on the restructured shape, not the first one.'),
   ('intent_node_id_decode_hop_column_live', 'intent_node_id_decode_hop_column',
    'One reader, and it is a recursive walk over these very rows, which is a shape no other registration here has. A recursive term joins its own accumulated output against this relation once per accumulated row, so a relation named in the step is evaluated as many times as the walk has rows rather than once, and inlining it makes the whole hop chain under it the thing being re-evaluated. Measured against a real schema: this relation is one and a half seconds on its own, the walk accumulates around twenty rows, and the walk does not finish inside a two-minute timeout, while the same walk over these rows as a table is a little over three seconds for the whole reader. Collapsing the walk''s six-column coordinate key onto the use site was tried first, on the theory that four null-safe disjunctions were what stopped the step from being planned; it is a real simplification and it is kept, and it moved the timeout not at all, which is what says the cost is the re-evaluation rather than the predicate. Refresh is not free here, the source reading the whole hop chain each time, so this registration is a claim that something reads the relation often and it is made in the increment that adds that reader.'),
   ('intent_field_reference_step_hop_live', 'intent_field_reference_step_hop',
