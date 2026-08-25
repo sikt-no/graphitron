@@ -6,7 +6,7 @@ bucket: cleanup
 priority: 2
 depends-on: []
 created: 2026-08-24
-last-updated: 2026-08-24
+last-updated: 2026-08-25
 ---
 
 # A mutation test seeds film_actor rows a query test asserts the absence of
@@ -29,6 +29,17 @@ every reader's assertion window or takes a row nobody else reads. Worth answerin
 failure presents as a correctness defect in condition-join emission, which is where the next reader
 of a red build will spend their afternoon, and because CI runs the reactor with `-T 1C`, so the
 concurrency that produces it is the normal case rather than the unlucky one.
+
+Two more occurrences, both 2026-08-25 and on consecutive full installs on one machine, widen both
+sides of the race. The same writer class has a third seeding site the paragraph above does not
+list, `seedFilmActor(3, 3)`, and a second reader observed it:
+`RoutineFieldExecutionTest.correlatedChildRoutineReturnsPerParentRows` failed with `[2, 3, 5]`
+against an expected `[2, 5]` for actor 3, the extra film 3 being exactly that transient pair, gone
+from the database by the time anyone looked. The very next run failed a different method of the
+same reader (`childRoutineThenHopsChainJoinsOutOfRoutineResultPerParent`, actor 2 showing the
+already-listed `(2, 3)` pair), so on that machine the two classes overlap more often than not. The
+fix should inventory every `seedFilmActor` call rather than the two pairs first observed, and the
+reader set is every per-parent film assertion in the module, not one condition-join case.
 
 Adjacent to R823, which records a different execution-tier test reading a mutating table; whether
 the two want one answer (a convention about which rows an execution test may write) or two is for
