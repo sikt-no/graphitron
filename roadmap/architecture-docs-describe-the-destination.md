@@ -641,12 +641,33 @@ six values for a field, and the page now carries a worked example for each: `TAB
 and finding its example is what turned up two of the fixture defects. The type-claim vocabulary
 (`TABLE`, `ERROR`) cannot be measured the same way, because the block renders field claims only.
 
-**Still to do.** The three marked leaf-taxonomy sections ("Type Classification", "Field
-Classification", "Implicit Classification Rules") keep their marks until the examples that subsume
-them land. Remaining promotions should be chosen by what the block would show that the page does not
-already: the DML payload carriers are the strongest candidates left, since the table gives them three
-rows for a mechanism (a mutation returning a wrapper whose data field owns the post-commit re-read)
-that no worked example shows.
+**Slice 3, part three: promoting against the tables.** The DML payload carrier landed as the page's
+23rd example, and it retired the two Mutation Fields rows that were the mechanism's only description.
+Choosing by what the block shows is the right filter for finding a candidate; choosing by which
+reference row a candidate would let go is the right filter for shrinking the transitional sections,
+and the two agree more often than not, because a row survives exactly when nothing on the page shows
+what it names.
+
+Reading the tables that way turned up a second kind of retirement that needs no corpus work at all.
+Seven rows named a verdict a worked example on the same page already demonstrated, and carried only a
+leaf name and a line of generator output that the example's prose did not happen to state. Folding
+that line into the example retires the row without losing anything: three from the type reference
+table (`RootType`, `InterfaceType`, `UnionType`, all three asserted by fixtures already rendered on
+the page) and four from Query Fields (the plain `@table` root and the three polymorphic returns).
+What is left in Query Fields is the two Relay roots, the two `@service` roots, and the failure row,
+none of which the page shows.
+
+The loop also rejected a candidate, which is worth recording because the reason is structural.
+`result-backing` pins the three-way split of how a non-`@table` result acquires its backing class, a
+genuine gap in the page, but one of its three arms is backed by an empty class, so the fixture
+classifies and cannot generate. The fix would be to give that class a readable property, which
+reaches the input axis, where the same class grounds the unbound `PojoInputType` default. Promoting
+it needs that question answered first, and it is not a documentation question.
+
+**Still to do.** The two remaining marked sections ("Type Classification", "Field Classification")
+keep their marks until the examples that subsume them land; "Implicit Classification Rules" is
+already gone. The reference tables that still describe a mechanism no example shows are the two Child
+Fields tables, where the class-backed parent's eight rows are the larger gap.
 
 **The outcome block, and the fork the owner settled.** Building it turned up something the plan
 does not cover: **not every doc example generates.** The corpus is a classification corpus, and a
