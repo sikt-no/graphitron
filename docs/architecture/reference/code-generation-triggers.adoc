@@ -1155,6 +1155,71 @@ the verb is a slot of the claim, not a claim of its own. Asserted by the `mutati
 example, which also pins the `multiRow` broadcast form of `DELETE` and the two `@service` mutation
 returns.
 
+==== Returning a payload wrapper instead of the row
+
+A mutation may hand back a carrier rather than the written row: a plain object with one data field
+naming what was written, optionally beside an errors-shaped field. The carrier binds no table, so the
+write's affected rows reach it as a record and the coordinate's target shape is `Record` instead of
+`Table`. The claim and the verb are unchanged; what moves is where the read-back lives.
+
+[source,graphql]
+----
+type Mutation {
+  updateFilmPayload(in: FilmUpdateInput!): FilmUpdatePayload @mutation(typeName: UPDATE)
+}
+
+type FilmUpdatePayload {
+  "The data field owns the read-back, a new keyed query off the written record's keys."
+  film: Film
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+
+input FilmUpdateInput {
+  filmId: Int! @field(name: "film_id")
+  title: String
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#title(Object)`
+
+| `FilmUpdatePayload.film`
+| no claiming directive
+| `fetchers.FilmUpdatePayloadFetchers#film(DataFetchingEnvironment)`
+
+| `Mutation.updateFilmPayload`
+| `MUTATION`, authored
+| `fetchers.MutationFetchers#updateFilmPayload(DataFetchingEnvironment)`
+
+|===
+
+On a direct `@table` return the write and the re-projection are one coordinate's business, the derived
+re-fetch above. A carrier splits them into two. The mutation emits a two-step fetcher: the per-kind DML
+chain runs inside `transactionResult` with a PK-only `RETURNING`, and the data field owns the follow-up
+`SELECT`, issued outside the transaction as its own keyed query off the returned keys. That is why
+the carrier's `film` field carries a nested verdict of its own rather than continuing the write's: it
+arrives as `OnlyChild` on a `Record` source shape (the `RETURNING` record, not a catalog row), and
+projects `Single` of shape `Table`. Its operation members are the reentry into the catalog and the
+projection itself.
+
+Bulk input takes the same shape with a list-shaped data field: one `transactionResult` runs the per-row
+DML and accumulates a typed result in input order, and the write target is derived from that
+`@table`-element data field rather than from the carrier. `DELETE` is the one verb whose carrier cannot
+hold a `@table` data field, for the reason `deleteFilm` above cannot project one; its only admissible
+data field is an encoded id read off the deleted row's `RETURNING` record. Asserted by the
+`dml-payloads` corpus example, which also pins both bulk forms, and by `dml-delete-payload` for the
+`DELETE` carrier.
+
 |===
 | Schema Pattern | `MutationField` Variant | `*Fetchers` Generates
 
@@ -1162,8 +1227,6 @@ returns.
 | `@mutation(typeName: INSERT, table: "…")`, returning `ID` | `DmlTableField` (Insert write arm) | As above; an encoded-`ID` return names no table, so `@mutation(table:)` names it on the field. Byte-identical carrier across the two rungs
 | `@mutation(typeName: UPSERT, table: "…")` (`table:` on a verb that does not read it) | `UnclassifiedField` (typed `MutationTableArgError.UnsupportedVerb`) | Validation error ; build fails. `table:` is wired for `DELETE`, `INSERT`, and `UPDATE` only
 | `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `UnclassifiedField` (typed deferral; the Upsert write arm has no live producer) | Rejected at classification. UPSERT is recognised and deliberately not generated: the write arm has no producer today, so the coordinate defers rather than erroring.
-| `@mutation(typeName: INSERT\|UPDATE\|DELETE\|UPSERT)`, returning a single-record class-backed carrier (one recognized data field, optional errors-shaped field; the carrier's backing class is reflected from the producing field, not declared) | `MutationDmlRecordField` | Two-step fetcher: per-kind DML chain inside `transactionResult` with PK-only `RETURNING`, plus a follow-up data-field SELECT outside the transaction
-| `@mutation(typeName: INSERT\|UPDATE)` with bulk input, returning a single-record carrier with a list-shaped `@table`-element data field | `MutationBulkDmlRecordField` | Per-row DML inside one `transactionResult`, accumulating a typed `Result<RecordN<PK>>` in input order. The write target is derived from that `@table`-element data field
 | `@service`, return `@table` type | `MutationServiceTableField` | Async DataLoader fetcher + `rows*()` method
 | `@service`, return non-table type | `MutationServiceRecordField` | Fetcher method
 | Neither `@service` nor `@mutation` | `UnclassifiedField`** | Validation error ; build fails

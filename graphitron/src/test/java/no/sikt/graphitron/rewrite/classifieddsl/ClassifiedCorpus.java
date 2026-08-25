@@ -1149,12 +1149,18 @@ public final class ClassifiedCorpus {
          * (the same carriers with a Delete write arm) live in the
          * `dml-delete-payload` example: their only admissible data field is an ID-element (a
          * @table-element projection off a deleted row is impossible), grounded on film_actor's
-         * synthesised node metadata.
+         * synthesised node metadata. Doc example: the projection query renders the single UPDATE
+         * carrier alone, which is the shape the page teaches; the bulk siblings are the same claim
+         * with a list-shaped data field and would add rows without adding a lesson.
          */
         new Example("dml-payloads", """
             type Film @table(name: "film") { title: String }
             type FilmInsertBulkPayload { films: [Film!] @commits(source: CorrelatedChain, result: SingleRecord) }
-            type FilmUpdatePayload { film: Film @commits(source: CorrelatedChain, result: SingleRecord) }
+            type FilmUpdatePayload {
+              film: Film
+                @classified(source: OnlyChild, operations: [Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
+                @commits(source: CorrelatedChain, result: SingleRecord)
+            }
             type FilmUpdateBulkPayload { films: [Film!] @commits(source: CorrelatedChain, result: SingleRecord) }
             input FilmCreateInput { title: String }
             input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
@@ -1168,6 +1174,14 @@ public final class ClassifiedCorpus {
               updateFilmsPayload(in: [FilmUpdateInput!]!): FilmUpdateBulkPayload
                 @mutation(typeName: UPDATE)
                 @classified(source: Mutation, operations: [Update], target: Single, targetShape: Record)
+            }
+            """,
+            """
+            mutation {
+              updateFilmPayload {
+                # The data field owns the read-back, a new keyed query off the written record's keys.
+                film { title }
+              }
             }
             """),
 
