@@ -29,7 +29,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R726` | The @nodeId instruction population excludes the multitable coordinate: state the boundary and pin it | Spec | 2026-08-25 <sub>created 2026-08-19</sub> | [plan](nodeid-bare-inference-per-participant-divergence.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
-| `R828` | The store-performance skill hand-rolls timings H2 already collects | Ready | 2026-08-25 | [plan](store-performance-h2-native-instruments.md) |
+| `R828` | The store-performance skill hand-rolls timings H2 already collects | In Review | 2026-08-25 | [plan](store-performance-h2-native-instruments.md) |
 | `R687` | A DML carrier payload with an errors field loses its return-derived write target | Spec | 2026-08-25 <sub>created 2026-08-17</sub> | [plan](dml-carrier-errors-field-blocks-return-derived-table.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -637,7 +637,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R789` [**The annotation enforcement walks skip nested classes, so an annotation on one goes unenforced**](nested-classes-escape-the-annotation-enforcement-walks.md) — Backlog, cleanup
 - `R736` [**The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering**](trace-writer-disabled-for-rest-of-fork.md) — Spec, bug
 - `R761` [**The dependency relation is derived after the store is stamped, so an interrupted boot leaves a warm store ordering alphabetically**](materialize-dependency-derived-before-stamp.md) — Backlog, dx
-- `R828` [**The store-performance skill hand-rolls timings H2 already collects**](store-performance-h2-native-instruments.md) — Ready, dx
+- `R828` [**The store-performance skill hand-rolls timings H2 already collects**](store-performance-h2-native-instruments.md) — In Review, dx
 - `R748` [**Decouple the roadmap tool from the generator reactor**](roadmap-tool-reactor-decoupling.md) — Spec, dx
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
 - `R568` [**Javadoc reference gate skips silently on rebuilds: the plugin up-to-date check compares options and file list, not source content**](javadoc-gate-incremental-skip.md) — Backlog, bug
