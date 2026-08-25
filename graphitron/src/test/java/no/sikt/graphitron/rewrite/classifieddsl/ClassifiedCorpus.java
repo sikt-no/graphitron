@@ -322,6 +322,10 @@ public final class ClassifiedCorpus {
          * source is what does. This example is the corpus arm that makes the derivation load-bearing:
          * without a service leaf on a class-backed parent, the source-shape mirror never sees the
          * Record answer on either service leaf.
+         *
+         * Doc example: it is the page's only class-backed parent hosting children of its own, and the
+         * pair renders the same two service leaves the @table-parented `service-table-child` renders,
+         * so the two read as a minimal pair on the parent's shape alone.
          */
         new Example("service-child-class-backed-parent", """
             type Film @table(name: "film") { title: String }
@@ -339,6 +343,16 @@ public final class ClassifiedCorpus {
               aggregated: Aggregated
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeLanguageKeyed"})
                 @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Record)
+            }
+            """,
+            """
+            {
+              aggregated {
+                # A scalar the service produces off the parent's backing record.
+                rank
+                # Table rows the service produces, keyed on the record the parent hands down.
+                filmsViaService { title }
+              }
             }
             """),
 
@@ -903,6 +917,12 @@ public final class ClassifiedCorpus {
          * derived): `FilmDetails.language` is a lookup-keyed batched read (its @lookupKey makes the
          * operation Lookup, target Table). FilmDetails is record-bound as getFilm's jOOQ-TableRecord
          * return type, which supplies the FK source key.
+         *
+         * Corpus-only, and not promotable: the shape does not reach generation from either side.
+         * Single cardinality is rejected outright ("Single-cardinality @lookupKey is not supported"),
+         * and the list spelling the rejection points at rides the batched-lookup gap this fixture is
+         * the recorded roster entry for, where the validator accepts the shape and no emission exists
+         * for the cell. A worked example here could only state that nothing is generated.
          */
         new Example("record-method", """
             type Language @table(name: "language") { name: String }

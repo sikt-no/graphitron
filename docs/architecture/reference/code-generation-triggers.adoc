@@ -510,6 +510,7 @@ type Country @table(name: "country") {
 key and carry the same `Child` / `Fetch` / `Table` verdict; `@splitQuery` flips only the derived
 new-query layer, not an asserted axis. Asserted by the `child-table` corpus example.
 
+[#record-handoff]
 ==== The record-handoff boundary
 
 `@splitQuery` is not the only trigger for the new-query derivation. A `@table` child reached by a foreign
@@ -569,8 +570,10 @@ type FilmDetails {
 `Film.language` (`TableField`) and `FilmDetails.language` (a record-sourced `BatchedTableField`) return the same `Language`
 over the same `film_language_id_fkey` foreign key and carry the same `Fetch` / `Table` operation and
 target; they differ only on the source shape (`Child(Table)` vs `Child(Record)`), and the record handoff
-forces a derived keyed re-query under `FilmDetails`, not a different asserted axis.
-Asserted by the `record-table` corpus example.
+forces a derived keyed re-query under `FilmDetails`, not a different asserted axis. That re-query is
+what the emitted names above are: `FilmDetails.language` gets an async DataLoader fetcher and a
+`rows*()` method, keyed on the foreign-key columns lifted off the parent's jOOQ `TableRecord`, where
+`Film.language` folds into the parent's own SELECT. Asserted by the `record-table` corpus example.
 
 [#target-shape]
 === `target` shape: build-vs-consume (Column vs. Field)
@@ -636,8 +639,11 @@ rejection carries.
 builds the projection for). `FilmStats.count`, a scalar under the record-backed `FilmStats`, classifies
 with target shape `Field` (a property graphitron reflects). `FilmDetails.stats`, a nested non-table object
 under the record-backed `FilmDetails`, also classifies with target shape `Field` (its object flavor). All
-hold `operation = Fetch`; the two record-backed cases also carry `source = Child(Record)`. Asserted by
-the `mapping` corpus example.
+hold `operation = Fetch`; the two record-backed cases also carry `source = Child(Record)`. Neither
+record-backed case emits SQL of its own: both are wiring values, and what the generator has to decide
+for each is only *where on the backing object the value is*, carried as the leaf's sealed
+`ValueLocator` arm (a typed column, a resolved accessor, a by-name read, or graphql-java's default
+property read). Asserted by the `mapping` corpus example.
 
 [#polymorphic-fields]
 === Polymorphic fields: interfaces, unions, and Relay nodes
@@ -1341,6 +1347,63 @@ type Language @table(name: "language") {
 Same verdict, same tier, and a fetcher method that hands back what the service returned. Asserted by
 the `service-scalar-child` corpus example.
 
+[#class-backed-service]
+Neither of those two verdicts is a statement about the parent. Move the same pair onto a parent that
+is not a table at all, a plain object whose backing class the generator reflects off its own
+`@service` producer, and the verdicts do not move:
+
+[source,graphql]
+----
+type Query {
+  aggregated: Aggregated @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "makeLanguageKeyed"})
+}
+
+type Aggregated {
+  "A scalar the service produces off the parent's backing record."
+  rank: Int @service(service: {className : "no.sikt.graphitron.rewrite.generators.TestFilmService", method : "getRankMappedByRecord"})
+  "Table rows the service produces, keyed on the record the parent hands down."
+  filmsViaService: [Film!]! @service(service: {className : "no.sikt.graphitron.rewrite.generators.TestFilmService", method : "getFilmsMappedByRecord"})
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Aggregated.filmsViaService`
+| `SERVICE`, authored
+| `fetchers.AggregatedFetchers#filmsViaService(DataFetchingEnvironment)`
+
+| `Aggregated.rank`
+| `SERVICE`, authored
+| `fetchers.AggregatedFetchers#rank(DataFetchingEnvironment)`
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#title(Object)`
+
+| `Query.aggregated`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#aggregated(DataFetchingEnvironment)`
+
+|===
+
+The parent here is class-backed: no `@table`, no `@record`, its backing class reflected off
+`makeLanguageKeyed`'s return type. Its two children carry the same `SERVICE` claim and the same two
+verdicts the `@table`-parented pair above carries, and `filmsViaService` still batches its `Film` rows
+through a DataLoader, keying the batch on the record the parent hands down rather than on a parent
+table row. What the parent's shape moves is the *source* axis, `Child(Record)` instead of
+`Child(Table)`, and the key the batch is built from with it. It does not move the claim, the target,
+or which leaf the coordinate lands on: both service leaves are minted under either parent, so no leaf
+name answers what arrives at `getSource()`. Asserted by the `service-child-class-backed-parent` corpus
+example.
+
 The last pair separates two things that both look like "this column is not where you would expect".
 `@reference` keeps the value in the catalog and changes which table it is read from, so the claim
 stays `TABLE_COLUMN` and stays `inferred`: the name still matched, just at the far end of a named
@@ -1570,19 +1633,24 @@ aggregate rather than matched against a column. The `nn` and `nb` fields get the
 
 === Child Fields (on a class-backed parent)
 
-The parent here is a type whose backing class is reflection-derived from its producer (a `@service` return, or a parent-accessor chain), not declared via a directive. The `Record*` variant names below are reflection-derived classifications, kept stable from earlier naming.
+The parent here is a type whose backing class is reflection-derived from its producer (a `@service`
+return, or a parent-accessor chain), not declared via a directive. The `Record*` variant names below
+are reflection-derived classifications, kept stable from earlier naming.
+
+A class-backed parent is not a separate classification either. It moves the source axis to
+`Child(Record)` and, with it, the key the child's query is built from; it does not move the claim or
+the target. The worked examples above cover most of what that means: scalars and nested non-table
+objects under such a parent in the <<target-shape,`target` shape example>>, an FK-reached `@table`
+child in the <<record-handoff,record-handoff example>>, and both `@service` forms in the
+<<class-backed-service,class-backed service pair>>. What is left is the three forms no example shows,
+two of which do not currently generate:
 
 |===
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
-| Scalar/enum (optionally `@field`-renamed) | `RecordReadField` | Wiring value ; read located by the leaf's sealed `ValueLocator` arm (typed column, resolved accessor, by-name, or graphql-java's default property read)
-| Return `@table`, `@lookupKey` (catalog FK from parent's jOOQ TableRecord) | `BatchedTableField` (Record-sourced, `KeyLift.FkColumns`, keyed lookup arm) | Async DataLoader fetcher + `rows*()` method
-| Return `@table` (default; catalog FK from parent's jOOQ TableRecord) | `BatchedTableField` (Record-sourced, `KeyLift.FkColumns`) | Async DataLoader fetcher + `rows*()` method
+| Return `@table` with `@lookupKey` (catalog FK from parent's jOOQ TableRecord) | `BatchedTableField` (Record-sourced, `KeyLift.FkColumns`, keyed lookup arm) | *Nothing.* Single cardinality is rejected at validate time (single-cardinality `@lookupKey` is not supported); the list spelling passes validation and reaches no emission, because the batched-lookup cell has no producer. Pinned as the corpus's one recorded launcher-production gap by the `record-method` example
 | Return `@table` with `@sourceRow` (parent is `Backed` or `JavaRecordType`; no catalog FK required) | `BatchedTableField` (Record-sourced, `KeyLift.Lifter`; keyed lookup arm when `@lookupKey` is present) | Async DataLoader fetcher + `rows*()` method; the developer-supplied static lifter populates the batched VALUES rows
-| Return non-table type | `RecordReadField` | Wiring value ; read located by the same `ValueLocator` arm set as the scalar row
 | `errors:` slot on a service payload (one entry per `@error` mapping) | `ErrorsField` | Passthrough; graphql-java's default `PropertyDataFetcher` reads the list the carrier's try/catch wrapper or the service-method body produced
-| `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method
-| `@service`, return non-table | `ServiceRecordField` | Fetcher method
 |===
 
 === Input Fields (resolved against the consuming field's table)
