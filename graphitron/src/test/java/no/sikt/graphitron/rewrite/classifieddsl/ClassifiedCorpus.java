@@ -789,7 +789,7 @@ public final class ClassifiedCorpus {
          * Query / Lookup / Table). @lookupKey makes the operation Lookup; the batch-key shape is a slot.
          */
         new Example("lookup", """
-            type Actor @table(name: "actor") { name: String }
+            type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type FilmActor @table(name: "film_actor") {
               actors(actor_id: [Int!]! @lookupKey): [Actor!]!
@@ -797,9 +797,17 @@ public final class ClassifiedCorpus {
             }
             type Query {
               filmActor: FilmActor @commits(source: AnchorTable, result: SingleRecord)
-              filmById(film_id: [ID] @lookupKey): [Film!]!
+              filmById(film_id: [ID] @lookupKey): [Film]!
                 @classified(source: Query, operations: [Lookup, OrderBy, Select], target: List, targetShape: Table)
                 @commits(source: KeyedLookup, result: RecordList)
+            }
+            """,
+            """
+            {
+              # Films fetched by a caller-supplied list of ids, one row back per id.
+              filmById(film_id: ["1", "2"]) {
+                filmId
+              }
             }
             """),
 

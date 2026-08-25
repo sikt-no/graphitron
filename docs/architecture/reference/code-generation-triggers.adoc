@@ -986,12 +986,55 @@ without declaring its path:
   rooted-at-parent NodeId reference deferral moved to the validator, which rejects the `NodeIdEncodeKeys`
   compaction on `ColumnBackedReferenceField` at every arity ahead of generation.
 
+=== Looking a root up by keys the caller supplies
+
+`@lookupKey` marks an argument whose values are the keys to look up. It is the only claim on this page
+written on an *argument* rather than on the field, and the claim still lands on the field: the
+coordinate reads `LOOKUP_KEY`, authored.
+
+[source,graphql]
+----
+type Query {
+  "Films fetched by a caller-supplied list of ids, one row back per id."
+  filmById(
+  film_id: [ID] @lookupKey): [Film]!
+}
+
+type Film @table(name: "film") {
+  filmId: Int! @field(name: "film_id")
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.filmId`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#filmId(Object)`
+
+| `Query.filmById`
+| `LOOKUP_KEY`, authored
+| `fetchers.QueryFetchers#filmById(DataFetchingEnvironment)`
+
+|===
+
+The contract is positional: one output element per key passed, with `null` at the position of a key
+that matched nothing. That is what forces the return type's elements to be nullable, and a `[Film!]!`
+here is an author error whose message says so. `Film.filmId` inside the looked-up rows is an ordinary
+inferred column read, unaffected by how its rows were reached. Asserted by the `lookup` corpus example.
+
+Only a root query field is claimed this way. `@lookupKey` on a child field's argument keys that child's
+correlated subquery by the values passed and claims nothing, so the child coordinate keeps whatever
+verdict its return type gives it. The same corpus example pins that child form beside the root one.
+
 === Query Fields
 
 |===
 | Schema Pattern | `QueryField` Variant | `*Fetchers` Generates
 
-| Any argument has `@lookupKey` | `QueryTableField` (keyed lookup arm) | Synchronous fetcher + `lookup*()` rows method (+ VALUES input-rows helper)
 | Field named `node` (Relay) | `QueryNodeField` | Fetcher method
 | Field named `nodes` (Relay; auto-emitted, batched-by-id) | `QueryNodesField` | Async DataLoader fetcher dispatching by NodeId
 | Return: `@table`+`@discriminate` interface | `QueryTableInterfaceField` | Fetcher method
