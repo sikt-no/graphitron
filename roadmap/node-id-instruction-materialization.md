@@ -1,13 +1,13 @@
 ---
 id: R826
 title: "intent_node_id_instruction costs 26 seconds per evaluation, and the fix is stranded on a quickfix branch"
-status: In Review
+status: Ready
 bucket: model
 priority: 2
 theme: model-cleanup
 depends-on: []
 created: 2026-08-24
-last-updated: 2026-08-24
+last-updated: 2026-08-25
 ---
 
 # intent_node_id_instruction costs 26 seconds per evaluation, and the fix is stranded on a quickfix branch
@@ -196,4 +196,55 @@ It is the highest priority carried by anything in Spec today.
 **Non-blocking, no response wanted.** The merge base is 105 trunk commits back rather than the 100
 the plan states. The number is making a point about distance and drifts every time trunk moves, so
 it is better left round than pinned.
+
+### Round 2, In Review -> Done, rework
+
+Reviewer session `session_01PXfXUgERb8cqaWW1QKuCUM`, 2026-08-25. Verification build green across
+all fourteen modules on `940e05d`.
+
+One finding, on question 3, and it is in the artifact this item exists to produce rather than in
+the code around it. Everything else checks: all four steps shipped, both open questions from the
+Spec gate were honoured, and the re-pricing is better reasoning than the plan asked for.
+
+**Finding 1. The shipped registration comment states the registry's size, and states it wrong.**
+The comment ends: "Refresh is one evaluation of the rule per capture, 1695 scans on that same
+fixture, which puts it *fifth of this registry's ten* rather than the dearest." `meta_materialize`
+holds eleven registrations on this tree, not ten. It already held eleven at `8b5b23d`, the commit
+that wrote the comment, because `intent_argument_column_scope_live` had landed on trunk before this
+item started work; the figure is carried over from an earlier baseline and the two re-pins after it,
+`6c94642` and `940e05d`, both revisited `DerivedReadCostTest` and neither revisited the SQL.
+
+The ordinal is the load-bearing half and it is unverified rather than merely stale. `fifth` was
+established against a registry that did not contain `intent_argument_column_scope_live`, and nothing
+weighed that refresh against this one's 1695 scans, so this refresh may be fifth or sixth and the
+comment does not know which. I cannot correct it in passing without re-taking the implementer's
+measurement, and guessing the rank would put an unmeasured number into the one comment whose whole
+claim is that its numbers are measured.
+
+Why this blocks rather than rides along. Step 4 was a quarter of the plan and its entire subject was
+making this comment's figures true on the tree they land in; a figure that was false on arrival is
+that step not done. It also ships and rots, unlike everything else flagged below, which dies with
+this file at Done. And the change already knows better: the roster javadoc this same item wrote says
+"Named rather than counted, because the roster gains rows from concurrent work and a count in this
+paragraph is stale the moment one lands", which is exactly the hazard the comment then walked into.
+
+What would satisfy it: either re-take the ranking against all eleven and state it, or apply the
+roster javadoc's own lever and drop the ordinal for something additions cannot falsify, naming the
+registrations measured dearer rather than counting places. The sentence's actual job is retracting
+the branch's "most expensive refresh in the registry" claim, and that retraction survives either
+way, so this is not a re-measurement of the item's premise.
+
+**Non-blocking, no response wanted, listed only because a rework round keeps this file alive.** The
+plan body has drifted from the tree in five places, all cosmetic and all deleted at Done, so fix them
+only if you are editing nearby. The four landing SHAs in the Implementation preamble
+(`31bd5f4ef`, `38f4b5473`, `728f12f02`, `fe6a70086`) resolve to nothing; the rebases renumbered them
+to `93d2ee8`, `1491f9a`, `60d01fe` and `8b5b23d`, plus `6c94642` and `940e05d` for the later re-pins.
+`READERS_IN_SCHEMA` and `READERS_WITH_CELLS` are 85 and 49, not the 83 and 47 the plan names; the
+claim that this item held both is true and I verified it against the diff, and it was R682's
+`7d571f9` that moved them before this item started. `READERS_WITH_CELLS` holding is reported as "as
+predicted" when the Spec predicted it would move, so the one figure whose prediction was wrong reads
+as the one that was right; nothing was re-pinned, so nothing was owed, but the record should say so.
+The exemption roster gained its sixth entry rather than its fifth row, R682 having added one first.
+And the "narrower registration" paragraph under Out of scope still asserts the most-expensive-refresh
+claim that step 4 reports as retracted.
 

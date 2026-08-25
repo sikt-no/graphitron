@@ -15,8 +15,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
+| `R826` | intent_node_id_instruction costs 26 seconds per evaluation, and the fix is stranded on a quickfix branch | Ready | 2026-08-25 <sub>created 2026-08-24</sub> | [plan](node-id-instruction-materialization.md) |
 | `R784` | Partition a straddling cross-table @nodeId reference per column on UPDATE instead of rejecting it | In Review | 2026-08-24 <sub>created 2026-08-21</sub> | [plan](straddling-reference-update-partition.md) |
-| `R826` | intent_node_id_instruction costs 26 seconds per evaluation, and the fix is stranded on a quickfix branch | In Review | 2026-08-24 | [plan](node-id-instruction-materialization.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
@@ -576,7 +576,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### model-cleanup
 
 - `R781` [**intent_field_column_table costs 151 seconds for 116 rows, and it is the inlining**](field-column-table-inlining-cost.md) — Backlog, model
-- `R826` [**intent_node_id_instruction costs 26 seconds per evaluation, and the fix is stranded on a quickfix branch**](node-id-instruction-materialization.md) — In Review, model
+- `R826` [**intent_node_id_instruction costs 26 seconds per evaluation, and the fix is stranded on a quickfix branch**](node-id-instruction-materialization.md) — Ready, model
 - `R765` [**Capture a field's authored named type as a fact, so a wrapper-stripping expression stops being a join key**](expression-keyed-joins-into-derived-relations.md) — Backlog, cleanup
 - `R334` [**Generated argument extraction is unreadable nested-ternary one-liners**](readable-condition-arg-extraction.md) — Backlog, Backlog
 - `R813` [**The derive package names three jobs and describes none of them**](derive-package-names-three-jobs.md) — Backlog, codegen
