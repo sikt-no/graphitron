@@ -2009,7 +2009,7 @@ to declare an index on a captured relation on the grounds that a schema-wide ind
 question one reader's evidence cannot settle. This one adds a different repeat: a performance comment
 in the DDL that was true when measured and was retired by a later registration nobody re-ran it
 against. One is an anecdote; the store now has an instrument for exactly this, the read-cost gate,
-and what it does not have is any check that a written measurement still holds. That is R830, filed here rather than
+and what it does not have is any check that a written measurement still holds. That is R831, filed here rather than
 left as another paragraph.
 
 ### Emitter half: family by family
