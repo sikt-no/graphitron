@@ -190,6 +190,7 @@ fails if this page ever drifts from what the corpus renders, so a displayed exam
 classifier actually produces the stated verdict for. The reference table that follows enumerates the
 verdicts not yet migrated to a worked example.
 
+[#table-type]
 === `@table` type → `TableType`
 
 A type carrying `@table(name:)` classifies as `TableType`, the pivot for SQL generation, unless a
@@ -228,9 +229,12 @@ type Film @table(name: "film") {
 |===
 
 `Film` classifies as `TableType` (full SQL generation: queries, joins, projections); `Query.film`
-enters the scope; `Film.title` projects an inline column. Asserted by the `catalog` corpus example via
-`@classifiedType(as: TableType)`. The field descriptions come from `# ...` comments authored on the
-example's projection query, rendered as SDL descriptions by `QueryViewRenderer`.
+enters the scope; `Film.title` projects an inline column. The root type itself classifies as
+`RootType`, which is a fetchers class and nothing more: a root type binds no table, so it opens no
+query scope of its own and only wires the fields hanging off it. Asserted by the `catalog` corpus
+example via `@classifiedType(as: TableType)` on `Film` and `@classifiedType(as: RootType)` on `Query`.
+The field descriptions come from `# ...` comments authored on the example's projection query, rendered
+as SDL descriptions by `QueryViewRenderer`.
 
 === `@node` over a table → `NodeType`
 
@@ -389,9 +393,6 @@ example via `@classifiedType(as: NestingType)`.
 | Classification Trigger on Type | `GraphitronType` Variant | Generator Output
 
 | Producer's reflected return is a Java/jOOQ class (a `@service` return or a parent-accessor chain) | `ResultType`* | `*Fetchers` class only (no SQL scope of its own). The backing class is reflection-derived, not declared.
-| `Query` or `Mutation` root type | `RootType` | `*Fetchers` class only
-| Interface without `@table` (multi-table) | `InterfaceType` | `*Fetchers` class
-| Union type | `UnionType` | `*Fetchers` class
 | `@error` | `ErrorType` | No generation (error mapping config)
 | Input type with `@table` (deprecated location; see `docs/manual/reference/directives/table.adoc`) | Whatever the same input without the directive classifies as | No generation decision of its own: the directive is ignored, `name:` is never read, and no reader consults it (the input-axis binding arm and the three nesting guards that once did were all deleted, so inertness is uniform). A non-fatal per-usage build warning announces the deprecation and carries the per-verb migration guidance (drop the directive for filters and lookup args; `@mutation(table:)` for DELETE and encoded-ID / scalar returns; return-derivation for INSERT/UPDATE). A future release rejects the location.
 | Input type whose consuming `@service` / `@condition` parameter is reflected as a developer class | `InputType`* | No generation (developer-provided class). The input's backing class is reflected from the parameter type it flows into.
@@ -638,6 +639,7 @@ under the record-backed `FilmDetails`, also classifies with target shape `Field`
 hold `operation = Fetch`; the two record-backed cases also carry `source = Child(Record)`. Asserted by
 the `mapping` corpus example.
 
+[#polymorphic-fields]
 === Polymorphic fields: interfaces, unions, and Relay nodes
 
 A field returning an interface, a union, or a Relay `Node` is *catalog-bound* over the participant
@@ -695,7 +697,9 @@ interface Named {
 `Customer.address` returns the plain interface `Named` (implemented by the `@table` type `Address`),
 so it classifies with `source = Child`, `operation = Fetch`, target shape `Interface` (`InterfaceField`):
 a derived new keyed query projects the participant table, with `Address` recorded as the participant slot.
-Asserted by the `interface` corpus example.
+`Named` itself classifies as `InterfaceType`, the verdict for an interface carrying no `@table` of its
+own, and generates a fetchers class. Asserted by the `interface` corpus example via
+`@classifiedType(as: InterfaceType)`.
 
 A union child follows the same dimensional rule. The selection descends into each participant through an
 inline fragment (`... on Film`, `... on Actor`), and classification resolves the union to its participant
@@ -748,8 +752,10 @@ union FilmOrActor = Film | Actor
 
 `FilmActor.related` returns the union `FilmOrActor`, so it classifies with `source = Child`,
 `operation = Fetch`, target shape `Union` (`UnionField`): a derived new keyed query projects whichever
-participant table a row resolves to, with `Film` and `Actor` recorded as the participant slots. Asserted
-by the `union` corpus example.
+participant table a row resolves to, with `Film` and `Actor` recorded as the participant slots.
+`FilmOrActor` itself classifies as `UnionType` and generates a fetchers class, the same shape
+`InterfaceType` gets: a union binds no table, and its participants carry the catalog binding. Asserted
+by the `union` corpus example via `@classifiedType(as: UnionType)`.
 
 The `@table`+`@discriminate` interface child (target shape `Table`; `TableInterfaceField` per-parent at
 single cardinality, `BatchedTableInterfaceField` DataLoader-batched at list cardinality) and
@@ -1032,17 +1038,25 @@ verdict its return type gives it. The same corpus example pins that child form b
 
 === Query Fields
 
+A root field's position is an axis value, not a separate classification: `source = Query` is what
+makes it a root, and the return type decides the rest exactly as it does on a child. The default case
+is the plain `@table` return of the <<table-type,`TableType` example>>, which emits a full
+fetcher: the condition call, the orderBy build, and the inline DSL chain
+(`dsl.select(Type.$project(...)).from(table)...`) that opens the query scope. The polymorphic returns
+are the <<polymorphic-fields,polymorphic section>> above, where a
+root and a child differ only in where they arrive: a multi-table interface or union root emits per-
+participant polymorphic projection through a derived new keyed query, and a `@table`+`@discriminate`
+interface root is the discriminated composition shown there under `@asConnection`.
+
+What is left is the pair of root-only forms and the failure row:
+
 |===
 | Schema Pattern | `QueryField` Variant | `*Fetchers` Generates
 
 | Field named `node` (Relay) | `QueryNodeField` | Fetcher method
 | Field named `nodes` (Relay; auto-emitted, batched-by-id) | `QueryNodesField` | Async DataLoader fetcher dispatching by NodeId
-| Return: `@table`+`@discriminate` interface | `QueryTableInterfaceField` | Fetcher method
-| Return: multi-table interface | `QueryInterfaceField` | Fetcher method(s) ; per-participant polymorphic projection
-| Return: union | `QueryUnionField` | Fetcher method(s) ; per-participant polymorphic projection
 | `@service`, return `@table` type | `QueryServiceTableField` | Async DataLoader fetcher + `rows*()` method
 | `@service`, return non-table type | `QueryServiceRecordField` | Fetcher method
-| Return: `@table` type (default) | `QueryTableField` | Full fetcher ; condition call + orderBy build + inline DSL chain (`dsl.select(Type.$project(...)).from(table)...`)
 | Anything else | `UnclassifiedField`** | Validation error ; build fails
 |===
 

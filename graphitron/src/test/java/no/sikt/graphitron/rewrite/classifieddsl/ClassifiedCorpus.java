@@ -347,17 +347,22 @@ public final class ClassifiedCorpus {
          * class by reflection on the @service producer's return type, never from a directive, and
          * the GraphitronType leaf reflects what that class is: a plain Java class is PojoResultType.Backed
          * (`as: Backed`), a Java record is JavaRecordType, a jOOQ TableRecord is JooqTableRecordType.
-         * Corpus-only: the @classifiedType axis is asserted directly; there is no field-side dimensional
+         * The @classifiedType axis is asserted directly; there is no field-side dimensional
          * lesson here. The `name` field on the Java-record-backed type (a record component of TestRecordDto)
          * doubles as the fixture's required field coordinate, classifying Child / Fetch / Field off the
          * record-shaped source backing.
+         *
+         * Corpus-only, and not promotable as it stands: DummyRecord is an empty class, so PojoBacked's
+         * only field names nothing it exposes and the fixture classifies without being able to generate.
+         * Giving DummyRecord a readable property would reach the input axis, where the same class grounds
+         * the unbound PojoInputType default.
          */
         new Example("result-backing", """
             type PojoBacked @classifiedType(as: Backed) { id: ID }
             type JavaRecordBacked @classifiedType(as: JavaRecordType) {
               name: String @classified(source: OnlyChild, operations: [], target: Single, targetShape: Field, sourceShape: Record)
             }
-            type JooqTableRecordBacked @classifiedType(as: JooqTableRecordType) { id: ID }
+            type JooqTableRecordBacked @classifiedType(as: JooqTableRecordType) { title: String }
             extend type Query {
               pojo: PojoBacked
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
