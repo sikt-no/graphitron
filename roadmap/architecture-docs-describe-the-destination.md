@@ -739,19 +739,59 @@ had made available without anyone reading it: a coordinate with a read to launch
 so `Film.details` returning an object and still taking an `Object` is the passthrough, visible in a
 block the page had already printed.
 
+**Slice 3, part seven: a table that restated the page.** The prediction at the end of part six was
+wrong. "DataLoader-backed field categories" did not need trimming; it needed retiring, and it is
+gone. Reading its twenty cells one at a time, exactly one said something the page did not already
+say somewhere else. Derived tables and the N x M result contract are defined in "Derived tables";
+that `@lookupKey` blocks pagination is in "Batch-shaping directives"; the condition contract has its
+own row in the "Conditions" table. The table was a cross product restating rules the page states
+once each, which is why it read as a summary and was in fact a second source of truth.
+
+Its title was a third stale claim of the same species as parts four and six. A section called
+"DataLoader-backed field categories" whose first two rows read "No ; synchronous" and "No ;
+correlated subquery": half the categories in it are not DataLoader-backed. `TypeFetcherGenerator`
+registers a DataLoader for the batched leaf, the service leaf and the batched polymorphic pair, and
+for nothing else. The title was true of the rows it had when it was written, and stayed on the page
+after the rows changed under it.
+
+The one showable cell became the promotion: pagination is allowed on `@splitQuery` without
+`@lookupKey`, and nothing on the page showed it. The new `paginated-child` example does, and asking
+why the other three cells read "Never" turned up a better fact than the cell itself. Pagination is
+available on exactly one of the four spellings of a `@table` child, and the other three refuse for
+two different reasons: the inline child has no statement of its own to put a window on, so
+`@asConnection` without `@splitQuery` is rejected outright, while either lookup-keyed spelling
+refuses because a page breaks the positional correspondence the argument establishes. Both
+rejections were already pinned, so the composition rule was true and simply unwritten.
+
+One fact lived only in that table and moved rather than died: the root lookup's read is synchronous,
+a thin fetcher over a `lookupFilmById` rows method. It is worth keeping because a rows method is
+easy to read as evidence of batching, and here it is what makes the statement callable from outside
+the fetcher instead.
+
+A smaller lesson, for whoever adds the next anchor. Giving the pagination section an explicit
+`[#pagination-and-facets]` id silently broke an existing cross-reference that had been using the
+auto-generated one. The AsciiDoctor run reports it as "possible invalid reference" at INFO level,
+not as a failure, so it is worth grepping for the old auto-id whenever a section that already had
+inbound links gains an explicit anchor.
+
 **Still to do.** The two remaining marked sections ("Type Classification", "Field Classification")
 keep their marks until the examples that subsume them land; "Implicit Classification Rules" is
 already gone. Both Child Fields tables are now down to what does not generate: three refusal rows on
 the `@table` parent, and on the class-backed parent `@sourceRow`, the `errors:` slot, and the
-corrected `@lookupKey` gap. The largest table still describing a mechanism no example shows is Input
-Fields at six rows, which is a different axis than the output-side work these six parts covered and
-should be sized before it is started.
+corrected `@lookupKey` gap.
 
-One table nearby is worth a look but is probably not a fold-in. "DataLoader-backed field categories"
-is the same `@splitQuery` x `@lookupKey` matrix part five worked through, crossed with root-versus-child,
-and now that the matrix has worked examples the overlap is visible. It carries three columns the
-examples do not (derived tables, whether non-lookup arguments are allowed, whether pagination is),
-so the right move is probably to trim its overlap rather than retire it.
+Counting the remaining reference tables rather than guessing at them, three output-side candidates
+are left, and the cheapest is the same move parts five and six made. The Query Fields table's five
+rows include the two Relay ones, `node` and `nodes`, and the corpus already carries both in the
+`relay-node` fixture, which has no query and so renders nowhere. Giving it one promotes two rows at
+the cost of a query. Behind that sit the mutation payload-wrapper table at eight rows and the type-
+side Reference table at twelve, the second of which is the residue of one of the two sections still
+carrying a transitional mark.
+
+Input Fields, at six rows, remains the only input-side table, and it should still be sized before it
+is started rather than picked up by momentum. Input-side leaves are on the enum truth table by
+design (see the partitioned obligation in `VariantCoverageTest`), so whether a corpus example is
+even the right vehicle for them is the first question to answer, not an assumption to carry in.
 
 **The outcome block, and the fork the owner settled.** Building it turned up something the plan
 does not cover: **not every doc example generates.** The corpus is a classification corpus, and a

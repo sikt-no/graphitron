@@ -1101,6 +1101,11 @@ of a key that matched nothing. That is what forces the return type's elements to
 `[Film!]!` there is an author error whose message says so. `Film.filmId` inside the looked-up rows is
 an ordinary inferred column read, unaffected by how its rows were reached.
 
+The root's read is synchronous. There is no parent set to batch over, so `Query.filmById` is a thin
+fetcher over a `lookupFilmById` rows method that runs the statement and returns its rows directly. A
+rows method is not by itself a sign of batching; it is what makes the read callable from outside the
+fetcher, so entity resolution can reach the same statement.
+
 `FilmActor.actors` carries the same directive one level down and reads `no claiming directive`.
 Position is what decides. On a root there is nothing but the argument to say where the rows come from,
 so `@lookupKey` claims the coordinate. On a child the return type has already said it, and the argument
@@ -1160,6 +1165,72 @@ The two directives are independent axes, so the four combinations of them are th
 `@table` child has: neither (inline subquery), `@splitQuery` alone (batched by the parent's foreign
 key), `@lookupKey` alone (inline, keyed by the argument), and both (batched, keyed by the argument).
 Only `@lookupKey` moves an asserted axis. Asserted by the `split-lookup` corpus example.
+
+[#paginated-child]
+==== The one spelling that paginates
+
+Exactly one of those four spellings can carry `@asConnection`.
+
+[source,graphql]
+----
+type Query {
+  country: Country
+}
+
+type Country @table(name: "country") {
+  "A batched child that also paginates: @splitQuery opened the statement the page needs."
+  cities: [City!]! @splitQuery @asConnection @defaultOrder(primaryKey: true)
+}
+
+type City @table(name: "city") {
+  city: String
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `City.city`
+| `TABLE_COLUMN`, inferred
+| `fetchers.CityFetchers#city(Object)`
+
+| `Country.cities`
+| no claiming directive
+| `fetchers.CountryFetchers#cities(DataFetchingEnvironment)`
+
+| `CountryCitiesConnection.edges`
+| no claiming directive
+| `fetchers.CountryCitiesConnectionFetchers#edges(DataFetchingEnvironment)`
+
+| `CountryCitiesEdge.node`
+| no claiming directive
+| `fetchers.CountryCitiesEdgeFetchers#node(DataFetchingEnvironment)`
+
+| `Query.country`
+| no claiming directive
+| `fetchers.QueryFetchers#country(DataFetchingEnvironment)`
+
+|===
+
+A page needs a statement of its own to put a window on, and `@splitQuery` is what opens one, so it is a
+precondition here rather than a companion directive. The other three spellings are refused, for two
+different reasons. The inline child is refused because its correlated subquery is folded into the
+parent's SELECT and there is nothing to window: `@asConnection` without `@splitQuery` is rejected
+outright. Either lookup-keyed spelling is refused because a page would break the positional
+correspondence `@lookupKey` establishes, and that holds whether or not `@splitQuery` is also present.
+
+`CountryCitiesConnection` and `CountryCitiesEdge` are synthesised for the coordinate and named after it,
+exactly as on <<pagination-and-facets,a paginated root>>; being batched changes where the rows come
+from, not how the wrapper types are made.
+
+The two directives contribute one `VALUES` derived table each, so what a spelling builds follows from
+what it carries: `@splitQuery` a <<derived-tables,derived source table>> of parent rows, `@lookupKey` a
+derived target table of argument values. The batched lookup carries both and its base result count is
+N × M; a root lookup has no parent side, so it returns exactly M. Asserted by the `paginated-child`
+corpus example.
 
 === Query Fields
 
@@ -1615,6 +1686,7 @@ type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
 nothing is unusual, they are reading a relation that happens to be a function result. Asserted by the
 `routine-table-valued-read` corpus example.
 
+[#pagination-and-facets]
 === Pagination, and facets over the same filter
 
 `@asConnection` rewrites a list field into a Relay connection. The connection, edge and page-info
@@ -1787,21 +1859,6 @@ two of which do not currently generate:
 
 **\*\* `UnclassifiedField`** is a direct permit of `GraphitronField`; it is not nested under `QueryField`, `MutationField`, or `ChildField`. It is listed in the tables above for completeness, but structurally it sits at the top level of the sealed hierarchy. `TableTargetField` is an intermediate sealed sub-interface of `ChildField` grouping all 5 SQL-generating child field variants (`TableField`, `BatchedTableField`, `TableInterfaceField`, `BatchedTableInterfaceField`, `ServiceTableField`). The batched leaf is source-gated, and a `@lookupKey` correspondence rides on its fetch sibling as the seal's `LookupResolution` arm rather than as a leaf of its own.
 
-=== DataLoader-backed field categories
-
-Four categories of DataLoader-backed child field, distinguished by `@splitQuery` and `@lookupKey`:
-
-|===
-| Category | DataLoader | Derived tables | `@condition` / non-`@lookupKey` args | Pagination
-
-| *`QueryTableField`, keyed lookup arm* (root lookup, no `@splitQuery`) | No ; synchronous | Derived target only | Allowed ; must preserve N × M contract† | Never ; result count = M exactly
-| *`TableField`, keyed lookup arm* (`@lookupKey`, no `@splitQuery`, table-mapped parent) | No ; correlated subquery | Derived target + correlated parent join | Allowed ; must preserve N × M contract† | Never
-| *`BatchedTableField`* (Table-sourced: `@splitQuery`, no `@lookupKey`) | Yes | Derived source only | Allowed | Allowed
-| *`BatchedTableField`, keyed lookup arm* (`@splitQuery` + `@lookupKey`) | Yes | Both | Allowed ; must preserve N × M contract† | Never ; result count = N × M
-|===
-
-† See <<derived-tables,Derived tables>> for the contract definition.
-
 '''
 
 == Classification without a directive
@@ -1852,7 +1909,7 @@ fetcher method. Asserted by the `enum-column` corpus example.
 
 A field returning a `*Connection` type is the same story one level out: `@asConnection` shapes the
 read and claims nothing, so neither the field nor the synthesised connection types carry a claim. See
-<<pagination-and-facets-over-the-same-filter,Pagination, and facets over the same filter>>.
+<<pagination-and-facets,Pagination, and facets over the same filter>>.
 
 '''
 

@@ -139,6 +139,42 @@ public final class ClassifiedCorpus {
             "{ store { customers(customer_id: \"1\") { firstName } } }"),
 
         /*
+         * The one paginated spelling a child has. @asConnection needs a statement of its own to put a
+         * window on, so it composes with @splitQuery and with nothing else: inline is rejected because
+         * the correlated subquery has no statement to window, and a lookup-keyed child is rejected
+         * because a page breaks the positional input-list <-> output-list correspondence.
+         *
+         * Doc example: it renders the surviving cell of the pagination composition, the one the four
+         * spellings of a @table child otherwise only assert.
+         */
+        new Example("paginated-child", """
+            type City @table(name: "city") @classifiedType(as: TableType) {
+              city: String @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
+            }
+
+            type Country @table(name: "country") @classifiedType(as: TableType) {
+              cities: [City!]! @splitQuery @asConnection @defaultOrder(primaryKey: true)
+                @classified(source: OnlyChild, operations: [Join, OrderBy, Paginate, Select], target: Single, targetShape: Connection)
+                @commits(source: CorrelatedChain, result: Connection)
+            }
+
+            extend type Query {
+              country: Country @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
+                @commits(source: AnchorTable, result: SingleRecord)
+            }
+            """,
+            """
+            {
+              country {
+                # A batched child that also paginates: @splitQuery opened the statement the page needs.
+                cities(first: 2) {
+                  edges { node { city } }
+                }
+              }
+            }
+            """),
+
+        /*
          * Target-shape minimal pair: Column vs Field. A scalar under the @table parent Film projects a
          * Column (`title` is a real DB column); a scalar under a record-backed parent projects a Field
          * (`FilmStats.count` is a POJO property, the record having no @table). The non-table object
