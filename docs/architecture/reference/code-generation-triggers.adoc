@@ -927,6 +927,143 @@ the read-back being the derived re-fetch. Asserted by the `dml` corpus example.
 
 The direct-return `DmlTableField` permit is guaranteed never to carry a class-backed (record-shaped) return: every DML mutation whose return type reflects to a record carrier routes through the DML-carrier permits (`MutationDmlRecordField` / `MutationBulkDmlRecordField`) via `BuildContext.scanStructuralDmlPayload`. The narrowness is enforced structurally by the routing in `FieldBuilder.classifyMutationField`, not by an Invariant the validator restates.
 
+=== When the value comes from somewhere other than the catalog
+
+Three directives take a coordinate away from the catalog and put a producer behind it. All three
+land as an `AUTHORED` claim, and the claim name is what the outcome block shows.
+
+`@service` names a Java method. What the generator does with its return depends on whether that
+return is a table type or not, and the pair below isolates exactly that: same directive, same
+parent, one returning `@table` rows and one returning a scalar.
+
+[source,graphql]
+----
+type Query {
+  language: Language
+}
+
+type Language @table(name: "language") {
+  name: String
+  "Films for this language, produced by a service and re-queried as table rows."
+  filmsViaService: [Film!]! @service(service: {className : "no.sikt.graphitron.rewrite.generators.TestFilmService", method : "getFilmsMapped"})
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#title(Object)`
+
+| `Language.filmsViaService`
+| `SERVICE`, authored
+| `fetchers.LanguageFetchers#filmsViaService(DataFetchingEnvironment)`
+
+| `Language.name`
+| `TABLE_COLUMN`, inferred
+| `fetchers.LanguageFetchers#name(Object)`
+
+| `Query.language`
+| no claiming directive
+| `fetchers.QueryFetchers#language(DataFetchingEnvironment)`
+
+|===
+
+The service returns values, and `Film` is a table type, so the values have to become table rows
+again: the coordinate opens a new keyed query, batched through a DataLoader, and `Film.title` reads
+a column of `film` inside it. Asserted by the `service-table-child` corpus example.
+
+Change the return to a scalar and the re-query disappears, because there is nothing to look up:
+
+[source,graphql]
+----
+type Query {
+  language: Language
+}
+
+type Language @table(name: "language") {
+  name: String
+  "A scalar a service produces; no SQL of its own."
+  rank: Int @service(service: {className : "no.sikt.graphitron.rewrite.generators.TestFilmService", method : "getRankMapped"})
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Language.name`
+| `TABLE_COLUMN`, inferred
+| `fetchers.LanguageFetchers#name(Object)`
+
+| `Language.rank`
+| `SERVICE`, authored
+| `fetchers.LanguageFetchers#rank(DataFetchingEnvironment)`
+
+| `Query.language`
+| no claiming directive
+| `fetchers.QueryFetchers#language(DataFetchingEnvironment)`
+
+|===
+
+Same verdict, same tier, and a fetcher method that hands back what the service returned. Asserted by
+the `service-scalar-child` corpus example.
+
+The last pair separates two things that both look like "this column is not where you would expect".
+`@reference` keeps the value in the catalog and changes which table it is read from, so the claim
+stays `TABLE_COLUMN` and stays `inferred`: the name still matched, just at the far end of a named
+foreign key. `@externalField` takes the value out of the catalog entirely and claims the coordinate.
+
+[source,graphql]
+----
+type Query {
+  film: Film
+}
+
+type Film @table(name: "film") {
+  "Reached over a named foreign key."
+  languageName: String @field(name: "name") @reference(path: [{key : "film_language_id_fkey"}])
+  "Computed in Java, not read from a column."
+  computedRating: String @externalField(reference: {className : "no.sikt.graphitron.rewrite.TestExternalFieldStub", method : "rating"})
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.computedRating`
+| `EXTERNAL_FIELD`, authored
+| `fetchers.FilmFetchers#computedRating(DataFetchingEnvironment)`
+
+| `Film.languageName`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#languageName(DataFetchingEnvironment)`
+
+| `Query.film`
+| no claiming directive
+| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
+
+|===
+
+This is the clearest reading of what the tier column means. `@reference` is written on
+`languageName` and the tier is still `inferred`, because `@reference` is not a claiming directive:
+it moves the site the name resolves against, and `intent_column_match_claim` then matches there. Only
+`@externalField` claims, so only `computedRating` reads `authored`. Asserted by the
+`reference-and-computed` corpus example.
+
 === Child Fields (on `@table` parent)
 
 ==== Scalar / Enum return type
@@ -935,7 +1072,6 @@ The direct-return `DmlTableField` permit is guaranteed never to carry a class-ba
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
 | `@field(name:)` or matching column name | `ColumnBackedField` (arity 1, `compaction = Direct`) | Wiring value (`ColumnFetcher`)
-| `@reference` on scalar | `ColumnBackedReferenceField` (arity 1, `compaction = Direct`) | Inline projection in `$project` + `ColumnFetcher` wiring value
 | `@reference` on scalar declared on a `TableInterfaceType` participant | `ParticipantColumnReferenceField` | Wiring value ; materialised by the enclosing `TableInterfaceField` fetcher's discriminator-gated correlated subselect (the same capped shape a plain scalar `@reference` takes) and read back via `FetcherEmitter` (participant-side FK, not the interface-side resolver)
 | `@nodeId`, no typeName | `ColumnBackedField` (`compaction = NodeIdEncodeKeys`; arity = the node key's column count) | Wiring value (`ColumnFetcher`); the projected column(s) are wrapped positionally in the per-Node `encode<TypeName>` helper
 | `@nodeId(typeName:)`, non-FK-mirror target | `ColumnBackedReferenceField` (`compaction = NodeIdEncodeKeys`; arity = the target key's column count) | Nothing yet ; rooted-at-parent NodeId reference, rejected at validate time as deferred (any arity), pending `nodeidreferencefield-join-projection-form`
@@ -946,9 +1082,6 @@ The direct-return `DmlTableField` permit is guaranteed never to carry a class-ba
 |===
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
-| `@externalField(reference: {className, method})` | `ComputedField` | Inlined call in `$project()` (`<Class>.<method>(table).as("<name>")`) + `ColumnFetcher` registered by alias in `wiring()`. Method must be `public static Field<X> name(<ParentTable> table)`.
-| `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method
-| `@service`, return non-table | `ServiceRecordField` | Fetcher method
 | Return `@table`, `@splitQuery` + `@lookupKey` | `BatchedTableField` (Table-sourced, keyed lookup arm) | Async DataLoader fetcher + `rows*()` method
 | Return `@table`, `@lookupKey` (no split) | `TableField` (keyed lookup arm) | Inline projection in `$project` ; correlated subquery via `DSL.multiset` + VALUES/JOIN lookup keyset
 | Return `@table`, `@splitQuery` | `BatchedTableField` (Table-sourced) | Async DataLoader fetcher + `rows*()` method

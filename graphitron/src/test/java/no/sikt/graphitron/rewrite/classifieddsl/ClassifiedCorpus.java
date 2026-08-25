@@ -274,6 +274,15 @@ public final class ClassifiedCorpus {
                 @commits(source: ServiceTableLift, result: LoaderDelegated)
             }
             type Query { language: Language @commits(source: AnchorTable, result: SingleRecord) }
+            """,
+            """
+            {
+              language {
+                name
+                # Films for this language, produced by a service and re-queried as table rows.
+                filmsViaService { title }
+              }
+            }
             """),
 
         /*
@@ -293,6 +302,15 @@ public final class ClassifiedCorpus {
                 @commits(source: ServiceCall, result: LoaderDelegated)
             }
             type Query { language: Language @commits(source: AnchorTable, result: SingleRecord) }
+            """,
+            """
+            {
+              language {
+                name
+                # A scalar a service produces; no SQL of its own.
+                rank
+              }
+            }
             """),
 
         /*
@@ -736,6 +754,16 @@ public final class ClassifiedCorpus {
                 @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
             }
             type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+            """,
+            """
+            {
+              film {
+                # Reached over a named foreign key.
+                languageName
+                # Computed in Java, not read from a column.
+                computedRating
+              }
+            }
             """),
 
         /*
