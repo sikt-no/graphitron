@@ -7,7 +7,7 @@ priority: 3
 theme: nodeid
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-19
+last-updated: 2026-08-25
 ---
 
 # A @nodeId filter input on a multitable query cannot state a per-participant join path
@@ -20,7 +20,7 @@ and the remedy the message names does not exist for this shape: a `@reference(pa
 
 ## Why it happens
 
-`NodeIdLeafResolver`'s join-path resolution takes the containing table, and with no `@reference` present falls back to single-hop FK auto-discovery via `ctx.catalog.findUniqueFkToTable(containingTable, targetTable)`. On a multitable query that resolution runs once per participant, each with its own table, so any participant lacking a unique single-hop FK to the target rejects and fails the build for the whole field.
+`NodeIdLeafResolver`'s join-path resolution takes the containing table, and with no `@reference` present falls back to single-hop FK auto-discovery via `JooqCatalog.findOutgoingFkToTable`, whose three-armed `OutgoingFkLookup` result (`Unique`, `Ambiguous`, `NoneInDirection`) `autoDiscoveryRefusal` turns into one of three refusals. On a multitable query that resolution runs once per participant, each with its own table, so any participant lacking a unique single-hop FK to the target rejects and fails the build for the whole field. The refusals have been reworded since the reported RC30 build: all three name `@reference`, but none is the message quoted above verbatim, so work from `autoDiscoveryRefusal`'s arms rather than grepping for the reporter's string.
 
 The per-participant escape hatch exists but is out of reach at this coordinate. `@referenceFor(type:, path:)` is exactly the surface for "this participant's complete path from the parent's table", and its own documentation says participants not named keep automatic discovery, which is the semantics this case wants. It is declared `repeatable on FIELD_DEFINITION`. Meanwhile `@reference` is declared on `FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION` and `@condition` on all three. So the general per-participant path surface stops one location short of the coordinate that needs it, and the surfaces that do reach input fields cannot express per-participant variation.
 
@@ -60,7 +60,7 @@ At an output field the query stands on the parent row and joins outward to the p
 - `directives.graphqls` (the single location authority) adds the two locations; there is no second Java-side location table.
 - `type:` names a table-bound participant of the *consuming field's* return type. `path:` is that participant's complete path from its own table to the `@nodeId` target's table.
 - Participants not named keep single-hop FK auto-discovery, the same override-merge as the output coordinate.
-- The path grammar inherits the decode rail's constraints, the same ones explicit `@reference` obeys on a `@nodeId` leaf today: hops on column pairs, the identity-carrying lift validation, no `{condition:}` steps (the `NodeIdLeafResolver` arms behind `LIFT_FAILURE_MARKER` and `CONDITION_STEP_MARKER`).
+- The path grammar inherits the decode rail's one remaining constraint, the same one explicit `@reference` obeys on a `@nodeId` leaf today: every step joins on column pairs, no `{condition:}` steps (the `NodeIdLeafResolver` arm behind `CONDITION_STEP_MARKER`, which survives because the `EXISTS` emitter is hop-general over foreign-key hops and over nothing else). The identity-carrying lift validation is gone: a chain that stops carrying its departing columns forward lands no key position and binds remotely rather than refusing.
 - `@reference` and `@referenceFor` together on one leaf reject as ambiguous: a leaf states one uniform path or per-participant paths, not both.
 - Plain `@reference` on a decode leaf under a multitable consumer stays legal. The output-coordinate doctrine ("a single stated path is terminal-correct for at most one participant") does not transfer: here the terminus is fixed, the stated hops resolve once per participant against that participant's own table, and a uniform path survives exactly where the per-participant resolutions coincide. The docs state that the check is per-participant rather than "a uniform path is allowed".
 
@@ -75,9 +75,9 @@ Strict per-use-site rejection was considered and dropped: it keys validity two g
 
 ### Participant identity threading and route selection
 
-`FieldBuilder.lowerParticipantFilters` already re-runs classification once per participant with only the table varying. The participant's identity travels as the existing model pair `ParticipantRef.TableBound` (type name and table together; a bare type-name String slot could disagree with the table it rides beside, and the two are one fact) on `ClassifyContext`, the builder-internal traversal scaffolding discarded before the model. It threads from `resolveTableFieldComponents` down through `InputFieldResolver.resolve` and `classifyInputField` to `NodeIdLeafResolver.resolve`.
+`FieldBuilder.lowerParticipantFilters` already re-runs classification once per participant with only the table varying. The participant's identity travels as the existing model pair `ParticipantRef.TableBound` (type name and table together; a bare type-name String slot could disagree with the table it rides beside, and the two are one fact) on `ClassifyContext`, the builder-internal traversal scaffolding discarded before the model. It threads from `resolveTableFieldComponents` down through `InputFieldResolver.resolve` and `classifyInputField` to `NodeIdLeafResolver.resolve`. `ClassifyContext` is already the vehicle for exactly this kind of fact: a two-slot record today (`expandingTypes`, `enclosingOverride`) whose own javadoc says the second slot is carried ahead of its consumers so that a new classifier arm does not have to touch every call site. The participant slot is a third of the same kind, and `enclosingOverride` is half of the override half's threading already in place.
 
-Route selection in `NodeIdLeafResolver.resolveFkJoinPath` becomes a small sealed outcome rather than an if-chain: explicit `@reference` chain, explicit `@referenceFor` route for the participant in scope, single-hop auto-discovery. The validator mirrors those arms.
+Route selection in `NodeIdLeafResolver.resolveFkJoinPath` becomes a small sealed outcome rather than an if-chain: explicit `@reference` chain, explicit `@referenceFor` route for the participant in scope, single-hop auto-discovery. The method's *return* is already sealed (`PathResolution`, `Walked` or `Refused`); what remains an if-chain is the choice of route inside it, and that is what gains the third arm. The validator mirrors those arms.
 
 ### The override escape and its uniformity invariant
 
@@ -93,7 +93,7 @@ Mixed contracts are rejected, not documented around. On a multitable consumer, o
 
 ### Rejections mint at the detection site
 
-With the participant in scope, `NodeIdLeafResolver` states the remedy that exists at the coordinate it fires on: under a participant, the no-unique-FK rejection names `@referenceFor(type: "<participant>", path:)` and the override escape; the single-table wording keeps naming `@reference`. No rewording wrap at the consuming site.
+With the participant in scope, `NodeIdLeafResolver` states the remedy that exists at the coordinate it fires on: under a participant, the no-unique-FK rejection names `@referenceFor(type: "<participant>", path:)` and the override escape; the single-table wording keeps naming `@reference`. No rewording wrap at the consuming site. Three wordings carry this, not one: `autoDiscoveryRefusal`'s `Ambiguous` arm, its reverse-FK `NoneInDirection` arm, and its no-FK-either-way `NoneInDirection` arm each name `@reference` today, and each needs the participant-scoped variant.
 
 `lowerParticipantFilters` stops short-circuiting on the first failing participant: each participant's rejections mint at their own coordinates (the `BuildContext.mintInputFieldFailures` pattern) and the consuming field carries one consequence rejection. `aggregateChildPolymorphicErrors` is not the tool here; it string-joins messages and flattens typed arms into prose.
 
@@ -139,7 +139,7 @@ Draft for the global-id how-to, a new "Multitable filter inputs" subsection unde
 ## Deliverables
 
 1. **`directives.graphqls`**: `@referenceFor` gains `INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION`; the directive-doc block gains the decode-coordinate sentence.
-2. **`NodeIdLeafResolver`**: sealed route-selection outcome in `resolveFkJoinPath`; participant-aware rejection wording; predicate-ownership parameter; fourth `Resolved` arm (author-owned predicate).
+2. **`NodeIdLeafResolver`**: a third route arm inside `resolveFkJoinPath` (whose `PathResolution` return is already sealed); participant-aware wording on all three `autoDiscoveryRefusal` arms; predicate-ownership parameter; fourth `Resolved` arm (author-owned predicate) beside `SameTable`, `FkTarget`, and `Rejected`.
 3. **Threading**: `ParticipantRef.TableBound` on `ClassifyContext`, from `resolveTableFieldComponents` through `InputFieldResolver.resolve` / `classifyInputField` to the resolver.
 4. **Consumers**: fourth-arm minting at `inputFieldFromNodeIdResolved` and `classifyArgument`; the `@reference`+`@referenceFor` combo rejection; duplicate-`type:` rejection; the uniformity enforcer and participant aggregation in `lowerParticipantFilters`; the axis-worded non-decode rejection.
 5. **Whole-schema unmatched-`type:` detection** over `graphitron_reference_for` × `intent_input_occurrence_path` × participant sets.
@@ -167,38 +167,49 @@ Execution tier (`graphitron-sakila-example`): a multitable interface where one p
 - R675's overload admission; no interaction, method resolution stays coordinate-invariant.
 - Replying on issue 525 happens when this ships; the reply is not a gate for Done. The `NodeIdEncoder` helpers can be pointed out to the reporter now, independent of this item.
 
-## The relation move touches three parts of this plan (2026-08-20)
+## Reconciliation with the current tree (2026-08-25)
 
-Read before the next Spec pass. The `@nodeId` instruction population and its encode/decode
-resolution became store relations on 2026-08-20. The relation-move item already flags one of these
-three (the lift constraint moving rather than vanishing); the other two it does not name.
+The plan was written on 2026-08-19; the `@nodeId` instruction population and its encode/decode
+resolution became store relations on 2026-08-20, and a sweep
+(`roadmap/audits/2026-08-20-nodeid-relation-impact-sweep.md`, Findings 1 and 6) flagged three places
+where that move might invalidate this plan. Re-checked against the tree today: two of the three
+resolved themselves and one stands. The body above has been edited to match; this section records
+what moved so a reviewer does not have to re-derive it.
 
-**The decode-rail grammar keeps one of its two named constraints.** The path-grammar bullet under
-*Semantics at the decode coordinate* inherits "hops on column pairs, the identity-carrying lift
-validation, no `{condition:}` steps (the `NodeIdLeafResolver` arms behind `LIFT_FAILURE_MARKER` and
-`CONDITION_STEP_MARKER`)". The lift conjunct goes: an absent lift becomes absent local columns and
-the chain binds remotely rather than rejecting. `CONDITION_STEP_MARKER` stays, deliberately, the
-`EXISTS` emitter being hop-general over foreign-key hops and nothing else. So the bullet should
-name one constraint, not two, and should point at the decode relation rather than at the markers.
+**Resolved: the decode rail lost one of its two grammar constraints.** The identity-carrying lift
+validation is gone (`LIFT_FAILURE_MARKER` no longer exists anywhere in the tree); an absent lift now
+binds remotely instead of refusing. `CONDITION_STEP_MARKER` stays, and the resolver's own javadoc
+states why. The bullet under *Semantics at the decode coordinate* names one constraint now.
 
-**Deliverable 2 restructures a method the relation move dissolves.** It asks for a "sealed
-route-selection outcome in `resolveFkJoinPath`" plus a fourth `Resolved` arm. The relation move
-retires `JoinPathResult`, which is what `resolveFkJoinPath` returns, and makes the class a reader
-of relation rows rather than the resolver of the facts. Two plans restructure one method from
-opposite directions: one replacing its return shape, the other moving the resolution out of Java.
-The author-owned-predicate outcome is the part worth keeping either way, since it is a decision
-about the leaf rather than a step in path resolution; where it lives is the open question.
+**Resolved: `resolveFkJoinPath` survived the relation move.** The sweep expected the method to
+dissolve and take Deliverable 2 with it. `JoinPathResult` is indeed gone, but the method remains,
+returns a private sealed `PathResolution`, and `NodeIdLeafResolver` still resolves routes off the
+catalog rather than reading relation rows. Deliverable 2 is implementable as written and is restated
+above in the current vocabulary. The author-owned-predicate outcome stays on the leaf, for the reason
+the plan already gave.
 
-**The relations have no participant dimension.** Deliverable 3 threads `ParticipantRef.TableBound`
-down to the resolver so a route can be selected per participant. `intent_node_id_instruction` is
-keyed by use site with no participant column, and its bare-inference arms reach the slot's table
-through `intent_argument_scope_table`, which demands an unambiguous binding and therefore answers
-nothing at a multitable coordinate. Explicit `@nodeId(typeName:)` leaves, which is this item's
-reported shape, resolve on the `EXPLICIT_TYPE_NAME` arm and are unaffected, so this is not a
-blocker here; but it is a blocker for the bare-inference divergence item this plan names in its
-own Out of scope, and the participant-keyed arm those two need is the same one.
+**Stands: the relations have no participant dimension.** `intent_node_id_instruction` is keyed by use
+site with no participant column, and its bare-inference arms reach the slot's table through
+`intent_argument_scope_table`, which demands an unambiguous binding and therefore answers nothing at a
+multitable coordinate. This item's reported shape is an explicit `@nodeId(typeName:)` leaf, which
+resolves on the `EXPLICIT_TYPE_NAME` basis, so this is not a blocker here. It is a blocker for R726,
+the bare-inference divergence this plan lists under Out of scope.
 
-Detail: `roadmap/audits/2026-08-20-nodeid-relation-impact-sweep.md`, Findings 1 and 6.
+**Three items want the participant-keyed arm and none owns it.** R673 (In Review) shipped computing
+its cross-participant verdict on the Java side, in `FieldBuilder`, over the classified participant
+set, because the relation produces no row at a multitable coordinate on either bare-inference arm.
+R726 needs the arm outright. This item needs it only if the per-participant route fact is ever moved
+into the store, which it is not here. Whoever widens the population repoints one call site in R673
+and unblocks R726; that ownership is worth settling before this item reaches Ready, but it is not a
+dependency of this plan as scoped, which is why `depends-on` stays empty.
+
+**What R673 left behind that this item should reuse.** `lowerParticipantFilters` now runs a
+cross-participant pre-pass (`resolveNodeIdArgTargets`, returning `NodeIdParticipantTargets`) ahead of
+the per-participant loop, and mints one cross-participant rejection off it (`firstNestedDivergence`,
+for a nested bare-`@nodeId` leaf whose participants disagree on the node type). That is the shape and
+the site this plan's uniformity enforcer wants, and its message is the model for the enforcer's
+wording. The per-participant loop still returns `ParticipantFiltersResult.Rejected` on the first
+failing participant, so Deliverable 4's "stop short-circuiting" requirement stands unchanged.
 
 ## Acceptance
 
@@ -206,14 +217,3 @@ Detail: `roadmap/audits/2026-08-20-nodeid-relation-impact-sweep.md`, Findings 1 
 - The no-unique-FK rejection under a participant names `@referenceFor` and the override escape; single-table wording is unchanged.
 - All failing participants surface together with typed, participant-coordinate rejections.
 - Full `mvn install -Plocal-db` green.
-
-## A third item now asks for the participant-keyed arm (2026-08-21)
-
-R673 (bare `@nodeId` argument dispatch on a polymorphic-returning field) landed its implementation
-computing the cross-participant question on the Java side, in `FieldBuilder`, over the classified
-participant set, because `intent_node_id_instruction` produces no row at a multitable coordinate on
-either bare-inference arm. Its producer takes the field definition plus the table-bound participant
-set and returns a sealed per-argument verdict, so a participant-keyed relation arm becomes the thing
-that producer reads instead of the thing it computes: one call site to repoint. So the arm this item
-names in "The relations have no participant dimension" now has three consumers waiting on it
-(this item, R673, and R726), which is worth knowing when deciding who owns widening the population.
