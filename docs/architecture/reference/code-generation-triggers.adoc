@@ -232,12 +232,104 @@ enters the scope; `Film.title` projects an inline column. Asserted by the `catal
 `@classifiedType(as: TableType)`. The field descriptions come from `# ...` comments authored on the
 example's projection query, rendered as SDL descriptions by `QueryViewRenderer`.
 
+=== `@node` over a table → `NodeType`
+
+A `@table` type that also carries nodehood classifies as `NodeType` rather than `TableType`: either
+`@node(keyColumns:)` written on it, or `implements Node` over a table whose jOOQ class publishes
+`__NODE_TYPE_ID` and `__NODE_KEY_COLUMNS`. Nodehood is a stronger claim than table-binding, so it
+takes precedence. The `@nodeId` field is where it shows: the coordinate carries an authored `NODE_ID`
+claim, and the emitted fetcher encodes the key columns into a Relay global id rather than projecting
+a column.
+
+[source,graphql]
+----
+type Query {
+  film: Film
+}
+
+type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+  "The Relay global id, encoded from the node key columns."
+  id: ID! @nodeId
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.id`
+| `NODE_ID`, authored
+| `fetchers.FilmFetchers#id(Object)`
+
+| `Query.film`
+| no claiming directive
+| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
+
+|===
+
+Note the tier: `NODE_ID` is `authored`, where `Film.title` in the first example was `inferred`. The
+directive is what makes the difference, and it is the anti-join in `intent_resolved_field_claim` that
+records it: an authored claim at a coordinate masks any structural reading there. Asserted by the
+`node-type` corpus example via `@classifiedType(as: NodeType)`.
+
+=== Object type with no binding → `NestingType`
+
+An object type carrying no `@table` and reached from no producer is a grouping type: it has no table
+of its own, and its fields resolve against whatever scope its parent opened. It generates a fetchers
+class, because its fields still need wiring, but it opens no query.
+
+[source,graphql]
+----
+type Query {
+  film: Film
+}
+
+type Film @table(name: "film") {
+  "A grouping type with no table of its own."
+  details: FilmDetails
+}
+
+type FilmDetails {
+  title: String
+  description: String
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.details`
+| no claiming directive
+| `fetchers.FilmFetchers#details(Object)`
+
+| `FilmDetails.description`
+| no claiming directive
+| `fetchers.FilmDetailsFetchers#description(Object)`
+
+| `FilmDetails.title`
+| no claiming directive
+| `fetchers.FilmDetailsFetchers#title(Object)`
+
+| `Query.film`
+| no claiming directive
+| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
+
+|===
+
+`FilmDetails.title` and `FilmDetails.description` read columns of `film`, the table its parent bound,
+which is what "nested under the parent's scope" means concretely. Asserted by the `nesting` corpus
+example via `@classifiedType(as: NestingType)`.
+
 === Reference table
 
 |===
 | Classification Trigger on Type | `GraphitronType` Variant | Generator Output
 
-| `@table` + `@node`, or `@table` + `implements Node` over a table publishing node metadata | `NodeType` | `*Fetchers` class + `*` class (with Relay ID handling)
 | Producer's reflected return is a Java/jOOQ class (a `@service` return or a parent-accessor chain) | `ResultType`* | `*Fetchers` class only (no SQL scope of its own). The backing class is reflection-derived, not declared.
 | `Query` or `Mutation` root type | `RootType` | `*Fetchers` class only
 | Interface with `@table` + `@discriminate` | `TableInterfaceType` | `*Fetchers` class
@@ -247,7 +339,6 @@ example's projection query, rendered as SDL descriptions by `QueryViewRenderer`.
 | Input type with `@table` (deprecated location; see `docs/manual/reference/directives/table.adoc`) | Whatever the same input without the directive classifies as | No generation decision of its own: the directive is ignored, `name:` is never read, and no reader consults it (the input-axis binding arm and the three nesting guards that once did were all deleted, so inertness is uniform). A non-fatal per-usage build warning announces the deprecation and carries the per-verb migration guidance (drop the directive for filters and lookup args; `@mutation(table:)` for DELETE and encoded-ID / scalar returns; return-derivation for INSERT/UPDATE). A future release rejects the location.
 | Input type whose consuming `@service` / `@condition` parameter is reflected as a developer class | `InputType`* | No generation (developer-provided class). The input's backing class is reflected from the parameter type it flows into.
 | Input type with no reflected backing class | `PojoInputType` (unbound) | No generation ; column binding resolved per field-usage against each consuming field's table
-| Object type with no `@table` and no producer binding | `NestingType` | No generation; nested under a parent table-bound or class-backed scope via `NestingField`
 | GraphQL `enum` type | `EnumType` | No generation; enum values map to DB strings/ints at column-bind time
 | GraphQL `scalar` type with `@scalarType(scalar:)` | `ScalarType` | No generation; the consumer's `public static final GraphQLScalarType` constant is registered on the synthesized schema via `.additionalType(...)`. Graphitron reflects on the constant's `Coercing<I, O>` to recover the Java type used for input-record components, service params, and `Field<X>` projections.
 | Spec built-in scalar (`Int` / `Float` / `String` / `Boolean` / `ID`) | `ScalarType` | Same registration shape; Java type comes from a closed table (the spec binds these names). `@scalarType` on a spec built-in is a hard validation error (directive conflict).

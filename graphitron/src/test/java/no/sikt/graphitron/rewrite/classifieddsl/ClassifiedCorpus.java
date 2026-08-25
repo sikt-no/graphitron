@@ -400,6 +400,17 @@ public final class ClassifiedCorpus {
               details: FilmDetails @classified(source: OnlyChild, operations: [], target: Single, targetShape: Table)
             }
             type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+            """,
+            """
+            {
+              film {
+                # A grouping type with no table of its own.
+                details {
+                  title
+                  description
+                }
+              }
+            }
             """),
 
         /*
@@ -972,6 +983,14 @@ public final class ClassifiedCorpus {
               id: ID! @nodeId
             }
             type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+            """,
+            """
+            {
+              film {
+                # The Relay global id, encoded from the node key columns.
+                id
+              }
+            }
             """),
 
         /*
