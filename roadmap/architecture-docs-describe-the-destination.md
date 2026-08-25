@@ -688,11 +688,34 @@ comment now records why it cannot be promoted, so the next pass does not spend t
 it. Attempting the list spelling to make it promotable is what surfaced all of this, and backing that
 out was correct: it would have moved the fixture off the guard it is the recorded entry for.
 
+**Slice 3, part five: the four spellings of a `@table` child.** The `@table`-parent Object-return
+table went from twelve rows to eight. The four retired are one shape under two independent
+directives: `@lookupKey` moves the operation axis to `Lookup`, `@splitQuery` moves the derived query
+layer and nothing else, and the four combinations of them are the four spellings a `@table` child
+has. The page had all four in the corpus and rendered only one of them.
+
+Two promotions closed that. `split-lookup` became a doc example, the batched keyed spelling, placed
+directly under the root-lookup example. And the `lookup` example's doc query was extended to select
+the child coordinate it already carried: the page's prose *claimed* that "the same corpus example
+pins that child form beside the root one" while the rendered SDL showed only the root, so a reader
+had to take the claim on trust. Now both coordinates are in one outcome block, one reading
+`LOOKUP_KEY`, authored and the other reading no claiming directive, which is a sharper way to make
+the point about position than the sentence was.
+
+The remaining two rows were fold-ins into the derived-layer example, and they took a piece of
+generator detail with them that the prose had been missing: what inline and split actually mean
+(a `DSL.multiset` correlated subquery in the parent's `$project`, with a `.limit(1)` and an unwrap
+lambda at single cardinality, against a DataLoader fetcher plus a `rows*()` method). Every `@table`
+child on the page is one of those two, so naming them once beside the example that contrasts them is
+where the sentence belongs.
+
 **Still to do.** The two remaining marked sections ("Type Classification", "Field Classification")
 keep their marks until the examples that subsume them land; "Implicit Classification Rules" is
-already gone. The largest reference table still describing a mechanism no example shows is Child
-Fields on a `@table` parent, at fourteen rows across its two tables. The class-backed table is down to three: `@sourceRow`,
-the `errors:` slot, and the corrected `@lookupKey` gap.
+already gone. The `@table`-parent Object-return table is down to eight rows: five polymorphic and
+plain-object forms the polymorphic section already discusses in prose, and three the build refuses.
+The polymorphic five are the next fold-in candidates, though they need a check first that the
+section's prose really carries what the rows carry. The class-backed table is down to three:
+`@sourceRow`, the `errors:` slot, and the corrected `@lookupKey` gap.
 
 **The outcome block, and the fork the owner settled.** Building it turned up something the plan
 does not cover: **not every doc example generates.** The corpus is a classification corpus, and a

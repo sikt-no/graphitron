@@ -121,8 +121,11 @@ public final class ClassifiedCorpus {
          * Keyed split lookup: a list child whose @lookupKey argument establishes a positional
          * input-list <-> output-list correspondence, fetched by a @splitQuery keyed batch
          * (a lookup-keyed batched read). The @lookupKey makes its operation Lookup; it lands on participant @table
-         * rows (target Table); the new-query batch shape is derived, not a tuple axis. Corpus-only: it
-         * is another Child / Lookup / Table leaf.
+         * rows (target Table); the new-query batch shape is derived, not a tuple axis.
+         *
+         * Doc example: it is the batched spelling of the child lookup the `lookup` example renders
+         * inline, so the two together vary @splitQuery over a lookup-keyed child the way `child-table`
+         * varies it over a plain one.
          */
         new Example("split-lookup", """
             type Customer @table(name: "customer") { firstName: String @field(name: "FIRST_NAME") }
@@ -132,7 +135,8 @@ public final class ClassifiedCorpus {
                 @commits(source: CorrelatedLookupChain, result: RecordList)
             }
             extend type Query { store: Store @commits(source: AnchorTable, result: SingleRecord) }
-            """),
+            """,
+            "{ store { customers(customer_id: \"1\") { firstName } } }"),
 
         /*
          * Target-shape minimal pair: Column vs Field. A scalar under the @table parent Film projects a
@@ -805,6 +809,9 @@ public final class ClassifiedCorpus {
          * an inline correlated subquery keyed by the lookup args (Child / Lookup /
          * Table); the root `Query.filmById` is a new query keyed by the lookup args (Root / Lookup /
          * Query / Lookup / Table). @lookupKey makes the operation Lookup; the batch-key shape is a slot.
+         *
+         * Both coordinates render: the same directive in two positions claims on the root and does not
+         * claim on the child, which is the point the doc example is placed to make.
          */
         new Example("lookup", """
             type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
@@ -825,6 +832,11 @@ public final class ClassifiedCorpus {
               # Films fetched by a caller-supplied list of ids, one row back per id.
               filmById(film_id: ["1", "2"]) {
                 filmId
+              }
+              filmActor {
+                actors(actor_id: [1]) {
+                  firstName
+                }
               }
             }
             """),
