@@ -459,16 +459,162 @@ points at `@scalarType(scalar:)` as the single fix, never falling back to `Objec
 
 Asserted by the `scalar-type` corpus example via `@classifiedType(as: ScalarType)`.
 
+[#backing-class]
+=== A Java class on either side of the boundary
+
+The types so far took their verdict from a directive the author wrote. A type that carries no binding
+directive can still get one from Java, by sitting at the boundary where a `@service` method hands a
+value out or takes one in. Nothing is declared; the verdict is read off the method's signature by
+reflection, and which leaf it lands on is simply what kind of Java thing the reflected class is.
+
+Three kinds, and the same three on both sides. Take the result side first: the type is what a producer
+returns.
+
+[source,graphql]
+----
+type Query {
+  "A plain Java class: the field resolves against a readable accessor."
+  pojo: PojoBacked @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "makeDummyRecord"})
+  "A Java record: the field resolves against a record component."
+  javaRecord: JavaRecordBacked @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "makeTestRecordDto"})
+  "A jOOQ TableRecord: the field resolves against a column of the record's table."
+  jooqRecord: JooqTableRecordBacked @service(service: {className : "no.sikt.graphitron.rewrite.TestServiceStub", method : "getFilm"})
+}
+
+type PojoBacked {
+  id: ID
+}
+
+type JavaRecordBacked {
+  name: String
+}
+
+type JooqTableRecordBacked {
+  title: String
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `JavaRecordBacked.name`
+| no claiming directive
+| `fetchers.JavaRecordBackedFetchers#name(Object)`
+
+| `JooqTableRecordBacked.title`
+| no claiming directive
+| `fetchers.JooqTableRecordBackedFetchers#title(Object)`
+
+| `PojoBacked.id`
+| no claiming directive
+| `fetchers.PojoBackedFetchers#id(Object)`
+
+| `Query.javaRecord`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#javaRecord(DataFetchingEnvironment)`
+
+| `Query.jooqRecord`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#jooqRecord(DataFetchingEnvironment)`
+
+| `Query.pojo`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#pojo(DataFetchingEnvironment)`
+
+|===
+
+The three result types land on `PojoResultType.Backed`, `JavaRecordType`, and `JooqTableRecordType`,
+and the fourth `ResultType` leaf, `JooqRecordType`, is what a table-less jOOQ `Record` reflects to. All
+four generate the same thing: a `*Fetchers` class and nothing else. A backed type owns no SQL scope,
+because graphitron did not build the value, it received it.
+
+What the leaf does decide is how a field on such a type resolves. Every one of them classifies as a
+plain field read, which is why all three child rows above say "no claiming directive": no directive
+claims them, and the resolution is structural. But the structure differs by leaf. `PojoBacked.id`
+resolves against a readable accessor, `JavaRecordBacked.name` against a record component, and
+`JooqTableRecordBacked.title` against a column of the record's own table. A field naming something the
+class does not expose is a build error at that coordinate, not a runtime null.
+
+The input side is the mirror image: the type is what a consumer takes.
+
+[source,graphql]
+----
+type Query {
+  "A plain Java class: each input field populates a JavaBean setter."
+  pojo(
+  in: PojoBackedInput): String @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "consumeDummyRecord"})
+  "A Java record: every component must bind, so the input declares them all."
+  javaRecord(
+  in: JavaRecordBackedInput): String @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "consumeTestRecordDto"})
+  "A jOOQ TableRecord: each input field binds to a column of the record's table."
+  jooqRecord(
+  in: JooqTableRecordBackedInput): String @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "consumeFilmRecord"})
+}
+
+input PojoBackedInput {
+  id: ID
+}
+
+input JavaRecordBackedInput {
+  name: String
+  value: Int
+}
+
+input JooqTableRecordBackedInput {
+  title: String
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Query.javaRecord`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#javaRecord(DataFetchingEnvironment)`
+
+| `Query.jooqRecord`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#jooqRecord(DataFetchingEnvironment)`
+
+| `Query.pojo`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#pojo(DataFetchingEnvironment)`
+
+|===
+
+Only the three roots appear, because an input type has no fields to resolve; it has fields to
+*populate*. The input leaves mirror the result ones (`PojoInputType`, `JavaRecordInputType`,
+`JooqRecordInputType`, `JooqTableRecordInputType`), and again none of them generates a class. What each
+one generates is the population code inside the root's own fetcher, so the service body receives its
+declared parameter type rather than a `Map`.
+
+The direction of the obligation flips here, and that is the part worth reading twice. On the result
+side an SDL field must find something on the class; a class member the schema ignores is simply not
+exposed. On the input side a Java *record* inverts it: the canonical constructor needs every component,
+so the input type must declare a field for each one. That is why `JavaRecordBackedInput` carries both
+`name` and `value` while `JavaRecordBacked` carries only `name`. A plain class does not invert it,
+because JavaBean population fills what it is given and leaves the rest at its default.
+
+`PojoInputType` carries a second population it does not share with the others: an input type that no
+`@service` parameter ever reflects still classifies as `PojoInputType`, unbound. That input has no
+backing class at all, and its fields resolve per usage against each consuming field's table, so the
+same input reused on two different tables resolves differently at each one.
+
+Asserted by the `result-backing` and `input-backing` corpus examples.
+
 === Reference table
 
 |===
 | Classification Trigger on Type | `GraphitronType` Variant | Generator Output
 
-| Producer's reflected return is a Java/jOOQ class (a `@service` return or a parent-accessor chain) | `ResultType`* | `*Fetchers` class only (no SQL scope of its own). The backing class is reflection-derived, not declared.
 | `@error` | `ErrorType` | No generation (error mapping config)
 | Input type with `@table` (deprecated location; see `docs/manual/reference/directives/table.adoc`) | Whatever the same input without the directive classifies as | No generation decision of its own: the directive is ignored, `name:` is never read, and no reader consults it (the input-axis binding arm and the three nesting guards that once did were all deleted, so inertness is uniform). A non-fatal per-usage build warning announces the deprecation and carries the per-verb migration guidance (drop the directive for filters and lookup args; `@mutation(table:)` for DELETE and encoded-ID / scalar returns; return-derivation for INSERT/UPDATE). A future release rejects the location.
-| Input type whose consuming `@service` / `@condition` parameter is reflected as a developer class | `InputType`* | No generation (developer-provided class). The input's backing class is reflected from the parameter type it flows into.
-| Input type with no reflected backing class | `PojoInputType` (unbound) | No generation ; column binding resolved per field-usage against each consuming field's table
 | Generated `PageInfo` type | `PageInfoType` | Connection page-info wrapper
 | Unresolvable directives | `UnclassifiedType` | Validation error ; build fails
 | Conflicting type directives (`@table` with `@error`) | Arm-order winner (the walk no longer tombstones conflicts) | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`) ; build fails
@@ -476,8 +622,8 @@ Asserted by the `scalar-type` corpus example via `@classifiedType(as: ScalarType
 
 *Intermediate sealed interfaces* (not shown in the table ; grouping nodes in the hierarchy):
 - `TableBackedType` ; groups `TableType`, `NodeType`, `TableInterfaceType`. Builders switch on this to detect table-mapped types.
-- `ResultType` is itself a sealed sub-interface with four concrete variants: `JavaRecordType`, `Backed` (the sole concrete leaf of the intermediate `PojoResultType`), `JooqRecordType`, `JooqTableRecordType` ; reflecting how the result class is represented in Java.
-- `InputType` is itself a sealed sub-interface with four concrete variants: `JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType` ; same split by Java representation. `PojoInputType` is the unbound default: an input's fields resolve against each consuming field's table, so one input reused across consumers on different tables resolves per-consumer.
+- `ResultType` and `InputType` group the reflection-derived leaves, four each, worked through under
+  <<backing-class,A Java class on either side of the boundary>>.
 
 '''
 

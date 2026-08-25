@@ -405,11 +405,6 @@ public final class ClassifiedCorpus {
          * lesson here. The `name` field on the Java-record-backed type (a record component of TestRecordDto)
          * doubles as the fixture's required field coordinate, classifying Child / Fetch / Field off the
          * record-shaped source backing.
-         *
-         * Corpus-only, and not promotable as it stands: DummyRecord is an empty class, so PojoBacked's
-         * only field names nothing it exposes and the fixture classifies without being able to generate.
-         * Giving DummyRecord a readable property would reach the input axis, where the same class grounds
-         * the unbound PojoInputType default.
          */
         new Example("result-backing", """
             type PojoBacked @classifiedType(as: Backed) { id: ID }
@@ -424,6 +419,16 @@ public final class ClassifiedCorpus {
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeTestRecordDto"})
               jooqRecord: JooqTableRecordBacked
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
+            """,
+            """
+            {
+              # A plain Java class: the field resolves against a readable accessor.
+              pojo { id }
+              # A Java record: the field resolves against a record component.
+              javaRecord { name }
+              # A jOOQ TableRecord: the field resolves against a column of the record's table.
+              jooqRecord { title }
             }
             """),
 
@@ -1150,11 +1155,18 @@ public final class ClassifiedCorpus {
          * parameter class: a plain Java class is PojoInputType, a Java record is JavaRecordInputType, a
          * jOOQ TableRecord is JooqTableRecordInputType. @classifiedType asserts each directly; input-field
          * classification stays out of scope (the enum truth table's game), so no @classified here.
+         *
+         * Each input declares exactly what its backing class can take, which is the axis-flip the doc
+         * example teaches: a Java record's canonical constructor needs every component, so the input
+         * must name them all, while a plain class populates the setters it is given and a jOOQ record
+         * binds each field to a column of its table.
+         *
+         * Doc example: the input half of the reflection-derived backing verdicts.
          */
         new Example("input-backing", """
             input PojoBackedInput @classifiedType(as: PojoInputType) { id: ID }
-            input JavaRecordBackedInput @classifiedType(as: JavaRecordInputType) { id: ID }
-            input JooqTableRecordBackedInput @classifiedType(as: JooqTableRecordInputType) { id: ID }
+            input JavaRecordBackedInput @classifiedType(as: JavaRecordInputType) { name: String value: Int }
+            input JooqTableRecordBackedInput @classifiedType(as: JooqTableRecordInputType) { title: String }
             extend type Query {
               pojo(in: PojoBackedInput): String
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "consumeDummyRecord"})
@@ -1162,6 +1174,16 @@ public final class ClassifiedCorpus {
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "consumeTestRecordDto"})
               jooqRecord(in: JooqTableRecordBackedInput): String
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "consumeFilmRecord"})
+            }
+            """,
+            """
+            {
+              # A plain Java class: each input field populates a JavaBean setter.
+              pojo(in: {id: "1"})
+              # A Java record: every component must bind, so the input declares them all.
+              javaRecord(in: {name: "A", value: 1})
+              # A jOOQ TableRecord: each input field binds to a column of the record's table.
+              jooqRecord(in: {title: "ACADEMY DINOSAUR"})
             }
             """),
 
@@ -1171,6 +1193,13 @@ public final class ClassifiedCorpus {
          * JooqRecordType and the input type as JooqRecordInputType, completing the reflection-driven
          * backing clusters of `result-backing` and `input-backing`. @classifiedType asserts the
          * verdicts directly; there is no field-side dimensional lesson.
+         *
+         * Corpus-only, and the input half is not promotable at all. PlainJooqRecord is abstract, and
+         * making it concrete is not the fix: jOOQ's own bare-Record implementations are all
+         * package-private, so no public concrete type has this shape. {@code InputBeanResolver} has
+         * one jOOQ arm and it is gated on the table-bound case, so a table-less jOOQ record falls
+         * through to the JavaBean path and is refused there. Whatever did reach this input leaf would
+         * be populated as a plain bean, which is what PojoInputType already means.
          */
         new Example("plain-jooq-record-backing", """
             type PlainJooqRecordBacked @classifiedType(as: JooqRecordType) { id: ID }

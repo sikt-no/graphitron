@@ -189,6 +189,10 @@ class ArchitectureDocSymbolGuardTest {
         exempt.put("FilmStats", "schema: worked-example GraphQL type");
         exempt.put("MediaItem", "schema: worked-example GraphQL interface");
         exempt.put("Rating", "schema: worked-example GraphQL enum over a catalog column");
+        exempt.put("PojoBacked", "schema: worked-example GraphQL type over a plain Java backing class");
+        exempt.put("JavaRecordBacked", "schema: worked-example GraphQL type over a Java record");
+        exempt.put("JooqTableRecordBacked", "schema: worked-example GraphQL type over a jOOQ TableRecord");
+        exempt.put("JavaRecordBackedInput", "schema: worked-example GraphQL input over a Java record");
         exempt.put("QueryFilmsConnection", "schema: a GraphQL type @asConnection synthesises for a coordinate");
         exempt.put("QueryFilmsEdge", "schema: a GraphQL type @asConnection synthesises for a coordinate");
         exempt.put("CountryCitiesConnection", "schema: a GraphQL type @asConnection synthesises for a coordinate");

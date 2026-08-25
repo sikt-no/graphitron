@@ -878,6 +878,59 @@ splitting out rather than absorbing. `@error` and `PageInfo` need only a legal r
 next cheap pair. Mutation Fields, at eight rows, is unchanged from part eight, and its first two rows
 are already restated by the section's own worked example.
 
+**Slice 3, part ten: the shared test class was the cheap half, and the feared blast radius was not
+there.** Part nine split the backing-class cluster out on the grounds that changing `DummyRecord`
+reaches roughly fourteen test files. The owner directed the change anyway, and the estimate was
+wrong: giving `DummyRecord` one `id` property with a getter and a setter broke nothing. The whole
+generator tier, 3984 tests, stayed green. The caution was about the number of files that name the
+class, not about what any of them asserts, and what they assert is the binding, never the member
+set. Two of the sites do lean on an absence, and both spell it precisely enough to survive: they say
+`DummyRecord` exposes no accessor returning a *`film` record*, which a `String` property does not
+change.
+
+That one property unblocked both halves of the cluster at once, because the same class grounds the
+result axis (a readable accessor for a field to resolve against) and the input axis (a JavaBean
+setter for a field to populate). The remaining two failures in `input-backing` were fixture defects
+with nothing shared about them: the Java-record input had to declare every component the canonical
+constructor needs, and the jOOQ-record input had to name a column that exists on `film`.
+
+Both fixtures now generate and both are promoted, into one section rather than two. The lesson is
+symmetric, so splitting it across two sections would have hidden the one thing worth noticing: the
+direction of the obligation flips. On the result side an SDL field must find something on the class,
+and a member the schema ignores is simply not exposed; on the input side a Java record inverts it,
+because the canonical constructor needs every component, so the input type must declare a field per
+component. That is why the rendered input block carries `value` and the result block does not. Two
+rows retire (the `ResultType` row and the reflected-`InputType` row), and the two intermediate-
+interface bullets under the table fold into a cross-reference, leaving six rows.
+
+`PojoInputType` did not retire as a row of its own; its fact (an input no `@service` parameter
+reflects is unbound, and resolves per usage against each consuming field's table) moved into the new
+section's prose, and the row goes when the next round confirms nothing else needs it.
+
+**The one that is not a fixture defect.** `plain-jooq-record-backing` stays refused, and the reason
+is worth recording because it is not the same kind of reason as the other five. `PlainJooqRecord` is
+hand-written, abstract, and implements `org.jooq.Record` without implementing `org.jooq.TableRecord`.
+That is deliberate: it exists to name the one shape that reaches `JooqRecordType` /
+`JooqRecordInputType`, a jOOQ record with no table behind it. jOOQ's generator never produces such a
+class. The bare-`Record` shape is what an ad-hoc projection yields at runtime, and its concrete
+classes (`org.jooq.impl.AbstractRecord` and the `RecordImplN` family) are all package-private, so
+there is no public concrete type to extend and no `dsl.newRecord` call that names one.
+
+On the result axis this costs nothing, and that half of the fixture generates today. On the input
+axis it is a wall, and the wall is structural rather than accidental. `InputBeanResolver` has exactly
+one jOOQ arm and it is gated on `JooqTableRecordInputType`, the column-bound case; a table-less jOOQ
+record falls through to the JavaBean path, which needs a concrete class with a no-arg constructor and
+setters. Meanwhile `looksLikeBeanCandidate` excludes everything under `org.jooq.*`, so declaring the
+parameter as `org.jooq.Record` itself does not reach that path either. The only class that can reach
+`JooqRecordInputType` at all is a consumer-authored class outside `org.jooq` that implements `Record`
+by hand, and for it to generate it would have to implement the whole `Record` surface concretely.
+
+So `JooqRecordInputType` is a classification leaf with no generation behaviour of its own: whatever
+lands on it is populated as a plain bean, exactly as `PojoInputType` would be. That is a finding
+about the input path, not about the fixture, and it belongs in its own item rather than in a docs
+round: either the input path should refuse a table-less jOOQ record with a message that says why, or
+the leaf should not exist on the input side.
+
 **The outcome block, and the fork the owner settled.** Building it turned up something the plan
 does not cover: **not every doc example generates.** The corpus is a classification corpus, and a
 fixture earns its place by pinning a verdict rather than by producing output, so a fixture can pin
