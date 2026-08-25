@@ -187,6 +187,9 @@ class ArchitectureDocSymbolGuardTest {
         exempt.put("FilmInput", "schema: worked-example GraphQL input type");
         exempt.put("FilmOrActor", "schema: worked-example GraphQL union");
         exempt.put("FilmStats", "schema: worked-example GraphQL type");
+        exempt.put("MediaItem", "schema: worked-example GraphQL interface");
+        exempt.put("Sprak", "schema: worked-example GraphQL enum naming a pivot vocabulary");
+        exempt.put("TranslatedTexts", "schema: worked-example GraphQL type");
         exempt.put("Foo", "schema: placeholder type in a worked example");
         exempt.put("Int", "schema: GraphQL built-in scalar");
         exempt.put("ExternalCodeReference", "schema: the directives schema's shared input type");

@@ -468,6 +468,14 @@ public final class ClassifiedCorpus {
                 @commits(source: PivotAggregate, result: SingleRecord)
             }
             type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+            """,
+            """
+            {
+              film {
+                # One row of translations, pivoted out of a per-language table.
+                titleTexts { nn nb }
+              }
+            }
             """),
 
         // The mixed-source reach (a type projected as a NestingField off a @table parent and also read
@@ -655,6 +663,14 @@ public final class ClassifiedCorpus {
               language: Language @commits(source: AnchorTable, result: SingleRecord)
               topMedia: MediaItem @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
                 @commits(source: DiscriminatedTable, result: SingleRecord)
+            }
+            """,
+            """
+            {
+              language {
+                # Discriminated participants, read from one table.
+                mediaList { title }
+              }
             }
             """),
 
@@ -900,6 +916,17 @@ public final class ClassifiedCorpus {
               contentId: Int! @field(name: "CONTENT_ID")
             }
             type Query { content: Content @commits(source: DiscriminatedTable, result: SingleRecord) }
+            """,
+            """
+            {
+              content {
+                contentId
+                ... on FilmContent {
+                  # Reached over a foreign key from one participant only.
+                  rating
+                }
+              }
+            }
             """),
 
         /*

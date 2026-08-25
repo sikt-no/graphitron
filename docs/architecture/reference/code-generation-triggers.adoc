@@ -332,7 +332,6 @@ example via `@classifiedType(as: NestingType)`.
 
 | Producer's reflected return is a Java/jOOQ class (a `@service` return or a parent-accessor chain) | `ResultType`* | `*Fetchers` class only (no SQL scope of its own). The backing class is reflection-derived, not declared.
 | `Query` or `Mutation` root type | `RootType` | `*Fetchers` class only
-| Interface with `@table` + `@discriminate` | `TableInterfaceType` | `*Fetchers` class
 | Interface without `@table` (multi-table) | `InterfaceType` | `*Fetchers` class
 | Union type | `UnionType` | `*Fetchers` class
 | `@error` | `ErrorType` | No generation (error mapping config)
@@ -815,6 +814,100 @@ participant field, which projects under its own fixed `<TypeName>_<fieldName>` a
 enters the result-key namespace at all. The rejection is a backstop against a future change that
 moves such a coordinate back into that namespace, not a shape to write a schema against.
 
+==== One table, many participants
+
+An interface carrying `@table` plus `@discriminate(on:)` is a single table read through a column that
+says which participant each row is. The interface's own fields resolve against that table, and the
+participants add nothing but a discriminator value.
+
+[source,graphql]
+----
+type Query {
+  language: Language
+}
+
+type Language @table(name: "language") {
+  "Discriminated participants, read from one table."
+  mediaList: [MediaItem!]! @reference(path: [{key : "film_language_id_fkey"}])
+}
+
+interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
+  title: String
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Language.mediaList`
+| no claiming directive
+| `fetchers.LanguageFetchers#mediaList(DataFetchingEnvironment)`
+
+| `MediaItem.title`
+| `TABLE_COLUMN`, inferred
+| no method of its own
+
+| `Query.language`
+| no claiming directive
+| `fetchers.QueryFetchers#language(DataFetchingEnvironment)`
+
+|===
+
+`MediaItem.title` shows something the emitted column is there to make visible: a coordinate can carry
+a verdict and still emit no method of its own. It is projected by the enclosing `mediaList` fetcher's
+discriminated read, not wired separately. A blank in that column is a fact about where the work
+happens, not a gap. Asserted by the `table-interface` corpus example via
+`@classifiedType(as: TableInterfaceType)`.
+
+==== A reference on one participant only
+
+Participants of a discriminated interface may reach past the shared table. A `@reference` on one of
+them is read for that participant's rows alone, gated by the discriminator, and it does get a method,
+because it is not part of the shared projection.
+
+[source,graphql]
+----
+type Query {
+  content: Content
+}
+
+interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+  contentId: Int! @field(name: "CONTENT_ID")
+}
+
+type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+  "Reached over a foreign key from one participant only."
+  rating: String @reference(path: [{key : "content_film_id_fkey"}]) @field(name: "RATING")
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Content.contentId`
+| `TABLE_COLUMN`, inferred
+| no method of its own
+
+| `FilmContent.rating`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmContentFetchers#rating(Object)`
+
+| `Query.content`
+| no claiming directive
+| `fetchers.QueryFetchers#content(DataFetchingEnvironment)`
+
+|===
+
+Both coordinates carry the same verdict at the same tier, and only one of them emits: the shared
+interface field folds into the discriminated read, the participant-local reference does not. Asserted
+by the `participant-reference` corpus example.
+
 === Reading the generator-output column
 
 The "`*Fetchers` Generates" column in the tables below names which of four emission paths a variant
@@ -1064,6 +1157,58 @@ it moves the site the name resolves against, and `intent_column_match_claim` the
 `@externalField` claims, so only `computedRating` reads `authored`. Asserted by the
 `reference-and-computed` corpus example.
 
+=== Turning rows into fields
+
+`@pivot` reads a table whose rows are the values you want as fields, and turns one row per key into
+one field per key. The vocabulary argument names the enum whose values map to the key column, so the
+target type's fields and the pivot's rows line up by name.
+
+[source,graphql]
+----
+type Query {
+  film: Film
+}
+
+type Film @table(name: "film") {
+  "One row of translations, pivoted out of a per-language table."
+  titleTexts: TranslatedTexts @reference(path: [{table : "film_translation"}]) @pivot(on: "lang_code", value: "title_txt", vocabulary: "Sprak")
+}
+
+type TranslatedTexts {
+  nn: String
+  nb: String
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.titleTexts`
+| no claiming directive
+| `fetchers.FilmFetchers#titleTexts(DataFetchingEnvironment)`
+
+| `Query.film`
+| no claiming directive
+| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
+
+| `TranslatedTexts.nb`
+| no claiming directive
+| `fetchers.TranslatedTextsFetchers#nb(Object)`
+
+| `TranslatedTexts.nn`
+| no claiming directive
+| `fetchers.TranslatedTextsFetchers#nn(Object)`
+
+|===
+
+No coordinate here carries a claim: `@pivot` and `@reference` are both shaping directives rather than
+claiming ones, and `TranslatedTexts` is a grouping type whose fields are filled from the pivoted
+aggregate rather than matched against a column. The `nn` and `nb` fields get their key values from the
+`Sprak` enum's own `@field(name:)` renames. Asserted by the `pivot` corpus example.
+
 === Child Fields (on `@table` parent)
 
 ==== Scalar / Enum return type
@@ -1072,7 +1217,6 @@ it moves the site the name resolves against, and `intent_column_match_claim` the
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
 | `@field(name:)` or matching column name | `ColumnBackedField` (arity 1, `compaction = Direct`) | Wiring value (`ColumnFetcher`)
-| `@reference` on scalar declared on a `TableInterfaceType` participant | `ParticipantColumnReferenceField` | Wiring value ; materialised by the enclosing `TableInterfaceField` fetcher's discriminator-gated correlated subselect (the same capped shape a plain scalar `@reference` takes) and read back via `FetcherEmitter` (participant-side FK, not the interface-side resolver)
 | `@nodeId`, no typeName | `ColumnBackedField` (`compaction = NodeIdEncodeKeys`; arity = the node key's column count) | Wiring value (`ColumnFetcher`); the projected column(s) are wrapped positionally in the per-Node `encode<TypeName>` helper
 | `@nodeId(typeName:)`, non-FK-mirror target | `ColumnBackedReferenceField` (`compaction = NodeIdEncodeKeys`; arity = the target key's column count) | Nothing yet ; rooted-at-parent NodeId reference, rejected at validate time as deferred (any arity), pending `nodeidreferencefield-join-projection-form`
 |===
