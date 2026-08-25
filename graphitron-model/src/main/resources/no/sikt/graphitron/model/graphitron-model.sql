@@ -3458,40 +3458,6 @@ COMMENT ON COLUMN intent_table_key_candidate.constraint_name IS 'the surviving c
 COMMENT ON COLUMN intent_table_key_candidate.primary_key IS 'whether this candidate is the table''s primary key. Not the rank: a table may declare a primary key and unique keys alike, and the rank already says which comes first, so this says which kind of identity a consumer ended up with when it reports one';
 COMMENT ON COLUMN intent_table_key_candidate.candidate_rank IS 'where this candidate sits among the survivors, counting from zero, in the order a consumer considers them: the primary key first where there is one, then the unique keys in the generated model''s enumeration. A consumer taking the first candidate its columns cover reads this ascending and stops';
 
-CREATE VIEW intent_foreign_key_node_key_lift
-  (source_name, table_schema, table_name, constraint_name,
-   referenced_source_name, referenced_schema, referenced_table, lift) AS
-SELECT rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name,
-       rc.referenced_source_name, rc.referenced_schema, rc.referenced_table,
-       CASE WHEN EXISTS (
-         SELECT 1 FROM sql_node_key_column nk
-          WHERE nk.source_name = rc.referenced_source_name
-            AND nk.table_schema = rc.referenced_schema
-            AND nk.table_name = rc.referenced_table
-            AND (nk.column_name IS NULL
-                 OR NOT EXISTS (
-                   SELECT 1 FROM sql_constraint_column rcc
-                    WHERE rcc.source_name = rc.referenced_source_name
-                      AND rcc.table_schema = rc.referenced_schema
-                      AND rcc.table_name = rc.referenced_table
-                      AND rcc.constraint_name = rc.referenced_constraint_name
-                      AND rcc.column_name = nk.column_name)))
-            THEN 'TRANSLATED' ELSE 'DIRECT' END
-  FROM sql_referential_constraint rc
- WHERE EXISTS (SELECT 1 FROM sql_node_key_column nk
-                WHERE nk.source_name = rc.referenced_source_name
-                  AND nk.table_schema = rc.referenced_schema
-                  AND nk.table_name = rc.referenced_table);
-COMMENT ON VIEW intent_foreign_key_node_key_lift IS 'Whether a decoded node id of the table a foreign key points at can be compared against columns of the table that declares the key, or only against the row it reaches through the join. One row per foreign key whose referenced table declares a node key, and the verdict is a closed vocabulary of two. This is the fact that decides whether an input field carrying a node id of the referenced type has an own-table tuple to bind, which is what every write rail asks before it will admit such a field: a value that only exists on the far side of a join has nothing to put in a SET or a WHERE. DIRECT is where every position of the referenced table''s node key is among the columns the key references, so each decoded position lands on one of this table''s own key-bearing columns and the whole tuple is local. TRANSLATED is where any position does not, the ordinary cause being a key pointing at some other unique column of the target while the node key is its primary key. The rule is stated as the absent landing rather than as the present translation, which is the resolver''s own framing and matters for one shape it makes fall out rather than be handled: a reference reaching its target through more than one key is translated too, because a position landing on an intermediate table is not landing here. That multi-hop case is not this relation''s to answer, one row here describing one key; a consumer walking a path reads DIRECT only where the path is a single element and takes any longer path as translated. Absence is a foreign key whose referenced table declares no node key, which is most of them: no node id of that table exists to decode, so the question does not arise rather than being answered negatively. A node key that declares a position resolving to no column reads TRANSLATED, which is deliberate and not a defect this relation reports: an unresolved position cannot land anywhere, and the relation that says a node key is malformed is intent_node_metadata_defect next door. Direction is not stated here because it is not in question. This relation is keyed by the declaring table, which is the table the columns would be local to, so the lift it describes is always the one from the declaring side; a consumer arriving from the referenced side is walking the key backwards and has no own-table tuple whatever this row says.';
-COMMENT ON COLUMN intent_foreign_key_node_key_lift.source_name IS 'the declaring table''s catalog partition, carried from sql_referential_constraint';
-COMMENT ON COLUMN intent_foreign_key_node_key_lift.table_schema IS 'the declaring table''s SQL schema';
-COMMENT ON COLUMN intent_foreign_key_node_key_lift.table_name IS 'the declaring table''s SQL name; the table a DIRECT lift''s columns are local to';
-COMMENT ON COLUMN intent_foreign_key_node_key_lift.constraint_name IS 'the foreign key''s constraint name; with the three columns above, sql_constraint''s key and this relation''s grain';
-COMMENT ON COLUMN intent_foreign_key_node_key_lift.referenced_source_name IS 'the referenced table''s catalog partition; carried so a reader has the node type''s table without rejoining the referential constraint';
-COMMENT ON COLUMN intent_foreign_key_node_key_lift.referenced_schema IS 'the referenced table''s SQL schema';
-COMMENT ON COLUMN intent_foreign_key_node_key_lift.referenced_table IS 'the referenced table''s SQL name, which is the table whose node key is being asked about';
-COMMENT ON COLUMN intent_foreign_key_node_key_lift.lift IS 'DIRECT where every position of the referenced table''s node key is among the columns this key references, so a decoded id lands wholly on the declaring table; TRANSLATED where any position does not. A closed vocabulary of two, and a third answer would be a new arm here rather than a silence';
-
 CREATE VIEW intent_node_metadata_defect
   (source_name, table_schema, table_name, defect, position) AS
 SELECT source_name, table_schema, table_name, 'TYPE_ID_NOT_DECLARED', CAST(NULL AS INT)
@@ -4240,6 +4206,45 @@ COMMENT ON COLUMN intent_resolved_node_key_column.type_name IS 'the graph type w
 COMMENT ON COLUMN intent_resolved_node_key_column.position IS '0-based position within the key, dense from zero, in the order the winning tier states; the order the encoded identity depends on, which is why the pick keeps a tier''s list whole';
 COMMENT ON COLUMN intent_resolved_node_key_column.column_name IS 'the key column''s name as the winning tier spells it: as written on the pinned tier, as the generated class stated it on the metadata tier, and the catalog''s own name on the primary-key tier. Matching against a table''s columns is case-insensitive wherever a reader does it, which is settled convention rather than this relation''s rule. No fold is exposed beside it, and the reason is not that the tiers are three: intent_spelled_table is a union across as many arms with no single owning relation either, and it reads each arm''s stored fold internally without trouble. What it does not do is expose one, because no view in this schema does; forwarding a fold through a derived view is what the folded columns'' own comments forbid, a fold being minted on the base relation a comparison joins. What this relation hands out is a spelling rather than a resolved column, which is what makes the question of whether handing out a spelling is the right payload here a live one rather than a closed door, and it is asked on the roadmap rather than settled by this comment. A reader matching an authored spelling against this column therefore folds this side at the crossing and joins the authored side''s own generated column, which is where the schema mints one';
 COMMENT ON COLUMN intent_resolved_node_key_column.tier IS 'which population answered, in a closed vocabulary of three: SDL_PINNED from an @node(keyColumns:) list, JOOQ_METADATA from the well-formed node metadata the bound table''s generated class states, CATALOG_PRIMARY_KEY from the bound table''s primary key under a node type, read off intent_node_type rather than the authored @node arm alone because that view is the one relation a reader of nodehood joins. Widening it there is inert today and stated as such rather than as a fix: the inferred arm requires well-formed node metadata, well-formedness requires a declared key-columns list, and that list is what the JOOQ_METADATA tier above answers with, so an inferred node type always resolves on the higher tier and this one only ever fires under an authored @node. It is the union anyway, so the tier stops being wrong rather than starting to be right if inference ever loosens. The order is the resolution''s own precedence, and the column is what lets a test pin which tier fired rather than only that the columns came out right';
+
+CREATE VIEW intent_foreign_key_node_key_lift
+  (graph_name, source_name, table_schema, table_name, constraint_name, node_type_name,
+   referenced_source_name, referenced_schema, referenced_table, lift) AS
+SELECT bt.graph_name, rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name,
+       bt.type_name,
+       rc.referenced_source_name, rc.referenced_schema, rc.referenced_table,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM intent_resolved_node_key_column nk
+          WHERE nk.graph_name = bt.graph_name AND nk.type_name = bt.type_name
+            AND (nk.column_name IS NULL
+                 OR NOT EXISTS (
+                   SELECT 1 FROM sql_constraint_column rcc
+                    WHERE rcc.source_name = rc.referenced_source_name
+                      AND rcc.table_schema = rc.referenced_schema
+                      AND rcc.table_name = rc.referenced_table
+                      AND rcc.constraint_name = rc.referenced_constraint_name
+                      AND rcc.column_name = nk.column_name)))
+            THEN 'TRANSLATED' ELSE 'DIRECT' END
+  FROM sql_referential_constraint rc
+  JOIN intent_bound_table bt
+    ON bt.table_source_name = rc.referenced_source_name
+   AND bt.table_schema = rc.referenced_schema
+   AND bt.table_name = rc.referenced_table
+ WHERE EXISTS (SELECT 1 FROM intent_node_type nt
+                WHERE nt.graph_name = bt.graph_name AND nt.type_name = bt.type_name)
+   AND EXISTS (SELECT 1 FROM intent_resolved_node_key_column nk
+                WHERE nk.graph_name = bt.graph_name AND nk.type_name = bt.type_name);
+COMMENT ON VIEW intent_foreign_key_node_key_lift IS 'Whether a decoded node id of the type a foreign key points at can be compared against columns of the table that declares the key, or only against the row it reaches through the join. One row per foreign key paired with a node type the referenced table backs, and the verdict is a closed vocabulary of two. The pairing is the grain rather than the key alone, and the reason is that the key this asks about is the node type''s resolved key and not the catalog''s: a node key is pinned in SDL where an author pins it and falls back to the generated model''s where none does, so one table backing two node types can answer differently for each, and the same key reads differently in two graphs. Reading the catalog''s own node metadata here instead was the first draft and it was wrong twice over, silently answering for no type at all where a table carries none, and answering the generator''s question with a fact the generator does not consult. This is the fact that decides whether an input field carrying a node id of the referenced type has an own-table tuple to bind, which is what every write rail asks before it will admit such a field: a value that only exists on the far side of a join has nothing to put in a SET or a WHERE. DIRECT is where every position of the node type''s resolved key is among the columns the key references, so each decoded position lands on one of this table''s own key-bearing columns and the whole tuple is local. TRANSLATED is where any position does not, the ordinary cause being a key pointing at some other unique column of the target while the node key is its primary key. The rule is stated as the absent landing rather than as the present translation, which is the resolver''s own framing and matters for one shape it makes fall out rather than be handled: a reference reaching its target through more than one key is translated too, because a position landing on an intermediate table is not landing here. That multi-hop case is not this relation''s to answer, one row here describing one key; a consumer walking a path reads DIRECT only where the path is a single element and takes any longer path as translated. Absence is a foreign key whose referenced table backs no node type in this graph, which is most of them: no node id of that table exists to decode, so the question does not arise rather than being answered negatively. A node key that declares a position resolving to no column reads TRANSLATED, which is deliberate and not a defect this relation reports: an unresolved position cannot land anywhere, and the relation that says a node key is malformed is intent_node_metadata_defect next door. Direction is not stated here because it is not in question. This relation is keyed by the declaring table, which is the table the columns would be local to, so the lift it describes is always the one from the declaring side; a consumer arriving from the referenced side is walking the key backwards and has no own-table tuple whatever this row says.';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.graph_name IS 'the owning graph''s partition, carried from the node type''s binding; part of the grain, a node key being an SDL-level fact that two graphs may pin differently';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.source_name IS 'the declaring table''s catalog partition, carried from sql_referential_constraint';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.table_schema IS 'the declaring table''s SQL schema';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.table_name IS 'the declaring table''s SQL name; the table a DIRECT lift''s columns are local to';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.constraint_name IS 'the foreign key''s constraint name; with the three columns above, sql_constraint''s key';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.node_type_name IS 'the node type whose resolved key this row is about, one the referenced table backs; with the graph and the key''s own coordinate, the grain';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.referenced_source_name IS 'the referenced table''s catalog partition; carried so a reader has the node type''s table without rejoining the referential constraint';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.referenced_schema IS 'the referenced table''s SQL schema';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.referenced_table IS 'the referenced table''s SQL name, which is the table whose node key is being asked about';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.lift IS 'DIRECT where every position of the node type''s resolved key is among the columns this key references, so a decoded id lands wholly on the declaring table; TRANSLATED where any position does not. A closed vocabulary of two, and a third answer would be a new arm here rather than a silence';
 
 CREATE VIEW intent_resolved_node_key_shape
   (graph_name, type_name, arity, record_class, sole_column_name, sole_column_java_type) AS
@@ -8016,6 +8021,51 @@ COMMENT ON COLUMN intent_input_field_filter_role.authored_condition IS 'the fiel
 COMMENT ON COLUMN intent_input_field_filter_role.source_name IS 'the input field''s own declaration file; the position a diagnostic would carry';
 COMMENT ON COLUMN intent_input_field_filter_role.source_line IS 'source line of the input field declaration, 1-based';
 COMMENT ON COLUMN intent_input_field_filter_role.source_column IS 'source column of the input field declaration, 1-based';
+
+CREATE VIEW intent_input_field_carrier_role
+  (graph_name, type_name, field_name,
+   resolving_source_name, resolving_schema, resolving_table, carrier_role) AS
+SELECT sc.graph_name, sc.type_name, sc.field_name,
+       sc.resolving_source_name, sc.resolving_schema, sc.resolving_table,
+       CASE
+         WHEN fr.role <> 'NODE_ID'
+           THEN CASE WHEN sc.basis = 'RESOLVING_TABLE' THEN 'OWN_COLUMNS' ELSE 'REMOTE' END
+         WHEN nt.table_name IS NULL THEN 'REMOTE'
+         WHEN nt.table_source_name = sc.resolving_source_name
+          AND nt.table_schema = sc.resolving_schema
+          AND nt.table_name = sc.resolving_table
+           THEN CASE WHEN ni.carries_reference_path THEN 'SELF_FK' ELSE 'OWN_COLUMNS' END
+         WHEN EXISTS (
+                SELECT 1 FROM intent_foreign_key_node_key_lift lf
+                 WHERE lf.graph_name = sc.graph_name
+                   AND lf.source_name = sc.resolving_source_name
+                   AND lf.table_schema = sc.resolving_schema
+                   AND lf.table_name = sc.resolving_table
+                   AND lf.node_type_name = ni.node_type_name
+                   AND lf.lift = 'DIRECT')
+           THEN 'CROSS_TABLE_FK'
+         ELSE 'REMOTE'
+       END
+  FROM intent_input_field_column_scope sc
+  JOIN intent_input_field_filter_role fr
+    ON fr.graph_name = sc.graph_name AND fr.type_name = sc.type_name
+   AND fr.field_name = sc.field_name
+   AND fr.resolving_source_name = sc.resolving_source_name
+   AND fr.resolving_schema = sc.resolving_schema
+   AND fr.resolving_table = sc.resolving_table
+  LEFT JOIN intent_node_id_instruction ni
+    ON ni.graph_name = sc.graph_name AND ni.site = 'INPUT_FIELD'
+   AND ni.type_name = sc.type_name AND ni.field_name = sc.field_name
+  LEFT JOIN intent_bound_table nt
+    ON nt.graph_name = ni.graph_name AND nt.type_name = ni.node_type_name;
+COMMENT ON VIEW intent_input_field_carrier_role IS 'What a column-bearing input field points at, which is what decides whether its value can be compared on the table it was classified against and, where it can, whether those columns are that row''s own identity or a pointer at another row. The sibling of intent_input_field_filter_role one question over: that relation says which rule resolves the field''s columns, this one says what the thing at the end of that resolution is. Both are needed and neither implies the other, a name match and a node id alike being able to land on own columns or on a foreign key''s. A closed vocabulary of four. OWN_COLUMNS is a site resolving on the table it was handed, which is the plain field, the same-table node id carrying no reference, and the inert empty reference path that falls back to the field''s own table; its columns are this row''s identity wherever they are in a key, so a consumer partitioning them may not split one such field across a key boundary. SELF_FK and CROSS_TABLE_FK are the two shapes of a node-id reference whose decoded key lands on this table''s own columns: the first names a foreign key back to the classifying table, so the columns point at a sibling row and are never this row''s identity however the key falls; the second points at another table, and its lifted columns can legitimately include this row''s identity, which is why it is the one carrier a consumer may partition per column rather than whole. REMOTE is everything else carrying a path, and it is a rejection''s population rather than a fourth way to contribute: the value reaches its row only through a join, so there is nothing local to compare it against, and every write rail refuses the shape at its own gate. Three distinct causes collapse into it deliberately, because the consumer''s answer is the same for all three and splitting them would invite a reader to treat one as usable: a plain reference with a non-empty path, whose predicate goes through an EXISTS; a node-id reference whose key lands on columns the foreign key does not reference; and a reference crossing more than one element, where a position landing on an intermediate table is not landing here. The last two are one fact read at different lengths, which is why the lift relation states its rule as the absent landing. What this relation does not say is which columns, or whether they fall in a key. Those are the match relation''s and the catalog''s, joined through this row; the carrier''s kind is a property of the reference and the same at every key it might be measured against, so folding a key membership in here would make the grain a key and duplicate every row per candidate. Absence is an input field whose site resolves to no column at all, which is the nesting field, the unbound one and the condition-owned one, none of which is a carrier and each of which the sibling relation already names.';
+COMMENT ON COLUMN intent_input_field_carrier_role.graph_name IS 'the owning graph''s partition, carried from the column scope';
+COMMENT ON COLUMN intent_input_field_carrier_role.type_name IS 'the input object type the field is declared on';
+COMMENT ON COLUMN intent_input_field_carrier_role.field_name IS 'the input field''s name within its container';
+COMMENT ON COLUMN intent_input_field_carrier_role.resolving_source_name IS 'the catalog partition of the table the site was classified against; part of the grain, so a shared input type reached from two tables gets a row for each';
+COMMENT ON COLUMN intent_input_field_carrier_role.resolving_schema IS 'the classifying table''s SQL schema; part of the grain, as above';
+COMMENT ON COLUMN intent_input_field_carrier_role.resolving_table IS 'the classifying table''s SQL name; with the two coordinate columns and the two columns above, the grain';
+COMMENT ON COLUMN intent_input_field_carrier_role.carrier_role IS 'what the carrier points at: OWN_COLUMNS, SELF_FK, CROSS_TABLE_FK or REMOTE, the four the classifier can answer. A closed vocabulary, and a fifth carrier shape is a new value here rather than a silence';
 
 CREATE TABLE rejection_validation_error (
   graph_name    VARCHAR NOT NULL,
