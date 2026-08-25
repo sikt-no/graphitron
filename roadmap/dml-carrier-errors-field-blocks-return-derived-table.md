@@ -202,17 +202,19 @@ already computes exactly this fact (scan `Admit` + empty `dmlEmittedBinding` is 
 of the same predicate is the two-consumers-one-derivation smell.
 
 Instead, widen the recognizer so it publishes *why*: split an ungrounded-carrier arm out of
-`CarrierBinding.NotACarrier` (carrying the admitting scan's result, see "what the arm carries"
+`CarrierBinding.NotACarrier` (carrying the DML scan's decoded facts, see "what the arm carries"
 below), and have `validateReturnType`'s scalar arm switch over that instead of re-scanning.
 
 Split it *inside* `NotACarrier`, not beside it. Make `NotACarrier` a sealed interface over two
-arms (a plain arm, and an ungrounded-carrier arm carrying the scan result) rather than adding
+arms (a plain arm, and an ungrounded-DML-carrier arm carrying decoded scan facts) rather than adding
 a fourth sibling to `CarrierBinding`. Every reader of the coarse question still wants the
-answer "not a producer-backed carrier" for an ungrounded carrier, and only one of the five
-existing read sites is a switch the compiler would force:
+answer "not a producer-backed carrier" for an ungrounded carrier, and none of the five
+existing read sites is an edit the compiler forces:
 
 * `TypeBuilder.carrierVerdict` (both its `instanceof` early return and the exhaustive `switch`
-  below it): a `null` verdict either way. The `switch` is the sole compile-time break.
+  below it): a `null` verdict either way. The `switch` arm is a type pattern on `NotACarrier`
+  itself (`case CarrierBinding.NotACarrier ignored -> null`), which under the split matches the
+  whole sealed subtree, so the switch stays exhaustive and compiles untouched.
 * `TypeBuilder.isDirectivelessNestingTarget`: an ungrounded carrier must stay a nesting target,
   as today.
 * `FieldBuilder.scanServiceCarrierShape`: must keep yielding `ServiceCarrierShape.NotApplicable`
@@ -223,32 +225,44 @@ existing read sites is a switch the compiler would force:
   cascade.
 
 A sibling arm would compile clean at all four of those `instanceof` sites while flipping three
-of them, so the enforcement is the sealed subtype keeping `instanceof NotACarrier` true, plus
-the one forced `switch` edit. Do not plan on the compiler enumerating the sites.
+of them; the nested split keeps `instanceof NotACarrier` true at every one, and no read site
+breaks at compile time under it either, `carrierVerdict`'s `switch` included (see above). The
+one forced edit is the construction site: the single `new CarrierBinding.NotACarrier()` in
+`TypeBuilder.carrierBinding` is the sole producer of the value, so sealing `NotACarrier` breaks
+exactly there and makes the author choose an arm at the point where the fact is made. The
+hand-walk of the five read sites is therefore the whole of the read-side enforcement, not a
+supplement to a compiler signal. Do not plan on the compiler enumerating the sites.
 
 That orphan-`@service` arm is the same predicate this section argues against re-spelling, one
 family over: it probes a scan in the classifier because the recognizer publishes no reason.
-Folding it onto the new arm is deliberately out of scope here and filed as R725: the three scans
-disagree by construction (they differ on forbidden data-field directives), so for a `@service`
-payload the DML scan can admit first and this arm's admitting-scan field would name the wrong
-family for that site. Subsuming it needs a decision about how the recognizer publishes per-family
-facts, not a mechanical edit, and it changes a live `@service` diagnostic that carries its own pins.
+Folding it onto the new arm is deliberately out of scope here and filed as R725: the arm this
+item mints is DML-specific by construction, the `@service` diagnostic needs a service-family
+fact, and the three scans disagree by construction (they differ on forbidden data-field
+directives), so subsuming it needs the recognizer to publish per-family facts, not a mechanical
+edit, and it changes a live `@service` diagnostic that carries its own pins.
 
 #### What the arm carries
 
-Two components, because the arm is reachable from any of the three scans:
+Two decoded components, both taken from the *DML* scan's `Admit` at the construction site: the
+data field's name (a `String`), and the `DmlElementKind`. The element arms disagree on whether
+they can name the offending data field (`RecordElement(String fieldName)` can,
+`Table(TableRef, String elementTypeName)` names the element type instead, and `IdElement()` is
+a no-component record), so the name is read off `Admit.dataField()`, the one source that holds
+for all three populations, and decoded to the field *name* at construction rather than
+republishing the `Admit` itself: `Admit` carries a live `GraphQLFieldDefinition`, and a
+published recognizer fact should hand its consumers neither a graphql-java handle to reach into
+nor the scan's own result vocabulary, which stays the recognizer's gathering detail.
 
-* **The whole `DmlPayloadScan.Admit`**, not a bare `DmlElementKind`. The three element arms
-  disagree on whether they can name the offending data field: `RecordElement(String fieldName)`
-  can, `Table(TableRef, String elementTypeName)` names the element type instead, and
-  `IdElement()` is a no-component record. `Admit.dataField()` is the one source that holds for
-  all three, so taking the whole `Admit` keeps the wording free to name the field on any
-  population instead of only on `RecordElement`.
-* **Which scan admitted.** More than one scan can admit the same payload, so the recorded family
-  is the first that admits in `carrierBinding`'s existing DML → routine → `@service` order; that
-  is the order the method already runs, so it needs no rule of its own. The DML seat below forks
-  wording only for a DML-scan admit (the seat's precondition, a non-`Reject` DML scan, makes that
-  the live case) and otherwise keeps the generic write-target message.
+Mint the arm only when the DML scan admitted. `carrierBinding` runs the scans in DML → routine
+→ `@service` order and its DML arm already binds the `Admit` it tests, so carrying that
+pattern variable to the fall-through construction is a bind, not a new derivation. A payload
+only the routine or `@service` scan admits stays the plain arm, which keeps the generic
+write-target message at the DML seat, the behaviour that seat wants anyway (its precondition is
+a non-`Reject` DML scan). This is also what keeps the arm out of R725's way: a first-wins
+"which scan admitted" slot would depend on evaluation order, would name the wrong family at the
+orphan-`@service` site, and would need the private `CarrierFamily` enum widened into the
+published fact. A DML-specific arm is R725's per-family publication realized for the one family
+this item needs, so R725 extends it rather than retires it.
 
 The wording forks on the element kind, because the three populations need different advice.
 For each population this arm is the only diagnostic *when the payload does not ground*, which
@@ -314,17 +328,26 @@ both verbs. No further work unless the fixed build still rejects their real sche
   comment above the grounding call.
 * `TypeBuilder.carrierBinding`: split the ungrounded-carrier arm out of
   `CarrierBinding.NotACarrier`, as a sealed subtype so the coarse `instanceof NotACarrier`
-  question keeps its answer. The arm carries the whole `DmlPayloadScan.Admit` plus which of the
-  three scans admitted, per "What the arm carries" above. Walk all five read sites by hand (the
-  four listed in the Design section plus `carrierVerdict`'s `switch`) and confirm each keeps
-  today's behaviour; only the `switch` breaks at compile time.
+  question keeps its answer. The arm carries the DML scan's decoded facts (the data field's
+  name and its `DmlElementKind`) and is minted only when the DML scan admitted, per "What the
+  arm carries" above; the DML arm's tested `Admit` reaches the fall-through construction as a
+  pattern-variable bind. The only compile-time break is the construction site, the single
+  `new CarrierBinding.NotACarrier()` in this method, where the arm gets chosen; no read site
+  breaks (`carrierVerdict`'s `switch` arm is a type pattern on `NotACarrier` and stays
+  exhaustive over the subtree). So walk all five read sites by hand (the four listed in the
+  Design section plus `carrierVerdict`'s `switch`) and confirm each keeps today's behaviour;
+  that walk is the whole of the read-side verification.
 * `MutationInputResolver.validateReturnType`: the scalar arm's new case switches over the
   recognizer's published fact, wording forked per element kind as above. The method is static
   over `(ReturnTypeRef, DmlKind, boolean, BuildContext)`, so it reaches the recognizer through
   `BuildContext.typeBuilder` rather than a signature change across its six call sites (all in
   `FieldBuilder`, two per verb: the `resolveInput` path and the inline path); that
   field is null for unit-tier harnesses, so null-guard it the way `BuildContext.lookAheadVerdict`
-  and `FieldBuilder`'s binding accessors already do.
+  and `FieldBuilder`'s binding accessors already do. Name the guard's fall-through: a null
+  `typeBuilder` keeps today's generic message. Only unit-tier harnesses can observe that branch,
+  since every production path wires the builder before classification starts
+  (`lookAheadVerdict`'s javadoc already states this), and the pipeline fixtures below are the
+  enforcement that the new diagnostic is live on the shipped path.
 * Stale-comment sweep, in the same change (these are the comments the next reader will use
   to judge whether a pre-index reader is safe): the `resolveAll`-DML-grounding rationale
   comment at the end of `prepareForWalk`, the `lookAheadVerdict` javadoc's
@@ -342,11 +365,26 @@ both verbs. No further work unless the fixed build still rejects their real sche
   `resolveDmlWriteTableRef` at all. It sits in the middle of the comments this sweep exists to
   fix, so correct it here rather than leaving it to the next reader.
 
-  The same phantom rung is spelled at six sites, not two, so the sweep has to be driven off a
-  grep for the bridge rather than off a shortlist. Fix all six or the claim stands exactly where
-  the next reader will look for it, which is the classify-time resolvers most of all:
+  The same phantom rung is spelled in two forms, a prose form naming the bridge as a precedence
+  entry and a rung-number form ("rung-1-vs-rung-3"), and three consecutive review rounds each
+  found the previous round's site list one short, so the sweep's instruction is an invariant and
+  a grep, not a closed list. The invariant: `resolveDmlWriteTableRef` and
+  `FieldBuilder.resolveReturnCapableWriteTarget` each have exactly two rungs (the return-derived
+  table, then `@mutation(table:)`), and the must-agree cross-check sits between rung 1 and
+  rung 2, where `resolveReturnCapableWriteTarget`'s javadoc, the authority on the lattice,
+  locates it. No comment may name a third rung, an input-`@table` rung, or a rung-1-vs-rung-3
+  match. Sweep the main sources with three greps: `rung-1-vs-rung-3`, `bridge`, `input's`. The
+  first is precise; the other two over-match on live uses (the `@table` input-shape bridge that
+  produces a `TableInputArg`, as in the `@lookupKey` derivations, and
+  `groundDmlMutationField`'s cardinality comment naming the bridge-shaped *input*), so each hit
+  is a candidate to judge against the invariant, not an entry on a to-fix list: a comment
+  describing what the bridge is stays, a comment placing it in the write-target precedence goes.
 
-  * `RecordBindingResolver.groundDmlMutationField`'s javadoc, above.
+  What the greps find as of this writing, as worked examples, not the measure of done (anchor
+  on the symbols; line numbers have already staled twice in review):
+
+  * `RecordBindingResolver.groundDmlMutationField`'s javadoc, above (its paraphrase also omits
+    rung 1 entirely).
   * `MutationInputResolver.RETURN_DERIVED_TABLE_VERBS`'s javadoc ("preferred over
     `@mutation(table:)` and the input `@table` bridge").
   * `FieldBuilder.classifyMutationField`'s INSERT-dispatch comment ("return-derived rung
@@ -355,12 +393,44 @@ both verbs. No further work unless the fixed build still rejects their real sche
   * `FieldBuilder.resolveUpdateWriteTarget`'s javadoc, same three-rung paraphrase.
   * `FieldBuilder.classifyDeleteTableField`'s javadoc, which spells the bridge as DELETE's
     second rung ("`@mutation(table:)`, then the input's `@table`"). DELETE has one rung.
+  * `FieldBuilder.classifyUpdatePayloadField`, a body comment: "the rung-1-vs-rung-3 table
+    match (the payload's `@table`-element table vs the input's deprecated `@table`) is owned by
+    `resolveUpdateWriteTarget`". The deferral is sound (the check runs in the shared
+    `resolveReturnCapableWriteTarget` behind that call); the rung pair is the wrong part.
+  * `FieldBuilder.classifyInsertPayloadField`'s javadoc: "`resolveInsertWriteTarget`, which
+    owns the rung-1-vs-rung-3 table-match check".
+  * A body comment inside that same `classifyInsertPayloadField` ("resolve the write target
+    (and the rung-1-vs-rung-3 table-match)").
 
-  All six describe paths that bottom out in `resolveDmlWriteTableRef`, directly or through
+  All nine describe paths that bottom out in `resolveDmlWriteTableRef`, directly or through
   `FieldBuilder.resolveReturnCapableWriteTarget`, and neither of those has a third rung.
-  `FieldBuilder.resolveInsertWriteTarget`'s javadoc already states the precedence correctly
-  ("the return's own `@table`, then `@mutation(table:)`"); use it as the wording template so the
-  six corrected sites agree by copying one phrasing rather than by six independent rewrites.
+
+  The fix at each defective site is subtraction, not a corrected paraphrase. Nine corrected
+  copies of a two-rung enumeration would still be nine hand-maintained spellings of one fact
+  with no enforcer, which is the drift that has already cost three review rounds; a
+  copy-one-template remedy dies of the disease it treats. Instead the rung enumeration lives
+  once, on its owners: `resolveDmlWriteTableRef`'s javadoc states the precedence it implements,
+  and `resolveReturnCapableWriteTarget`'s javadoc states the cross-check against it. Every
+  other site defers. A javadoc site drops its rung list and points with `{@link}` at the
+  resolver it actually calls, which the Javadoc reference gate keeps live; a body comment names
+  the resolver in prose and enumerates nothing. `resolveInsertWriteTarget`'s javadoc, correct
+  today, is still a copy: strike its rung list too and let its existing
+  `{@link #resolveReturnCapableWriteTarget}` carry the deferral.
+
+  One of the owners needs a correction of its own. `resolveReturnCapableWriteTarget`'s step-3
+  block re-derives rung 1 inline (`scanStructuralDmlPayload` + `DmlElementKind.Table`), a
+  second spelling of `MutationInputResolver.resolveReturnDerivedTable`'s carrier branch,
+  sitting directly under comments this sweep rewrites to assert single-sourcing. Route that
+  rung-1 read through `resolveReturnDerivedTable`: the method is static, package-visible, and
+  takes the `fieldDef` the caller already holds, and the step-3 comment itself documents the
+  inline read as "equal to the helper's return-derived rung"; verify that equivalence at
+  implementation (both reads run post-index once the ordering move lands). If a blocker turns
+  up, the fallback is honesty over silence: the comment must state that the cross-check
+  re-reads rung 1 off the classified return type, rather than implying one producer.
+
+  Done means: rerun the three greps, and every remaining hit is either an owner's javadoc or a
+  live-bridge description; no comment outside the owners enumerates the rungs a `{@link}` could
+  defer to.
 
 The deeper fix, a typed not-yet-built arm on the indices so a pre-index read refuses instead of
 answering, is filed as R689 and out of scope here.
@@ -388,7 +458,7 @@ Pipeline tier, in `SingleRecordPayloadPipelineTest`:
   an errors-bearing carrier with no `@mutation(table:)` resolves neither rung at grounding
   time, so no `DmlEmitted` is minted and the field rejects. They fail before the ordering
   move and pass after it.
-* Optionally pin rung agreement on the added `tableArg = true` fixture: the grounded
+* Pin rung agreement on the added `tableArg = true` fixture: the grounded
   `DmlEmitted.tableRef` equals the classified write target. Note what this can and cannot
   see. Pre-fix the two call sites diverged in *provenance* (grounding fell to rung 2 while
   classification took rung 1), but on an agreeing fixture both rungs resolve the same
