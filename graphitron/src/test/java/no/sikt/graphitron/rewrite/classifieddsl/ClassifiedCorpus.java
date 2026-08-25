@@ -72,9 +72,9 @@ public final class ClassifiedCorpus {
         /*
          * Enum-typed scalar: a field whose GraphQL return type is an enum still resolves to a real DB
          * column on the @table parent, so it classifies exactly like any other inline scalar. The
-         * enum-ness lives in the GraphQL-to-Java conversion, not the classification. Corpus-only: it
-         * lands on the already-taught Child / Fetch / Column coordinate, pinning the "enum returns are
-         * columns" edge.
+         * enum-ness lives in the GraphQL-to-Java conversion, not the classification. It lands on the
+         * already-taught Child / Select / Column coordinate, pinning the "enum returns are columns"
+         * edge, which is what the page's worked example shows.
          */
         new Example("enum-column", """
             enum Rating @classifiedType(as: EnumType) { G PG PG13 R NC17 }
@@ -82,6 +82,14 @@ public final class ClassifiedCorpus {
               rating: Rating @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
             }
             type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+            """,
+            """
+            {
+              film {
+                # A GraphQL enum return, still a plain column read.
+                rating
+              }
+            }
             """),
 
         /*

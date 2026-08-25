@@ -923,25 +923,56 @@ Four categories of DataLoader-backed child field, distinguished by `@splitQuery`
 
 '''
 
-== Implicit Classification Rules
+== Classification without a directive
 
-[NOTE]
-====
-*Transitional.* This section describes the schema patterns the classification walk reads without a
-directive, a surface being drained rather than one to extend. What it states is accurate today. For
-the architecture the walk drains into, see
-xref:../explanation/pipeline-overview.adoc[Pipeline overview].
-====
+Most coordinates on this page carry a directive. Some carry none and still classify, and the verdict
+layer says so in one column rather than as a separate rule: `intent_column_match_claim` claims
+`TABLE_COLUMN` for a field whose name resolves against the table its site navigates to, with no
+directive involved, and `intent_resolved_field_claim.tier` reads `INFERRED` where such a reading
+survived the anti-join against the authored claims.
 
-Not all classification requires directives. The builder also classifies based on:
+Every outcome block above shows this happening. `Film.title` under <<the-chain,the first example>>
+is `TABLE_COLUMN`, inferred: nothing was written on it, and the catalog matched the name.
+
+The return type does not change that. A field whose GraphQL type is an enum is still a column read;
+the enum-ness lives in the conversion between the column's value and the GraphQL value, not in the
+classification.
+
+[source,graphql]
+----
+type Query {
+  film: Film
+}
+
+type Film @table(name: "film") {
+  "A GraphQL enum return, still a plain column read."
+  rating: Rating
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.rating`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#rating(Object)`
+
+| `Query.film`
+| no claiming directive
+| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
 
 |===
-| Schema Pattern | Classification Effect
 
-| Field name matches column name (on `@table` type) | `ColumnBackedField` ; direct column mapping
-| Field returns `*Connection` type (from `@asConnection` transform) | `FieldWrapper.Connection` ; pagination logic
-| GraphQL enum on `@table` field | Enum-to-DB string/int mapping
-|===
+`Film.rating` lands on the same verdict as `Film.title`, at the same tier, and emits the same shape of
+fetcher method. Asserted by the `enum-column` corpus example.
+
+One inferred reading is not yet rendered here: a field returning a `*Connection` type, which the
+`@asConnection` transform produces, carries the pagination shape without a directive on the field
+itself. Its verdict is gated by the `connection` and `faceted-connection` corpus examples until a
+worked example for it lands on this page.
 
 '''
 
