@@ -267,6 +267,61 @@ class TextDocumentServiceTest {
         }
     }
 
+    /**
+     * The references request end to end: the capability is advertised at initialize, the handler is
+     * reachable over the wire, and the {@code includeDeclaration} flag the editor sets arrives where
+     * it decides something. The schema opened here is the one the fixture captured, so the sites
+     * come back against the file the request named.
+     */
+    @Test
+    void referencesRequestRoundTripsToTheCapturedUses(@TempDir Path tmp) throws Exception {
+        String sdl = """
+            type Query {
+              films: [Film!]!
+            }
+
+            type Film {
+              title: String
+            }
+            """;
+        try (var fixture = StoreFixture.of(tmp, sdl);
+             var access = fixture.access()) {
+            var workspace = new no.sikt.graphitron.lsp.state.Workspace();
+            workspace.setStore(access);
+            var proxy = startServer(new GraphitronLanguageServer(workspace));
+            var initialized = proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+            assertThat(initialized.getCapabilities().getReferencesProvider())
+                .as("an editor only sends the request to a server that advertises it")
+                .isNotNull();
+
+            String uri = SourceUri.of(fixture.sourceName());
+            proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
+                new TextDocumentItem(uri, "graphql", 1, sdl)));
+
+            // Cursor inside the "Film" of "type Film", the declaration name.
+            var position = new Position(4, 7);
+            var uses = references(proxy, uri, position, false);
+            assertThat(uses).extracting(use -> use.getRange().getStart().getLine())
+                .as("the one use is the films field on line 1")
+                .containsExactly(1);
+
+            assertThat(references(proxy, uri, position, true))
+                .extracting(use -> use.getRange().getStart().getLine())
+                .as("with includeDeclaration the type's own site joins")
+                .containsExactly(1, 4);
+        }
+    }
+
+    private static java.util.List<? extends org.eclipse.lsp4j.Location> references(
+        org.eclipse.lsp4j.services.LanguageServer proxy, String uri, Position position,
+        boolean includeDeclaration
+    ) throws Exception {
+        var params = new org.eclipse.lsp4j.ReferenceParams(
+            new TextDocumentIdentifier(uri), position,
+            new org.eclipse.lsp4j.ReferenceContext(includeDeclaration));
+        return proxy.getTextDocumentService().references(params).get(5, TimeUnit.SECONDS);
+    }
+
     @Test
     void didCloseClearsDiagnosticsForFile() throws Exception {
         var server = new GraphitronLanguageServer(new no.sikt.graphitron.lsp.state.Workspace());

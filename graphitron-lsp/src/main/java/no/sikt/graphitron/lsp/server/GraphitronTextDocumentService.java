@@ -10,6 +10,7 @@ import no.sikt.graphitron.lsp.hover.Hovers;
 import no.sikt.graphitron.lsp.inlay.InlayHints;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.Positions;
+import no.sikt.graphitron.lsp.references.References;
 import no.sikt.graphitron.lsp.state.StoreRead;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.lsp.trace.LspTrace;
@@ -33,6 +34,7 @@ import org.eclipse.lsp4j.InlayHintParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
+import org.eclipse.lsp4j.ReferenceParams;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
@@ -328,6 +330,45 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                         };
                     });
                 return result != null ? result : Either.forLeft(List.of());
+            }
+        });
+    }
+
+    /**
+     * Find Usages: the sites in the schema that use the name under the cursor. The definition
+     * handler's shape, differing where the question does. It fans out, so the result is a list
+     * rather than an {@code Optional} and an empty one means "nothing uses this" rather than
+     * "not understood". It goes through the interactive door on a read of its own,
+     * {@link StoreRead#REFERENCES}: the request blocks a cursor exactly as a jump does, so it
+     * belongs on that reader, and naming its own read is what lets an expired budget say which
+     * question was abandoned.
+     */
+    @Override
+    public CompletableFuture<List<? extends Location>> references(ReferenceParams params) {
+        return CompletableFuture.supplyAsync(() -> {
+            String uri = params.getTextDocument().getUri();
+            try (var span = LspTrace.span("references")) {
+                span.detail("uri", uri);
+                boolean includeDeclaration = params.getContext() != null
+                    && params.getContext().isIncludeDeclaration();
+                List<? extends Location> result = workspace.withView(uri, List.<Location>of(), file -> {
+                    var pos = Positions.resolve(file.source(),
+                        params.getPosition().getLine(),
+                        params.getPosition().getCharacter()).tsPoint();
+                    StoreAnswer<List<Location>> found = workspace.answering(
+                        StoreRead.REFERENCES, uri, store ->
+                            References.compute(workspace.vocabulary(), file, store, pos,
+                                includeDeclaration));
+                    return switch (found) {
+                        case StoreAnswer.Answered<List<Location>> answered -> answered.value();
+                        // The list an editor is showing stays as it was, which is what it does for
+                        // a jump that declines too. The store boundary has already warned, naming
+                        // the read that overran.
+                        case StoreAnswer.OutOfBudget<List<Location>> ignored -> List.<Location>of();
+                    };
+                });
+                span.detail("locations", result.size());
+                return result;
             }
         });
     }

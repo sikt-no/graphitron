@@ -64,8 +64,14 @@ public final class SdlDeclarations {
      * collapsed to a zero-width range. The store holds the SDL parse's own convention (an absolute
      * path, 1-based line and column), so this is the same edge conversion
      * {@link SourceDeclarations} makes for the Java parse's.
+     *
+     * <p>Visible to the package so {@link SdlTypeUsages} converts its rows through this one
+     * conversion rather than a second copy of it. Both read captured SDL positions, and the
+     * skip-a-site rule above (a relative {@code source_name} is a source no editor can open) is
+     * a property of the rows rather than of the question being asked, so the two surfaces cannot
+     * be allowed to disagree about it.
      */
-    private static Optional<Location> location(String sourceName, Integer line, Integer column) {
+    static Optional<Location> location(String sourceName, Integer line, Integer column) {
         if (sourceName == null || line == null || column == null || line < 0 || column < 0) {
             return Optional.empty();
         }

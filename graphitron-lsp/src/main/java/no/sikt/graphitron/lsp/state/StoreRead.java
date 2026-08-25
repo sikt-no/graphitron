@@ -22,6 +22,7 @@ public enum StoreRead {
 
     HOVER("the hover read"),
     DEFINITION("the go-to-definition read"),
+    REFERENCES("the find-references read"),
     COMPLETION("the completion read"),
     INLAY_HINTS("the inlay-hint read"),
     CODE_ACTIONS("the code-action quick-fix read"),

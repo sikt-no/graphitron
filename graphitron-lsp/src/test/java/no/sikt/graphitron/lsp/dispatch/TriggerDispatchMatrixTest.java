@@ -181,11 +181,21 @@ class TriggerDispatchMatrixTest {
      * The document sweeps have no cursor, so no cursor-keyed surface may claim one, and the
      * cursor tokens are never answered by the pushed diagnostics channel. Getting this backwards
      * is how a sweep ends up re-derived per keystroke, which is the cost the incumbent pays.
+     *
+     * <p>Which surfaces are cursor-keyed comes from {@link LspSurface#isCursorKeyed}, not from a
+     * set spelled out here. A list in this test covered the surfaces that existed when it was
+     * written and silently left a later one outside the guard; asking the enum means a new
+     * cursor-keyed surface is guarded from the moment it is declared.
      */
     @Test
     @DisplayName("cursor-keyed surfaces decline the document sweeps, and diagnostics decline the cursor tokens")
     void theCursorAndSweepAxesDoNotCross() {
-        var cursorSurfaces = Set.of(LspSurface.COMPLETION, LspSurface.HOVER, LspSurface.DEFINITION);
+        var cursorSurfaces = Arrays.stream(LspSurface.values())
+            .filter(LspSurface::isCursorKeyed)
+            .toList();
+        assertThat(cursorSurfaces)
+            .as("the guard is vacuous if no surface says it is cursor-keyed")
+            .isNotEmpty();
 
         for (Class<?> sweep : sealedLeaves(Trigger.DocumentScan.class)) {
             @SuppressWarnings("unchecked")
@@ -205,6 +215,27 @@ class TriggerDispatchMatrixTest {
                 .as("diagnostics are pushed with no cursor, so %s is carried by a sweep instead",
                     token.getSimpleName())
                 .isEqualTo(TriggerDispatch.Status.NO_ANSWER);
+        }
+    }
+
+    /**
+     * Every surface states a verdict on every trigger. The enforcement lives in the matrix's own
+     * row constructor, which throws while the class initialises, so what this adds is the
+     * statement of what that failure means: a surface is missing from a row, most likely one
+     * just added to {@link LspSurface} and not yet thought about trigger by trigger.
+     */
+    @Test
+    @DisplayName("every surface states a verdict on every trigger")
+    void theVerdictsPartitionTheTriggers() {
+        Set<Class<?>> leaves = sealedLeaves(Trigger.class);
+        for (LspSurface surface : LspSurface.values()) {
+            Set<Class<?>> stated = new HashSet<>();
+            stated.addAll(TriggerDispatch.answeredBy(surface));
+            stated.addAll(TriggerDispatch.gapsOf(surface));
+            stated.addAll(TriggerDispatch.declinedBy(surface));
+            assertThat(simpleNames(stated))
+                .as("%s must say what it does with each trigger", surface)
+                .isEqualTo(simpleNames(leaves));
         }
     }
 

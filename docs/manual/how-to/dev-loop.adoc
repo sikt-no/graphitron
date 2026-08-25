@@ -22,7 +22,7 @@ On macOS the filesystem-watch half of this loop is slow on its own. Attaching yo
 | `mvn quarkus:dev` in another terminal. Quarkus watches `target/generated-sources/` by mtime and hot-reloads only the classes that actually changed.
 
 | 3. Connect your editor
-| Point your LSP client at `localhost:8487` (TCP) for diagnostics, hover, completion, and go-to-definition on `.graphqls`. IntelliJ users: see <<intellij>>.
+| Point your LSP client at `localhost:8487` (TCP) for diagnostics, hover, completion, go-to-definition, and find-references on `.graphqls`. IntelliJ users: see <<intellij>>.
 
 | 4. Connect your agent (optional)
 | Point an MCP-aware agent (Claude Code, Cursor) at `http://127.0.0.1:8488/mcp`. See <<mcp>>.
@@ -91,11 +91,22 @@ Java's `WatchService` has no native file-event backend on macOS; it falls back t
 
 The LSP path sidesteps this entirely. When your editor is attached to the LSP on `localhost:8487`, the editor's save event drives the regeneration directly, instead of waiting for the polling watcher to notice the file changed on disk. So on macOS, attaching your editor to the LSP is not just for diagnostics and completion: it is what restores an instant save-to-regen loop. The schema watcher still runs as a headless fallback for saves made outside the attached editor; it is just slower on this platform.
 
-Linux and Windows have native watch backends and do not suffer this latency, but connecting the editor is still worth it for the diagnostics, hover, completion, and go-to-definition the LSP provides.
+Linux and Windows have native watch backends and do not suffer this latency, but connecting the editor is still worth it for the diagnostics, hover, completion, go-to-definition, and find-references the LSP provides.
 
 == Connect your editor to the LSP
 
 The LSP speaks over TCP on `localhost:8487`. Any LSP client that can connect to a TCP socket works: point it at that address and register it for `.graphql` and `.graphqls` files. Neovim, Helix, and VS Code can target a TCP socket directly. IntelliJ needs one extra hop, covered next.
+
+[#find-usages]
+=== Find usages
+
+Ask your editor for references (Find Usages) on a name in a `.graphqls` file and you get every other site in the schema that uses it. On a type name that is every field and argument declared with that type, every `implements`, and every union member. Put the cursor on the declaration or on any use of it; both ask the same question.
+
+Two things to know about the answer.
+
+It is the last capture's view of your schema. A usage you typed a moment ago appears once `graphitron:dev` has picked the file up, and a result in a file you have been editing points at the line it was captured at. The whole list rides one cadence, so it is never half live.
+
+A result lands on the site the capture recorded, which is not always the name you clicked. An `implements` or a union member is positioned on the type token itself; a field or an argument is positioned on its own declaration, so a use in `films: [Film!]!` lands on `films` rather than on `Film`.
 
 [#intellij]
 == IntelliJ users
@@ -143,7 +154,7 @@ Set it up with https://plugins.jetbrains.com/plugin/23257-lsp4ij[LSP4IJ] (Red Ha
 +
 The `programArgs` command is what bridges stdio to the dev server's TCP socket; the mappings register the server for `.graphql` and `.graphqls` files.
 . Start `mvn graphitron:dev` in a terminal first (the bridge connects to it; if the dev goal is not running, `nc` exits immediately and IntelliJ reports the server as crashed).
-. Open a `.graphqls` file. LSP4IJ spawns the bridge, attaches, and you get diagnostics, hover, completion, and go-to-definition.
+. Open a `.graphqls` file. LSP4IJ spawns the bridge, attaches, and you get diagnostics, hover, completion, go-to-definition, and find-references.
 
 Notes:
 

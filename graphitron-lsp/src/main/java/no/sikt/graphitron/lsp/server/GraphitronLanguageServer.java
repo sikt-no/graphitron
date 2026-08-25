@@ -84,6 +84,9 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
         capabilities.setHoverProvider(true);
         capabilities.setCompletionProvider(new CompletionOptions(false, null));
         capabilities.setDefinitionProvider(true);
+        // Find Usages, in the editors' own words: the reverse of the jump above, answered from
+        // the same cursor and returning every schema site that uses what it names.
+        capabilities.setReferencesProvider(true);
         capabilities.setCodeActionProvider(true);
         // Advertise the inlay-hint capability so editors that opt in via
         // graphitron.inlayHints.* config keys receive the inferred-directive and
