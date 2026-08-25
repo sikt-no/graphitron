@@ -133,67 +133,36 @@ across five relations and the surface is useful without it.
 
 ## Slices
 
-### Slice A: the surface plus the SDL type arm
+### Slice A: the surface plus the SDL type arm — shipped at 3658fc3
 
 The reverse of `IntraSchemaDefinitions`, and the arm that needs no new facts.
+`referencesProvider` is registered, `GraphitronTextDocumentService.references`
+answers on `StoreRead.REFERENCES` through the interactive door, and
+`SdlTypeUsages` reads the four populations (field and argument `named_type`,
+`implements`, union member) as one statement, honouring `includeDeclaration`.
 
-- `capabilities.setReferencesProvider(true)`; override
-  `references(ReferenceParams)` on `GraphitronTextDocumentService`, mirroring the
-  definition handler's shape (one span, one store read, one `StoreAnswer` switch,
-  empty list when out of budget).
-- New `StoreRead.REFERENCES` constant, so the out-of-budget warning names this
-  read rather than borrowing the definition one. A references answer fans out
-  over several relations where definition does a point lookup, so which
-  `StoreAccess` door it goes through (interactive or bulk) is a Slice A decision,
-  not an afterthought.
-- New `LspSurface.REFERENCES`, and reach stated for it in every
-  `TriggerDispatch.MATRIX` row. Two existing guards catch part of this and it is
-  worth being exact about which part, because the gap decides the work:
-  - `TriggerDispatchMatrixTest.everySurfaceAnswersSomething` iterates
-    `LspSurface.values()` and requires a positive answered count, so a
-    `REFERENCES` constant named in *no* row fails the build immediately.
-  - The unguarded seam is narrower: once **one** row names `REFERENCES` that test
-    goes green, and the remaining 20 rows default to `NO_ANSWER` unreviewed. A
-    surface that declines 20 of 21 triggers is indistinguishable, to the build,
-    from one that meant to.
-  - A second seam: `theCursorAndSweepAxesDoNotCross` hand-lists
-    `cursorSurfaces = Set.of(COMPLETION, HOVER, DEFINITION)`, so a cursor-keyed
-    `REFERENCES` sits outside that guard until somebody adds it by hand.
+Both dispatch-matrix seams are closed rather than left to review discipline.
+`Reach` now rejects a row that leaves any surface without a verdict, so a
+constant added to `LspSurface` fails the build until all twenty-one triggers
+have been decided; and `LspSurface` states its own keying, so the axis test
+derives the cursor-surface set instead of hand-listing it.
 
-  Both are closed in this slice rather than left to review discipline. `Reach`
-  requires every surface to be named, so an omitted cell is a build failure; and
-  the cursor-surface set is derived rather than listed, so a new cursor-keyed
-  surface joins that guard on declaration.
-- The arm itself: cursor on a type declaration name (`type Film`) or on a type
-  reference (`films: [Film!]!`) yields every field and argument whose
-  `named_type` is `Film`, every `implements` naming it, and every union member.
-  Honour `ReferenceContext.isIncludeDeclaration` for whether the declaration
-  sites join the list.
-- Tests in the LSP tier, per population, plus one that a type nothing references
-  answers with an empty list rather than declining.
+### Slice B: the directive-target arms — shipped at fb94c43
 
-### Slice B: the directive-target arms
+The reverse of `Definitions`, one arm per `Behavior` leaf, dispatched through the
+same exhaustive switch. Table and column match on the resolved target
+(`intent_bound_table`, `intent_column_match_claim`); class, method and foreign
+key match on the name as written, no resolution view existing for them. A
+`@nodeId(typeName:)` folds into Slice A's population rather than standing up one
+of its own. `@argMapping` and `@scalarType` stay gaps in the matrix.
 
-The reverse of `Definitions`, one arm per `Behavior` leaf, each a filter on the
-decoded family's payload column:
+Three things the implementation learned that the spec had not: a path hop writes
+either spelling of a foreign key, so the key arm matches both; the column arm
+needs the parent-binding fallback its jump twin has; and the class population is
+every positioned carrier, with `@record` and the error handler out for stated
+reasons.
 
-- `CatalogTableBinding`: every coordinate bound to the same table.
-- `CatalogColumnBinding`: every coordinate bound to the same column.
-- `ClassNameBinding` / `MethodNameBinding`: every coordinate naming the same
-  class, or the same method on it.
-- `CatalogFkBinding`: every `@reference` path step using the same key.
-- `NodeTypeBinding`: every `@nodeId(typeName:)` naming the same type, which folds
-  into Slice A's type population rather than standing alone.
-- `ArgMappingBinding` / `ScalarTypeBinding`: state the verdict, gap or decline,
-  in the matrix rather than resolving to nothing silently.
-
-Dispatch is the existing exhaustive switch over `Behavior`, so a new binding arm
-forces a references decision at compile time, the property `Definitions` already
-has. There is no `SourceAbsent` analogue here: the reverse direction never asks
-whether a declaration was positioned, so an empty answer means "nothing uses
-this", full stop.
-
-### Slice C (optional, separable): argument-value positions in capture
+### Slice C (optional, separable): argument-value positions in capture — not shipped
 
 Add source position to the `graphql_*_directive_arg` relations and populate it in
 capture, then narrow every Slice B result from the application to the value span.
@@ -231,13 +200,17 @@ store, which the new one joins. Grep the phrase rather than trusting these
 locations; the point is that the list is spelled out in prose in four places and
 none of them is generated.
 
-## Open questions for the Spec review
+## Open questions, as answered by the implementation
 
-1. Does a references answer belong on the interactive `StoreAccess` door, given
-   it fans out over more relations than any other cursor-keyed read?
-2. Scope check: field-name and enum-value declaration names as reference
-   subjects (who uses this field?) are deferred out of Slice A and B. Confirm
-   that is the right cut, or fold the field case into Slice B.
+1. **Which `StoreAccess` door.** The interactive one, `StoreRead.REFERENCES`. The
+   request blocks a cursor exactly as a jump does, and that is what the door is
+   about; the fan-out is over relations rather than over documents, so it is not
+   the drain's grain.
+2. **Field-name and enum-value subjects.** Still deferred, and now deferred
+   visibly: a cursor on a field declaration name answers with an empty list
+   rather than falling back to the enclosing type's population, and a test pins
+   that. The matrix records `@argMapping` as a gap for this surface, which is
+   where the same question surfaces from the directive side.
 
 Two questions the first review round settled, recorded here so they are not
 reopened: the freshness and precision decisions above, and tightening `Reach`
