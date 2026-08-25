@@ -1283,6 +1283,14 @@ public final class ClassifiedCorpus {
                 @mutation(typeName: INSERT)
                 @classified(source: Mutation, operations: [Insert], target: Single, targetShape: Record)
             }
+            """,
+            """
+            mutation {
+              # Writes the row, then projects it back through the catalog.
+              updateFilm { title }
+              # Cannot project a row that is gone; hands back the deleted row's id.
+              deleteFilm
+            }
             """),
 
         /*
