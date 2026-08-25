@@ -3458,6 +3458,40 @@ COMMENT ON COLUMN intent_table_key_candidate.constraint_name IS 'the surviving c
 COMMENT ON COLUMN intent_table_key_candidate.primary_key IS 'whether this candidate is the table''s primary key. Not the rank: a table may declare a primary key and unique keys alike, and the rank already says which comes first, so this says which kind of identity a consumer ended up with when it reports one';
 COMMENT ON COLUMN intent_table_key_candidate.candidate_rank IS 'where this candidate sits among the survivors, counting from zero, in the order a consumer considers them: the primary key first where there is one, then the unique keys in the generated model''s enumeration. A consumer taking the first candidate its columns cover reads this ascending and stops';
 
+CREATE VIEW intent_foreign_key_node_key_lift
+  (source_name, table_schema, table_name, constraint_name,
+   referenced_source_name, referenced_schema, referenced_table, lift) AS
+SELECT rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name,
+       rc.referenced_source_name, rc.referenced_schema, rc.referenced_table,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM sql_node_key_column nk
+          WHERE nk.source_name = rc.referenced_source_name
+            AND nk.table_schema = rc.referenced_schema
+            AND nk.table_name = rc.referenced_table
+            AND (nk.column_name IS NULL
+                 OR NOT EXISTS (
+                   SELECT 1 FROM sql_constraint_column rcc
+                    WHERE rcc.source_name = rc.referenced_source_name
+                      AND rcc.table_schema = rc.referenced_schema
+                      AND rcc.table_name = rc.referenced_table
+                      AND rcc.constraint_name = rc.referenced_constraint_name
+                      AND rcc.column_name = nk.column_name)))
+            THEN 'TRANSLATED' ELSE 'DIRECT' END
+  FROM sql_referential_constraint rc
+ WHERE EXISTS (SELECT 1 FROM sql_node_key_column nk
+                WHERE nk.source_name = rc.referenced_source_name
+                  AND nk.table_schema = rc.referenced_schema
+                  AND nk.table_name = rc.referenced_table);
+COMMENT ON VIEW intent_foreign_key_node_key_lift IS 'Whether a decoded node id of the table a foreign key points at can be compared against columns of the table that declares the key, or only against the row it reaches through the join. One row per foreign key whose referenced table declares a node key, and the verdict is a closed vocabulary of two. This is the fact that decides whether an input field carrying a node id of the referenced type has an own-table tuple to bind, which is what every write rail asks before it will admit such a field: a value that only exists on the far side of a join has nothing to put in a SET or a WHERE. DIRECT is where every position of the referenced table''s node key is among the columns the key references, so each decoded position lands on one of this table''s own key-bearing columns and the whole tuple is local. TRANSLATED is where any position does not, the ordinary cause being a key pointing at some other unique column of the target while the node key is its primary key. The rule is stated as the absent landing rather than as the present translation, which is the resolver''s own framing and matters for one shape it makes fall out rather than be handled: a reference reaching its target through more than one key is translated too, because a position landing on an intermediate table is not landing here. That multi-hop case is not this relation''s to answer, one row here describing one key; a consumer walking a path reads DIRECT only where the path is a single element and takes any longer path as translated. Absence is a foreign key whose referenced table declares no node key, which is most of them: no node id of that table exists to decode, so the question does not arise rather than being answered negatively. A node key that declares a position resolving to no column reads TRANSLATED, which is deliberate and not a defect this relation reports: an unresolved position cannot land anywhere, and the relation that says a node key is malformed is intent_node_metadata_defect next door. Direction is not stated here because it is not in question. This relation is keyed by the declaring table, which is the table the columns would be local to, so the lift it describes is always the one from the declaring side; a consumer arriving from the referenced side is walking the key backwards and has no own-table tuple whatever this row says.';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.source_name IS 'the declaring table''s catalog partition, carried from sql_referential_constraint';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.table_schema IS 'the declaring table''s SQL schema';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.table_name IS 'the declaring table''s SQL name; the table a DIRECT lift''s columns are local to';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.constraint_name IS 'the foreign key''s constraint name; with the three columns above, sql_constraint''s key and this relation''s grain';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.referenced_source_name IS 'the referenced table''s catalog partition; carried so a reader has the node type''s table without rejoining the referential constraint';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.referenced_schema IS 'the referenced table''s SQL schema';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.referenced_table IS 'the referenced table''s SQL name, which is the table whose node key is being asked about';
+COMMENT ON COLUMN intent_foreign_key_node_key_lift.lift IS 'DIRECT where every position of the referenced table''s node key is among the columns this key references, so a decoded id lands wholly on the declaring table; TRANSLATED where any position does not. A closed vocabulary of two, and a third answer would be a new arm here rather than a silence';
+
 CREATE VIEW intent_node_metadata_defect
   (source_name, table_schema, table_name, defect, position) AS
 SELECT source_name, table_schema, table_name, 'TYPE_ID_NOT_DECLARED', CAST(NULL AS INT)
