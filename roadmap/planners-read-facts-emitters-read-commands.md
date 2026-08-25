@@ -2115,6 +2115,103 @@ is about what the resolved column is for and never about where it resolves. The 
 these three, the input-field counterpart of `intent_argument_filter_role`, is what the fold will
 actually read and is the natural next increment.
 
+### Conditions, sixth increment: which rule answers for an input field
+
+The relation the fold will actually read. The three resolution relations under it say where a name
+resolves and which column it reaches; none of them says whether a name is what the site contributes at
+all. `intent_input_field_filter_role` answers that, one rung up, the way
+`intent_argument_filter_role` answers it at the argument site.
+
+**The grain carries over, and now for a second reason.** The key is again the input field's coordinate
+and the table it was classified against, and here it is forced by the fork itself rather than only by
+the resolution below it: two of the classifier's arms ask the catalog a question about that table, one
+asking whether the written name reaches a column on it and the other whether it backs exactly one node
+type. The same declaration is a name match against a table that has its column and the unbound carrier
+against one that does not, so a coordinate-keyed relation could state only one of those.
+
+**Five roles and one modifier.** `NODE_ID`, `NESTING`, `NAME_MATCHED`, `CONDITION_OWNED`, `UNBOUND`,
+with `authored_condition` for the `@condition` that composes rather than owns. The interesting one is
+`UNBOUND`, because it is where this relation stops being the argument relation with different words.
+There, absence is uniformly a rejection's population: an argument no rule answers for is an argument
+the build refuses. Here the classifier has a resolved carrier for a field whose name reaches no column,
+so a site that contributes nothing of its own is a role and only the refusals are silent. And the pair
+of that role with the modifier is exactly a rejection the validator already mints: a
+`@condition(override: false)` asks to compose with an implicit column predicate, and an unbound field
+has no column to build one from. A rejection's population stated as two columns rather than as an
+absence is the reason the carrier is worth naming.
+
+**Two facts about a contribution are occurrence-grain, and both stay where they already live.** The
+enclosing `@condition(override: true)` cascade is `intent_input_occurrence_override`'s, keyed by path,
+because one input field reached under two paths can sit inside an override on one and not the other.
+The circular-nesting cut is `intent_input_occurrence_path`'s, for the same reason: a field closing a
+cycle on one path is an ordinary nesting on another. That second one is worth stating plainly rather
+than glossing, because it is a limit and not a division of labour. It is the one arm of the
+classifier's fork that reads path state instead of the definition and the table, so it is the one arm
+this relation cannot transcribe, and a reader walking the input surface has to terminate on the
+occurrence relation rather than on this one. A reader that only wants to know how a definition
+classifies against a table needs neither.
+
+**One asymmetry with the argument site, stated because it looks like an inconsistency and is not.** A
+`@field(name:)` binding beside an implicit node id is a rejection at an argument, naming two binding
+axes at once. At an input field it is a fall-through to the name match, the binding simply renaming
+what the column lookup looks for. Beside an *authored* `@nodeId` it is neither, the resolver never
+consulting it. Three sites, three answers, all three with a case.
+
+**A correctness bug the work surfaced.** An authored `@nodeId` whose target resolves to no node type
+was falling through to the arms below it and surfacing as a name match or as the unbound carrier. The
+classifier enters that arm on the directive and the `ID` type alone and never returns to the column
+lookup, so the site is a rejection. Found while restructuring rather than while writing the arms,
+which is the ordinary way: the second shape had to answer the same question in one expression and the
+gap showed.
+
+**The restructure that was written, measured, and thrown away.** Three of the arms ask whether the
+name reaches a column, so each names `intent_input_field_column_match`, and H2 inlines a view with no
+common-subexpression elimination. Three expansions of a walk looks like an obvious fold into one pass:
+left-join the match once, write the fork as an ordered `CASE` over its columns. That shape is worse by
+an order of magnitude.
+
+[cols="4,1,1"]
+|===
+| sakila example, 917 fields and 267 arguments, 107 roles | ms | rows visited
+
+| the shipped ranked arms
+| 16
+| 9592
+
+| one pass, the match left-joined once, the fork a CASE
+| 166
+| 10822
+
+| `intent_input_field_column_match` alone, for scale
+| 2
+| 2141
+|===
+
+The arms are cheap for a reason a scan count does not show, and it is worth carrying forward. Each
+names the match under a driver of its own: the name-match arm reads it once and sequentially, and the
+other two correlate into it over the small populations of `@reference`-bearing and node-id-instructed
+fields. The single pass joins it once per site, on six columns, with no index to reach a view by. So
+"named three times" was the wrong thing to count.
+
+**And the two fixtures disagreed.** `DerivedReadCostTest`'s scaled fixture, measured first, said the
+one-pass shape was the better one: 3922 rows visited against 4830 for the ranked arms. Its units give
+every input field a `@reference`, which is exactly what makes both correlated arms unselective, so the
+property that makes the arms cheap on a real schema is the property that fixture removes. When a
+synthetic fixture and the shipped schema disagree by an order of magnitude the shipped schema is the
+measurement, and the sequence is the lesson: the gate's fixture is built to make registrations
+visible, not to be representative, and reading a shape choice off it was a mistake caught only because
+the sakila control was run afterwards.
+
+The gate's own pinned pair for this relation is 4845 against 4833, twelve rows visited, which is the
+same four-scan per-naming floor the three resolution relations sit at, counted three times over. The
+clocks there are a wash rather than better, sixty milliseconds against fifty-nine, which is what a
+quarter of one per cent looks like on a clock.
+
+**What this increment leaves owing.** The fold's two remaining blockers, unchanged: the polymorphic
+participant fan-out through the argument column scope, and the read-versus-filter fork at a mutation's
+payload argument. With the role relation in place the fold itself is next, and what it needs from the
+input surface is now one join rather than a walk.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the

@@ -102,10 +102,10 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 93;
+    private static final int READERS_IN_SCHEMA = 94;
 
     /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 55;
+    private static final int READERS_WITH_CELLS = 56;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -122,7 +122,7 @@ class DerivedReadCostTest {
      * So a drop here is not the matrix quietly seeing less; it is cost moving off a reader and onto
      * a refresh, and the refresh is a view in this domain and priced like any other.
      */
-    private static final int CELLS = 118;
+    private static final int CELLS = 124;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -207,7 +207,7 @@ class DerivedReadCostTest {
      * the one thing this gate is built without; the day that index lands, the equality assertion
      * deletes them.
      *
-     * <p>The last three are the instrument's own floor rather than work, and they are worth reading
+     * <p>The last four are the instrument's own floor rather than work, and they are worth reading
      * before adding anything that looks like them. The three input-field resolution relations each
      * name the reference-step hop relation, and against the registered target they visit exactly
      * four rows more than against the source view: 189 against 185, 345 against 341, 1110 against
@@ -217,6 +217,14 @@ class DerivedReadCostTest {
      * milliseconds against thirteen, four against fourteen and six against twenty-six, which is the
      * shape that says this is the counter's floor and not a cost. No index question arises: the
      * target already carries one, and a difference of four scans is not an index's to move.
+     *
+     * <p>The fourth is the same floor counted three times over: the input-field role relation, 4845
+     * against 4833, whose body names the column-match relation in three of its arms, so the walk's
+     * four namings are made three times. Twelve scans on 4845 is a quarter of one per cent, and here
+     * the clocks are a wash rather than decisively better, sixty milliseconds against fifty-nine,
+     * which is what a difference that size looks like on a clock. Three namings looks like something
+     * to fold into one, and the one-pass shape that would do it was written and measured and is not
+     * an improvement: see that relation's own comment, which carries the figures and the reason.
      *
      * <p>Three larger pairs stood here until the targets were indexed, and how they left is worth
      * knowing before adding more. They were not the registrations' fault and no reader had to be
@@ -255,7 +263,8 @@ class DerivedReadCostTest {
         // The instrument's own floor, four scans apiece; measured above.
         "intent_field_reference_step_hop|intent_input_field_reference_step_target",
         "intent_field_reference_step_hop|intent_input_field_column_scope",
-        "intent_field_reference_step_hop|intent_input_field_column_match");
+        "intent_field_reference_step_hop|intent_input_field_column_match",
+        "intent_field_reference_step_hop|intent_input_field_filter_role");
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather

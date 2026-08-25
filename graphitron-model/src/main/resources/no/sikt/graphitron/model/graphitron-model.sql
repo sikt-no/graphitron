@@ -7707,6 +7707,193 @@ COMMENT ON COLUMN intent_argument_filter_role.source_name IS 'the argument''s ow
 COMMENT ON COLUMN intent_argument_filter_role.source_line IS 'source line of the argument declaration, 1-based';
 COMMENT ON COLUMN intent_argument_filter_role.source_column IS 'source column of the argument declaration, 1-based';
 
+CREATE VIEW intent_input_field_filter_role
+  (graph_name, type_name, field_name,
+   resolving_source_name, resolving_schema, resolving_table,
+   role, authored_condition, source_name, source_line, source_column) AS
+WITH resolved_name (graph_name, type_name, field_name,
+                    resolving_source_name, resolving_schema, resolving_table) AS (
+  SELECT graph_name, type_name, field_name,
+         resolving_source_name, resolving_schema, resolving_table
+    FROM intent_input_field_column_match
+),
+node_id_at_table (graph_name, type_name, field_name,
+                  resolving_source_name, resolving_schema, resolving_table,
+                  implicit) AS (
+  SELECT i.graph_name, i.type_name, i.field_name,
+         sc.table_source_name, sc.table_schema, sc.table_name,
+         MIN(CASE WHEN i.basis = 'TARGET_ID_NAME' THEN 1 ELSE 0 END)
+    FROM intent_node_id_instruction i
+    JOIN intent_input_occurrence_path p
+      ON p.graph_name = i.graph_name AND p.path = i.path
+    JOIN intent_argument_scope_table sc
+      ON sc.graph_name = p.graph_name AND sc.type_name = p.root_type_name
+     AND sc.field_name = p.root_field_name AND sc.argument_name = p.root_argument_name
+   WHERE i.site = 'INPUT_FIELD'
+   GROUP BY i.graph_name, i.type_name, i.field_name,
+            sc.table_source_name, sc.table_schema, sc.table_name
+),
+table_node (graph_name, table_source_name, table_schema, table_name, candidates) AS (
+  SELECT bt.graph_name, bt.table_source_name, bt.table_schema, bt.table_name,
+         CAST(COUNT(*) AS INT)
+    FROM intent_resolved_type_binding bt
+    JOIN intent_node_type nt
+      ON nt.graph_name = bt.graph_name AND nt.type_name = bt.type_name
+   GROUP BY bt.graph_name, bt.table_source_name, bt.table_schema, bt.table_name
+)
+SELECT graph_name, type_name, field_name,
+       resolving_source_name, resolving_schema, resolving_table,
+       role, authored_condition, source_name, source_line, source_column
+  FROM (SELECT arm.graph_name, arm.type_name, arm.field_name,
+               arm.resolving_source_name, arm.resolving_schema, arm.resolving_table,
+               arm.role,
+               CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_condition fc
+                                  WHERE fc.graph_name = arm.graph_name
+                                    AND fc.type_name = arm.type_name
+                                    AND fc.field_name = arm.field_name
+                                    AND COALESCE(fc.override, FALSE) = FALSE)
+                    THEN TRUE ELSE FALSE END AS authored_condition,
+               f.source_name, f.source_line, f.source_column,
+               ROW_NUMBER() OVER (
+                 PARTITION BY arm.graph_name, arm.type_name, arm.field_name,
+                              arm.resolving_source_name, arm.resolving_schema,
+                              arm.resolving_table
+                 ORDER BY arm.precedence) AS rn
+          FROM (SELECT rt.graph_name, rt.type_name, rt.field_name,
+                       rt.table_source_name AS resolving_source_name,
+                       rt.table_schema AS resolving_schema,
+                       rt.table_name AS resolving_table,
+                       'NONE' AS role, 1 AS precedence
+                  FROM intent_input_field_resolving_table rt
+                 WHERE EXISTS (SELECT 1 FROM graphql_field_directive d
+                                WHERE d.graph_name = rt.graph_name
+                                  AND d.type_name = rt.type_name
+                                  AND d.field_name = rt.field_name
+                                  AND d.directive_name = 'notGenerated')
+                 UNION ALL
+                SELECT rt.graph_name, rt.type_name, rt.field_name,
+                       rt.table_source_name, rt.table_schema, rt.table_name, 'NONE', 2
+                  FROM intent_input_field_resolving_table rt
+                 WHERE EXISTS (SELECT 1 FROM graphitron_field_lookup_key k
+                                WHERE k.graph_name = rt.graph_name
+                                  AND k.type_name = rt.type_name
+                                  AND k.field_name = rt.field_name)
+                 UNION ALL
+                SELECT rt.graph_name, rt.type_name, rt.field_name,
+                       rt.table_source_name, rt.table_schema, rt.table_name,
+                       CASE WHEN n.resolving_table IS NOT NULL
+                            THEN 'NODE_ID' ELSE 'NONE' END, 3
+                  FROM intent_input_field_resolving_table rt
+                  JOIN graphql_field f
+                    ON f.graph_name = rt.graph_name AND f.type_name = rt.type_name
+                   AND f.field_name = rt.field_name AND f.named_type = 'ID'
+                  JOIN graphitron_field_node_id nd
+                    ON nd.graph_name = rt.graph_name AND nd.type_name = rt.type_name
+                   AND nd.field_name = rt.field_name
+                  LEFT JOIN node_id_at_table n
+                    ON n.graph_name = rt.graph_name AND n.type_name = rt.type_name
+                   AND n.field_name = rt.field_name
+                   AND n.resolving_source_name = rt.table_source_name
+                   AND n.resolving_schema = rt.table_schema
+                   AND n.resolving_table = rt.table_name
+                 UNION ALL
+                SELECT rt.graph_name, rt.type_name, rt.field_name,
+                       rt.table_source_name, rt.table_schema, rt.table_name,
+                       CASE WHEN EXISTS (SELECT 1 FROM resolved_name m
+                                          WHERE m.graph_name = rt.graph_name
+                                            AND m.type_name = rt.type_name
+                                            AND m.field_name = rt.field_name
+                                            AND m.resolving_source_name = rt.table_source_name
+                                            AND m.resolving_schema = rt.table_schema
+                                            AND m.resolving_table = rt.table_name)
+                            THEN 'NAME_MATCHED' ELSE 'NONE' END, 4
+                  FROM intent_input_field_resolving_table rt
+                 WHERE EXISTS (SELECT 1 FROM graphitron_field_reference r
+                                WHERE r.graph_name = rt.graph_name
+                                  AND r.type_name = rt.type_name
+                                  AND r.field_name = rt.field_name)
+                 UNION ALL
+                SELECT rt.graph_name, rt.type_name, rt.field_name,
+                       rt.table_source_name, rt.table_schema, rt.table_name, 'NESTING', 5
+                  FROM intent_input_field_resolving_table rt
+                  JOIN graphql_field f
+                    ON f.graph_name = rt.graph_name AND f.type_name = rt.type_name
+                   AND f.field_name = rt.field_name
+                  JOIN graphql_type nested
+                    ON nested.graph_name = f.graph_name AND nested.type_name = f.named_type
+                   AND nested.kind = 'INPUT_OBJECT'
+                 UNION ALL
+                SELECT n.graph_name, n.type_name, n.field_name,
+                       n.resolving_source_name, n.resolving_schema, n.resolving_table,
+                       CASE WHEN EXISTS (SELECT 1 FROM resolved_name m
+                                          WHERE m.graph_name = n.graph_name
+                                            AND m.type_name = n.type_name
+                                            AND m.field_name = n.field_name
+                                            AND m.resolving_source_name = n.resolving_source_name
+                                            AND m.resolving_schema = n.resolving_schema
+                                            AND m.resolving_table = n.resolving_table)
+                            THEN 'NONE' ELSE 'NODE_ID' END, 6
+                  FROM node_id_at_table n
+                 WHERE n.implicit = 1
+                   AND NOT EXISTS (SELECT 1 FROM graphitron_field_binding b
+                                    WHERE b.graph_name = n.graph_name
+                                      AND b.type_name = n.type_name
+                                      AND b.field_name = n.field_name)
+                 UNION ALL
+                SELECT rt.graph_name, rt.type_name, rt.field_name,
+                       rt.table_source_name, rt.table_schema, rt.table_name, 'NONE', 6
+                  FROM intent_input_field_resolving_table rt
+                  JOIN graphql_field f
+                    ON f.graph_name = rt.graph_name AND f.type_name = rt.type_name
+                   AND f.field_name = rt.field_name
+                   AND f.field_name = 'id' AND f.named_type = 'ID'
+                  JOIN table_node tn
+                    ON tn.graph_name = rt.graph_name
+                   AND tn.table_source_name = rt.table_source_name
+                   AND tn.table_schema = rt.table_schema AND tn.table_name = rt.table_name
+                 WHERE tn.candidates > 1
+                   AND NOT EXISTS (SELECT 1 FROM graphitron_field_node_id nd
+                                    WHERE nd.graph_name = rt.graph_name
+                                      AND nd.type_name = rt.type_name
+                                      AND nd.field_name = rt.field_name)
+                   AND NOT EXISTS (SELECT 1 FROM graphitron_field_binding b
+                                    WHERE b.graph_name = rt.graph_name
+                                      AND b.type_name = rt.type_name
+                                      AND b.field_name = rt.field_name)
+                 UNION ALL
+                SELECT rt.graph_name, rt.type_name, rt.field_name,
+                       rt.table_source_name, rt.table_schema, rt.table_name,
+                       'CONDITION_OWNED', 7
+                  FROM intent_input_field_resolving_table rt
+                  JOIN graphitron_field_condition fc
+                    ON fc.graph_name = rt.graph_name AND fc.type_name = rt.type_name
+                   AND fc.field_name = rt.field_name AND fc.override = TRUE
+                 UNION ALL
+                SELECT m.graph_name, m.type_name, m.field_name,
+                       m.resolving_source_name, m.resolving_schema, m.resolving_table,
+                       'NAME_MATCHED', 8
+                  FROM resolved_name m
+                 UNION ALL
+                SELECT rt.graph_name, rt.type_name, rt.field_name,
+                       rt.table_source_name, rt.table_schema, rt.table_name, 'UNBOUND', 9
+                  FROM intent_input_field_resolving_table rt) arm
+          JOIN graphql_field f
+            ON f.graph_name = arm.graph_name AND f.type_name = arm.type_name
+           AND f.field_name = arm.field_name) ranked
+ WHERE rn = 1 AND role <> 'NONE';
+COMMENT ON VIEW intent_input_field_filter_role IS 'Which rule resolves what one input field contributes at the site that reaches it. The input-field counterpart of intent_argument_filter_role, and the relation a consumer assembling a generated predicate or a generated assignment out of an input surface reads before it reads any of the resolution relations under it, because what it needs first is which of them applies. The grain differs from the argument relation''s, and that is the first thing to know about it. An argument''s role is a function of the argument. An input field''s is a function of the field and the table it was classified against, because two arms of the fork ask the catalog a question about that table: whether the written name reaches a column on it, and whether it backs exactly one node type. So the resolving table is part of the key here exactly as it is on the three resolution relations below, and the same input field reached under two arguments whose fields select from different tables carries two rows and can carry two different roles. The switch is an ordered fork rather than a set of disjoint tests, so this is a ranked collapse and not a union: the two retired directive applications first, then an authored @nodeId, then a @reference path, then a nested input object, then the implicit node id, then the condition-owned carrier, then the name match, then the unbound carrier. Ranking rather than unioning is what keeps a field carrying two of these from surfacing twice, and the order is the classifier''s own rather than a precedence this relation invented. Three of the arms ask whether the field''s name reaches a column, so each of them names intent_input_field_column_match, which H2 inlines with no common-subexpression elimination. Folding those three into one pass over the sites, with the match left-joined once and the fork written as an ordered CASE over its columns, was written and measured and is worse: on the sakila example schema, 917 fields and 267 arguments, the ranked arms take sixteen milliseconds and 9592 rows visited where the one-pass shape takes 166 and 10822, both answering the same 107 rows. The arms are cheap for a reason a scan count does not show, which is that each names the match under a driver of its own. The name-match arm reads it once and sequentially, and the other two correlate into it over the small populations of @reference-bearing and node-id-instructed fields, where the single pass joins it once per site with no index to reach it by. The read-cost gate''s scaled fixture said the opposite of this, its units making every input field carry a @reference and so making both correlated arms unselective; when a synthetic fixture and the shipped schema disagree by an order of magnitude, the shipped schema is the measurement. What the roles mean. NODE_ID means the columns come from a resolved node key rather than from a name, and it covers both readings the store already carries, the authored @nodeId and the implicit one at an ID field literally named id whose resolving table backs exactly one node type. Both are read off intent_node_id_instruction, which has already applied the node-type resolution and every decline it makes; what this relation adds is the wiring that relation deliberately does not state, which at this site is two exits. A column of the field''s own name on the resolving table shadows the implicit reading into a rejection, and it is tested ahead of the column lookup so that a real column of that name is a rejection rather than a contest either reading wins. A @field(name:) binding suppresses the implicit reading too, and here that is a fall-through to the name match rather than the rejection the argument site gives it: at an argument a binding beside an implicit node id names two binding axes at once and the site resolves to nothing, and at an input field the binding simply renames what the column lookup looks for. Beside an authored @nodeId a binding is neither of those, the resolver never consulting it. NESTING means the contribution is the nested input type''s own fields, resolved at their coordinates and against this same table, so a reader following it changes coordinate without changing table. That last clause is why the resolving table is stable down a whole tree: the nesting arm descends with the table it was handed, and a @table application on an input object is captured and ignored. NAME_MATCHED means the contribution names the column intent_input_field_column_match resolved, and it covers the @reference-pathed field and the plain one alike, the column resolution already telling them apart by its scope''s basis. CONDITION_OWNED means @condition(override: true) on the field: the method owns the whole contribution and no column is recorded, which is the classifier''s one carrier reached from both sides of the column lookup, the column having resolved and the column having missed. It is deliberately ranked under the four arms above it, because a node-id, @reference-pathed or nested field carrying override: true still takes its own arm and carries the condition alongside; only a plain scalar field reaches the fork where the override decides the carrier. UNBOUND is where this relation departs from its argument-grain counterpart. There, absence is uniformly a rejection''s population. Here the classifier has a resolved carrier for a field whose name reaches no column, so a site that contributes nothing of its own has a role rather than a silence, and what that role means is a question one rung up: with no authored @condition the carrier is cascade-dependent and the consumer''s use-keyed walk decides it, and with an authored @condition(override: false) the pair is exactly the located rejection the validator mints, a composing condition having no implicit predicate left to compose with. That pair, role UNBOUND and authored_condition true, is a rejection''s population stated as two columns instead of as an absence, which is the point of giving the carrier a name. Absence proper is the rejection population, and every site in it is a rejection rather than a field that quietly contributes nothing: a @notGenerated or @lookupKey application, both retired at this site and both rejected outright rather than ignored; a repeated or unresolvable @reference, repetition being a conflict here and not a chain; an implicit node id shadowed by a column of that name; an ID field named id whose resolving table backs more than one node type, which the instruction relation declines by requiring a single candidate and which this relation therefore has to state for itself, so that a later arm cannot claim the site the classifier rejected; and an authored @nodeId whose target resolves to no node type, which is a rejection here and not a fall-through, the classifier entering that arm on the directive and the ID type alone and never returning to the column lookup below it. What the decode then does with a target that did resolve is the decode relations'' answer rather than this one''s. Two facts about a contribution are deliberately not here, both because they are occurrence-grain and both already stated at that grain. The enclosing @condition(override: true) cascade is intent_input_occurrence_override''s, keyed by occurrence path, because one input field reached under two paths can sit inside an override on one and not on the other. The circular-nesting cut is intent_input_occurrence_path''s, for the same reason: a field closing a cycle on one path is an ordinary nesting on another. That cut is the one arm of the classifier''s fork that reads path state rather than the definition and the table, and so the one arm this relation cannot transcribe; a reader walking occurrences holds the path already and joins both facts there, and a reader that only wants to know how a definition classifies against a table needs neither. What this relation does not state is the contribution itself. Which column, which comparison, which reach, and whether a resolved column is read as a predicate or written as an assignment are the resolution relations'' answers and the consuming site''s, read through the role; putting them here would make this a filter-surface relation at the wrong grain, an input field being where the rule is chosen and not where the contribution is assembled.';
+COMMENT ON COLUMN intent_input_field_filter_role.graph_name IS 'the owning graph''s partition, carried from graphql_field';
+COMMENT ON COLUMN intent_input_field_filter_role.type_name IS 'the input object type the field is declared on. Not the type whose binding started any navigation, an input object having none, which is the difference from the argument-grain counterpart where the owning type is the navigating one';
+COMMENT ON COLUMN intent_input_field_filter_role.field_name IS 'the input field this row classifies';
+COMMENT ON COLUMN intent_input_field_filter_role.resolving_source_name IS 'the catalog partition of the table the site was classified against; part of the grain, so a shared input type reached from two tables gets a row for each';
+COMMENT ON COLUMN intent_input_field_filter_role.resolving_schema IS 'the classifying table''s SQL schema; part of the grain, as above';
+COMMENT ON COLUMN intent_input_field_filter_role.resolving_table IS 'the classifying table''s SQL name; with the two coordinate columns and the two above it, the grain. One row per input field per table it is classified against, which is one row per classification the build actually performs';
+COMMENT ON COLUMN intent_input_field_filter_role.role IS 'which rule resolves the contribution: NODE_ID, NESTING, NAME_MATCHED, CONDITION_OWNED or UNBOUND, the winner of the ranked fork. A closed vocabulary, and a new classifier arm is a new value here rather than a silence';
+COMMENT ON COLUMN intent_input_field_filter_role.authored_condition IS 'the field carries an authored @condition that composes with whatever the role contributes, which is every @condition except the override: true one CONDITION_OWNED already names. A modifier on the role and not a role, because the classifier attaches it inside four of the five arms rather than instead of them; the condition''s own identity is one join to graphitron_field_condition away';
+COMMENT ON COLUMN intent_input_field_filter_role.source_name IS 'the input field''s own declaration file; the position a diagnostic would carry';
+COMMENT ON COLUMN intent_input_field_filter_role.source_line IS 'source line of the input field declaration, 1-based';
+COMMENT ON COLUMN intent_input_field_filter_role.source_column IS 'source column of the input field declaration, 1-based';
+
 CREATE TABLE rejection_validation_error (
   graph_name    VARCHAR NOT NULL,
   ordinal       INT     NOT NULL,
