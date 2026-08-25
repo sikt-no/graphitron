@@ -4543,6 +4543,92 @@ COMMENT ON COLUMN intent_argument_column_match.source_name IS 'the argument''s o
 COMMENT ON COLUMN intent_argument_column_match.source_line IS 'source line of the argument declaration, 1-based';
 COMMENT ON COLUMN intent_argument_column_match.source_column IS 'source column of the argument declaration, 1-based';
 
+CREATE VIEW intent_facet_binding
+  (graph_name, type_name, field_name, ordinal, column_name, value_type_name, value_nullable,
+   source_name, source_line, source_column) AS
+SELECT f.graph_name, f.type_name, f.field_name, f.ordinal,
+       fb.name_ref,
+       f.named_type,
+       CASE WHEN f.is_list THEN NOT f.item_non_null ELSE TRUE END,
+       fc.source_name, fc.source_line, fc.source_column
+  FROM graphitron_facet fc
+  JOIN graphql_field f
+    ON f.graph_name = fc.graph_name AND f.type_name = fc.type_name
+   AND f.field_name = fc.field_name
+  JOIN graphql_type owner
+    ON owner.graph_name = f.graph_name AND owner.type_name = f.type_name
+   AND owner.kind = 'INPUT_OBJECT'
+  JOIN graphitron_field_binding fb
+    ON fb.graph_name = f.graph_name AND fb.type_name = f.type_name
+   AND fb.field_name = f.field_name
+ WHERE NOT f.non_null
+   AND f.named_type <> 'ID'
+   AND NOT EXISTS (SELECT 1 FROM graphql_type leaf
+                    WHERE leaf.graph_name = f.graph_name AND leaf.type_name = f.named_type
+                      AND leaf.kind = 'INPUT_OBJECT')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_reference r
+                    WHERE r.graph_name = f.graph_name AND r.type_name = f.type_name
+                      AND r.field_name = f.field_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_condition co
+                    WHERE co.graph_name = f.graph_name AND co.type_name = f.type_name
+                      AND co.field_name = f.field_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_node_id n
+                    WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name
+                      AND n.field_name = f.field_name);
+COMMENT ON VIEW intent_facet_binding IS 'What one @asFacet application binds, at the applications that are well formed: the column its counts group by, the named type those counts are keyed on, and whether such a key may be null. The definition-keyed half of the facet reading, keyed on the input field the directive sits on and resolving nothing about who consumes it; intent_connection_facet is the use-keyed half and reads this one. The split is the resolver''s own rather than a convenience: the classifier states this predicate in one place precisely because the synthesis walk that gates on it sees a field and no consuming coordinate, and every check that needs one lives away from it. The arms transcribe that predicate. The field carries a @field(name:) binding, because a facet value is a GROUP BY key on one column and nothing else names which. It is optional, because a non-null filter is always active, so its facet could never show the counts the filter is not narrowing. Its named type is not an input object, for the same one-column reason, and is not ID, ID being where a node-id reading arises with no directive to point at. It carries no @reference, @condition or @nodeId, those being the join-mediated and node-id bindings the direct-column facet emitter does not serve. The owning type is an INPUT_OBJECT, which is the predicate''s domain and not a further arm: @asFacet written anywhere else is a use-keyed misuse and declines here by never meeting a filter input. Every one of those declines is a misuse the build rejects with a named diagnostic, so on a schema that assembles at all this relation holds every @asFacet application in the graph, and absence is a defect relation''s subject rather than this one''s. value_nullable reads the list element where the filter field is a list and the field itself where it is not, the non-null form having already declined, which is the promoter''s own unwrapping and not a restatement of it. The synthesized FacetValue type name those two columns decide is deliberately not a column here: it is a naming convention over them, and the naming belongs where the other minted names are formed. Deliberately not registered, on measurement rather than on size: registering it costs its one reader more than it saves. Inlined, this rule lets that reader drive from the carrier''s own arguments and reach the facets of each by key, which measured linear in the applications. As a table it is the driving relation instead, and the reader''s join to graphql_argument on named_type has no index to seek, so it degrades to every argument of the graph once per row here: on a fixture of 144 applications the reader went from 659 scans to 7779, and an index on this relation''s own coordinate moved neither figure, the missing seek being on the other side of that join.';
+COMMENT ON COLUMN intent_facet_binding.graph_name IS 'the owning graph''s partition, carried from graphitron_facet';
+COMMENT ON COLUMN intent_facet_binding.type_name IS 'the input object type the facet field is declared on';
+COMMENT ON COLUMN intent_facet_binding.field_name IS 'the facet field''s name within that input type; with the two columns above, the grain';
+COMMENT ON COLUMN intent_facet_binding.ordinal IS 'the field''s declaration order within its input type, carried from graphql_field; the inner half of the order one carrier''s facets surface in';
+COMMENT ON COLUMN intent_facet_binding.column_name IS 'the @field(name:) binding as written: the column the counts group by. Which table it resolves on is the consuming carrier''s element binding and not a fact about the application, so it is not here';
+COMMENT ON COLUMN intent_facet_binding.value_type_name IS 'the named type a facet key carries, the filter field''s leaf; a scalar or an enum, an input object being a decline above';
+COMMENT ON COLUMN intent_facet_binding.value_nullable IS 'whether a facet key may be null: the list element''s nullability where the filter field is a list, TRUE otherwise. With value_type_name it decides both the synthesized FacetValue type the counts surface through and whether the aggregate scrubs a null key';
+COMMENT ON COLUMN intent_facet_binding.source_name IS 'the @asFacet application''s own file; the position a diagnostic would carry';
+COMMENT ON COLUMN intent_facet_binding.source_line IS 'source line of the application, 1-based';
+COMMENT ON COLUMN intent_facet_binding.source_column IS 'source column of the application, 1-based';
+
+CREATE VIEW intent_connection_facet
+  (graph_name, type_name, field_name, position, filter_argument_name,
+   facet_type_name, facet_field_name, column_name, value_type_name, value_nullable,
+   source_name, source_line, source_column) AS
+SELECT graph_name, type_name, field_name,
+       ROW_NUMBER() OVER (PARTITION BY graph_name, type_name, field_name
+                          ORDER BY argument_ordinal, facet_ordinal),
+       filter_argument_name, facet_type_name, facet_field_name,
+       column_name, value_type_name, value_nullable,
+       source_name, source_line, source_column
+  FROM (SELECT a.graph_name, a.type_name, a.field_name,
+               a.ordinal AS argument_ordinal, fb.ordinal AS facet_ordinal,
+               a.argument_name AS filter_argument_name,
+               fb.type_name AS facet_type_name, fb.field_name AS facet_field_name,
+               fb.column_name, fb.value_type_name, fb.value_nullable,
+               fb.source_name, fb.source_line, fb.source_column,
+               ROW_NUMBER() OVER (
+                 PARTITION BY a.graph_name, a.type_name, a.field_name, fb.field_name
+                 ORDER BY a.ordinal, fb.ordinal) AS rn
+          FROM intent_facet_binding fb
+          JOIN graphql_argument a
+            ON a.graph_name = fb.graph_name AND a.named_type = fb.type_name
+          JOIN graphitron_field_synthesis c
+            ON c.graph_name = a.graph_name AND c.type_name = a.type_name
+           AND c.field_name = a.field_name
+           AND c.macro = 'CONNECTION') carrier_facet
+ WHERE rn = 1;
+COMMENT ON VIEW intent_connection_facet IS 'Which facets one connection carrier surfaces, and in which order: one row per @asFacet application reachable from the carrier''s own filter arguments. The use-keyed half of the facet reading, and what a consumer emitting a faceted connection reads. The carrier population is the expansion rather than the directive. graphitron_field_synthesis holds a row exactly where the CONNECTION macro rewrote a field''s type expression, which is @asConnection on a bare list with a named element and nothing else, so @asConnection that expanded nothing carries no facets here and neither does a structural Connection return type, whose shape is the author''s and which the promoter appends no facets field to. That is the spec''s "inert at the others" reading, held by construction rather than by an arm. Reachability is one hop: the facet field is declared on a type an argument of the carrier names, which is the promoter''s own walk and not a transitive closure through nested input objects. position is dense per carrier and is the emission order, argument declaration order then facet field declaration order, which is what lets a consumer fold these rows into a file and get the same bytes twice. A facet name repeated across one carrier''s filter inputs collapses to its first occurrence, transcribing the promoter''s first-wins dedup; that is a backstop and not a rule, a duplicate being rejected with a named diagnostic before it can reach an accepted schema, and it sits after the definition-keyed gate so a malformed duplicate never consumes the name a well-formed one would take. Two carriers sharing one connection name each read their own filter arguments here rather than one reconciled registry entry, which agrees with that registry on every schema that assembles: carriers minting one connection name must project the same facets, and a disagreement is a rejection naming both. What this relation does not state is whether the emitter serves the carrier it resolves. That a faceted carrier must be a root Query connection over a table-backed element is a limit of the emitter that exists today, enforced as a rejection, and putting it here would make an emitter''s reach a fact about the schema.';
+COMMENT ON COLUMN intent_connection_facet.graph_name IS 'the owning graph''s partition, carried from the carrier''s arguments';
+COMMENT ON COLUMN intent_connection_facet.type_name IS 'the type owning the carrier field';
+COMMENT ON COLUMN intent_connection_facet.field_name IS 'the carrier field''s name within that type; with the column above, the connection carrier''s coordinate';
+COMMENT ON COLUMN intent_connection_facet.position IS 'the facet''s place in this carrier''s facet list, 1-based and dense: argument declaration order, then facet field declaration order. The emission order, so a consumer reads it rather than re-deriving it from the two ordinals it was computed from';
+COMMENT ON COLUMN intent_connection_facet.filter_argument_name IS 'the carrier argument the facet''s binding rides in. Half of a facet''s suppression identity at emission: a same-named field on a sibling filter argument is a different binding, and the pair with facet_field_name is what tells them apart';
+COMMENT ON COLUMN intent_connection_facet.facet_type_name IS 'witness: the input object type the application was written on, which is the argument''s named type. With the column beside it this is intent_facet_binding''s key, so the application''s own position is one join away';
+COMMENT ON COLUMN intent_connection_facet.facet_field_name IS 'the facet field''s name: the label the counts surface under, and the other half of the suppression identity';
+COMMENT ON COLUMN intent_connection_facet.column_name IS 'the column the counts group by, carried from intent_facet_binding';
+COMMENT ON COLUMN intent_connection_facet.value_type_name IS 'the named type a facet key carries, carried from intent_facet_binding';
+COMMENT ON COLUMN intent_connection_facet.value_nullable IS 'whether a facet key may be null, carried from intent_facet_binding';
+COMMENT ON COLUMN intent_connection_facet.source_name IS 'the @asFacet application''s own file, carried from intent_facet_binding: a diagnostic about a facet points at the application and not at the carrier that consumes it';
+COMMENT ON COLUMN intent_connection_facet.source_line IS 'source line of the application, 1-based';
+COMMENT ON COLUMN intent_connection_facet.source_column IS 'source column of the application, 1-based';
+
 CREATE VIEW intent_resolved_field_claim
   (graph_name, type_name, field_name, classifier, tier) AS
 SELECT graph_name, type_name, field_name, classifier, 'AUTHORED'

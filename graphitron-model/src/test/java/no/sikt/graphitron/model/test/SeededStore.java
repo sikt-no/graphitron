@@ -20,6 +20,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION;
@@ -312,6 +313,49 @@ public final class SeededStore {
             .set(GRAPHQL_FIELD.NAMED_TYPE, namedType)
             .set(GRAPHQL_FIELD.NON_NULL, false)
             .set(GRAPHQL_FIELD.IS_LIST, isList)
+            .set(GRAPHQL_FIELD.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHQL_FIELD.SOURCE_LINE, 2)
+            .set(GRAPHQL_FIELD.SOURCE_COLUMN, 3)
+            .execute();
+    }
+
+    /**
+     * One field on an input object type, with its wrapping and its place in the type stated
+     * outright. An input field differs from the output fields {@link #seedField} spells in two ways
+     * a relation reads: its order within the type is a fact consumers fold in, and its nullability
+     * is what tells a filter that is always active from one an author may leave unset. Neither can
+     * be a default here for that reason.
+     *
+     * <p>The owning type is seeded as an {@code INPUT_OBJECT} when the case has not seeded it, on
+     * {@link #seedDeclaredType}'s idempotent terms; the named type stays the case's to seed, only it
+     * knowing the kind.
+     *
+     * @param itemNonNull the element's non-nullability when {@code isList}, and {@code null}
+     *                    otherwise, which the DDL checks rather than tolerates
+     */
+    public static void seedInputField(DSLContext dsl, String graphName, String typeName,
+                                      String fieldName, String namedType, int ordinal,
+                                      boolean nonNull, boolean isList, Boolean itemNonNull) {
+        seedDeclaredType(dsl, graphName, typeName, "INPUT_OBJECT");
+        dsl.insertInto(GRAPHQL_FIELD_COORDINATE)
+            .set(GRAPHQL_FIELD_COORDINATE.GRAPH_NAME, graphName)
+            .set(GRAPHQL_FIELD_COORDINATE.TYPE_NAME, typeName)
+            .set(GRAPHQL_FIELD_COORDINATE.FIELD_NAME, fieldName)
+            .execute();
+        var element = Boolean.TRUE.equals(itemNonNull) ? namedType + "!" : namedType;
+        var listed = isList ? "[" + element + "]" : element;
+        dsl.insertInto(GRAPHQL_FIELD)
+            .set(GRAPHQL_FIELD.GRAPH_NAME, graphName)
+            .set(GRAPHQL_FIELD.TYPE_NAME, typeName)
+            .set(GRAPHQL_FIELD.FIELD_NAME, fieldName)
+            .set(GRAPHQL_FIELD.ORDINAL, ordinal)
+            .set(GRAPHQL_FIELD.DECLARATION_LINE, SEED_LINE)
+            .set(GRAPHQL_FIELD.DECLARATION_COLUMN, SEED_COLUMN)
+            .set(GRAPHQL_FIELD.TYPE_SDL, nonNull ? listed + "!" : listed)
+            .set(GRAPHQL_FIELD.NAMED_TYPE, namedType)
+            .set(GRAPHQL_FIELD.NON_NULL, nonNull)
+            .set(GRAPHQL_FIELD.IS_LIST, isList)
+            .set(GRAPHQL_FIELD.ITEM_NON_NULL, itemNonNull)
             .set(GRAPHQL_FIELD.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHQL_FIELD.SOURCE_LINE, 2)
             .set(GRAPHQL_FIELD.SOURCE_COLUMN, 3)
@@ -1295,6 +1339,24 @@ public final class SeededStore {
             .set(GRAPHITRON_CONNECTION.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHITRON_CONNECTION.SOURCE_LINE, 2)
             .set(GRAPHITRON_CONNECTION.SOURCE_COLUMN, 3)
+            .execute();
+    }
+
+    /**
+     * An {@code @asFacet} application on an input field: presence and a position, which is the whole
+     * of what the directive states. What the facet binds is elsewhere, on the field's own row and on
+     * its {@code @field} application, which is why a case about a facet seeds three rows and not
+     * one.
+     */
+    public static void seedFacet(DSLContext dsl, String graphName, String typeName,
+                                 String fieldName) {
+        dsl.insertInto(GRAPHITRON_FACET)
+            .set(GRAPHITRON_FACET.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FACET.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FACET.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FACET.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_FACET.SOURCE_LINE, 2)
+            .set(GRAPHITRON_FACET.SOURCE_COLUMN, 3)
             .execute();
     }
 

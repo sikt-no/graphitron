@@ -475,6 +475,8 @@ class FactCaptureAgreementTest {
         registrations.put("intent_argument_column_scope", Arm.DERIVED);
         registrations.put("intent_argument_column_scope_live", Arm.DERIVED);
         registrations.put("intent_argument_column_match", Arm.DERIVED);
+        registrations.put("intent_facet_binding", Arm.DERIVED);
+        registrations.put("intent_connection_facet", Arm.DERIVED);
         registrations.put("intent_field_column_table", Arm.DERIVED);
         registrations.put("intent_field_separate_fetch", Arm.DERIVED);
         registrations.put("intent_class_member_slot", Arm.DERIVED);
