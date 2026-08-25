@@ -1,7 +1,7 @@
 ---
 id: R828
 title: "The store-performance skill hand-rolls timings H2 already collects"
-status: Spec
+status: Ready
 bucket: dx
 priority: 4
 theme: tooling
@@ -388,3 +388,46 @@ Non-blocking, no response needed.
 - The item has no `## Implementation` or `## Tests` section and Scope carries the implementation. For a
   prose-only change that reads fine. Raising it only because whichever way finding 3 goes may give the
   item a build surface that wants one.
+
+### Round 2: Spec → Ready, signed off
+
+Reviewer session `session_01KFRygu4Y3D1BDh8Td39Z7e`, 2026-08-25. Status flips to Ready.
+
+All three findings are answered, and two of them are answered with a measurement rather than a
+preference. I reproduced both on the pinned 2.4.240 rather than reading them.
+
+Finding 1 is closed and the replacement is better than what I proposed. Five repeats of one view
+query with reuse on gave max 164.46 and cumulative 164.65, a ratio of 1.00; with
+`OPTIMIZE_REUSE_RESULTS FALSE` the same five gave max 163.65 and cumulative 318.69, a ratio of 1.95.
+The mechanism is exactly as stated, cumulative collapsing onto maximum because one execution is all
+that is real, and the direction that matters is safe: a corrupted row cannot present a high ratio,
+so the discriminator has no false negatives. Preferring it to my cumulative-against-wall-clock is
+right for the reason given, that mine needs a second measurement taken outside the instrument.
+
+Finding 2 is closed. The page now takes one named addition and the item says why that fact and not
+the others: it is an engine-evaluation rule rather than instrument mechanics, and it sits beside a
+rule of identical shape that the page already carries. The reasoning follows the split the skill
+itself declares, so the implementer inherits a decision rather than making one.
+
+Finding 3 is closed, and the measurement it rests on reproduces. With both settings issued on one
+connection and four repeats run and read entirely on a second, the ratio came back 1.81, honest;
+the same cross-connection shape with reuse left on came back 1.00. So the settings really are
+database-wide, the second reading is genuinely sensitive to them rather than accidentally honest,
+and the affordance would have bought two lines. Declining it on that basis is the right call and it
+is now recorded as one.
+
+Non-blocking, and none of it needs a response.
+
+- The honest ratio's floor is more fixture-dependent than the item's single figure suggests. Against
+  the item's 2.87 out of 5, mine came in at 1.95 out of 5 and 1.81 out of 4, because a cold first
+  run dominates the maximum more in my fixture than in the item's. The item's own framing already
+  covers this, "near 1 is corrupt" rather than "equal to n is honest", and it is why that framing
+  should survive into the skill unqualified: an implementer who turns it into a numeric threshold
+  would reject an honest 1.81 as corrupt.
+- The new "both settings are database-wide" bullet subsumes the existing "Query statistics is
+  database-wide rather than session-scoped" bullet two lines below it. Same fact stated twice in one
+  list; the implementer writes it once either way.
+- The findings responses landed in the revision commit's message rather than as notes beneath each
+  finding, which is what the item file conventions ask for. It cost nothing here, because the commit
+  message maps one-to-one onto the three findings and the diff reads cleanly against them, so the
+  delta was auditable. Noting it only so the convention does not quietly lapse on the next item.
