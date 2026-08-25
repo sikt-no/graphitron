@@ -8047,7 +8047,7 @@ SELECT sc.graph_name, sc.type_name, sc.field_name,
          ELSE 'REMOTE'
        END
   FROM intent_input_field_column_scope sc
-  LEFT JOIN intent_node_id_instruction ni
+  LEFT JOIN intent_node_id_instruction_live ni
     ON ni.graph_name = sc.graph_name AND ni.site = 'INPUT_FIELD'
    AND ni.type_name = sc.type_name AND ni.field_name = sc.field_name
   LEFT JOIN intent_bound_table nt
