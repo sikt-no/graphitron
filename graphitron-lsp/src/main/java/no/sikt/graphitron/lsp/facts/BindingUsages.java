@@ -40,15 +40,18 @@ import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
  * reference-step families are the exception, and they take their position from the reference row
  * they belong to.
  *
- * <p>Two matching rules appear here and the difference between them is deliberate. Where a
- * resolution view exists ({@code intent_bound_table} for a table binding,
+ * <p>Three matching rules appear here and the differences between them are deliberate, because a
+ * reader deserves to know which of their answers is resolution-exact and which is name-exact.
+ * Where a resolution view exists ({@code intent_bound_table} for a table binding,
  * {@code intent_column_match_claim} for a column) the match is on the resolved target, so
  * {@code @table(name: "film")} and {@code @table(name: "public.film")} find each other and neither
- * finds a same-named table in another schema. Where no resolution view exists (a class or method
- * name, a reference path's hop) the match is on the name as written, case-insensitively, with a
- * qualifier narrowing rather than widening. That is the latitude {@link CatalogColumns} and
- * {@link CatalogTables} already take with a spelling, and it is stated here because a reader
- * deserves to know which of their answers is resolution-exact and which is name-exact.
+ * finds a same-named table in another schema. A reference path's hop has no resolution view, so it
+ * matches on the name as written, case-insensitively, with a qualifier narrowing rather than
+ * widening; that is the latitude {@link CatalogColumns} and {@link CatalogTables} already take with
+ * a spelling. A class or method name has no resolution view either, and matches exactly: a Java
+ * identifier is case-sensitive and its package is part of the name rather than a qualifier that
+ * could narrow, so folding case here would report {@code com.example.Films} as a use of
+ * {@code com.example.films}.
  */
 public final class BindingUsages {
 
