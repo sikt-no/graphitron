@@ -1,7 +1,7 @@
 ---
 id: R828
 title: "The store-performance skill hand-rolls timings H2 already collects"
-status: In Review
+status: Ready
 bucket: dx
 priority: 4
 theme: tooling
@@ -431,3 +431,80 @@ Non-blocking, and none of it needs a response.
   finding, which is what the item file conventions ask for. It cost nothing here, because the commit
   message maps one-to-one onto the three findings and the diff reads cleanly against them, so the
   delta was auditable. Noting it only so the convention does not quietly lapse on the next item.
+
+### Round 3: In Review → Done, rework requested
+
+Reviewer session `session_01KFRygu4Y3D1BDh8Td39Z7e`, 2026-08-25. Status flips to Ready.
+
+Question 3 is answered, with one exception, and question 4 is where that exception bites. What landed
+is the change the Spec gate approved: the page took exactly the one addition Scope named, in the
+section Scope named, beside the rule of identical shape; the four instruments went into the steps
+Scope assigned them; the profiler edit stayed inside step 1 and did not promote the instrument; and
+both declined items, an affordance on `GraphitronModelStore` and any `meta_relation_reference`
+change, are absent from the diff. Every factual claim the two documents now make about H2 I re-took
+against the pinned 2.4.240 rather than reading, including the whole of `ConvertTraceFile`, which the
+item had asserted and nothing here had yet exercised. All of them hold. That narrative is in this
+commit's message.
+
+**Finding 1 (question 4, and question 3). Step 2's recipe executes each relation exactly once, so the
+spread the item made its whole case on is not delivered, the setting the recipe calls non-optional
+does nothing in it, and one sentence in step 3 is false as written.**
+
+The recipe loops over relations, not over executions. Run exactly as written against a three-level
+view stack: `count=1`, `stddev=0.0000`, `cum/max=1.00` on every row, for all three relations. So a
+reader who follows the recipe gets precisely the single-run reading with no spread that step 1 opens
+by warning about, which is the failure the item chose this instrument to fix.
+
+Three consequences, in order of how load-bearing they are.
+
+Step 3 says the instrument "reports a standard deviation and an execution count without being asked
+for them". You do have to ask, by executing more than once, and the recipe never does; from the
+recipe the standard deviation column is 0.0000 by construction. That sentence carries the argument
+for preferring this instrument to a hand-rolled timing, so it is the one that has to become true
+rather than be softened.
+
+`SET OPTIMIZE_REUSE_RESULTS FALSE` is inert in the recipe as written. Measured, because it was worth
+ruling out that it changes a single execution: one execution of a view naming its child twice cost
+3400 against 3199 ms, 3090 against 3034, and 3222 against 3176, reuse on against off, which is 0.94
+to 0.99 and inside the noise. Reuse only ever costs you a repeat, so a recipe with no repeat teaches
+the statement as ritual. The item was explicit that the setting "must carry the setting in the recipe
+itself, not as a footnote"; it is in the recipe, and the repeat that gives it meaning is not.
+
+Every row the recipe produces sits at `cum/max = 1.00`, which step 3 calls "a corrupted row and
+nothing else produces it". The `EXECUTION_COUNT` above one qualifier is present and saves a careful
+reader, so this is not a false alarm, but the recipe's own output is the one shape where the tell has
+to be suppressed and the recipe does not say so.
+
+For contrast, from the same fixture: five repeats with reuse off gave `count=5 cum=15359.05
+max=3129.84 stddev=52.4493`, a ratio of 4.91, and five with reuse left on gave `count=5 cum=1055.54
+max=1055.44 avg=211.11`, a ratio of 1.00. The instrument does everything the item claims once
+something repeats.
+
+What would satisfy: the recipe produces more than one execution of whatever it wants a spread for.
+How many, whether the repeat lives in step 2's block or is named as a rule in step 3, and whether
+step 5's deliberate "name each child once" stays as it is, are all choices between arms and so the
+implementer's rather than mine.
+
+Non-blocking, no response needed.
+
+- The profiler's self-sampling caveat is the one constraint from the item's list that landed nowhere:
+  the collector thread is sampled and not excluded, it was half of all samples in the item's own
+  probe, and so a `getTop(3)` spends a slot on `Profiler.getRunnableStackTraces`. Step 1 now tells a
+  reader the instrument is usable and to raise `depth` before reading a profile, which is exactly the
+  reader who will meet that. It is small, and the item file dies at Done, so if it is not worth a
+  clause it should be dropped by decision rather than by omission.
+- Recorded as checked rather than as a finding: the citation policy's new third category is not a
+  scope deviation, though the spec did say nothing asks that policy to change. Without it the policy
+  as written forbids the profiler frame counts and the trace-file size ratio the spec did ask to
+  land, so the paragraph is a consequence of the approved change rather than an addition to it. The
+  transition commit flags it for the reviewer, which is where it belonged.
+- `relations` in step 2's block is undefined, as `tmp` above it already was, and the prose directly
+  under the block tells the reader to name their own list, so it reads as a placeholder rather than a
+  defect. Raising it only because whatever answers finding 1 lands in that same block.
+- The honest ratio's floor is now four independent fixtures wide, 1.81 and 1.95 in round 2, 1.97 in
+  the implementation, and 4.91 here. That spans nearly the whole range from the corrupt reading to
+  the execution count, which is a stronger case for the skill's refusal to name a cutoff than the
+  skill's own text needs to make.
+- `f216109`'s message cites `4872bfa` for the reproduction; the commit carrying it on this branch is
+  `8c03600`, the pre-rebase name having gone with the rebase. Nothing to fix in published history,
+  noted so the next reader of the trail is not looking for a commit that is not on the branch.
