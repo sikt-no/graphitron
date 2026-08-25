@@ -664,10 +664,35 @@ classifies and cannot generate. The fix would be to give that class a readable p
 reaches the input axis, where the same class grounds the unbound `PojoInputType` default. Promoting
 it needs that question answered first, and it is not a documentation question.
 
+**Slice 3, part four: the class-backed parent, and a row that was not true.** The class-backed table
+went from eight rows to three. Two were retired by promoting `service-child-class-backed-parent` as
+the page's 24th example, placed beside the `@table`-parented service pair so the two read as a
+minimal pair on the parent's shape alone. Three more were the fold-in kind from part three: two
+`RecordReadField` rows the `target` shape example already demonstrates, and the FK-reached `@table`
+row the record-handoff example already demonstrates.
+
+The sixth row is the finding. It claimed an async DataLoader fetcher and a `rows*()` method for
+`@table` + `@lookupKey` under a record parent, and that cell emits nothing at all. Single cardinality
+is rejected at validate time; the list spelling the rejection message points at passes validation and
+reaches no producer. That second half is not a discovery so much as something the tree already knew
+and the page did not: `record-method` is the corpus's one recorded launcher-production-gap entry, and
+`ClassifiedDslTest` pins the roster at exactly that one fixture with the gap's reason spelled out.
+The row was describing the destination while a test three directories away described the surface.
+
+This is the shape of defect the item was filed for, and it argues for a filter the earlier parts did
+not state: a reference row claiming generated output is worth checking against a fixture even when
+no promotion is in view, because a row nothing renders is a row nothing has ever checked. It also
+sets the honest handling. The row stays, corrected to say what happens and pointing at the fixture
+that pins it, because deleting it would drop a known gap rather than document one. `record-method`'s
+comment now records why it cannot be promoted, so the next pass does not spend the same afternoon on
+it. Attempting the list spelling to make it promotable is what surfaced all of this, and backing that
+out was correct: it would have moved the fixture off the guard it is the recorded entry for.
+
 **Still to do.** The two remaining marked sections ("Type Classification", "Field Classification")
 keep their marks until the examples that subsume them land; "Implicit Classification Rules" is
-already gone. The reference tables that still describe a mechanism no example shows are the two Child
-Fields tables, where the class-backed parent's eight rows are the larger gap.
+already gone. The largest reference table still describing a mechanism no example shows is Child
+Fields on a `@table` parent, at fourteen rows across its two tables. The class-backed table is down to three: `@sourceRow`,
+the `errors:` slot, and the corrected `@lookupKey` gap.
 
 **The outcome block, and the fork the owner settled.** Building it turned up something the plan
 does not cover: **not every doc example generates.** The corpus is a classification corpus, and a
