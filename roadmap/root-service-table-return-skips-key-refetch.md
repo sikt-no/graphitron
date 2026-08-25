@@ -1,7 +1,7 @@
 ---
 id: R834
 title: "A top-level @service returning a @table type reads columns off the returned record instead of refetching by key"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 2
 theme: service
@@ -82,3 +82,204 @@ value, which is the mistake the page currently invites.
 Reported externally as GitHub issue 534 against 10.0.0-RC33, with the RC34 generated code inspected
 and unchanged; confirmed against the rewrite on 2026-08-25 by reading the generated sources in
 `graphitron-sakila-example/target/generated-sources/`.
+
+## Design
+
+The rule in one sentence: a root `@service` field returning a `@table`-bound type re-fetches the
+requested fields by primary key, the contract the polymorphic and discriminated service returns
+already state, so the author's obligation everywhere becomes "populate the key columns and
+Graphitron fetches the rest". The mechanism, in dependency order; every named symbol was verified
+against the tree on 2026-08-25.
+
+**1. Model: mint the reentry member.** The passthrough is one clause, `rootServicePassthrough`, in
+`OperationMembers.mintsReentry`, with a twin production in `OperationMemberRelation`; the two are
+pinned equal by `OperationMemberMintPinTest`, so they flip together. Deleting the clause makes the
+mint read as the positive fact it always gated: a bare table target holding produced records mints
+reentry, full stop. `OperationMembers.DECLARED_SHAPES` must simultaneously admit `Kind.REENTRY`
+into the optional set for `QueryServiceTableField` and `MutationServiceTableField`, or
+`validateAgainstDeclaredShape` hard-fails construction. After the flip, `emitsKeyedReQuery()` and
+`requiresReFetch()` agree at every coordinate; the javadoc that currently explains their one
+disagreement (on `OutputField`, `OperationMember.Reentry`, and the two service-table leaves)
+rewrites to the new rule.
+
+**2. Launcher: a root-service verdict.** `LauncherCommands.verdictOf` answers `Launch.NONE` for a
+root service today (the `SERVICE` rule is gated on not-root), and `LauncherRelationClosureTest`
+pins that absence. Add a `Launch` arm for the root-service reentry, verdict "root, has a
+`ServiceCall` member, has a `Reentry` member", minting a `LaunchSource.ProjectedReentry` whose
+`ParentCorrelation.OnLiftedSlots` correlation is the return table's own primary key. That is PK
+self-identity, the same correlation `FilmCardWrapperFetchers.rowsFilm` runs on. `Launch` is a total
+switch at every consumer, so the compiler walks the cascade. `RootLauncherRenderer` already
+dispatches `ProjectedReentry` to `ReentryRowsFragments`; the renderer needs no change.
+
+**3. Emitted body: reuse `ReentryRowsFragments`.** `projectedBody` already emits both
+cardinalities: `VALUES(idx, pk...)` join plus `$project` from the live selection set plus
+`ORDER BY idx` for lists, and a degenerate plain key equality for single. Its three inputs (target
+table, key columns, projection unit) all derive from facts the leaf already carries. One real type
+decision remains: `LauncherCommands.INVOCATION_BY_SOURCE` has no arm for "keys captured by the
+caller from a service return"; `Invocation.Batched` presumes a loader and `ReturningKeyed` presumes
+a DML `RETURNING`. Recommendation: a new `Invocation` arm rather than a widened `ReturningKeyed`,
+because `ReentryRowsFragments.keysType` derives the keys-parameter type from the invocation and an
+honest arm keeps the census readable; implementation may land on widening if the type plumbing
+turns out identical, with the constraint that the keys type matches what `projectedBody` consumes.
+
+**4. Caller-side lift.** `buildServiceFetcherCommon` in `TypeFetcherGenerator` (shared by the query
+and mutation twins) grows a post-call step: lift each returned record's primary key, call the
+minted `rows<Field>` companion, return its result instead of the raw records. The lift loop shape
+already exists twice, in `MultiTablePolymorphicEmitter.buildServiceDispatchBlock` and
+`ServiceRowsFragments.liftBody`. When the service method declared no `dsl` parameter, synthesize
+the local from `TenantDslEmitter.dslExpression`, exactly as `MultiTablePolymorphicEmitter` does for
+the polymorphic refetch. The refetch therefore runs on `graphitronContext(env).getDslContext(env)`,
+the request's connection, matching the polymorphic path.
+
+**5. Domain return type.** `QueryServiceTableField.domainReturnType()` is
+`DomainReturnType.Record(table)` today because children walked the service's typed record. After
+the change children walk the re-fetched projected row, like every catalog read, so the domain
+return type moves to whatever the catalog root read answers and downstream child wiring agrees.
+This is the widest-reaching edit in the item; see Risks.
+
+**6. Missing-row contract.** A lifted key with no matching table row drops from a list result and
+resolves a single result to null, matching the drop contract `ContentSearchService` already pins
+(its record 999). Pin the plain-shape version at execution tier.
+
+**7. Rejections, validator-mirrored per the house pattern.** Three validator touchpoints. First,
+the keyless return table: a root `@service` returning a `@table` type whose table has no primary
+key has nothing to key the refetch on, so it is rejected at classify time with the table named,
+mirrored in the validator. The child `@service` arm already carries the exact sentence
+("@service on a table-bound return type requires the returned table 'X' to have a primary key for
+identity re-projection", `GraphitronSchemaValidator.validateServiceTableField`); the root arm's
+`validateQueryServiceTableField` is an empty method today. This is a new build failure on schemas
+that currently build; changelog and docs say so. Second, the reentry implementedness guard
+currently rejects any `emitsKeyedReQuery()` leaf that is neither a `BatchKeyField` nor a
+`MutationField.DmlTableField`; it must admit the new leaves in the same commit that mints the
+member. Third, the existing rejection of an error channel on a reentry `@service` field (the
+reentry fetcher inlines its channel arms on a single-channel premise) must be checked against root
+services carrying error channels, which become reentry under this item; if the combination is
+live in fixtures, the reentry emit learns the channel arms rather than the rejection widening, and
+either outcome gets a pipeline pin.
+
+## The backlog's four questions, settled
+
+**Escape hatch reach.** The no-`@table` shape works today and is pinned: `FilmDetails` has no
+`@table`, is backed by jOOQ's `FilmRecord` (`JooqTableRecordType`, asserted by
+`SharedDomainTypeProducerPipelineTest`), and `FilmDetailsFetchers.title` reads the column straight
+off whatever the producer handed over. So the escape hatch exists and costs nothing new. What it
+cannot do is mask one column on an otherwise ordinary `@node` entity, because `@node` requires
+`@table`; no current surface (condition, tenant scoping) offers per-caller column redaction. Per
+the backlog's own framing that is a follow-up item to file if demand appears, not a blocker; the
+docs name the hatch and what dropping `@table` gives up.
+
+**Keyless tables.** Rejected, per Design point 7. Breaking for schemas that currently build; the
+changelog entry says so and names the fix (add a primary key, or drop `@table` for the direct-read
+shape).
+
+**The extra lookup.** A service that already selects every column pays one additional batched
+keyed SELECT per field until rewritten to select keys only. Accepted: it is one query per field
+per request, the same price every polymorphic service return already pays, and correctness beats
+the saved round trip. The docs state the cost and the key-only rewrite that removes it.
+
+**Connection identity.** The refetch runs on the request's `DSLContext`. No fixture disagrees: the
+multi-schema and tenant `@service` fixtures return scalars, not `@table` types (the cross-schema
+fixture's concern is inbound record naming; the tenant fixture is a child scalar), and the tenant
+fan-out on a root `@service` is already rejected by `TenantFanOutClassificationTest`. One comment
+in that test states its basis as "a plain service return's reach is structurally empty", which
+stops being true under this item; the rejection stays, the comment rewrites. A new execution
+fixture pins that key-only records refetch on the request connection.
+
+## Phases
+
+**Phase 1, additive.** The keyless-return-table rejection at the root arm: classifier diagnostic
+plus validator mirror plus pipeline pins, cloned from the child arm's wording and from the
+reject-plus-control shape of `PkLessParentServiceSourcesRejectionTest`. Lands alone and green
+before any behaviour changes.
+
+**Phase 2, cutover.** One commit, because the pieces are coupled by the implementedness guard:
+the model flip (both mint homes plus `DECLARED_SHAPES`), the `Launch` and `Invocation` arms with
+the `ProjectedReentry` row producer, the caller-side lift in `buildServiceFetcherCommon`, the
+domain-return-type move, and the guard admission. Pin updates ride along:
+`OperationMemberMintPinTest`, `ReFetchDerivationTest`, `LauncherRelationClosureTest` (the pinned
+absence of a root-service launcher row becomes a pinned presence),
+`GraphitronSchemaBuilderTest`'s service rows, the corpus examples whose outcome tables show the
+passthrough, and `TypeFetcherGeneratorTest`'s body-shape comment.
+
+**Phase 3, proof and prose.** Rewrite `SampleQueryService.filmsByService` to populate only
+`FILM_ID`, which is the fixture the tier never had; its siblings (`filmsByServiceRenamed`, the
+path-mapping family) stay full-select to prove already-full records keep working and the extra
+lookup is harmless. Execution pins for the key-only fixture, the missing-row drop, and the
+existing `titleTitlecase` child resolving off the projected parent. Update the service javadoc
+contracts (`SampleQueryService` states the passthrough today; `PolymorphicSearchService` and
+`ContentSearchService` become statements of the now-universal rule). Docs per the section below.
+
+## Test surface
+
+- Pipeline: the pin updates named in Phase 2; new reject-plus-control tests for the keyless root
+  return; a pin for the error-channel outcome of Design point 7.
+- Unit: `TypeFetcherGeneratorTest.queryServiceTableField_emittedFetcher_declaresTypedResult`
+  re-asserts the new declared return type; body shape stays delegated to execution tier per its
+  own comment.
+- Execution (`graphitron-sakila-example`): key-only service records resolve full column data;
+  absent key drops from a list and nulls a single; full-select siblings return unchanged results;
+  `filmsByService_titleTitlecase_resolvesOnServiceReturnedTypedParent` stays green with its
+  name and comment updated to the projected-parent reality.
+- Compilation: the emitted companion compiles at Java 17 under the existing gate; nothing new.
+
+## User documentation (first-client check)
+
+The unified contract, replacing the passthrough statement in
+`docs/manual/how-to/handle-services.adoc` (currently at the `Result<TableRecord>` heading and
+restated in Pitfalls):
+
+> When the return type is bound to a `@table` GraphQL type, the framework treats the returned
+> records as key carriers: it lifts each record's primary key and re-selects the fields the query
+> asked for from the table, in one batched query on the request's connection. Populate the key
+> columns; everything else comes from the table. This is the same contract for every
+> table-returning service shape (plain, interface, union), and it is the outbound mirror of the
+> inbound rule above: records crossing the service boundary carry the key columns and nothing
+> else, in both directions.
+
+That last clause is the connection the page currently lacks between its inbound IMPORTANT
+admonition and the outbound contract; the admonition gains the same cross-reference. The Pitfalls
+entry rewrites from "returns skip framework projection" to the keyless-table rejection and the
+missing-row drop. A short escape-hatch paragraph follows the contract: a type without `@table`
+whose backing class is a jOOQ record keeps the direct read (the `FilmDetails` shape), the author
+names columns with `@field(name:)`, and dropping `@table` gives up the catalog-driven surface
+including `@node`. The fourth surface, `docs/manual/reference/directives/service.adoc`, currently
+states "the framework treats jOOQ records as already-populated rows and skips its own projection"
+and rewrites to one sentence of the new contract. Changelog entry states the behaviour change and
+the new keyless rejection loudly.
+
+## Retired vocabulary
+
+- "root `@service` passthrough" and the `rootServicePassthrough` clause name
+- "universal passthrough" (the `buildServiceFetcherCommon` javadoc's phrase)
+- "treats the records as already-projected rows" / "already-populated rows"
+- "the service is responsible for selecting every column"
+
+## Risks
+
+- The domain-return-type move (Design point 5) is the widest unknown: every child shape hanging
+  off a service-returned `@table` parent (nesting fields, batched children, reference paths, the
+  `titleTitlecase` wrap) must agree on the projected-row source. Each child shape is already
+  execution-covered off catalog reads; the residual risk is an arm keyed specifically on the
+  service parent's typed record, and the verification build surfaces it.
+- The error-channel interaction (Design point 7) may force the reentry emit to learn channel arms,
+  which grows Phase 2.
+- A consumer whose service deliberately returned column values differing from the table gets
+  table values after upgrading. That is the intended fix of the reported bug, but it is a silent
+  semantic change for anyone relying on it; the changelog and the escape-hatch paragraph are the
+  mitigation.
+- `ValuesJoinRowBuilder` caps the VALUES row at `Row22`, so composite primary keys up to 21
+  columns; the same cap every existing keyed path has, no new constraint.
+
+## Done criteria
+
+- Generated `QueryFetchers.filmsByService` lifts keys and returns the `rows<Field>` companion's
+  result; no direct passthrough of service records bound to a `@table` type remains.
+- Named execution test proves key-only service records resolve full column data, and another
+  proves the missing-row drop/null contract.
+- The keyless root return is rejected naming the table, classifier and validator both, with
+  reject-plus-control pipeline pins.
+- `emitsKeyedReQuery()` agrees with `requiresReFetch()` at every coordinate and the javadoc
+  explaining their old disagreement is gone.
+- All four documentation surfaces state the one-sentence contract, the inbound and outbound rules
+  cross-reference each other, and the escape hatch is documented with what it gives up.
+- The retirement sweep at the Done gate finds none of the retired vocabulary.
