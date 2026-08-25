@@ -7,7 +7,7 @@ priority: 5
 theme: mutation-write
 depends-on: []
 created: 2026-08-17
-last-updated: 2026-08-24
+last-updated: 2026-08-25
 ---
 
 # A DML carrier payload with an errors field loses its return-derived write target
@@ -482,3 +482,65 @@ form rather than its number. What would satisfy it: state the invariant the swee
 give a grep that reaches every spelling of it (`rung.3`, `bridge`, `input's {@code @table}`), and
 keep the site list as worked examples of what the grep finds rather than as the closed set the
 implementer is measured against. `resolveInsertWriteTarget`'s javadoc stays the wording template.
+
+**Spec -> Ready, 2026-08-25: revisions, the round above is unanswered and its second finding
+under-enumerates by one.** Question 1 again, for the same reason: the plan body has not changed
+since the round above was appended, so both of that round's findings stand exactly as filed. No
+commit anywhere in the repo touches this file after the one that appended them, and the Design
+section still reads "plus the one forced `switch` edit" while Implementation still reads "only the
+`switch` breaks at compile time" and "spelled at six sites, not two ... driven off a grep for the
+bridge". Nothing here reopens what that round settled; this round exists to correct one count in it
+so the next revision closes both findings in one pass instead of a fourth.
+
+*Finding 1 re-verified, nothing to add.* `CarrierBinding` permits three subtypes
+(`TypeBuilder:348`), `NotACarrier` is a component-less record (`:354`), `carrierVerdict`'s switch arm
+is the type pattern `case CarrierBinding.NotACarrier ignored -> null` (`:410`), and `:388` is the
+sole `new CarrierBinding.NotACarrier()` in the tree. Sealing `NotACarrier` over two arms leaves that
+pattern matching the whole subtree, so the switch stays exhaustive; the construction site is the
+only forced edit. The prior round's remedy is the right one.
+
+*Finding 3: three sites carry the rung-number spelling, not two, and all three predate the round
+that named two.* The round above cites `FieldBuilder:5768` and `:6335`. At its own commit the file
+carried three `rung-1-vs-rung-3` occurrences, at 5754, 6321 and 6353, and it carries the same three
+today:
+
+* `FieldBuilder:5755`, a body comment in `classifyUpdatePayloadField`: "the rung-1-vs-rung-3 table
+  match (the payload's `@table`-element table vs the input's deprecated `@table`) is owned by
+  `resolveUpdateWriteTarget`".
+* `FieldBuilder:6321`, the javadoc on `classifyInsertPayloadField`: "`resolveInsertWriteTarget`,
+  which owns the rung-1-vs-rung-3 table-match check".
+* `FieldBuilder:6353`, a body comment inside that same method: "resolve the write target (and the
+  rung-1-vs-rung-3 table-match)".
+
+Both citations are also fourteen lines off the real positions at that commit, so the site list was
+stale in the round that filed it. That is the third consecutive round to miscount this one sweep,
+which retires the list form rather than adjusting its number.
+
+The full population is nine: the six prose-form sites the Implementation section already names
+(`MutationInputResolver:134`, `RecordBindingResolver:611`, `FieldBuilder:5525`, `:5548`, `:5872`,
+`:6179`, all confirmed present and all wrong) plus the three above. Three greps reach all nine:
+`rung-1-vs-rung-3` finds the rung-number form, `bridge` finds four of the prose form, and `input's`
+finds the remaining two. The last two over-match on unrelated live bridges
+(`FieldBuilder:1844`, `:2104`, `TypeBuilder:1033`, `RecordBindingResolver:660`), which is the
+argument for the invariant being the instruction and the hits being candidates to judge:
+`resolveDmlWriteTableRef` and `FieldBuilder.resolveReturnCapableWriteTarget` each have exactly two
+rungs, so no comment may name a third rung or an input-`@table` rung. `resolveInsertWriteTarget`'s
+javadoc (`FieldBuilder:6210`) stays the wording template, and
+`resolveReturnCapableWriteTarget`'s own javadoc is the authority the three rung-number sites
+contradict: it enumerates rung 1 and rung 2 and locates the must-agree cross-check between them.
+
+*Also checked, and holding.* The diagnosis and both design moves survive an independent read.
+`prepareForWalk` still runs `resolveAll()` at 220, `buildClassificationIndices()` at 232,
+`groundRoutineCarriers()` at 236 and the trailing `lookAheadMemo.clear()` at 251, with the comment
+above 236 naming the ErrorIndex precondition the DML family never got.
+`resolveDmlWriteTableRef` has the two rungs its javadoc enumerates and still asserts the
+phase-portability this bug falsifies. `carrierBinding` runs the DML, routine and `@service` scans in
+that order, so "the first that admits" needs no rule of its own, and its DML and routine arms
+discard the `Admit` they test, so carrying it is a pattern-variable bind rather than a new
+derivation. `BuildContext.typeBuilder` exists as a nullable field with the null-guard precedent the
+plan points at (`BuildContext:276`). The three fixtures the Tests section flips exist under the
+names it gives them. Question 2 is answered: the ordering move extends the treatment
+`groundRoutineCarriers` already has, the write-gate turns a positional invariant into a structural
+one, and the sealed split inside `NotACarrier` keeps one derivation with one publisher.
+
+Status stays Spec.
