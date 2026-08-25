@@ -1,7 +1,7 @@
 ---
 id: R828
 title: "The store-performance skill hand-rolls timings H2 already collects"
-status: In Progress
+status: In Review
 bucket: dx
 priority: 4
 theme: tooling
