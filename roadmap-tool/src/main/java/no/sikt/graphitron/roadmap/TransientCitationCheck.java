@@ -102,19 +102,6 @@ final class TransientCitationCheck {
     private static final Set<String> PERMANENT_ARTIFACTS =
         Set.of("changelog.md", "workflow.adoc", "README.md", "index.adoc");
 
-    /**
-     * Citations already in the walked habitat when the walk was added, each one real. Carrying
-     * them lets the guard land before the pages are rewritten rather than after, which is the
-     * order that makes the rewrite verifiable: the mechanism that will hold the pages is in place
-     * while they are edited. Every entry is {@code <repo-relative page>|<citation>}.
-     *
-     * <p>This is a burn-down list, not a suppression list, and {@link #staleBaselineEntries} is
-     * what keeps the distinction real: an entry whose citation is gone fails the check, so the set
-     * empties itself as the pages are cleaned and cannot survive as a permanent exemption. When it
-     * reaches empty, delete it, {@link #staleBaselineEntries}, and this javadoc with it.
-     */
-    static final Set<String> KNOWN_CITATIONS = knownCitations();
-
     private TransientCitationCheck() {}
 
     /**
@@ -148,19 +135,6 @@ final class TransientCitationCheck {
                 System.err.println("  " + m);
             }
             throw new BuildFailure("agent-onboarding document declared for scanning does not exist");
-        }
-
-        List<String> stale = isBaselineRoot(root) ? staleBaselineEntries(root, KNOWN_CITATIONS) : List.of();
-        if (!stale.isEmpty()) {
-            System.err.println("check-transient-citations: " + stale.size()
-                + " baseline entr(ies) in TransientCitationCheck.KNOWN_CITATIONS name a citation"
-                + " that is no longer in the tree. The baseline is a burn-down list: delete the"
-                + " entry in the commit that removed the citation, so it cannot survive as a"
-                + " permanent exemption.");
-            for (String entry : stale) {
-                System.err.println("  " + entry);
-            }
-            throw new BuildFailure("stale transient-citation baseline entries");
         }
 
         if (result.findings().isEmpty()) {
@@ -209,7 +183,6 @@ final class TransientCitationCheck {
                 scanned++;
                 String relative = root.relativize(page).toString().replace('\\', '/');
                 for (Finding f : scanFile(page)) {
-                    if (KNOWN_CITATIONS.contains(relative + "|" + f.citation())) continue;
                     findings.add(new Finding(relative, f.line(), f.citation(), f.content()));
                 }
             }
@@ -233,33 +206,7 @@ final class TransientCitationCheck {
         }
     }
 
-    /**
-     * Baseline entries whose citation is no longer in the tree. Each one is an edit that cleaned a
-     * page without deleting the line that recorded it, which is how a burn-down list turns into a
-     * permanent exemption if nothing checks.
-     */
-    static List<String> staleBaselineEntries(Path root, Set<String> baseline) throws IOException {
-        Set<String> live = new java.util.LinkedHashSet<>();
-        for (String tree : SCANNED_TREES) {
-            for (Path page : pagesUnder(root.resolve(tree))) {
-                String relative = root.relativize(page).toString().replace('\\', '/');
-                for (Finding f : scanFile(page)) {
-                    live.add(relative + "|" + f.citation());
-                }
-            }
-        }
-        return baseline.stream().filter(entry -> !live.contains(entry)).sorted().toList();
-    }
 
-    /**
-     * Whether {@code root} is the repository the baseline was written against, by the same
-     * {@code roadmap/workflow.adoc} anchor the Java-source guards walk up to find. The baseline
-     * names paths in this repository, so against any other root every entry would read as stale
-     * and the check would fail for a reason that has nothing to do with a citation.
-     */
-    static boolean isBaselineRoot(Path root) {
-        return Files.isRegularFile(root.resolve("roadmap/workflow.adoc"));
-    }
 
     /**
      * Flags every item-id and non-permanent {@code roadmap/} path citation in {@code file}.
@@ -287,14 +234,6 @@ final class TransientCitationCheck {
     }
 
 
-    private static Set<String> knownCitations() {
-        Set<String> known = new java.util.LinkedHashSet<>();
-        // reference/code-generation-triggers.adoc
-        known.add("docs/architecture/reference/code-generation-triggers.adoc|R145");
-        known.add("docs/architecture/reference/code-generation-triggers.adoc|R431");
-        known.add("docs/architecture/reference/code-generation-triggers.adoc|R432");
-        return Set.copyOf(known);
-    }
 
     record Finding(String doc, int line, String citation, String content) {}
 

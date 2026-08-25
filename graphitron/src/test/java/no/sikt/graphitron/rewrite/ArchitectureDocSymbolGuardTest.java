@@ -33,14 +33,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code SIBLING_MODULE} exemptions below: a class in a module this one does not depend on cannot
  * be resolved from here, and is exempted by name rather than resolved by a second mechanism.
  *
- * <p><b>Two lists, two meanings.</b> {@link #EXEMPT} is permanent and claims a span is legitimately
- * not a resolvable type. {@link #KNOWN_DANGLING} is temporary and claims the opposite: the span is
- * real rot that a later commit removes. {@link #baselineCarriesNoStaleEntry} fails on an entry
- * whose citation is gone, so the list empties itself as the pages are rebuilt and cannot rot into a
- * permanent suppression. When it reaches empty, delete it and this paragraph with it.
+ * <p>{@link #EXEMPT} is the one list, and it is permanent: each entry claims a span is legitimately
+ * not a resolvable type. It carried a second, temporary list beside it while the pages this guard
+ * landed against were still being rebuilt; that list burned down to empty and went away with the
+ * rebuild, which is what it was built to do.
  *
- * <p>When this guard fires on a name that is not in either list, repoint the citation at the symbol
- * that replaced it, or state the fact without naming a type; do not add an exemption to silence it.
+ * <p>When this guard fires, repoint the citation at the symbol that replaced it, or state the fact
+ * without naming a type; do not add an exemption to silence it. {@link #exemptionsAreAllStillCited}
+ * keeps the list honest in the other direction: an exemption for text no page carries any more is an
+ * unguarded census of its own.
  */
 @UnitTier
 class ArchitectureDocSymbolGuardTest {
@@ -72,12 +73,6 @@ class ArchitectureDocSymbolGuardTest {
      */
     static final Map<String, String> EXEMPT = exemptions();
 
-    /**
-     * Citations that resolve to nothing and are known rot, carried so the guard can land before the
-     * pages are rebuilt rather than after. Every entry names what the citation should become.
-     */
-    static final Map<String, String> KNOWN_DANGLING = knownDangling();
-
     @Test
     void everyCitedTypeResolvesOnTheClasspath() throws IOException {
         Path root = GuardScope.locateRepoRoot();
@@ -107,7 +102,6 @@ class ArchitectureDocSymbolGuardTest {
         List<Citation> dangling = citations.stream()
             .filter(c -> !ArchitectureDocSymbolScanner.resolves(c.symbol(), universe))
             .filter(c -> !EXEMPT.containsKey(c.symbol()))
-            .filter(c -> !KNOWN_DANGLING.containsKey(c.symbol()))
             .toList();
 
         assertThat(dangling)
@@ -117,27 +111,6 @@ class ArchitectureDocSymbolGuardTest {
                 + "(emitted output, another module's internals, a GraphQL type, an enum constant, "
                 + "an off-classpath library); never to silence the guard. Offending citations:\n"
                 + dangling.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).orElse(""))
-            .isEmpty();
-    }
-
-    @Test
-    void baselineCarriesNoStaleEntry() throws IOException {
-        Path root = GuardScope.locateRepoRoot();
-        Set<String> universe = ArchitectureDocSymbolScanner.classpathTypeNames();
-        Set<String> cited = new LinkedHashSet<>();
-        for (Path page : ArchitectureDocSymbolScanner.pages(root)) {
-            for (Citation c : ArchitectureDocSymbolScanner.scanPage(root, page)) {
-                if (!ArchitectureDocSymbolScanner.resolves(c.symbol(), universe)) cited.add(c.symbol());
-            }
-        }
-
-        Set<String> stale = new TreeSet<>(KNOWN_DANGLING.keySet());
-        stale.removeAll(cited);
-
-        assertThat(stale)
-            .as("KNOWN_DANGLING is a burn-down list, not a suppression list: an entry whose "
-                + "citation is gone must be deleted in the commit that removed it, so the list "
-                + "reaches empty and goes away with the rebuild. Delete these entries: %s", stale)
             .isEmpty();
     }
 
@@ -165,19 +138,16 @@ class ArchitectureDocSymbolGuardTest {
 
         // emitted: written into a consumer's sources by a generator, never declared here.
         exempt.put("ColumnFetcher", "emitted: per-app runtime class");
-        exempt.put("ConnectionHelper", "emitted: per-app runtime class");
         exempt.put("ConnectionResult", "emitted: per-app runtime class");
         exempt.put("EntityFetcherDispatch", "emitted: per-app federation dispatch class");
         exempt.put("Graphitron", "emitted: per-app entry-point class carrying newExecutionInput");
         exempt.put("GraphitronContext", "emitted: per-app context interface");
         exempt.put("GraphitronContextImpl", "emitted: the consumer's own implementation of it");
-        exempt.put("GraphitronValues", "emitted: per-app values class");
         exempt.put("NodeIdEncoder", "emitted: per-app node-id encoder");
         exempt.put("NodeIdStrategy", "emitted: per-app node-id strategy interface");
         exempt.put("OrderByResult", "emitted: per-app order-by result class");
         exempt.put("Outcome", "emitted: error-channel result type in generated output");
         exempt.put("Outcome.Success", "emitted: the success arm of that generated result type");
-        exempt.put("QueryNodeFetcher", "emitted: per-app node fetcher");
 
         // module: a real reactor type in a module this test tier does not depend on.
         exempt.put("BundledLibraryLookup", "module: graphitron-lsp");
@@ -235,19 +205,5 @@ class ArchitectureDocSymbolGuardTest {
         exempt.put("RecordN", "library: jOOQ declares Record1..Record22; RecordN is the family shorthand");
 
         return exempt;
-    }
-
-    /**
-     * The rot the survey found, plus what the extractor turned up beside it. Each entry is a real
-     * finding waiting on the commit that rebuilds its section, not a claim that the citation is
-     * fine. {@link #baselineCarriesNoStaleEntry} deletes the list from under itself as they go.
-     */
-    private static Map<String, String> knownDangling() {
-        Map<String, String> known = new LinkedHashMap<>();
-        known.put("ColumnFetcherClassGenerator", "Source Map generator list; the class is gone");
-        known.put("InputDirectiveInputTypes", "Source Map directives row; the class is gone");
-        known.put("FetchRelated", "named as a member of the derived layer; no such type");
-        known.put("LiftedHop", "retired onto ParentCorrelation.OnLiftedSlots; the row still names it");
-        return known;
     }
 }

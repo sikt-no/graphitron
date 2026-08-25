@@ -7,7 +7,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -200,35 +199,8 @@ class TransientCitationCheckTest {
             .isInstanceOf(BuildFailure.class);
     }
 
-    @Test
-    void aBaselineEntryWhoseCitationIsGone_isStale() throws IOException {
-        // The property that keeps the burn-down list from becoming a suppression list: an entry
-        // for a citation nobody writes any more must be reported so the cleanup commit deletes it.
-        String planted = "docs/architecture/index.adoc|R999999";
 
-        assertThat(TransientCitationCheck.staleBaselineEntries(repoRoot(), Set.of(planted)))
-            .containsExactly(planted);
-    }
 
-    @Test
-    void aBaselineEntryStillCited_isNotStale() throws IOException {
-        // The other direction: the real baseline is exactly the live population, so nothing in it
-        // is stale today. This is what makes the burn-down assertion a live check rather than a
-        // list that happens to pass.
-        assertThat(TransientCitationCheck.staleBaselineEntries(
-            repoRoot(), TransientCitationCheck.KNOWN_CITATIONS)).isEmpty();
-    }
-
-    @Test
-    void aRootWithoutTheWorkflowAnchor_isNotJudgedAgainstTheBaseline(@TempDir Path dir) throws IOException {
-        // The baseline names paths in this repository. Against any other root every entry would
-        // read as stale, so the anchor decides whether the burn-down invariant even applies.
-        writeBothDocs(dir, "# Clean\n\nNo citations.\n", "# Web env\n\nClean.\n");
-
-        assertThat(TransientCitationCheck.isBaselineRoot(dir)).isFalse();
-        assertThat(TransientCitationCheck.isBaselineRoot(repoRoot())).isTrue();
-        assertThat(TransientCitationCheck.run(List.of(dir.toString()))).isZero();
-    }
 
     @Test
     void bothPublishedDocTreesAreScanned() {
@@ -238,6 +210,19 @@ class TransientCitationCheckTest {
         // contributor-facing one. Narrowing this list back needs a reason stated here.
         assertThat(TransientCitationCheck.SCANNED_TREES)
             .containsExactlyInAnyOrder("docs/architecture", "docs/manual");
+    }
+
+    @Test
+    void thePublishedDocTreesCarryNoTransientCitation() throws IOException {
+        // What the burn-down list was carrying us toward, now pinned directly. The list is gone
+        // because it reached empty; this is the assertion that keeps it empty, stated against the
+        // real trees rather than a fixture so a reintroduced id fails here and not only in the
+        // Maven step.
+        assertThat(TransientCitationCheck.scan(repoRoot()).findings())
+            .as("an architecture or manual page cites a roadmap item id or a roadmap/<slug> path. "
+                + "Both trees render to the public site, where the roadmap directory is not the "
+                + "reader's to search: state the fact, or cite a permanent artifact.")
+            .isEmpty();
     }
 
     @Test
@@ -251,13 +236,6 @@ class TransientCitationCheckTest {
         }
     }
 
-    @Test
-    void everyBaselineEntryNamesAPageAndACitation() {
-        assertThat(TransientCitationCheck.KNOWN_CITATIONS)
-            .as("the baseline is keyed by page and citation so one page's cleanup cannot excuse "
-                + "another's; a malformed entry would match nothing and never go stale")
-            .allSatisfy(entry -> assertThat(entry).matches("^docs/architecture/[\\w./-]+\\.adoc\\|R\\d+$"));
-    }
 
     @Test
     void run_withFindings_throwsBuildFailure(@TempDir Path dir) throws IOException {

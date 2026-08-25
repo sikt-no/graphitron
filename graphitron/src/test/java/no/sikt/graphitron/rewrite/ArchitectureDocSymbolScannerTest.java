@@ -110,13 +110,6 @@ class ArchitectureDocSymbolScannerTest {
                 .matches("^(emitted|module|schema|value|library|rejected): .+"));
     }
 
-    @Test
-    void everyBaselineEntryStatesWhatIsWrong() {
-        assertThat(ArchitectureDocSymbolGuardTest.KNOWN_DANGLING.values())
-            .as("a burn-down entry that does not say what the citation should become is a "
-                + "suppression wearing a different name")
-            .allSatisfy(reason -> assertThat(reason).isNotBlank());
-    }
 
     @Test
     void aGeneratedBlockIsSkippedWholeAndTheScanResumesAfterIt() throws IOException {

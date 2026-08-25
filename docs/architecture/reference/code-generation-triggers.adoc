@@ -1,119 +1,141 @@
 = Code Generation Triggers
 
-A guide to how GraphQL schema patterns drive Graphitron's code generation. This document introduces the classification pipeline and the vocabulary needed to read the source code. For variant details and record components, read the Javadoc on each source file listed in the <<source-map,Source Map>> below.
+You wrote a schema pattern. What does Graphitron generate from it, and where does each piece land?
+This page answers that, following the chain the generator actually runs: the schema becomes facts,
+the facts resolve into a verdict per coordinate, the verdicts join into command rows, and each row
+renders into a generated unit. Worked examples carry the bulk of the answer; every block in them is
+rendered from a live fixture, not transcribed.
 
 '''
 
-== How Classification Works
+== The chain
 
-[NOTE]
-====
-*Transitional.* This section describes the classification walk and the sealed model it produces, a
-surface being drained rather than one to extend. What it states is accurate today. For the
-architecture the walk drains into, the fact store and the command relations rendered from it, see
-xref:../explanation/pipeline-overview.adoc[Pipeline overview].
-====
+Four stages, each reading only the stage before it.
 
-`GraphitronSchemaBuilder` reads the schema once and classifies every type and field into a sealed
-hierarchy. The generators then operate on these classified models ; they never re-read directives.
-The walk and the `GraphitronSchema` model it produces are the *transitional producer surface* of the
-strangler migration described in the xref:../explanation/pipeline-overview.adoc[Pipeline overview]:
-directives are also decoded by capture into the fact store's `graphitron_` relations, consumers
-re-source from the walk's model onto the store one at a time, and new facts land only in the store,
-never as new leaf types.
-
-----
-GraphQL Schema
-      ↓
-GraphitronSchemaBuilder  (classification walk ; transitional producer surface)
-      ↓
-GraphitronSchema
-  ├── Map<String, GraphitronType>                      types         (one per GraphQL type)
-  ├── Map<FieldCoordinates, GraphitronField>           fields        (one per field)
-  ├── Map<String, List<GraphitronField>>               fieldsByType  (derived index)
-  ├── Map<String, EntityResolution>                    entitiesByType (federation entity mappings)
-  └── List<BuildWarning>                               warnings      (non-fatal advisories)
-      ↓
-Generators
-  ├── TypeFetcherGenerator     →  fetchers.*Fetchers
-  ├── ProjectionUnitRenderer   →  types.* (command-driven)
-  └── ConditionGlueRenderer    →  conditions.*Conditions (rendered from ConditionCommand rows)
-----
-
-Each sealed variant maps to specific generator output. The sections below show the full
-directive-pattern → variant → generator output chain.
-
-'''
-
-== Classification Vocabulary
-
-[NOTE]
-====
-*Transitional.* This section describes the field axes (source context, target type, scope) in their
-original form, superseded by the three-axis `(source, operation, target)` model the field now carries
-directly through its `source()` / `operation()` / `target()` accessors. The terms below survive as
-properties derived from those three axes, not as independent axes. For how a field classifies today,
-see <<field-classification,Field Classification>>; for the architecture both are being drained into,
-see xref:../explanation/pipeline-overview.adoc[Pipeline overview].
-====
-
-Two independent classifications describe every field: the *source context* it is defined on (parent type), and the *target type* it returns. Both matter because scope transitions are determined by the pair, not by either alone.
-
-=== Source context
-
-The type on which a field is defined.
-
-|===
-| Source context | Trigger | What Graphitron generates
-
-| *Unmapped* | *(none ; Query, Mutation)* | Entry point. No SQL yet.
-| *Table-mapped* | `@table` | Full SQL generation ; queries, joins, projections.
-| *Result-mapped* | producer's reflected return is a Java/jOOQ class | Runtime wiring only. The type's backing class is derived by reflection from its producing field (a `@service` return or a parent-accessor chain). Graphitron validates types and wires data fetchers, but generates no SQL until a new scope starts.
-|===
-
-=== Target type
-
-The classification of the field's return type (the element type ; looked through `List` and `Connection` wrappers). Encoded as `ReturnTypeRef`.
-
-|===
-| Target type | `ReturnTypeRef` variant | When it appears
-
-| *Target table* | `TableBoundReturnType` | Return type has `@table` (or is a `@table` + `@discriminate` interface), or a `NestingField` inherits the parent's table context. Carries a fully resolved `TableRef`.
-| *Target record* | `ResultReturnType` | Return type is class-backed: its backing Java/jOOQ class is reflected from the producing field's return type, not from a directive.
-| *Target scalar* | `ScalarReturnType` | Scalar, enum, or an unclassified type name (e.g. `@nodeId(typeName:)` argument types).
-| *Target polymorphic* | `PolymorphicReturnType` | Interfaces/unions spanning multiple tables, and the Relay/Federation built-ins `node` / `_entities`.
-|===
-
-"Target table" is the pivot concept for scope transitions: every new scope is a query rooted in some target table, driven either by the root entering a table-mapped type or by a *record handoff* from a result-mapped source into a target-table return.
-
-=== Scope
-
-A Graphitron scope corresponds to one SQL statement. Fields within a scope contribute to the same query. Scope is determined by the *(source context, target type)* pair ; *independently* of `@lookupKey`, which is orthogonal.
-
-[#diagram-d3]
+[#diagram-chain]
 [source,mermaid]
 ----
-stateDiagram-v2
-    direction LR
-    [*] --> NoScope
-    NoScope --> InScope : enter<br/>(unmapped root field<br/>reaches target-table type)
-    InScope --> InScope : split<br/>(@splitQuery on table-mapped source<br/>→ new scope via DataLoader, parent PK key)
-    InScope --> InScope : record handoff<br/>(target-table field on result-mapped source<br/>or @service returning target-table type<br/>→ new scope via DataLoader, parent PK or custom batch key)
-    InScope --> Private : exit<br/>(@service field creates private scope<br/>independent of any Graphitron-managed scope)
-    Private --> InScope : (private scope ends, caller continues)
-    InScope --> [*]
+flowchart LR
+    SDL[GraphQL schema] --> CAP[capture]
+    CAP --> F[("facts<br/>graphitron_ / graphql_")]
+    F --> DER[derivation]
+    DER --> V[("verdicts<br/>intent_ views")]
+    V --> PLAN[planning]
+    PLAN --> C[("command rows")]
+    C --> REN[render]
+    REN --> OUT[generated units]
 ----
 
-|===
-| Boundary | Trigger
+*Capture* transcribes the schema into the fact store: one relation per thing the SDL states, in the
+author's vocabulary (`graphql_`) and in Graphitron's (`graphitron_`). Capture decides nothing; it
+records. *Derivation* asks the questions whose answers are verdicts, as SQL views over those facts
+(`intent_`). *Planning* joins verdicts into command rows, one row per thing that will be generated.
+*Render* folds each row into an emitted unit, a class or a method, and folds nothing else.
 
-| *Enter* | An unmapped root field reaches a target-table type ; the first scope starts
-| *Split* | `@splitQuery` on a table-mapped source ; a new scope via DataLoader, keyed by the parent's PK
-| *Record handoff* | A target-table field on a result-mapped source, or any user-provided return (`@service`) reaching a target-table type ; new scope via DataLoader, keyed by the parent's PK or a custom batch key
-| *Exit* | `@service` fields create a *private scope* ; their SQL statement is independent of any Graphitron-managed scope
+The depth lives elsewhere and this page does not restate it: stage order and what is still
+transitional in
+xref:../explanation/pipeline-overview.adoc[Pipeline overview], the modelling discipline every
+relation obeys in xref:../explanation/fact-model.adoc[The fact model] and its gentler sibling
+xref:../explanation/naming-the-row.adoc[Naming the row], and per-relation detail with the sentence
+each relation's own comment states in xref:schema/index.adoc[the generated schema reference].
+
+One transitional note, so nothing here reads as more settled than it is. A classification walk
+(`GraphitronSchemaBuilder` and the sealed `GraphitronSchema` model) still runs alongside capture and
+still feeds parts of planning. It is a surface being drained, not a place to extend: new facts land
+in the store, and consumers re-source onto the store one at a time. Sections of this page that are
+still written in the walk's vocabulary say so on the section.
+
+'''
+
+== How a coordinate gets its verdict
+
+This is the page's closed vocabulary. A coordinate is a `(type, field)` pair, or a type on its own;
+its verdict is not one decision but the answer to several independent questions asked of the facts.
+Each question is a relation, each relation states its own rule in its own comment, and the sections
+below name the relation rather than restating the rule. Follow a name into
+xref:schema/index.adoc[the generated schema reference] for its columns and its full comment.
+
+[cols="1,3"]
+|===
+| Question | The relation that answers it
+
+| What did the author claim, on a field?
+| `intent_authored_field_claim`. One arm pair per claiming directive (`@service`, `@externalField`,
+  `@nodeId`, `@lookupKey`, `@routine`, `@mutation`): a decoded arm reading the semantic relation, and
+  a presence arm falling back to the raw application where the decode declined.
+
+| What did the author claim, on a type?
+| `intent_authored_type_claim`. `@table` and `@error`, decoded arm plus presence fallback each, with
+  the root type names masked out.
+
+| Which catalog table does a type bind?
+| `intent_bound_table`, resolving `@table`'s reference through `intent_spelled_table`: the `name`
+  argument as written, or the type name where the argument was omitted.
+
+| What does the catalog match on its own?
+| `intent_column_match_claim`, the structural classifier: a field whose name resolves against the
+  table its site navigates to claims `TABLE_COLUMN`, with no directive involved.
+
+| So what won?
+| `intent_resolved_field_claim`. The authored rows unioned with the inferred rows at coordinates the
+  authored relation does not cover. Its `tier` column says which: `AUTHORED`, or `INFERRED` for a
+  structural reading that survived the anti-join.
+
+| What contradicts?
+| `intent_authored_claim_conflict`: one row per coordinate two or more distinct classifiers claim,
+  at both grains. That is the whole predicate; the relation carries no population filter, so each
+  consumer applies the population its own question needs.
 |===
 
-`@lookupKey` does not appear in this table on purpose. It shapes the batch (adds the derived target table and the N × M invariant) but does not by itself open or close a scope ; that is always decided by the source/target pair above.
+Two properties of this layer are worth stating outright, because they are what make it the
+vocabulary to learn rather than one of several.
+
+*Masking is a join, not a guard.* A structural classifier never checks whether a directive was
+written; `intent_resolved_field_claim`'s anti-join does the masking, at the coordinate grain. Any
+authored claim at a coordinate masks every structural reading there, presence arms included, because
+a directive whose decode declined still diverted the walk.
+
+*A conflict is a fact, not a failure.* `intent_authored_claim_conflict` is total over the authored
+claims. Whether a violated coordinate fails the build is the consumer's question: the build-error
+surface joins the emitted type domain, while the editor's diagnostic arm reads the rows ungated,
+because a type no field reaches is precisely where an author most needs the signal. What that does
+to generation is xref:../explanation/typed-rejection.adoc[Typed rejection]'s subject, and
+<<when-nothing-is-generated,When nothing is generated>> below.
+
+'''
+
+== What one generated thing is
+
+A command row is one thing that will be generated. Planning mints the rows; render folds each into an
+emitted unit and folds nothing else. The relations below are the whole command tier.
+
+include::_command-relations.adoc[]
+
+Each row's sentence above is the first sentence of that relation's own javadoc, rendered at build
+rather than transcribed here, so a relation added or renamed in the code shows up in this table or
+fails the render.
+
+*Unit names are minted in one place.* Every `UnitRef` and `UnitMethodRef` comes from the naming
+schemes in `GeneratedUnits` and from nowhere else, which `PackageImportDirectionTest` enforces by
+pinning the minting site. That single mint is what makes an emitted name in a worked example below
+trustworthy: it is the name the run produced, not a name a doc author reconstructed.
+
+*Closure is asserted, and the gaps are disclosed rather than implied.* `LauncherRelationClosureTest`
+joins the relation the run actually rendered from against the emit walk and against the classified
+model, in both directions: every coordinate the covered families claim has exactly one row, every
+row's `(owner, method)` names a method the run declared, and no two rows claim the same method. The
+covered families come from the producer's own declared membership, never a hand-maintained
+restatement. Three absences are pinned as absences, so they read as decisions:
+
+- the batched polymorphic pair is emitted and uncommitted, its rows methods named through the same
+  `GeneratedUnits` scheme with no row behind them;
+- a root `@service` passthrough gets no row, because value-level re-fetch without a site-level
+  re-query is not a launch;
+- an encoded-DML return arm carries no reentry.
+
+The relations' own populations disclose their transitional edges the same way: `LauncherRelation`
+covers migrated root SELECT coordinates, and `FetcherEdgeRelation` the covered non-launcher
+families. Both are widening as consumers re-source onto the store.
 
 === Derived tables
 
@@ -134,14 +156,19 @@ Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
 | *Lookup condition* | Filters the (source × target) row pairs produced by a lookup's derived target table. Must preserve the N × M positional contract ; see <<derived-tables,Derived tables>> above. | `@condition` directive on a field with `@lookupKey`
 |===
 
-=== Structural properties
+=== Batch-shaping directives
 
-|===
-| Property | Effect
+Two directives change the shape of the batch rather than what a coordinate classifies as.
 
-| *`@splitQuery`* | On a table-mapped source, forces a new scope via DataLoader: `TableField` → Table-sourced `BatchedTableField` (R432 merged the former Split/Record leaf pairs onto these source-gated leaves); a co-present `@lookupKey` rides along as the leaf's keyed lookup arm. On a result-mapped source it is redundant ; the record handoff already opens a new scope ; and should produce a build *warning*, not an error.
-| *`@lookupKey`* | Argument values become the derived target table (see <<derived-tables,Derived tables>>). Blocks pagination (preserves the N × M result invariant). The correspondence rides as the fetch leaf's keyed `LookupResolution` arm: `TableField` without `@splitQuery`, Table-sourced `BatchedTableField` with it, `QueryTableField` at the root. Orthogonal to scope ; see <<scope,Scope>>.
-|===
+`@splitQuery` on a field whose parent is bound to a table forces a new SQL statement, dispatched
+through a DataLoader keyed by the parent's key columns. On a field whose parent is class-backed it is
+redundant, because the handoff into that parent already opened a new statement; that case is a build
+*warning*, not an error.
+
+`@lookupKey` turns the field's argument values into the derived target table above. It blocks
+pagination, which is what preserves the N × M result invariant, and it does not by itself open or
+close a statement. A field can carry both directives; the lookup rides along on whatever statement
+`@splitQuery` opened.
 
 '''
 
@@ -276,7 +303,7 @@ The three asserted axes are:
   `Paginate` operation.
 
 The *derived layer* is computed from those three plus the field's slots and schema position, never
-asserted: `FetchRelated` (a `Fetch` reaching a related entity over a join-path), *re-fetch* (a
+asserted: *fetch-related* (a `Fetch` reaching a related entity over a join-path), *re-fetch* (a
 service/DML producer yielding a `Table` shape, forcing a re-projection), *new-query* (`@splitQuery` /
 polymorphic / record-handoff opening a fresh keyed query), and *polarity* (mutating-or-not, from the
 `source` root and the write operations). The governing principle is *assert what nothing else carries;
@@ -398,6 +425,7 @@ target; they differ only on the source shape (`Child(Table)` vs `Child(Record)`)
 forces a derived keyed re-query under `FilmDetails`, not a different asserted axis.
 Asserted by the `record-table` corpus example.
 
+[#target-shape]
 === `target` shape: build-vs-consume (Column vs. Field)
 
 The `target` shape records what domain object the value is, and with it whether graphitron *builds* the
@@ -741,6 +769,7 @@ NOTE: A `@service` field's input *parameter* may itself be a generated jOOQ `Tab
 
 NOTE: On that same column axis, several plain input fields may name *one* column, which is the standard GraphQL rename-deprecation shape: add the new field, keep the old one marked `@deprecated` until its removal date, and point both at the column. `InputBeanResolver` admits the overlap when all but at most one of the colliding fields carry native `@deprecated`, and merges the group into a single `CallSiteExtraction.ColumnBinding` carrying *ordered read paths* rather than several writers on one column. Precedence is the live (non-deprecated) path first, then the deprecated paths in reverse declaration order; the emitted load tries them in that order and takes the first `containsKey`-present one, so a client sending both names gets the live value, a client sending only the old name still writes, and a client sending neither leaves the column `changed=false`. Two *live* fields on one column stay an author error (`JooqRecordInputError.LiveColumnCollision`). This is the only write path that admits the pattern: the INSERT and UPDATE mutation paths reject an all-plain column overlap on their own mechanisms (a SET map holding one value per column, and a bulk VALUES join that cannot name one derived column twice).
 
+[#mutation-fields]
 === Mutation Fields
 
 A mutation whose `@mutation(typeName:)` writes the catalog and returns a `@table` type classifies with
@@ -796,7 +825,7 @@ the read-back being the derived re-fetch. Asserted by the `dml` corpus example.
 | `@mutation(typeName: UPDATE)`, returning `ID` or a `@table` type | `DmlTableField` (Update write arm) | Fetcher method ; write + read-back SELECT (the derived re-fetch). Same two-rung write-target ladder as `INSERT` (return-derived, else `@mutation(table:)`)
 | `@mutation(typeName: DELETE, table: "…")`, returning `ID` | `DmlTableField` (Delete write arm) | Fetcher method ; write + encoded-PK off `RETURNING` (no read-back ; the row is gone, target shape `Column`). The write target is named on the field; a `DELETE` return can never name it
 | `@mutation(typeName: UPSERT, table: "…")` (`table:` on a verb that does not read it) | `UnclassifiedField` (typed `MutationTableArgError.UnsupportedVerb`) | Validation error ; build fails. `table:` is wired for `DELETE`, `INSERT`, and `UPDATE` only
-| `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `UnclassifiedField` (typed deferral; the Upsert write arm has no live producer) | Rejected at classification ; UPSERT generation gated pending R145
+| `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `UnclassifiedField` (typed deferral; the Upsert write arm has no live producer) | Rejected at classification. UPSERT is recognised and deliberately not generated: the write arm has no producer today, so the coordinate defers rather than erroring.
 | `@mutation(typeName: INSERT\|UPDATE\|DELETE\|UPSERT)`, returning a single-record class-backed carrier (one recognized data field, optional errors-shaped field; the carrier's backing class is reflected from the producing field, not declared) | `MutationDmlRecordField` | Two-step fetcher: per-kind DML chain inside `transactionResult` with PK-only `RETURNING`, plus a follow-up data-field SELECT outside the transaction
 | `@mutation(typeName: INSERT\|UPDATE)` with bulk input, returning a single-record carrier with a list-shaped `@table`-element data field | `MutationBulkDmlRecordField` | Per-row DML inside one `transactionResult`, accumulating a typed `Result<RecordN<PK>>` in input order. The write target is derived from that `@table`-element data field
 | `@service`, return `@table` type | `MutationServiceTableField` | Async DataLoader fetcher + `rows*()` method
@@ -875,7 +904,7 @@ The parent here is a type whose backing class is reflection-derived from its pro
 
 `InputField` is a separate top-level sub-hierarchy of `GraphitronField`, alongside `RootField` and `ChildField`. It classifies input-object fields against the consuming field's resolved table: the return-type table on the filter and arg-level `@lookupKey` paths, the write-target table on the DML paths.
 
-**\*\* `UnclassifiedField`** is a direct permit of `GraphitronField`; it is not nested under `QueryField`, `MutationField`, or `ChildField`. It is listed in the tables above for completeness, but structurally it sits at the top level of the sealed hierarchy. `TableTargetField` is an intermediate sealed sub-interface of `ChildField` grouping all 5 SQL-generating child field variants (`TableField`, `BatchedTableField`, `TableInterfaceField`, `BatchedTableInterfaceField`, `ServiceTableField`; R432 collapsed the former Split/Record pairs onto the source-gated batched leaf, and the lookup leaves later folded onto their fetch siblings with the `@lookupKey` correspondence riding as the seal's `LookupResolution` arm).
+**\*\* `UnclassifiedField`** is a direct permit of `GraphitronField`; it is not nested under `QueryField`, `MutationField`, or `ChildField`. It is listed in the tables above for completeness, but structurally it sits at the top level of the sealed hierarchy. `TableTargetField` is an intermediate sealed sub-interface of `ChildField` grouping all 5 SQL-generating child field variants (`TableField`, `BatchedTableField`, `TableInterfaceField`, `BatchedTableInterfaceField`, `ServiceTableField`). The batched leaf is source-gated, and a `@lookupKey` correspondence rides on its fetch sibling as the seal's `LookupResolution` arm rather than as a leaf of its own.
 
 === DataLoader-backed field categories
 
@@ -916,81 +945,92 @@ Not all classification requires directives. The builder also classifies based on
 
 '''
 
-== Source Map
+[#when-nothing-is-generated]
+== When nothing is generated
 
-[WARNING]
-====
-*Incomplete.* This map covers the draining `no.sikt.graphitron.rewrite` tree only. Its opening claim
-that all source lives there is false: `no.sikt.graphitron.facts`,
-`no.sikt.graphitron.plan`, `no.sikt.graphitron.command` and `no.sikt.graphitron.render` are
-top-level siblings of `rewrite`, and this map names none of them, so it does not route a
-contributor to where a change belongs. The per-file lists below are hand-maintained and have
-drifted from the tree in both directions. For the packages that hold the destination, see
-xref:../explanation/pipeline-overview.adoc[Pipeline overview] and
-xref:../explanation/fact-model.adoc[The fact model].
-====
+A pattern the generator refuses still classifies. Capture records the same facts, derivation resolves
+the same verdict, and then planning mints no command row: the run produces *diagnostic* rows instead,
+and render has nothing to fold.
 
-All source lives under `graphitron/src/main/java/no/sikt/graphitron/rewrite/`. Each file has Javadoc documenting its variants and record components.
+That is why a worked example can show a verdict and no emitted names, and why the two on this page
+that do, under <<target-shape,`target` shape>> and under <<mutation-fields,Mutation Fields>>, are
+not gaps in the tables. Their
+outcome blocks state the absence, because "generates nothing" is an answer to this page's question,
+not a missing row.
 
-=== Model (`model/`)
+The diagnostics themselves are a closed vocabulary and a small one. `rejection_validation_error`
+carries one row per rejection, keyed by the graph and the emit order of the walk's error stream, with
+a `kind` column whose `CHECK` constraint holds the three-way fork:
 
+[cols="1,3"]
 |===
-| Concept | File | What to look for
+| `kind` | What it means
 
-| Type hierarchy | `GraphitronType.java` | Sealed interface ; all type variants and their record components
-| Field hierarchy | `GraphitronField.java` | Sealed interface ; `RootField`/`ChildField`/`InputField` sub-hierarchies
-| SQL-generating marker | `SqlGeneratingField.java` | Orthogonal interface ; `returnType()`, `filters()`, `orderBy()`, `pagination()`
-| Method-backed marker | `MethodBackedField.java` | Orthogonal interface ; `method()` returning `MethodRef`
-| DataLoader marker | `BatchKeyField.java` | Orthogonal interface ; `sourceKey()`, `loaderRegistration()`, `rowsMethodName()`
-| Table reference | `TableRef.java` | Resolved jOOQ table with PK columns
-| Column reference | `ColumnRef.java` | Resolved column with Java type
-| Return type | `ReturnTypeRef.java` | `TableBound` / `Result` / `Scalar` / `Polymorphic`
-| Cardinality | `FieldWrapper.java` | `Single` / `List` / `Connection`
-| Join path | `JoinStep.java` | `Hop` (a `TableExpr` target × an `On`: `ColumnPairs` / `Predicate`); R431 retired the transitional `LiftedHop` onto `ParentCorrelation.OnLiftedSlots`
-| WHERE filters | `WhereFilter.java` | `GeneratedConditionFilter` / `ConditionFilter` ; call-site contract
-| Service methods | `MethodRef.java` | Resolved Java method with `ParamSource` variants
-| DataLoader keys | `SourceKey.java`, `KeyLift.java`, `LoaderRegistration.java` | `SourceKey` is the batch-key residue (`columns` plus sealed `Wrap`: `Row` / `Record` / `TableRecord`). `KeyLift` is the record-parent lift provenance (`FkColumns` / `Lifter` / `Accessor` / `ProducedRecords`, the arity-bearing arms carrying an `Arity`). `LoaderRegistration` carries DataLoader identity (`Container`: `POSITIONAL_LIST` / `MAPPED_SET`; `Dispatch`: `LOAD_ONE` / `LOAD_MANY`).
-| Ordering | `OrderBySpec.java` | `Fixed` / `Argument` / `None`
-| Pagination | `PaginationSpec.java` | Relay cursor arguments
-| Argument extraction | `CallSiteExtraction.java` | Direct strategies (`Direct` / `EnumValueOf` / `ContextArg` / `JooqConvert`) plus sealed sub-shapes: `NestedInputField` (descends an input-object graph for `@condition` on `INPUT_FIELD_DEFINITION`), `NodeIdDecodeKeys` (`ThrowOnMismatch`; arity-N NodeId decode at the call site), `NodeIdDecodeRecord` (NodeId decode into a jOOQ-record member), `InputBean` (service input-bean instantiation), and `JooqRecord` (jOOQ record construction from input fields)
-| Input field hierarchy | `InputField.java` | Sealed interface ; `ColumnBackedField` / `ColumnBackedReferenceField` (each arity 1..N) / `NestingField` for mutation inputs
-| Condition params | `CallParam.java`, `BodyParam.java` | Call-site vs body-generation views
+| `AUTHOR_ERROR`
+| The schema says something Graphitron understands and refuses. The author can fix it; the message
+  names what and, where a name was close, what was probably meant.
+
+| `INVALID_SCHEMA`
+| The schema is not well-formed enough to classify against.
+
+| `DEFERRED`
+| A recognised combination with no live producer. The coordinate is understood and deliberately not
+  generated, which is different from being wrong.
 |===
 
-=== Builders (root package)
+The taxonomy behind those rows, why rejection is a returned value rather than a thrown exception, and
+how a coordinate carries its own refusal, is
+xref:../explanation/typed-rejection.adoc[Typed rejection]. What an author sees for each is the
+manual's diagnostics glossary.
 
+'''
+
+== Where the code lives
+
+Six top-level packages under `no.sikt.graphitron`. The map states ownership: which package a change
+belongs in, not what each package will become.
+
+[cols="1,3"]
 |===
-| Component | File | Responsibility
+| Package | What it owns
 
-| Entry point | `GraphitronSchemaBuilder.java` | Sole directive-reading boundary ; assembles `GraphitronSchema`
-| Type classification | `TypeBuilder.java` | Two-pass: classify types, then enrich interfaces/unions with participants
-| Field classification | `FieldBuilder.java` | Classifies fields based on parent type, directives, and return type
-| jOOQ lookups | `JooqCatalog.java` | Lazy wrapper around jOOQ `Catalog` ; tables, columns, FKs, indexes, PKs
-| Service reflection | `ServiceCatalog.java` | Reflects `@service` / `@condition` Java methods into `MethodRef`
+| `facts`
+| Capture. Visitors that transcribe a schema into store rows, one per thing the SDL states. Decides
+  nothing.
+
+| `command`
+| The command vocabulary: the row types planning mints and render reads, plus the catalog and
+  argument value types they carry. `KeyProjectionRelation` lives here rather than in `plan`, because
+  it is keyed by the coordinate an `argMapping` sits on rather than by a generation run.
+
+| `plan`
+| Planning. The command producers, the relations they mint into, `EmitPlan` that runs them, and
+  `GeneratedUnits`, the single site every generated unit name is minted from.
+
+| `render`
+| The render shell. One fold per command row into emitted source, and nothing that decides.
+
+| `rewrite`
+| The classification walk and the sealed model it produces, plus the generators still driven from
+  that model. *Transitional*: this is the surface being drained. A change here should be asked
+  whether it belongs in one of the four above instead. Its `derive` subpackage is recorded as
+  misnamed, with the split filed as its own work.
+
+| `docs`
+| Build-time renderers that emit documentation fragments, such as the command-relation table above.
+  Never on a consumer's classpath.
 |===
 
-=== Generators (`generators/`)
-
-Four families, by what they emit. The Generators package holds emitter helpers (`SplitRowsMethodEmitter`, `JoinPathEmitter`, `MultiTablePolymorphicEmitter`, `ArgCallEmitter`, `FetcherEmitter`, `HandleMethodBody`, `SelectMethodBody`, etc.) alongside the entry-point generators below ; helpers are reached from inside a generator and don't appear in this table. The lookup VALUES + JOIN emission lives outside the package, in `render/LookupRows`.
-
-|===
-| Family | Generators | What lands
-
-| Fetcher emission | `TypeFetcherGenerator`; `ProjectionUnitRenderer` and `ConditionGlueRenderer` (command-driven) | `fetchers.*Fetchers` (wiring + field fetcher/rows methods); `types.*` (`$project(grouped, table, env)` projection units: anchors, anchor-prefixed nesting units, per-coordinate pivot units); `conditions.*Conditions` (per-parent condition glue, one method per filtered coordinate)
-| Schema emission (`schema/`) | `ObjectTypeGenerator`, `InputTypeGenerator`, `EnumTypeGenerator`, `GraphitronFacadeGenerator`, `GraphitronSchemaClassGenerator`, `FetcherRegistrationsEmitter`, `DirectiveDefinitionEmitter`, `AppliedDirectiveEmitter`, `GraphQLValueEmitter`, `InputDirectiveInputTypes` | The runtime SDL classes graphql-java consumes: per-type wiring entries, applied-directive emission, registration glue
-| Error-handling emission (`schema/`) | `ConstraintViolationsClassGenerator`, `ErrorMappingsClassGenerator`, `ErrorRouterClassGenerator` | The typed-error classes service payloads project errors into; mappings constant + router that selects per-exception
-| Runtime helpers (`util/`) | `ColumnFetcherClassGenerator`, `ConnectionResultClassGenerator`, `ConnectionHelperClassGenerator`, `GraphitronValuesClassGenerator`, `EntityFetcherDispatchClassGenerator`, `GraphitronContextInterfaceGenerator`, `NodeIdEncoderClassGenerator`, `OrderByResultClassGenerator`, `QueryNodeFetcherClassGenerator` | Per-app emitted runtime classes (`ColumnFetcher`, `ConnectionResult`, `ConnectionHelper`, `GraphitronValues`, `EntityFetcherDispatch`, `GraphitronContext`, `NodeIdEncoder`, `OrderByResult`, `QueryNodeFetcher`) — the runtime extension points graphql-java and the federation library plug into
-|===
-
-`GeneratorUtils` (root of `generators/`) holds shared building blocks reached from any family ; `ResolvedTableNames`, key-type construction, constants. Condition glue is command-driven: the plan's `ConditionCommands` producer mints one row per filtered coordinate and `render/ConditionGlueRenderer` emits the per-parent `*Conditions` classes whose methods take the jOOQ table and the argument map (the typed adapter / composer pairing now lives inside one glue body; see the "Wire boundaries are typed adapter / composer pairs" principle in xref:../principles/development-principles.adoc[Graphitron Development Principles]).
-
-=== Directives
-
-- *SDL definitions*: `graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`. `RewriteSchemaLoader` auto-injects this file into the merged schema.
-- *Directive reference with examples*: see the directive reference under `docs/manual/reference/directives/` (rendered at the published manual). For the contributor-facing chapter consolidating runtime extension points and the typed-rejection narrative, see xref:runtime-extension-points.adoc[Runtime Extension Points] and xref:../explanation/typed-rejection.adoc[Typed rejection]; this Source Map is the canonical reference for what each generator emits.
+Every relation, every fact and every verdict has its rule stated once, in its own comment in the
+store's DDL, and rendered browsable at xref:schema/index.adoc[the generated schema reference]. That
+is the reference to reach for when this page names a relation and you want its columns.
 
 '''
 
 *See also:*
-- xref:../principles/development-principles.adoc[Graphitron Development Principles] ; the six axioms, their corollaries, and the named enforcement behind each
-- link:https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/roadmap[Rewrite Roadmap] ; remaining generator work
+
+- xref:../explanation/pipeline-overview.adoc[Pipeline overview] ; what runs when, and what is still transitional
+- xref:../explanation/fact-model.adoc[The fact model] ; the discipline every relation obeys
+- xref:../explanation/typed-rejection.adoc[Typed rejection] ; the refusal taxonomy behind the diagnostic rows
+- xref:runtime-extension-points.adoc[Runtime Extension Points] ; the emitted classes a consumer plugs into
+- xref:../principles/development-principles.adoc[Graphitron Development Principles] ; the axioms and the named enforcement behind each

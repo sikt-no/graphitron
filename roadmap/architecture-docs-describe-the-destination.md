@@ -552,11 +552,18 @@ generator emitted for it, held verbatim by `OutcomeBlockDocTest` the way `Classi
 the SDL half. The "what gets generated" half of those eight examples is drift-guarded rather than
 ungated prose.
 
-**The burn-down lists.** `TransientCitationCheck.KNOWN_CITATIONS` is down from 43 entries to the 3
-on `code-generation-triggers.adoc`, which belong to the sections slice 3 rebuilds.
-`ArchitectureDocSymbolGuardTest.KNOWN_DANGLING` is down from 11 to the 4 the Source Map and the
-derived-layer prose still name. Both empty out with slice 3, and both fail the build on an entry
-whose finding is gone, so neither can survive as a permanent exemption.
+**The burn-down lists are gone.** They emptied with slice 3's skeleton commit and were deleted with
+it, which is what a burn-down list is for. `TransientCitationCheck.KNOWN_CITATIONS` went 43 → 3 → 0,
+`ArchitectureDocSymbolGuardTest.KNOWN_DANGLING` 11 → 4 → 0, and each list's stale-entry check went
+with it: with nothing left to burn down there is nothing for it to check. What replaces them is a
+direct assertion in each guard's own tier that the trees are clean, so a reintroduced id or dangling
+symbol fails without a list to be added to.
+
+Deleting the symbol list surfaced three exemptions (`ConnectionHelper`, `GraphitronValues`,
+`QueryNodeFetcher`) whose only citation was the Source Map's runtime-helpers row.
+`exemptionsAreAllStillCited` caught all three the moment that row went, and they were deleted rather
+than kept: an exemption for text no page carries is an unguarded census of its own. That is the
+second time that check has paid for itself.
 
 **Scope added at the owner's direction.** The citation gate now walks `docs/manual` as well as
 `docs/architecture`, and the manual's three item ids are gone. It was left out at first on the
@@ -591,8 +598,26 @@ the generator emits into a consumer's sources, and classes in modules that tier 
 on. Widening would roughly triple the exemption list while adding no finding of the kind the gate
 exists to catch, which is the fork's own stated objection, now with a number on it.
 
-**Not started.** Slice 3: the page's restructure, the other 47 examples, and the table
-rows each promotion deletes.
+**Slice 3, part one: the skeleton.** The page is now organized as the chain. Landed: the chain
+intro with its diagram; "How a coordinate gets its verdict", the verdict-layer section that is the
+page's new closed vocabulary, naming each `intent_` relation and linking the generated schema
+reference rather than restating a rule; "What one generated thing is", carrying the
+`_command-relations.adoc` include plus the single-mint rule and the closure statement with its three
+disclosed absences; "When nothing is generated", the rejection section, with the
+`rejection_validation_error` three-way `kind` fork; and "Where the code lives", a six-package
+ownership map that replaces the Source Map.
+
+Deleted with them: the "Classification Vocabulary" section and the Source Map, and with those the
+last three roadmap-id citations and all four dangling symbols. The axis subsections went whole;
+"Derived tables" and "Conditions" were kept and moved under the command-relation section, because
+they describe live batching mechanics rather than the superseded axis framing the section's own NOTE
+declared historical. "Structural properties" was rewritten as prose stating what `@splitQuery` and
+`@lookupKey` do to the batch, with the leaf names and the archaeology dropped.
+
+**Still to do.** Slice 3, part two: the other 47 corpus examples, one per commit, and the table rows
+each promotion deletes. The three marked leaf-taxonomy sections ("Type Classification", "Field
+Classification", "Implicit Classification Rules") keep their marks until the examples that subsume
+them land.
 
 **The outcome block, and the fork the owner settled.** Building it turned up something the plan
 does not cover: **not every doc example generates.** The corpus is a classification corpus, and a
