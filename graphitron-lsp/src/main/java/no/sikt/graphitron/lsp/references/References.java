@@ -20,11 +20,11 @@ import java.util.Optional;
  * every other SDL site that uses it. So it returns a list where definition returns at most one, and
  * an empty list means nothing uses the name rather than that the name was not understood.
  *
- * <p>The composition point for the arms, one per cursor shape, in the order a cursor can satisfy
- * them. {@link TypeReferences} answers for a type name, whether the cursor is on the declaration or
- * on a use of it. The arms key off disjoint syntax, so the chain is an {@code or} over the first
- * that has something to say rather than a classification up front, which is the shape the
- * definition handler already has.
+ * <p>The composition point for the arms, one per cursor shape. {@link BindingReferences} answers for
+ * a cursor inside a directive argument, {@link TypeReferences} for a cursor on a type name, whether
+ * that is the declaration or a use of it. The arms key off disjoint syntax (a {@code named_type}
+ * never appears inside a directive argument), so the chain takes the first with something to say
+ * rather than classifying up front, which is the shape the definition handler already has.
  */
 public final class References {
 
@@ -52,6 +52,9 @@ public final class References {
         LspVocabulary vocabulary, FileSnapshot file, StoreHandle store, Point pos,
         boolean includeDeclaration
     ) {
-        return TypeReferences.compute(file, store, pos, includeDeclaration);
+        var bindings = BindingReferences.compute(vocabulary, file, store, pos, includeDeclaration);
+        return bindings.isEmpty()
+            ? TypeReferences.compute(file, store, pos, includeDeclaration)
+            : bindings;
     }
 }

@@ -5,10 +5,13 @@ import no.sikt.graphitron.lsp.references.TypeReferences;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.assertj.core.api.Assertions;
+import org.eclipse.lsp4j.Location;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
@@ -200,12 +203,12 @@ class TypeReferencesTest {
         String uri = "file:///schema.graphqls";
         ws.didOpen(uri, 1, SDL);
 
-        var uses = ws.withView(uri, List.<org.eclipse.lsp4j.Location>of(), file ->
+        var uses = ws.withView(uri, List.<Location>of(), file ->
             TypeReferences.compute(file, Optional.empty(), cursorOn(ws, uri, "Film implements"), false));
         assertThat(uses).isEmpty();
     }
 
-    private static List<org.eclipse.lsp4j.Location> referencesTo(StoreFixture fixture, String token) {
+    private static List<Location> referencesTo(StoreFixture fixture, String token) {
         return referencesTo(fixture, token, false);
     }
 
@@ -213,14 +216,14 @@ class TypeReferencesTest {
      * Opens the captured file as the buffer the cursor sits in, so the request is the one an editor
      * makes: a position in a real file, answered from the graph that captured it.
      */
-    private static List<org.eclipse.lsp4j.Location> referencesTo(
+    private static List<Location> referencesTo(
         StoreFixture fixture, String token, boolean includeDeclaration
     ) {
         var ws = new Workspace();
         String uri = capturedUri(fixture);
         ws.didOpen(uri, 1, sourceOf(fixture));
         StoreHandle handle = fixture.handle();
-        var uses = ws.withView(uri, List.<org.eclipse.lsp4j.Location>of(), file ->
+        var uses = ws.withView(uri, List.<Location>of(), file ->
             TypeReferences.compute(file, handle, cursorOn(ws, uri, token), includeDeclaration));
         assertThat(uses).allSatisfy(use -> assertThat(use.getUri()).isEqualTo(uri));
         return uses;
@@ -228,8 +231,8 @@ class TypeReferencesTest {
 
     private static String sourceOf(StoreFixture fixture) {
         try {
-            return java.nio.file.Files.readString(Path.of(fixture.sourceName()));
-        } catch (java.io.IOException e) {
+            return Files.readString(Path.of(fixture.sourceName()));
+        } catch (IOException e) {
             throw new AssertionError("the fixture's own schema file is unreadable", e);
         }
     }
@@ -238,11 +241,11 @@ class TypeReferencesTest {
         return Path.of(fixture.sourceName()).toUri().toString();
     }
 
-    private static java.util.function.Function<org.eclipse.lsp4j.Location, Integer> startLine() {
+    private static java.util.function.Function<Location, Integer> startLine() {
         return use -> use.getRange().getStart().getLine();
     }
 
-    private static java.util.function.Function<org.eclipse.lsp4j.Location, Integer> startColumn() {
+    private static java.util.function.Function<Location, Integer> startColumn() {
         return use -> use.getRange().getStart().getCharacter();
     }
 

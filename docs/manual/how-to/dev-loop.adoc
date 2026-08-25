@@ -100,7 +100,11 @@ The LSP speaks over TCP on `localhost:8487`. Any LSP client that can connect to 
 [#find-usages]
 === Find usages
 
-Ask your editor for references (Find Usages) on a name in a `.graphqls` file and you get every other site in the schema that uses it. On a type name that is every field and argument declared with that type, every `implements`, and every union member. Put the cursor on the declaration or on any use of it; both ask the same question.
+Ask your editor for references (Find Usages) on a name in a `.graphqls` file and you get every other site in the schema that uses it.
+
+On a type name that is every field and argument declared with that type, every `implements`, and every union member. Put the cursor on the declaration or on any use of it; both ask the same question.
+
+On a name inside a directive it is every coordinate bound to the same thing: the other types mapped to a table, the other fields bound to a column, every coordinate naming a service class or one of its methods, every `@reference` path keyed on a foreign key. Two spellings of one table find each other, since the match is on the table the name resolves to rather than on the text. A field that binds a column by name alone, with no `@field`, is a use of that column too, because the generator reads it as one.
 
 Two things to know about the answer.
 
