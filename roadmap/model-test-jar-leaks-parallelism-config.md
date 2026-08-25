@@ -1,21 +1,22 @@
 ---
 id: R764
-title: "graphitron-model ships its junit-platform.properties to three consumers that never asked for it"
+title: "graphitron-model ships its junit-platform.properties to four consumers that never asked for it"
 status: Backlog
 bucket: dx
 priority: 2
 theme: tooling
 depends-on: []
 created: 2026-08-20
-last-updated: 2026-08-20
+last-updated: 2026-08-25
 ---
 
-# graphitron-model ships its junit-platform.properties to three consumers that never asked for it
+# graphitron-model ships its junit-platform.properties to four consumers that never asked for it
 
 `graphitron-model/src/test/resources/junit-platform.properties` turns on four-thread class-level test
-parallelism for that module. It also rides along in the module's test-jar, and three modules consume
-that test-jar at test scope: `graphitron`, `graphitron-lsp` and `graphitron-mcp`. So the file now
-configures four modules' test runs, one of them deliberately. In `graphitron-lsp` and `graphitron-mcp`
+parallelism for that module. It also rides along in the module's test-jar, and four modules consume
+that test-jar at test scope: `graphitron`, `graphitron-lsp`, `graphitron-mcp` and
+`graphitron-maven-plugin`. So the file now configures five modules' test runs, one of them
+deliberately. In `graphitron-lsp` and `graphitron-mcp`
 it silently enabled parallelism those modules never declared, worth **17.5 s and 7.5 s** respectively,
 which is a real win arriving through an invisible channel. In `graphitron` it put a second
 `junit-platform.properties` on the classpath and produced the launcher warning that `graphitron`'s own
@@ -23,6 +24,16 @@ pom carries an explicit exclusion to prevent. Whichever way the parallelism ques
 provenance has to become visible: a contributor reading `graphitron-lsp`'s pom and test resources
 today cannot discover why its test classes run concurrently, and a test there that is not
 thread-safe will start flaking with no local cause to find.
+
+## The predicted flake arrived
+
+`graphitron-maven-plugin` is the consumer this item originally missed, and it is where the predicted
+symptom first surfaced: `CatalogRefreshTest.javaSourceWriteMovesTheStoreRowWithoutAGeneratorPass`
+failed twice on one machine on 2026-08-25 (both on the cold first build of a session, passing on
+rerun and in isolation), because its 1.6 s latch budget competes with `DevMojoTest`'s ~13 s of
+generator work under the four-way class parallelism this leak enables, parallelism the module's own
+pom and test resources never mention. R832 owns the test's budget; this item owns the channel. A
+Spec pass should answer its questions for all four consumers, not three.
 
 ## The mechanism, and that it was already known
 
