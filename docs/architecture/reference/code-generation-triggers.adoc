@@ -236,6 +236,7 @@ example via `@classifiedType(as: TableType)` on `Film` and `@classifiedType(as: 
 The field descriptions come from `# ...` comments authored on the example's projection query, rendered
 as SDL descriptions by `QueryViewRenderer`.
 
+[#node-type]
 === `@node` over a table → `NodeType`
 
 A `@table` type that also carries nodehood classifies as `NodeType` rather than `TableType`: either
@@ -779,8 +780,8 @@ by the `union` corpus example via `@classifiedType(as: UnionType)`.
 The `@table`+`@discriminate` interface child is a further leaf on this same polymorphic rule, and the
 one where cardinality forks the delivery; it gets its own worked example under
 <<one-table-many-participants,One table, many participants>> below. The Relay `Node` root
-(`QueryNodeField`, `operation = NodeResolve`, target shape `Interface`) is another, asserted
-corpus-only by the `relay-node` example.
+(`QueryNodeField`, `operation = NodeResolve`, target shape `Interface`) is another, worked through
+under <<relay-node,Any root that returns `Node`>>.
 
 A discriminated interface may also be a *joined-table* (class-table) inheritance: each concrete type
 declares its own detail `@table` distinct from the discriminated base, with its inherited (base-resident)
@@ -1244,13 +1245,12 @@ root and a child differ only in where they arrive: a multi-table interface or un
 participant polymorphic projection through a derived new keyed query, and a `@table`+`@discriminate`
 interface root is the discriminated composition shown there under `@asConnection`.
 
-What is left is the pair of root-only forms and the failure row:
+What is left is the `@service` pair, the failure row, and the Relay node roots, which get a worked
+example of their own at the end of this section:
 
 |===
 | Schema Pattern | `QueryField` Variant | `*Fetchers` Generates
 
-| Field named `node` (Relay) | `QueryNodeField` | Fetcher method
-| Field named `nodes` (Relay; auto-emitted, batched-by-id) | `QueryNodesField` | Async DataLoader fetcher dispatching by NodeId
 | `@service`, return `@table` type | `QueryServiceTableField` | Async DataLoader fetcher + `rows*()` method
 | `@service`, return non-table type | `QueryServiceRecordField` | Fetcher method
 | Anything else | `UnclassifiedField`** | Validation error ; build fails
@@ -1261,6 +1261,81 @@ The federation `_entities` field is *not* modelled as a `QueryField` permit; it 
 NOTE: A `@service` field's input *parameter* may itself be a generated jOOQ `TableRecord` (singular or `List<…>`), distinct from the field's return type. When the parameter's SDL input type classifies as `JooqTableRecordInputType`, the call site binds it on the *column axis* rather than instantiating a Java bean: each plain input field names a column through `@field(name:)`, and an optional `@nodeId` field decodes the record's scalar key. The parameter is materialised by a generated `create<Record>` (singular) / `create<Record>List` (list) helper on the `*Fetchers` class (the `CallSiteExtraction.JooqRecord` binding), which loads the columns through `record.fromArray(…, Tables.<T>.<col>…)` and decodes the identity through `NodeIdEncoder.decodeValues`. The binding is coordinate-agnostic: it applies identically whether the `@service` field is a root field or a `@table`-parent child field, sharing one helper.
 
 NOTE: On that same column axis, several plain input fields may name *one* column, which is the standard GraphQL rename-deprecation shape: add the new field, keep the old one marked `@deprecated` until its removal date, and point both at the column. `InputBeanResolver` admits the overlap when all but at most one of the colliding fields carry native `@deprecated`, and merges the group into a single `CallSiteExtraction.ColumnBinding` carrying *ordered read paths* rather than several writers on one column. Precedence is the live (non-deprecated) path first, then the deprecated paths in reverse declaration order; the emitted load tries them in that order and takes the first `containsKey`-present one, so a client sending both names gets the live value, a client sending only the old name still writes, and a client sending neither leaves the column `changed=false`. Two *live* fields on one column stay an author error (`JooqRecordInputError.LiveColumnCollision`). This is the only write path that admits the pattern: the INSERT and UPDATE mutation paths reject an all-plain column overlap on their own mechanisms (a SET map holding one value per column, and a bulk VALUES join that cannot name one derived column twice).
+
+[#relay-node]
+==== Any root that returns `Node`
+
+A root field whose element type is the `Node` interface is a node fetcher. Its *name* has nothing to
+do with it:
+
+[source,graphql]
+----
+type Query {
+  "Relay's own entry point: one global id at a time."
+  node(
+  id: ID!): Node
+  "The list form of the same signature."
+  nodes(
+  ids: [ID!]!): [Node]
+  "Not named `node`, and classified as one anyway: the signature is the trigger."
+  internalFilmNode(
+  id: ID): Node
+}
+
+interface Node {
+  id: ID!
+}
+
+type Film implements Node @table(name: "film") @node {
+  title: String
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#title(Object)`
+
+| `Node.id`
+| no claiming directive
+| no method of its own
+
+| `Query.internalFilmNode`
+| no claiming directive
+| `fetchers.QueryFetchers#internalFilmNode(DataFetchingEnvironment)`
+
+| `Query.node`
+| no claiming directive
+| `fetchers.QueryFetchers#node(DataFetchingEnvironment)`
+
+| `Query.nodes`
+| no claiming directive
+| `fetchers.QueryFetchers#nodes(DataFetchingEnvironment)`
+
+|===
+
+All three roots classify the same way: `source = Query`, `operation = NodeResolve`, target shape
+`Interface`. Recognition is by signature, never by field name, and `internalFilmNode` is in the example
+to make that testable rather than merely stated. A federation subgraph commonly publishes an extra
+by-id entry point under its own name; name-based dispatch would classify that as a plain interface
+root and give it a keyed query over the participants instead of node resolution.
+
+Cardinality is the one axis that changes the delivery. The single-valued roots read the `id` argument
+and return the row synchronously. The list root fans its ids out into DataLoaders keyed by the
+execution path, so ids arriving at the same path batch into one read, and returns a future. Both go
+through one generated dispatcher, which peels the type prefix off each global id and resolves the row
+through the same entity dispatch federation `_entities` uses; a null, malformed, or unknown-prefix id
+comes back as `null` rather than an error, which is what the Relay spec asks for. That dispatcher is
+emitted only when the schema classifies at least one `NodeType`.
+
+`Film` carries `@node` and its `id` carries `@nodeId`, which is what makes it reachable by global id at
+all; that declaration is the <<node-type,`NodeType` example>> above. Asserted by the `relay-node`
+corpus example.
 
 [#mutation-fields]
 === Mutation Fields

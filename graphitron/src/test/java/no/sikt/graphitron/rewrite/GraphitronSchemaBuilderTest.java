@@ -6558,7 +6558,8 @@ class GraphitronSchemaBuilderTest {
 
         // The bare Relay-root verdicts (QueryNodeField in canonical and federation-style-alias
         // forms, QueryNodesField) live in the spec-by-example corpus (`relay-node` example:
-        // Query.node, Query.internalFilmNode, Query.nodes).
+        // Query.node, Query.internalFilmNode, Query.nodes), and render as the worked example
+        // under Query Fields on the code-generation-triggers page.
 
         ENTITY_QUERY_FIELD(
             "field named '_entities' has no special handling; classifies as UnclassifiedField (underscore-prefixed return type not in ctx.types)",

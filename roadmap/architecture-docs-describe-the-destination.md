@@ -793,6 +793,45 @@ is started rather than picked up by momentum. Input-side leaves are on the enum 
 design (see the partitioned obligation in `VariantCoverageTest`), so whether a corpus example is
 even the right vehicle for them is the first question to answer, not an assumption to carry in.
 
+**Slice 3, part eight: a trigger the table got wrong, and a fixture nobody ran.** Part seven named
+the Relay pair as the cheapest next promotion, and it was, but not for the reason given. The two
+rows did not just fail to render. They stated the wrong trigger.
+
+Both read as a field *name*: "Field named `node`", "Field named `nodes`". The generator says the
+opposite, in a comment written against exactly this misreading: Relay node fetchers are recognised
+by signature, not by name, and any `Query` field whose element type is the `Node` interface is one.
+The comment goes on to name the consequence, which is why it is worth stating on the page: a
+federation subgraph publishing an extra by-id entry point under its own name would classify as a
+plain interface root under a name-based rule and get a keyed query over the participants instead of
+node resolution. The `nodes` row carried a second false claim, "auto-emitted": nothing synthesises
+that field, the author declares it. What the build does synthesise for a node type is the federation
+`@key`, which is a different fact about a different artifact.
+
+The third column of both rows held. The single form is a synchronous read, the list form fans ids
+into per-path DataLoaders and returns a future, and both go through one generated dispatcher that
+peels the type prefix off each id and resolves it through the same entity dispatch `_entities` uses.
+That is the shared destination the two rows had no column for, so it is now prose.
+
+The promotion turned up something else. Giving `relay-node` a projection query runs it through the
+outcome block, which generates, and the fixture did not: `Film` declared `id: ID!` with neither
+`@node` on the type nor `@nodeId` on the field, so the build rejected `Film.id` as an unresolvable
+column. It had been in the corpus passing `ClassifiedDslTest` the whole time, because the fixture's
+`@classified` claims are all on the three `Query` coordinates and nothing asserted that the schema
+was one the generator would accept. This is the sharpest argument yet for promoting corpus-only
+fixtures rather than leaving them: a fixture that renders nowhere is a fixture whose schema no gate
+runs end to end.
+
+**Still to do.** Query Fields is down to three rows: the `@service` pair and the failure row. Two
+output-side candidates remain, the mutation payload-wrapper table at eight rows and the type-side
+Reference table at twelve, the second still the residue of a transitionally marked section. Input
+Fields is unchanged from part seven, including the question of whether a corpus example is the right
+vehicle at all.
+
+Worth carrying forward: part seven found a stale section title, this part found two false cells and
+a fixture the build refuses. The reference tables are not merely redundant with the worked examples,
+they are the part of the page nothing checks, and the promotion loop is finding that out one table
+at a time.
+
 **The outcome block, and the fork the owner settled.** Building it turned up something the plan
 does not cover: **not every doc example generates.** The corpus is a classification corpus, and a
 fixture earns its place by pinning a verdict rather than by producing output, so a fixture can pin

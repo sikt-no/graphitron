@@ -801,12 +801,40 @@ public final class ClassifiedCorpus {
             }
             """),
 
+        /*
+         * The Relay node roots, and the third field that shows what actually triggers them. All
+         * three return the Node interface and all three classify the same way; only the last is
+         * named something other than `node` / `nodes`, which is the point. Recognition is by
+         * signature (element type Node), never by field name, so a federation subgraph's extra
+         * by-id entry point is a node fetcher rather than a plain interface root.
+         *
+         * Cardinality is the one axis that forks: single delivers synchronously, list batches.
+         *
+         * Doc example: it renders the trigger the page's reference table stated as a field name.
+         */
         new Example("relay-node", """
-            type Film implements Node @table(name: "film") { id: ID! title: String }
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
             extend type Query {
               node(id: ID!): Node @classified(source: Query, operations: [NodeResolve], target: Single, targetShape: Interface)
               nodes(ids: [ID!]!): [Node] @classified(source: Query, operations: [NodeResolve], target: List, targetShape: Interface)
               internalFilmNode(id: ID): Node @classified(source: Query, operations: [NodeResolve], target: Single, targetShape: Interface)
+            }
+            """,
+            """
+            {
+              # Relay's own entry point: one global id at a time.
+              node(id: "1") {
+                id
+                ... on Film { title }
+              }
+              # The list form of the same signature.
+              nodes(ids: ["1", "2"]) {
+                id
+              }
+              # Not named `node`, and classified as one anyway: the signature is the trigger.
+              internalFilmNode(id: "1") {
+                id
+              }
             }
             """),
 
