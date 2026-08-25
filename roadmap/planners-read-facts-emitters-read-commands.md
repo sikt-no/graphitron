@@ -2386,6 +2386,77 @@ branches to price without adding a table and the name resolves on both branches 
 at a mutation's payload argument, which the role relation's input-expansion arm still does not
 distinguish. With that closed the fold has every relation it named.
 
+### Conditions, eighth increment: what identifies a row, and what a carrier points at
+
+The last blocker turned out to be misnamed, and finding that out was most of the increment. A
+mutation's payload argument is not the opposite of a filter argument. `DELETE ... WHERE` and
+`UPDATE ... SET ... WHERE` are ordinary SQL, and the generator already writes both: `DeleteRows`
+carries a `Broadcast` arm for `multiRow: true` with no key covered, whose worked example filters on a
+non-key column, and its comment says in as many words that non-key filter columns are legitimate
+extra predicates rather than orphans. So the question is not whether a payload contributes a
+predicate. It is which of its fields do, and that is decided per DML kind: a delete's admitted
+columns are all predicate with the covered key as a cardinality guard, an update partitions by the
+matched key, an insert has no WHERE to contribute to at all.
+
+**Two things read wrong before they were read right, and both are worth keeping.** The first was
+upsert. Reading the emitter, it looked like a fourth partition with a conflict target of its own,
+built from `@lookupKey` fields, and the vocabulary was nearly widened to carry it. It is dead code:
+the classifier refuses the verb at its verb dispatch, and the message it refuses with names the
+blocker as the conflict target's uniqueness. The emitter's own runtime message cites `@lookupKey` on
+a mutation input field, which the input resolver rejects outright as no longer supported. Reading an
+emitter before establishing that its classifier reaches it is how a retired mechanism gets modelled
+as a live one, and the store would have carried a vocabulary for a verb no build performs. Upsert
+stays deferred and this increment states nothing about it.
+
+The second was the grain. An update's partition follows the carrier's role rather than its column
+list: own columns partition whole and a straddle rejects, a self-FK routes wholly to the written half
+whatever its key membership, and a cross-table FK partitions per column. That last one is why the
+destination belongs to a column and not to an input field. A relation keyed by the field would have
+had to pick one answer for a carrier the walker went to some trouble to split.
+
+**What landed, which is the input side of that and not the destination itself.** Three relations,
+because each turned out to be a prerequisite of the next.
+
+`sql_constraint` gains the enumeration position. The write surface takes the first candidate key its
+columns cover, walking the primary key and then the unique keys in the order the generated model
+enumerates them, and nothing on a captured constraint recovers that order. `intent_table_key_candidate`
+transcribes the walk including both its projections, the column-set dedup and keeping an empty
+primary key where an empty unique key is dropped. Six tables in the test catalog carry two
+candidates, which is the ambiguity that made the capture worth doing rather than a tiebreaker worth
+inventing.
+
+`intent_foreign_key_node_key_lift` says whether a decoded node id lands on the referencing table or
+only across the join, which is what every write rail asks before admitting such a carrier. Stated as
+the absent landing rather than the present translation, which is the resolver's framing and is what
+makes a multi-hop reach fall out translated without an arm of its own.
+
+`intent_input_field_carrier_role` is the four-way vocabulary the update partition switches on.
+
+**Three corrections the verification found, each of which had looked right.** The scope basis does
+not discriminate the carriers: a cross-table node id resolves on its own table, correctly, because
+the columns it binds are the lifted foreign-key columns, and the translated carrier resolves the same
+way while having no local columns at all. The lift belongs to the node type rather than to the
+catalog, a node key being pinned in SDL where an author pins one; reading the catalog's own node
+metadata answered for no type at all on every table carrying none, which was most of them. And the
+carrier relation joined the filter role to ask whether a node id applied, so a site the role relation
+states nothing for lost its carrier verdict too, which a plain reference path turns out to be.
+
+All three were caught by pricing the relation against a real capture rather than by reading the SQL
+again, and the second and third by cases written to disagree: the fixtures the codebase already
+carries for the alternate-key reference sort correctly now and did not before.
+
+**A registered read the gate refused, and was right to.** `DerivedReadCostTest` flagged two new
+non-monotonic pairs. One is the input-field family's, which already carries it five times: reading
+the registered reference hops costs more than reading their source view. The other was the carrier
+relation reading the node-id instruction's registered table where the argument-grain sibling reads
+its live view. That one is answered rather than rostered, the relation now spelling the view, which
+is the distinction the roster is for: a row there is a regression that has been accepted, not one
+that has been noticed.
+
+**What this increment leaves owing.** The destination itself, at the column grain, and the matched
+key it needs, computed over the identity columns the carrier role now admits rather than over every
+admitted column. Then the fold.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the
