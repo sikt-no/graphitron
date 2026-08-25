@@ -1742,12 +1742,25 @@ public final class SeededStore {
     /**
      * A key on a catalog table.
      *
+     * <p>{@code key_position} is assigned rather than taken, so a case does not have to state a
+     * number it has no opinion about: a uniqueness constraint lands after the ones already seeded on
+     * the table, which is the enumeration capture writes when it walks the generated model, and a
+     * foreign key takes none because it is not in that enumeration. Seed the primary key before the
+     * unique keys and the order matches what a real catalog produces.
+     *
      * @param constraintType {@code PRIMARY KEY}, {@code UNIQUE} or {@code FOREIGN KEY}
      * @param jooqName the constant jOOQ generated for the key, or null where it generated none
      */
     public static void seedConstraint(DSLContext dsl, String sourceName, String tableSchema, String tableName,
                                       String constraintName, String constraintType, String jooqName) {
+        Integer keyPosition = "FOREIGN KEY".equals(constraintType) ? null
+            : dsl.fetchCount(SQL_CONSTRAINT,
+                SQL_CONSTRAINT.SOURCE_NAME.eq(sourceName)
+                    .and(SQL_CONSTRAINT.TABLE_SCHEMA.eq(tableSchema))
+                    .and(SQL_CONSTRAINT.TABLE_NAME.eq(tableName))
+                    .and(SQL_CONSTRAINT.KEY_POSITION.isNotNull()));
         dsl.insertInto(SQL_CONSTRAINT)
+            .set(SQL_CONSTRAINT.KEY_POSITION, keyPosition)
             .set(SQL_CONSTRAINT.SOURCE_NAME, sourceName)
             .set(SQL_CONSTRAINT.TABLE_SCHEMA, tableSchema)
             .set(SQL_CONSTRAINT.TABLE_NAME, tableName)

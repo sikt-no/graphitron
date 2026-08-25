@@ -8028,7 +8028,7 @@ CREATE VIEW intent_input_field_carrier_role
 SELECT sc.graph_name, sc.type_name, sc.field_name,
        sc.resolving_source_name, sc.resolving_schema, sc.resolving_table,
        CASE
-         WHEN fr.role <> 'NODE_ID'
+         WHEN ni.node_type_name IS NULL
            THEN CASE WHEN sc.basis = 'RESOLVING_TABLE' THEN 'OWN_COLUMNS' ELSE 'REMOTE' END
          WHEN nt.table_name IS NULL THEN 'REMOTE'
          WHEN nt.table_source_name = sc.resolving_source_name
@@ -8047,12 +8047,6 @@ SELECT sc.graph_name, sc.type_name, sc.field_name,
          ELSE 'REMOTE'
        END
   FROM intent_input_field_column_scope sc
-  JOIN intent_input_field_filter_role fr
-    ON fr.graph_name = sc.graph_name AND fr.type_name = sc.type_name
-   AND fr.field_name = sc.field_name
-   AND fr.resolving_source_name = sc.resolving_source_name
-   AND fr.resolving_schema = sc.resolving_schema
-   AND fr.resolving_table = sc.resolving_table
   LEFT JOIN intent_node_id_instruction ni
     ON ni.graph_name = sc.graph_name AND ni.site = 'INPUT_FIELD'
    AND ni.type_name = sc.type_name AND ni.field_name = sc.field_name
