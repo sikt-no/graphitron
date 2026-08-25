@@ -1911,11 +1911,106 @@ binding, where it would have made the reader twelve times worse), and register (
 What separates them is not size and not reader count but how the reader reaches the relation, which
 is the thing to measure and not to reason about.
 
-**What the conditions conversion still owes.** The membership fold itself, which is now a reduction
-over this relation and the authored `@condition` population rather than a new rule. Plus the
-coordinate-to-rows multimap the `rowFor` section handed forward, which is where the deferred
-quadratic gets measured, and the producer conversion itself, which is where the three leaf references
-in `ConditionCommands` go.
+**What this increment leaves owing.** The membership fold itself, which looked from here like a
+reduction over this relation and the authored `@condition` population. The section below is what
+happened when that reduction was drafted: it needs a table to name, and the relation that answers
+which table is keyed per argument.
+
+### Conditions, fourth increment: the coordinate's own scope table
+
+Drafting the membership fold is what produced this increment, the same way drafting the fold produced
+the section above it. Membership is one row per coordinate-and-table, so the fold has to name a table,
+and the relation that answers which table a coordinate's generated SQL binds against turned out to
+answer it only where an argument existed to carry the answer. `intent_argument_scope_table` states the
+field's rule and keys it per argument: both its rungs read the field's named type or the field's
+`@mutation(table:)`, nothing in either is an argument's, and every argument of one field carries the
+same row. An authored `@condition` on a field with no arguments filters a table that relation cannot
+name, and that is not an edge case, it is the ordinary static filter.
+
+So the rule moves to the grain it was always about. `intent_field_scope_table` states it once, and
+`intent_argument_scope_table` becomes the fan-out of that relation over the field's arguments and
+nothing else: one join, no rungs, no window. Its own comment now says that is its whole content. The
+rows are unchanged, which the argument relation's existing anchor test asserts without being edited
+and the measurement below confirms at 171 rows either way, so the four readers of the registered
+target see nothing.
+
+**What the fold still owes, which drafting it is what found.** Three of its arms need relations the
+store does not have, and none of the three is this increment's to add. An input-object argument
+expands into its input type's fields, which resolve at *their* coordinates; the store has no
+input-field-grain column resolution outside the facet gate, so whether such an argument contributes is
+not askable yet. A multi-table polymorphic root fans its filter surface out over its participants'
+tables, and `intent_argument_filter_role` has no name-matched row at such a coordinate at all, the
+name match resolving against a scope that a union type by definition does not have; carrying the
+fan-out through would mean fanning the argument column scope out too. And a mutation's input payload
+argument is not a filter argument, which the role relation's input-expansion arm does not currently
+distinguish. Stating the fold over what the store can answer today would have made it quietly wrong at
+three shapes rather than incomplete at none, so the fold waits and the DDL says why.
+
+**Read cost, and a hazard comment that had gone stale.** The dedup looked like it should cost
+something: the field grain is a wider domain than the argument grain here, 918 fields against 268
+arguments, and the new relation answers for every field rather than only for those carrying arguments.
+Measured on the sakila example schema, that is exactly what the first shape did, taking the refresh
+source from 28 milliseconds to 40.
+
+The reason it does not cost that in the end is a correction. `intent_argument_scope_table`'s comment
+carried an essay against joining the type binding onto the field's stripped type expression, and for
+projecting that expression into an inner derived table first: joining a derived relation on an
+expression makes H2 evaluate that relation once per driving row, and the essay priced the difference
+at two orders of magnitude. It was true when it was written. What retired it was not a rewrite but the
+registration of `intent_resolved_type_binding` some increments later: once the relation on the far
+side of that join is a table, there is nothing to re-evaluate. Nobody re-measured, and the comment
+went on steering the next author, which is this one.
+
+[cols="4,1,1"]
+|===
+| sakila example, 918 fields and 268 arguments, 236 scope rows | ms | rows visited
+
+| field grain, binding joined on the expression
+| 13
+| 62264
+
+| field grain, expression projected into a derived table first
+| 33
+| 3014
+
+| field grain, driving fields narrowed to non-scalar named types
+| 65
+| 4363
+
+| argument grain, binding joined on the expression
+| 6
+| 19087
+
+| argument grain, expression projected into a derived table first (the shape that shipped)
+| 27
+| 2022
+|===
+
+So the shape the comment steered away from is the fastest at either grain, and the increment takes it.
+The refresh source ends at 14 milliseconds where the inline argument-grain rule cost 28, halved while
+computing a rule over three and a half times the driving rows.
+
+The scan counts are quoted because they are wrong in an instructive direction. The cheapest shape here
+visits twenty times the rows of the dearest, and the middle shape, which prunes the driver before the
+join, is the worst of the three while visiting a fourteenth of the rows the best one does. The
+increment before this one found the clock moving thirtyfold where the count moved 35%; this one finds
+the count and the clock ordering the candidates in opposite directions outright. A scan count says how
+much a plan touched. It does not say what that cost, and here it does not even rank.
+
+**What the conditions conversion still owes.** The membership fold, now blocked on three relations
+named above: the input-field-grain column resolution, the polymorphic participant fan-out through the
+argument column scope, and the read-versus-filter fork at a mutation's payload argument. Plus the
+coordinate-to-rows multimap the `rowFor` section handed forward, which is where the deferred quadratic
+gets measured, and the producer conversion itself, which is where the three leaf references in
+`ConditionCommands` go.
+
+**A third instance of the same refused case, and it is now a case.** Two earlier increments declined
+to declare an index on a captured relation on the grounds that a schema-wide index is a discipline
+question one reader's evidence cannot settle. This one adds a different repeat: a performance comment
+in the DDL that was true when measured and was retired by a later registration nobody re-ran it
+against. One is an anecdote; the store now has an instrument for exactly this, the read-cost gate,
+and what it does not have is any check that a written measurement still holds. That is R830, filed here rather than
+left as another paragraph.
 
 ### Emitter half: family by family
 
