@@ -27,9 +27,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-24 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R814` | The architecture docs describe the surface being drained as if it were the design | In Progress | 2026-08-23 | [plan](architecture-docs-describe-the-destination.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
-| `R726` | The @nodeId instruction population excludes the multitable coordinate: state the boundary and pin it | Spec | 2026-08-25 <sub>created 2026-08-19</sub> | [plan](nodeid-bare-inference-per-participant-divergence.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
+| `R726` | The @nodeId instruction population excludes the multitable coordinate: state the boundary and pin it | Ready | 2026-08-25 <sub>created 2026-08-19</sub> | [plan](nodeid-bare-inference-per-participant-divergence.md) |
 | `R687` | A DML carrier payload with an errors field loses its return-derived write target | Spec | 2026-08-25 <sub>created 2026-08-17</sub> | [plan](dml-carrier-errors-field-blocks-return-derived-table.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -431,7 +431,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R676` [**A @nodeId filter input on a multitable query cannot state a per-participant join path**](nodeid-filter-per-participant-paths.md) — Ready, bug
 - `R588` [**Diagnostics for `implements Node @table` over a table with no node metadata**](node-without-metadata-diagnostics.md) — Backlog, dx
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
-- `R726` [**The @nodeId instruction population excludes the multitable coordinate: state the boundary and pin it**](nodeid-bare-inference-per-participant-divergence.md) — Spec, architecture
+- `R726` [**The @nodeId instruction population excludes the multitable coordinate: state the boundary and pin it**](nodeid-bare-inference-per-participant-divergence.md) — Ready, architecture
 - `R273` [**Land or retire R265's deferred compile-tier guard**](bare-scalar-id-arm-modernisation.md) — Backlog, architecture
 - `R24` [**Rooted-at-parent NodeId reference JOIN-projection emitter (ColumnBackedReferenceField, both arities)**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 - `R419` [**Reject list-valued @nodeId+@reference carriers on INSERT inputs at build time**](list-nodeid-reference-insert-rejection.md) — Backlog, validation

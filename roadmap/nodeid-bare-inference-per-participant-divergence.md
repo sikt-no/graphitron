@@ -1,7 +1,7 @@
 ---
 id: R726
 title: "The @nodeId instruction population excludes the multitable coordinate: state the boundary and pin it"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: nodeid
