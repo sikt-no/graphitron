@@ -336,6 +336,7 @@ Both `@nodeId` coordinates claim `NODE_ID` and both emit, with or without `typeN
 difference is which key shape gets encoded, not which verdict is reached. Asserted by the
 `composite-node-key` corpus example.
 
+[#nesting-type]
 === Object type with no binding → `NestingType`
 
 An object type carrying no `@table` and reached from no producer is a grouping type: it has no table
@@ -384,8 +385,13 @@ type FilmDetails {
 |===
 
 `FilmDetails.title` and `FilmDetails.description` read columns of `film`, the table its parent bound,
-which is what "nested under the parent's scope" means concretely. Asserted by the `nesting` corpus
-example via `@classifiedType(as: NestingType)`.
+which is what "nested under the parent's scope" means concretely. They fold into the parent's SELECT
+and are projected inline, so the grouping object itself needs no query of its own: `Film.details` is
+wired as a passthrough that hands the parent's source object straight down. The parameter lists in
+the block are the tell. A coordinate with a read to launch takes a `DataFetchingEnvironment`; one
+that is only a value read off the row already in hand takes an `Object`. `Film.details` returns an
+object and still takes an `Object`, which is what makes it a passthrough rather than a fetch.
+Asserted by the `nesting` corpus example via `@classifiedType(as: NestingType)`.
 
 === Reference table
 
@@ -770,10 +776,11 @@ participant table a row resolves to, with `Film` and `Actor` recorded as the par
 `InterfaceType` gets: a union binds no table, and its participants carry the catalog binding. Asserted
 by the `union` corpus example via `@classifiedType(as: UnionType)`.
 
-The `@table`+`@discriminate` interface child (target shape `Table`; `TableInterfaceField` per-parent at
-single cardinality, `BatchedTableInterfaceField` DataLoader-batched at list cardinality) and
-the Relay `Node` root (`QueryNodeField`, `operation = NodeResolve`, target shape `Interface`) are further
-leaves on this same polymorphic rule; they are asserted corpus-only (`table-interface`, `relay-node`).
+The `@table`+`@discriminate` interface child is a further leaf on this same polymorphic rule, and the
+one where cardinality forks the delivery; it gets its own worked example under
+<<one-table-many-participants,One table, many participants>> below. The Relay `Node` root
+(`QueryNodeField`, `operation = NodeResolve`, target shape `Interface`) is another, asserted
+corpus-only by the `relay-node` example.
 
 A discriminated interface may also be a *joined-table* (class-table) inheritance: each concrete type
 declares its own detail `@table` distinct from the discriminated base, with its inherited (base-resident)
@@ -889,15 +896,18 @@ participant field, which projects under its own fixed `<TypeName>_<fieldName>` a
 enters the result-key namespace at all. The rejection is a backstop against a future change that
 moves such a coordinate back into that namespace, not a shape to write a schema against.
 
+[#one-table-many-participants]
 ==== One table, many participants
 
 An interface carrying `@table` plus `@discriminate(on:)` is a single table read through a column that
 says which participant each row is. The interface's own fields resolve against that table, and the
-participants add nothing but a discriminator value.
+participants add nothing but a discriminator value. Both cardinalities are below, because this is the
+one polymorphic child where cardinality decides something.
 
 [source,graphql]
 ----
 type Query {
+  inventory: Inventory
   language: Language
 }
 
@@ -909,6 +919,11 @@ type Language @table(name: "language") {
 interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
   title: String
 }
+
+type Inventory @table(name: "inventory") {
+  "The same interface at single cardinality."
+  media: MediaItem
+}
 ----
 
 // Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
@@ -916,6 +931,10 @@ interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
 [cols="1,1,2"]
 |===
 | Coordinate | Verdict | Emitted
+
+| `Inventory.media`
+| no claiming directive
+| `fetchers.InventoryFetchers#media(DataFetchingEnvironment)`
 
 | `Language.mediaList`
 | no claiming directive
@@ -925,6 +944,10 @@ interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
 | `TABLE_COLUMN`, inferred
 | no method of its own
 
+| `Query.inventory`
+| no claiming directive
+| `fetchers.QueryFetchers#inventory(DataFetchingEnvironment)`
+
 | `Query.language`
 | no claiming directive
 | `fetchers.QueryFetchers#language(DataFetchingEnvironment)`
@@ -932,10 +955,22 @@ interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
 |===
 
 `MediaItem.title` shows something the emitted column is there to make visible: a coordinate can carry
-a verdict and still emit no method of its own. It is projected by the enclosing `mediaList` fetcher's
+a verdict and still emit no method of its own. It is projected by the enclosing fetcher's
 discriminated read, not wired separately. A blank in that column is a fact about where the work
-happens, not a gap. Asserted by the `table-interface` corpus example via
-`@classifiedType(as: TableInterfaceType)`.
+happens, not a gap.
+
+The two child coordinates carry the same asserted `Child` / `Fetch` / `Table` verdict and differ only
+below it. `Language.mediaList` is a list, so it batches: a DataLoader fetcher and a `rows*()` method,
+with the discriminated re-projection running over the batch's parent-input `VALUES` anchor.
+`Inventory.media` is single, so it fetches per parent row, one re-projection each. The batch key is
+the foreign-key hop's source side rather than the parent's primary key, because one foreign key
+correlates the whole participant set here instead of each participant holding its own. What
+cardinality decides is *how many* statements, not whether there is one; either way the re-projection
+is its own statement rather than a fold into the parent's SELECT, which is what separates this child
+from a plain `@table` child. The `@reference` on the list side is not part of that difference: it is
+there because `film` holds two foreign keys to `language` and one of them has to be named.
+
+Asserted by the `table-interface` corpus example via `@classifiedType(as: TableInterfaceType)`.
 
 ==== A reference on one participant only
 
@@ -1698,19 +1733,16 @@ aggregate rather than matched against a column. The `nn` and `nb` fields get the
 
 ==== Object return type
 
-The four spellings of a plain `@table` child are worked through above and are not repeated here:
-`@splitQuery` over an unkeyed child in the <<derived-layer,derived layer example>>, and both lookup-keyed
-spellings in the <<lookup-child,child lookup pair>>. What is left is the polymorphic return types, the
-plain-object form, and the three rows the build refuses:
+Every return type a child can have is worked through above, so none of them is repeated here. The four
+spellings of a plain `@table` child are the <<derived-layer,derived layer example>> and the
+<<lookup-child,child lookup pair>>; the polymorphic return types are
+<<polymorphic-fields,Polymorphic fields>>, with the discriminated interface child's cardinality fork
+under <<one-table-many-participants,One table, many participants>>; the plain object with no `@table`
+is the <<nesting-type,`NestingType` example>>. What is left is the three rows the build refuses:
 
 |===
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
-| Return `@table`+`@discriminate` interface, list | `BatchedTableInterfaceField` | Async DataLoader fetcher + `rows*()` method ; the discriminated re-projection over the batch's parent-input `VALUES` anchor
-| Return `@table`+`@discriminate` interface, single | `TableInterfaceField` | Fetcher method (one re-projection per parent row)
-| Return multi-table interface | `InterfaceField` | Fetcher method(s) ; per-participant polymorphic projection
-| Return union | `UnionField` | Fetcher method(s) ; per-participant polymorphic projection
-| Return plain object (no `@table`) | `NestingField` | Inline projection ; nested fields fold into the parent SELECT, the object itself wired as an `env.getSource()` passthrough (inherits parent table context)
 | Conflicting directives | Arm-order winner (the walk no longer tombstones conflicts) | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`); build fails. The LSP/MCP projection reports `FieldClassification.Conflicted` carrying the claims
 | `@notGenerated` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; fields must be fully described by the schema.
 | `@multitableReference` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; the rewrite generates multi-table interface dispatch from `@discriminate` / `@discriminator`.

@@ -694,6 +694,10 @@ public final class ClassifiedCorpus {
                 # Discriminated participants, read from one table.
                 mediaList { title }
               }
+              inventory {
+                # The same interface at single cardinality.
+                media { title }
+              }
             }
             """),
 

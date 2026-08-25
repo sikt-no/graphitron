@@ -709,13 +709,49 @@ lambda at single cardinality, against a DataLoader fetcher plus a `rows*()` meth
 child on the page is one of those two, so naming them once beside the example that contrasts them is
 where the sentence belongs.
 
+**Slice 3, part six: the cardinality fork, and a second stale claim.** The same table went from
+eight rows to three, which is every row that describes something the build generates. What is left
+is the three the build refuses.
+
+One promotion did the work again, and again by selecting a coordinate the corpus already carried.
+`table-interface` renders the discriminated interface child at list cardinality; the single-cardinality
+coordinate was sitting in the same fixture unrendered, so the doc query now selects both. The fork is
+worth showing rather than asserting, because this is the one polymorphic child where cardinality
+decides anything: list batches through a DataLoader keyed on the foreign-key hop's source side,
+single fetches per parent row, and either way the discriminated re-projection is its own statement
+rather than a fold into the parent's SELECT. Before touching the rows I checked the claim against
+`BatchedDiscriminatedInterfaceChildPipelineTest`, which pins exactly that fork; this time the
+reference row was true.
+
+The finding this round is smaller than part four's but the same species. The polymorphic section
+introduced the discriminated interface child and closed with "they are asserted corpus-only
+(`table-interface`, `relay-node`)" while `table-interface` was rendering as a worked example one
+subsection below. A sentence about the state of the evidence, written once and never rechecked. It
+now points at the example instead. Worth noting that the *first* filter this item produced would not
+have caught it: it is not a claim about generated output, it is a claim about the docs themselves.
+Prose that says where a thing is documented rots the same way prose that says what a thing generates
+does.
+
+Three more rows folded in with no new text needed, the polymorphic section already carrying what
+they carried. The fifth, `NestingField`, took one sentence, and it is a sentence the outcome blocks
+had made available without anyone reading it: a coordinate with a read to launch takes a
+`DataFetchingEnvironment` and one that is only a value read off the row in hand takes an `Object`,
+so `Film.details` returning an object and still taking an `Object` is the passthrough, visible in a
+block the page had already printed.
+
 **Still to do.** The two remaining marked sections ("Type Classification", "Field Classification")
 keep their marks until the examples that subsume them land; "Implicit Classification Rules" is
-already gone. The `@table`-parent Object-return table is down to eight rows: five polymorphic and
-plain-object forms the polymorphic section already discusses in prose, and three the build refuses.
-The polymorphic five are the next fold-in candidates, though they need a check first that the
-section's prose really carries what the rows carry. The class-backed table is down to three:
-`@sourceRow`, the `errors:` slot, and the corrected `@lookupKey` gap.
+already gone. Both Child Fields tables are now down to what does not generate: three refusal rows on
+the `@table` parent, and on the class-backed parent `@sourceRow`, the `errors:` slot, and the
+corrected `@lookupKey` gap. The largest table still describing a mechanism no example shows is Input
+Fields at six rows, which is a different axis than the output-side work these six parts covered and
+should be sized before it is started.
+
+One table nearby is worth a look but is probably not a fold-in. "DataLoader-backed field categories"
+is the same `@splitQuery` x `@lookupKey` matrix part five worked through, crossed with root-versus-child,
+and now that the matrix has worked examples the overlap is visible. It carries three columns the
+examples do not (derived tables, whether non-lookup arguments are allowed, whether pagination is),
+so the right move is probably to trim its overlap rather than retire it.
 
 **The outcome block, and the fork the owner settled.** Building it turned up something the plan
 does not cover: **not every doc example generates.** The corpus is a classification corpus, and a
