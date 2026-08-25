@@ -1,7 +1,7 @@
 ---
 id: R673
 title: "A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: nodeid
@@ -203,6 +203,13 @@ instead: `occupantsByIds(ids: [])` returns all seven occupants. The Tests sectio
 asks for a unit-tier case and says why, and names the execution case in the list cell's sentence.
 The behaviour needed no code change, as the reviewer predicted; the delivered helper and glue pass
 the new case unmodified.
+
+One thing the new case inherits, worth naming rather than leaving for the next red build to
+rediscover: it reads an unfiltered root and asserts a row count, which is the shape R823 is filed
+against. Its sibling `dispatch_nullableArgumentAbsent_leavesTheFieldUnfiltered` already asserts the
+same seven rows, so this adds a second reader of the same population rather than a new kind of
+exposure, and both belong in the census R823 asks for. The empty-list assertion cannot be narrowed
+to named rows without giving up what it proves, since "unfiltered" is the claim.
 
 *Not blocking, no action asked.* The dispatch fixtures are all unions
 (`AddressOccupant = Customer | Staff`), while the reported repro is an interface. The two arms
