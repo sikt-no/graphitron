@@ -1,7 +1,7 @@
 ---
 id: R826
 title: "intent_node_id_instruction costs 26 seconds per evaluation, and the fix is stranded on a quickfix branch"
-status: Ready
+status: In Progress
 bucket: model
 priority: 2
 theme: model-cleanup
@@ -44,14 +44,17 @@ trunk does not have, on a history whose merge base with trunk is now 100 commits
 
 ## Implementation
 
-All four steps shipped. Landed at `31bd5f4ef` (execution-tier fix), `38f4b5473` (model DDL),
-`728f12f02` (capture registration) and `fe6a70086` (roster, re-pin, re-measurement).
+All four steps shipped. Landed at `93d2ee8` (execution-tier fix), `1491f9a` (model DDL),
+`60d01fe` (capture registration) and `8b5b23d` (roster, re-pin, re-measurement), with `6c94642` and
+`940e05d` re-pinning the matrix as concurrent work moved its baseline underneath, and the rework
+round below correcting the registration comment.
 
 1. **The three commits landed**, both conflicts resolved keep-both as planned.
-2. **The exemption roster gained its fifth row**, with the reader-shape argument the Spec review
-   confirmed. The roster's javadoc now separates the two kinds of argument it holds: four that
-   declined a lever on measurement, and this one, which has no candidate to measure. A row of the
-   second kind is falsified by a new reader rather than by a new figure.
+2. **The exemption roster gained its sixth entry**, a concurrent item having added one first, with
+   the reader-shape argument the Spec review confirmed. The roster's javadoc now separates the two
+   kinds of argument it holds: those that declined a lever on measurement, and this one, which has
+   no candidate to measure. A row of the second kind is falsified by a new reader rather than by a
+   new figure.
 3. **The matrix was re-priced, and it moved the opposite way from the prediction.** `CELLS` fell by
    five, down rather than up. The absolute moved three times while this was in flight, a concurrent
    item landing views and then a registration of its own, and the drop of five held across all
@@ -64,12 +67,20 @@ All four steps shipped. Landed at `31bd5f4ef` (execution-tier fix), `38f4b5473` 
    instruction rule, so they did not get cheaper, they stopped reaching. The cost moved to the
    refresh, which is a view in the same domain and holds its own cell against that registration
    monotonically. No new non-monotonic pair appeared, so the registration costs no other relation
-   more. `READERS_IN_SCHEMA` and `READERS_WITH_CELLS` both held at 83 and 47, as predicted and for
-   the predicted reason: one view becomes a table and one `_live` view arrives.
+   more. `READERS_IN_SCHEMA` and `READERS_WITH_CELLS` were both left untouched by this item, and
+   their absolutes moved only because concurrent work added views; they read 85 and 49 by the time
+   this landed and 87 and 49 now. The first held for the reason the plan predicted: one view becomes
+   a table and one `_live` view arrives, so the count is net neutral. The second held and the plan
+   predicted it would move, so the record should say so plainly rather than let the one wrong
+   prediction read as a right one. Nothing was owed either way, since neither needed re-pinning.
 4. **The comment was re-measured, and one claim did not survive.** It said this was the most
-   expensive refresh in the registry; on the twelve-unit fixture it is fifth of ten by scans,
-   behind the field-reference step hop, the column scope, the carrier data field and the decode hop
-   column, two of which were registered after the branch was cut. The claim is gone. The
+   expensive refresh in the registry; on the twelve-unit fixture four registrations refresh dearer,
+   the field-reference step hop, the field column scope, the carrier data field and the decode hop
+   column, two of which were registered after the branch was cut. The claim is gone. The retraction
+   first replaced it with a place in an ordering, which the Done gate caught as both stale and
+   unverified, and the rework round replaced that with the four names: a place is falsified by any
+   registration landing beside it and a name is not, which is the lever this item's own roster
+   javadoc had already stated one paragraph away. The
    consumer-schema wall clocks stay, now attributed to the schema and tree they were taken on
    rather than stated as facts about this one, since nothing here can re-take them. Beside them
    stand scan counts a reader of this tree can re-take: with the rows stored against the rule
@@ -112,8 +123,9 @@ rather than a rewrite.
 **Rewriting the rule.** The alternatives above were measured and lost to the registration. This
 item stores the rule's rows; it does not restate the rule.
 
-**The narrower registration.** Refresh here is one evaluation of the rule per capture, the most
-expensive refresh in the registry. The registration that would cut it is the inner alias rather
+**The narrower registration.** Refresh here is one evaluation of the rule per capture, dear enough
+to be worth cutting though not the dearest in the registry. The registration that would cut it is
+the inner alias rather
 than the whole rule, and that alias is local today; promoting it to a named relation is what would
 make it registrable. Worth its own item once this lands, and filing it is not this item's job
 either.
@@ -233,6 +245,32 @@ roster javadoc's own lever and drop the ordinal for something additions cannot f
 registrations measured dearer rather than counting places. The sentence's actual job is retracting
 the branch's "most expensive refresh in the registry" claim, and that retraction survives either
 way, so this is not a re-measurement of the item's premise.
+
+*Author response.* Fixed, by the second of the two routes offered, and the first was run anyway to
+get the names. All eleven refresh sources were re-measured together on the twelve-unit fixture:
+the field-reference step hop 18213 scans, the field column scope 2918, the carrier data field 2551,
+the decode hop column 2288, this one 1695, the resolved type binding 778, the argument scope table
+632, the spelled table 597, the errors field 537, the argument column scope 117, the argmapping
+pair 87. So the eleventh registration refreshes an order of magnitude cheaper than this one and the
+ordinal did happen to be fifth, which is worth recording only because it means the shipped comment
+was wrong about the registry's size while landing on the right rank by luck. The finding's reading
+holds either way: nothing had weighed the eleventh against this one, so `fifth` was unverified when
+written, and a number nobody measured has no business in the one comment whose whole claim is that
+its numbers are measured.
+
+The comment now names the four registrations measured dearer instead of counting places, and says
+why in its own text: a place is falsified by any registration landing beside it and a name is not.
+That is the roster javadoc's lever, applied where the finding points out it should have been applied
+already. The retraction of the branch's claim survives intact, and the sentence no longer carries a
+figure that a concurrent registration can invalidate without touching this file.
+
+*Author response to the non-blocking list.* All five fixed, since this round edits the file anyway.
+The four landing SHAs now resolve, and the two later re-pins are named beside them. The roster
+gained its sixth entry, not its fifth row. `READERS_IN_SCHEMA` and `READERS_WITH_CELLS` are no
+longer quoted at stale absolutes: the plan now says this item left both untouched, gives both
+readings, and states plainly that the second held where the Spec predicted it would move, rather
+than reporting the one wrong prediction as a right one. The `Out of scope` paragraph no longer
+repeats the most-expensive-refresh claim that step 4 retracts four paragraphs above it.
 
 **Non-blocking, no response wanted, listed only because a rework round keeps this file alive.** The
 plan body has drifted from the tree in five places, all cosmetic and all deleted at Done, so fix them
