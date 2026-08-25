@@ -102,10 +102,10 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 94;
+    private static final int READERS_IN_SCHEMA = 95;
 
     /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 56;
+    private static final int READERS_WITH_CELLS = 57;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -122,7 +122,7 @@ class DerivedReadCostTest {
      * So a drop here is not the matrix quietly seeing less; it is cost moving off a reader and onto
      * a refresh, and the refresh is a view in this domain and priced like any other.
      */
-    private static final int CELLS = 124;
+    private static final int CELLS = 126;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -510,6 +510,19 @@ class DerivedReadCostTest {
      * a populated fixture untrue of the hop-column registration. With it, that cell is the widest ratio
      * in the matrix by wall clock, tens of milliseconds registered against seconds unregistered, which
      * is the shape that registration's own registry reason describes.
+     *
+     * <p>{@code media} is the third such arm and it is a per-unit union of two of the cluster's own
+     * bound types with one filter argument over a column both their tables carry. Before it the
+     * fixture had no multi-table polymorphic root at all, so the participant fan-out held no rows at
+     * any size: the field scope's participant arm, and therefore the branch multiplicity every
+     * relation below it inherits, priced as an empty relation. That is the state a previous increment
+     * of this work walked into from the other direction, reading a shape choice off a fixture whose
+     * units made both correlated arms of a ranked view unselective, and the lesson is the same one in
+     * reverse. A gate blind to a shape does not price it conservatively; it prices the instrument's
+     * floor and reports a number. The union's members are the existing {@code Film} and
+     * {@code Inventory} types rather than new ones, so the arm adds branches to price without adding
+     * a table, and the filter column is the key one of them declares on the other, which is what
+     * makes the name resolve on both branches instead of on one.
      */
     private static String scaledSdl(int units) {
         var sdl = new StringBuilder("""
@@ -573,6 +586,7 @@ class DerivedReadCostTest {
               id: ID! @nodeId
               inventory: [Inventory%1$d!]! @reference(path: [{key: "inventory_store_id_fkey"}])
             }
+            union Media%1$d = Film%1$d | Inventory%1$d
             """.formatted(i)));
         sdl.append("type Query {\n").append("""
               rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
@@ -589,6 +603,7 @@ class DerivedReadCostTest {
                 {key: "inventory_store_id_fkey"}
               ])
               inventoryForFilm%1$d(id: ID! @nodeId(typeName: "Film%1$d")): [Inventory%1$d!]!
+              media%1$d(filmId: Int @field(name: "film_id")): [Media%1$d!]!
             """.formatted(i)));
         return sdl.append("}\n").toString();
     }

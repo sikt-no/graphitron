@@ -2212,6 +2212,180 @@ participant fan-out through the argument column scope, and the read-versus-filte
 payload argument. With the role relation in place the fold itself is next, and what it needs from the
 input surface is now one join rather than a walk.
 
+### Conditions, seventh increment: the polymorphic participant fan-out
+
+The second of the fold's three blockers, and the one that turned out to be a hole in the relation
+every other one of these increments read. A field returning a union, or an interface carrying no
+`@table` of its own, is not one statement. The classifier lowers its whole filter surface once per
+table-bound participant, each against that participant's own table, and mints a condition method
+named after the participant rather than after the container. So the coordinate has one root per
+branch, and `intent_field_scope_table` could state none of them: its upper rung joins a binding on
+the field's named type, a container binds nothing, and the relation's own comment closed with the
+claim that a field with no bound named type and no `@mutation` reads no table at all. That
+biconditional was false for every multi-table polymorphic root in the tree, eleven of them filtered
+in the sakila example alone, and the falsehood was inherited by every relation below: no argument
+scope, no column resolution, no `NAME_MATCHED` role. The blocker as the fourth increment stated it
+was that the role relation "has no name-matched row at such a coordinate at all"; the cause was one
+rung further up than that reading suggested.
+
+**The arm is disjoint, which is why it is not a third rung.** `intent_field_participant_scope_table`
+states the population, one row per participant whose type the container holds a certain binding for,
+keyed by the participant and not only by the table: the unit name a consumer mints is the
+participant's, so a row carrying a table alone could not tell it which. `intent_field_scope_table`
+unions the distinct tables of that relation in under a `PARTICIPANT_TABLE` basis, and unions rather
+than ranks because the arm contends with neither rung. Its own precondition is that the container
+binds no table, which is exactly what the upper rung requires it to have; and it declines where a
+resolving `@mutation(table:)` has already answered, which is what the lower rung reads. Ranking it
+would have stated a precedence the site does not have, which is the objection the argument column
+scope makes about a repeated `@reference` and it applies unchanged here. The `DENSE_RANK` is
+untouched, and the two grains part on purpose: the participant relation keys on the participant
+because a unit is named after one, the scope relation is distinct on the table because a statement
+is rooted in one, so two participants backed by one table are two rows there and one here.
+
+**What the fan-out cost in rules was almost nothing, and that was the point.** The argument scope is
+a pure fan-out of the field scope and needed no edit. The argument column scope reads it, the column
+match reads that, and the role relation's `NAME_MATCHED` arm reads the match, so the population
+arrives at the relation the blocker named through four relations that each already state their site
+as a coordinate paired with a table. The grain widening is not new vocabulary either: the fifth and
+sixth increments already put the resolving table in the key at the input surface, on
+`intent_input_field_column_scope`'s reading that a departure which is not a function of the
+coordinate belongs in the key. The argument surface just had no shape that exercised it.
+
+**One window did have to widen, and a test case found it rather than review.**
+`intent_argument_column_match` collapses its candidates with a `ROW_NUMBER` to take the first match
+in tier-then-ordinal order, and it partitioned by the argument alone. What that collapse is for is
+two columns of one table answering one name; partitioned by the argument it also collapsed the
+branches, keeping whichever branch sorted first and silently dropping the others. The first
+two-branch case written against the new relation returned one row where it expected two, and the
+resolved table joined the partition. Worth stating as a rule rather than as an incident: a relation
+whose grain widens owes an audit of every window over it, and the one sibling window that was
+checked and deliberately left alone is the role relation's, which stays partitioned by the argument
+because the rule an argument falls under is the same on every branch.
+
+**Where the fan-out is stated and not yet answered.**
+`intent_argument_reference_step_target` gains the per-branch departure for free and its two arity
+columns do not follow: they are counted per element and position rather than per departure, so two
+branches walking one element at one position land in a single partition and their candidate counts
+conflate. Putting the departure in that partition would close it and would also split the candidate
+set at an ambiguous mid-chain landing, which changes what the arity means on a shape the tree does
+exercise. No graph in the tree writes an argument-site `@reference` at a polymorphic root, and the
+branch emitter's supported-extraction list does not name one, so this is an unexercised limit rather
+than an answer anybody reads, and the relation's comment says so in those terms rather than claiming
+the shape works.
+
+**The node-id family picks the fan-out up, and both readings it produces are the resolver's.** The
+two inference bases of `intent_node_id_instruction` resolve against the argument scope, so an
+inferred instruction at a polymorphic root names one node type per branch. At a top-level argument
+that is the per-branch decode the resolver supports outright. At a nested input field it is the
+divergence the resolver rejects, one leaf meaning a different id on each branch, and the two rows
+carrying two node types are what makes that rejection a detection over a relation instead of a walk
+check with nothing behind it. Neither is a new basis; both are the departure's grain arriving.
+
+**The absences, restated where they were wrong.** Seven relations' comments asserted a silence they
+did not own, and each now says what it answers at a coordinate with branches: the field scope, the
+argument scope, the argument column scope and its match, the role relation, the argument reference
+step target, and the two input-surface relations that already carried a resolving table in their
+keys and needed only the sentence saying which tables those now are. The correction that matters
+most is the first one, because it is the one that made a hole look like a rule.
+
+**Read cost, and an essay that turns out to be conditional rather than wrong.** Measured on the
+sakila example schema, 917 fields and 267 arguments, 128 participant rows out, five interleaved
+sweeps with result reuse off so every figure carries an execution count above one and a standard
+deviation.
+
+[cols="4,1,1"]
+|===
+| sakila example, 917 fields and 267 arguments | ms | sd
+
+| the membership joined onto the stripped type expression
+| 47
+| 3.6
+
+| the expression projected into a derived table first, measured and not taken
+| 27
+| 1.9
+
+| the same projection, driving from the 52 membership rows
+| 29
+| 6.0
+
+| the shipped shape with both exclusions removed, as a floor
+| 42
+| 2.7
+
+| the two ranked rungs alone, which is the relation before this arm
+| 16
+| 0.7
+|===
+
+The projection is worth 42%, it is the shape the fourth increment kept an essay *against*, and it
+does not ship. Taking those in order. The essay is conditional rather than wrong: that increment
+retired it at the field grain once the relation on the far side of its join became a table, and a
+stored far side has nothing to re-evaluate per driving row, where `intent_poly_member` is a view and
+the original finding therefore stands here. Join a derived relation on an expression and the
+projection pays; join a stored one and it does not. The relation's comment says so and points at the
+essay, because read apart they look like a reversal.
+
+**And then the gate refused the faster shape, which is the more useful half of this.** The projection
+changes which plan H2 takes for this relation and for the two above it, and under that plan the
+registered read of `intent_resolved_type_binding` visits more rows than reading its source view
+would, for this relation, `intent_field_scope_table` and `intent_argument_scope_table_live` alike.
+`DerivedReadCostTest` asserts the opposite over every such pair, so the projection fails the
+verification build, deterministically: two full builds with it red on exactly those three pairs
+against one full build green immediately before it. The shipped shape is therefore the slower one,
+and the 47 against 27 stands in the relation's comment beside the reason.
+
+Two things about how that was nearly got wrong, because the sequence is the lesson rather than the
+verdict. The first reading was that the three pairs were the instrument's floor, single-digit scans
+flipping on noise, which the four rostered sibling pairs at four to twelve scans made plausible.
+Printing every cell instead of the flagged ones refuted it outright: those three are monotonic by
+2334 and 3112 scans when they are monotonic at all, and a margin that size does not move on noise.
+The second reading was that they flapped one run in four, and that came from averaging across two
+regimes that are not comparable. Sorted by regime rather than by outcome, both full builds agree with
+each other and the two runs that passed were single-class scoped runs. Believing a difference read
+off runs that were not comparable is the opening item on the store-performance procedure's own list
+of retracted conclusions, and this is that mistake, made while holding the document that names it.
+
+What the refusal actually is, stated plainly because it is a fork somebody has to decide rather than
+a defect to fix here: a scan count stops tracking cost exactly when a change moves rows between a
+view and a table, which is the fact model's own caveat and is what this projection does. So the gate
+is enforcing the metric its own doctrine says does not rank cost, and it is doing so against a
+measured 42% improvement in the metric that does. Whether a wall-clock-justified scan inversion
+belongs in that gate is a discipline question one relation's evidence should not settle, so this
+increment takes the slower shape and leaves the question named. Rostering the three pairs was the
+other candidate and is worse: they are regime-dependent where the ten existing rows are not, so
+pinning them would fail the scoped run that developers actually use.
+
+Two controls decided the rest, and both refuted something. Driving from 52 membership rows rather
+than 917 fields reads like the obvious win and measured worse, with three times the spread, so the
+smaller driver bought nothing; it is recorded as a measured loss rather than left for the next reader
+to re-run. And the floor control kills the diagnosis anyone would reach for first: with both
+anti-joins removed the shape costs 42 against 47, so the exclusions are a tenth of it. Both children
+price under a millisecond, the membership at 0.3 and the binding at 0.04, which is what says there is
+no expensive child and nothing to register underneath.
+
+**Not registered, on reader count rather than on cost, and the regression stated rather than
+buried.** One relation names this one and one names that, so a registration would pay one refresh to
+save one evaluation. What the arm does cost is real: `intent_field_scope_table` goes from 16
+milliseconds to 59, once per refresh of the argument scope it feeds, against the 14 the fourth
+increment had got that refresh source down to. That is the price of a question the store could not
+answer at all, and it is the kind of number this item has twice found stated once and never
+re-taken, so the trade is written where the relation is and flagged for re-measurement when the
+membership fold arrives as a second reader.
+
+**A gate that could not see the shape.** `DerivedReadCostTest`'s scaled fixture carried no
+multi-table polymorphic root, so the new relation and every branch multiplicity below it would have
+priced as an empty relation while the gate reported a number. That is the fifth increment's finding
+arriving from the other side: there, a fixture whose units gave every input field a `@reference` made
+two correlated arms unselective and sent a shape choice the wrong way. A gate blind to a shape does
+not price it conservatively. The fixture now carries a per-unit union of the cluster's existing types
+with one filter argument over the key column one of their tables declares on the other, so it adds
+branches to price without adding a table and the name resolves on both branches rather than one.
+
+**What this increment leaves owing.** One of the fold's three blockers: the read-versus-filter fork
+at a mutation's payload argument, which the role relation's input-expansion arm still does not
+distinguish. With that closed the fold has every relation it named.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the

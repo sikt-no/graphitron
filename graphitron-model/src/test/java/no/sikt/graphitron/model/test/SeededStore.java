@@ -61,6 +61,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
@@ -1453,6 +1454,28 @@ public final class SeededStore {
             .set(GRAPHQL_IMPLEMENTS.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHQL_IMPLEMENTS.SOURCE_LINE, 2)
             .set(GRAPHQL_IMPLEMENTS.SOURCE_COLUMN, 3)
+            .execute();
+    }
+
+    /**
+     * A union's membership edge, in the declaration direction the relation stores: the union
+     * declares the member, so the union is the declared type here where the implementing type is
+     * the declared one on {@link #seedImplements}. The member's own ordinal is the union's authored
+     * source order, so a case stating two members states which came first.
+     */
+    public static void seedUnionMember(DSLContext dsl, String graphName, String unionName,
+                                       String memberTypeName, int ordinal) {
+        seedDeclaredType(dsl, graphName, unionName, "UNION");
+        dsl.insertInto(GRAPHQL_UNION_MEMBER)
+            .set(GRAPHQL_UNION_MEMBER.GRAPH_NAME, graphName)
+            .set(GRAPHQL_UNION_MEMBER.UNION_NAME, unionName)
+            .set(GRAPHQL_UNION_MEMBER.MEMBER_TYPE_NAME, memberTypeName)
+            .set(GRAPHQL_UNION_MEMBER.ORDINAL, ordinal)
+            .set(GRAPHQL_UNION_MEMBER.DECLARATION_LINE, SEED_LINE)
+            .set(GRAPHQL_UNION_MEMBER.DECLARATION_COLUMN, SEED_COLUMN)
+            .set(GRAPHQL_UNION_MEMBER.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHQL_UNION_MEMBER.SOURCE_LINE, 2)
+            .set(GRAPHQL_UNION_MEMBER.SOURCE_COLUMN, 3)
             .execute();
     }
 

@@ -31,6 +31,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
 import static no.sikt.graphitron.model.test.SeededStore.seedTableBinding;
 import static no.sikt.graphitron.model.test.SeededStore.seedType;
+import static no.sikt.graphitron.model.test.SeededStore.seedUnionMember;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -373,6 +374,58 @@ class ArgumentFilterRoleTest {
             seedArgument(dsl, GRAPH, "Query", "films", "title", "String");
 
             assertThat(rowsIn(dsl, "other")).isEmpty();
+        });
+    }
+
+    // ===== The branches of a polymorphic root =====
+
+    /**
+     * The name match answers at a field returning a multi-table polymorphic container, which it could
+     * not before the participant fan-out reached the column resolution: such a coordinate is rooted in
+     * one table per branch, the name resolves against each of them, and this relation had no row at
+     * all where the classifier lowers a predicate per branch.
+     *
+     * <p>One row, not one per branch. The rule an argument falls under is the argument's and is the
+     * same on every branch, so this relation stays at the argument's grain and the branch-specific
+     * answer, which column on which table, is the resolution's to give. Asserted here rather than
+     * only in that relation's test because the grains parting company is what a reader of this one
+     * has to know.
+     */
+    @Test
+    void theNameMatchAnswersAtAPolymorphicRootOnceForTheArgument() {
+        withCatalog(dsl -> {
+            seedColumn(dsl, PKG, PUBLIC, "language", "title", 1, "TITLE");
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedTableBinding(dsl, GRAPH, "Language", "language");
+            seedUnionMember(dsl, GRAPH, "Document", "Film", 1);
+            seedUnionMember(dsl, GRAPH, "Document", "Language", 2);
+            seedField(dsl, GRAPH, "Query", "documents", "Document", true);
+            seedArgument(dsl, GRAPH, "Query", "documents", "title", "String");
+
+            assertThat(rows(dsl).map(ArgumentFilterRoleTest::render))
+                .containsExactly("title NAME_MATCHED");
+        });
+    }
+
+    /**
+     * A name reaching a column on one branch only still carries the role, on the strength of the
+     * branch that resolved. That is a rejection's population rather than a contribution the build
+     * emits, the classifier failing on the branch whose table has no such column, and it reads as one
+     * against the resolution's rows and not against this one: the reading of absence this relation
+     * already takes, applied where presence is the partial answer.
+     */
+    @Test
+    void anArgumentResolvingOnOneBranchOnlyStillCarriesTheRole() {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedTableBinding(dsl, GRAPH, "Language", "language");
+            seedUnionMember(dsl, GRAPH, "Document", "Film", 1);
+            seedUnionMember(dsl, GRAPH, "Document", "Language", 2);
+            seedField(dsl, GRAPH, "Query", "documents", "Document", true);
+            seedArgument(dsl, GRAPH, "Query", "documents", "title", "String");
+
+            assertThat(rows(dsl).map(ArgumentFilterRoleTest::render))
+                .containsExactly("title NAME_MATCHED");
         });
     }
 

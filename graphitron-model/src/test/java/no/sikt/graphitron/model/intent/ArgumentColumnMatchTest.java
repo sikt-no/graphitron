@@ -24,6 +24,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
 import static no.sikt.graphitron.model.test.SeededStore.seedTableBinding;
 import static no.sikt.graphitron.model.test.SeededStore.seedType;
+import static no.sikt.graphitron.model.test.SeededStore.seedUnionMember;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -235,6 +236,56 @@ class ArgumentColumnMatchTest {
         });
     }
 
+    // ===== The branches of a polymorphic root =====
+
+    /**
+     * An argument of a field returning a multi-table polymorphic container resolves one column per
+     * branch, each on that branch's own table. The site here is the argument together with the table,
+     * which is what the scope this reads keys on, and it is what the classifier does: it lowers the
+     * filter surface once per participant so the generated predicate compares a column of the table
+     * that branch selects from.
+     */
+    @Test
+    void anArgumentOfAPolymorphicRootResolvesAColumnOnEachBranch() {
+        withCatalog(dsl -> {
+            seedColumn(dsl, PKG, PUBLIC, "film", "name", 3, "NAME");
+            seedColumn(dsl, PKG, PUBLIC, "actor", "name", 2, "NAME");
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedTableBinding(dsl, GRAPH, "Actor", "actor");
+            seedUnionMember(dsl, GRAPH, "Document", "Film", 1);
+            seedUnionMember(dsl, GRAPH, "Document", "Actor", 2);
+            seedField(dsl, GRAPH, "Query", "documents", "Document", true);
+            seedArgument(dsl, GRAPH, "Query", "documents", "name", "String");
+
+            assertThat(rows(dsl).map(ArgumentColumnMatchTest::render)).containsExactly(
+                "Query.documents(name) name=actor.name JOOQ_NAME",
+                "Query.documents(name) name=film.name JOOQ_NAME");
+        });
+    }
+
+    /**
+     * A name reaching a column on one branch and none on another resolves on the branch that has it
+     * and stays silent on the branch that does not. That silence is the classifier's own
+     * per-participant rejection: it lowers each branch and fails on the one whose table has no such
+     * column, so the build never emits this coordinate. The relation states the resolution and the
+     * divergence is a detection over it, one branch here against the two the coordinate is rooted in,
+     * rather than a verdict this view reaches on its own.
+     */
+    @Test
+    void aNameOnOneBranchOnlyResolvesThereAndIsSilentOnTheOther() {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedTableBinding(dsl, GRAPH, "Actor", "actor");
+            seedUnionMember(dsl, GRAPH, "Document", "Film", 1);
+            seedUnionMember(dsl, GRAPH, "Document", "Actor", 2);
+            seedField(dsl, GRAPH, "Query", "documents", "Document", true);
+            seedArgument(dsl, GRAPH, "Query", "documents", "title", "String");
+
+            assertThat(rows(dsl).map(ArgumentColumnMatchTest::render))
+                .containsExactly("Query.documents(title) title=film.title JOOQ_NAME");
+        });
+    }
+
     // ===== Fixture =====
 
     private static void withCatalog(Consumer<DSLContext> body) {
@@ -280,7 +331,8 @@ class ArgumentColumnMatchTest {
             .where(INTENT_ARGUMENT_COLUMN_MATCH.GRAPH_NAME.eq(graphName))
             .orderBy(INTENT_ARGUMENT_COLUMN_MATCH.TYPE_NAME,
                 INTENT_ARGUMENT_COLUMN_MATCH.FIELD_NAME,
-                INTENT_ARGUMENT_COLUMN_MATCH.ARGUMENT_NAME)
+                INTENT_ARGUMENT_COLUMN_MATCH.ARGUMENT_NAME,
+                INTENT_ARGUMENT_COLUMN_MATCH.TABLE_NAME)
             .fetch();
     }
 
