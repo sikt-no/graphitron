@@ -1,7 +1,7 @@
 ---
 id: R818
 title: "textDocument/references: find every SDL site that uses a name"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 4
 theme: lsp
