@@ -115,13 +115,24 @@ exactly as the skill's floor control is meant to establish. The term was a `SELE
 `INFORMATION_SCHEMA.KEY_COLUMN_USAGE`, named twice, once per end of a foreign key, and inlined at
 both namings.
 
+This relation is an instance of the case the skill's bisect step was added for, expensive with every
+child cheap, and it needed a third bisection axis that step does not list. The two it names are CTEs
+and top-level `UNION` arms; this body has neither, being one flat join, and what localised it was
+dropping one join at a time and re-timing. Worth adding to that list, since a flat join of derived
+tables is the shape the `meta_` family is mostly made of.
+
 **Scan counts and wall clock disagreed, in both directions.** Storing the census without an index
 visited twenty times more rows than the shipping view (87834 against 4248) and was faster (105
 against 161 ms). Adding the index then removed 96% of those visits (87834 to 3484) and moved the
-clock not at all (105 to 103 ms, inside a standard deviation of 13). A scan count weights every
-visited row equally, and a row of a view over `INFORMATION_SCHEMA` does not cost what a row of a
-table costs. The skill leans hard on scan counts and `DerivedReadCostTest` is built entirely on
-them; neither says where that instrument stops being a cost model, and this is that boundary.
+clock not at all (105 to 103 ms, inside a standard deviation of 13).
+
+The skill now says a `scanCount` is a row count and not a cost, and says to price the shape by
+timing, so the general point is already made and this item does not re-make it. What the run adds is
+the specific mechanism and a measured case in both directions: a scan count weights every visited row
+equally, and a row of a view over `INFORMATION_SCHEMA` does not cost what a row of a table costs, so
+the instrument diverges from cost exactly when a change moves rows between a view and a table. That
+is what every registration in the register does, which makes this the case where the caveat bites
+rather than an abstract one.
 
 **The lever, and why it is a conjunction.** Census stored alone: no change. Key-constraint relation
 stored alone: 49.7 ms. Both stored: 0.7 ms. Neither is the fix and together they are, which is a
@@ -219,13 +230,15 @@ The skill's own citation policy applies to whatever lands: it restates no measur
 number, because the page and the `meta_materialize` reason rows are the gated surfaces for those and
 a copy here rots unobserved. Nothing in this item asks for that to change.
 
-The scan-count boundary above is in scope for the skill and is the one edit here that touches a
-claim the tree already makes. Step 3 presents `scanCount` as the instrument that turns "this read is
-slow" into a diagnosis, and `DerivedReadCostTest` rests its whole no-number design on scan counts
-being comparable across shapes. Both stay right for what they do; what is missing is the stated
-limit, that a scan count weights every visited row equally and so stops tracking cost exactly when a
-change moves rows between a view and a table, which is what every registration in the register does.
-Write the limit down beside the instrument rather than reopening the gate.
+On the scan-count boundary, most of the work is already done and this item should not redo it. The
+skill's plan step now states that a `scanCount` is a row count rather than a cost and tells the
+reader to price the shape by timing. What is left is one sentence of mechanism beside that rule,
+naming when the divergence happens rather than only that it can: a scan count weights every visited
+row equally, so it stops tracking cost when a change moves rows between a view and a table. That
+is worth adding because it is what every registration in the register does, and because the timing
+this item's instrument makes cheap is exactly what the existing rule tells the reader to reach for
+next. `DerivedReadCostTest` is untouched by any of this; it rests its no-number design on scan
+counts being comparable across shapes, which is a different claim and a sound one.
 
 Two open questions for Spec, both surfaced by the run above rather than assumed:
 
