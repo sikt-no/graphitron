@@ -1092,7 +1092,7 @@ public final class ClassifiedCorpus {
               filmIds: [ID] @nodeId(typeName: "Film") @classified(source: OnlyChild, operations: [], target: List, targetShape: Column, sourceShape: Record)
               errors: [DeleteFilmsError]
             }
-            type Query { x: String }
+            type Query { film: Film }
             type Mutation {
               deleteFilms: FilmIdsPayload
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsAsList"})
@@ -1136,7 +1136,7 @@ public final class ClassifiedCorpus {
                 @classified(source: OnlyChild, operations: [], target: List, targetShape: Record, sourceShape: Record)
               errors: [CreateFilmsErr]
             }
-            type Query { x: String }
+            type Query { film: Film }
             type Mutation {
               createFilms: CreateFilmsPayload
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "createFilmsWithActors"})
@@ -1163,7 +1163,7 @@ public final class ClassifiedCorpus {
             type FilmUpdateBulkPayload { films: [Film!] @commits(source: CorrelatedChain, result: SingleRecord) }
             input FilmCreateInput { title: String }
             input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
-            type Query { x: String }
+            type Query { film: Film }
             type Mutation {
               createFilmsPayload(in: [FilmCreateInput!]!): FilmInsertBulkPayload
                 @mutation(typeName: INSERT)
@@ -1187,7 +1187,7 @@ public final class ClassifiedCorpus {
         new Example("dml", """
             type Film @table(name: "film") { title: String }
             input FilmInput { title: String }
-            type Query { x: String }
+            type Query { film: Film }
             type Mutation {
               createFilm(in: FilmInput!): Film
                 @mutation(typeName: INSERT)
@@ -1261,7 +1261,7 @@ public final class ClassifiedCorpus {
             input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
             input FilmTitleInput { title: String @field(name: "title") }
             input FilmCreateInput { title: String }
-            type Query { x: String }
+            type Query { film: Film }
             type Mutation {
               updateFilm(in: FilmUpdateInput!): Film
                 @mutation(typeName: UPDATE)
@@ -1337,6 +1337,7 @@ public final class ClassifiedCorpus {
          * PK, satisfying DELETE's key-coverage admission.
          */
         new Example("dml-delete-payload", """
+            interface Node { id: ID! }
             type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeId }
             input FilmActorRef { id: ID! @nodeId }
             type DeletedFilmActorPayload {
@@ -1345,7 +1346,7 @@ public final class ClassifiedCorpus {
             type DeletedFilmActorsPayload {
               deletedIds: [ID!] @classified(source: OnlyChild, operations: [], target: List, targetShape: Column, sourceShape: Record)
             }
-            type Query { x: String }
+            type Query { filmActor: FilmActor }
             type Mutation {
               deleteFilmActor(in: FilmActorRef!): DeletedFilmActorPayload
                 @mutation(typeName: DELETE, table: "film_actor")
@@ -1500,7 +1501,7 @@ public final class ClassifiedCorpus {
                 @classified(source: OnlyChild, operations: [Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
                 @commits(source: CorrelatedChain, result: SingleRecord)
             }
-            type Query { x: String }
+            type Query { film: Film }
             type Mutation {
               runFilm: FilmPayload
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})

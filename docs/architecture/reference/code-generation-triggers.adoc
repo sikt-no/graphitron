@@ -1079,22 +1079,19 @@ input FilmInput {
 
 // Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
 .What the pipeline makes of it
-[cols="1,1"]
+[cols="1,1,2"]
 |===
-| Coordinate | Verdict
+| Coordinate | Verdict | Emitted
 
 | `Film.title`
 | `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#title(Object)`
 
 | `Mutation.createFilm`
 | `MUTATION`, authored
+| `fetchers.MutationFetchers#createFilm(DataFetchingEnvironment)`
 
 |===
-
-NOTE: This pattern classifies but does not generate: the build rejects it, so there
-are no emitted names to show. The verdicts above are what the store derives either
-way. See xref:../explanation/typed-rejection.adoc[Typed rejection] for what a
-rejection carries.
 
 `Mutation.createFilm` inserts a `film` row from `FilmInput` and projects the inserted row as the `@table`
 type `Film`: `source = Mutation`, `operation = Insert`, target shape `Table` (`MutationField.DmlTableField` carrying an Insert write arm),
@@ -1548,11 +1545,10 @@ A pattern the generator refuses still classifies. Capture records the same facts
 the same verdict, and then planning mints no command row: the run produces *diagnostic* rows instead,
 and render has nothing to fold.
 
-That is why a worked example can show a verdict and no emitted names, and why the two on this page
-that do, under <<target-shape,`target` shape>> and under <<mutation-fields,Mutation Fields>>, are
-not gaps in the tables. Their
-outcome blocks state the absence, because "generates nothing" is an answer to this page's question,
-not a missing row.
+That is why a worked example can show a verdict and no emitted names, and why the one on this page
+that does, under <<target-shape,`target` shape>>, is not a gap in the tables. Its outcome block
+states the absence, because "generates nothing" is an answer to this page's question, not a missing
+row.
 
 The diagnostics themselves are a closed vocabulary and a small one. `rejection_validation_error`
 carries one row per rejection, keyed by the graph and the emit order of the walk's error stream, with
