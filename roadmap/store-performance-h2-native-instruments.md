@@ -91,7 +91,7 @@ produced.
 view, then read `INFORMATION_SCHEMA.QUERY_STATISTICS` ordered by cumulative time. That ranked all 85
 relations at once, where the skill's current recipe is a hand-written probe per relation. Fourth
 place was `meta_relation_reference` at about 181 ms, which is a `meta_` relation, and every one of
-the eleven existing registrations is on an `intent_` one.
+the twelve existing registrations is on an `intent_` one.
 
 **The instrument lied twice, in ways worth naming.** The first control read as a fourteenfold
 improvement. It was not: H2 reuses the result of a repeated identical query, so every repeat after
@@ -252,3 +252,86 @@ Two open questions for Spec, both surfaced by the run above rather than assumed:
    and carrying a schema change inside it would make the skill edit hostage to five gates that have
    nothing to do with tracing. The measurements are recorded above so that a separate item can start
    from them rather than re-taking them.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready, revisions requested
+
+Reviewer session `session_01KFRygu4Y3D1BDh8Td39Z7e`, 2026-08-25. Status stays Spec.
+
+Question 1 is answered. Stated without the phase list: the next person chasing a slow derived relation
+stops hand-writing a `System.nanoTime()` probe per relation and instead turns on H2's own per-statement
+statistics, getting the whole ranking, an execution count and a standard deviation out of a run that was
+going to happen anyway; gains two evidence sources the skill has none for today, the planner's own cost
+evaluation at trace level 3 and a measured whole-run cost ranking to sit beside
+`report-inline-multiplicity`'s static one; and finds step 1's profiler warning naming a usable
+instrument instead of a dead end. The instruments are real on the pinned H2 and behave as the item
+says. Verification narrative is in this commit's message.
+
+Question 2 is where the item is not handoff-ready. Three things an implementer would have to decide
+before writing a line.
+
+**Finding 1 (question 2, and question 1's viability). The result-reuse tell contradicts itself, so the
+item's central caveat ships without a working discriminator.**
+
+The item says twice that `MIN_EXECUTION_TIME` is always 0.0 and, in the same breath, that "a zero
+minimum beside a non-zero maximum is what a reuse-corrupted row looks like", naming that as the
+column's one use. Both halves cannot hold. A column that is always 0.0 reads identically on an honest
+row and a corrupted one, so it discriminates nothing. Reproduced on 2.4.240: four runs of one view
+query with reuse left on reported `count=4 min=0.0 max=407.06 cum=407.33 avg=101.83`, and the same four
+runs under `SET OPTIMIZE_REUSE_RESULTS FALSE` reported `count=4 min=0.0 max=764.84 cum=2076.47
+avg=519.12`. The minimum is 0.0 on both, and the honest row carries a non-zero maximum beside it.
+
+This is worth blocking on rather than noting, because the item tells the implementer that whatever the
+skill grows here "must carry the setting in the recipe itself, not as a footnote". A document whose
+whole subject is not believing a bad reading would ship a tell that fires on every reading, honest ones
+included. What would satisfy: name a discriminator that works. The run recorded above already used one,
+cumulative execution time against the summed wall clock (293 against 298 in the narrative; 2076 against
+2077 summed in the reproduction, versus 407 against roughly 1700 with reuse on). Which discriminator
+the skill carries changes what the implementer writes, so the choice is the author's rather than mine.
+
+**Finding 2 (question 2). `docs/architecture/explanation/fact-model.adoc` is named as a change target
+and no described edit lands on it.**
+
+Scope's first sentence names two files. Every paragraph after it assigns its edit to a numbered step of
+the skill: query statistics to steps 3 and 5, the planner cost trace to step 3, `ConvertTraceFile` to
+step 3, the profiler to step 1, and the scan-count mechanism sentence to the plan step, which is the
+skill's step 3 and not the page (the page carries no scan-count rule; I checked). So the page is named
+and never written to, and the implementer decides whether it is touched at all.
+
+The split is not self-evident, which is why leaving it open costs something. The skill's own opening
+says the page is the source of the rules and the skill is the procedure that reaches them in order, and
+several of this item's constraints are engine-evaluation rules of exactly the kind the page already
+carries: "H2 inlines a non-recursive `WITH` exactly as it inlines a view" is on that page today, and
+"H2 reuses the result of a repeated identical query, so a repeat is not a repeat" is the same kind of
+fact about the same engine. What would satisfy: say for each instrument fact whether it is a page rule
+or a skill procedure, or say plainly that the page is untouched and drop it from the Scope sentence.
+
+**Finding 3 (question 2). Open question 1 leaves the item's blast radius undecided, and Spec → Ready is
+the transition that decides it.**
+
+Open question 1 asks whether the instrument becomes a standing affordance, a store openable with query
+statistics already on and result reuse off, and says it "should be decided rather than assumed". That is
+a change to `GraphitronModelStore`, `graphitron-model` main source, inside an item whose Scope otherwise
+describes two prose files. The two answers are not variants of one item: one is a documentation edit
+with no build surface, the other adds a construction path to the class every store in the reactor comes
+from, with the gates and the store-fixture guard that implies. An implementer resolves this on their
+first read, which is the design decision this gate exists to take. What would satisfy: pick one.
+Declining the affordance and recording why is a complete answer, and so is taking it with the
+constructor surface named.
+
+Non-blocking, no response needed.
+
+- Open question 2 reads as open, but the prose directly beneath it answers it: this item is about the
+  instrument, and the schema change would make the skill edit hostage to five gates that have nothing
+  to do with tracing. Stating it as decided, with the follow-on item filed, removes the only other
+  thing an implementer has to resolve.
+- The run's numbers are dated. The pinned count in `DerivedReadCostTest` is `READERS_IN_SCHEMA` and
+  stood at 88 at the commit that moved this item to Spec, not 85; it read 85 two commits earlier, so
+  the run predates two landings. I left the "85 to 86" figures alone, because editing them would
+  falsify the record of what the run saw, but a follow-on item starting from these measurements should
+  re-pin from current rather than from 86. I did correct "eleven existing registrations" to twelve in
+  this commit; the point it carries, that every registration is on an `intent_` relation, still holds.
+- The item has no `## Implementation` or `## Tests` section and Scope carries the implementation. For a
+  prose-only change that reads fine. Raising it only because whichever way finding 3 goes may give the
+  item a build surface that wants one.
