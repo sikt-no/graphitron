@@ -99,9 +99,21 @@ the first costs nothing and `AVERAGE_EXECUTION_TIME` is one real execution divid
 count. Isolated on the pinned H2: six runs of one query measured 98 ms then 0, 0, 0, 0, 0, and the
 view reported an average of 15.4 ms for a query that takes about 92. `SET OPTIMIZE_REUSE_RESULTS
 FALSE` restores honest repeats, after which cumulative time (293 ms) matches the summed wall clock
-(298 ms). The tell was the second lie: `MIN_EXECUTION_TIME` read 0.0. It always does, even when
-every run took at least 26 ms, so that column is not populated and cannot be used, and a
-zero minimum beside a non-zero maximum is what a reuse-corrupted row looks like.
+(298 ms). The second lie was `MIN_EXECUTION_TIME`, which read 0.0. It always does, even when every
+run took at least 26 ms, so that column is not populated and cannot be used for anything.
+
+**The discriminator is `CUMULATIVE_EXECUTION_TIME / MAX_EXECUTION_TIME`, and it is internal to the
+view.** Reuse leaves exactly one execution real, so cumulative collapses onto maximum however many
+repeats were asked for; honest repeats push the ratio up toward the execution count. Measured on
+2.4.240, five repeats of one view query: reuse on gave max 342.67, cumulative 342.81, a ratio of
+1.00; reuse off gave max 109.40, cumulative 313.84, a ratio of 2.87. So with
+`EXECUTION_COUNT` above one, a ratio near 1 is a corrupted row and nothing else produces it. Stated
+as a ratio rather than as "cumulative matches the summed wall clock" deliberately: the wall-clock
+comparison also works and is what caught it here, but it requires the author to take a second
+measurement outside the instrument, which is the labour this item exists to remove. The ratio needs
+only the row in front of you. The ceiling is the execution count and the observed honest ratio sits
+below it, 2.87 against 5, because a cold first run inflates the maximum; the rule is "near 1 is
+corrupt", not "equal to n is honest".
 
 That mattered, because the corrupted numbers had already carried two conclusions: the fourteenfold
 figure, and a child-isolation pass whose real reading is below.
@@ -178,10 +190,17 @@ Each of these was probed against the pinned H2 (2.4.240) rather than read off do
   real execution divided by the repeat count. This is a silent under-report proportional to how many
   repeats were asked for, which makes it worse the more careful the author is being. Whatever the
   skill grows here must carry the setting in the recipe itself, not as a footnote.
-- **`MIN_EXECUTION_TIME` is always 0.0** and must not be read. Its one use is as a tell: a zero
-  minimum beside a non-zero maximum is what a result-reuse-corrupted row looks like.
+- **`MIN_EXECUTION_TIME` is always 0.0** and must not be read at all. It is 0.0 on an honest row and
+  on a corrupted one alike, so it is not a tell either; the discriminator is the cumulative-over-
+  maximum ratio described in the run above.
 - Disabling result reuse changes absolute figures, so it has to be set the same way on both sides of
   any before-and-after comparison.
+- **Both settings are database-wide, not session-scoped.** Set on one connection and a second
+  connection's statements are recorded, and recorded honestly: measured on 2.4.240, with both set on
+  connection 1 and four repeats run and read entirely on connection 2, the ratio came back 2.07
+  rather than 1.00. So one `SET` pair on the store's own connection covers every `StoreReader` a
+  session mints, and a probe does not have to thread the setting through the connections it wants to
+  measure.
 - Query statistics is database-wide rather than session-scoped, so it also covers statements issued
   through the second connections `GraphitronModelStore.reader` mints. That is a point in its favour:
   a capture and its readers show up in one table.
@@ -210,8 +229,24 @@ Each of these was probed against the pinned H2 (2.4.240) rather than read off do
 
 ## Scope
 
-The change is to `.claude/skills/store-performance/SKILL.md` and to the rules page it defers to,
-`docs/architecture/explanation/fact-model.adoc` under "Derived reads are views, not stored facts".
+Two files, and the split between them follows the split the skill already declares: the page carries
+rules about how the engine evaluates, the skill carries the procedure that reaches them in order.
+
+**`docs/architecture/explanation/fact-model.adoc`, under "Derived reads are views, not stored facts",
+takes exactly one addition:** that H2 reuses the result of a repeated identical query, so a repeat is
+not a repeat unless `OPTIMIZE_REUSE_RESULTS` is off. That is an engine-evaluation rule of the same
+kind and the same shape as the page's existing "H2 inlines a non-recursive `WITH` exactly as it
+inlines a view", which sits in the paragraph on expression-shaped joins, and it belongs beside it
+rather than in a procedure document. It also bears directly on the page's own measured claims: every
+figure on that page is a timing, and this is the rule that says when a timing is real.
+
+**Everything else in this item is skill procedure and none of it touches the page.** The instrument
+mechanics (which `SET` commands, which columns of `INFORMATION_SCHEMA.QUERY_STATISTICS` to read,
+the cumulative-over-maximum discriminator, the trace levels, the profiler's depth field) are how an
+author operates a tool, not facts about how the engine evaluates a relation, and the page carries no
+scan-count rule for the boundary sentence below to attach to. So the page is touched once and the
+rest lands in `.claude/skills/store-performance/SKILL.md`.
+
 Query statistics is the substantial addition and belongs in steps 3 and 5, as the default way to get
 per-relation timings rather than as an extra. The planner cost trace belongs in step 3 as a named
 second instrument for the case where the chosen plan is itself the question. `ConvertTraceFile` at
@@ -240,18 +275,36 @@ this item's instrument makes cheap is exactly what the existing rule tells the r
 next. `DerivedReadCostTest` is untouched by any of this; it rests its no-number design on scan
 counts being comparable across shapes, which is a different claim and a sound one.
 
-Two open questions for Spec, both surfaced by the run above rather than assumed:
+## What this item is not, decided rather than left open
 
-1. Whether any of this should become a standing affordance rather than a documented recipe. A store
-   openable with query statistics already on, and with result reuse off, would make the instrument
-   reachable without editing a probe, and the reuse setting is exactly the kind of thing an author
-   gets wrong once per investigation. That is a change to `GraphitronModelStore`, a wider blast
-   radius than the rest of this item, and it should be decided rather than assumed.
-2. Whether `meta_relation_reference` gets its own item. The 153x is real, measured, and reproducible,
-   and it is a genuine finding rather than an illustration; but this item is about the instrument,
-   and carrying a schema change inside it would make the skill edit hostage to five gates that have
-   nothing to do with tracing. The measurements are recorded above so that a separate item can start
-   from them rather than re-taking them.
+Both of these were open questions in the first draft and the Spec gate is where they get answered,
+so they are answered.
+
+**No standing affordance on `GraphitronModelStore`. This item is prose only and adds no build
+surface.** The affordance considered was a store openable with query statistics already on and
+result reuse off. It is declined, and the measurement above is what decides it rather than a
+preference for the smaller change: both settings are database-wide, so two `SET` statements issued
+on the store's own connection cover every reader connection a session mints. The affordance would
+therefore save an author two lines, at the cost of a second construction path on the class every
+store in the reactor comes from, with the store-fixture guard and the boot-path gates that implies.
+Two lines is not a construction path. The two statements go in the skill's probe recipe, where an
+author reading the recipe cannot miss them, which is the same place the recipe already puts
+`STORE_EXPLAIN`. If a later item finds authors omitting them in practice, that is evidence this
+answer was wrong and is the moment to revisit; nothing here is load-bearing against it.
+
+**`meta_relation_reference` is a separate item and not this one's work.** The 153x is real, measured
+and reproducible, and it is a finding rather than an illustration, which is exactly why it should not
+ride inside a skill edit: the implementation tripped five schema-discipline gates (graph-key
+leading column, column comments on the two rule views, a registered agreement source, the pinned
+view count, and blank reference entries), none of which has anything to do with tracing, and every
+one of which would block a documentation change from landing. It is filed separately as
+`roadmap/meta-relation-reference-inlined-key-projection.md`, carrying the measurements above plus
+that gate list, so it starts from them rather than re-taking them. Nothing in this item depends on
+it, and it does not depend on this one.
+
+One correction that item inherits: the figures in the run above are a record of what the run saw and
+are deliberately not updated, but `DerivedReadCostTest`'s pinned `READERS_IN_SCHEMA` has moved since,
+so the follow-on re-pins from current rather than from this run's 86.
 
 ## Reviewer findings
 
