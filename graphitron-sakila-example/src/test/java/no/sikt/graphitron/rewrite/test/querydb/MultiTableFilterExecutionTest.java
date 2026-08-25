@@ -357,6 +357,25 @@ class MultiTableFilterExecutionTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void dispatch_emptyIdList_leavesBothBranchesUnfiltered() {
+        // The D3 list cell's absent-vs-mismatched fold. The prune-mode helper answers null for an
+        // empty wire list just as it does for an absent one, so neither branch gets a conjunct and
+        // every occupant comes back, which is the shipped list-filter semantics a single-table
+        // @nodeId list already has. A non-null empty return would instead mean "every element
+        // mismatched" and render falseCondition on both branches, returning nothing.
+        Map<String, Object> data = execute("""
+            { occupantsByIds(ids: []) { __typename } }
+            """);
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("occupantsByIds");
+        assertThat(rows)
+            .as("five customers and two staff, unfiltered")
+            .hasSize(7);
+        assertThat(rows).extracting(r -> (String) r.get("__typename"))
+            .containsOnly("Customer", "Staff");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void dispatch_nullableArgumentAbsent_leavesTheFieldUnfiltered() {
         // The D3 nullable-scalar cell, absent half: no conjunct on either branch, so every occupant
         // comes back. A branch that read "absent" as "mismatched" would return nothing here.

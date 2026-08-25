@@ -1,13 +1,13 @@
 ---
 id: R673
 title: "A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: nodeid
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-24
+last-updated: 2026-08-25
 ---
 
 # A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId
@@ -113,11 +113,11 @@ Fixtures (sakila example): give `Staff` a bare `@node`, which also means `implem
 - an `@asConnection` sibling for D4's second root fetcher, mirroring `occupantsByNameConnection`,
 - a nested-input divergent leaf fixture for the D5 rejection (pipeline tier only).
 
-Unit tier (`CompositeDecodeHelperRegistryTest`): the prune-mode list helper's new empty-wire contract (D3) gets its own assertion beside the existing SKIP-body pins. Those pins are `contains` assertions and survive the added fold silently, so without a new one the contract D3's list cell rests on is untested.
+No unit-tier case. The prune-mode list helper's empty-wire contract (D3) is a behaviour, so it is pinned where the behaviour is observable: the execution-tier empty-list case below. Asserting it against the emitted method body would be a code-string assertion, which `docs/architecture/principles/development-principles.adoc` bans at every tier.
 
 Pipeline tier (`MultiTableFilterLoweringTest`): divergent targets lower to `PruneOnMismatch` per participant plus the dispatch fact on the model; shared-target (`occupantsByAddress`) stays `ThrowOnMismatch` with no dispatch fact; the nested divergent leaf rejects with the D5 author error; the single-base-table arm rejects the ambiguous bare `@nodeId` (the scope-cut enforcer).
 
-Execution tier (`MultiTableFilterExecutionTest`): the primary D3 pin is the list-shaped exact-set assertion (mixed Customer and Staff ids return exactly the named rows with correct `__typename`, nothing from unpruned branches) plus the nullable-argument absent case (unfiltered) and present-mismatched case, since the single-cardinality arm can mask an unpruned branch as an order-dependent `__typename`. Also: a Customer id returns the Customer row, a Staff id the Staff row (the reported repro), a Film id fails with the client error naming Customer and Staff, a malformed id fails with the malformed-branch message, the `@asConnection` sibling gives the same client error rather than an empty page (D4's second fetcher), and the existing `nodeIdFilter_wrongTypeId_surfacesClientError` on `occupantsByAddress` stays untouched and green (all branches share one expected type there, so the branch-level throw remains correct).
+Execution tier (`MultiTableFilterExecutionTest`): the primary D3 pin is the list-shaped exact-set assertion (mixed Customer and Staff ids return exactly the named rows with correct `__typename`, nothing from unpruned branches) plus the nullable-argument absent case (unfiltered) and present-mismatched case, since the single-cardinality arm can mask an unpruned branch as an order-dependent `__typename`. The list cell's other half is the empty-wire case, `occupantsByIds(ids: [])`, which returns all seven occupants unfiltered: that is the one behaviour the prune-mode list helper's absent-or-empty fold exists to produce, and an empty return there would mean the fold read empty as all-mismatched. Also: a Customer id returns the Customer row, a Staff id the Staff row (the reported repro), a Film id fails with the client error naming Customer and Staff, a malformed id fails with the malformed-branch message, the `@asConnection` sibling gives the same client error rather than an empty page (D4's second fetcher), and the existing `nodeIdFilter_wrongTypeId_surfacesClientError` on `occupantsByAddress` stays untouched and green (all branches share one expected type there, so the branch-level throw remains correct).
 
 The fixtures also leave the store side something it lacks, without this item testing it. `NodeIdInstructionTest` carries no interface or union case at all, so the silence at this coordinate is pinned in neither direction. Adding that pin here would freeze a consequence of `intent_argument_scope_table`'s certainty demand as though it were a decision somebody made, and R728's own rule is that no test asserts a relation agrees with the classified model. So the fixtures above are the shape that store-tier case wants once R728's implementer settles the population question, and telling that author is the obligation, not a test written here.
 
@@ -196,6 +196,13 @@ confirmed the behaviour is already correct, so this is a tier move and not a bug
 `QueryConditions.decodeCustomerKeys` returns `null` for an absent *or* empty wire list and the glue
 renders `if (ids != null) condition = condition.and(ids.isEmpty() ? DSL.falseCondition() : ...)`, so
 the new case should pass as written.
+
+**Author response, 2026-08-25: done as asked.** The unit-tier case is deleted, and
+`MultiTableFilterExecutionTest.dispatch_emptyIdList_leavesBothBranchesUnfiltered` pins the behaviour
+instead: `occupantsByIds(ids: [])` returns all seven occupants. The Tests section above no longer
+asks for a unit-tier case and says why, and names the execution case in the list cell's sentence.
+The behaviour needed no code change, as the reviewer predicted; the delivered helper and glue pass
+the new case unmodified.
 
 *Not blocking, no action asked.* The dispatch fixtures are all unions
 (`AddressOccupant = Customer | Staff`), while the reported repro is an interface. The two arms

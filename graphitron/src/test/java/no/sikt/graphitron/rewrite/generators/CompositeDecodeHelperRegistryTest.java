@@ -83,23 +83,6 @@ class CompositeDecodeHelperRegistryTest {
     }
 
     @Test
-    void emit_listSkipHelper_answersNullForAnEmptyWireList() {
-        // The prune-mode contract the branch filter's falseCondition rests on: absent and empty both
-        // answer null, so a non-null *empty* return can only mean every element mismatched. The
-        // assertions above are `contains` checks and would survive this fold silently.
-        var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
-        registry.register(decodeFilmActor(), CompositeDecodeHelperRegistry.Mode.SKIP, true);
-        assertThat(registry.emit().iterator().next().code().toString())
-            .contains("nodeIds.isEmpty()");
-
-        var throwRegistry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
-        throwRegistry.register(decodeFilmActor(), CompositeDecodeHelperRegistry.Mode.THROW, true);
-        assertThat(throwRegistry.emit().iterator().next().code().toString())
-            .as("the throw arm keeps its shipped shape: an empty list has no bad element to report")
-            .doesNotContain("nodeIds.isEmpty()");
-    }
-
-    @Test
     void emit_listThrowHelper_throwsClientExceptionWithTwoBranchMessage() {
         var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
         registry.register(decodeFilmActor(), CompositeDecodeHelperRegistry.Mode.THROW, true);

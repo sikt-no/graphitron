@@ -22,8 +22,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
-| `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | Ready | 2026-08-24 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | In Progress | 2026-08-25 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-24 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R814` | The architecture docs describe the surface being drained as if it were the design | In Progress | 2026-08-23 | [plan](architecture-docs-describe-the-destination.md) |
 | `R705` | A condition-join hop in a reference filter path is rejected, though the emitter it needs already ships | In Review | 2026-08-24 <sub>created 2026-08-18</sub> | [plan](condition-join-hops-in-reference-filter-paths.md) |
@@ -429,7 +429,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### nodeid
 
 - `R615` [**init.sql documents the live idreffixture DDL as serving deleted shim tests**](idreffixture-purpose-comment-stale.md) — Backlog, tech-debt
-- `R673` [**A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId**](nodeid-arg-dispatches-on-typeid.md) — Ready, bug
+- `R673` [**A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId**](nodeid-arg-dispatches-on-typeid.md) — In Progress, bug
 - `R676` [**A @nodeId filter input on a multitable query cannot state a per-participant join path**](nodeid-filter-per-participant-paths.md) — Spec, bug
 - `R726` [**Bare @nodeId inference on a multitable filter can answer differently per participant with no diagnostic**](nodeid-bare-inference-per-participant-divergence.md) — Backlog, bug
 - `R588` [**Diagnostics for `implements Node @table` over a table with no node metadata**](node-without-metadata-diagnostics.md) — Backlog, dx
