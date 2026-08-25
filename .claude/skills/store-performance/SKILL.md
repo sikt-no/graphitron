@@ -40,9 +40,15 @@ So, in order of what counts as evidence:
 - **`EXPLAIN ANALYZE` says which relations the plan touches and how many rows it scanned at each
   node. It does not say where the time went.** H2 attaches no per-node timing, so a plan tells you
   shape and it never ranks cost. A profiler frame names the call site rather than the plan, so no
-  sampling depth answers that question either. If you do reach for JFR anyway, know that its default
-  64-frame depth is shallower than the H2 view stack, so every sample truncates inside `org.h2` and
-  the profile reads as a dead end that is really a truncation.
+  sampling depth answers that question either, and nothing below reorders that: a sampled stack
+  reports no scan count and is not a plan. What it need not be is a dead end, because the truncation
+  that makes it read as one is a number somebody chose. H2 ships its own sampling profiler,
+  `org.h2.util.Profiler`, whose `depth` is a public field, and out of the box it truncates worse than
+  the JFR default this skill used to send you off with: 48 frames against 64. Measured on a
+  five-level stack of views, every sample came back cut at exactly 48, and the same stacks at
+  `depth = 256` came back whole at 88 and 90. So raise it before reading anything off a profile, and
+  then read the height itself as information, because the frames repeat one self-similar block per
+  view expansion and an untruncated stack is as deep as the derivation that produced it.
 - **A statement that never returns names itself, for free.** This is the cheapest evidence in the
   whole procedure and it arrives before any measurement: interrupt the build and the failure carries
   the SQL it was executing, or read the last `Executing query` line in jOOQ's DEBUG log. A hang is
@@ -112,14 +118,26 @@ String sdl = Files.readString(Path.of("..", "graphitron-sakila-example",
     "src", "main", "resources", "graphql", "schema.graphqls"));
 try (var store = CapturedStore.ofCatalog(tmp, sdl, new JooqCatalog(DEFAULT_JOOQ_PACKAGE))) {
     var dsl = store.dsl();
-    long t = System.nanoTime();
-    Object rows = dsl.resultQuery("SELECT count(*) FROM " + relation).fetchOne(0);
-    System.out.println(relation + " rows=" + rows + " ms=" + (System.nanoTime() - t) / 1_000_000);
+    dsl.execute("SET OPTIMIZE_REUSE_RESULTS FALSE");
+    dsl.execute("SET QUERY_STATISTICS_MAX_ENTRIES 2000");
+    dsl.execute("SET QUERY_STATISTICS TRUE");
+    for (String relation : relations) {
+        dsl.resultQuery("SELECT count(*) FROM " + relation).fetchOne(0);
+    }
+    dsl.resultQuery("""
+            SELECT SQL_STATEMENT, EXECUTION_COUNT, CUMULATIVE_EXECUTION_TIME,
+                   MAX_EXECUTION_TIME, AVERAGE_EXECUTION_TIME, STD_DEV_EXECUTION_TIME
+            FROM INFORMATION_SCHEMA.QUERY_STATISTICS
+            ORDER BY CUMULATIVE_EXECUTION_TIME DESC""")
+        .fetch().forEach(r -> System.out.println("PROBE " + r));
 }
 ```
 
-The capture itself is seconds, which is the floor of every run and not part of what you are
-measuring, so time relations inside one capture rather than one per test method.
+Note what is not in there: no `System.nanoTime()`, and no probe method per relation. The database
+keeps the timings itself once asked, which is step 3's subject; the three `SET` statements are the
+whole cost of asking, and the first of them is not optional. The capture is seconds, which is the
+floor of every run and not part of what you are measuring, so name every relation you care about
+inside one capture rather than opening one per test method.
 
 ```bash
 mvn test -pl :graphitron -Dtest=YourProbeTest -DexcludedGroups=execution
@@ -138,9 +156,39 @@ results silently.
 
 ## 3. Measure relationally
 
-Time relations in isolation, one at a time, against that population. A relation's own cost and the
-cost of a reader that names it are different numbers, and the second is not informative until you
-have the first.
+Time relations in isolation against that population. A relation's own cost and the cost of a reader
+that names it are different numbers, and the second is not informative until you have the first.
+
+**Do not hand-roll the timing.** `SET QUERY_STATISTICS TRUE` makes H2 aggregate per distinct
+statement text and `INFORMATION_SCHEMA.QUERY_STATISTICS` reads it back: one row per statement,
+carrying `EXECUTION_COUNT`, then the minimum, maximum, cumulative, average and standard deviation of
+its execution time in milliseconds, and those same five figures again for the row count it returned.
+Ordered by cumulative time that ranks every relation you touched in one pass, so the isolation this
+step asks for falls out of a run that was going to happen anyway. The spread is the part to actually
+use rather than a convenience: step 1 opens on conclusions that were single readings believed
+without repeats, and this is the instrument that reports a standard deviation and an execution count
+without being asked for them.
+
+Three things about it are not optional.
+
+- **`SET OPTIMIZE_REUSE_RESULTS FALSE` first, or your repeats are not repeats.** The rule and its
+  measurement are on the fact-model page. What it means here is that the setting belongs in the
+  recipe rather than in your memory, because the under-report grows with the number of repeats and
+  so bites hardest when you are being most careful. If you need to judge a row you did not take that
+  way, the tell is inside the row: reuse leaves exactly one execution real, so
+  `CUMULATIVE_EXECUTION_TIME` collapses onto `MAX_EXECUTION_TIME` however many executions were
+  counted, and honest repeats push that ratio up. With `EXECUTION_COUNT` above one, a ratio near 1
+  is a corrupted row and nothing else produces it. Read that as "near 1 is corrupt" and not as a
+  threshold you can name: the honest floor is fixture-dependent and sits well below the execution
+  count, because a cold first run inflates the maximum, so an author who picks a number starts
+  rejecting honest rows with it.
+- **`MIN_EXECUTION_TIME` reads 0.0 and means nothing.** It is 0.0 on an honest row and a corrupted
+  one alike, whatever the runs actually cost, so it is neither a floor nor a tell. Use the ratio.
+- **The statistics are the store's and not the console's.** `StoreConsole` is a second database
+  holding read-only linked tables, so its own `INFORMATION_SCHEMA.QUERY_STATISTICS` answers about
+  the statements the console ran. Both settings, on the other hand, are database-wide rather than
+  per connection, so one `SET` pair on the store's own connection covers every `StoreReader` a
+  session mints and a capture and its readers land in one table.
 
 Rank suspects statically before you time them. A `report-inline-multiplicity` subcommand on
 `roadmap-tool` has served this; check that it is present on your branch before planning around it,
@@ -151,6 +199,20 @@ such a ranking is either way: a count of textual references multiplied down the 
 breadth. Breadth is not cost, and the fact-model page says so with the numbers, so the ranking names
 suspects and your timings price them. Expect it to name the wrong ones sometimes; that is what
 pricing is for.
+
+The measured counterpart to that ranking is `org.h2.tools.ConvertTraceFile`, which reads a finished
+trace file and appends to its output a report ranking every statement the trace saw by self and
+accumulated share of total time, with an execution count and a result count each. The static tool
+ranks breadth over the DDL and this one ranks cost over a run, so they answer one question from
+opposite ends and the interesting case is where they disagree. It costs `SET TRACE_LEVEL_FILE 2` on
+the connection and nothing else. Its one real limit is where a trace can exist at all:
+`TRACE_LEVEL_FILE` writes nothing for an in-memory database, so this is an instrument for the on-disk
+store step 2 sends you to first and not for a `CapturedStore` probe, where the option is
+`TRACE_LEVEL_SYSTEM_OUT` and the output lands in the surefire file already interleaved with jOOQ's
+DEBUG logging. Two ways it wastes your time: level 1 writes no file at all when nothing failed, and
+`ConvertTraceFile` then exits on a `NoSuchFileException` naming a file you never asked for, which
+reads as a broken tool rather than as a level set too low; and level 3 also works but is five times
+the file for a statistics table identical in structure, so drive this one at 2.
 
 Then get the plan, understanding what it can and cannot tell you.
 
@@ -182,6 +244,32 @@ Two constraints on this step, both of which have cost time:
   the shape by timing, and prefer arithmetic that closes: if driving cardinalities multiply out to
   roughly the count you see, you understand the plan, and if they do not, you do not yet. Run it
   against the populated store rather than a seeded one; a plan over a dozen rows is a different plan.
+  The divergence has a mechanism, and knowing when to expect it beats knowing that it can happen: a
+  scan count weights every visited row equally, and a row of a view over `INFORMATION_SCHEMA` does
+  not cost what a row of a table costs, so the count stops tracking cost exactly when a change moves
+  rows between a view and a table. That is what every registration in the register does, which makes
+  this the case where the caveat bites rather than a hypothetical one. It has been seen in both
+  directions in one sitting: a stored snapshot visited twenty times the rows of the view it replaced
+  and ran faster, and adding an index to it then removed 96% of those visits and moved the clock not
+  at all.
+
+### When the plan itself is the question
+
+`EXPLAIN ANALYZE` reports the plan H2 chose. It does not report the plans it priced and rejected, so
+over a deep stack of views "why that join order, why that index" is otherwise a question you cannot
+put to the database at all. Trace level 3 answers it, and it is the only thing here that does: per
+table filter, a candidate cost for each available index, then the index and the plan it took.
+
+```java
+if (System.getenv("STORE_EXPLAIN") != null) {
+    dsl.execute("SET TRACE_LEVEL_SYSTEM_OUT 3");  // TRACE_LEVEL_FILE 3 on a file-backed store
+}
+```
+
+Behind the same guard as the plan above, and for one further reason: level 3 is heavy enough to
+distort the timings you are using it to explain, so it is switched on to read a decision and off
+again before you measure anything. Query statistics is the opposite and is cheap enough to leave on
+for a whole run.
 
 ### When the relation is expensive and every child is cheap: bisect the body
 
@@ -196,7 +284,13 @@ Bisect the body instead, and do it before trying any rewrite:
    `SELECT COUNT(*) FROM ( <arm> ) x (<the relation's own column list>)`. H2 requires those explicit
    aliases where an arm's select list has unnamed or repeated columns, and the relation's declared
    column list is exactly the alias list you need.
-3. **Read the result as a localisation, not a diagnosis.** One arm carrying essentially all of the
+3. **Drop one join at a time and re-time**, where the body is one flat join of derived tables and so
+   has neither a `WITH` block nor a `UNION` for the two axes above to bisect. That is most of what
+   the `meta_` family is made of, so expect to need this axis rather than treating it as the odd
+   case. It is step 5's floor control applied per term instead of to the whole suspect, and it
+   localises without your having to have a hypothesis first, which is the point: a term you would
+   not have suspected is precisely the one the other two axes cannot reach.
+4. **Read the result as a localisation, not a diagnosis.** One arm carrying essentially all of the
    time, and returning few rows while doing it, is the SQL to study. The others are noise you can now
    ignore.
 
@@ -249,7 +343,10 @@ pricing it.
 The controls that keep paying:
 
 - **Time every child in isolation.** The cheapest control there is, and it refutes the hypothesis
-  you are most likely to start from. A relation whose every child answers in milliseconds and which
+  you are most likely to start from. Under query statistics it is cheaper still: name each child
+  once in the run you were already taking and the ranking separates them for you, so the control
+  costs a loop rather than a probe method per child, which is the difference between running it and
+  deciding it was not worth it. A relation whose every child answers in milliseconds and which
   itself takes minutes has no expensive child: its cost is the expansion, and no amount of
   registering something underneath it will help. When it lands this way, go to the bisection in
   step 3 rather than to a lever.
@@ -339,6 +436,15 @@ restates no measured per-relation number: the page and the `reason` rows are gat
 one is scanned by nothing, so a copy here is a copy that rots in silence. Two kinds of figure are
 deliberate exceptions, and they share a justification: their whole content is that a number of that
 kind means nothing, so there is no surface where they would ever be checked and nothing to drift
-against. The reactor-spread figures in step 1 are one. The scan-count reading in step 1 and the
-rewrite regressions in step 6 are the other, and both are stated in relative terms for the same
-reason.
+against. The reactor-spread figures in step 1 are one. The scan-count readings in steps 1 and 3 and
+the rewrite regressions in step 6 are the other, and all of them are stated in relative terms for
+the same reason. The result-reuse measurement is the case that shows the policy working rather than
+an exception to it: it is a timing, it is checked on the fact-model page, and step 3 therefore cites
+the page instead of copying the number down.
+
+The instrument constants are a third kind and are not exceptions at all, because they are not
+measurements of anything in this repository: the profiler's depths, the trace levels and the
+columns of `INFORMATION_SCHEMA.QUERY_STATISTICS` are properties of the H2 the root pom pins. No
+gated surface holds them, nothing here can drift against a relation, and the way to check one is to
+re-measure the tool, which is how each got into this document. They move when that pin moves, so
+treat a version bump as the occasion to re-take them.
