@@ -127,7 +127,8 @@ class MaterializeRegistryGateTest {
         "intent_argument_column_match",
         "intent_errors_field",
         "intent_carrier_data_field",
-        "intent_node_id_instruction");
+        "intent_node_id_instruction",
+        "intent_input_field_resolving_table");
 
     @Test
     @DisplayName("every registered source is a view and every registered target is a table")

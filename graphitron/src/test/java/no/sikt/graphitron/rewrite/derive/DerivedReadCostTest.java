@@ -85,14 +85,15 @@ class DerivedReadCostTest {
      * pinned sets.
      *
      * <p>{@link #KNOWN_NON_MONOTONIC} is scale-dependent, and not monotonically: it is empty at one
-     * unit, where the gate would see nothing at all, the same four pairs at four units and at eight
-     * (the floor trio plus the parameter-type reader), and the six above at twelve, where two
-     * borderline cells' plans flip against the statistics that size implies. Both twelve-only pairs
-     * were answered as index questions and declined on measurement, per the set's own javadoc, so
-     * what twelve adds is visibility rather than noise. Twelve is kept because it is the size that
-     * ships and the fixture may grow and may not shrink; the set is pinned at the size the gate
-     * actually runs, and the two smaller sizes are recorded here so the next re-pin knows the
-     * boundary moved before and can move again.
+     * unit, where the gate would see nothing at all, three pairs at four units, four at eight, and
+     * the nine above at twelve, where several borderline cells' plans flip against the statistics
+     * that size implies. Every twelve-only pair was answered as an index question and declined on
+     * measurement, per the set's own javadoc, so what twelve adds is visibility rather than noise.
+     * Twelve is kept because it is the size that ships and the fixture may grow and may not shrink;
+     * the set is pinned at the size the gate actually runs, and the two smaller sizes are recorded
+     * here so the next re-pin knows the boundary moved before and can move again. Those three
+     * figures were re-taken when the fixture grew its input surface, because a size boundary is a
+     * measurement like any other and does not survive the fixture it was taken on.
      *
      * <p>The fixture may grow and may not shrink. A smaller one is the single change that would make
      * this gate pass while seeing nothing, the registrations existing precisely because a rule is
@@ -101,10 +102,10 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 89;
+    private static final int READERS_IN_SCHEMA = 93;
 
     /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 51;
+    private static final int READERS_WITH_CELLS = 55;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -121,7 +122,7 @@ class DerivedReadCostTest {
      * So a drop here is not the matrix quietly seeing less; it is cost moving off a reader and onto
      * a refresh, and the refresh is a view in this domain and priced like any other.
      */
-    private static final int CELLS = 111;
+    private static final int CELLS = 118;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -167,16 +168,23 @@ class DerivedReadCostTest {
      * The pairs where the registered shape costs more, {@code registration|reader}, each one a finding
      * rather than a tolerance.
      *
-     * <p>Two mechanisms, each answered by measurement, and the set holds nothing else. The first
-     * three are the pruning
-     * an inlined view body offered and a table cannot: the argmapping readers' site-literal arms
-     * pruned the pair view's union to one arm apiece and now visit the whole table per arm (815 scans
-     * registered against 357 for the parameter-type reader, 433 against 391 for the segment binding),
-     * and the errors-field member view drives from the whole relation, whose inlined predicates let
-     * the fused plan skip rows the plain table join visits (916 against 713). Each was answered as an
+     * <p>Three mechanisms, each answered by measurement, and the set holds nothing else. The first
+     * two are the pruning
+     * an inlined view body offered and a table cannot: the argmapping parameter-type reader's
+     * site-literal arms pruned the pair view's union to one arm apiece and now visit the whole table
+     * per arm (815 scans registered against 357), and the errors-field member view drives from the
+     * whole relation, whose inlined predicates let the fused plan skip rows the plain table join
+     * visits (916 against 761). Each was answered as an
      * index question first: every index shape tried on either target moved no reader at all or made a
      * dear one worse, so the scans are the readers' own cost of standing on a table, sub-millisecond
      * against the seconds each registration buys.
+     *
+     * <p>The segment-binding reader stood beside the parameter-type one on the same mechanism, at
+     * 433 scans against 391, and left when the fixture grew an input surface: the extra arguments
+     * change what the planner knows about the pair relation and the arm stops being the cheaper
+     * shape. Recorded rather than simply deleted, because the row leaving on a fixture change is a
+     * different fact from a row leaving because a lever landed, and the difference is what the next
+     * author needs.
      *
      * <p>The last four share one mechanism and one named lever. Registering the carrier relation
      * changed the planner's join order in the hop and the seat: both now reach {@code graphql_field}
@@ -198,6 +206,17 @@ class DerivedReadCostTest {
      * are pinned rather than tolerated because a tolerance would be a number, and a number here is
      * the one thing this gate is built without; the day that index lands, the equality assertion
      * deletes them.
+     *
+     * <p>The last three are the instrument's own floor rather than work, and they are worth reading
+     * before adding anything that looks like them. The three input-field resolution relations each
+     * name the reference-step hop relation, and against the registered target they visit exactly
+     * four rows more than against the source view: 189 against 185, 345 against 341, 1110 against
+     * 1106. H2 charges a table visit at least one scan per naming where a view whose evaluation
+     * short-circuits is charged none, and four namings is what these three bodies make between the
+     * walk's anchor and its recursive term. The wall clocks run the other way and decisively, two
+     * milliseconds against thirteen, four against fourteen and six against twenty-six, which is the
+     * shape that says this is the counter's floor and not a cost. No index question arises: the
+     * target already carries one, and a difference of four scans is not an index's to move.
      *
      * <p>Three larger pairs stood here until the targets were indexed, and how they left is worth
      * knowing before adding more. They were not the registrations' fault and no reader had to be
@@ -227,13 +246,16 @@ class DerivedReadCostTest {
     private static final Set<String> KNOWN_NON_MONOTONIC = Set.of(
         // The pruning an inlined body offered and a table cannot; measured index-free above.
         "intent_argmapping_pair|intent_argmapping_bound_parameter_type",
-        "intent_argmapping_pair|intent_argmapping_segment_binding",
         "intent_errors_field|intent_errors_field_member",
         // The unindexed named-type join; the lever is filed on the roadmap, measured above.
         "intent_carrier_data_field|intent_carrier_routine_hop",
         "intent_carrier_data_field|intent_mutation_routine_seat",
         "intent_spelled_table|intent_carrier_routine_hop",
-        "intent_spelled_table|intent_mutation_routine_seat");
+        "intent_spelled_table|intent_mutation_routine_seat",
+        // The instrument's own floor, four scans apiece; measured above.
+        "intent_field_reference_step_hop|intent_input_field_reference_step_target",
+        "intent_field_reference_step_hop|intent_input_field_column_scope",
+        "intent_field_reference_step_hop|intent_input_field_column_match");
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather
@@ -456,6 +478,17 @@ class DerivedReadCostTest {
      * {@value #READERS_WITH_CELLS} readers empty, and a gate over empty relations measures the
      * instrument's floor and nothing else.
      *
+     * <p>The per-unit filter input is in that list for the same reason and is the second such arm.
+     * Before it the fixture's whole input surface was two fields on two mutation payloads, neither
+     * scaled with the units and neither carrying a {@code @reference}, so the input-field resolution
+     * relations held a couple of flat rows and their reference walk held none. A gate over relations
+     * that size prices the counter rather than the work, and it showed: with the surface flat, the
+     * resolving-table registration read as a regression against all three of its readers, and with
+     * the surface scaled every one of those three went monotonic. The input is deliberately three
+     * shapes rather than one, a plain column name, a nested input object so the descent has depth,
+     * and a {@code @reference}-pathed field so the walk has a chain to follow, because the three
+     * relations fork on exactly those.
+     *
      * <p>{@code inventoryForFilm} is in that list for one target's sake and is the arm to understand
      * before touching it. A node-id argument populates the decode walk's hop relations only where the
      * argument's own scope table differs from the node type's table <em>and</em> exactly one foreign
@@ -502,6 +535,15 @@ class DerivedReadCostTest {
             }
             """.formatted(i)));
         IntStream.range(0, units).forEach(i -> sdl.append("""
+            input NestedFilmFilter%1$d {
+              releaseYear: Int @field(name: "release_year")
+            }
+            input FilmFilter%1$d {
+              title: String
+              nested: NestedFilmFilter%1$d
+              inStore: Int @field(name: "store_id")
+                @reference(path: [{key: "inventory_film_id_fkey"}])
+            }
             type Film%1$d implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
               id: ID! @nodeId
               title: String
@@ -530,7 +572,7 @@ class DerivedReadCostTest {
                 @reference(path: [{table: "rental"}])
             """);
         IntStream.range(0, units).forEach(i -> sdl.append("""
-              films%1$d: [Film%1$d!]!
+              films%1$d(filter: FilmFilter%1$d): [Film%1$d!]!
               film%1$d(id: ID! @nodeId(typeName: "Film%1$d")): Film%1$d
               filmsByKey%1$d(film_id: [ID] @lookupKey): [Film%1$d!]!
               storeForFilm%1$d(id: ID! @nodeId(typeName: "Film%1$d")): [Store%1$d!]! @reference(path: [

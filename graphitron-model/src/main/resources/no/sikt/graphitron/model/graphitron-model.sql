@@ -6074,6 +6074,234 @@ COMMENT ON COLUMN intent_input_occurrence_override.override_type_name IS 'witnes
 COMMENT ON COLUMN intent_input_occurrence_override.override_field_name IS 'witness: the overriding site''s field name';
 COMMENT ON COLUMN intent_input_occurrence_override.override_argument_name IS 'witness: the overriding site''s argument name; NULL when the witness is a field-site condition (graphitron_field_condition''s key shape), non-NULL when it is the argument-site relation''s row';
 
+CREATE TABLE intent_input_field_resolving_table (
+  graph_name        VARCHAR NOT NULL,
+  type_name         VARCHAR NOT NULL,
+  field_name        VARCHAR NOT NULL,
+  table_source_name VARCHAR NOT NULL,
+  table_schema      VARCHAR NOT NULL,
+  table_name        VARCHAR NOT NULL,
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+
+CREATE VIEW intent_input_field_resolving_table_live
+  (graph_name, type_name, field_name,
+   table_source_name, table_schema, table_name) AS
+SELECT DISTINCT p.graph_name, st.container_type_name, st.field_name,
+       sc.table_source_name, sc.table_schema, sc.table_name
+  FROM intent_input_occurrence_path p
+  JOIN intent_input_occurrence_path_step st
+    ON st.graph_name = p.graph_name AND st.path = p.path AND st.ordinal = p.depth
+  JOIN intent_argument_scope_table sc
+    ON sc.graph_name = p.graph_name AND sc.type_name = p.root_type_name
+   AND sc.field_name = p.root_field_name AND sc.argument_name = p.root_argument_name
+ WHERE p.depth >= 1;
+COMMENT ON VIEW intent_input_field_resolving_table_live IS 'This states the rule and is evaluated on demand. The canonical name intent_input_field_resolving_table beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_input_field_resolving_table.';
+COMMENT ON COLUMN intent_input_field_resolving_table_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_input_field_resolving_table.graph_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_input_field_resolving_table_live.type_name IS 'the type_name of a row of this rule, materialized into intent_input_field_resolving_table.type_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_input_field_resolving_table_live.field_name IS 'the field_name of a row of this rule, materialized into intent_input_field_resolving_table.field_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_input_field_resolving_table_live.table_source_name IS 'the table_source_name of a row of this rule, materialized into intent_input_field_resolving_table.table_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_input_field_resolving_table_live.table_schema IS 'the table_schema of a row of this rule, materialized into intent_input_field_resolving_table.table_schema, whose comment carries what the value means';
+COMMENT ON COLUMN intent_input_field_resolving_table_live.table_name IS 'the table_name of a row of this rule, materialized into intent_input_field_resolving_table.table_name, whose comment carries what the value means';
+COMMENT ON TABLE intent_input_field_resolving_table IS 'Which table an input field is classified against, and the pair is the grain: an input field resolves against a table it is handed rather than one it owns, so the same input field reached under two arguments whose fields select from different tables is two rows here and two answers everywhere downstream. That is the whole reason this relation exists as its own name. The input-field classifier takes a resolving table from its caller and never re-roots it: the nesting arm descends into a nested input object carrying the same table down, and a @table application on an input object is captured and ignored, so every field in the tree under one argument shares that argument''s table. The table itself is the consuming field''s, read from intent_argument_scope_table because the classifier is handed the field''s own target table at both entry points, the read surface''s argument expansion and the write surface''s payload resolution. Deliberately not the argument''s column scope, which is a different question one rung down: an argument-site @reference moves where the argument''s own name resolves and does not move where its input type''s fields resolve, the classifier passing the field''s table into the expansion either way. The domain is intent_input_occurrence_path''s, which already holds every input field any argument reaches and already stops where the classification walk stops, so this relation adds a table to that reach and nothing else; the DISTINCT is what collapses the several occurrences of one input field under one table back to the one classification the build performs. Absence is where no argument reaches the field, which is every input object no use site names, and where the reaching argument''s field binds no table at all, which is the ordinary case for an argument on a field that reads nothing. Materialized: this relation is a table refilled from intent_input_field_resolving_table_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
+COMMENT ON COLUMN intent_input_field_resolving_table.graph_name IS 'the owning graph''s partition, carried from the occurrence path';
+COMMENT ON COLUMN intent_input_field_resolving_table.type_name IS 'the input object type the field is declared on, the occurrence step''s container; with the column beside it, graphql_field''s key for an input coordinate';
+COMMENT ON COLUMN intent_input_field_resolving_table.field_name IS 'the input field''s name within its container';
+COMMENT ON COLUMN intent_input_field_resolving_table.table_source_name IS 'the resolving table''s catalog partition, the first column of the sql_table key this row names';
+COMMENT ON COLUMN intent_input_field_resolving_table.table_schema IS 'the resolving table''s SQL schema';
+COMMENT ON COLUMN intent_input_field_resolving_table.table_name IS 'the resolving table''s SQL name; with the two columns above this is sql_table''s full key, and with the two coordinate columns it is this relation''s grain';
+
+CREATE VIEW intent_input_field_reference_step_target
+  (graph_name, type_name, field_name,
+   resolving_source_name, resolving_schema, resolving_table,
+   ordinal, position, via, key_matched_by,
+   from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table, constraint_name, fk_on_from,
+   targets, candidates) AS
+WITH RECURSIVE chain (graph_name, type_name, field_name,
+   resolving_source_name, resolving_schema, resolving_table,
+   ordinal, position, via, key_matched_by,
+   from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table, constraint_name, fk_on_from) AS (
+  SELECT h.graph_name, h.type_name, h.field_name,
+         rt.table_source_name, rt.table_schema, rt.table_name,
+         h.ordinal, h.position, h.via, h.key_matched_by,
+         h.from_source_name, h.from_schema, h.from_table,
+         h.to_source_name, h.to_schema, h.to_table, h.constraint_name, h.fk_on_from
+    FROM intent_field_reference_step_hop h
+    JOIN intent_input_field_resolving_table rt
+      ON rt.graph_name = h.graph_name AND rt.type_name = h.type_name
+     AND rt.field_name = h.field_name
+     AND rt.table_source_name = h.from_source_name AND rt.table_schema = h.from_schema
+     AND rt.table_name = h.from_table
+   WHERE h.position = 0
+  UNION
+  SELECT h.graph_name, h.type_name, h.field_name,
+         p.resolving_source_name, p.resolving_schema, p.resolving_table,
+         h.ordinal, h.position, h.via, h.key_matched_by,
+         h.from_source_name, h.from_schema, h.from_table,
+         h.to_source_name, h.to_schema, h.to_table, h.constraint_name, h.fk_on_from
+    FROM chain p
+    JOIN intent_field_reference_step_hop h
+      ON h.graph_name = p.graph_name AND h.type_name = p.type_name
+     AND h.field_name = p.field_name AND h.ordinal = p.ordinal
+     AND h.position = p.position + 1
+     AND h.from_source_name = p.to_source_name AND h.from_schema = p.to_schema
+     AND h.from_table = p.to_table
+)
+SELECT graph_name, type_name, field_name,
+       resolving_source_name, resolving_schema, resolving_table,
+       ordinal, position, via, key_matched_by,
+       from_source_name, from_schema, from_table,
+       to_source_name, to_schema, to_table, constraint_name, fk_on_from,
+       CAST(MAX(target_rank) OVER (
+         PARTITION BY graph_name, type_name, field_name,
+                      resolving_source_name, resolving_schema, resolving_table,
+                      ordinal, position) AS INT),
+       CAST(COUNT(*) OVER (
+         PARTITION BY graph_name, type_name, field_name,
+                      resolving_source_name, resolving_schema, resolving_table,
+                      ordinal, position) AS INT)
+  FROM (SELECT c.*, DENSE_RANK() OVER (
+                 PARTITION BY c.graph_name, c.type_name, c.field_name,
+                              c.resolving_source_name, c.resolving_schema, c.resolving_table,
+                              c.ordinal, c.position
+                 ORDER BY c.to_source_name, c.to_schema, c.to_table) AS target_rank
+          FROM chain c) ranked;
+COMMENT ON VIEW intent_input_field_reference_step_target IS 'Where each element of an input field''s @reference path actually lands: the same hop relation the two older walks read, chained from the table the input field is classified against. The third of three sibling walks and the third departure, which is the only thing that separates them. A field-site path departs from the enclosing type''s own binding; an argument-site path departs from the table the argument''s content binds against; an input-field path departs from the table its consuming field handed the expansion, because an input object type binds nothing and the walk would otherwise have no table to start from at all. That departure is intent_input_field_resolving_table''s whole subject and is read from it rather than restated. The hops are the field-site relation''s and not a fourth capture: an input field is a graphql_field row on an INPUT_OBJECT parent, so its @reference elements land in the same step relation an output field''s do and intent_field_reference_step_hop already enumerates their candidate joins. Only the seed differs, which is why this view exists and a fourth hop relation does not. The departure is part of the key here where the two siblings need no such column: their departure is a function of the coordinate, and this one''s is not, an input field reached under two arguments on different tables walking two different chains from one authored path. Everything the field-site sibling''s comment argues about the recursion holds unchanged: an element that resolves to nothing ends the chain, so absence means "not reached" and never "resolves to nothing in particular", and an element carrying neither key nor table is not a hop this view knows. Terminal-element readers project the maximum position per application, as there. One thing about this shape is worth a reader''s attention and is why the departure relation is a materialized table rather than the view it was written as. An anchor term is not evaluated once: H2 re-evaluates it alongside the recursive term, so a view named in an anchor is expanded on every iteration where the same join written as an ordinary query is planned once. Measured on the sakila example schema, the anchor join as a plain SELECT costs a millisecond whether the departure is a view or a table, and as this walk''s anchor it costs 39 milliseconds against the view and one against the table. The registration in meta_materialize carries the rest of those figures and is argued on this reader.';
+COMMENT ON COLUMN intent_input_field_reference_step_target.graph_name IS 'the owning graph''s partition, carried from the hop relation';
+COMMENT ON COLUMN intent_input_field_reference_step_target.type_name IS 'the input object type owning the field the @reference is applied to';
+COMMENT ON COLUMN intent_input_field_reference_step_target.field_name IS 'the input field the @reference is applied to';
+COMMENT ON COLUMN intent_input_field_reference_step_target.resolving_source_name IS 'the catalog partition of the table this chain departed from; part of the key, unlike on either sibling walk, because an input field''s departure is its consuming site''s and not its own';
+COMMENT ON COLUMN intent_input_field_reference_step_target.resolving_schema IS 'the departing table''s SQL schema; part of the key, as above';
+COMMENT ON COLUMN intent_input_field_reference_step_target.resolving_table IS 'the departing table''s SQL name; part of the key, as above. Equal to from_table at position 0 and unrelated to it after that';
+COMMENT ON COLUMN intent_input_field_reference_step_target.ordinal IS 'the owning @reference application''s ordinal, since the directive is repeatable at capture; repetition on an input field is a conflict the resolver rejects, so a reader wanting the authored path counts applications rather than trusting this column to be zero';
+COMMENT ON COLUMN intent_input_field_reference_step_target.position IS 'the element''s 0-based position within its application''s path; positions are contiguous from 0 up to wherever the chain stopped';
+COMMENT ON COLUMN intent_input_field_reference_step_target.via IS 'which arm resolved the element, as on the hop relation: KEY, TABLE or NAME_MATCH';
+COMMENT ON COLUMN intent_input_field_reference_step_target.key_matched_by IS 'for a KEY element, the namespace that answered; NULL on a TABLE or NAME_MATCH element. As on the hop relation';
+COMMENT ON COLUMN intent_input_field_reference_step_target.from_source_name IS 'the departing table''s catalog partition for this element: the resolving table at position 0, the previous element''s arrival after that';
+COMMENT ON COLUMN intent_input_field_reference_step_target.from_schema IS 'this element''s departing SQL schema';
+COMMENT ON COLUMN intent_input_field_reference_step_target.from_table IS 'this element''s departing SQL table name';
+COMMENT ON COLUMN intent_input_field_reference_step_target.to_source_name IS 'the arriving table''s catalog partition, first column of its sql_table key';
+COMMENT ON COLUMN intent_input_field_reference_step_target.to_schema IS 'the arriving table''s SQL schema';
+COMMENT ON COLUMN intent_input_field_reference_step_target.to_table IS 'the arriving table''s SQL name. At the path''s last position this is the table the input field''s effective name resolves its column against';
+COMMENT ON COLUMN intent_input_field_reference_step_target.constraint_name IS 'the foreign key this element joins on, named or discovered; NULL on a NAME_MATCH element, as on the hop relation';
+COMMENT ON COLUMN intent_input_field_reference_step_target.fk_on_from IS 'TRUE when the departing table declares the foreign key; the element''s direction. NULL on a NAME_MATCH element, as on the hop relation';
+COMMENT ON COLUMN intent_input_field_reference_step_target.targets IS 'how many distinct tables this element reaches, this row''s arrival being one of them; 1 where the destination is certain. Separate from candidates for the reason the sibling walks state: a reader that only needs the destination can trust a certain one where a reader that has to render the join cannot';
+COMMENT ON COLUMN intent_input_field_reference_step_target.candidates IS 'how many rows this element resolved to, counting routes and not just destinations; 1 is the walk''s requirement for an expressible hop';
+
+CREATE VIEW intent_input_field_column_scope
+  (graph_name, type_name, field_name,
+   resolving_source_name, resolving_schema, resolving_table,
+   basis, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT tg.graph_name, tg.type_name, tg.field_name,
+       tg.resolving_source_name, tg.resolving_schema, tg.resolving_table,
+       'PATH_TERMINAL',
+       tg.to_source_name, tg.to_schema, tg.to_table
+  FROM intent_input_field_reference_step_target tg
+  JOIN (SELECT graph_name, type_name, field_name, COUNT(*) AS applications
+          FROM graphitron_field_reference
+         GROUP BY graph_name, type_name, field_name) only_application
+    ON only_application.graph_name = tg.graph_name
+   AND only_application.type_name = tg.type_name
+   AND only_application.field_name = tg.field_name
+   AND only_application.applications = 1
+  JOIN (SELECT graph_name, type_name, field_name, ordinal, MAX(position) AS position
+          FROM graphitron_field_reference_step
+         GROUP BY graph_name, type_name, field_name, ordinal) last_element
+    ON last_element.graph_name = tg.graph_name
+   AND last_element.type_name = tg.type_name
+   AND last_element.field_name = tg.field_name
+   AND last_element.ordinal = tg.ordinal
+   AND last_element.position = tg.position
+ WHERE tg.targets = 1
+UNION ALL
+SELECT rt.graph_name, rt.type_name, rt.field_name,
+       rt.table_source_name, rt.table_schema, rt.table_name,
+       'RESOLVING_TABLE',
+       rt.table_source_name, rt.table_schema, rt.table_name
+  FROM intent_input_field_resolving_table rt
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_field_reference_step s
+                    WHERE s.graph_name = rt.graph_name
+                      AND s.type_name = rt.type_name
+                      AND s.field_name = rt.field_name)
+   AND (SELECT COUNT(*) FROM graphitron_field_reference r
+         WHERE r.graph_name = rt.graph_name
+           AND r.type_name = rt.type_name
+           AND r.field_name = rt.field_name) <= 1;
+COMMENT ON VIEW intent_input_field_column_scope IS 'Which table the column name written at an input field resolves against: the input-field twin of intent_argument_column_scope and intent_field_column_scope, and a third relation for the reason the third walk is a third walk. The departure differs and here it is not even a function of the coordinate, so the resolving table is part of the key and the same input field carries one row per table it is classified against. Two rules, disjoint rather than ranked, so this is a plain union with no windowed collapse over it and it carries the one-row-per-site property both twins stand on. An authored @reference path resolves to its terminal element''s table, demanding the terminal reach exactly one table rather than exactly one row, so an element joining two tables by three keys still names its destination; the DISTINCT over a projection keeping only the table is what collapses several routes to one destination. An input field with no path element resolves in the table it was handed, read from intent_input_field_resolving_table rather than restated, so the two spellings of that departure cannot drift. Repetition is a conflict and not a chain, as at the argument site and unlike at the output-field site: ordered composition has no meaning on an input field, the resolver rejects a second application outright, and a site carrying two has no row here under either rule. That second demand is on the applications and not on their elements, so an author writing an empty @reference(path: []) beside a real one has no row here, and an author writing one empty application alone has the resolving-table row, which is the bare predicate a directive-less field would have produced and is what the resolver gives that site. Nothing here reads the classifier''s ordered fork. A @notGenerated or @lookupKey application, a @nodeId decode, a nested input object and a plain name all have a scope, and which of them the classifier actually resolves the site as is a role question one rung up; this relation answers where a name would resolve if one is written, which is intent_argument_column_scope''s stance at its own site. Its consumer is intent_input_field_column_match, which asks which column the name reaches.';
+COMMENT ON COLUMN intent_input_field_column_scope.graph_name IS 'the owning graph''s partition, carried from both rules'' base relations';
+COMMENT ON COLUMN intent_input_field_column_scope.type_name IS 'the input object type the field is declared on. Not the type whose binding started any navigation, an input object having none, which is the difference from the output-field twin where the two are one';
+COMMENT ON COLUMN intent_input_field_column_scope.field_name IS 'the input field whose site this row resolves';
+COMMENT ON COLUMN intent_input_field_column_scope.resolving_source_name IS 'the catalog partition of the table the site was classified against; part of the grain, so a shared input type reached from two tables gets a row for each';
+COMMENT ON COLUMN intent_input_field_column_scope.resolving_schema IS 'the classifying table''s SQL schema; part of the grain, as above';
+COMMENT ON COLUMN intent_input_field_column_scope.resolving_table IS 'the classifying table''s SQL name; with the two coordinate columns and the two columns above, the grain. Equal to the resolved table on the RESOLVING_TABLE rule and the walk''s departure on the other';
+COMMENT ON COLUMN intent_input_field_column_scope.basis IS 'which rule resolved this site, in a closed vocabulary of two disjoint rules: PATH_TERMINAL (an authored input-field @reference path''s terminal element), RESOLVING_TABLE (no path element written, the table the classifier was handed). Also the fork a predicate binding takes, PATH_TERMINAL being exactly the case where the resolved table is not the one the consuming field already selects from';
+COMMENT ON COLUMN intent_input_field_column_scope.table_source_name IS 'the resolved table''s catalog partition, the first column of the sql_table key this row names';
+COMMENT ON COLUMN intent_input_field_column_scope.table_schema IS 'the resolved table''s SQL schema';
+COMMENT ON COLUMN intent_input_field_column_scope.table_name IS 'the resolved table''s SQL name. With the two columns above this is sql_table''s full key, so the table''s columns are one join away';
+
+CREATE VIEW intent_input_field_column_match
+  (graph_name, type_name, field_name,
+   resolving_source_name, resolving_schema, resolving_table,
+   matched_name, matched_by,
+   table_source_name, table_schema, table_name, column_name,
+   source_name, source_line, source_column) AS
+SELECT graph_name, type_name, field_name,
+       resolving_source_name, resolving_schema, resolving_table,
+       matched_name, matched_by,
+       table_source_name, table_schema, table_name, column_name,
+       source_name, source_line, source_column
+  FROM (SELECT sc.graph_name, sc.type_name, sc.field_name,
+               sc.resolving_source_name, sc.resolving_schema, sc.resolving_table,
+               COALESCE(fb.name_ref, f.field_name) AS matched_name,
+               CASE WHEN c.jooq_name_upper
+                         = COALESCE(fb.name_ref_upper, f.field_name_upper)
+                    THEN 'JOOQ_NAME' ELSE 'SQL_NAME' END AS matched_by,
+               sc.table_source_name, sc.table_schema, sc.table_name,
+               c.column_name,
+               f.source_name, f.source_line, f.source_column,
+               ROW_NUMBER() OVER (
+                 PARTITION BY sc.graph_name, sc.type_name, sc.field_name,
+                              sc.resolving_source_name, sc.resolving_schema,
+                              sc.resolving_table
+                 ORDER BY CASE WHEN c.jooq_name_upper
+                                    = COALESCE(fb.name_ref_upper, f.field_name_upper)
+                               THEN 0 ELSE 1 END, c.ordinal) AS rn
+          FROM intent_input_field_column_scope sc
+          JOIN graphql_field f
+            ON f.graph_name = sc.graph_name AND f.type_name = sc.type_name
+           AND f.field_name = sc.field_name
+          JOIN graphql_type leaf
+            ON leaf.graph_name = f.graph_name AND leaf.type_name = f.named_type
+           AND leaf.kind IN ('SCALAR', 'ENUM')
+          LEFT JOIN graphitron_field_binding fb
+            ON fb.graph_name = f.graph_name AND fb.type_name = f.type_name
+           AND fb.field_name = f.field_name
+          JOIN sql_column c
+            ON c.source_name = sc.table_source_name AND c.table_schema = sc.table_schema
+           AND c.table_name = sc.table_name
+           AND (c.jooq_name_upper = COALESCE(fb.name_ref_upper, f.field_name_upper)
+                OR c.column_name_upper
+                   = COALESCE(fb.name_ref_upper, f.field_name_upper))) matched
+ WHERE rn = 1;
+COMMENT ON VIEW intent_input_field_column_match IS 'Which column an input field''s own name resolves to on the table its site navigates to: the column a predicate or an assignment built from that field names. The input-field counterpart of intent_argument_column_match, and everything that relation argues about not being a claim holds here for the same reason: no classifier vocabulary reaches an input field, and what such a field gets from a resolved column is a binding and not a kind, so these rows carry no classifier column and nothing reduces them. The field''s named type has kind SCALAR or ENUM, which is the classifier''s own structure rather than an addition: an input-object-typed field is a nesting the walk descends into and resolves at the fields below it, so a name match against the container itself would be a row no consumer asked for. The site resolves against exactly one table, which is intent_input_field_column_scope''s resolution, so every decline that relation makes is a silence here and this view adds none of its own. The effective name is the @field(name:) binding where one was written, else the field name, which is the classifier''s own COALESCE, and the same directive relation answers it here as at an output field, an input field being a graphql_field row like any other. The match is two-tier, the generated Java name before the SQL name, both case-insensitive, collapsed to the first match in tier-then-ordinal order. The scope drives the join, which is load-bearing rather than stylistic on the measurement intent_column_match_claim''s comment carries: reading the scope from underneath the field relation would cost the whole scope once per candidate field. What this relation does not answer is what the resolved column is for. A column reached from a read surface''s filter argument is a predicate and one reached from a mutation''s payload is an assignment or a key, and nothing on this row tells those apart, the classifier deciding it from the consuming site rather than from the input field. Absence is where a written name reaches no column on the resolved table, which is the classifier''s unbound-field carrier, and it is equally the ordinary answer for a field whose content is not column-shaped at all: an ID field standing for a node id resolves its columns from the node key and not from its name, and a field carrying a rejected @notGenerated or @lookupKey application contributes nothing at all. Nothing here tells those apart either, and what would is a role relation over this one rather than a column on it.';
+COMMENT ON COLUMN intent_input_field_column_match.graph_name IS 'the owning graph''s partition, carried from the scope';
+COMMENT ON COLUMN intent_input_field_column_match.type_name IS 'the input object type the field is declared on';
+COMMENT ON COLUMN intent_input_field_column_match.field_name IS 'the input field whose name this row resolves';
+COMMENT ON COLUMN intent_input_field_column_match.resolving_source_name IS 'the catalog partition of the table the site was classified against; carried from the scope, where it is part of the grain and here too';
+COMMENT ON COLUMN intent_input_field_column_match.resolving_schema IS 'the classifying table''s SQL schema; part of the grain, as above';
+COMMENT ON COLUMN intent_input_field_column_match.resolving_table IS 'the classifying table''s SQL name; with the two coordinate columns and the two columns above, the grain';
+COMMENT ON COLUMN intent_input_field_column_match.matched_name IS 'the effective name that matched: the @field(name:) binding where one was written, else the input field''s own name';
+COMMENT ON COLUMN intent_input_field_column_match.matched_by IS 'which tier answered, in a closed vocabulary of two: JOOQ_NAME (the generated Java name) or SQL_NAME. The generated name is preferred where both match, which is the classifier''s order';
+COMMENT ON COLUMN intent_input_field_column_match.table_source_name IS 'witness: the resolved table''s catalog partition. Which navigation reached it is intent_input_field_column_scope''s basis, and a consumer emitting the binding needs both';
+COMMENT ON COLUMN intent_input_field_column_match.table_schema IS 'witness: the resolved table''s SQL schema';
+COMMENT ON COLUMN intent_input_field_column_match.table_name IS 'witness: the resolved table''s SQL name';
+COMMENT ON COLUMN intent_input_field_column_match.column_name IS 'the resolved column''s SQL name on that table; with the three witness columns above, sql_column''s full key';
+COMMENT ON COLUMN intent_input_field_column_match.source_name IS 'the input field''s own declaration file; the position a diagnostic would carry';
+COMMENT ON COLUMN intent_input_field_column_match.source_line IS 'source line of the input field declaration, 1-based';
+COMMENT ON COLUMN intent_input_field_column_match.source_column IS 'source column of the input field declaration, 1-based';
+
 CREATE VIEW intent_argmapping_pair_live
   (graph_name, site, use_site, type_name, field_name, argument_name, ordinal, step_position,
    position, param_name, argument_path, source_name, source_line, source_column) AS
@@ -7873,7 +8101,9 @@ INSERT INTO meta_materialize VALUES
   ('intent_carrier_data_field_live', 'intent_carrier_data_field',
    'The deepest relation whose materialization stops re-evaluation for every expensive reader left in the carrier family: the mutation-routine seat names it five times across its verdict arms, the carrier routine hop drives from it, the error-channel view probes it once per producing field, RoutineWriteFacts joins it twice per generation beside four seat namings, and the language server''s CarrierDataField reads it per $source completion, where the windowed body means a coordinate filter prunes nothing and one completion pays the whole derivation. The body was restructured in the same change that registered it, so the refresh this row installs is priced on both captures the registration doctrine asks about: about 170 milliseconds for 15 rows on a carrier-bearing schema (the sakila example, down from about 6.6 seconds before the restructure) and about 12 milliseconds for no rows on a carrier-free one, the number a consumer with no routines pays. Measured against the same real schema, the readers over it: the carrier read itself had already fallen from about 49 seconds to that 170 milliseconds by restructure alone, and this registration is what takes the seat''s five namings and the error channel''s per-producer probe from re-evaluating the rule to reading its rows. Correct as a view and too expensive to evaluate per naming, the registration case.'),
   ('intent_node_id_instruction_live', 'intent_node_id_instruction',
-   'Three view bodies name this relation and one of them, the decode slot, names it twice through a local alias that is itself named twice, so a single read of the slot relation expands to several whole evaluations of this rule. Its own cost is internal rather than inherited, the whole of it in one union arm that joins a local alias to a second local alias derived from the first: H2 inlines a non-recursive WITH exactly like a view and eliminates no common subexpression, so that inner alias is recomputed once per driving row. No rewrite restores the sharing, and what established that was a consumer schema of 95 classpath sources and a 388-row catalog census, on the tree before this schema declared its argument-coordinate index: there one evaluation of the rule was 26 s while every relation it reads answered in under a second, widening the inner alias to carry the outer one''s columns measured 94 s, driving the arm from the inner alias measured 66 s, spelling the join''s null-safe comparisons as IS NOT DISTINCT FROM changed nothing, and snapshotting the inner alias into a table put the arm at 0.7 s, which is the shape of the fix and the reason this is a registration rather than a rewrite. Those are that schema''s figures and that tree''s; they are stated as provenance because no reader of this file can re-take them. What this tree can check is the direction, and it survived the indexes declared since. On the twelve-unit fixture the derived-read-cost gate runs, rows stored against rule evaluated on demand, in scans: this relation 85 against 1780, the decode slot 348 against 1535, the decode defect 349 against 1548, the encode 5732 against 7428, the decode endpoint 2030 against 3145. Every reader improves, which is the claim a registration makes and the one that gate holds. Downstream is the whole of the reason: on that consumer schema the decode slot relation went from not answering in 400 s to 278 ms with these rows stored, and the decode defect view a build reads sits directly on it, so before this registration a consumer with a schema that size had a build that did not finish. Refresh is one evaluation of the rule per capture, 1695 scans on that same fixture, and not the dearest here: measured together on it, intent_field_reference_step_hop_live, intent_field_column_scope_live, intent_carrier_data_field_live and intent_node_id_decode_hop_column_live each refresh dearer than this one. Named rather than given a place in an ordering, because a place is falsified by any registration landing beside it and a name is not. The narrower registration that would cut this one is the inner alias, which is a local alias rather than a named relation today and wants promoting to one before it can be registered.');
+   'Three view bodies name this relation and one of them, the decode slot, names it twice through a local alias that is itself named twice, so a single read of the slot relation expands to several whole evaluations of this rule. Its own cost is internal rather than inherited, the whole of it in one union arm that joins a local alias to a second local alias derived from the first: H2 inlines a non-recursive WITH exactly like a view and eliminates no common subexpression, so that inner alias is recomputed once per driving row. No rewrite restores the sharing, and what established that was a consumer schema of 95 classpath sources and a 388-row catalog census, on the tree before this schema declared its argument-coordinate index: there one evaluation of the rule was 26 s while every relation it reads answered in under a second, widening the inner alias to carry the outer one''s columns measured 94 s, driving the arm from the inner alias measured 66 s, spelling the join''s null-safe comparisons as IS NOT DISTINCT FROM changed nothing, and snapshotting the inner alias into a table put the arm at 0.7 s, which is the shape of the fix and the reason this is a registration rather than a rewrite. Those are that schema''s figures and that tree''s; they are stated as provenance because no reader of this file can re-take them. What this tree can check is the direction, and it survived the indexes declared since. On the twelve-unit fixture the derived-read-cost gate runs, rows stored against rule evaluated on demand, in scans: this relation 85 against 1780, the decode slot 348 against 1535, the decode defect 349 against 1548, the encode 5732 against 7428, the decode endpoint 2030 against 3145. Every reader improves, which is the claim a registration makes and the one that gate holds. Downstream is the whole of the reason: on that consumer schema the decode slot relation went from not answering in 400 s to 278 ms with these rows stored, and the decode defect view a build reads sits directly on it, so before this registration a consumer with a schema that size had a build that did not finish. Refresh is one evaluation of the rule per capture, 1695 scans on that same fixture, and not the dearest here: measured together on it, intent_field_reference_step_hop_live, intent_field_column_scope_live, intent_carrier_data_field_live and intent_node_id_decode_hop_column_live each refresh dearer than this one. Named rather than given a place in an ordering, because a place is falsified by any registration landing beside it and a name is not. The narrower registration that would cut this one is the inner alias, which is a local alias rather than a named relation today and wants promoting to one before it can be registered.'),
+  ('intent_input_field_resolving_table_live', 'intent_input_field_resolving_table',
+   'Two readers, both added in the increment that registers this, and one of them is a recursive walk that names this relation in its anchor term. That position is what the registration buys and it is a shape no other row here states. A recursive term is evaluated repeatedly by construction, and H2 evaluates the anchor beside it rather than once, so a view named in an anchor is expanded afresh on every iteration where the same join written as an ordinary query is planned once. Measured on the sakila example schema, 917 fields and 267 arguments, with every row count unchanged: the anchor join written as a plain SELECT costs one millisecond and 1103 rows visited whether this relation is a view or a table, and the same join as a recursive walk''s anchor costs 39 milliseconds and 1184 rows visited against a view and 1 millisecond and 231 against a table. So the bare walk goes from 39 to 1, and the three shipped relations over it fall with it: the walk with its own windowing on top from 44 milliseconds to 4, its column scope from 45 to 4 and its column match from 49 to 7, with 1196, 2317 and 3975 rows visited falling to 243, 483 and 2141. The plan shape agrees here, which is worth the clause because on three preceding increments it did not: the rows visited fall about fivefold where the clock falls about fortyfold, so the count points the right way this time and still understates the move by most of an order of magnitude. Refresh is one evaluation of the source view per graph, one to two milliseconds and 1103 rows visited to produce 107, which is less than a single read of the walk was paying. No index is declared on the target: the anchor joins it on the whole coordinate and the table is a hundred rows against a hop relation of a couple of hundred, so H2 reads both whole, and an index without a measurement is a claim with nothing behind it.');
 
 CREATE TABLE meta_materialize_dependency (
   source_view_name VARCHAR NOT NULL,

@@ -126,7 +126,8 @@ class FactSchemaGateTest {
           films(sequelTo: ID @nodeId(typeName: "Film")): [Film!]!
           filmCategories(
             updatedSince: String @field(name: "last_update"),
-            inCategory: ID @nodeId(typeName: "Category")
+            inCategory: ID @nodeId(typeName: "Category"),
+            filter: FilmCategoryFilter
           ): [FilmCategory!]!
           categories: [Category!]!
           filmsForActor(actorId: ID!, minLength: Int): [Film!]!
@@ -151,6 +152,10 @@ class FactSchemaGateTest {
         type ActorFilmsPayload {
           films: [Film]
           errors: [ActorFilmsError]
+        }
+
+        input FilmCategoryFilter {
+          lastUpdate: String @field(name: "last_update")
         }
 
         type Film @table(name: "film") @node {

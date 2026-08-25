@@ -2012,6 +2012,109 @@ against. One is an anecdote; the store now has an instrument for exactly this, t
 and what it does not have is any check that a written measurement still holds. That is R831, filed here rather than
 left as another paragraph.
 
+### Conditions, fifth increment: the input surface's column resolution
+
+The first of the three relations the fold turned out to need. An input-object argument contributes
+whatever its input type's fields contribute, resolved at their coordinates rather than at the
+argument's, and the store had no input-field-grain column resolution at all outside the facet gate.
+So the membership fold could not ask whether such an argument contributes anything, which is the one
+thing it needs from that arm.
+
+**The grain question again, and it answers differently than it looks.** An input field does not own a
+table. The classifier is handed one by whatever argument reached it, and the descent into a nested
+input object carries that same table down unchanged, a `@table` on an input object being captured and
+ignored. So the resolution's inputs are the input field's coordinate and the table it was classified
+against, and that pair is the key. Not the occurrence path, which is where the store already holds the
+input surface: an input type reached three ways under one argument is three paths and one
+classification, and keying on the path would hand every consumer duplicates to fold away. Not the
+coordinate alone either, which is the more tempting mistake: one input type reused under two arguments
+whose fields select from different tables resolves to two different columns, and a relation answering
+once per coordinate would be wrong at whichever site it did not pick. Both directions have a case
+asserting them.
+
+**Three relations, and the third walk is a target view rather than a fourth hop relation.** An input
+field is a `graphql_field` row on an `INPUT_OBJECT` parent, so its `@reference` elements land in the
+same step relation an output field's do and `intent_field_reference_step_hop` already enumerates their
+candidate joins. What was missing is only the seed: the field-site walk departs from the enclosing
+type's binding and the argument-site walk from the argument's scope, and an input object binds nothing,
+so this one departs from the table the consuming field handed the expansion. That departure is part of
+the key here where neither sibling needs such a column, and the case that earns it is one authored path
+under two arguments, resolving under one and reaching nothing under the other.
+
+**A hazard nobody in this file had met: a recursive anchor.** The walk cost 44 milliseconds for five
+rows, against three for the field-site sibling. Bisecting it: the anchor join written as an ordinary
+`SELECT` costs one millisecond, and the identical join as the walk's anchor costs 39. H2 evaluates a
+recursive CTE's anchor term alongside the recursive term rather than once, so a view named in an anchor
+is expanded on every iteration. Confirmed by substitution, the same walk with the departure relation
+snapshotted into a table costing one millisecond, which is why `intent_input_field_resolving_table` is
+registered rather than the plain view it was written as.
+
+[cols="4,1,1"]
+|===
+| sakila example, 917 fields and 267 arguments | ms | rows visited
+
+| the anchor join as a plain SELECT, departure a view
+| 1
+| 1103
+
+| the same join as a recursive walk's anchor, departure a view
+| 39
+| 1184
+
+| the same, departure a table
+| 1
+| 231
+
+| `intent_input_field_reference_step_target`, before and after
+| 44 to 4
+| 1196 to 243
+
+| `intent_input_field_column_scope`, before and after
+| 45 to 4
+| 2317 to 483
+
+| `intent_input_field_column_match`, before and after
+| 49 to 7
+| 3975 to 2141
+|===
+
+The scan count points the right way this time, which is worth saying after three increments where it
+did not. It still understates: the rows visited fall about fivefold where the clock falls about
+fortyfold.
+
+**The read-cost gate was pricing its own counter, and that is the increment's other finding.** The
+registration read as a regression against all three of its own readers, which is the gate saying a
+registered target visits more rows than the source view. The reason was the fixture. Its entire input
+surface was two fields on two mutation payloads, neither scaled with the units and neither carrying a
+`@reference`, so the three new relations held a couple of flat rows and their walk held none, and what
+the gate was comparing was H2 charging a table visit one scan per naming against a view whose
+evaluation short-circuits and is charged none. The fixture now grows a filter input per unit in three
+shapes, a plain column name, a nested input object and a `@reference`-pathed field, because those are
+the three forks the relations have. With the surface scaled, all three of the registration's own pairs
+go monotonic.
+
+Three pairs remain and are pinned as findings: each of the three relations against the
+`intent_field_reference_step_hop` registration, at exactly four scans more registered than
+unregistered, with the clock three to six times better registered. Four namings of that relation across
+an anchor and a recursive term, one scan apiece, is the counter's floor and not a cost. A fourth pair
+left the pinned set at the same time, the argmapping segment binding's, whose plan stopped being the
+cheaper shape once the fixture carried more arguments. That is recorded rather than quietly deleted,
+because a row leaving because the fixture moved and a row leaving because a lever landed are different
+facts.
+
+The same fixture change invalidated the gate's own record of how its pinned set varies with size, so
+those three figures were re-taken rather than left standing: three pairs at four units, four at eight,
+nine at twelve. That is R831's subject arriving in the same increment that filed it, and handled by
+hand because nothing yet does it for us.
+
+**What this increment leaves owing.** Two of the fold's three blockers: the polymorphic participant
+fan-out through the argument column scope, and the read-versus-filter fork at a mutation's payload
+argument. The second is now visibly narrow rather than vague, this increment having established that
+both entry points into the input-field classifier hand it the consuming field's own table, so the fork
+is about what the resolved column is for and never about where it resolves. The role relation over
+these three, the input-field counterpart of `intent_argument_filter_role`, is what the fold will
+actually read and is the natural next increment.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the

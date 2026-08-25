@@ -436,6 +436,11 @@ class FactCaptureAgreementTest {
         registrations.put("intent_resolved_node_type_id", Arm.DERIVED);
         registrations.put("intent_field_scope_table", Arm.DERIVED);
         registrations.put("intent_argument_scope_table", Arm.DERIVED);
+        registrations.put("intent_input_field_resolving_table", Arm.DERIVED);
+        registrations.put("intent_input_field_resolving_table_live", Arm.DERIVED);
+        registrations.put("intent_input_field_reference_step_target", Arm.DERIVED);
+        registrations.put("intent_input_field_column_scope", Arm.DERIVED);
+        registrations.put("intent_input_field_column_match", Arm.DERIVED);
         registrations.put("intent_node_id_instruction", Arm.DERIVED);
         registrations.put("intent_node_id_decode_endpoint", Arm.DERIVED);
         registrations.put("intent_node_id_decode_hop", Arm.DERIVED);
