@@ -114,6 +114,7 @@ generated jOOQ catalog; where the rows only a pipeline run writes are what your 
 A probe over that population, in `graphitron`'s own test tree, is about this much:
 
 ```java
+int repeats = 5;
 String sdl = Files.readString(Path.of("..", "graphitron-sakila-example",
     "src", "main", "resources", "graphql", "schema.graphqls"));
 try (var store = CapturedStore.ofCatalog(tmp, sdl, new JooqCatalog(DEFAULT_JOOQ_PACKAGE))) {
@@ -121,8 +122,10 @@ try (var store = CapturedStore.ofCatalog(tmp, sdl, new JooqCatalog(DEFAULT_JOOQ_
     dsl.execute("SET OPTIMIZE_REUSE_RESULTS FALSE");
     dsl.execute("SET QUERY_STATISTICS_MAX_ENTRIES 2000");
     dsl.execute("SET QUERY_STATISTICS TRUE");
-    for (String relation : relations) {
-        dsl.resultQuery("SELECT count(*) FROM " + relation).fetchOne(0);
+    for (int sweep = 0; sweep < repeats; sweep++) {     // sweeps, not adjacent repeats
+        for (String relation : relations) {
+            dsl.resultQuery("SELECT count(*) FROM " + relation).fetchOne(0);
+        }
     }
     dsl.resultQuery("""
             SELECT SQL_STATEMENT, EXECUTION_COUNT, CUMULATIVE_EXECUTION_TIME,
@@ -134,10 +137,36 @@ try (var store = CapturedStore.ofCatalog(tmp, sdl, new JooqCatalog(DEFAULT_JOOQ_
 ```
 
 Note what is not in there: no `System.nanoTime()`, and no probe method per relation. The database
-keeps the timings itself once asked, which is step 3's subject; the three `SET` statements are the
-whole cost of asking, and the first of them is not optional. The capture is seconds, which is the
-floor of every run and not part of what you are measuring, so name every relation you care about
-inside one capture rather than opening one per test method.
+keeps the timings itself once asked, which is step 3's subject, and the three `SET` statements are
+the whole cost of asking.
+
+**The outer loop is load-bearing and not decoration.** A pass that executes each relation once
+reports `EXECUTION_COUNT` 1, a standard deviation of exactly 0, and a cumulative time equal to the
+maximum by definition, so the row carries no spread at all and its cumulative-over-maximum ratio
+reads 1.00, which is the corrupted-row signature step 3 tells you to distrust. Nor is it a stable
+ranking, which is the part that actually costs you something. Measured on a three-view fixture
+where one view is defined over another and names it twice, and so cannot be cheaper than it: three
+single-pass runs ranked that pair reader-first, then child-first, then reader-first again, the
+middle one putting the reader at half the cost of the view it names twice. Five interleaved sweeps
+of the same fixture ranked all three relations identically on three runs out of three, with ratios
+between 3.6 and 4.7 and standard deviations that mean something. Whatever a first execution pays
+for, and JIT and class loading are the obvious candidates, it is larger than the differences you are
+trying to rank.
+
+Sweeps rather than adjacent repeats, deliberately: repeating the whole list spreads that first-run
+drift across every relation instead of charging it to whichever one you listed first. Adjacent
+repeats work too and read higher ratios, being a warm steady state per relation, so take that shape
+knowingly rather than by accident.
+
+Repeats cost what they multiply, and that trade belongs here rather than in a footnote: five sweeps
+of a relation that answers in a second is five seconds, and five sweeps of one that takes minutes is
+a wait you should pick deliberately. Lower the count for an expensive relation, or rank once cheaply
+and then repeat
+only the suspects. What you may not do is read a `count=1` row as though it were a measurement; it
+is an ordering, and a provisional one.
+
+The capture is seconds, which is the floor of every run and not part of what you are measuring, so
+name every relation you care about inside one capture rather than opening one per test method.
 
 ```bash
 mvn test -pl :graphitron -Dtest=YourProbeTest -DexcludedGroups=execution
@@ -163,19 +192,32 @@ that names it are different numbers, and the second is not informative until you
 statement text and `INFORMATION_SCHEMA.QUERY_STATISTICS` reads it back: one row per statement,
 carrying `EXECUTION_COUNT`, then the minimum, maximum, cumulative, average and standard deviation of
 its execution time in milliseconds, and those same five figures again for the row count it returned.
-Ordered by cumulative time that ranks every relation you touched in one pass, so the isolation this
+Ordered by cumulative time that ranks every relation you touched in one run, so the isolation this
 step asks for falls out of a run that was going to happen anyway. The spread is the part to actually
 use rather than a convenience: step 1 opens on conclusions that were single readings believed
 without repeats, and this is the instrument that reports a standard deviation and an execution count
-without being asked for them.
+for free. Free, but not unasked: it reports the spread of the executions you actually ran, so a run
+that executes each statement once reports a standard deviation of zero and says nothing whatever
+about whether its own figures are stable. The repeats are yours to ask for, and step 2's outer loop
+is where you ask.
 
-Three things about it are not optional.
+Four things about it are not optional.
+
+- **A row with `EXECUTION_COUNT` 1 ranks, and does nothing else.** Its standard deviation is exactly
+  0 and its cumulative equals its maximum by construction, so it carries no spread and its ratio
+  reads 1.00 whatever the truth is. Every tell below needs more than one execution to say anything,
+  which is the reason the recipe repeats and the reason a single-pass ranking is provisional.
 
 - **`SET OPTIMIZE_REUSE_RESULTS FALSE` first, or your repeats are not repeats.** The rule and its
   measurement are on the fact-model page. What it means here is that the setting belongs in the
   recipe rather than in your memory, because the under-report grows with the number of repeats and
-  so bites hardest when you are being most careful. If you need to judge a row you did not take that
-  way, the tell is inside the row: reuse leaves exactly one execution real, so
+  so bites hardest when you are being most careful. Read the converse off that too: the statement
+  only ever buys a repeat, and does nothing measurable to a single execution, where reuse on against
+  off came in at 0.94 to 0.99 of each other across three pairs and stayed inside the noise. So this
+  setting and the outer loop are one decision rather than two. A recipe that sets it and repeats
+  nothing has performed a ritual, in the document whose whole subject is not believing bad readings.
+  If you need to judge a row you did not take that way, the tell is inside the row: reuse leaves
+  exactly one execution real, so
   `CUMULATIVE_EXECUTION_TIME` collapses onto `MAX_EXECUTION_TIME` however many executions were
   counted, and honest repeats push that ratio up. With `EXECUTION_COUNT` above one, a ratio near 1
   is a corrupted row and nothing else produces it. Read that as "near 1 is corrupt" and not as a
@@ -343,9 +385,9 @@ pricing it.
 The controls that keep paying:
 
 - **Time every child in isolation.** The cheapest control there is, and it refutes the hypothesis
-  you are most likely to start from. Under query statistics it is cheaper still: name each child
-  once in the run you were already taking and the ranking separates them for you, so the control
-  costs a loop rather than a probe method per child, which is the difference between running it and
+  you are most likely to start from. Under query statistics it is cheaper still: name every child in
+  the sweep you were already taking and the ranking separates them for you, so the control costs a
+  list entry rather than a probe method per child, which is the difference between running it and
   deciding it was not worth it. A relation whose every child answers in milliseconds and which
   itself takes minutes has no expensive child: its cost is the expansion, and no amount of
   registering something underneath it will help. When it lands this way, go to the bisection in
@@ -442,9 +484,12 @@ the same reason. The result-reuse measurement is the case that shows the policy 
 an exception to it: it is a timing, it is checked on the fact-model page, and step 3 therefore cites
 the page instead of copying the number down.
 
-The instrument constants are a third kind and are not exceptions at all, because they are not
-measurements of anything in this repository: the profiler's depths, the trace levels and the
-columns of `INFORMATION_SCHEMA.QUERY_STATISTICS` are properties of the H2 the root pom pins. No
-gated surface holds them, nothing here can drift against a relation, and the way to check one is to
-re-measure the tool, which is how each got into this document. They move when that pin moves, so
-treat a version bump as the occasion to re-take them.
+Figures about the instrument itself are a third kind and are not exceptions at all, because they are
+not measurements of anything in this repository. Two sorts appear. The constants are properties of
+the H2 the root pom pins: the profiler's depths, the trace levels, the columns of
+`INFORMATION_SCHEMA.QUERY_STATISTICS`. The rest are readings taken on a throwaway fixture built to
+characterise the tool rather than any relation, which is what the single-pass ranking instability in
+step 2 is, three views invented for the purpose. No gated surface holds either sort, neither can
+drift against a relation, and the way to check one is to re-measure the tool, which is how each got
+into this document. They move when that pin moves, so treat a version bump as the occasion to
+re-take them.
