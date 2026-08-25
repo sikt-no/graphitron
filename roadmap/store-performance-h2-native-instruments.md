@@ -80,6 +80,76 @@ There is a second thing the stacks give for free, visible in the probe below: th
 self-similar block per view expansion, so the depth of a sampled stack reads as the nesting depth of
 the derivation that produced it.
 
+## The instrument was driven end to end before this item was written
+
+Everything below was run against the sakila example schema over a `CapturedStore`, and then rolled
+back. It is here because the item is a claim that an instrument earns its place, and the way to
+support that claim is to have used it. The changes are not in the tree; the numbers are what they
+produced.
+
+**Ranking.** One probe, one capture, 8.8 seconds: query statistics on, one `SELECT count(*)` per
+view, then read `INFORMATION_SCHEMA.QUERY_STATISTICS` ordered by cumulative time. That ranked all 85
+relations at once, where the skill's current recipe is a hand-written probe per relation. Fourth
+place was `meta_relation_reference` at about 181 ms, which is a `meta_` relation, and every one of
+the eleven existing registrations is on an `intent_` one.
+
+**The instrument lied twice, in ways worth naming.** The first control read as a fourteenfold
+improvement. It was not: H2 reuses the result of a repeated identical query, so every repeat after
+the first costs nothing and `AVERAGE_EXECUTION_TIME` is one real execution divided by the repeat
+count. Isolated on the pinned H2: six runs of one query measured 98 ms then 0, 0, 0, 0, 0, and the
+view reported an average of 15.4 ms for a query that takes about 92. `SET OPTIMIZE_REUSE_RESULTS
+FALSE` restores honest repeats, after which cumulative time (293 ms) matches the summed wall clock
+(298 ms). The tell was the second lie: `MIN_EXECUTION_TIME` read 0.0. It always does, even when
+every run took at least 26 ms, so that column is not populated and cannot be used, and a
+zero minimum beside a non-zero maximum is what a reuse-corrupted row looks like.
+
+That mattered, because the corrupted numbers had already carried two conclusions: the fourteenfold
+figure, and a child-isolation pass whose real reading is below.
+
+**Isolation, honestly.** Whole relation 153 to 166 ms; every child between 0.2 and 2.1 ms. That is
+the skill's own first control firing: no expensive child, so the cost is the expansion.
+
+**The floor control refuted the suspect.** Two rounds had gone into the census join. Removing the
+census joins from the statement entirely still left 95 to 106 ms, so the census was never the term,
+exactly as the skill's floor control is meant to establish. The term was a `SELECT DISTINCT` over
+`INFORMATION_SCHEMA.KEY_COLUMN_USAGE`, named twice, once per end of a foreign key, and inlined at
+both namings.
+
+**Scan counts and wall clock disagreed, in both directions.** Storing the census without an index
+visited twenty times more rows than the shipping view (87834 against 4248) and was faster (105
+against 161 ms). Adding the index then removed 96% of those visits (87834 to 3484) and moved the
+clock not at all (105 to 103 ms, inside a standard deviation of 13). A scan count weights every
+visited row equally, and a row of a view over `INFORMATION_SCHEMA` does not cost what a row of a
+table costs. The skill leans hard on scan counts and `DerivedReadCostTest` is built entirely on
+them; neither says where that instrument stops being a cost model, and this is that boundary.
+
+**The lever, and why it is a conjunction.** Census stored alone: no change. Key-constraint relation
+stored alone: 49.7 ms. Both stored: 0.7 ms. Neither is the fix and together they are, which is a
+different lesson from the registry's existing "materialize the deepest relation the cost multiplies
+through".
+
+**The rewrite rung failed as predicted.** Hoisting the derived table into a `WITH` measured 201 ms
+against the view's 211: no change, which is what the fact-model page says to expect, since H2 inlines
+a non-recursive `WITH` exactly like a view. Driving the halves off
+`INFORMATION_SCHEMA.TABLE_CONSTRAINTS`, which is already at constraint grain and needs no `DISTINCT`,
+reached 121 ms but at 124316 scans.
+
+**Implemented.** Two stored relations filled once per booted store beside
+`MaterializeDependencies.populate`, and `meta_relation_reference` reading them. One read of the
+shipping relation went from 153 to 166 ms to **1.0 ms** with a standard deviation of 0.3, scans from
+4250 to 1752, and the row count unchanged at 175. It left the top eight entirely.
+
+**Two findings the measurement did not predict.** First, the capture-cadence materializer is the
+wrong mechanism here: these rows are a function of the DDL alone, and their readers include the
+schema gates and the docs drift guard, which run against a store no capture has touched, so a
+capture-cadence refresh would leave those readers on an empty relation. Boot-time derivation is the
+right cadence and `meta_materialize_dependency` is the precedent. Second, the full build then failed
+five gates, and every one was schema discipline rather than cost: new base tables must lead with
+`graph_name`, the two rule views needed column comments, the new relations needed a registered
+agreement source, `SchemaReferencePagesTest` refused to render blank comment entries, and
+`DerivedReadCostTest`'s pinned view count needed re-pinning from 85 to 86. Worth stating plainly:
+`DerivedReadCostTest` did not fail on cost direction. The measurement was the easy half.
+
 ## Constraints the implementer should not have to rediscover
 
 Each of these was probed against the pinned H2 (2.4.240) rather than read off documentation.
@@ -92,6 +162,15 @@ Each of these was probed against the pinned H2 (2.4.240) rather than read off do
   gets interleaved with jOOQ's own DEBUG logging.
 - Query statistics does work on an in-memory database, which is what makes it the one that fits the
   skill's existing probe recipe unchanged.
+- **Repeats need `SET OPTIMIZE_REUSE_RESULTS FALSE` or they are not repeats.** H2 reuses a repeated
+  identical query's result, so the second and later runs cost nothing and the reported average is one
+  real execution divided by the repeat count. This is a silent under-report proportional to how many
+  repeats were asked for, which makes it worse the more careful the author is being. Whatever the
+  skill grows here must carry the setting in the recipe itself, not as a footnote.
+- **`MIN_EXECUTION_TIME` is always 0.0** and must not be read. Its one use is as a tell: a zero
+  minimum beside a non-zero maximum is what a result-reuse-corrupted row looks like.
+- Disabling result reuse changes absolute figures, so it has to be set the same way on both sides of
+  any before-and-after comparison.
 - Query statistics is database-wide rather than session-scoped, so it also covers statements issued
   through the second connections `GraphitronModelStore.reader` mints. That is a point in its favour:
   a capture and its readers show up in one table.
@@ -140,8 +219,23 @@ The skill's own citation policy applies to whatever lands: it restates no measur
 number, because the page and the `meta_materialize` reason rows are the gated surfaces for those and
 a copy here rots unobserved. Nothing in this item asks for that to change.
 
-An open question for Spec: whether any of this should become a standing affordance rather than a
-documented recipe. A store that could be opened with query statistics already on, under a flag, would
-make the instrument reachable without editing a probe. That is a change to `GraphitronModelStore`
-rather than to a skill document, it is a wider blast radius than the rest of this item, and it should
-be decided rather than assumed.
+The scan-count boundary above is in scope for the skill and is the one edit here that touches a
+claim the tree already makes. Step 3 presents `scanCount` as the instrument that turns "this read is
+slow" into a diagnosis, and `DerivedReadCostTest` rests its whole no-number design on scan counts
+being comparable across shapes. Both stay right for what they do; what is missing is the stated
+limit, that a scan count weights every visited row equally and so stops tracking cost exactly when a
+change moves rows between a view and a table, which is what every registration in the register does.
+Write the limit down beside the instrument rather than reopening the gate.
+
+Two open questions for Spec, both surfaced by the run above rather than assumed:
+
+1. Whether any of this should become a standing affordance rather than a documented recipe. A store
+   openable with query statistics already on, and with result reuse off, would make the instrument
+   reachable without editing a probe, and the reuse setting is exactly the kind of thing an author
+   gets wrong once per investigation. That is a change to `GraphitronModelStore`, a wider blast
+   radius than the rest of this item, and it should be decided rather than assumed.
+2. Whether `meta_relation_reference` gets its own item. The 153x is real, measured, and reproducible,
+   and it is a genuine finding rather than an illustration; but this item is about the instrument,
+   and carrying a schema change inside it would make the skill edit hostage to five gates that have
+   nothing to do with tracing. The measurements are recorded above so that a separate item can start
+   from them rather than re-taking them.
