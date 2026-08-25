@@ -48,7 +48,9 @@ So, in order of what counts as evidence:
   five-level stack of views, every sample came back cut at exactly 48, and the same stacks at
   `depth = 256` came back whole at 88 and 90. So raise it before reading anything off a profile, and
   then read the height itself as information, because the frames repeat one self-similar block per
-  view expansion and an untruncated stack is as deep as the derivation that produced it.
+  view expansion and an untruncated stack is as deep as the derivation that produced it. It also
+  samples its own collector thread without excluding it, which was half of all samples and the top
+  entry on the run that put this here, so ask for more entries than you mean to read.
 - **A statement that never returns names itself, for free.** This is the cheapest evidence in the
   whole procedure and it arrives before any measurement: interrupt the build and the failure carries
   the SQL it was executing, or read the last `Executing query` line in jOOQ's DEBUG log. A hang is
