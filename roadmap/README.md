@@ -25,7 +25,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-24 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R814` | The architecture docs describe the surface being drained as if it were the design | In Progress | 2026-08-23 | [plan](architecture-docs-describe-the-destination.md) |
 | `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | In Review | 2026-08-25 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
-| `R705` | A condition-join hop in a reference filter path is rejected, though the emitter it needs already ships | In Review | 2026-08-24 <sub>created 2026-08-18</sub> | [plan](condition-join-hops-in-reference-filter-paths.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
@@ -340,7 +339,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
-- `R705` [**A condition-join hop in a reference filter path is rejected, though the emitter it needs already ships**](condition-join-hops-in-reference-filter-paths.md) — In Review, feature
 - `R682` [**Planners read facts, emitters read commands: dissolve the walk and the leaf zoo**](planners-read-facts-emitters-read-commands.md) — In Progress, architecture
 - `R628` [**Producer-binding probe grounds a dot-path leaf parameter against the outer input type**](producer-probe-dotpath-misgrounding.md) — Backlog, bug
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
