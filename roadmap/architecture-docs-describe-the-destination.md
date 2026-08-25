@@ -832,6 +832,52 @@ a fixture the build refuses. The reference tables are not merely redundant with 
 they are the part of the page nothing checks, and the promotion loop is finding that out one table
 at a time.
 
+**Slice 3, part nine: the type-verdict fixtures do not generate, and the renderer would not have
+shown them anyway.** Part eight found one corpus-only fixture the build refuses. Probing the rest of
+the type-side cluster found that every one of them is refused, each for its own mundane reason:
+
+- `input-backing`: three errors, one per coordinate. The plain-class input names a field the empty
+  `DummyRecord` does not have; the Java-record input misses a component the canonical constructor
+  needs; the jOOQ-record input names `id` on a table whose key is `film_id`.
+- `result-backing`: `PojoBacked.id` has no accessor on `DummyRecord`. The fixture's own comment
+  already said this, and said what would fix it.
+- `plain-jooq-record-backing`: `PlainJooqRecord` is abstract, so the bean helper cannot instantiate
+  it as a parameter.
+- `scalar-type` and `error-type`: both returned their subject type from a bare root, which is not a
+  legal root return at all.
+- `connection`: `Film.id` names no column, the same error `relay-node` had.
+
+Read together these are not six accidents. A corpus fixture is admitted on whether it pins a
+verdict, and nothing asks whether the schema it pins that verdict on is one the generator would
+accept, so the type-verdict cluster drifted into a state where none of it does. That is exactly the
+gap the promotion loop closes, one fixture at a time, because a doc example runs generation to
+render its outcome block.
+
+The second obstacle was the renderer. `QueryViewRenderer` deliberately left scalars and enums
+unexpanded as "leaf vocabulary", which meant an example about a scalar could not show the
+`@scalarType` declaration that is its entire trigger. The renderer's own closure-honesty rule is the
+argument against that: an excerpt must not name a type it never shows. It now emits a scalar or enum
+the fixture declares and the excerpt reaches, leaving spec built-ins and the prelude's assertion
+vocabulary out. Two rendered blocks changed as a result, `enum-column` gaining its `Rating`
+declaration and `scalar-type` its two scalars.
+
+With both fixed, `scalar-type` was rewritten from a bare `Money` root into a `BigDecimal` column on
+`payment` plus a `Money` service parameter, which are the two places the reflected Java type is
+actually consumed. Four rows retire: the two scalar rows, the scalar rejection row (its fact moved
+into the new section's prose), and the enum row, whose verdict was already on the page as a field
+example and only needed the type's own sentence. The type-side Reference table is down from twelve
+rows to eight.
+
+**Still to do.** The remaining eight rows of the type-side Reference table are the two backing-class
+rows, the `PojoInputType` row, `@error`, `PageInfo`, the deprecated input `@table` location, and two
+refusal rows. The first three are the `result-backing` / `input-backing` / `plain-jooq-record-backing`
+cluster, and they cannot be promoted until their fixtures generate. Two of the three need a change to
+a shared test class (`DummyRecord` gaining a readable property, `PlainJooqRecord` becoming
+concrete), which is a wider blast radius than a docs round should take on its own; that is worth
+splitting out rather than absorbing. `@error` and `PageInfo` need only a legal root, so they are the
+next cheap pair. Mutation Fields, at eight rows, is unchanged from part eight, and its first two rows
+are already restated by the section's own worked example.
+
 **The outcome block, and the fork the owner settled.** Building it turned up something the plan
 does not cover: **not every doc example generates.** The corpus is a classification corpus, and a
 fixture earns its place by pinning a verdict rather than by producing output, so a fixture can pin

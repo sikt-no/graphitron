@@ -1054,11 +1054,39 @@ public final class ClassifiedCorpus {
          * A custom @scalarType scalar classifies as ScalarType (the consumer's Coercing constant is
          * registered; Graphitron reflects its Java type). @classifiedType asserts the type verdict
          * directly; there is no field-side dimensional lesson.
+         *
+         * Both places the reflected Java type is consumed are here, because the leaf alone says
+         * nothing about what the reflection is for: BigDecimal grounds a column projection, Money a
+         * @service parameter. The fields around them classify as they would with any other scalar.
+         *
+         * Doc example: the fixture used to reach neither, returning `Money` from a bare root, which
+         * classified and could not generate.
          */
         new Example("scalar-type", """
+            scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+                @classifiedType(as: ScalarType)
             scalar Money @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY")
                 @classifiedType(as: ScalarType)
-            extend type Query { x: Money }
+            type Payment @table(name: "payment") @classifiedType(as: TableType) {
+              amount: BigDecimal
+                @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
+            }
+            extend type Query {
+              payment: Payment @commits(source: AnchorTable, result: SingleRecord)
+              price(amount: Money): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "wireMoney"})
+                @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Record)
+            }
+            """,
+            """
+            {
+              payment {
+                # A library-supplied scalar over a real numeric column.
+                amount
+              }
+              # The same reflection, one use over: the resolved Java type is the service parameter's.
+              price(amount: "1.00")
+            }
             """),
 
         /*

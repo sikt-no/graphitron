@@ -394,6 +394,71 @@ that is only a value read off the row already in hand takes an `Object`. `Film.d
 object and still takes an `Object`, which is what makes it a passthrough rather than a fetch.
 Asserted by the `nesting` corpus example via `@classifiedType(as: NestingType)`.
 
+[#scalar-type]
+=== `@scalarType` over a scalar → `ScalarType`
+
+A `scalar` declaration carrying `@scalarType(scalar:)` names a `public static final GraphQLScalarType`
+constant, and that constant is the whole binding:
+
+[source,graphql]
+----
+type Query {
+  payment: Payment
+  "The same reflection, one use over: the resolved Java type is the service parameter's."
+  price(
+  amount: Money): String @service(service: {className : "no.sikt.graphitron.rewrite.TestServiceStub", method : "wireMoney"})
+}
+
+type Payment @table(name: "payment") {
+  "A library-supplied scalar over a real numeric column."
+  amount: BigDecimal
+}
+
+scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+
+scalar Money @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY")
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Payment.amount`
+| `TABLE_COLUMN`, inferred
+| `fetchers.PaymentFetchers#amount(Object)`
+
+| `Query.payment`
+| no claiming directive
+| `fetchers.QueryFetchers#payment(DataFetchingEnvironment)`
+
+| `Query.price`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#price(DataFetchingEnvironment)`
+
+|===
+
+Both scalars classify as `ScalarType`, and neither generates anything of its own. What the verdict
+buys is a registration and a Java type. The constant is registered on the synthesized schema through
+`.additionalType(...)`, and graphitron reflects on its `Coercing<I, O>` to recover the Java type the
+scalar stands for.
+
+The two coordinates show why that recovered type matters, because they are the two places it is
+consumed. `Payment.amount` is an ordinary column read whose projection needs a `Field<X>`, and `X` is
+what the reflection resolved. `Query.price` takes the scalar as a `@service` parameter, and the same
+resolution is what lets the argument bind to the method's parameter type. Nothing about either
+coordinate's own verdict changes: `amount` is the same `TABLE_COLUMN` a `String` column would be, and
+`price` is the same `SERVICE` any other service root is.
+
+The spec's own built-ins (`Int`, `Float`, `String`, `Boolean`, `ID`) register the same way, but their
+Java types come from a closed table rather than from reflection, because the spec binds those names.
+Writing `@scalarType` on one of them is a hard validation error rather than an override. A non-spec
+scalar with no `@scalarType` is the other error: it classifies as `UnclassifiedType` and the build
+points at `@scalarType(scalar:)` as the single fix, never falling back to `Object`.
+
+Asserted by the `scalar-type` corpus example via `@classifiedType(as: ScalarType)`.
+
 === Reference table
 
 |===
@@ -404,10 +469,6 @@ Asserted by the `nesting` corpus example via `@classifiedType(as: NestingType)`.
 | Input type with `@table` (deprecated location; see `docs/manual/reference/directives/table.adoc`) | Whatever the same input without the directive classifies as | No generation decision of its own: the directive is ignored, `name:` is never read, and no reader consults it (the input-axis binding arm and the three nesting guards that once did were all deleted, so inertness is uniform). A non-fatal per-usage build warning announces the deprecation and carries the per-verb migration guidance (drop the directive for filters and lookup args; `@mutation(table:)` for DELETE and encoded-ID / scalar returns; return-derivation for INSERT/UPDATE). A future release rejects the location.
 | Input type whose consuming `@service` / `@condition` parameter is reflected as a developer class | `InputType`* | No generation (developer-provided class). The input's backing class is reflected from the parameter type it flows into.
 | Input type with no reflected backing class | `PojoInputType` (unbound) | No generation ; column binding resolved per field-usage against each consuming field's table
-| GraphQL `enum` type | `EnumType` | No generation; enum values map to DB strings/ints at column-bind time
-| GraphQL `scalar` type with `@scalarType(scalar:)` | `ScalarType` | No generation; the consumer's `public static final GraphQLScalarType` constant is registered on the synthesized schema via `.additionalType(...)`. Graphitron reflects on the constant's `Coercing<I, O>` to recover the Java type used for input-record components, service params, and `Field<X>` projections.
-| Spec built-in scalar (`Int` / `Float` / `String` / `Boolean` / `ID`) | `ScalarType` | Same registration shape; Java type comes from a closed table (the spec binds these names). `@scalarType` on a spec built-in is a hard validation error (directive conflict).
-| Non-spec / non-federation `scalar` with no `@scalarType` | `UnclassifiedType` | Validation error pointing at `@scalarType(scalar:)` as the single fix; no silent fallback to `Object`.
 | Generated `PageInfo` type | `PageInfoType` | Connection page-info wrapper
 | Unresolvable directives | `UnclassifiedType` | Validation error ; build fails
 | Conflicting type directives (`@table` with `@error`) | Arm-order winner (the walk no longer tombstones conflicts) | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`) ; build fails
@@ -1961,6 +2022,14 @@ type Film @table(name: "film") {
   "A GraphQL enum return, still a plain column read."
   rating: Rating
 }
+
+enum Rating {
+  G
+  PG
+  PG13
+  R
+  NC17
+}
 ----
 
 // Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
@@ -1980,7 +2049,9 @@ type Film @table(name: "film") {
 |===
 
 `Film.rating` lands on the same verdict as `Film.title`, at the same tier, and emits the same shape of
-fetcher method. Asserted by the `enum-column` corpus example.
+fetcher method. `Rating` itself classifies as `EnumType` and generates nothing: its values become the
+strings or ints the column holds at bind time, which is the whole of what the enum contributes.
+Asserted by the `enum-column` corpus example.
 
 A field returning a `*Connection` type is the same story one level out: `@asConnection` shapes the
 read and claims nothing, so neither the field nor the synthesised connection types carry a claim. See

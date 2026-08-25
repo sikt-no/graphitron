@@ -143,8 +143,9 @@ class QueryViewRendererTest {
             .doesNotContain("@classifiedType")
             .doesNotContain("@classified(");
         assertThat(out)
-            .as("the enum referenced by a field is named but not expanded")
-            .doesNotContain("enum Severity");
+            .as("an enum the fixture declares and the excerpt names renders too: a leaf the "
+                + "excerpt mentions and never shows is what closure honesty forbids")
+            .contains("enum Severity");
     }
 
     @Test

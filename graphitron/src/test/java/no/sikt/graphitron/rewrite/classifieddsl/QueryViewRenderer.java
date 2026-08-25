@@ -17,12 +17,14 @@ import graphql.language.InterfaceTypeDefinition;
 import graphql.language.Node;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.OperationDefinition;
+import graphql.language.ScalarTypeDefinition;
 import graphql.language.Selection;
 import graphql.language.SelectionSet;
 import graphql.language.TypeDefinition;
 import graphql.language.UnionTypeDefinition;
 import graphql.parser.Parser;
 import graphql.schema.GraphQLArgument;
+import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLFieldsContainer;
 import graphql.schema.GraphQLInputObjectField;
@@ -30,10 +32,12 @@ import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInterfaceType;
 import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLObjectType;
+import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
+import graphql.schema.idl.ScalarInfo;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
@@ -82,9 +86,12 @@ import java.util.stream.Stream;
  * so the excerpt does not reference types it never shows (the closure-honesty rule): a kept field's
  * argument types are emitted in full, recursing through nested input objects, and a union or
  * interface reached by a kept field (or named by a fragment {@code on}) is emitted so a polymorphic
- * excerpt shows its declaration. Scalars and enums stay unexpanded (leaf vocabulary, not containers
- * the selection descends into), as do the generated {@code @asConnection} wrappers; the authored
- * field that produces them prints instead.
+ * excerpt shows its declaration. A scalar or enum the <em>fixture</em> declares is emitted for the
+ * same reason: it is leaf vocabulary, but a leaf the excerpt names and never shows is exactly what
+ * closure honesty forbids, and for a scalar the declaration carries the {@code @scalarType} binding
+ * that makes the type mean anything. Spec built-ins and the prelude's own enums are not the
+ * fixture's to show, so they stay out; so do the generated {@code @asConnection} wrappers, where the
+ * authored field that produces them prints instead.
  *
  * <p><strong>Descriptions.</strong> The projection query is the per-example place to say <em>why</em>
  * a coordinate exists, which the shared description-free corpus fixture cannot. A {@code # ...}
@@ -109,6 +116,14 @@ public final class QueryViewRenderer {
     private static final Set<String> INTERNAL_DIRECTIVES = Set.copyOf(
         new graphql.schema.idl.SchemaParser().parse(ClassifiedDsl.PRELUDE)
             .getDirectiveDefinitions().keySet());
+
+    /**
+     * The type names the prelude declares, derived the same way as {@link #INTERNAL_DIRECTIVES}.
+     * The leaf expansion below emits what the <em>fixture</em> declares; the prelude's assertion
+     * vocabulary is not part of any example and would be noise on the page.
+     */
+    private static final Set<String> PRELUDE_TYPES = Set.copyOf(
+        new graphql.schema.idl.SchemaParser().parse(ClassifiedDsl.PRELUDE).types().keySet());
 
     /**
      * The output-field coordinates the {@code selection} touches, parent type to field names.
@@ -162,6 +177,16 @@ public final class QueryViewRenderer {
                 append(sb, stripInternalDirectives(def, touched));
             }
         }
+        // 4. Leaf types the fixture declares and the excerpt names (closure honesty).
+        for (String name : touched.leafTypes) {
+            if (PRELUDE_TYPES.contains(name) || ScalarInfo.isGraphqlSpecifiedScalar(name)) {
+                continue;
+            }
+            TypeDefinition<?> def = merged(registry, name);
+            if (def != null) {
+                append(sb, stripInternalDirectives(def, touched));
+            }
+        }
         return sb.toString().strip();
     }
 
@@ -191,6 +216,7 @@ public final class QueryViewRenderer {
         final Map<String, Set<String>> fieldsByParent = new LinkedHashMap<>();
         final Set<String> abstractTypes = new LinkedHashSet<>();
         final Set<String> inputTypes = new LinkedHashSet<>();
+        final Set<String> leafTypes = new LinkedHashSet<>();
         final Map<String, String> typeDescriptions = new LinkedHashMap<>();
         final Map<String, Map<String, String>> fieldDescriptions = new LinkedHashMap<>();
     }
@@ -276,15 +302,27 @@ public final class QueryViewRenderer {
             if (target instanceof GraphQLUnionType || target instanceof GraphQLInterfaceType) {
                 out.abstractTypes.add(((GraphQLNamedType) target).getName());
             }
+            recordLeaf(target);
             walk(field.getSelectionSet(), target);
         }
 
         private void collectInputClosure(GraphQLType type) {
+            recordLeaf(type);
             if (type instanceof GraphQLInputObjectType input && inputSeen.add(input.getName())) {
                 out.inputTypes.add(input.getName());
                 for (GraphQLInputObjectField inputField : input.getFieldDefinitions()) {
                     collectInputClosure(GraphQLTypeUtil.unwrapAll(inputField.getType()));
                 }
+            }
+        }
+
+        /**
+         * Records a scalar or enum the excerpt names. Whether it is the fixture's to show is the
+         * emit loop's call: this only says the excerpt reached it.
+         */
+        private void recordLeaf(GraphQLType type) {
+            if (type instanceof GraphQLScalarType || type instanceof GraphQLEnumType) {
+                out.leafTypes.add(((GraphQLNamedType) type).getName());
             }
         }
 
@@ -366,6 +404,10 @@ public final class QueryViewRenderer {
             });
             case EnumTypeDefinition e -> e.transform(b -> {
                 b.directives(realDirectives(e.getDirectives()));
+                applyDescription(b::description, typeDescription);
+            });
+            case ScalarTypeDefinition s -> s.transform(b -> {
+                b.directives(realDirectives(s.getDirectives()));
                 applyDescription(b::description, typeDescription);
             });
             case InputObjectTypeDefinition io -> io.transform(b -> {
