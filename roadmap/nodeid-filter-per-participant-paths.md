@@ -1,7 +1,7 @@
 ---
 id: R676
 title: "A @nodeId filter input on a multitable query cannot state a per-participant join path"
-status: In Review
+status: Ready
 bucket: bug
 priority: 3
 theme: nodeid
@@ -256,6 +256,42 @@ tables carry, which still pins everything the escape promises: the method fires 
 against that branch's own table, with no implicit predicate of the generator's beside it. The
 `NodeIdEncoder` decode a production author writes is documented in the global-id how-to and in the
 fixture method's own javadoc, with the reason it cannot be exercised here.
+
+## Reviewer findings
+
+### Round 1 (2026-08-26, In Review -> Ready)
+
+One finding, on completeness evidence; everything else checked out.
+
+**The author-owned lift at the argument coordinate is untested.** The Tests section names its
+evidence: "all-participants-rejected plus `override: true` lifts to the author-owned carrier at
+both coordinates". The delivered tests cover the input-field coordinate twice
+(`NodeIdParticipantRoutePipelineTest.everyParticipantUnresolvedUnderOverride` at pipeline tier,
+`stockByLanguageOverride` at execution tier) and the argument coordinate for routes and for the
+whole-schema detection, but no test in the tree reaches the argument coordinate's lift:
+`ArgumentRef.ScalarArg.ConditionOwnedArg`, its minting arm in `FieldBuilder.classifyArgument`,
+and its `projectFilters` projection are exercised by nothing. The code is delivered and wired,
+and the docs advertise the shape (`condition.adoc`'s ladder and `referenceFor.adoc` both cover
+"input field or argument"), so if the glue at that coordinate were wrong (the condition
+reflection order, the plan's pre-resolved arm, the carrier's constructor invariant) the build
+would stay green. This deviation is also not among the ones "What implementation settled
+differently" records, so the spec as it stands promises a test that does not exist.
+
+What satisfies it: one pipeline test mirroring `everyParticipantUnresolvedUnderOverride` with
+the leaf as a top-level argument (`stock(languageId: ID @nodeId(typeName: "Language")
+@condition(... override: true))` on the same union), asserting the authored method fires per
+participant with no implicit predicate beside it, or asserting the classified carrier directly.
+Alternatively, if the both-coordinates claim is deliberately narrowed, record that in the
+deviations section and say why the input-field evidence covers the argument glue; the test is
+cheaper.
+
+Verification notes from this round, so the next pass need not re-derive them: full
+`mvn install -Plocal-db` on the rebased tree passed except
+`RoutineFieldExecutionTest.splitRoutineChildBatchesByBoundColumns`, which is the documented
+nondeterministic cross-class race (filed as its own item), and reran green serially; the four
+one-leaf/override pipeline rejection tests, the detection family, and the execution fixture all pass;
+`NodeIdOverrideConditionFkTargetPipelineTest` is unmodified; docs carry no roadmap-internal
+markers; the single-table rejection rows in `GraphitronSchemaBuilderTest` are untouched.
 
 ## Acceptance
 
