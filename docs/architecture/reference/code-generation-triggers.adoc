@@ -1738,8 +1738,7 @@ tops out at an encoded `ID` and the target shape is `Column`. That is also why `
 say `@mutation(table: "film")`: an `ID` return names no type, so the write target has nowhere else to
 come from. Both coordinates carry the same `MUTATION` claim at the same tier, which is the point:
 the verb is a slot of the claim, not a claim of its own. Asserted by the `mutation-roots` corpus
-example, which also pins the `multiRow` broadcast form of `DELETE` and the two `@service` mutation
-returns.
+example, which also pins the `multiRow` broadcast form of `DELETE`.
 
 ==== Returning a payload wrapper instead of the row
 
@@ -1806,15 +1805,78 @@ data field is an encoded id read off the deleted row's `RETURNING` record. Asser
 `dml-payloads` corpus example, which also pins both bulk forms, and by `dml-delete-payload` for the
 `DELETE` carrier.
 
+[#mutation-service]
+==== A mutation whose producer is a Java method
+
+`@mutation` is not the only way onto a mutation root. `@service` puts a Java method behind the
+coordinate instead of a DML write, and the claim it lands is `SERVICE`, not `MUTATION`: no verb, no
+write target, nothing for `@mutation(table:)` to name. What the return type still decides is the
+target shape, and the pair below is that difference alone.
+
+[source,graphql]
+----
+type Mutation {
+  "A @table return: the service's rows are re-queried through the catalog."
+  importFilm: Film @service(service: {className : "no.sikt.graphitron.rewrite.TestServiceStub", method : "runFilm"})
+  "A non-table return: what the service produced is the answer."
+  summariseFilm: FilmDetails @service(service: {className : "no.sikt.graphitron.rewrite.TestServiceStub", method : "runDetails"})
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+
+type FilmDetails {
+  title: String
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#title(Object)`
+
+| `FilmDetails.title`
+| no claiming directive
+| `fetchers.FilmDetailsFetchers#title(Object)`
+
+| `Mutation.importFilm`
+| `SERVICE`, authored
+| `fetchers.MutationFetchers#importFilm(DataFetchingEnvironment)`
+
+| `Mutation.summariseFilm`
+| `SERVICE`, authored
+| `fetchers.MutationFetchers#summariseFilm(DataFetchingEnvironment)`
+
+|===
+
+Both roots are `source = Mutation`, `operation = ServiceCall`. `importFilm` returns `Film`, a `@table`
+type, so the service's values have to become catalog rows again: target shape `Table`, and the
+coordinate opens a keyed re-query the way the child-coordinate `@service` pair below does, which is
+why `Film.title` reads a column of `film` rather than a property of whatever the method returned.
+`summariseFilm` returns a type that binds no table, so there is nothing to look up and the service's
+own value is the answer: target shape `Record`. That is the same table-vs-non-table split
+`service-table-child` and `service-scalar-child` draw on a child coordinate, one rung up; the parent
+being a mutation root moves the source axis and nothing else.
+
+A root carries one of the two claims, never both; the conflict row below says what happens when an
+author writes both. Asserted by the `mutation-service` corpus example.
+
+Four of the five rows left below are rejections, which the corpus does not render: it demonstrates
+patterns that classify and generate, so a build failure has no worked example to be pulled into. The
+first row is the exception, a live pattern still stated rather than shown.
+
 |===
 | Schema Pattern | `MutationField` Variant | `*Fetchers` Generates
 
-| `@mutation(typeName: INSERT)`, returning a `@table` type (write target derived from the return) | `DmlTableField` (Insert write arm) | Fetcher method ; write + read-back SELECT (the derived re-fetch). The return names the write target
-| `@mutation(typeName: INSERT, table: "…")`, returning `ID` | `DmlTableField` (Insert write arm) | As above; an encoded-`ID` return names no table, so `@mutation(table:)` names it on the field. Byte-identical carrier across the two rungs
+| `@mutation(typeName: INSERT, table: "…")`, returning `ID` | `DmlTableField` (Insert write arm) | As the direct-`@table` INSERT above; an encoded-`ID` return names no table, so `@mutation(table:)` names it on the field. Byte-identical carrier across the two rungs
 | `@mutation(typeName: UPSERT, table: "…")` (`table:` on a verb that does not read it) | `UnclassifiedField` (typed `MutationTableArgError.UnsupportedVerb`) | Validation error ; build fails. `table:` is wired for `DELETE`, `INSERT`, and `UPDATE` only
 | `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `UnclassifiedField` (typed deferral; the Upsert write arm has no live producer) | Rejected at classification. UPSERT is recognised and deliberately not generated: the write arm has no producer today, so the coordinate defers rather than erroring.
-| `@service`, return `@table` type | `MutationServiceTableField` | Async DataLoader fetcher + `rows*()` method
-| `@service`, return non-table type | `MutationServiceRecordField` | Fetcher method
 | Neither `@service` nor `@mutation` | `UnclassifiedField`** | Validation error ; build fails
 | Both `@service` and `@mutation` | Arm-order winner (the walk no longer tombstones conflicts) | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`) ; build fails. The LSP/MCP projection reports `FieldClassification.Conflicted` carrying both claims' decoded slot facts (verb, table, method)
 |===

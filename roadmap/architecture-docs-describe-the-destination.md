@@ -987,3 +987,30 @@ subsume any of them, and the table now says so in a lead-in rather than leaving 
 which rows are still waiting their turn. Whether the section's transitional NOTE should come off with
 the table at its floor is a call for the owner, not a mechanical consequence: the NOTE marks the walk
 being drained as much as the table.
+
+**Slice 3, part twelve: the mutation table's first field-side cut, and one verdict that had a corpus
+home but no page.**
+
+With the type-side table at its floor, the promotion moved to the field side, where the mutation
+table stood at eight rows. Two of those rows, `@service` returning a `@table` type and `@service`
+returning a non-table type, were already asserted by the corpus: the `mutation-roots` fixture carried
+both coordinates. They just were not in its rendered query, so the page told the reader about them in
+a leaf-name table while a machine-checked example of them sat one file away, unshown. That is the
+shape this item is about, and it is worth naming: a verdict can be *tested* and still be *undescribed*.
+
+Rather than widen `mutation-roots`, the two coordinates moved out of it into a `mutation-service`
+example of their own. `mutation-roots` renders a minimal pair on the write verb (`UPDATE` projects
+the row back, `DELETE` cannot), and adding two service roots to that query would have blunted exactly
+the difference the pair is isolating. One verdict, one home; the fixture that teaches a difference
+should carry nothing that is not that difference. Its comment also said "Corpus-only" while carrying a
+query, a leftover from before it was promoted, now corrected.
+
+A third row went without any new fixture: `@mutation(typeName: INSERT)` returning a `@table` type was
+already rendered, with prose, by the `dml` worked example a few paragraphs above the table. It had
+been left in place as a summary of what the example already showed, which is the duplication the item
+treats as the defect rather than the convenience.
+
+Mutation table eight rows to five. Four of the five are rejections and are floor, for the reason the
+type-side lead-in gives. The fifth, `INSERT` returning an encoded `ID`, is a live generating pattern
+with no example yet and is the next candidate here; the lead-in says so rather than letting a reader
+guess which rows are waiting their turn.

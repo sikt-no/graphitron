@@ -1433,19 +1433,18 @@ public final class ClassifiedCorpus {
          * @table (the row is gone; RETURNING carries only the PK), so it tops out at an encoded-ID return:
          * Mutation / Delete / Column (DmlTableField with a Delete write arm and an Encoded* return-expression arm).
          * DELETE admits two ways onto the same verdict: a PK-covering filter input (`deleteFilm`) or an
-         * explicit `multiRow: true` broadcast over a non-PK filter (`deleteFilmsBroadcast`). An @service
-         * mutation re-queries the catalog for its @table return (MutationServiceTableField, Mutation /
-         * ServiceCall / Table) or materializes a non-table record-backed type (MutationServiceRecordField,
-         * Mutation / ServiceCall / Record). A DML payload carrier (a plain object wrapping one @table
-         * data field) exposes the RETURNING rows as a record, so the carrier itself is Mutation / Insert /
-         * Record (MutationDmlRecordField, Insert write arm), the follow-up projection being the data field's
-         * own concern (a Child / Fetch / Table BatchedTableField on the payload). Corpus-only: these
-         * remaining root forms are additional leaves on the principles the `dml` and `dml-payloads`
-         * examples teach.
+         * explicit `multiRow: true` broadcast over a non-PK filter (`deleteFilmsBroadcast`). A DML
+         * payload carrier (a plain object wrapping one @table data field) exposes the RETURNING rows as
+         * a record, so the carrier itself is Mutation / Insert / Record (MutationDmlRecordField, Insert
+         * write arm), the follow-up projection being the data field's own concern (a Child / Fetch /
+         * Table BatchedTableField on the payload).
+         *
+         * Doc example: the write-verb minimal pair, `updateFilm` beside `deleteFilm`. The broadcast and
+         * carrier forms stay out of the query; they are additional leaves on the principles the `dml`
+         * and `dml-payloads` examples teach, not a difference the pair is isolating.
          */
         new Example("mutation-roots", """
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
-            type FilmDetails { title: String }
             type FilmPayload { film: Film @classified(source: OnlyChild, operations: [Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
                 @commits(source: CorrelatedChain, result: SingleRecord) }
             input FilmKeyInput { filmId: Int! @field(name: "film_id") }
@@ -1463,12 +1462,6 @@ public final class ClassifiedCorpus {
               deleteFilmsBroadcast(in: FilmTitleInput!): ID
                 @mutation(typeName: DELETE, multiRow: true, table: "film")
                 @classified(source: Mutation, operations: [Delete], target: Single, targetShape: Column)
-              externalMutation: Film
-                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
-                @classified(source: Mutation, operations: [ServiceCall], target: Single, targetShape: Table)
-              externalRecord: FilmDetails
-                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runDetails"})
-                @classified(source: Mutation, operations: [ServiceCall], target: Single, targetShape: Record)
               createFilmPayload(in: FilmCreateInput!): FilmPayload
                 @mutation(typeName: INSERT)
                 @classified(source: Mutation, operations: [Insert], target: Single, targetShape: Record)
@@ -1480,6 +1473,38 @@ public final class ClassifiedCorpus {
               updateFilm { title }
               # Cannot project a row that is gone; hands back the deleted row's id.
               deleteFilm
+            }
+            """),
+
+        /*
+         * A mutation root whose producer is a Java method rather than a DML write. Both coordinates
+         * carry the same Mutation / ServiceCall claim; what the return type moves is the target shape.
+         * A @table return has to become catalog rows again, so the coordinate re-queries the catalog
+         * keyed on what the service handed back (MutationServiceTableField, targetShape Table); a
+         * non-table return is materialized from the service's own value (MutationServiceRecordField,
+         * targetShape Record). This is the mutation-root rung of the same table-vs-non-table split the
+         * `service-table-child` / `service-scalar-child` pair draws on a child coordinate.
+         *
+         * Doc example: the @service return-type minimal pair on a mutation root.
+         */
+        new Example("mutation-service", """
+            type Film @table(name: "film") { title: String }
+            type FilmDetails { title: String }
+            type Mutation {
+              importFilm: Film
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
+                @classified(source: Mutation, operations: [ServiceCall], target: Single, targetShape: Table)
+              summariseFilm: FilmDetails
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runDetails"})
+                @classified(source: Mutation, operations: [ServiceCall], target: Single, targetShape: Record)
+            }
+            """,
+            """
+            mutation {
+              # A @table return: the service's rows are re-queried through the catalog.
+              importFilm { title }
+              # A non-table return: what the service produced is the answer.
+              summariseFilm { title }
             }
             """),
 
