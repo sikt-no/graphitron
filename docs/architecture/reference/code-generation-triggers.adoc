@@ -125,12 +125,10 @@ joins the relation the run actually rendered from against the emit walk and agai
 model, in both directions: every coordinate the covered families claim has exactly one row, every
 row's `(owner, method)` names a method the run declared, and no two rows claim the same method. The
 covered families come from the producer's own declared membership, never a hand-maintained
-restatement. Three absences are pinned as absences, so they read as decisions:
+restatement. Two absences are pinned as absences, so they read as decisions:
 
 - the batched polymorphic pair is emitted and uncommitted, its rows methods named through the same
   `GeneratedUnits` scheme with no row behind them;
-- a root `@service` passthrough gets no row, because value-level re-fetch without a site-level
-  re-query is not a launch;
 - an encoded-DML return arm carries no reentry.
 
 The relations' own populations disclose their transitional edges the same way: `LauncherRelation`

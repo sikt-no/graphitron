@@ -372,6 +372,42 @@ the new keyless rejection loudly.
   mitigation.
 - `ValuesJoinRowBuilder` caps the VALUES row at `Row22`, so composite primary keys up to 21
   columns; the same cap every existing keyed path has, no new constraint.
+- The delete-and-return mutation service (round 3's non-blocking note 2). A root
+  `@mutation @service` that deletes rows and hands the deleted records back bound to a `@table`
+  type renders those records today and, under the new rule, refetches nothing: it resolves an
+  empty list or a null. Unlike the differing-column-values case above, no key-only rewrite
+  recovers it; only dropping `@table` does. The mutation twin is the coordinate where an author
+  is most likely to hold rows the table no longer has, so the changelog and the docs both say so.
+
+## Plan departures (recorded during implementation)
+
+Six, none changing the design:
+
+1. **The unit-tier `film` fixture had to gain a primary key.** `TestFixtures.filmTable()` carries
+   no PK columns, and `ParentCorrelation.OnLiftedSlots` refuses an empty column tuple, so the
+   hand-built table-bound service leaves in `TypeFetcherGeneratorTest` and the two
+   `*ServiceTableFieldValidationTest` cases now use a new `TestFixtures.tableBoundFilmWithPk` /
+   the existing `filmTableWithPk`. This is the honest fixture update the rule forces: a key-less
+   return table is no longer a constructible shape at this coordinate.
+2. **The three root validator guards are one method.** Design point 7's keyless and channel
+   touchpoints and round 3's key-arity note fold into `validateRootServiceTableReturn`, shared by
+   the query leaf and its mutation twin, rather than three separate clauses per leaf.
+3. **The missing-row fixture is a new coordinate, not the rewritten one.**
+   `filmsByService(ids:)` runs its own `SELECT` and so can never return a key the table has no
+   row for. `SampleQueryService.filmsByServiceUnchecked` (new, plus `Query.filmsByServiceUnchecked`)
+   builds key-only records in memory with no query at all, which pins the drop contract and, as a
+   bonus, the strongest form of the rule: a service need not touch the database to answer a
+   `@table`-bound field. `filmsByService` still became key-only, as the plan specified.
+4. **One SQL baseline beyond the stated test surface.**
+   `RootLauncherSqlBaselineTest.rootServiceTableReturn_oneCompanionSelectOverTheLiftedKeys` pins
+   the caller-side claim the test surface named in prose but had no home for: that the coordinate
+   costs exactly one keyed re-select, input-ordered. The companion's body shape stays baselined at
+   the DML caller.
+5. **"Universal passthrough" retires only where it stopped being true**, per round 3's imprecision
+   note: at `buildServiceFetcherCommon`. At the record- and scalar-returning leaves the arm is
+   still a passthrough, so those three sites keep the word "passthrough" and drop "universal".
+6. **The changelog entry is left to the Done gate**, per `roadmap/workflow.adoc`, which places it
+   at the approve step with the landing commits cited.
 
 ## Done criteria
 

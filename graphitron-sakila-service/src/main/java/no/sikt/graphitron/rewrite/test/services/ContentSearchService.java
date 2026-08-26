@@ -14,7 +14,9 @@ import java.util.List;
  * distinct {@code FilmRecord} / {@code ActorRecord} classes are the discriminator). The generated
  * fetcher therefore collects each record's primary key, re-fetches by PK, and routes each row off the
  * live {@code CONTENT_TYPE} value via the {@code Content} {@code TypeResolver}. The methods set only
- * the primary key and leave the rest for Graphitron to fetch.
+ * the primary key and leave the rest for Graphitron to fetch, which is the contract every
+ * table-returning {@code @service} shape now states, the plain single-table return
+ * ({@link SampleQueryService#filmsByService}) included.
  */
 public final class ContentSearchService {
 

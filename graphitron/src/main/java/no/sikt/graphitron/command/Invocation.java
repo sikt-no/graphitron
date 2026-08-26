@@ -41,12 +41,15 @@ public sealed interface Invocation {
     }
 
     /**
-     * The DML reentry delivery: the mutation entry point runs the write itself (the transaction,
-     * the dialect guard, the {@code RETURNING} key capture), then calls the launcher once with
-     * the captured keys to re-select the payload. Payload-free by design: the keys parameter's
-     * element type derives from the {@link LaunchSource.Reentry} correlation, the list lift from
-     * the result shape, and the {@code dsl} binding from the shell's dsl-declaration fragment,
-     * so every fact this arm would carry already rides another axis.
+     * The reentry delivery: the entry point produces the keys itself, then calls the launcher
+     * once with them to re-select the payload. Two callers capture keys at the call site, and
+     * the arm is the same for both. A mutation entry point runs the write (the transaction, the
+     * dialect guard, the {@code RETURNING} key capture); a root {@code @service} entry point
+     * runs the developer's method and lifts the returned records' primary keys. Payload-free by
+     * design: the keys parameter's element type derives from the {@link LaunchSource.Reentry}
+     * correlation, the list lift from the result shape, and the {@code dsl} binding from the
+     * shell's dsl-declaration fragment, so every fact this arm would carry already rides another
+     * axis.
      */
     record ReturningKeyed() implements Invocation {}
 }

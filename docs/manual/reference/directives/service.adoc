@@ -57,7 +57,7 @@ type Query {
 }
 ----
 
-`filmsByService` returns a `Result<FilmRecord>` directly; the framework treats jOOQ records as already-populated rows and skips its own projection. `filmsByServiceRenamed` shows `argMapping`: the GraphQL arg `ids` binds to the Java parameter `filmIds` because the service method's signature reads more naturally that way. `filmCount` returns a plain scalar.
+`filmsByService` returns a `Result<FilmRecord>`, and because `Film` carries `@table` the framework reads those records as key carriers: it lifts each record's primary key and re-selects the requested fields from the table, so the method need only populate the key columns. `filmsByServiceRenamed` shows `argMapping`: the GraphQL arg `ids` binds to the Java parameter `filmIds` because the service method's signature reads more naturally that way. `filmCount` returns a plain scalar.
 
 The Java surface for the first method:
 

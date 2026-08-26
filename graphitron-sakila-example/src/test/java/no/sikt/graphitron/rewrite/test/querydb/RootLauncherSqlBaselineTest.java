@@ -390,6 +390,27 @@ class RootLauncherSqlBaselineTest {
     }
 
     @Test
+    void rootServiceTableReturn_oneCompanionSelectOverTheLiftedKeys() {
+        // The caller-side half of the reentry companion at a root @service coordinate. The
+        // service (filmsByServiceUnchecked) runs no query of its own, so whatever reaches the
+        // log is the framework's: exactly one statement, the companion's re-select, joining the
+        // lifted keys' VALUES table on the primary key and ordered by idx so the answer comes
+        // back in the order the service handed the keys over. Both VALUES cells bind (the idx
+        // included, `DSL.val(i, Integer.class)`), matching the same companion's DML baseline.
+        // The companion's own body shape is baselined at that caller; what this pins is that the
+        // service caller issues it exactly once.
+        execute("{ filmsByServiceUnchecked(ids: [2, 1]) { title } }");
+        assertThat(SQL_LOG)
+            .as("a root @service table return costs one keyed re-select, input-ordered")
+            .containsExactly(
+                "select \"public\".\"film\".\"title\" "
+                    + "from \"public\".\"film\" "
+                    + "join (values (?, ?), (?, ?)) as \"keysinput\" (\"idx\", \"film_id\") "
+                    + "on \"public\".\"film\".\"film_id\" = \"keysinput\".\"film_id\" "
+                    + "order by \"keysinput\".\"idx\"");
+    }
+
+    @Test
     void discriminatedRoot_sameNamedParticipantFields_bothCorrelationsUnderDistinctAliases() {
         execute("{ allFanItems { fanBaseId ... on FanAlpha { target { fanTargetId } } "
             + "... on FanBeta { target { fanTargetId } } } }");

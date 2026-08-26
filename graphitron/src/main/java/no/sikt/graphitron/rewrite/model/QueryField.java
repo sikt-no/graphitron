@@ -205,18 +205,18 @@ public sealed interface QueryField extends RootField
      * {@link MethodRef#params()} via {@link ParamSource}.
      *
      * <p>{@code errorChannel} carries the carrier-side typed-error wiring when this field's
-     * payload includes an {@code errors} field. The success arm is universal passthrough: the
-     * service method returns the SDL payload class (or table-bound record) directly, and
-     * per-field wiring projects SDL fields off the parent's domain return.
+     * payload includes an {@code errors} field, which a table-bound return never does
+     * (channel resolution requires a class-backed result return), pinned at the build boundary
+     * by the validator's root service arm.
      *
-     * <p><b>Reentry realization.</b> This leaf is value-level re-fetch
-     * ({@link OutputField#requiresReFetch()} is true — the service-produced record must be
-     * re-projected against the catalog) but <em>not</em> site-level reentry
-     * ({@link OutputField#emitsKeyedReQuery()} is false): the emitted fetcher hands the record
-     * straight through, and the re-projection is realized by the downstream child fetchers'
-     * {@code $project}. The site-level fact is the single carrier of this distinction — the emit
-     * dispatch, the launcher relation's per-family membership switches, and the reentry validate
-     * guard all read it rather than recomputing the root-service exclusion per site.
+     * <p><b>Reentry realization.</b> This leaf is both value-level re-fetch
+     * ({@link OutputField#requiresReFetch()}) and site-level reentry
+     * ({@link OutputField#emitsKeyedReQuery()}): the records the developer's method returns are
+     * key carriers, and the emitted fetcher lifts their primary keys and returns the reentry
+     * companion's re-selected rows. So the author's obligation is to populate the key columns;
+     * every other selected field comes from the table. The emitted payload is the companion's
+     * ({@code List<Record>} / {@code Record}), which is what {@code env.getSource()} hands every
+     * child hanging off the parent, a projected row exactly as under a catalog read.
      */
     record QueryServiceTableField(
         String parentTypeName,
@@ -244,9 +244,11 @@ public sealed interface QueryField extends RootField
      * {@link MethodRef#params()} via {@link ParamSource}.
      *
      * <p>{@code errorChannel} carries the carrier-side typed-error wiring when this field's
-     * payload includes an {@code errors} field. The success arm is universal passthrough: the
-     * service method returns the SDL payload class (or scalar / pojo) directly, and per-field
-     * wiring projects SDL fields off the parent's domain return.
+     * payload includes an {@code errors} field. The success arm is a passthrough: the service
+     * method returns the SDL payload class (or scalar / pojo) directly, and per-field wiring
+     * projects SDL fields off the parent's domain return. This is where the non-table return
+     * differs from its table-bound sibling, whose records are key carriers re-selected from the
+     * catalog.
      */
     record QueryServiceRecordField(
         String parentTypeName,

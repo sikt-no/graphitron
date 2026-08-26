@@ -63,7 +63,7 @@ class ReFetchDerivationTest {
     }
 
     @Test
-    void siteLevelFactExcludesTheRootServicePassthrough() {
+    void siteLevelFactAgreesWithTheValueLevelFactAtEveryTableBoundServiceCoordinate() {
         GraphitronSchema schema = TestSchemaHelper.buildSchema(SERVICE_FIXTURE);
 
         // The child @service-table field emits its keyed re-query at its own site (the lift
@@ -72,15 +72,15 @@ class ReFetchDerivationTest {
         assertThat(language.requiresReFetch()).isTrue();
         assertThat(language.emitsKeyedReQuery()).isTrue();
 
-        // The root @service field is the divergence the site-level fact exists for: its value is
-        // re-projected (requiresReFetch true), but the emitted fetcher is a direct passthrough —
-        // the re-projection is realized by the downstream child fetchers' $project, so no keyed
-        // re-query is emitted at the root site.
+        // And so does the root @service field, which is the coordinate the two facts used to
+        // disagree at: the fetcher lifts the returned records' primary keys and calls the
+        // reentry companion, so the re-query is emitted at this site, not deferred to whatever
+        // children happen to hang off the parent.
         OutputField externalFilm = (OutputField) schema.field("Query", "externalFilm");
         assertThat(externalFilm.requiresReFetch()).isTrue();
         assertThat(externalFilm.emitsKeyedReQuery())
-            .as("root service passthrough: value-level re-fetch without a site-level re-query")
-            .isFalse();
+            .as("a table-bound root service return re-queries at its own site")
+            .isTrue();
 
         // Non-re-fetching fields are trivially not site-level reentry.
         assertThat(((OutputField) schema.field("Query", "film")).emitsKeyedReQuery()).isFalse();

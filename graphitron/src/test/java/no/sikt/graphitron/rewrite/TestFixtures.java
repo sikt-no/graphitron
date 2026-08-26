@@ -419,6 +419,16 @@ public final class TestFixtures {
         return new ReturnTypeRef.TableBoundReturnType("Film", filmTable(), wrapper);
     }
 
+    /**
+     * {@link #tableBoundFilm} over the PK-bearing {@code film}. The shape the keyed re-projection
+     * needs: a table-bound {@code @service} return is re-selected by the returned record's
+     * primary key, so a key-less {@link #filmTable()} is not a constructible return there (the
+     * classifier rejects it, and the correlation refuses an empty column tuple).
+     */
+    public static ReturnTypeRef.TableBoundReturnType tableBoundFilmWithPk(FieldWrapper wrapper) {
+        return new ReturnTypeRef.TableBoundReturnType("Film", filmTableWithPk(), wrapper);
+    }
+
     public static ReturnTypeRef.TableBoundReturnType tableBound(String typeName, TableRef table, FieldWrapper wrapper) {
         return new ReturnTypeRef.TableBoundReturnType(typeName, table, wrapper);
     }

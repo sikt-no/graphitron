@@ -242,9 +242,7 @@ public sealed interface OperationMember {
      * The site-level keyed re-query: this coordinate's own emit includes the
      * {@code VALUES(idx, key...)} join re-projecting the target {@code @table} from keys held at
      * the source. Minted exactly where the site-level reentry fact holds, so
-     * {@link OutputField#emitsKeyedReQuery()} is a member-presence read; the root
-     * {@code @service} passthrough (re-projection realized by the downstream child fetchers)
-     * deliberately mints none.
+     * {@link OutputField#emitsKeyedReQuery()} is a member-presence read.
      */
     record Reentry() implements OperationMember {}
 

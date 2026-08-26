@@ -624,9 +624,11 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void queryServiceTableField_emittedFetcher_declaresTypedResult() {
-        // List-cardinality @table-bound @service field returns Result<FilmRecord> typed, not
-        // Object. Body-shape properties (the optional dsl local, direct service call, no
-        // projection) are asserted at execution tier: GraphQLQueryTest.queryServiceTable_filmsByService_*.
+        // The declared payload is the reentry companion's, not the developer's container: the
+        // records the service returns are key carriers, and what reaches graphql-java (and so
+        // every child's env.getSource()) is the projected row the companion re-selected. Body-
+        // shape properties (the dsl local, the service call, the key lift) are asserted at
+        // execution tier: GraphQLQueryTest.queryServiceTable_filmsByService_*.
         var method = TestFixtures.staticServiceMethodRef(
             "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             "filmsByService",
@@ -638,12 +640,17 @@ class TypeFetcherGeneratorTest {
                 new MethodRef.Param.Typed("ids", "java.util.List<java.lang.Integer>",
                     new ParamSource.Arg(new CallSiteExtraction.Direct(), no.sikt.graphitron.rewrite.PathExpr.head("ids")))));
         var field = new QueryField.QueryServiceTableField("Query", "filmsByService", null,
-            TestFixtures.tableBoundFilm(nonNullList()), TestFixtures.stubServiceCall(method), Optional.empty());
+            TestFixtures.tableBoundFilmWithPk(nonNullList()), TestFixtures.stubServiceCall(method), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         assertThat(method(spec, "filmsByService").returnType().toString())
-            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>>");
+            .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>");
+        // The developer's own container stays the inner result local's type, and the companion
+        // the row named is what the body returns.
+        assertThat(method(spec, "filmsByService").code().toString())
+            .contains("org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord> result")
+            .contains("rowsFilmsByService(keys, env)");
     }
 
     @Test
@@ -801,8 +808,9 @@ class TypeFetcherGeneratorTest {
     // ===== MutationServiceTableField / MutationServiceRecordField =====
     //
     // Mutation services share buildServiceFetcherCommon with the query side, so the
-    // try/catch wrapper and Jakarta validation pre-step carry over for free; the success
-    // arm is universal passthrough. Tests below assert that the mutation switch arms reach
+    // try/catch wrapper and Jakarta validation pre-step carry over for free, and so does the
+    // table-bound arm's keyed re-projection of the returned records; the record- and
+    // scalar-returning arms keep the passthrough. Tests below assert that the mutation switch arms reach
     // the helper (rather than emitting a stub) and that the wrapper integration is observable
     // on the emitted body.
 
@@ -817,22 +825,25 @@ class TypeFetcherGeneratorTest {
             ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord"),
             List.of());
         var field = new MutationField.MutationServiceTableField("Mutation", "createFilm", null,
-            tableBoundFilm(single()), TestFixtures.stubServiceCall(method), Optional.empty());
+            TestFixtures.tableBoundFilmWithPk(single()), TestFixtures.stubServiceCall(method), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         var emitted = method(spec, "createFilm");
         assertThat(emitted.returnType().toString())
-            .isEqualTo("graphql.execution.DataFetcherResult<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>");
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Record>");
         var body = emitted.code().toString();
         assertThat(body).contains("com.example.Service.createFilm");
+        // The service call is this arm's write-analog, and the keyed re-select follows it here
+        // exactly as it follows a DML write.
+        assertThat(body).contains("rowsCreateFilm(keys, env)");
         // Stub variants throw from a fresh body; the real emitter goes through the try block.
         assertThat(body).doesNotContain("UnsupportedOperationException");
         assertThat(body).contains("try");
     }
 
     @Test
-    void mutationServiceTableField_listReturn_declaresResultOfRecord() {
+    void mutationServiceTableField_listReturn_declaresListOfRecord() {
         // Mirrors queryServiceTableField_emittedFetcher_declaresTypedResult; the table-bound
         // mutation service shape is identical.
         var method = TestFixtures.staticServiceMethodRef(
@@ -842,12 +853,12 @@ class TypeFetcherGeneratorTest {
                 ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord")),
             List.of());
         var field = new MutationField.MutationServiceTableField("Mutation", "createFilms", null,
-            tableBoundFilm(nonNullList()), TestFixtures.stubServiceCall(method), Optional.empty());
+            TestFixtures.tableBoundFilmWithPk(nonNullList()), TestFixtures.stubServiceCall(method), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         assertThat(method(spec, "createFilms").returnType().toString())
-            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>>");
+            .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>");
     }
 
     @Test

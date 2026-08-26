@@ -243,12 +243,14 @@ public sealed interface LaunchSource {
     }
 
     /**
-     * The DML reentry capability shared by the mutation companions: the launcher's FROM anchors
-     * on the {@link #table} the write returned keys for, restricted to exactly those keys by
+     * The reentry capability shared by the keyed companions: the launcher's FROM anchors on the
+     * {@link #table} the caller captured keys for, restricted to exactly those keys by
      * {@link #correlation}'s lifted slots (single: key equality; list: an {@code (idx, keys...)}
-     * VALUES join, input-ordered by {@code idx}). The write emitter derives its {@code RETURNING}
-     * column list from the same correlation, so the keys handed across the generated call
-     * boundary are assignment-compatible by construction, not by javadoc agreement.
+     * VALUES join, input-ordered by {@code idx}). Both callers derive their key list from the
+     * same correlation the companion's parameter type reads (the write emitter its
+     * {@code RETURNING} columns, the root {@code @service} fetcher the columns it lifts off the
+     * returned records), so the keys handed across the generated call boundary are
+     * assignment-compatible by construction, not by javadoc agreement.
      */
     sealed interface Reentry extends LaunchSource permits ProjectedReentry, DiscriminatedReentry {
         TableRef table();
@@ -257,11 +259,13 @@ public sealed interface LaunchSource {
     }
 
     /**
-     * A projected mutation companion: the returned type is one table-backed object, re-selected
-     * through the {@link #projection} unit's {@code $project} over the key restriction. The
-     * table is the correlation's own target (the write's table IS the payload's table for this
-     * arm), so no second slot restates it. Deliberately no empty-input gate: the write emitter
-     * owns the no-match guard, and the companion is only called with captured keys.
+     * A projected companion: the returned type is one table-backed object, re-selected through
+     * the {@link #projection} unit's {@code $project} over the key restriction. The table is the
+     * correlation's own target (the keys are the payload table's own key for this arm, whether
+     * the write returned them or the fetcher lifted them off a service's records), so no second
+     * slot restates it. Deliberately no empty-input gate: the caller owns it (the write emitter's
+     * no-match guard; the root {@code @service} fetcher's null-or-empty gate), and the companion
+     * is only called with captured keys.
      */
     record ProjectedReentry(UnitRef projection,
             no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots correlation)

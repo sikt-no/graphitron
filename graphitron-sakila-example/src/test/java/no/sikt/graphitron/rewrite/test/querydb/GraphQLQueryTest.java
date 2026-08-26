@@ -614,15 +614,14 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void filmsByService_titleTitlecase_resolvesOnServiceReturnedTypedParent() {
-        // The service-returned-parent kind for the Wrap.TableRecord key extraction.
-        // filmsByService runs its own selectFrom(FILM) and hands back Result<FilmRecord> with no
-        // framework projection at all. One unconditional read serves this parent and the
-        // SQL-projected one alike, because a jOOQ-generated record carries its own primary key
-        // and the framework force-includes that same key when it builds the parent SELECT. This
-        // is the arrival path that has no force-inclusion to rely on, so it is the one that
-        // proves the read needs no runtime fork. The SQL-parent kind of the same field stays
-        // pinned by films_titleTitlecase_withCollidingMultisetSibling_bothResolve_noMappingException.
+    void filmsByService_titleTitlecase_resolvesOnServiceReturnedProjectedParent() {
+        // A batched child @service hanging off a root @service parent. The parent is now the
+        // projected row the reentry companion re-selected, not the FilmRecord the service handed
+        // back, so this is the pin that the child's Wrap.TableRecord key extraction reads the key
+        // off whatever the parent's projection carries. It has one to read because the
+        // companion's $project force-includes the key, the same force-inclusion every catalog
+        // parent relies on. The SQL-parent kind of the same field stays pinned by
+        // films_titleTitlecase_withCollidingMultisetSibling_bothResolve_noMappingException.
         Map<String, Object> data = execute("{ filmsByService(ids: [1, 2]) { titleTitlecase } }");
         var films = (java.util.List<Map<String, Object>>) data.get("filmsByService");
         assertThat(films)
@@ -4317,16 +4316,67 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void queryServiceTable_filmsByService_returnsRecordsThatFlowThroughColumnFetchers() {
-        // SampleQueryService.filmsByService runs its own SELECT and returns Result<FilmRecord>.
-        // The framework does no projection; graphql-java's column fetchers walk the records via
-        // field-name lookup. Asserting on title / rentalRate confirms the record traversal path works.
+    void queryServiceTable_keyOnlyServiceRecords_resolveFullColumnData() {
+        // The contract this coordinate states, exercised at its minimum:
+        // SampleQueryService.filmsByService selects FILM_ID and nothing else, so `title` and
+        // `rentalRate` are null on every record it returns. They resolve anyway, because the
+        // fetcher reads the records as key carriers and re-selects the requested fields from
+        // `film` keyed on the FILM_ID it lifted. Before this behaviour, the same query answered
+        // a whole column of nulls with nothing thrown, which is the bug this pins shut.
         Map<String, Object> data = execute(
             "{ filmsByService(ids: [1, 2]) { filmId title rentalRate } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByService");
         assertThat(films).extracting(f -> f.get("title"))
+            .as("a column the service never selected still resolves from the table")
             .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER");
+        assertThat(films).extracting(f -> f.get("rentalRate"))
+            .as("and so does a second one, so this is projection and not a lucky record read")
+            .doesNotContainNull();
         assertThat(films).extracting(f -> f.get("filmId"))
+            .as("input order is preserved: the companion orders the re-select by the key's index")
+            .containsExactly(1, 2);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void queryServiceTable_fullySelectedServiceRecords_resolveUnchanged() {
+        // The sibling contract: a service that selects every column (what authors were told to
+        // write before the key-only rule) keeps working untouched. It pays one extra keyed
+        // SELECT for the re-projection and answers the same rows.
+        Map<String, Object> data = execute(
+            "{ filmsByServiceRenamed(ids: [1, 2]) { filmId title rentalRate } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByServiceRenamed");
+        assertThat(films).extracting(f -> f.get("title"))
+            .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER");
+        assertThat(films).extracting(f -> f.get("rentalRate")).doesNotContainNull();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void queryServiceTable_serviceRunningNoQuery_resolvesFromTheKeyAlone() {
+        // The strongest form of the contract: filmsByServiceUnchecked builds FilmRecords in
+        // memory with only FILM_ID set and never touches the database. Every selected field
+        // resolves, because the key is all the framework needs.
+        Map<String, Object> data = execute(
+            "{ filmsByServiceUnchecked(ids: [2, 1]) { filmId title } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByServiceUnchecked");
+        assertThat(films).extracting(f -> f.get("title"))
+            .as("resolved from the table, in the order the service handed the keys over")
+            .containsExactly("ACE GOLDFINGER", "ACADEMY DINOSAUR");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void queryServiceTable_keyWithNoLiveRow_dropsFromTheListResult() {
+        // The missing-row contract, the plain-shape version of what the discriminated service
+        // return already pins with its record 999: a lifted key the table has no row for drops
+        // from the result rather than surfacing as a null element or an error. film_id 999999 is
+        // unseeded, and the unchecked service hands it over without checking.
+        Map<String, Object> data = execute(
+            "{ filmsByServiceUnchecked(ids: [1, 999999, 2]) { filmId } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByServiceUnchecked");
+        assertThat(films).extracting(f -> f.get("filmId"))
+            .as("the unmatched key drops; the matched ones keep their order")
             .containsExactly(1, 2);
     }
 

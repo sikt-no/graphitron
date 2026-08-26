@@ -54,10 +54,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * batched polymorphic pair is the one decided emitted-and-uncommitted population (its rows
  * methods are named through the same {@code GeneratedUnits} scheme with no row behind them);
  * the fixture instantiates its interface half, so a producer that started minting rows for it
- * fails both the model → row equality and the explicit negative pin here. The root
- * {@code @service} passthrough pin and the Encoded-DML pin keep the other deliberate absences
- * visible: value-level re-fetch without a site-level re-query gets no row, and an encoded
- * return arm carries no reentry, by the fact, not by omission.
+ * fails both the model → row equality and the explicit negative pin here. The Encoded-DML pin
+ * keeps the other deliberate absence visible: an encoded return arm carries no reentry, by the
+ * fact, not by omission. Beside it, the root {@code @service} table return's pin is the positive
+ * form of what used to be an absence there, its companion row named and its source arm read.
  */
 @PipelineTier
 class LauncherRelationClosureTest {
@@ -246,13 +246,18 @@ class LauncherRelationClosureTest {
                     .isEqualTo(OUTPUT_PACKAGE + ".fetchers.FilmPayloadFetchers");
             });
 
-        // Root @service passthrough: value-level re-fetch true, site-level fact false, no row.
+        // Root @service table return: value-level and site-level facts agree, and the row is
+        // the companion the fetcher calls with the keys it lifted off the returned records.
         OutputField externalFilm = (OutputField) model.field("Query", "externalFilm");
         assertThat(externalFilm.requiresReFetch()).isTrue();
         assertThat(externalFilm.emitsKeyedReQuery())
-            .as("root service passthrough re-projects downstream, not at its own site")
-            .isFalse();
-        assertThat(launchers.rowFor("Query", "externalFilm")).isEmpty();
+            .as("a table-bound root service return re-projects at its own site")
+            .isTrue();
+        assertThat(launchers.rowFor("Query", "externalFilm"))
+            .hasValueSatisfying(row -> {
+                assertThat(row.unit().methodName()).isEqualTo("rowsExternalFilm");
+                assertThat(row.source()).isInstanceOf(LaunchSource.ProjectedReentry.class);
+            });
 
         // The batched polymorphic pair's interface half: emitted-and-uncommitted by decision.
         // Model fact first (the fixture really instantiates the leaf), then the absence.

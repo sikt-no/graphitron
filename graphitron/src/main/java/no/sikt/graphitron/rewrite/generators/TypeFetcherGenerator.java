@@ -320,6 +320,7 @@ public class TypeFetcherGenerator {
     private static final ClassName SET                  = ClassName.get("java.util", "Set");
     private static final ClassName MAP                  = ClassName.get("java.util", "Map");
     private static final ClassName DATA_FETCHER_RESULT  = ClassName.get("graphql.execution", "DataFetcherResult");
+    private static final ClassName DSL_CONTEXT          = ClassName.get("org.jooq", "DSLContext");
     /** {@code List<SortField<?>>} — the return type of every {@code *OrderBy} helper method. */
     private static final TypeName SORT_FIELD_LIST       = ParameterizedTypeName.get(LIST,
         ParameterizedTypeName.get(SORT_FIELD, WildcardTypeName.subtypeOf(Object.class)));
@@ -678,7 +679,9 @@ public class TypeFetcherGenerator {
                 }
                 case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(ctx, f, outputPackage));
                 case QueryField.QueryNodesField f             -> builder.addMethod(buildQueryNodesFetcher(ctx, f, outputPackage));
-                case QueryField.QueryServiceTableField f      -> builder.addMethod(buildQueryServiceTableFetcher(ctx, f, outputPackage));
+                case QueryField.QueryServiceTableField f      -> builder.addMethod(
+                    buildQueryServiceTableFetcher(ctx, f,
+                        serviceReentryRowOf(f, launchers), launchers.carrierDsl(), outputPackage));
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(ctx, f, outputPackage));
                 case QueryField.QueryServicePolymorphicField f ->
                     MultiTablePolymorphicEmitter
@@ -740,7 +743,9 @@ public class TypeFetcherGenerator {
                     builder.addMethod(renderRoutineWrite(ctx, f, routineWrites));
                 case MutationField.MutationRoutineWriteRecordField f ->
                     builder.addMethod(renderRoutineWrite(ctx, f, routineWrites));
-                case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableFetcher(ctx, f, outputPackage));
+                case MutationField.MutationServiceTableField f -> builder.addMethod(
+                    buildMutationServiceTableFetcher(ctx, f,
+                        serviceReentryRowOf(f, launchers), launchers.carrierDsl(), outputPackage));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(buildMutationServiceRecordFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServicePolymorphicField f ->
                     MultiTablePolymorphicEmitter
@@ -1381,18 +1386,39 @@ public class TypeFetcherGenerator {
 
 
     /**
-     * Emits the fetcher for a {@link QueryField.QueryServiceTableField}: a direct call to
-     * the developer service method, with an optional {@code dsl} local declared first
-     * if the method takes a {@link org.jooq.DSLContext}. No projection — graphql-java's
-     * column fetchers traverse the service-returned {@code Record}/{@code Result<Record>}.
+     * The root {@code @service} table return's companion row, the one the coordinate's keyed
+     * re-select is rendered from. Absence is membership drift (the producer mints a row for
+     * every table-bound root service leaf), surfaced loudly rather than degraded into the old
+     * passthrough.
+     */
+    private static no.sikt.graphitron.command.LauncherCommand serviceReentryRowOf(
+            no.sikt.graphitron.rewrite.model.OutputField field, no.sikt.graphitron.plan.LauncherRelation launchers) {
+        return launchers.rowFor(field.parentTypeName(), field.name())
+            .orElseThrow(() -> new IllegalStateException(
+                "Graphitron generator bug (root service table dispatch): coordinate '"
+                + field.qualifiedName() + "' has no launcher row;"
+                + " the producer's membership and this dispatch have drifted"));
+    }
+
+    /**
+     * Emits the fetcher for a {@link QueryField.QueryServiceTableField}: a call to the developer
+     * service method, then the keyed re-projection of what it returned. The records handed back
+     * are read as key carriers: the body lifts each record's primary key into the companion's
+     * keys container and returns the {@code rows<Field>} companion's result, so a service that
+     * populated only the key columns resolves every selected field.
      *
-     * <p>Return type is the specific {@code Result<<RecordClass>>} for List cardinality or
-     * the specific {@code <RecordClass>} for Single. Type-strictness is enforced at classifier
-     * time: the strict return-type comparison in {@code ServiceDirectiveResolver}'s classify
-     * phase rejects methods whose declared parameterized return type doesn't match the expected
-     * record class for the field's {@code @table}-bound return type.
+     * <p>The declared payload is therefore the companion's ({@code List<Record>} for List
+     * cardinality, {@code Record} for Single), which is also what {@code env.getSource()} hands
+     * every child hanging off the parent: a projected row, exactly as under a catalog read. The
+     * developer's own container ({@code Result<XRecord>} or {@code List<XRecord>}) stays the type
+     * of the inner {@code result} local. Type-strictness on that container is enforced at
+     * classifier time: the strict return-type comparison in {@code ServiceDirectiveResolver}'s
+     * classify phase rejects methods whose declared parameterized return type doesn't match the
+     * expected record class for the field's {@code @table}-bound return type.
      */
     private static MethodSpec buildQueryServiceTableFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryServiceTableField qstf,
+                                                             no.sikt.graphitron.command.LauncherCommand row,
+                                                             no.sikt.graphitron.command.CarrierDsl carrierDsl,
                                                              String outputPackage) {
         var tableRef = qstf.returnType().table();
         var recordClass = tableRef.recordClass();
@@ -1400,10 +1426,11 @@ public class TypeFetcherGenerator {
         // For List cardinality, the developer's declared return type is either Result<XRecord>
         // or List<XRecord> (validated in ServiceDirectiveResolver.validateRootListTableBoundReturnPair);
         // declare the local with whichever shape the developer chose so the generated
-        // assignment compiles. graphql-java accepts either as a list value.
-        TypeName returnType = isList ? qstf.serviceMethodCall().javaReturnType() : recordClass;
+        // assignment compiles.
+        TypeName resultLocalType = isList ? qstf.serviceMethodCall().javaReturnType() : recordClass;
         return buildServiceFetcherCommon(ctx, qstf.name(), qstf.serviceMethodCall(),
-            qstf.parentTypeName(), returnType, qstf.errorChannel(), outputPackage);
+            qstf.parentTypeName(), resultLocalType, qstf.errorChannel(), outputPackage,
+            new ServiceReentryLift(qstf, row, carrierDsl, tableRef));
     }
 
     /**
@@ -1454,17 +1481,20 @@ public class TypeFetcherGenerator {
      * and no parent-batching context, so the emission delegates to the shared
      * {@link #buildServiceFetcherCommon} helper without alteration. The shared helper handles
      * the pre-execution Jakarta validation pre-step and the try/catch wrapper uniformly across
-     * query and mutation services; the success arm is universal passthrough.
+     * query and mutation services, and the same keyed re-projection of the returned records.
      */
     private static MethodSpec buildMutationServiceTableFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationServiceTableField mstf,
+                                                                no.sikt.graphitron.command.LauncherCommand row,
+                                                                no.sikt.graphitron.command.CarrierDsl carrierDsl,
                                                                 String outputPackage) {
         var tableRef = mstf.returnType().table();
         var recordClass = tableRef.recordClass();
         boolean isList = mstf.returnType().wrapper().isList();
         // See buildQueryServiceTableFetcher for the List-cardinality policy.
-        TypeName returnType = isList ? mstf.serviceMethodCall().javaReturnType() : recordClass;
+        TypeName resultLocalType = isList ? mstf.serviceMethodCall().javaReturnType() : recordClass;
         return buildServiceFetcherCommon(ctx, mstf.name(), mstf.serviceMethodCall(),
-            mstf.parentTypeName(), returnType, mstf.errorChannel(), outputPackage);
+            mstf.parentTypeName(), resultLocalType, mstf.errorChannel(), outputPackage,
+            new ServiceReentryLift(mstf, row, carrierDsl, tableRef));
     }
 
     /**
@@ -1514,11 +1544,13 @@ public class TypeFetcherGenerator {
      * {@code GraphitronContext}-supplied {@code Validator}, and short-circuits with the
      * payload's errors-arm filled by the violations when any are produced.
      *
-     * <p>The success arm is universal passthrough: the service method returns the SDL payload
-     * class directly, and the emitter forwards the return value into the
-     * {@link DataFetcherResult} without further assembly. Per-field wiring (graphql-java's
-     * child fetchers) projects SDL fields off the parent's domain return, so the generator
-     * does not construct output DTOs on the happy path.
+     * <p>The success arm forks on {@code lift}. With no lift (the record- and scalar-returning
+     * leaves) it is passthrough: the service method returns the SDL payload class directly, and
+     * the emitter forwards the return value into the {@link DataFetcherResult} without further
+     * assembly, letting per-field wiring (graphql-java's child fetchers) project SDL fields off
+     * the parent's domain return. With a lift (the two table-bound leaves) the returned records
+     * are key carriers: the arm lifts their primary keys and returns the reentry companion's
+     * re-selected rows instead. See {@link #emitServiceReentryLift}.
      *
      * <p>The catch arm forks on {@code errorChannel}: a present channel routes through
      * {@code ErrorRouter.dispatch} with the channel's mapping table and synthesized payload
@@ -1531,13 +1563,41 @@ public class TypeFetcherGenerator {
                                                         String parentTypeName, TypeName valueType,
                                                         Optional<ErrorChannel.Mapped> errorChannel,
                                                         String outputPackage) {
+        return buildServiceFetcherCommon(ctx, fieldName, carrier, parentTypeName, valueType,
+            errorChannel, outputPackage, null);
+    }
+
+    /**
+     * One table-bound root {@code @service} coordinate's post-call lift: the leaf (for the
+     * tenant-resolved {@code dsl} declaration the companion's shell fragment needs), the
+     * companion's launcher row, the run's carrier fact, and the table whose primary key the
+     * records are read as carriers of.
+     */
+    private record ServiceReentryLift(no.sikt.graphitron.rewrite.model.OutputField field,
+            no.sikt.graphitron.command.LauncherCommand row,
+            no.sikt.graphitron.command.CarrierDsl carrierDsl,
+            TableRef table) {}
+
+    private static MethodSpec buildServiceFetcherCommon(TypeFetcherEmissionContext ctx, String fieldName,
+                                                        ServiceMethodCall carrier,
+                                                        String parentTypeName, TypeName valueType,
+                                                        Optional<ErrorChannel.Mapped> errorChannel,
+                                                        String outputPackage,
+                                                        ServiceReentryLift lift) {
         // An @service outcome field (Mapped channel) hands graphql-java a typed Outcome<X>
         // source. The DataFetcherResult payload type becomes Outcome<X>; the inner method result
         // local stays X (the service's return), wrapped in Success on the happy path and replaced by
         // ErrorList on the mapped-error path. A channel-less @service field (no errors field) keeps
         // the bare X payload and the redact-only catch arm.
         boolean wrap = errorChannel.isPresent();
-        TypeName payloadType = wrap ? outcomeOf(valueType, outputPackage) : valueType;
+        // With a lift the declared payload is the companion's re-selected rows, not the
+        // developer's container; valueType stays the inner result local's type either way. A
+        // lift can never coincide with a channel (resolveErrorChannel answers no-channel for a
+        // @table-bound return), which the root service validator arm pins at the build boundary.
+        TypeName liftedValueType = lift == null
+            ? valueType
+            : no.sikt.graphitron.render.RootLauncherRenderer.valueTypeOf(lift.row());
+        TypeName payloadType = wrap ? outcomeOf(liftedValueType, outputPackage) : liftedValueType;
 
         var builder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -1561,10 +1621,15 @@ public class TypeFetcherGenerator {
                 TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage),
                 outputPackage, parentTypeName + "." + fieldName, ctx.nodeIdDecodeHelpers())
             .forEach(builder::addStatement);
+        if (lift != null) {
+            builder.addCode(emitServiceReentryLift(ctx, lift, carrier, fieldName,
+                liftedValueType, outputPackage));
+        }
+        String payloadLocal = lift == null ? "result" : "payload";
         if (wrap) {
-            builder.addCode(returnSyncSuccessWrapped(payloadType, outputPackage, "result"));
+            builder.addCode(returnSyncSuccessWrapped(payloadType, outputPackage, payloadLocal));
         } else {
-            builder.addCode(returnSyncSuccess(valueType, "result"));
+            builder.addCode(returnSyncSuccess(liftedValueType, payloadLocal));
         }
         builder.nextControlFlow("catch ($T e)", Exception.class);
         if (wrap) {
@@ -1575,6 +1640,101 @@ public class TypeFetcherGenerator {
         builder.endControlFlow();
 
         return builder.build();
+    }
+
+    /**
+     * The table-bound root {@code @service} arm's post-call lift, and the caller half of the
+     * reentry companion's contract. Registers the companion through
+     * {@code ctx.addCompanionMethod} (the same registration {@link #emitReentry} performs for
+     * the DML caller, with the tenant-resolved {@code dsl} declaration as the shell fragment),
+     * then emits, after the {@code result} local the service call declared:
+     *
+     * <ul>
+     *   <li>The empty gate, which is the caller's to own: the companion deliberately has none
+     *       ("only ever called with captured keys"), and its list arm builds
+     *       {@code DSL.values(keyRows)}, which jOOQ rejects on an empty array. A null or empty
+     *       list return resolves the empty list; a null single return resolves null, mirroring
+     *       {@link #emitReentry}'s {@code keys == null} guard.</li>
+     *   <li>The keys container, typed to the companion's own {@code keys} parameter
+     *       ({@code ReentryRowsFragments.keysType}, a {@code RecordN} row lifted to
+     *       {@code Result} for the list shape) and built through jOOQ's typed
+     *       {@code newResult} / {@code newRecord} overloads, so assignment compatibility across
+     *       the generated call boundary is structural rather than by agreement. Where the DML
+     *       caller gets this container free from {@code returningResult(...).fetch()}, this
+     *       caller constructs it from the records it was handed.</li>
+     *   <li>The call: {@code <valueType> payload = rows<Field>(keys, env);}.</li>
+     * </ul>
+     *
+     * <p>The {@code dsl} local is arm-entailed here regardless of the service method's own
+     * {@code needsDsl} answer (the container needs a {@code DSLContext}), so it is declared when
+     * the call did not declare it, exactly as the route (a) polymorphic fetcher does for its own
+     * by-PK auto-fetch.
+     */
+    private static CodeBlock emitServiceReentryLift(TypeFetcherEmissionContext ctx,
+            ServiceReentryLift lift, ServiceMethodCall carrier, String fieldName,
+            TypeName valueType, String outputPackage) {
+        var row = lift.row();
+        ctx.addCompanionMethod(no.sikt.graphitron.render.RootLauncherRenderer.render(
+            row, lift.carrierDsl(),
+            TenantDslEmitter.resolve(ctx, lift.field(), outputPackage).declaration(),
+            ctx.argPathHelpers(), ctx.projectedKeyHost()));
+
+        boolean isList = row.result() instanceof no.sikt.graphitron.command.ResultShape.RecordList;
+        var table = lift.table();
+        var keyCols = table.primaryKeyColumns();
+        TypeName keysType = no.sikt.graphitron.render.ReentryRowsFragments.keysType(row);
+        TypeName keyRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
+            new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), keyCols);
+        CodeBlock keyFields = keyColumnFields(table, keyCols);
+
+        var body = CodeBlock.builder();
+        if (!ServiceMethodCallEmitter.declaresDslLocal(carrier)) {
+            body.addStatement("$T dsl = $L", DSL_CONTEXT,
+                TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage));
+        }
+        if (isList) {
+            body.beginControlFlow("if (result == null || result.isEmpty())")
+                .addStatement("return $T.<$T>newResult().data($T.of()).build()",
+                    DATA_FETCHER_RESULT, valueType, LIST)
+                .endControlFlow()
+                .addStatement("$T keys = dsl.newResult($L)", keysType, keyFields)
+                .beginControlFlow("for ($T carried : result)", RECORD)
+                .addStatement("keys.add(dsl.newRecord($L).values($L))", keyFields,
+                    keyCellsFrom(table, keyCols, "carried"))
+                .endControlFlow();
+        } else {
+            body.beginControlFlow("if (result == null)")
+                .addStatement("return $T.<$T>newResult().data(null).build()",
+                    DATA_FETCHER_RESULT, valueType)
+                .endControlFlow()
+                .addStatement("$T keys = dsl.newRecord($L).values($L)", keyRowType, keyFields,
+                    keyCellsFrom(table, keyCols, "result"));
+        }
+        body.addStatement("$T payload = $L(keys, env)", valueType, row.unit().methodName());
+        return body.build();
+    }
+
+    /** {@code Tables.FILM.FILM_ID, ...} over the table's key columns. */
+    private static CodeBlock keyColumnFields(TableRef table,
+            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyCols) {
+        var b = CodeBlock.builder();
+        for (int i = 0; i < keyCols.size(); i++) {
+            if (i > 0) b.add(", ");
+            b.add("$T.$L.$L", table.constantsClass(), table.javaFieldName(), keyCols.get(i).javaName());
+        }
+        return b.build();
+    }
+
+    /** {@code <local>.get(Tables.FILM.FILM_ID), ...} over the table's key columns. */
+    private static CodeBlock keyCellsFrom(TableRef table,
+            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyCols, String local) {
+        var b = CodeBlock.builder();
+        for (int i = 0; i < keyCols.size(); i++) {
+            if (i > 0) b.add(", ");
+            b.add("$L.get($T.$L.$L)", local, table.constantsClass(), table.javaFieldName(),
+                keyCols.get(i).javaName());
+        }
+        return b.build();
     }
 
     /** {@code Outcome<X>} in the run's schema-support package, boxing primitive {@code X}.*/

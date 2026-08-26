@@ -35,7 +35,8 @@ class LauncherMembershipTest {
     // chain, discriminated interface, keyed lookup), the four batched child shapes (plain
     // split, split lookup at list-per-key cardinality, split pivot, discriminated interface at
     // list cardinality), both @service child kinds
-    // (table-returning and scalar), and all four reentry-carrying DML return arms. The encoded
+    // (table-returning and scalar), the root @service table return whose fetcher lifts the
+    // returned records' keys, and all four reentry-carrying DML return arms. The encoded
     // DELETE is the deliberate non-member witness: present in the model, no row.
     private static final String SDL = """
         interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
@@ -83,6 +84,8 @@ class LauncherMembershipTest {
           content: Content
           tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
             @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+          externalFilms: [Film!]! @service(
+            service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsAtRoot"})
         }
         type Mutation {
           createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
@@ -93,9 +96,10 @@ class LauncherMembershipTest {
         }
         """;
 
-    /** The 14 minting coordinates the fixture exercises, pinned so the fixture stays honest. */
+    /** The 15 minting coordinates the fixture exercises, pinned so the fixture stays honest. */
     private static final List<String> EXPECTED_COVERED = List.of(
         "Query.films", "Query.filmById", "Query.content", "Query.tilganger",
+        "Query.externalFilms",
         "Film.titleTextsSplit", "Film.actorsSplit", "Film.languages", "Film.contents",
         "Language.films", "Language.rank",
         "Mutation.createFilm", "Mutation.createFilms",
@@ -203,7 +207,7 @@ class LauncherMembershipTest {
             .toList();
         assertThat(expected)
             .as("the fixture must exercise every non-DML launch family member")
-            .hasSize(10);
+            .hasSize(11);
         assertThat(relation.rows())
             .extracting(r -> r.coordinate().getTypeName() + "." + r.coordinate().getFieldName())
             .containsExactlyInAnyOrderElementsOf(expected);

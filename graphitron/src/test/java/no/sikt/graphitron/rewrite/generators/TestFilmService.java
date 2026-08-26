@@ -159,6 +159,15 @@ public class TestFilmService {
         throw new UnsupportedOperationException();
     }
 
+    /**
+     * Fixture: a root {@code @service} table return, the coordinate whose fetcher lifts the
+     * returned records' primary keys and calls the reentry companion. No batch key: the root has
+     * no parent to batch against.
+     */
+    public static List<FilmRecord> getFilmsAtRoot() {
+        throw new UnsupportedOperationException();
+    }
+
     /** Fixture: a List-cardinality root return-pair mismatch plus a parameter that binds to nothing. */
     public static List<LanguageRecord> getLanguagesWithUnmatched(String unmatched) {
         throw new UnsupportedOperationException();

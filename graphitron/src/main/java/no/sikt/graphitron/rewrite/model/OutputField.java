@@ -109,29 +109,27 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     /**
      * Site-level reentry: this coordinate's own emit includes the keyed re-query, the
      * {@code VALUES(idx, key...)} join re-projecting the target {@code @table} from keys held at
-     * the source, with PK self-identity as the degenerate correlation. Distinct from
-     * {@link #requiresReFetch()}, which is <em>value-level</em> ("this field's value is
-     * re-projected somewhere"): a root {@code @service} field returning a {@code @table} type
-     * hands the produced record straight through and its re-projection is realized by the
-     * downstream child fetchers' {@code $project}, so the value-level fact is true while no
-     * re-query is emitted at the root site. The child {@code @service} arm, the record-sourced
-     * batched arms, and the projected DML arms all emit the re-query at their own site.
+     * the source, with PK self-identity as the degenerate correlation. Distinct in <em>kind</em>
+     * from {@link #requiresReFetch()}, which is <em>value-level</em> ("this field's value is
+     * re-projected somewhere"), though the two now agree at every coordinate: every shape whose
+     * value is re-projected emits the re-query at its own site, the child {@code @service} arm,
+     * the record-sourced batched arms, the projected DML arms, and the table-bound root
+     * {@code @service} returns alike.
      *
      * <p>Every site-level consumer (the reentry emit dispatch, the validate-time reentry guard)
-     * reads this predicate rather than recomputing
-     * {@code requiresReFetch() && !rootServicePassthrough} per site (two consumers evaluating
-     * the same compound predicate over model fields is the drift {@code requiresReFetch}'s own
+     * reads this predicate rather than recomputing the mint's facts per site (two consumers
+     * evaluating the same predicate over model fields is the drift {@code requiresReFetch}'s own
      * single-homing exists to prevent). The launcher relation's membership is deliberately not
-     * a consumer: {@link no.sikt.graphitron.plan.LauncherCommands} switches on leaf kind and
-     * return-expression arm, never on this predicate, which is true for an Encoded DELETE (its
-     * {@code Delete} operation arm produces a record) while the relation deliberately mints no
-     * row for the encoded return arms.
+     * a consumer: {@link no.sikt.graphitron.plan.LauncherCommands} reads the member kinds
+     * present, never this predicate, which is true for an Encoded DELETE (its {@code Delete}
+     * operation arm produces a record) while the relation deliberately mints no row for the
+     * encoded return arms.
      */
     default boolean emitsKeyedReQuery() {
         // A member-presence read: the reentry member is minted centrally in
         // OperationMembers from the same facts this predicate always encoded (a bare
-        // catalog table target, a received or produced record, minus the root service
-        // passthrough), so the compound predicate is stated once, at the mint.
+        // catalog table target and a received or produced record), so the predicate is
+        // stated once, at the mint.
         return OperationMembers.membersOf(this).stream()
             .anyMatch(m -> m instanceof OperationMember.Reentry);
     }

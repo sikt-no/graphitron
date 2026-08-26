@@ -4654,9 +4654,9 @@ class FieldBuilder {
      * reflected return type does not equal the SDL payload type (or {@code List<Payload>} for
      * list-cardinality fields); returns {@code null} otherwise.
      *
-     * <p>Per-field wiring projects SDL fields off the parent's domain return, so the success
-     * arm is universal passthrough: the service method must return the SDL payload class
-     * directly. This check makes the constraint explicit at classify time rather than at
+     * <p>Per-field wiring projects SDL fields off the parent's domain return, so a class-backed
+     * payload's success arm is a passthrough: the service method must return the SDL payload
+     * class directly. This check makes the constraint explicit at classify time rather than at
      * runtime via a ClassCastException.
      *
      * <p>For a two-level record-composite carrier ({@link TypeBuilder.CarrierBinding.ClassBacked}),

@@ -81,6 +81,12 @@ public final class LauncherCommands {
         NONE,
         /** A {@code @service} child's loader delegation ({@code load<Field>}). */
         SERVICE,
+        /**
+         * A root {@code @service} table return's reentry companion re-select
+         * ({@code rows<Field>}), keyed on the primary keys lifted off the records the
+         * developer's method handed back.
+         */
+        SERVICE_REENTRY,
         /** A DML write's reentry companion re-select ({@code reentryRows<Field>}). */
         DML_REENTRY,
         /** A root catalog launch ({@code launcher<Field>} / {@code lookup<Field>}). */
@@ -113,12 +119,15 @@ public final class LauncherCommands {
      * schema-free walk read one predicate over two fact sources (the members and delivery
      * views on a walk-built schema; the leaf projection and crosswalk on a walk-less one).
      *
-     * <p>The three rules, in order: a child hosting a serviceCall member launches through its
+     * <p>The four rules, in order: a child hosting a serviceCall member launches through its
      * loader (the call is the delivery, so anchor-hood is bypassed by the member the way the
-     * member production lets the call claim the projection slot); write plus reentry members
-     * launch the write's companion re-select (the launcher relation's reentry-sourced rows;
-     * the {@code Encoded*} returns mint no reentry member, so their exclusion is the member
-     * fact, stated nowhere); a select member on a single-table-anchored target, or a pivot
+     * member production lets the call claim the projection slot); a root hosting a serviceCall
+     * beside a reentry member launches the call's companion re-select, keyed on what the
+     * developer's method handed back (a table-bound root service return, the only root service
+     * shape that mints reentry); write plus reentry members launch the write's companion
+     * re-select (the launcher relation's reentry-sourced rows; the {@code Encoded*} returns mint
+     * no reentry member, so their exclusion is the member fact, stated nowhere); a select member
+     * on a single-table-anchored target, or a pivot
      * member, launches a catalog unit when the coordinate is a root (roots always run their
      * own unit) or its delivery is batched. Single-table anchoring is the target-axis fact
      * {@link TargetShape.Table}: the multi-table polymorphic family carries
@@ -130,6 +139,10 @@ public final class LauncherCommands {
         boolean root = out instanceof RootField;
         if (!root && hasKind(members, OperationMember.Kind.SERVICE_CALL)) {
             return Launch.SERVICE;
+        }
+        if (root && hasKind(members, OperationMember.Kind.SERVICE_CALL)
+                && hasKind(members, OperationMember.Kind.REENTRY)) {
+            return Launch.SERVICE_REENTRY;
         }
         if (hasKind(members, OperationMember.Kind.WRITE)
                 && hasKind(members, OperationMember.Kind.REENTRY)) {
@@ -158,7 +171,7 @@ public final class LauncherCommands {
      * The delivery arm each source arm's rows carry, declared beside the dispatch as producer
      * data: the invocation axis is functionally determined by the source arm (the root and
      * discriminated kinds run direct, the batched and service children register a DataLoader,
-     * the reentry companions take the write's captured {@code RETURNING} keys). Total over
+     * the reentry companions take the keys their entry point captured). Total over
      * {@link LaunchSource}'s concrete arms; the test tree asserts totality and, at every
      * relation it builds, that each produced row's invocation arm equals the declared arm for
      * its source arm.
@@ -191,6 +204,7 @@ public final class LauncherCommands {
                 rows.add(switch (verdict) {
                     case NONE -> throw new IllegalStateException("unreachable: NONE is filtered above");
                     case SERVICE -> serviceRow(field, units);
+                    case SERVICE_REENTRY -> serviceReentryRow(field, units);
                     case DML_REENTRY -> dmlRowOf(schema, requireDmlCarrier(field), units);
                     case ROOT_CATALOG -> rootCatalogRow(schema, field, conditions, units);
                     case BATCHED_CHILD_CATALOG -> batchedChildRow(schema, field, conditions, units);
@@ -282,6 +296,56 @@ public final class LauncherCommands {
                 + ") received a service launch verdict but has no payload arm here;"
                 + " the membership predicate and this payload dispatch have drifted");
         };
+    }
+
+    /**
+     * The root {@code @service} table-return family's payload dispatch, reached only behind a
+     * {@link Launch#SERVICE_REENTRY} verdict; same discipline as {@link #rootCatalogRow}. Both
+     * leaves carry the same three facts the companion needs (the return table, its projection
+     * unit, the result cardinality), so the arms differ only in which leaf they read them off.
+     */
+    private static LauncherCommand serviceReentryRow(GraphitronField field, GeneratedUnits units) {
+        return switch (field) {
+            case QueryField.QueryServiceTableField f ->
+                serviceReentryRow(f, f.returnType(), units);
+            case MutationField.MutationServiceTableField f ->
+                serviceReentryRow(f, f.returnType(), units);
+            default -> throw new IllegalStateException(
+                "Graphitron generator bug (launcher production): coordinate '"
+                + field.qualifiedName() + "' (" + field.getClass().getSimpleName()
+                + ") received a root service reentry launch verdict but has no payload arm here;"
+                + " the membership predicate and this payload dispatch have drifted");
+        };
+    }
+
+    /**
+     * A root {@code @service} table return's companion row: the named unit holding the follow-up
+     * SELECT, keyed on the primary keys the fetcher lifts off the records the developer's method
+     * returned. The correlation is PK self-identity, the degenerate {@code OnLiftedSlots} the
+     * record-sourced carrier re-fetch already runs, so the same {@link LaunchSource.ProjectedReentry}
+     * arm serves this caller as serves the projected DML return; what varies is only where the
+     * keys were captured. The where slot stays null (the root service leaves declare no filter
+     * surface of their own; the developer's method owns the selection), the list arm's ORDER BY
+     * idx is source-entailed so the ordering slot is absent, and tenancy is single by
+     * classification (a tenant fan-out on a root {@code @service} is classifier-rejected).
+     */
+    private static LauncherCommand serviceReentryRow(OutputField field,
+            no.sikt.graphitron.rewrite.model.ReturnTypeRef.TableBoundReturnType returnType,
+            GeneratedUnits units) {
+        var table = returnType.table();
+        return new LauncherCommand(
+            units.reentryRowsMethod(field.parentTypeName(), field.name()),
+            FieldCoordinates.coordinates(field.parentTypeName(), field.name()),
+            new LaunchSource.ProjectedReentry(
+                units.typeClass(returnType.returnTypeName()),
+                new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots(
+                    table, table.primaryKeyColumns())),
+            null,
+            new Invocation.ReturningKeyed(),
+            new TenantStrategy.Single(),
+            returnType.wrapper().isList()
+                ? new ResultShape.RecordList(null)
+                : new ResultShape.SingleRecord());
     }
 
     /**
@@ -411,7 +475,9 @@ public final class LauncherCommands {
      * two walks cannot disagree on membership. The DML reentry companions are deliberately
      * absent: a schema-free assembly builds no mutation writes, so no captured
      * {@code RETURNING} keys exist for a companion to re-select by, and the reentry verdict is
-     * skipped rather than served.
+     * skipped rather than served. The root {@code @service} companion is served, the same
+     * reasoning read the other way: the keys are captured from the developer's returned records
+     * at the call site, so the row needs only leaf facts, and these leaves the assemblies build.
      */
     public static LauncherRelation produceWithoutSchema(List<? extends GraphitronField> fields,
             String outputPackage) {
@@ -470,6 +536,11 @@ public final class LauncherCommands {
                     units);
                 case ChildField.ServiceTableField stf -> serviceTableRow(stf, units);
                 case ChildField.ServiceRecordField srf -> serviceRecordRow(srf, units);
+                // Unlike the DML companions, the root service companion is served here: its
+                // payload needs only leaf facts (the return table's primary key and the
+                // projection unit), and the unit-tier fetcher assemblies do build these leaves.
+                case QueryField.QueryServiceTableField qstf -> serviceReentryRow(qstf, units);
+                case MutationField.MutationServiceTableField mstf -> serviceReentryRow(mstf, units);
                 default -> throw new IllegalStateException(
                     "Graphitron generator bug (schema-free launcher production): field '"
                     + field.qualifiedName() + "' received a launch verdict but has no"
@@ -1120,7 +1191,8 @@ public final class LauncherCommands {
         return switch (verdictOf(schema, field)) {
             case NONE -> null;
             case SERVICE -> units.loadMethod(field.parentTypeName(), field.name());
-            case DML_REENTRY -> units.reentryRowsMethod(field.parentTypeName(), field.name());
+            case SERVICE_REENTRY, DML_REENTRY ->
+                units.reentryRowsMethod(field.parentTypeName(), field.name());
             case ROOT_CATALOG ->
                 hasKind(schema.operationMembersOf(field.parentTypeName(), field.name()),
                         OperationMember.Kind.LOOKUP)

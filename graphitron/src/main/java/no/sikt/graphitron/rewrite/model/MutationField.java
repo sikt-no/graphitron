@@ -318,14 +318,13 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p>Parameter binding (including context arguments) is fully encoded in
      * {@link MethodRef#params()} via {@link ParamSource}.
      *
-     * <p>The success arm is universal passthrough: the service method returns the SDL payload
-     * class (or table-bound record) directly, and per-field wiring projects SDL fields off the
-     * parent's domain return.
-     *
-     * <p><b>Reentry realization.</b> Value-level re-fetch without a site-level re-query,
-     * exactly as {@link QueryField.QueryServiceTableField}: {@code requiresReFetch()} is true,
-     * {@code emitsKeyedReQuery()} is false, and the re-projection is realized by the downstream
-     * child fetchers' {@code $project}. See that leaf's javadoc for the fact linkage.
+     * <p><b>Reentry realization.</b> Both value-level re-fetch and site-level reentry, exactly as
+     * {@link QueryField.QueryServiceTableField}: the returned records are key carriers, and the
+     * emitted fetcher lifts their primary keys and returns the reentry companion's re-selected
+     * rows. See that leaf's javadoc for the fact linkage. The service call stands where a DML
+     * write stands on the mutation family's other reentry caller, so this coordinate re-selects
+     * rows that must still exist: a service that deletes rows and hands the deleted records back
+     * has nothing to re-select, and its answer is the empty list (or null).
      */
     record MutationServiceTableField(
         String parentTypeName,
@@ -350,9 +349,10 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p>Parameter binding (including context arguments) is fully encoded in
      * {@link MethodRef#params()} via {@link ParamSource}.
      *
-     * <p>The success arm is universal passthrough: the service method returns the SDL payload
-     * class (or scalar / pojo) directly, and per-field wiring projects SDL fields off the
-     * parent's domain return.
+     * <p>The success arm is a passthrough: the service method returns the SDL payload class (or
+     * scalar / pojo) directly, and per-field wiring projects SDL fields off the parent's domain
+     * return. This is where the non-table return differs from its table-bound sibling, whose
+     * records are key carriers re-selected from the catalog.
      */
     record MutationServiceRecordField(
         String parentTypeName,

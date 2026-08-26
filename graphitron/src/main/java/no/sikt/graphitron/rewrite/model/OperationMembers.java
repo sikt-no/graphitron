@@ -48,9 +48,8 @@ import java.util.Set;
  *       ({@link TargetShape.Record} / {@link TargetShape.Field}, or a catalog column read off an
  *       in-memory producer record) triggers no query-composing operation, and the DataFetcher's
  *       existence is the fact.</li>
- *   <li><b>The reentry member is minted centrally</b> ({@code mintsReentry}), from the same
- *       facts the site-level predicate always read (a bare catalog table target, a received or
- *       produced record, minus the root {@code @service} passthrough), so
+ *   <li><b>The reentry member is minted centrally</b> ({@code mintsReentry}), from the two facts
+ *       that decide it (a bare catalog table target, a received or produced record), so
  *       {@link OutputField#emitsKeyedReQuery()} reads member presence instead of recomputing a
  *       compound predicate per site.</li>
  * </ul>
@@ -130,8 +129,14 @@ public final class OperationMembers {
             shape(Set.of(Kind.NODE_RESOLVE), Set.of())),
         Map.entry(QueryField.QueryNodesField.class,
             shape(Set.of(Kind.NODE_RESOLVE), Set.of())),
+        // Reentry is *required*, not optional, on the two table-bound service leaves: every
+        // instance has a bare table target and a record-producing service call, so every
+        // instance mints. (Contrast DmlTableField, whose encoded return arms mint none, which is
+        // what makes the slot honestly optional there.) The one wrapper that would break the
+        // "every instance" claim is unconstructible: ServiceDirectiveResolver rejects a
+        // Connection return on a root @service outright.
         Map.entry(QueryField.QueryServiceTableField.class,
-            shape(Set.of(Kind.SERVICE_CALL), Set.of())),
+            shape(Set.of(Kind.SERVICE_CALL, Kind.REENTRY), Set.of())),
         Map.entry(QueryField.QueryServiceRecordField.class,
             shape(Set.of(Kind.SERVICE_CALL), Set.of())),
         Map.entry(QueryField.QueryServicePolymorphicField.class,
@@ -151,8 +156,9 @@ public final class OperationMembers {
             shape(Set.of(Kind.WRITE), Set.of())),
         Map.entry(MutationField.MutationRoutineWriteRecordField.class,
             shape(Set.of(Kind.WRITE), Set.of())),
+        // The mutation twin of the query service-table entry above; same reasoning.
         Map.entry(MutationField.MutationServiceTableField.class,
-            shape(Set.of(Kind.SERVICE_CALL), Set.of())),
+            shape(Set.of(Kind.SERVICE_CALL, Kind.REENTRY), Set.of())),
         Map.entry(MutationField.MutationServiceRecordField.class,
             shape(Set.of(Kind.SERVICE_CALL), Set.of())),
         Map.entry(MutationField.MutationServicePolymorphicField.class,
@@ -398,10 +404,11 @@ public final class OperationMembers {
     }
 
     /**
-     * The site-level reentry mint: a bare catalog {@link TargetShape.Table} target whose value
-     * comes from a received record (a record-sourced child) or a record-producing member (a
-     * service call or DML write), minus the root {@code @service} passthrough whose
-     * re-projection is realized by the downstream child fetchers.
+     * The site-level reentry mint, one positive fact: a bare catalog {@link TargetShape.Table}
+     * target whose value comes from a received record (a record-sourced child) or a
+     * record-producing member (a service call or DML write) re-projects the table by key at its
+     * own site. Records that cross a producer boundary are key carriers wherever the target is a
+     * catalog table, so the fact reads the same at every depth and on every producer kind.
      */
     private static boolean mintsReentry(OutputField leaf, List<OperationMember> base) {
         if (!(leaf.target().shape() instanceof TargetShape.Table)) {
@@ -409,12 +416,7 @@ public final class OperationMembers {
         }
         boolean receivedRecord = leaf instanceof ChildField cf && cf.sourceShape() == SourceShape.Record;
         boolean producedRecord = base.stream().anyMatch(OperationMember::producesRecord);
-        if (!receivedRecord && !producedRecord) {
-            return false;
-        }
-        boolean rootServicePassthrough = !(leaf instanceof ChildField)
-            && base.stream().anyMatch(m -> m instanceof ServiceCall);
-        return !rootServicePassthrough;
+        return receivedRecord || producedRecord;
     }
 
     /**

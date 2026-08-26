@@ -72,9 +72,11 @@ class UnifiedEmissionPinsTest {
         // the keyed-lookup root onto the table arm, and the routine fold merged the
         // routine-sourced root there too, the fork living in the launcher row's source arm),
         // the four child arms (batched table with the keyed-lookup fork inside, batched pivot,
-        // service table lift, service record delegate), and the DML reentry companion's one
+        // service table lift, service record delegate), the DML reentry companion's one
         // shared write-arm call (emitReentry; the projected and discriminated arms converge on
-        // it, so the fold added one site, not two). A handcrafted bypass replaces one call
+        // it, so the fold added one site, not two), and the root @service table return's one
+        // shared call (emitServiceReentryLift; the query and mutation twins converge on it the
+        // same way). A handcrafted bypass replaces one call
         // with inline MethodSpec construction and drops the count; a legitimately new launcher
         // family raises it, and touching this number is the review point.
         long renderSites = countAcrossGenerators(
@@ -84,7 +86,7 @@ class UnifiedEmissionPinsTest {
             .as("Every launcher emit site in generators/ routes through "
                 + "RootLauncherRenderer.render; a count move in either direction is a "
                 + "deliberate edit here")
-            .isEqualTo(8);
+            .isEqualTo(9);
     }
 
     @Test

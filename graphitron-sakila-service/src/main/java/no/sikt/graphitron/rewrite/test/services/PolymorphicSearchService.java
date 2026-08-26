@@ -15,8 +15,9 @@ import java.util.List;
  * <em>is</em> the discriminator. The generated fetcher dispatches on the runtime record class
  * ({@code FilmRecord} → {@code Film}, {@code ActorRecord} → {@code Actor}), tags the matched
  * participant's {@code __typename}, and auto-fetches the selected columns by primary key. The
- * methods therefore set only the PK and leave the rest for Graphitron to fetch, matching the
- * legacy 9.3 contract.
+ * methods therefore set only the PK and leave the rest for Graphitron to fetch, which is the
+ * contract every table-returning {@code @service} shape now states, the plain single-table return
+ * ({@link SampleQueryService#filmsByService}) included.
  */
 public final class PolymorphicSearchService {
 

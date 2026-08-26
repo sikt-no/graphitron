@@ -209,11 +209,12 @@ public final class GeneratedUnits {
     }
 
     /**
-     * {@code <Parent>Fetchers#rows<Field>}: a DML reentry companion, the named unit holding a
-     * projected / discriminated mutation's follow-up SELECT, keyed on the {@code RETURNING}-
-     * captured keys. Same formula as {@link #rowsMethod} and deliberately a separate method,
-     * per that scheme's own precedent: the population joins the relation from the mutation
-     * family, and a future fork in the formula happens here, in the one minting locus.
+     * {@code <Parent>Fetchers#rows<Field>}: a reentry companion, the named unit holding an entry
+     * point's follow-up SELECT, keyed on the keys that entry point captured (a projected /
+     * discriminated mutation's {@code RETURNING} columns, or a root {@code @service} return's
+     * lifted primary keys). Same formula as {@link #rowsMethod} and deliberately a separate
+     * method, per that scheme's own precedent: the population joins the relation from the
+     * reentry families, and a future fork in the formula happens here, in the one minting locus.
      */
     public UnitMethodRef reentryRowsMethod(String parentTypeName, String fieldName) {
         return new UnitMethodRef(fetchers(parentTypeName), "rows" + upperCamel(fieldName));

@@ -566,12 +566,22 @@ type Query {
     # the generator emitted an unguarded `film.film_id.in(null)` which jOOQ renders as
     # the literal `false`, silently producing the empty set.
     filmsByEffectiveNullability(filter: FilmIdListFilter): [Film!]!
-    # plan-service-root-fetchers.md: @service root fetcher with @table-bound return.
-    # Service hands back Result<FilmRecord> directly; framework does no projection.
+    # @service root fetcher with a @table-bound return. The service selects FILM_ID and nothing
+    # else: the framework reads the returned records as key carriers and re-selects the requested
+    # fields from `film` by that key, so the key-only shape is a complete answer. Its renamed
+    # sibling below stays full-select, so the tier covers both.
     filmsByService(ids: [Int!]!): [Film!]!
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             method: "filmsByService"
+        })
+    # The key carrier taken literally: the service runs no query at all, just hands back one
+    # FilmRecord per requested id with the key set. Pins that the re-select needs nothing but the
+    # key, and that a key with no live row drops from the result.
+    filmsByServiceUnchecked(ids: [Int!]!): [Film!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+            method: "filmsByServiceUnchecked"
         })
     # R53 (external-code-reference-arg-mapping.md): GraphQL arg `ids` binds to the Java parameter
     # `filmIds` via argMapping; SampleQueryService.filmsByServiceRenamed(DSLContext, List<Integer> filmIds).

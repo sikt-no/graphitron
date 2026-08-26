@@ -274,7 +274,8 @@ public final class ClassifiedCorpus {
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDetailsProps"})
               externalFilm: Film
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
-                @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Table)
+                @classified(source: Query, operations: [Reentry, ServiceCall], target: Single, targetShape: Table)
+                @commits(source: ProjectedReentry, result: SingleRecord)
             }
             """),
 
@@ -1493,7 +1494,8 @@ public final class ClassifiedCorpus {
             type Mutation {
               importFilm: Film
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
-                @classified(source: Mutation, operations: [ServiceCall], target: Single, targetShape: Table)
+                @classified(source: Mutation, operations: [Reentry, ServiceCall], target: Single, targetShape: Table)
+                @commits(source: ProjectedReentry, result: SingleRecord)
               summariseFilm: FilmDetails
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runDetails"})
                 @classified(source: Mutation, operations: [ServiceCall], target: Single, targetShape: Record)

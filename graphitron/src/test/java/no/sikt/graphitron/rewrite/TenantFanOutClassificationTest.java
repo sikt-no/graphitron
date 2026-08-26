@@ -112,8 +112,9 @@ class TenantFanOutClassificationTest {
 
     @Test
     void markerOnServiceFieldRejects_aheadOfReachDerivedArms() {
-        // A plain service return's reach is structurally empty; without the dedicated arm this
-        // would misreport as "nothing to fan out over".
+        // The service coordinate needs its own rejection arm rather than a reach-derived one:
+        // the reach a fan-out would scatter over is the developer's method, not a statement the
+        // classifier composed, so a reach-derived verdict has nothing right to say about it.
         var schema = build("""
             type Film @table(name: "film") { title: String }
             type Query {

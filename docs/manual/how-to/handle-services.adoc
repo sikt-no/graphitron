@@ -178,21 +178,46 @@ The runtime contract is "your servlet or webfilter must place each named value o
 
 A `@service` method is opaque to the generator: no SQL is spliced, no projection is grafted on. The classifier inspects the *return type* and routes the result through one of four runtime paths.
 
-=== `Result<TableRecord>` (or `List<TableRecord>`): direct hand-off
+=== `Result<TableRecord>` (or `List<TableRecord>`): the records are key carriers
 
 [source,java]
 ----
 public static Result<FilmRecord> filmsByService(DSLContext dsl, List<Integer> ids) {
-    return dsl.selectFrom(Tables.FILM)
+    return dsl.select(Tables.FILM.FILM_ID)
+        .from(Tables.FILM)
         .where(Tables.FILM.FILM_ID.in(ids))
         .orderBy(Tables.FILM.FILM_ID)
-        .fetch();
+        .fetchInto(Tables.FILM);
 }
 ----
 
-When the return type is bound to a `@table` GraphQL type and the Java return is a `Result<X>` (or `List<X>`) of jOOQ records, the framework treats the records as already-projected rows and hands them straight to graphql-java. Each record carries every column the table emits; the per-field column fetchers walk the record without an additional SELECT.
+When the return type is bound to a `@table` GraphQL type, the framework treats the returned records as key carriers: it lifts each record's primary key and re-selects the fields the query asked for from the table, in one batched query on the request's connection, ordered back to the order your method returned. Populate the key columns; everything else comes from the table. This is the same contract for every table-returning service shape (plain, interface, union), and it is the outbound mirror of the inbound rule above: records crossing the service boundary carry the key columns and nothing else, in both directions.
 
-This is the right shape when the service has already produced the rows you want returned and no further projection is needed. The trade-off: the service is responsible for selecting *every column* the schema may eventually ask for. A field added to the GraphQL type later will read `null` from records that didn't include that column.
+So the example selects `FILM_ID` alone and is a complete answer for any selection set over `Film`. Selecting more columns is harmless, and existing services that select every column keep returning the same rows; they just pay one keyed `SELECT` they no longer need. Rewriting them to select keys only removes that cost.
+
+Two consequences worth knowing before you rely on this:
+
+* *The returned table needs a primary key.* There is nothing else to key the re-select on, so a `@table` type over a key-less table is rejected at build time, naming the table.
+* *A key with no live row drops out.* If your method hands back a key the table has no row for, that element is absent from a list result, and a single result resolves `null`. This is worth a second look on a mutation `@service` that deletes rows and hands the deleted records back: those rows are gone, so there is nothing to re-select. Return the ids, or use the escape hatch below.
+
+==== Escape hatch: a type without `@table`
+
+`@table` on a GraphQL type is the declaration that the type *is* that table's rows, which is why its column values come from the table. If you want to return column values that differ from what the table holds, drop `@table` from the return type and name the columns with `@field(name:)`. The Java signature stays exactly the same, the backing jOOQ record is read directly, and no re-select happens:
+
+[source,graphql]
+----
+type FilmSummary {          # no @table: read straight off the returned record
+    filmId: Int  @field(name: "film_id")
+    title: String @field(name: "title")
+}
+
+type Query {
+    filmSummaries(ids: [Int!]!): [FilmSummary!]!
+        @service(service: {className: "...FilmSummaryService", method: "summarise"})
+}
+----
+
+What dropping `@table` gives up is the catalog-driven surface on that type: `@reference` paths, `@splitQuery` children, `@orderBy`, pagination, and `@node` (which requires `@table`). So this is the right move for a projection type you shape yourself, and the wrong one for an entity you want the catalog features on.
 
 === Scalar return: graphql-java coerces
 
@@ -315,12 +340,14 @@ public static Map<FilmRecord, String> titleTitlecase(Set<FilmRecord> films, DSLC
 ----
 
 One statement for the whole batch, which is what the DataLoader dispatch exists to make possible. Reading `film.getTitle()` off the key instead returns `null` for every row in the batch: the key is a fresh `FilmRecord` carrying `FILM_ID` and nothing else, so every other column reads `null` regardless of what the client selected.
+
+The same rule runs the other way across the same boundary: a record your method *returns* for a `@table`-bound type is read as a key carrier too, so you populate the key columns and the framework selects the rest. See <<result-tablerecord-or-listtablerecord-the-records-are-key-carriers>>.
 ====
 
 The contract holds identically under both parent kinds, so the same typed-record `@service` child works under either without a change to its Java signature:
 
 * *SQL-projected parent* (the parent came from a framework SELECT, e.g. a `@table` query or a split-query parent). The framework includes the parent's key columns in that SELECT whenever the `@service` field is selected (the field's own projection entry carries them, and the field's fetcher only runs when it is selected), and builds the key record from them.
-* *Service-returned parent* (the parent is itself a `@service` handing back a hand-rolled record, e.g. `selectFrom(FILM)` returning `Result<FilmRecord>`). A jOOQ-generated record always carries its own primary key, so the same read works with no framework SELECT involved.
+* *Service-returned parent* (the parent is itself a `@service` handing back records for a `@table`-bound type). Those records are key carriers too, so the framework re-selects the parent rows by key before any child runs; the child then reads its key off a projected row, exactly as under an SQL-projected parent.
 
 [#batching-class-backed]
 === Batching a child `@service` on a class-backed parent
@@ -401,7 +428,7 @@ The performance shape: one `Set<Key>`-input call, one `Map<Key, Value>`-output r
 * *`contextArguments:` requires the request layer to set them.* The framework reads `env.getGraphQlContext().get(name)`; if the servlet/filter doesn't put the value there, the parameter is `null` at call time. The classifier doesn't validate the value is set; only that the Java parameter named to receive it exists.
 * *Non-root `@service` requires `@splitQuery`.* The classifier rejects a child `@service` without it. The shape on the child is `Set<Key>` → `Map<Key, Value>`, not `(Parent, Args) → Value`. Single-statement nested resolution is not supported on the service path.
 * *Map keys must round-trip.* The returned `Map` is read by `framework-supplied Set` element. If your body constructs new keys (not `Row<N>` instances backed by the same value-equals semantics), the lookup misses and the field returns `null` for every parent. Prefer to rebuild keys from the framework's `Set` rather than constructing fresh ones.
-* *`Result<TableRecord>` returns skip framework projection.* The service is responsible for selecting every column the schema may eventually ask for. A schema field added later that reads a column the service didn't include returns `null` from records that lack it.
+* *A `@table`-bound return needs a keyed table, and unmatched keys drop.* The framework re-selects the returned records by primary key, so a `@table` type over a key-less table is rejected at build time naming the table, and a key the table has no row for is absent from a list result (or `null` for a single one). A service that deletes rows and returns them has nothing left to re-select.
 * *A child `@service` body fetches its own non-key data.* No source shape, typed record included, carries parent columns beyond the key. Take the `DSLContext` and issue one batched query for what you need; the framework does not smuggle extra columns through the parent SELECT on your behalf.
 * *A `@table` parent with no primary key cannot host a batched child `@service`.* On a `@table` parent the element type must be the parent's own record, so the batch key is that table's primary key and a table without one leaves nothing to key on; the classifier rejects the coordinate at build time and names the table.
 * *Every child `@service` batches.* There is no per-parent service call: a child `@service` whose method declares no `Sources` parameter is rejected at build time, whatever it returns. Take the keys and return them keyed (`Map<Key, Value>`) or positionally (`List<Value>`).

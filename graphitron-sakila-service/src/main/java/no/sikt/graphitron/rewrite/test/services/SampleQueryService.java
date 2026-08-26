@@ -12,8 +12,9 @@ import java.util.List;
  *
  * <ul>
  *   <li>{@link #filmsByService} — returns {@code Result<FilmRecord>} for {@code @service}
- *       with a {@code @table}-bound return type. Service hands records straight to graphql-java;
- *       no framework projection.</li>
+ *       with a {@code @table}-bound return type, populating the primary key and nothing else.
+ *       The framework reads the records as key carriers and re-selects the requested fields
+ *       from the table, which is what makes the key-only shape sufficient.</li>
  *   <li>{@link #filmCount} — returns a scalar for {@code @service} with a non-table return.</li>
  * </ul>
  *
@@ -26,15 +27,41 @@ public final class SampleQueryService {
     private SampleQueryService() {}
 
     /**
-     * Returns FilmRecords directly — no framework projection. Demonstrates that
-     * {@code @service} with a {@code @table}-bound return type hands the records straight
-     * to graphql-java, whose column fetchers walk them.
+     * Selects the primary key and nothing else: the deliberately minimal shape a
+     * {@code @table}-bound {@code @service} return is allowed to be. Every other selected field
+     * resolves because the framework re-selects it from {@code film} keyed on the {@code FILM_ID}
+     * it reads off each returned record. Its siblings below stay full-select on purpose, so the
+     * tier covers both the key-only contract and the already-full records the old contract
+     * asked authors to write.
+     *
+     * <p>{@code FILM_ID} is populated through a coerced {@code FilmRecord}, not through
+     * {@code selectFrom}, which is the whole point: a record whose other columns were never
+     * fetched is still a complete answer.
      */
     public static Result<FilmRecord> filmsByService(DSLContext dsl, List<Integer> ids) {
-        return dsl.selectFrom(Tables.FILM)
+        return dsl.select(Tables.FILM.FILM_ID)
+            .from(Tables.FILM)
             .where(Tables.FILM.FILM_ID.in(ids))
             .orderBy(Tables.FILM.FILM_ID)
-            .fetch();
+            .fetchInto(Tables.FILM);
+    }
+
+    /**
+     * The key carrier taken literally: one {@code FilmRecord} per requested id, with the key set
+     * and no query run at all. Two things this pins that {@link #filmsByService} cannot. A
+     * service need not touch the database to answer a {@code @table}-bound field, which is the
+     * strongest form of "populate the key columns and Graphitron fetches the rest". And a key the
+     * table has no row for has to go somewhere: it drops from the result, the same contract the
+     * discriminated service return already carries.
+     */
+    public static Result<FilmRecord> filmsByServiceUnchecked(DSLContext dsl, List<Integer> ids) {
+        Result<FilmRecord> carriers = dsl.newResult(Tables.FILM);
+        for (Integer id : ids) {
+            FilmRecord carrier = dsl.newRecord(Tables.FILM);
+            carrier.setFilmId(id);
+            carriers.add(carrier);
+        }
+        return carriers;
     }
 
     /**

@@ -243,8 +243,7 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
         boolean bareTableTarget = shape instanceof TargetShape.Table;
         boolean receivedRecord = leaf instanceof ChildField cf && cf.sourceShape() == SourceShape.Record;
         boolean producedRecord = serviceTrigger || writeRow.isPresent();
-        boolean rootServicePassthrough = isRoot && serviceTrigger;
-        if (bareTableTarget && (receivedRecord || producedRecord) && !rootServicePassthrough) {
+        if (bareTableTarget && (receivedRecord || producedRecord)) {
             kinds.add(OperationMember.Kind.REENTRY);
         }
         return kinds;

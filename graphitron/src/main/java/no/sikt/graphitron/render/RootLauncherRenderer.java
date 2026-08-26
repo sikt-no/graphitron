@@ -96,7 +96,7 @@ public final class RootLauncherRenderer {
         // direct single-tenant launcher takes the one resolved DSLContext its entry point
         // acquired; a fanned launcher takes none, its acquisition being plural and internal to
         // the scatter carrier; a batched launcher takes its loader keys; a reentry companion
-        // takes the write's captured RETURNING keys, the dsl declared in the body by the
+        // takes the keys its entry point captured, the dsl declared in the body by the
         // shell's fragment.
         switch (row.invocation()) {
             case Invocation.Batched batched ->

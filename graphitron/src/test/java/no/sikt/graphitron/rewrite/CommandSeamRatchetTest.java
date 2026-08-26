@@ -248,8 +248,13 @@ class CommandSeamRatchetTest {
      * shares rather than a leaf of any of the seven hierarchies. That is the shape a conversion
      * should leave behind: a producer that still asks the schema something asks it of the widest
      * carrier that can answer.
+     *
+     * <p>Raised 136 to 140 when the root {@code @service} table return gained its reentry
+     * companion row: the launch family's payload dispatch reads the two service-table leaves
+     * (two arms in the schema walk, two in the schema-free one), the same sanctioned payload-half
+     * reads every other family's dispatch holds.
      */
-    private static final int PLAN_LEAF_REFERENCES = 136;
+    private static final int PLAN_LEAF_REFERENCES = 140;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide
