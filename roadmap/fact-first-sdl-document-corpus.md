@@ -1,7 +1,7 @@
 ---
 id: R840
 title: "The corpus becomes a folder of self-describing, fact-first SDL documents"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: testing
