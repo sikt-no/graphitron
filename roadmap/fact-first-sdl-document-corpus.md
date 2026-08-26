@@ -176,40 +176,44 @@ therefore *executed, never surveyed*, and four floors say so mechanically:
 - **Every document annotates at least one coordinate**, which is today's non-vacuity check on
   `ClassifiedDslTest` kept.
 
-## Slice 1: the container moves, additively
+## Slice 1: the container moves (shipped at `bcad819` + `a457732`)
 
-Additive-then-cutover, per `roadmap/workflow.adoc`: a big-bang swap of 57 fixtures and 19 readers in
-one commit makes the item's own failure criterion unprovable until the last reader moves. Instead the
-loader lands with two or three documents while `documents()` returns the folder unioned with the
-surviving Java list, so **every reader keeps calling one accessor and never sees two sources**, and
-"one new file, no `.java` edit" is provable at document number one. Then the list drains, document by
-document, and `ClassifiedCorpus` is deleted when it is empty. This slice is orthogonal to the other
-two: both could land against the Java strings today, so the container is neither's prerequisite, it
-is the thing that makes them cheap.
+All 57 fixtures are documents under `graphitron/src/test/resources/corpus/`, the prelude is
+`_prelude.graphqls` beside them, `CorpusDocuments` loads the folder from the source tree with its
+floors in `CorpusDocumentsTest`, the 19 readers call `documents()` / `withProjection()` /
+`coveredLeaves()`, and `ClassifiedCorpus` and `ClassifiedDsl.PRELUDE` are gone. Every projection
+comment and every recast Java comment is now an SDL description on the coordinate it is about. The
+page is untouched: all 32 rendered blocks are byte-identical, held by `ClassifiedDocTest`.
 
-- Move the 57 fixtures into `graphitron/src/test/resources/corpus/`, one document per current
-  `Example`, each carrying its fixture, its assertion directives verbatim, its projection query where
-  it has one, and its Java comment recast as descriptions on the coordinates the comment is about.
-- Write `_prelude.graphqls` from `ClassifiedDsl.PRELUDE`. Keep the constants
-  `ClassifiedDsl.CLASSIFIED` and friends only if a Java reader still needs the directive name by
-  symbol; the prelude text itself has no Java home after this.
-- Add `CorpusDocuments` with the four floors above, dual-sourced while the list drains. Delete
-  `ClassifiedCorpus` at the end of the slice, when it holds nothing.
-- Repoint the 19 readers (7 in the package, 12 outside) at the loader's accessors. Because the
-  accessor is dual-sourced, this is one commit's worth of imports and is done before any document
-  moves.
-- The SDL-versus-Java mirror tests (`sourceWrapperMirrorsAdapterValues` and its four siblings, plus
-  the `TypeVerdict`, `SynthesisedType`, `LauncherSource` and `LauncherResult` mirrors) read their SDL
-  side out of the parsed prelude document instead of a Java string. They keep their meaning and lose
-  their transport. They survive slice 1 because the walk-tuple directives they guard survive it; each
-  one dies in slice 2 with the enum it mirrors, since a CSV block declares no enum, and whatever the
-  walk still needs at that point dies with the zoo under R682.
+Five learnings, each of which changed the plan as written:
 
-Where the descriptions go is the one judgment call in this slice. A Java comment that explains a
-minimal pair belongs on the two coordinates the pair contrasts, not on one of them; a comment about
-the fixture as a whole belongs on the type the fixture is about. A comment that is really page prose
-(the "Corpus-only" label R814 found stale on `mutation-roots`, for instance) is deleted rather than
-transcribed.
+- **The additive dual-source phase was not needed, and skipping it bought a stronger proof.** The plan
+  called for the loader to land with two or three documents while `documents()` returned the folder
+  unioned with the surviving Java list, so that "one new file, no `.java` edit" was provable at
+  document number one. Extracting all 57 mechanically instead made a better argument available: a
+  one-shot check compared every id's SDL and projection, and the prelude, string by string against the
+  Java list before it was deleted, and reported zero mismatches. That is equality, where the
+  incremental path would have offered a green build per document.
+- **The prose recast is page-neutral by construction, which the plan did not anticipate.** The
+  renderer already stamped projection comments on as SDL descriptions, so moving the same text to the
+  SDL side changes where the prose lives and not what prints. Only one added description touched a
+  rendered block, and it was page prose by the plan's own rule.
+- **A claim about coverage is not coordinate prose.** The one Java comment with nowhere to go said
+  that its document is what keeps the source-shape mirror honest. That went into
+  `SourceShapeProjectionTest`'s javadoc, beside the mirror it is about, rather than onto a coordinate.
+- **The comment-to-description seam retires with the recast.** With prose in the documents,
+  `QueryViewRenderer`'s `descriptionOf` / `applyDescription` and the two description maps on
+  `Touched` have no author, and the renderer prints what the parsed SDL carries. Its four
+  comment tests become two on the successor mechanism.
+- **`AstPrinter` breaks a field's argument list onto its own line once the field carries a
+  description.** A renderer unit test's expectation moved for that reason, not a behavioural one; the
+  page's committed blocks have carried the multi-line form all along.
+
+The mirror tests (`sourceWrapperMirrorsAdapterValues` and its four siblings, plus the `TypeVerdict`,
+`SynthesisedType`, `LauncherSource` and `LauncherResult` mirrors) now read their SDL side out of the
+parsed prelude document. They survive this slice because the walk-tuple directives they guard survive
+it; each one dies in slice 2 with the enum it mirrors, since a CSV block declares no enum, and
+whatever the walk still needs at that point dies with the zoo under R682.
 
 ## Slice 2: the assertion becomes a fact expectation
 
@@ -475,6 +479,9 @@ the reviewer should ask it explicitly: for each expectation `ClassifiedDocTest` 
 - `ClassifiedCorpus`, `ClassifiedCorpus.Example`, `ClassifiedCorpus.examples()`,
   `ClassifiedCorpus.docExamples()` (slice 1).
 - `ClassifiedDsl.PRELUDE` and the phrase "the test prelude" for a Java string (slice 1).
+- `QueryViewRenderer`'s comment-to-description seam and the phrasing that names it: "a `#` comment
+  line above a selected coordinate", "the projection query is the per-example place to say why a
+  coordinate exists" (slice 1). A coordinate's prose is its own SDL description.
 - `ClassifiedDocTest`, `OutcomeBlockDocTest`, and the paste loop they document ("paste this block
   into the page", "copy the block from the failure message") (slice 3, after their expectations have
   moved).
