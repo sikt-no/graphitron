@@ -66,6 +66,13 @@ The measurable forms, each checkable on the landed tree:
   Java class by FQN (a `@service` stub, a backing record) may still need a method on that stub, which
   is what `DummyRecord` gaining a property and `PlainJooqRecord`'s abstractness were in R814's
   slice 3.
+
+  **Amended by slice 3, honestly: it is two new files plus one line, not one plus one.** The second
+  file is the generated fragment, and it is in the diff because slice 3 committed it rather than
+  staging it, for the reasons that slice records. What the form was protecting is intact: neither new
+  file is Java, neither is hand-written, and the fragment is produced by running a test rather than by
+  an author typing it. What is lost is the sharper claim that a reader of the diff sees exactly one
+  authored artifact, and the fragment is the price of the emitted names having an oracle at all.
 - `ClassifiedCorpus.java` (1783 lines) and `ClassifiedDsl.java` (the Java prelude string) are gone;
   the corpus is 57 or more documents in one folder, and the prelude is one document beside them.
 - The authored page's committed `[source,graphql]` blocks and `.What the pipeline makes of it`
@@ -146,7 +153,8 @@ assertion directive or a widened enum is a prelude edit, not a Java edit.
 
 **Read from the source tree, not the classpath.** The loader resolves
 `graphitron/src/test/resources/corpus` as a path, with the two-candidate working-directory
-resolution `ClassifiedDocTest` already uses, rather than as a classpath resource directory. What is
+resolution the documentation guards already use for the page, rather than as a classpath resource
+directory. What is
 asserted is then exactly what an author edits, and a stale copy under `target/test-classes` cannot
 answer for a document that is no longer there.
 
@@ -224,12 +232,13 @@ the store and compares them by anti-join in both directions, and `CorpusExpectat
 four floors with `CorpusExpectationsTest` planting a regression under each. What the rest of this
 section describes and the shipped work does not yet do, in the order it should be picked up:
 
-1. **The emitted-names approval files.** The verdict half of an outcome block is now an
-   `@expectEquals` table, but the emitted names are still pinned only by `OutcomeBlockDocTest`'s page
-   comparison. Landing the approval files as a second generation sweep beside that test doubles a
-   133-second cost for the interim, so the cheaper shape is to land them and the page collapse
-   together: have the approval test own the one generation run and render the page fragment from the
-   approved names plus the store's verdicts, rather than generating twice.
+1. **The emitted-names approval files.** *Shipped in slice 3, as one artifact rather than two.* The
+   verdict half of an outcome block is an `@expectEquals` table, and the emitted names were left
+   pinned only by the page comparison. Landing an approval file as a second generation sweep beside
+   that test would have doubled a 133-second cost for the interim, so the cheaper shape was to land
+   it with the page collapse and have one generation run serve both. Slice 3 took that further: the
+   approval file and the page's included fragment are the same file, so there is one artifact, one
+   sweep and no second copy of the emitted names.
 2. **The per-axis `@classified` retirement.** The claim relations are asserted beside the tuple
    directives rather than instead of them, because no `@classified` axis is *covered* by a claim
    relation alone: the claim relations spell which classifier claimed a coordinate and at what tier,
@@ -374,84 +383,102 @@ than a mechanical port. The last `@classified` dies with the zoo, under R682, no
 **The emitted-names half moves too, and this is why the slice precedes the doc collapse.** The
 verdict half of an outcome block becomes an `@expectEquals` table in the document. The emitted
 unit and method names are not a store fact, so they get the other habitat the tree already has for a
-checked-in expectation: one approval file per document in the corpus folder, holding exactly what
-`OutcomeBlockRenderer` renders for the emitted column today, in the `ApprovalQueryExampleTest` sense.
-The corpus test compares against it. That is the oracle `OutcomeBlockDocTest` is today, with the page
-taken out of the loop.
+checked-in expectation: an approval file per document holding exactly what `OutcomeBlockRenderer`
+renders for the emitted column, in the `ApprovalQueryExampleTest` sense, with the corpus test
+comparing against it. That is the oracle the page comparison was, with the page taken out of the loop.
+The corpus folder was the assumed home; slice 3 put it in the documentation tree instead, because the
+approval file and the page's fragment turned out to be one file, and only one of the two directories
+can be included from a page.
 
-## Slice 3: the page becomes a view
+## Slice 3: the page becomes a view (shipped)
 
-Only now does the page stop holding expectations, because by here it holds none: the verdicts are
-asserted in the documents and the emitted names in the approval files. This is the correction that
-reordered the slices. Doing the collapse first would delete two approval oracles
-(`ClassifiedDocTest`, `OutcomeBlockDocTest`) and put nothing in their place, because
+Only now does the page stop holding expectations. This is the correction that reordered the slices.
+Doing the collapse first would delete two approval oracles and put nothing in their place, because
 generated-not-committed removes the comparison rather than relocating it, and the emitted names of
 the 32 doc examples are pinned nowhere else in the tree. The `_command-relations.adoc` precedent does
 not cover that: it renders a census carrying no behavioural claim, so there is nothing for it to
 approve.
 
-With the expectations rehomed, the fragment is a pure render of already-asserted facts, and
-generated-into-staging-never-committed is exactly right for it. One AsciiDoc fragment per doc
-example: the coordinate prose read from the captured description rows, the rendered SDL block, and
-the outcome table. The authored page keeps its narrative, its teaching order and its section
-headings, plus one `include::_example-<id>.adoc[]` line per example. `ClassifiedDocTest` and
-`OutcomeBlockDocTest` are then deleted, having nothing left to hold.
+**What landed.** One AsciiDoc fragment per document carrying a projection, at
+`docs/architecture/reference/_example-<id>.adoc`: the rendered SDL block and the outcome table,
+joined by `CorpusFragmentRenderer`. The page keeps its narrative, its teaching order and its section
+headings, and carries one `include::_example-<id>.adoc[]` line per example and no block of its own;
+it went from 2474 lines to 1205. `CorpusFragmentTest` compares every fragment against what the
+corpus renders now and carries the three placement floors, with a planted regression under each in
+`CorpusFragmentRendererTest`. `ClassifiedDocTest` and `OutcomeBlockDocTest` are deleted.
 
-The floor that replaces their discovery half: **a document carrying a projection operation that no
-authored page includes fails the build**, and an include naming no document fails it too. That check
-reads the authored pages and the loaded corpus, so it lives in the `graphitron` test tier beside the
-corpus, on the placement reasoning R814 settled for the architecture symbol gate (`roadmap-tool`
-cannot see the classes such a check needs).
+**The arm is a fourth one, and the reason the three recorded arms all lost is the same.** The plan
+sent whoever picked this up to choose between a main-side capture entry point, a staged fragment
+written by the test tier, and collapsing only the outcome tables. All three are answers to one
+question, where the fragment is generated at build time, and all three pay for it in the same coin:
+the render captures and generates, so it needs the corpus's reflection stubs, and those are test-tree
+classes behind `maven.test.skip`. A main-side entry point is cheaper than the plan feared (capture
+needs only `GraphitronModelStore.open`, `RewriteSchemaLoader.load` and `FactCapture.capture`, all
+main-side, and `TestConfiguration.testContext` is a `RewriteContext` over two string constants), but
+it does not reach the stubs, and a docs render that cannot resolve a `@service` FQN does not fail:
+generation rejects the pattern, the block renders "generates nothing", and the page is quietly wrong
+for 22 of the 57 documents. Moving the stubs to main sources ships test fixtures to consumers, which
+this item's own boundary paragraph refuses.
 
-**Where the render runs: the docs module, over a main-side renderer.** This is
-`CommandRelationFragment`'s shape exactly: a class in `no.sikt.graphitron.docs`, invoked from
-`docs/pom.xml` at `process-resources` with `classpathScope=compile`, taking the corpus folder and the
-output path as arguments the way that renderer takes a source root. `CorpusDocuments` and the two
-renderers move from the test tree into that package; the harness goes on consuming them.
+**So the fragment is not generated at build time. It is generated, committed, and approved.** That
+follows from the plan's own reasoning about the emitted names, read one step further: the plan wanted
+never-committed page fragments *and* checked-in approval files for the emitted names, on the grounds
+that the fragment holds no expectation while the approval does. But the outcome table *is* the
+emitted names, so the fragment holds an expectation, so the premise for never-committed fails and the
+two artifacts were always one. The fragment is committed because it is an oracle; being committed, it
+serves the page directly, and an unconditional `include::` resolves in every build including the ones
+that skip tests. This is the contract `roadmap/README.md` already has, and the approval idiom
+`ApprovalQueryExampleTest` already documents: generated, committed, never hand-edited, regenerated by
+the test that owns it. Slice 2's remaining emitted-names approval is therefore not a separate
+deliverable; it is this file, which is also what the plan asked for when it said to land the two
+together so one generation sweep serves both.
 
-**A defect in this arm, found while landing slice 2 and unresolved.** The renderers cannot simply move
-to main sources: `OutcomeBlockRenderer` captures through `CapturedStore` and configures through
-`TestConfiguration`, both test-tree infrastructure, so moving it to `no.sikt.graphitron.docs` drags the
-capture harness into main with it. The plan's own answer, a provided-scope dependency on `graphitron`'s
-test-jar, does not close it either: `-Pquick` sets `maven.test.skip`, which skips test compilation, so
-the test-jar is empty under exactly the profile the plan invokes it to survive. Whoever picks up slice 3
-decides between three arms rather than assuming this one: give the docs render a main-side capture
-entry point (the real fix, and the largest), let the fragment be written by the `graphitron` test tier
-into the docs module's staging directory and accept that `-Pquick` skips both the fragment and the
-render, or keep the page's blocks committed and collapse only the outcome tables. The first is the only
-one that leaves an unconditional `include::` honest.
+**The loop the paste loop became.** A disagreeing render is written to
+`graphitron/target/corpus-fragments/` and the failure message gives the `cp` line onto the approved
+file. Under this module's own `target` and not beside the approved file on purpose: the fragments live
+in the published documentation tree, so a stray `.adoc` there would be staged and scanned as an
+untracked page. Nothing is copied out of a failure message, which is the fourth measurable form.
 
-The arm this rejects, and why, because it looks cheaper: an `exec` in `graphitron/pom.xml` with
-`classpathScope=test` would keep everything in the test tree and add no docs dependency, but
-`-Pquick` sets `maven.test.skip`, which skips test *compilation*, so that execution has no classes to
-run and fails outright rather than merely costing time. Gating it on the same flag makes the
-fragment's existence conditional on a test-lifecycle flag while its `include::` consumer is
-unconditional, which either dangles the include or forces R814's absent-fragment gate to be relaxed.
-There is no exec in the reactor gated on a test-skip flag; every one of them runs at `compile` or
-`process-*` with `classpathScope=compile`.
+Three properties of the placement worth stating, because each was a choice:
 
-The price of the chosen arm is two provided-scope dependencies on the docs module and one coupling
-worth naming outright:
+- **The fragments share a directory with the page that includes them.** A relative `xref:` written
+  inside a fragment then resolves identically whether it is read as part of the including page or on
+  its own, which is what the staged-site xref check reads it as. A `_examples/` subdirectory would
+  have made the rejection note's `xref:../explanation/typed-rejection.adoc` wrong by one level in one
+  of the two readings.
+- **The `_` prefix is load-bearing three times, and one existing gate had to learn it.** Asciidoctor
+  renders every staged `.adoc` that does not start with one, so without it the site would publish 32
+  title-less pages beside the page including them; the corpus's own include floor uses it to tell a
+  fragment from an authored page; and `HowToIndexCoverageTest`, which requires every page in a
+  section directory to be listed in that section's `index.adoc`, was counting fragments as pages. It
+  now excludes underscore files, with a case asserting the exclusion has a population, because an
+  exclusion guarding nothing reads as a general escape hatch. That gate is the one thing in the tree
+  that already had an opinion about what a file in `docs/architecture/reference` is, and it is worth
+  noting that neither the staged-site xref check nor the architecture symbol scan needed changing:
+  the fragments sit in the page's own directory, so their relative `xref:` targets resolve, and the
+  region marker on the first line is what the symbol scan reads.
+- **The generated-region marker moved from the block to the fragment's first line.** The architecture
+  symbol scan skips from the marker to the close of the table inside the region, so one marker at the
+  head covers both halves, and it is also the line telling a human not to edit the file.
 
-- `graphitron-sakila-db`, for the jOOQ catalog the fixtures' tables resolve against. The docs build
-  then needs `-Plocal-db` like every other build, and the catalog-jar clobber footgun fails it loudly
-  rather than rendering a plausible empty table, which is the floor discipline the schema reference
-  already applies.
-- `graphitron`'s test-jar, for the Java classes corpus documents name by FQN (`TestServiceStub`,
-  `DummyRecord`, `PlainJooqRecord`). Provided scope on a pom-packaged module that already sets
-  `maven.deploy.skip` reaches no published artifact, which is the same reasoning the module's
-  existing `provided` dependency on `graphitron` states.
-- The coupling: those stubs are fixtures of the corpus as much as the documents are, and they stay in
-  the test tree while the documents leave it. That is a deliberate split, not an oversight. Moving
-  reflection stubs into main sources would ship test fixtures to consumers, and the acceptance form
-  above already states the boundary it creates: an example needing a new stub method is not a
-  one-file diff.
+The floor that replaces the two guards' discovery half: **a document carrying a projection that no
+authored page includes fails the build**, an include naming no document fails it too, and so does a
+fragment whose document is gone. Those read the authored pages and the loaded corpus, so they live in
+the `graphitron` test tier beside the corpus, on the placement reasoning R814 settled for the
+architecture symbol gate (`roadmap-tool` cannot see the classes such a check needs).
+
+**What the docs module did not need.** No new dependency, no exec, no pom change at all. The plan
+priced the chosen arm at two provided-scope dependencies (`graphitron-sakila-db` for the catalog,
+`graphitron`'s test-jar for the stubs) and a coupling it named as deliberate; a committed fragment
+buys all three back. The coupling's consequence survives and is still true: an example needing a new
+stub method is not a one-file diff.
 
 ## Tests
 
 Every gate below is pipeline tier: capture and generation over the corpus need neither PostgreSQL nor
-the jOOQ codegen beyond the catalog the tier already has, which is where `ClassifiedDslTest` and
-`OutcomeBlockDocTest` sit today.
+the jOOQ codegen beyond the catalog the tier already has, which is where `ClassifiedDslTest` and the
+documentation guards sit. The one exception, landed: the placement floors are set comparisons over
+three lists of names, so they are unit tier and need no store.
 
 - `CorpusDocumentsTest` (slice 1): the four loader floors, each with a planted regression (a removed
   document, a mis-globbed file, a document no parameterized test claims, a document with no annotated
@@ -467,10 +494,14 @@ the jOOQ codegen beyond the catalog the tier already has, which is where `Classi
   column's `CHECK (x IN (...))` clause fails as a membership error rather than as a row mismatch,
   with a planted regression. For a view column, the weaker signal is the failure message's own
   "no row in any document carries this value" line, and the test for it is that the message says so.
-- The emitted-names approval comparison (slice 2), one per document that generates, replacing
-  `OutcomeBlockDocTest`'s page comparison with a corpus-folder one.
-- The placement floor (slice 3): a document with a projection and no include fails; an include with
-  no document fails. Planted regressions both ways.
+- The emitted-names approval comparison, one per document with a projection, replacing the page
+  comparison with a file comparison. Landed in slice 3 rather than slice 2, over the same file the
+  page includes: `CorpusFragmentTest` holds both halves of a worked example at once, so there is one
+  approval per example instead of one per half.
+- The placement floors (slice 3): a document with a projection and no fragment fails, a fragment with
+  no document fails, and a fragment no page includes fails. A planted regression under each, plus one
+  for the near-miss the include floor has to reject: a page naming the fragment's filename in prose
+  is not a page showing it.
 - Unchanged and load-bearing throughout: `VariantCoverageTest`'s corpus obligation, which R682 owns
   re-keying. This item must not narrow what it covers. Its `coveredLeaves()` derivation moves from
   `ClassifiedCorpus` to the loader in slice 1 and is otherwise untouched.
@@ -478,8 +509,11 @@ the jOOQ codegen beyond the catalog the tier already has, which is where `Classi
 The completeness question for the Done gate ("how do we know the item is complete") is the Goal's
 four measurable forms, and the strongest of them is the first: the review can read the `git log` of
 the last example added and see one file plus one line. The second-strongest is a negative one, and
-the reviewer should ask it explicitly: for each expectation `ClassifiedDocTest` and
-`OutcomeBlockDocTest` hold today, name what fails now if it breaks.
+the reviewer should ask it explicitly: for each expectation the two retired documentation guards
+held, name what fails now if it breaks. The answer the landed tree gives: the rendered SDL and the
+outcome table both fail `CorpusFragmentTest`'s approval, an example that stops being shown fails its
+include floor, and an example that stops existing fails the orphan floor. What no longer fails is a
+hand-edit to the page's copy of a block, because the page has no copy.
 
 ## Constraints and boundaries
 
@@ -527,8 +561,11 @@ the reviewer should ask it explicitly: for each expectation `ClassifiedDocTest` 
   line above a selected coordinate", "the projection query is the per-example place to say why a
   coordinate exists" (slice 1). A coordinate's prose is its own SDL description.
 - `ClassifiedDocTest`, `OutcomeBlockDocTest`, and the paste loop they document ("paste this block
-  into the page", "copy the block from the failure message") (slice 3, after their expectations have
-  moved).
+  into the page", "copy the block from the failure message") (slice 3, their expectations having
+  moved into the committed fragment). Also retired with them: "the doc-bridge guard" and "the page
+  holds it verbatim". The page holds nothing; an approval file does. Note for whoever runs the
+  retirement sweep: "drift guard" itself stays live, naming the schema-identifier guard and a dozen
+  other mechanisms, so it is not a registry candidate.
 - "doc example" as a distinct kind of corpus entry, superseded by "a document with a projection".
 - Per axis in slice 2, and only as each axis moves: `@classified`, `@classifiedType`,
   `DimensionTuple`, "the dimensional tuple", "the three-axis verdict". Whatever survives slice 2
@@ -544,6 +581,12 @@ the reviewer should ask it explicitly: for each expectation `ClassifiedDocTest` 
 
 ## Documentation deliverables
 
+- **Landed in slice 3: the skill's page steps are the successor loop.** Step 4 renders the fragment
+  and gives a `cp`, step 5 places one include line, and both carry the rule that a fragment is never
+  hand-edited. The testing how-to gains the fragment as the tree's second approval-style fixture home
+  and states why it is generated-and-committed. The reference page's own intro now says it holds no
+  expectation of its own, and the stale slice-1 sentence claiming its descriptions come from
+  projection comments is gone.
 - **The `classified-corpus` skill is rewritten**, not amended: its eight-step loop is a Java-editing
   procedure (author an `Example`, run the drift test, paste the block) and every step changes. The
   successor loop is: write a document, run the corpus test, done. It is rewritten in the slice that
