@@ -692,8 +692,22 @@ check at classify time that every extra field has an accessor to read from on ev
 channel, but that check fires on the carrier and not on the `@error` type, so an extra field never
 moves the type's verdict away from `ErrorType`.
 
-The payload's own two fields are plain passthroughs over the record the service returned, which is
-the reflection-derived backing of <<backing-class,the previous section>> and not an error concern.
+The payload's `data` field is a plain passthrough over the record the service returned, the
+reflection-derived backing of <<backing-class,the previous section>>. `errors` is not. It is the
+error channel's own coordinate, and the method in its row is where a caught throwable becomes a list
+the wire can carry.
+
+What that method looks like depends on how the carrier ships the errors, which the classifier
+resolves once, with the parent's channel in scope, and which has three answers. Here the errors ride
+an error-list arm of the value the producer returned, so the emitted method takes the source and
+unwraps that arm, resolving to null on the success arm to honour the field's nullability; that is the
+`(Object)` signature in the block above. A carrier that ships them out of band instead, on the
+result's local context, emits a method taking the `DataFetchingEnvironment` and reading them back
+from there. A plain class-backed parent whose `errors`-shaped field is a slot the developer
+populated emits no method at all: the registration wires a `PropertyDataFetcher` onto the property,
+the way `severity` is wired above. Only that third form is a passthrough, and a producer-bound
+payload like this one does not take it.
+
 The rest of the `handlers:` option set (SQL-state and vendor-code matching, validation fan-out,
 `matches:` message filters) is in `docs/manual/reference/directives/error.adoc`; the classification
 verdict does not vary with any of it.
@@ -2276,15 +2290,15 @@ A class-backed parent is not a separate classification either. It moves the sour
 the target. The worked examples above cover most of what that means: scalars and nested non-table
 objects under such a parent in the <<target-shape,`target` shape example>>, an FK-reached `@table`
 child in the <<record-handoff,record-handoff example>>, and both `@service` forms in the
-<<class-backed-service,class-backed service pair>>. What is left is the three forms no example shows,
-two of which do not currently generate:
+<<class-backed-service,class-backed service pair>>, and the `errors:` slot in the
+<<error-type,`ErrorType` example>>. What is left is the two forms no example shows, one of which does
+not currently generate:
 
 |===
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
 | Return `@table` with `@lookupKey` (catalog FK from parent's jOOQ TableRecord) | `BatchedTableField` (Record-sourced, `KeyLift.FkColumns`, keyed lookup arm) | *Nothing.* Single cardinality is rejected at validate time (single-cardinality `@lookupKey` is not supported); the list spelling passes validation and reaches no emission, because the batched-lookup cell has no producer. Pinned as the corpus's one recorded launcher-production gap by the `record-method` example
 | Return `@table` with `@sourceRow` (parent is `Backed` or `JavaRecordType`; no catalog FK required) | `BatchedTableField` (Record-sourced, `KeyLift.Lifter`; keyed lookup arm when `@lookupKey` is present) | Async DataLoader fetcher + `rows*()` method; the developer-supplied static lifter populates the batched VALUES rows
-| `errors:` slot on a service payload (one entry per `@error` mapping) | `ErrorsField` | Passthrough; graphql-java's default `PropertyDataFetcher` reads the list the carrier's try/catch wrapper or the service-method body produced
 |===
 
 === Input Fields (resolved against the consuming field's table)

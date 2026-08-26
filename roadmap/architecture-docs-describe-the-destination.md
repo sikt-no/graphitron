@@ -1014,3 +1014,39 @@ Mutation table eight rows to five. Four of the five are rejections and are floor
 type-side lead-in gives. The fifth, `INSERT` returning an encoded `ID`, is a live generating pattern
 with no example yet and is the next candidate here; the lead-in says so rather than letting a reader
 guess which rows are waiting their turn.
+
+**Slice 3, part thirteen: the same wrong sentence, twice, one of them mine.**
+
+The class-backed-parent child table carried a row saying the `errors:` slot on a service payload is a
+"passthrough; graphql-java's default `PropertyDataFetcher` reads the list the carrier's try/catch
+wrapper produced." The outcome block landed in part eleven, on the same page, says
+`SakPayload.errors` emits `fetchers.SakPayloadFetchers#errors(Object)`. A generated method on the
+payload's fetchers class is not graphql-java's default fetcher, and the block has a way to say
+"nothing was emitted": it printed exactly that for `severity`, three rows up.
+
+The generator has three emit forms for that coordinate, selected by a transport the classifier
+resolves once with the parent's channel in scope. One is an inline `PropertyDataFetcher` registration
+and emits no method; one emits a method taking the `DataFetchingEnvironment` and reading the local
+context; one emits a method taking the source and unwrapping an error-list arm, which is the
+`(Object)` signature the block shows. The row described the first and the example takes the third, so
+the page's table and the page's evidence were describing different carriers as if there were one.
+
+Two things about this are worth keeping. First, it is the second instance of the same defect: the
+`@error` type row retired in part eleven was wrong in the same direction, and in nearly the same
+words, about a neighbouring coordinate. A row that says "graphql-java handles it" has now twice meant
+"nobody re-read the emitter after it grew an arm." That is a repeatable smell, not a one-off.
+
+Second, and less comfortable: the correction landed on my own prose too. Part eleven's closing
+paragraph said the payload's "own two fields are plain passthroughs over the record the service
+returned." `data` is. `errors` never was. I wrote that sentence in the same commit that rendered the
+block contradicting it, having read the block. The retired row and my paragraph failed the same way,
+which is the argument for the direction the fact-first corpus item takes: the outcome block is
+machine-checked and the sentence beside it is not, so the sentence is where the rot goes. Restating
+in prose what the block already proves is not redundancy, it is a second place to be wrong.
+
+That item's "three parallel habitats" claim has a fresh instance from part twelve, too. The
+`mutation-service` promotion required the example's story in a Java comment nothing renders, `#`
+comments inside the projection query, and hand prose on the page. And `mutation-roots` was still
+labelled "Corpus-only" in its Java comment long after it had gained a doc query, because nothing
+renders that comment and so nothing could catch it. It was fixed as hygiene in part twelve. It is
+better read as the predicted failure, arriving on schedule.
