@@ -28,6 +28,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-26 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R814` | The architecture docs describe the surface being drained as if it were the design | In Review | 2026-08-26 <sub>created 2026-08-23</sub> | [plan](architecture-docs-describe-the-destination.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
+| `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
 | `R687` | A DML carrier payload with an errors field loses its return-derived write target | Spec | 2026-08-25 <sub>created 2026-08-17</sub> | [plan](dml-carrier-errors-field-blocks-return-derived-table.md) |
@@ -608,6 +609,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R600` [**Retire the roadmap markdown-to-AsciiDoc translator by authoring plans in AsciiDoc**](roadmap-plans-authored-as-asciidoc.md) — Backlog, cleanup
 - `R814` [**The architecture docs describe the surface being drained as if it were the design**](architecture-docs-describe-the-destination.md) — In Review, architecture
 - `R836` [**The fact schema's prose is written for its author, not its reader**](fact-schema-prose-plain-language.md) — Spec, dx
+- `R842` [**Refused patterns gather in one section instead of a residue in every table**](refused-patterns-gather-in-one-section.md) — Spec, architecture
 - `R758` [**The fact model page never learns the materialization registry**](fact-model-page-learns-the-registry.md) — Backlog, dx
 - `R635` [**The schema drift guard covers the prefix-less relations too**](schema-drift-guard-covers-prefixless-relations.md) — Backlog, cleanup
 - `R614` [**lookupKey.adoc claims a per-input-field shape the Query side rejects**](lookupkey-per-input-field-doc-claim.md) — Backlog, docs
