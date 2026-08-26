@@ -1,13 +1,13 @@
 ---
 id: R726
 title: "The @nodeId instruction population excludes the multitable coordinate: state the boundary and pin it"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 4
 theme: nodeid
 depends-on: []
 created: 2026-08-19
-last-updated: 2026-08-25
+last-updated: 2026-08-26
 ---
 
 # Bare @nodeId inference on a multitable filter can answer differently per participant with no diagnostic
