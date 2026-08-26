@@ -1,7 +1,7 @@
 ---
 id: R832
 title: "CatalogRefreshTest budgets a real refresh like a no-op trigger"
-status: In Review
+status: Ready
 bucket: dx
 priority: 2
 theme: tooling
@@ -112,3 +112,71 @@ Two things the plan left to the implementer and how they were settled:
 Per-run cost is unchanged, which is the property that says the split landed on the right axis: the
 only figure that grew is one a green run never pays. The class runs 3/3 green in isolation in
 3.5 s against 3.9 s before, the 1.6 s of that which is the negative test's sleep being untouched.
+
+## Reviewer findings
+
+Round 1, In Review -> Ready. Question 1 (is this the approved change) passes cleanly. Question 2
+(how do we know the item is complete) fails on the one piece of evidence this item named for
+itself.
+
+**Question 1, no finding.** The delivered tree is line for line what Spec approved: `WAIT_MS` split
+into `FIRE_CEILING_MS` (`DEBOUNCE_MS + 15_000`, taken by both positive awaits) and `QUIESCENCE_MS`
+(`DEBOUNCE_MS + 1500`, taken by the negative test's sleep), each carrying a javadoc in the
+`DerivedReadCostTest.BUDGET_FLOOR_MILLIS` shape, live symbols only, no shared helper, no production
+code, one file plus roadmap markdown. Nothing was skipped, nothing unapproved was added, no design
+was substituted. The out-of-scope boundaries hold: `SchemaWatcherTest` and `DebounceExecutorTest`
+are untouched, and R764 already names `graphitron-maven-plugin` as its consumer. The javadoc's
+cross-module `{@link}` targets do resolve; `mvn javadoc:test-javadoc-no-fork -pl
+:graphitron-maven-plugin -Ddoclint=reference` is green on the delivered file.
+
+The split also demonstrably does its job. On one reviewer run the refresh took 4,308 ms, which the
+retired 1.6 s budget would have failed outright and the new ceiling absorbed without noticing.
+
+**Question 2, blocking finding: the headroom ratio does not survive re-measurement.** The
+Verification section made the ratio the completeness answer and said why: "the measured refresh
+cost and the ceiling both live in the constant's javadoc, so a reviewer can re-measure, divide, and
+compare." Re-measured, with a `System.nanoTime` bracket around the `refreshJavaSources` call and the
+module's own suite running four-way concurrent, the refresh cost across four runs was:
+
+    528 ms   801 ms   3,588 ms   4,308 ms
+
+on a 14-core machine at load average ~21, which is the loaded condition this item exists to survive
+and the same condition the implementation commit reports building under. The 854 ms in the javadoc
+sits near the bottom of that spread, not at its centre and nowhere near its top. Dividing as the
+spec asks: 15,100 / 4,308 is about 3.5x, not the "roughly seventeen times the room it took" the
+javadoc claims. The figure is a single sample from a quiet run presented as the measurement, and it
+does not travel to another machine.
+
+Two sentences of the ceiling's javadoc are therefore untrue as written: "this leaves it roughly
+seventeen times the room it took", and "If this ceiling is ever reached, the refresher is broken or
+hung, not slow." At 4.3 s observed against a 15.1 s ceiling, a slow refresher is three and a half
+times away from reaching it, not out of reach.
+
+This is the shape of the original defect at a safer magnitude. The item was filed because a
+wall-clock figure was carried over without an argument for this class's conditions; the replacement
+figure is argued from a measurement taken outside the conditions the argument invokes by name.
+Note that the 854 ms and the 17x both come from the approved Spec body, so this is a defect in the
+premise the implementer faithfully carried, not a deviation from it. It surfaces here because this
+gate is the item's first fresh-context reading, the Spec -> Ready sign-off and the implementation
+having been the same session.
+
+**What would satisfy it.** Re-measure the refresh under the module's own concurrency on a loaded
+machine, take the worst case rather than a single quiet sample, and make the javadoc's stated
+measurement and derived ratio match it. Then either:
+
+- keep `DEBOUNCE_MS + 15_000` and state the honest ratio (a range, or worst-observed, giving
+  roughly three to four times under load), dropping the "broken or hung, not slow" claim or
+  weakening it to what 3.5x supports; or
+- raise the ceiling until "machine load cannot reach it" is true with the headroom the argument
+  wants. The value is free on the green path, which is the whole point of the ceiling axis, so a
+  larger figure costs nothing.
+
+The choice between them is the implementer's; the finding is only that the number in the javadoc
+and the number a reviewer measures have to be the same number. `QUIESCENCE_MS` is unaffected: its
+figure is argued on its own axis, and 1,600 ms is 16x the 100 ms debounce as stated.
+
+**Non-blocking, no action required here.** The reference gate (`javadoc-no-fork`, bound at `verify`
+in the root pom) reads main sources only; `test-javadoc-no-fork` is named in that pom's comment as
+the pair for test sources but is not wired. So the live-symbol `{@link}`s this item deliberately
+chose over `{@code}` are compiler-checked for the statically imported symbol and unchecked for the
+rest. They resolve today, verified above. Worth a Backlog item, not a condition on this gate.
