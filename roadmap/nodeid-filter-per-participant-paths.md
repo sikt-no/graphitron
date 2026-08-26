@@ -1,7 +1,7 @@
 ---
 id: R676
 title: "A @nodeId filter input on a multitable query cannot state a per-participant join path"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: nodeid
