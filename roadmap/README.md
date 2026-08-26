@@ -18,6 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R832` | CatalogRefreshTest budgets a real refresh like a no-op trigger | In Review | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](catalog-refresh-latch-budget-prices-a-real-trigger.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
+| `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Spec | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
@@ -599,6 +600,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### docs
 
+- `R838` [**Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations**](declarative-comment-style.md) — Spec, dx
 - `R596` [**Cross-file xref paths naming deleted plan pages publish as 404 links**](dangling-plan-page-xref-paths.md) — Backlog, cleanup
 - `R592` [**Document the lint rules as a manual reference page**](lint-rule-reference-page.md) — Backlog, dx
 - `R604` [**LeafCoverageReport carries a private escapeAdocCell duplicating Main's**](roadmap-tool-adoc-cell-escape-dedup.md) — Backlog, cleanup
