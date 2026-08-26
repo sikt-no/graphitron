@@ -104,10 +104,10 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 106;
+    private static final int READERS_IN_SCHEMA = 107;
 
     /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 66;
+    private static final int READERS_WITH_CELLS = 67;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -132,7 +132,7 @@ class DerivedReadCostTest {
      * stops at the target it reads. A registration whose rule is read only through the relation being
      * registered is the case that moves this figure least.
      */
-    private static final int CELLS = 175;
+    private static final int CELLS = 178;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -414,9 +414,11 @@ class DerivedReadCostTest {
         "intent_field_reference_step_hop|intent_mutation_payload_refusal_live",
         "intent_field_reference_step_hop|intent_mutation_payload_column_live",
         // The scope family's payload rung, where the counter and the clock disagree outright;
-        // measured above.
-        "intent_carrier_data_field|intent_field_scope_table",
-        "intent_carrier_data_field|intent_argument_scope_table_live",
+        // measured above. One pair, where three stood before the field-grain scope table was
+        // registered: registering it moved this rung's reach onto the source view, and the two
+        // fan-outs that reached the rung only through the field grain stopped reaching it, the
+        // walk now stopping at the target they read.
+        "intent_carrier_data_field|intent_field_scope_table_live",
         // The same rung, reached by the one relation in the write family that still expands the
         // scope family: the write payload's own rule, which is now a registration's source view
         // and so is reached here rather than by everything above it. Six pairs stood beside this
@@ -428,7 +430,7 @@ class DerivedReadCostTest {
         // refusal and the write destination each used to expand the scope family on their way to
         // an answer, and each now reads a table for the same fact, so the rung is no longer on
         // their path and they hold no cell against it to be non-monotonic in.
-        "intent_carrier_data_field|intent_mutation_write_payload_live");
+        "intent_mutation_write_payload|intent_mutation_payload_column_live");
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather

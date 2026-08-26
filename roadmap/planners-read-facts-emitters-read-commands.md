@@ -3019,6 +3019,94 @@ in the order that would reverse the answer if leaves were what was compared.
 **What this increment leaves owing**: the fold itself, still unchanged, and the emitter-side reader
 of this rank, which arrives with the write emitters rather than with the store.
 
+### Conditions, sixteenth increment: the fold, and the diff that told it what it was missing
+
+Fifteen increments named the membership fold as what they were building toward.
+`intent_condition_membership` is it: one row per coordinate and table the coordinate contributes a
+WHERE clause against, which is the key the condition command relation is keyed by. Membership is
+presence and nothing else, so the relation is small and the whole of its content is what makes a
+row exist.
+
+**Five sources, three of which cannot be suppressed.** A `@condition` is a method the author wrote
+and asked to have called, so one on the field, one on any argument whatever that argument's role,
+and one on any input field the arguments reach all contribute unconditionally. The two generated
+sources, an argument whose role resolves a predicate and an input field whose role does, are the
+ones the modifiers act on. What the fold does with those modifiers is read them at the grain the
+classifier reads them at, which for `@lookupKey` means propagating it: a marker on the argument
+consumes the whole expansion beneath it, so an occurrence under such an argument contributes
+nothing at any depth.
+
+**Suppression never removes a row, and that is worth stating because it reads like it should.**
+Whatever sets an override is itself an authored `@condition`, at the field, the argument or an
+enclosing input field, so it contributes under one of the three authored sources and the
+coordinate stays a member. The suppression predicates in the rule are therefore provably unable to
+change the answer at this grain. They are kept anyway, so that each arm is independently a correct
+statement of "does this contribute", and the relation's comment says they are redundant rather than
+leaving a reader to wonder.
+
+**Four exclusions, each its own reason.** A mutation's predicates come from the write partition; a
+`@service` field generates no SQL; the relay node field resolves a node and never filters; a
+`@lookupKey` argument is the VALUES-and-join path. They are written as four exclusions rather than
+one predicate because a reader debugging a missing row wants to know which fired.
+
+**The participant fan-out arrived for free, which was the point of an earlier increment.** The
+table side is `intent_field_scope_table` at its own grain, and that relation already carries a
+`PARTICIPANT_TABLE` row per participant table, so a multi-table polymorphic root gets one row per
+branch without this relation deciding anything. Membership stays a property of the coordinate: a
+name resolving on one participant and not another is a build failure at that participant rather
+than a membership difference, so there is nothing here to fan out.
+
+**What made this increment different: the fold was diffed against the producer.** Every previous
+relation in this chain was anchored by fixtures alone. This one has a consumer that already exists,
+so its rows were compared against the `(coordinate, table)` keys `ConditionCommands.produce`
+actually yields for the sakila example schema, 91 of them. The first draft was 55 rows too many and
+5 too few. Four fold-side rules closed the 55, and all four are rules the classifier applies that
+reading the classifier had not made obvious: the mutation exclusion alone was 37 of them, because a
+mutation's write payload argument reads as an input-object filter argument until something says it
+is not. A fifth fix closed two of the five: reading `graphitron_field_condition` at the input
+field's own coordinate rather than trusting `intent_input_field_filter_role.authored_condition`,
+which is false on a nesting field that carries a condition.
+
+The final three misses are not the fold's, and locating them is the diff's real yield. Two are
+`intent_field_scope_table` having no row for a field returning an author-declared connection type,
+because the rule navigates a connection through `graphitron_field_synthesis` and only a
+generator-synthesised connection has one. One is an argument whose `@reference` path ends in a
+condition hop resolving no column scope, that hop naming no foreign key for the step-target
+relation to carry. Both are filed with their coordinates. Six coordinates of that schema contribute
+nothing here that the generator does contribute, and the relation says so.
+
+**The read cost, and a registration decided by the same mirror the previous increment found.** One
+evaluation of the fold was 6167 milliseconds. Bisection put it on `intent_field_scope_table`, a
+77-millisecond view on the inner side of the final join, evaluated once per contributing
+coordinate. The rewrite was tried first, as this family's own rule says it must be: reversing the
+join so the scope table drives and the fold's contributor set is probed measures 68349, because the
+contributor set is the more expensive of the two derived sides and reversing only moves the
+re-evaluation onto it. This is the case where the rewrite is not the answer, which is worth having
+met once.
+
+So `intent_field_scope_table` is registered, and the numbers are the previous increment's finding
+arriving on a second relation and pointing the other way:
+
+| the scope table as | one read of the fold |
+|---|---|
+| a view | 6167 ms |
+| a table with no index on the coordinate | 91045 ms |
+| a table with one | 342 ms |
+
+The refresh is 77 milliseconds, one evaluation of the scope rule per graph. The index is not a
+tuning of this registration, it is the registration: without it the target is fifteen times worse
+than the view it replaced, because an inlined view can be evaluated restricted and a table can only
+be scanned. Last increment that reasoning argued against a registration; here the same reasoning
+argues for one with an index and against one without, which is what makes it a rule rather than a
+result.
+
+**What this increment leaves owing**: the producer conversion, which is now a matter of
+`ConditionCommands.produce` reading these rows instead of walking the classified fields, and the
+read-side refusal relation. The store has none: a coordinate whose argument classification fails is
+refused whole and has no filter surface, where the write partition states its refusals in two
+relations of its own. On a schema that builds that population is empty, every refusal being a build
+failure, so it is the fold's one structural gap rather than a wrong answer anyone can observe.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the
