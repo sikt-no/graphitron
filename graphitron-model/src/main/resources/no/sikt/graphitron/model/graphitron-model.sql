@@ -8253,7 +8253,29 @@ COMMENT ON COLUMN intent_mutation_write_payload.source_name IS 'the SDL file the
 COMMENT ON COLUMN intent_mutation_write_payload.source_line IS 'source line of the @mutation application, 1-based';
 COMMENT ON COLUMN intent_mutation_write_payload.source_column IS 'source column of the @mutation application, 1-based';
 
-CREATE VIEW intent_mutation_payload_refusal
+CREATE TABLE intent_mutation_payload_refusal (
+  graph_name          VARCHAR NOT NULL,
+  type_name           VARCHAR NOT NULL,
+  field_name          VARCHAR NOT NULL,
+  operation           VARCHAR NOT NULL,
+  path                VARCHAR NOT NULL,
+  container_type_name VARCHAR NOT NULL,
+  input_field_name    VARCHAR NOT NULL,
+  role                VARCHAR,
+  cause               VARCHAR NOT NULL,
+  write_source_name   VARCHAR NOT NULL,
+  write_schema        VARCHAR NOT NULL,
+  write_table         VARCHAR NOT NULL,
+  source_name         VARCHAR NOT NULL,
+  source_line         INT,
+  source_column       INT,
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+
+CREATE INDEX ix_mutation_payload_refusal_site ON intent_mutation_payload_refusal
+  (graph_name, type_name, field_name, container_type_name, input_field_name);
+
+CREATE VIEW intent_mutation_payload_refusal_live
   (graph_name, type_name, field_name, operation,
    path, container_type_name, input_field_name, role, cause,
    write_source_name, write_schema, write_table,
@@ -8358,7 +8380,24 @@ SELECT graph_name, type_name, field_name, operation,
                             WHERE a.graph_name = rc.graph_name AND a.path = rc.path
                               AND a.ordinal < rc.depth)) ranked
  WHERE rn = 1;
-COMMENT ON VIEW intent_mutation_payload_refusal IS 'Why a walker-driven write refuses one input field, located at the occurrence that reaches it. The refusal half of intent_mutation_write_payload: that relation folds the three refusals an argument owns into its own absence and deliberately leaves these out of it, because each of them is a refusal at a coordinate an author can be pointed at, and folding them into one silence at the mutation would throw the position away. The grain is the occurrence path rather than the input field, so a shared input type reached from two write surfaces is refused once under each and every row names both the mutation it broke and the step inside the payload that broke it. The path carries the mutation coordinate as its root, so the coordinate columns beside it are a projection rather than a widening of the key. The domain is the write payload''s and therefore the two verbs whose input a walker flattens, UPDATE and DELETE. An INSERT admits its payload through a gate of its own, which rejects a @lookupKey and a composing @condition on the input type outright and admits the condition-owned field this relation refuses, so its refusals are not these and putting them here would make one vocabulary stand for two rules. Two gates, in the order the build runs them, and the vocabulary keeps them apart. UNCLASSIFIED is the first and is not a walker''s refusal at all: the classifier declined the field, the validator mirror lifts that decline into a rejection on the mutation, and the walker never runs. Why it declined is intent_input_field_filter_role''s absence and the resolution relations under it; the cause here says which gate refused and leaves the diagnostic where the rule is stated. The other five are the walkers'' own, and they are one set rather than two: the DELETE and UPDATE flatteners refuse the same five shapes at the same two gates, and the only thing that differs between them is which typed error carries the message. The five are ranked rather than unioned because a field can be several of them at once and the build reports the first. REMOTE_CARRIER is decided at the binding switch ahead of every other test, so a reference carrier whose decoded value reaches its row only through a join is refused for that and not for whatever else it also is. CONDITION_OWNED and UNBOUND are carriers of their own and never reach the shape gate below them. LIST_CARRIER is that gate''s first test and AUTHORED_CONDITION its second, which is the order a list-typed field carrying a @condition is reported in. The role sits beside the cause because two of the causes cover two sites each. A list-typed field is refused whether it is a leaf carrier or a nesting grouping, and so is a field carrying a @condition; the walkers report those as four messages and this relation as two causes, the role telling a reader which of the four a row is. Widening the vocabulary instead would have restated at this grain a distinction the role relation already draws. AUTHORED_CONDITION is any @condition on a field whose role is not CONDITION_OWNED, of either override value, because what the walkers refuse is the directive on a shape they would otherwise admit rather than one of its readings: an override: true condition beside a @nodeId or a @reference is refused exactly as a composing one is, the classifier having given that field its own arm rather than the condition-owned carrier. That is also why this cause is not read off the role relation''s authored_condition column, which by construction says nothing about the override: true case. A refused nesting is never descended into, so nothing below it is classified and nothing below it is refused. This relation states that as a cut rather than as a rule: no row is emitted at a path any strict prefix of which carries a refusal of its own, whichever cause that prefix carries. The circular-nesting cut is not restated here at all, being intent_input_occurrence_path''s and already applied to the population this relation drives from. Absence is a payload the walkers admit at every occurrence of its input surface, which is the ordinary working write surface, and it is not a claim that the write succeeds. Whether the admitted remainder identifies a row is the matched key''s question and a refusal of the mutation rather than of a field, so it has no coordinate to be located at and no row here.';
+COMMENT ON VIEW intent_mutation_payload_refusal_live IS 'This states the rule and is evaluated on demand. The canonical name intent_mutation_payload_refusal beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_mutation_payload_refusal.';
+COMMENT ON COLUMN intent_mutation_payload_refusal_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_mutation_payload_refusal.graph_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_refusal_live.type_name IS 'the type_name of a row of this rule, materialized into intent_mutation_payload_refusal.type_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_refusal_live.field_name IS 'the field_name of a row of this rule, materialized into intent_mutation_payload_refusal.field_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_refusal_live.operation IS 'the operation of a row of this rule, materialized into intent_mutation_payload_refusal.operation, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_refusal_live.path IS 'the path of a row of this rule, materialized into intent_mutation_payload_refusal.path, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_refusal_live.container_type_name IS 'the container_type_name of a row of this rule, materialized into intent_mutation_payload_refusal.container_type_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_refusal_live.input_field_name IS 'the input_field_name of a row of this rule, materialized into intent_mutation_payload_refusal.input_field_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_refusal_live.role IS 'the role of a row of this rule, materialized into intent_mutation_payload_refusal.role, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_refusal_live.cause IS 'the cause of a row of this rule, materialized into intent_mutation_payload_refusal.cause, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_refusal_live.write_source_name IS 'the write_source_name of a row of this rule, materialized into intent_mutation_payload_refusal.write_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_refusal_live.write_schema IS 'the write_schema of a row of this rule, materialized into intent_mutation_payload_refusal.write_schema, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_refusal_live.write_table IS 'the write_table of a row of this rule, materialized into intent_mutation_payload_refusal.write_table, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_refusal_live.source_name IS 'the source_name of a row of this rule, materialized into intent_mutation_payload_refusal.source_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_refusal_live.source_line IS 'the source_line of a row of this rule, materialized into intent_mutation_payload_refusal.source_line, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_refusal_live.source_column IS 'the source_column of a row of this rule, materialized into intent_mutation_payload_refusal.source_column, whose comment carries what the value means';
+
+COMMENT ON TABLE intent_mutation_payload_refusal IS 'Why a walker-driven write refuses one input field, located at the occurrence that reaches it. The refusal half of intent_mutation_write_payload: that relation folds the three refusals an argument owns into its own absence and deliberately leaves these out of it, because each of them is a refusal at a coordinate an author can be pointed at, and folding them into one silence at the mutation would throw the position away. The grain is the occurrence path rather than the input field, so a shared input type reached from two write surfaces is refused once under each and every row names both the mutation it broke and the step inside the payload that broke it. The path carries the mutation coordinate as its root, so the coordinate columns beside it are a projection rather than a widening of the key. The domain is the write payload''s and therefore the two verbs whose input a walker flattens, UPDATE and DELETE. An INSERT admits its payload through a gate of its own, which rejects a @lookupKey and a composing @condition on the input type outright and admits the condition-owned field this relation refuses, so its refusals are not these and putting them here would make one vocabulary stand for two rules. Two gates, in the order the build runs them, and the vocabulary keeps them apart. UNCLASSIFIED is the first and is not a walker''s refusal at all: the classifier declined the field, the validator mirror lifts that decline into a rejection on the mutation, and the walker never runs. Why it declined is intent_input_field_filter_role''s absence and the resolution relations under it; the cause here says which gate refused and leaves the diagnostic where the rule is stated. The other five are the walkers'' own, and they are one set rather than two: the DELETE and UPDATE flatteners refuse the same five shapes at the same two gates, and the only thing that differs between them is which typed error carries the message. The five are ranked rather than unioned because a field can be several of them at once and the build reports the first. REMOTE_CARRIER is decided at the binding switch ahead of every other test, so a reference carrier whose decoded value reaches its row only through a join is refused for that and not for whatever else it also is. CONDITION_OWNED and UNBOUND are carriers of their own and never reach the shape gate below them. LIST_CARRIER is that gate''s first test and AUTHORED_CONDITION its second, which is the order a list-typed field carrying a @condition is reported in. The role sits beside the cause because two of the causes cover two sites each. A list-typed field is refused whether it is a leaf carrier or a nesting grouping, and so is a field carrying a @condition; the walkers report those as four messages and this relation as two causes, the role telling a reader which of the four a row is. Widening the vocabulary instead would have restated at this grain a distinction the role relation already draws. AUTHORED_CONDITION is any @condition on a field whose role is not CONDITION_OWNED, of either override value, because what the walkers refuse is the directive on a shape they would otherwise admit rather than one of its readings: an override: true condition beside a @nodeId or a @reference is refused exactly as a composing one is, the classifier having given that field its own arm rather than the condition-owned carrier. That is also why this cause is not read off the role relation''s authored_condition column, which by construction says nothing about the override: true case. A refused nesting is never descended into, so nothing below it is classified and nothing below it is refused. This relation states that as a cut rather than as a rule: no row is emitted at a path any strict prefix of which carries a refusal of its own, whichever cause that prefix carries. The circular-nesting cut is not restated here at all, being intent_input_occurrence_path''s and already applied to the population this relation drives from. Absence is a payload the walkers admit at every occurrence of its input surface, which is the ordinary working write surface, and it is not a claim that the write succeeds. Whether the admitted remainder identifies a row is the matched key''s question and a refusal of the mutation rather than of a field, so it has no coordinate to be located at and no row here. Materialized: this relation is a table refilled from intent_mutation_payload_refusal_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
 COMMENT ON COLUMN intent_mutation_payload_refusal.graph_name IS 'the owning graph''s partition, carried from the write payload';
 COMMENT ON COLUMN intent_mutation_payload_refusal.type_name IS 'the type owning the refused mutation field, which is the occurrence path''s root type';
 COMMENT ON COLUMN intent_mutation_payload_refusal.field_name IS 'the mutation field whose payload this row refuses; with the column above, the coordinate intent_mutation_write_payload is keyed by';
@@ -8374,6 +8413,215 @@ COMMENT ON COLUMN intent_mutation_payload_refusal.write_table IS 'the write tabl
 COMMENT ON COLUMN intent_mutation_payload_refusal.source_name IS 'the refused input field''s own declaration file; the position a diagnostic would carry, and the whole reason these refusals are stated here rather than folded into the payload relation''s absence';
 COMMENT ON COLUMN intent_mutation_payload_refusal.source_line IS 'source line of the input field declaration, 1-based';
 COMMENT ON COLUMN intent_mutation_payload_refusal.source_column IS 'source column of the input field declaration, 1-based';
+
+COMMENT ON INDEX ix_mutation_payload_refusal_site IS 'Serves the one predicate any reader of this relation writes: intent_mutation_payload_column_live asks, per occurrence it is considering, whether any step of that occurrence is a refused site of the mutation it belongs to, which is an equality on the mutation coordinate and on the step''s own coordinate and nothing else. That probe is correlated by construction, once per candidate occurrence, so the difference between a seek and a scan of this table is the difference between the relation above terminating and not. Not UNIQUE: the grain is the occurrence path and this key is the coordinate, so one refused input field reached under two paths of one mutation is two rows under one key.';
+CREATE TABLE intent_mutation_payload_column (
+  graph_name          VARCHAR NOT NULL,
+  type_name           VARCHAR NOT NULL,
+  field_name          VARCHAR NOT NULL,
+  operation           VARCHAR NOT NULL,
+  path                VARCHAR NOT NULL,
+  container_type_name VARCHAR NOT NULL,
+  input_field_name    VARCHAR NOT NULL,
+  role                VARCHAR NOT NULL,
+  carrier_role        VARCHAR NOT NULL,
+  position            INT     NOT NULL,
+  column_name         VARCHAR NOT NULL,
+  write_source_name   VARCHAR NOT NULL,
+  write_schema        VARCHAR NOT NULL,
+  write_table         VARCHAR NOT NULL,
+  source_name         VARCHAR NOT NULL,
+  source_line         INT,
+  source_column       INT,
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+
+CREATE VIEW intent_mutation_payload_column_live
+  (graph_name, type_name, field_name, operation,
+   path, container_type_name, input_field_name, role, carrier_role,
+   position, column_name,
+   write_source_name, write_schema, write_table,
+   source_name, source_line, source_column) AS
+WITH site (graph_name, type_name, field_name,
+           resolving_source_name, resolving_schema, resolving_table,
+           role, carrier_role) AS (
+  SELECT fr.graph_name, fr.type_name, fr.field_name,
+         fr.resolving_source_name, fr.resolving_schema, fr.resolving_table,
+         fr.role, cr.carrier_role
+    FROM intent_input_field_carrier_role cr
+    JOIN intent_input_field_filter_role fr
+      ON fr.graph_name = cr.graph_name AND fr.type_name = cr.type_name
+     AND fr.field_name = cr.field_name
+     AND fr.resolving_source_name = cr.resolving_source_name
+     AND fr.resolving_schema = cr.resolving_schema
+     AND fr.resolving_table = cr.resolving_table
+),
+admitted (graph_name, type_name, field_name, operation, path,
+               container_type_name, input_field_name, role, carrier_role,
+               write_source_name, write_schema, write_table,
+               source_name, source_line, source_column) AS (
+  SELECT w.graph_name, w.type_name, w.field_name, w.operation, p.path,
+         s.container_type_name, s.field_name, st.role, st.carrier_role,
+         w.write_source_name, w.write_schema, w.write_table,
+         f.source_name, f.source_line, f.source_column
+    FROM intent_mutation_write_payload w
+    JOIN intent_input_occurrence_path p
+      ON p.graph_name = w.graph_name AND p.root_type_name = w.type_name
+     AND p.root_field_name = w.field_name AND p.root_argument_name = w.argument_name
+     AND p.depth > 0
+    JOIN intent_input_occurrence_path_step s
+      ON s.graph_name = p.graph_name AND s.path = p.path AND s.ordinal = p.depth
+    JOIN site st
+      ON st.graph_name = s.graph_name AND st.type_name = s.container_type_name
+     AND st.field_name = s.field_name
+     AND st.resolving_source_name = w.write_source_name
+     AND st.resolving_schema = w.write_schema
+     AND st.resolving_table = w.write_table
+    JOIN graphql_field f
+      ON f.graph_name = s.graph_name AND f.type_name = s.container_type_name
+     AND f.field_name = s.field_name
+   WHERE NOT EXISTS (SELECT 1 FROM intent_mutation_payload_refusal r
+                       JOIN intent_input_occurrence_path_step a
+                         ON a.graph_name = p.graph_name AND a.path = p.path
+                        AND a.container_type_name = r.container_type_name
+                        AND a.field_name = r.input_field_name
+                      WHERE r.graph_name = w.graph_name AND r.type_name = w.type_name
+                        AND r.field_name = w.field_name)
+)
+SELECT a.graph_name, a.type_name, a.field_name, a.operation,
+       a.path, a.container_type_name, a.input_field_name, a.role, a.carrier_role,
+       0, m.column_name,
+       a.write_source_name, a.write_schema, a.write_table,
+       a.source_name, a.source_line, a.source_column
+  FROM admitted a
+  JOIN intent_input_field_column_match m
+    ON m.graph_name = a.graph_name AND m.type_name = a.container_type_name
+   AND m.field_name = a.input_field_name
+   AND m.resolving_source_name = a.write_source_name
+   AND m.resolving_schema = a.write_schema
+   AND m.resolving_table = a.write_table
+ WHERE a.role = 'NAME_MATCHED'
+ UNION ALL
+SELECT a.graph_name, a.type_name, a.field_name, a.operation,
+       a.path, a.container_type_name, a.input_field_name, a.role, a.carrier_role,
+       d.position, d.local_column_name,
+       a.write_source_name, a.write_schema, a.write_table,
+       a.source_name, a.source_line, a.source_column
+  FROM admitted a
+  JOIN intent_node_id_decode_column d
+    ON d.graph_name = a.graph_name AND d.site = 'INPUT_FIELD' AND d.path = a.path
+ WHERE a.role = 'NODE_ID';
+COMMENT ON VIEW intent_mutation_payload_column_live IS 'This states the rule and is evaluated on demand. The canonical name intent_mutation_payload_column beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_mutation_payload_column.';
+COMMENT ON COLUMN intent_mutation_payload_column_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_mutation_payload_column.graph_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_column_live.type_name IS 'the type_name of a row of this rule, materialized into intent_mutation_payload_column.type_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_column_live.field_name IS 'the field_name of a row of this rule, materialized into intent_mutation_payload_column.field_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_column_live.operation IS 'the operation of a row of this rule, materialized into intent_mutation_payload_column.operation, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_column_live.path IS 'the path of a row of this rule, materialized into intent_mutation_payload_column.path, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_column_live.container_type_name IS 'the container_type_name of a row of this rule, materialized into intent_mutation_payload_column.container_type_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_column_live.input_field_name IS 'the input_field_name of a row of this rule, materialized into intent_mutation_payload_column.input_field_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_column_live.role IS 'the role of a row of this rule, materialized into intent_mutation_payload_column.role, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_column_live.carrier_role IS 'the carrier_role of a row of this rule, materialized into intent_mutation_payload_column.carrier_role, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_column_live.position IS 'the position of a row of this rule, materialized into intent_mutation_payload_column.position, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_column_live.column_name IS 'the column_name of a row of this rule, materialized into intent_mutation_payload_column.column_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_column_live.write_source_name IS 'the write_source_name of a row of this rule, materialized into intent_mutation_payload_column.write_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_column_live.write_schema IS 'the write_schema of a row of this rule, materialized into intent_mutation_payload_column.write_schema, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_column_live.write_table IS 'the write_table of a row of this rule, materialized into intent_mutation_payload_column.write_table, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_column_live.source_name IS 'the source_name of a row of this rule, materialized into intent_mutation_payload_column.source_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_column_live.source_line IS 'the source_line of a row of this rule, materialized into intent_mutation_payload_column.source_line, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_column_live.source_column IS 'the source_column of a row of this rule, materialized into intent_mutation_payload_column.source_column, whose comment carries what the value means';
+
+COMMENT ON TABLE intent_mutation_payload_column IS 'What a write payload actually puts on the table, column by column: one row per admitted occurrence per decode slot, carrying the column that slot binds and what the carrier at the end of it points at. The substrate two relations above it both need and neither should re-derive, the matched key asking which of these columns cover a candidate key and the write destination asking what each one is for. Admitted is the refusal relation''s complement and is read from it rather than restated: no step of this occurrence is a refused site of this mutation. Testing the steps rather than the leaf is what applies the cut, a refused grouping never being descended into, and testing the coordinate rather than the path is exact because a refusal under one mutation is a property of the input field and the write table and both are fixed for the whole payload. The population is then the two column-resolving roles and nothing else, a nesting having no column of its own and the other three roles being refusals here. Two arms, one per role, and they differ in arity rather than in kind. A name match is one column at position zero, which is the plain field and the empty reference path alike. A node id is one row per position of the decoded key, so a compound key is a compound contribution and the emitter reads its value at the slot this column names. That is why position is a column and not an implicit ordering: the UPDATE partition splits a cross-table foreign key per column, and once split, neither half''s ordering recovers which slot of the decode a column came from. The decode is joined on the occurrence path alone with no guard on where it departs, which is safe here and would not be at a read site. A decode''s departure is the consuming argument''s scope, and that is one table per branch where the consuming field returns a multi-table polymorphic container. A write payload has no such branch: the participant arm''s own precondition is that the field''s named type binds no table and that the field carries no resolving @mutation(table:) spelling, and each of the three write rungs contradicts one of those. So the argument here has exactly one scope table, it is the write table, and there is no second branch for the join to pick up. The carrier role travels on the row because both consumers fork on it and neither should join back for it. The UPDATE walker counts only non-self-FK columns toward the key match, a self-FK''s columns pointing at a sibling row and never at this row''s identity, and it routes a self-FK''s columns wholly to the SET half however they fall against the key. Neither fact is derivable from the column. Absence is a payload with no column-bearing occurrence in it, and every occurrence the walkers refuse, which the refusal relation states with a cause. This relation says nothing about what a column is for. A column reached from a DELETE is a predicate and one reached from an UPDATE is a predicate or an assignment depending on the matched key it is measured against, and the key is not known until every row here is. Materialized: this relation is a table refilled from intent_mutation_payload_column_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
+COMMENT ON COLUMN intent_mutation_payload_column.graph_name IS 'the owning graph''s partition, carried from the write payload';
+COMMENT ON COLUMN intent_mutation_payload_column.type_name IS 'the type owning the mutation field, which is the occurrence path''s root type';
+COMMENT ON COLUMN intent_mutation_payload_column.field_name IS 'the mutation field whose payload contributes this column';
+COMMENT ON COLUMN intent_mutation_payload_column.operation IS 'the verb the walker was flattening for, UPDATE or DELETE; carried because the covered set the matched key computes over differs between them';
+COMMENT ON COLUMN intent_mutation_payload_column.path IS 'the occurrence path of the contributing input field; with the graph and the position, this relation''s grain';
+COMMENT ON COLUMN intent_mutation_payload_column.container_type_name IS 'the input object type the contributing field is declared on';
+COMMENT ON COLUMN intent_mutation_payload_column.input_field_name IS 'the contributing input field''s name within that container; named apart from field_name because that column is the mutation''s';
+COMMENT ON COLUMN intent_mutation_payload_column.role IS 'which rule resolved the column, NAME_MATCHED or NODE_ID, carried from the filter role. The two arms of this relation, and what tells a one-column contribution from a decoded tuple without counting rows';
+COMMENT ON COLUMN intent_mutation_payload_column.carrier_role IS 'what the carrier points at, OWN_COLUMNS, SELF_FK or CROSS_TABLE_FK, carried from the carrier role relation. REMOTE cannot appear, a remote carrier being a refusal at this site rather than a contribution';
+COMMENT ON COLUMN intent_mutation_payload_column.position IS 'the 0-based decode slot within the contributing field''s own column tuple: always zero for a name match, and the node key''s position for a decode. What the emitter reads the value at, and the one fact a split carrier''s two halves cannot recover between them';
+COMMENT ON COLUMN intent_mutation_payload_column.column_name IS 'the column on the write table this slot binds, as the catalog spells it. Never null: a decode with a position that lands nowhere is a remote carrier and is refused before it reaches here';
+COMMENT ON COLUMN intent_mutation_payload_column.write_source_name IS 'the catalog partition of the table the write targets, which is also the table the field was classified against';
+COMMENT ON COLUMN intent_mutation_payload_column.write_schema IS 'the write table''s SQL schema';
+COMMENT ON COLUMN intent_mutation_payload_column.write_table IS 'the write table''s SQL name; with the two columns above, sql_table''s full key, and with the column name above, sql_column''s';
+COMMENT ON COLUMN intent_mutation_payload_column.source_name IS 'the contributing input field''s own declaration file; the position a diagnostic naming this column would carry';
+COMMENT ON COLUMN intent_mutation_payload_column.source_line IS 'source line of the input field declaration, 1-based';
+COMMENT ON COLUMN intent_mutation_payload_column.source_column IS 'source column of the input field declaration, 1-based';
+CREATE VIEW intent_mutation_matched_key
+  (graph_name, type_name, field_name, operation, multi_row, verdict,
+   write_source_name, write_schema, write_table,
+   constraint_name, primary_key, candidate_rank,
+   source_name, source_line, source_column) AS
+WITH surface (graph_name, type_name, field_name, operation, multi_row,
+              write_source_name, write_schema, write_table,
+              source_name, source_line, source_column) AS (
+  SELECT w.graph_name, w.type_name, w.field_name, w.operation, w.multi_row,
+         w.write_source_name, w.write_schema, w.write_table,
+         w.source_name, w.source_line, w.source_column
+    FROM intent_mutation_write_payload w
+   WHERE NOT EXISTS (SELECT 1 FROM intent_mutation_payload_refusal r
+                      WHERE r.graph_name = w.graph_name AND r.type_name = w.type_name
+                        AND r.field_name = w.field_name)
+),
+covering (graph_name, type_name, field_name, column_name) AS (
+  SELECT DISTINCT c.graph_name, c.type_name, c.field_name, c.column_name
+    FROM intent_mutation_payload_column c
+   WHERE c.operation = 'DELETE' OR c.carrier_role <> 'SELF_FK'
+),
+covered (graph_name, type_name, field_name, constraint_name, primary_key, candidate_rank) AS (
+  SELECT s.graph_name, s.type_name, s.field_name,
+         k.constraint_name, k.primary_key, k.candidate_rank
+    FROM surface s
+    JOIN intent_table_key_candidate k
+      ON k.source_name = s.write_source_name AND k.table_schema = s.write_schema
+     AND k.table_name = s.write_table
+    LEFT JOIN sql_constraint_column kc
+      ON kc.source_name = k.source_name AND kc.table_schema = k.table_schema
+     AND kc.table_name = k.table_name AND kc.constraint_name = k.constraint_name
+    LEFT JOIN covering cv
+      ON cv.graph_name = s.graph_name AND cv.type_name = s.type_name
+     AND cv.field_name = s.field_name AND cv.column_name = kc.column_name
+   GROUP BY s.graph_name, s.type_name, s.field_name,
+            k.constraint_name, k.primary_key, k.candidate_rank
+  HAVING COUNT(kc.column_name) = COUNT(cv.column_name)
+),
+matched (graph_name, type_name, field_name, constraint_name, primary_key, candidate_rank) AS (
+  SELECT graph_name, type_name, field_name, constraint_name, primary_key, candidate_rank
+    FROM (SELECT c.graph_name, c.type_name, c.field_name,
+                 c.constraint_name, c.primary_key, c.candidate_rank,
+                 ROW_NUMBER() OVER (PARTITION BY c.graph_name, c.type_name, c.field_name
+                                    ORDER BY c.candidate_rank) AS rn
+            FROM covered c) ranked
+   WHERE rn = 1
+)
+SELECT s.graph_name, s.type_name, s.field_name, s.operation, s.multi_row,
+       CASE WHEN m.constraint_name IS NOT NULL THEN 'IDENTIFIED'
+            WHEN s.operation = 'DELETE' AND s.multi_row = TRUE THEN 'BROADCAST'
+            ELSE 'UNCOVERED' END,
+       s.write_source_name, s.write_schema, s.write_table,
+       m.constraint_name, m.primary_key, m.candidate_rank,
+       s.source_name, s.source_line, s.source_column
+  FROM surface s
+  LEFT JOIN matched m
+    ON m.graph_name = s.graph_name AND m.type_name = s.type_name
+   AND m.field_name = s.field_name;
+COMMENT ON VIEW intent_mutation_matched_key IS 'Whether a write payload identifies the row it acts on, and through which key. One row per write surface whose payload the walkers admit entirely, which is the population both walkers reach this question at: they collect every per-field refusal first and return before matching a key, on the grounds that an unadmitted field makes the covered set unreliable and a spurious coverage error on top of a real field error helps nobody. So a mutation with any refusal has no row here at all, and that absence is the refusal relation''s to explain rather than a verdict of its own. The match itself is verb-neutral and is the one thing the two walkers genuinely share: which catalog key does this input cover. The candidates and their order are intent_table_key_candidate''s, primary key first and then the unique keys in declaration order with duplicates on the column set already collapsed, so the primary key being the tiebreaker is that relation''s ranking read in ascending order rather than a preference invented here. Covered means every column of the key is one this payload contributes, which is a subset test and not an equality: an input naming more columns than a key needs still covers it, and the surplus is the other consumer''s business. The subset test is counted rather than correlated, the key''s columns outer-joined to the payload''s and the two counts compared, so the contributed columns are read once for the whole matrix instead of once per key column per candidate per surface. That shape also keeps the degenerate reading honest: a candidate with no columns at all compares zero against zero and is covered, which is what a subset test over an empty set does and what the matcher this transcribes would answer. No catalog jOOQ generates produces such a key, so it is a property of the rule rather than a population. What is not verb-neutral is the covered set, and that is the whole reason the verb is on the row. A DELETE counts every admitted column, every one of them being a WHERE predicate. An UPDATE counts only the columns of carriers that pin identity, which is every carrier except a self-referencing foreign key: a self-FK''s columns point at a sibling row, so a key column reachable only through one is not this row''s identity and an UPDATE that treated it as such would key on the wrong row. Stated as a predicate over the carrier role rather than as two relations, because the question and the ranking are identical and only the input to the subset test moves. A closed vocabulary of three. IDENTIFIED names the winning key and carries its rank and whether it is the primary, which is what a consumer emitting the WHERE clause and a diagnostic naming the key both need. BROADCAST is the DELETE that covered nothing and opted in: multiRow: true is the author saying the statement may match many rows, and it is an arm rather than a modifier because the emitted statement has no key predicate at all. UNCOVERED is everything else, and it is a rejection''s population: an UPDATE has no broadcast reading, multiRow: true on one being refused before a write surface exists at all, so an UPDATE whose input pins no key is an author error with the covered columns and the candidate keys as its evidence, both one join from this row. The three key columns are null together and exactly on the two verdicts that name no key, which is the vocabulary determining them rather than an unfilled slot. What this relation does not say is what happens to the columns the key did not take. On a DELETE nothing does, every admitted column being a predicate and the key being a cardinality guard beside them rather than a subset of them. On an UPDATE the key is a partition, and where each remaining column lands, whether a carrier straddles the key, and whether anything is left to set at all are the write destination''s answers over the same substrate this one reduces.';
+COMMENT ON COLUMN intent_mutation_matched_key.graph_name IS 'the owning graph''s partition, carried from the write payload';
+COMMENT ON COLUMN intent_mutation_matched_key.type_name IS 'the type owning the mutation field';
+COMMENT ON COLUMN intent_mutation_matched_key.field_name IS 'the mutation field this verdict is about; with the column above and the graph, the grain, one row per write surface';
+COMMENT ON COLUMN intent_mutation_matched_key.operation IS 'the verb, UPDATE or DELETE. Not provenance: it selects the covered set the match ran over and it gates the broadcast arm';
+COMMENT ON COLUMN intent_mutation_matched_key.multi_row IS 'the @mutation(multiRow:) spelling, carried from the write payload. False on every UPDATE row by construction, that spelling being refused there before a write surface exists';
+COMMENT ON COLUMN intent_mutation_matched_key.verdict IS 'IDENTIFIED, BROADCAST or UNCOVERED, a closed vocabulary of three. A fourth outcome is a new value here rather than a silence';
+COMMENT ON COLUMN intent_mutation_matched_key.write_source_name IS 'the catalog partition of the table the write targets, and the table whose candidate keys were ranked';
+COMMENT ON COLUMN intent_mutation_matched_key.write_schema IS 'the write table''s SQL schema';
+COMMENT ON COLUMN intent_mutation_matched_key.write_table IS 'the write table''s SQL name; with the two columns above, sql_table''s full key';
+COMMENT ON COLUMN intent_mutation_matched_key.constraint_name IS 'the winning key''s constraint name on that table; NULL on the two verdicts that name no key. With the three table columns above, intent_table_key_candidate''s key, so the key''s own columns are one join away';
+COMMENT ON COLUMN intent_mutation_matched_key.primary_key IS 'whether the winning key is the table''s primary key rather than a unique one; NULL where no key won. Carried because a diagnostic and an emitted comment both read differently for the two';
+COMMENT ON COLUMN intent_mutation_matched_key.candidate_rank IS 'the winning key''s 0-based rank among the table''s candidates, carried so a reader can see how far down the order the match had to go without re-ranking; NULL where no key won';
+COMMENT ON COLUMN intent_mutation_matched_key.source_name IS 'the @mutation application''s own declaration file; the position a coverage diagnostic would carry';
+COMMENT ON COLUMN intent_mutation_matched_key.source_line IS 'source line of the @mutation application, 1-based';
+COMMENT ON COLUMN intent_mutation_matched_key.source_column IS 'source column of the @mutation application, 1-based';
 
 CREATE TABLE rejection_validation_error (
   graph_name    VARCHAR NOT NULL,
@@ -8773,7 +9021,11 @@ INSERT INTO meta_materialize VALUES
   ('intent_input_field_resolving_table_live', 'intent_input_field_resolving_table',
    'Two readers, both added in the increment that registers this, and one of them is a recursive walk that names this relation in its anchor term. That position is what the registration buys and it is a shape no other row here states. A recursive term is evaluated repeatedly by construction, and H2 evaluates the anchor beside it rather than once, so a view named in an anchor is expanded afresh on every iteration where the same join written as an ordinary query is planned once. Measured on the sakila example schema, 917 fields and 267 arguments, with every row count unchanged: the anchor join written as a plain SELECT costs one millisecond and 1103 rows visited whether this relation is a view or a table, and the same join as a recursive walk''s anchor costs 39 milliseconds and 1184 rows visited against a view and 1 millisecond and 231 against a table. So the bare walk goes from 39 to 1, and the three shipped relations over it fall with it: the walk with its own windowing on top from 44 milliseconds to 4, its column scope from 45 to 4 and its column match from 49 to 7, with 1196, 2317 and 3975 rows visited falling to 243, 483 and 2141. The plan shape agrees here, which is worth the clause because on three preceding increments it did not: the rows visited fall about fivefold where the clock falls about fortyfold, so the count points the right way this time and still understates the move by most of an order of magnitude. Refresh is one evaluation of the source view per graph, one to two milliseconds and 1103 rows visited to produce 107, which is less than a single read of the walk was paying. No index is declared on the target: the anchor joins it on the whole coordinate and the table is a hundred rows against a hop relation of a couple of hundred, so H2 reads both whole, and an index without a measurement is a claim with nothing behind it.'),
   ('intent_input_field_filter_role_live', 'intent_input_field_filter_role',
-   'Named from the carrier-role relation beside it, twice, once per arm, and each naming is a correlated one: both arms drive from a relation of their own and ask this one what the classifier resolved each site as, so it is evaluated per driving row rather than per naming. The rule is a nine-arm ranked union three of whose arms name the input-field column match, so one evaluation is not cheap and a hundred of them are not affordable. Measured on the sakila example schema: one evaluation is 36 milliseconds, and the reader that correlates into it costs 4.9 seconds against 56 milliseconds with this relation snapshotted into a table, the name-matched arm falling from 4.1 seconds to 7 milliseconds and the node-id arm from 0.9 seconds to 49. The refresh is 58 milliseconds, which is what one naming already cost. Driving from this relation instead, and joining the two cheap sides onto it, was written and measured first and is the same 4.9 seconds: H2 inlines whichever derived relation ends up on the inner side and correlates it, so the shape has no spelling that avoids the re-evaluation and only a table does.');
+   'Named from the carrier-role relation beside it, twice, once per arm, and each naming is a correlated one: both arms drive from a relation of their own and ask this one what the classifier resolved each site as, so it is evaluated per driving row rather than per naming. The rule is a nine-arm ranked union three of whose arms name the input-field column match, so one evaluation is not cheap and a hundred of them are not affordable. Measured on the sakila example schema: one evaluation is 36 milliseconds, and the reader that correlates into it costs 4.9 seconds against 56 milliseconds with this relation snapshotted into a table, the name-matched arm falling from 4.1 seconds to 7 milliseconds and the node-id arm from 0.9 seconds to 49. The refresh is 58 milliseconds, which is what one naming already cost. Driving from this relation instead, and joining the two cheap sides onto it, was written and measured first and is the same 4.9 seconds: H2 inlines whichever derived relation ends up on the inner side and correlates it, so the shape has no spelling that avoids the re-evaluation and only a table does.'),
+  ('intent_mutation_payload_refusal_live', 'intent_mutation_payload_refusal',
+   'Registered for its one reader''s sake rather than for its own, and the measurement that forced it is the plainest in this table. intent_mutation_payload_column_live asks this relation, once per occurrence it is considering, whether any step of that occurrence is a refused site of the same mutation. That probe is correlated by construction, and correlating into a view means re-evaluating a rule that itself names the write payload and through it the whole scope family. On the read-cost gate''s twelve-unit fixture the reader was four seconds; on the sakila example schema the capture did not finish, twenty-three minutes of CPU with no output, which is what a per-row expansion of this rule costs once the input surface is a real one rather than a synthetic cluster. Snapshotting it into an indexed table turns each probe into a seek. The index is declared on the target and argued there; it is the whole point of the registration, a scan of this table per candidate occurrence being no better than the view was.'),
+  ('intent_mutation_payload_column_live', 'intent_mutation_payload_column',
+   'The registration the relation above it predicted, arriving one increment later at the grain the write surfaces are keyed by. This rule reaches the whole scope family twice over: it names the write payload directly and again through the refusal relation, and it names its own admitted set once per column-resolving arm, so H2, which inlines a view wherever it is named and eliminates no common subexpression, expands the binding join inside intent_field_scope_table several times in one read. Measured on the read-cost gate''s twelve-unit fixture, one read is 217475 rows visited and about four seconds where the refusal relation it is built on is 59099 and eighty milliseconds, and the matched key that reduces over it inherits the four seconds and adds half a second of its own. Three levers were measured before this one and all three refused, which is why the registration is the answer rather than a rewrite. The refusal anti-join is not the cause, the admitted set costing 1961 milliseconds with it and 2002 without. An index on the binding target moved rows visited from 217 thousand to 42 thousand and the clock the wrong way, 3900 to 5071, which is the fact model''s own caveat arriving a third time. And driving the two column arms from their own views rather than from the admitted set, which is the lever that takes the carrier-role join from 2005 milliseconds to 74 in isolation, made the whole relation an order of magnitude worse: the admitted set is a common table expression and H2 re-evaluates an inlined one per driving row of whatever ends up outside it. That last finding is the one the row above already recorded at its own site, and this relation is where it was confirmed a second time. Cheap to compute once and ruinous to compute per naming, which is the registration case exactly.');
 
 CREATE TABLE meta_materialize_dependency (
   source_view_name VARCHAR NOT NULL,

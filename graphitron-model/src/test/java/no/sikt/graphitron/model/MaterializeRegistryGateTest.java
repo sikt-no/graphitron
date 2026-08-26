@@ -118,6 +118,14 @@ class MaterializeRegistryGateTest {
      *   relation is rather than from a shape somebody chose: it is the population those three
      *   views each partition, and a reader whose grain is one row per instruction drives from the
      *   instructions.</li>
+     *   <li>{@code intent_mutation_payload_column}: its one reader reads it whole. The matched-key
+     *   relation collects the columns a payload contributes as a {@code DISTINCT} over every row of
+     *   this target and then joins the candidate keys onto that, so there is no probe for an index
+     *   to serve and a declared one would only be maintained. The shape that would change the
+     *   answer is a reader keyed by one mutation coordinate, which the write destination relation
+     *   will be; the coordinate to declare then is {@code (graph_name, type_name, field_name)}, and
+     *   it should be timed at that point rather than declared now, an index without a measurement
+     *   being a claim with nothing behind it.</li>
      * </ul>
      */
     private static final Set<String> NO_INDEX = Set.of(
@@ -128,7 +136,8 @@ class MaterializeRegistryGateTest {
         "intent_errors_field",
         "intent_carrier_data_field",
         "intent_node_id_instruction",
-        "intent_input_field_resolving_table");
+        "intent_input_field_resolving_table",
+        "intent_mutation_payload_column");
 
     @Test
     @DisplayName("every registered source is a view and every registered target is a table")

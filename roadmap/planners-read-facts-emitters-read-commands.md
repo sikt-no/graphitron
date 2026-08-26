@@ -2664,6 +2664,92 @@ reads the input-field family.
 **What this increment leaves owing**, now two rather than three: the destination at the column grain
 and the matched key over the identity columns. Then the fold.
 
+### Conditions, twelfth increment: what the payload puts on the table, and what pins the row
+
+Two relations and a cost. `intent_mutation_payload_column` says which columns of the write table a
+payload actually puts a value on, and `intent_mutation_matched_key` reduces over it to say whether the
+payload pins the row it acts on and through which key.
+
+**The substrate first.** Both remaining relations, the matched key and the write destination, need the
+same thing: the columns a payload contributes, per occurrence, per decode slot. Writing that once is
+the whole reason `intent_mutation_payload_column` exists rather than each of them re-deriving it. Two
+arms, one per column-resolving role, differing in arity rather than in kind: a name match is one column
+at slot zero, and a node id is one row per position of the decoded key. Position is a column rather than
+an implicit ordering because the UPDATE partition splits a cross-table foreign key per column, and once
+split neither half's ordering recovers which slot of the decode a column came from.
+
+Admission is the refusal relation's complement and is read from it rather than restated: no step of this
+occurrence is a refused site of this mutation. Testing the steps rather than the leaf is what applies the
+cut, and testing the coordinate rather than the path is exact because a refusal under one mutation is a
+property of the input field and the write table, both fixed for the whole payload.
+
+The carrier role travels on the row because both consumers fork on it and neither should join back for
+it. That is not a convenience: it is what the next paragraph is about.
+
+**The matched key, and why the verb is on the row.** The match itself is verb-neutral and is the one
+thing the two walkers genuinely share, which catalog key does this input cover. The candidates and their
+order are `intent_table_key_candidate`'s, so the primary key winning a tie is that relation's ranking
+read ascending rather than a preference invented here. What is not verb-neutral is the covered set. A
+DELETE counts every admitted column, every one being a WHERE predicate. An UPDATE counts only carriers
+that pin identity, which is every carrier except a self-referencing foreign key: a self-FK's column holds
+a sibling row's identity, so keying an UPDATE on it would update the wrong row. One payload over one
+table therefore answers differently under the two verbs, and both halves of that pair are pinned over one
+fixture, because either half alone reads as a fact about the input rather than about the verb.
+
+A vocabulary of three. IDENTIFIED names the winning key with its rank and whether it is the primary.
+BROADCAST is the DELETE that covered nothing and opted in, an arm rather than a modifier because the
+emitted statement has no key predicate at all. UNCOVERED is everything else and is a rejection's
+population; an UPDATE has no broadcast reading, `multiRow: true` on one being refused before a write
+surface exists.
+
+A payload with any refusal has no verdict at all, because both walkers collect every per-field refusal
+and return before matching a key. A coverage verdict there would be one the build never computed, and
+wrong in the direction that reads as an author error stacked on top of a real one.
+
+**The cost, which is this increment's second finding.** Written as a plain view the column relation cost
+about four seconds a read on the read-cost gate's twelve-unit fixture, and the matched key inherited that
+and added half a second, where the refusal relation they are built on costs eighty milliseconds. That is
+a defect and not a price, and it was worth chasing properly rather than accepting: the read-cost gate's
+own runtime went from under a minute to over twenty.
+
+Three rewrites were measured and all three refused. The occurrence cut is not the cause, the admitted set
+costing 1961 milliseconds with the anti-join and 2002 without. An index on the binding target cut rows
+visited from 217,000 to 42,000 and moved the clock the wrong way, 3900 against 5071, which is the fact
+model's own caveat arriving a third time. And driving the two column arms from their own views, which is
+the lever that takes the carrier-role join from 2005 milliseconds to 74 in isolation, made the whole rule
+an order of magnitude worse: an inlined common table expression is re-evaluated per driving row of
+whatever sits outside it. That last one is not a new finding; `intent_input_field_filter_role`'s own
+registration records it at its own site, and this is the second confirmation.
+
+What the plan showed is that the rows go where no rewrite reaches them: 631 nodes, the largest being the
+binding join inside `intent_field_scope_table`, re-expanded because H2 inlines a view wherever it is named
+and eliminates no common subexpression. So the rule was registered, which is exactly what that shape is
+for, and the read cost went: the target reads in two scans and no measurable time, and the matched key
+fell from 417,491 rows in 4004 to 4396 milliseconds to 200,018 in 244 to 272.
+
+That moved the cost onto the refresh and was not the end of it, which is the part worth remembering. A
+refresh runs on every capture, the reactor's own included, and the sakila example build then did not
+finish at all: twenty-three minutes of CPU with no output, where the gate's fixture had said four
+seconds. The remaining expansion was the same shape one relation down. The column rule probes
+`intent_mutation_payload_refusal` once per candidate occurrence, so it re-evaluated a view that names
+the write payload and through it the whole scope family. Registering that relation too, with an index on
+the coordinate the probe writes, turns each probe into a seek; the sakila capture finishes in under
+three minutes.
+
+So the finding is one shape rather than two incidents: a per-row probe into a derived relation costs the
+same either way, and whether it surfaces as a slow read or a non-terminating refresh depends only on
+which side of a registration it lands on. The gate's twelve-unit fixture understated it by as much as it
+takes to turn four seconds into no termination. What remains is that this pair's refresh is three orders
+of magnitude above every other registration on that fixture, and it is filed as its own item because the
+first thing it needs is a measurement against a real schema rather than a synthetic one.
+
+One thing the failed rewrites left behind and worth keeping: the carrier-role join is written with the
+carrier role driving rather than correlated into, which is 2005 milliseconds against 74 in isolation.
+Better-shaped either way, and the same lever the input-field role relation's own comment argues for.
+
+**What this increment leaves owing**: the write destination at the column grain, which is the UPDATE
+partition with its straddle rules, its agreement obligations and its empty-SET refusal. Then the fold.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the

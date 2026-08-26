@@ -104,10 +104,10 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 99;
+    private static final int READERS_IN_SCHEMA = 101;
 
     /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 60;
+    private static final int READERS_WITH_CELLS = 62;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -124,7 +124,7 @@ class DerivedReadCostTest {
      * So a drop here is not the matrix quietly seeing less; it is cost moving off a reader and onto
      * a refresh, and the refresh is a view in this domain and priced like any other.
      */
-    private static final int CELLS = 152;
+    private static final int CELLS = 167;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -243,13 +243,47 @@ class DerivedReadCostTest {
      * the question the store could not answer at all before costs about nine milliseconds, paid once
      * per refresh of the argument scope rather than per read.
      *
-     * <p>A fourth cell joined those three when the refusal relation was written over the write
-     * payload, and it is the same disagreement one relation further down rather than a new finding:
-     * registered it visits 59099 rows in 80 to 87 milliseconds, unregistered 43111 in 149 to 157,
-     * three runs apiece and the spread inside seven milliseconds on either side. Worth reading as
-     * the shape this arm keeps: everything built over the payload rung inherits the cell, so a new
-     * reader of that family arrives here by construction and the question to ask of it is whether
-     * its clock agrees with the three above rather than whether its counter does.
+     * <p>Three more cells joined those three as the write-payload family grew, and they are the same
+     * disagreement further down rather than new findings. The refusal relation is 59099 rows in 80
+     * to 87 milliseconds registered against 43111 in 149 to 157 unregistered; the payload column
+     * relation 217475 in 3828 to 4095 against 153523 in 8137 to 8231; the matched key 417491 in 4004
+     * to 4396 against 289587 in 8420 to 8736. Three runs apiece. Everything built over the payload
+     * rung inherits the cell by construction, so the question to ask of the next such reader is
+     * whether its clock agrees with the ones above rather than whether its counter does.
+     *
+     * <p>This gate found a defect rather than pricing a cost while those figures were being taken,
+     * and it is worth the space because three levers were measured against it and all three refused.
+     * The payload column rule cost four seconds a read where the refusal relation it is built on
+     * costs eighty milliseconds, and the matched key over it inherited that and added half a second.
+     * The occurrence cut is not the cause: the admitted set costs 1961 milliseconds with the
+     * anti-join and 2002 without. An index on the binding target cut rows visited from 217 thousand
+     * to 42 thousand and moved the clock the wrong way, 3900 against 5071, which is this file''s own
+     * caveat arriving a third time. And driving the two column arms from their own views rather than
+     * from the admitted set, which is the lever that takes the carrier-role join from 2005
+     * milliseconds to 74 in isolation, made the whole rule an order of magnitude worse: an inlined
+     * common table expression is re-evaluated per driving row of whatever ends up outside it, which
+     * is the same finding {@code intent_input_field_filter_role}''s registration already records at
+     * its own site. What the plan showed is that the rows go where no rewrite reaches them: 631
+     * nodes, the largest being the binding join inside the scope family, re-expanded because H2
+     * inlines a view wherever it is named and eliminates no common subexpression.
+     *
+     * <p>So the rule was registered, which is what that shape is for, and the read cost went: the
+     * target reads in two scans and no measurable time, and the matched key over it fell from 417491
+     * rows in 4004 to 4396 milliseconds to 200018 in 244 to 272. That moved the cost onto the
+     * refresh and was not the end of it. A refresh runs on every capture, including the reactor''s
+     * own, and on the sakila example schema the capture then did not finish at all: twenty-three
+     * minutes of CPU with no output, where this fixture had said four seconds. The remaining
+     * expansion was the same shape one relation down, the rule probing
+     * {@code intent_mutation_payload_refusal} once per candidate occurrence and so re-evaluating a
+     * view that names the write payload and through it the whole scope family. Registering that
+     * relation too, with an index on the coordinate the probe writes, turns each probe into a seek
+     * and the sakila capture finishes in under three minutes.
+     *
+     * <p>Worth keeping as the shape rather than as two figures. A per-row probe into a derived
+     * relation is the cost here, every time; whether it shows up as a slow read or a slow refresh
+     * depends only on which side of a registration the probe ends up on, and a synthetic fixture
+     * twelve clusters wide understates it by as much as it takes to turn four seconds into no
+     * termination at all.
      *
      * <p>Three larger pairs stood here until the targets were indexed, and how they left is worth
      * knowing before adding more. They were not the registrations' fault and no reader had to be
@@ -295,15 +329,19 @@ class DerivedReadCostTest {
         // child took up when the input-field path stopped being unwalkable.
         "intent_field_reference_step_hop|intent_node_id_decode_hop",
         "intent_field_reference_step_hop|intent_node_id_decode_hop_column_live",
-        // The same floor again, twelve scans out of fifty-nine thousand, reached because the
-        // refusal relation reads the input-field family; measured above.
-        "intent_field_reference_step_hop|intent_mutation_payload_refusal",
+        // The same floor again, reached because the write-payload family reads the input-field
+        // one: twelve scans out of fifty-nine thousand on the refusal, thirty-six out of two
+        // hundred thousand on the two above it; measured above.
+        "intent_field_reference_step_hop|intent_mutation_payload_refusal_live",
+        "intent_field_reference_step_hop|intent_mutation_payload_column_live",
         // The scope family's payload rung, where the counter and the clock disagree outright;
         // measured above.
         "intent_carrier_data_field|intent_field_scope_table",
         "intent_carrier_data_field|intent_argument_scope_table_live",
         "intent_carrier_data_field|intent_mutation_write_payload",
-        "intent_carrier_data_field|intent_mutation_payload_refusal");
+        "intent_carrier_data_field|intent_mutation_payload_refusal_live",
+        "intent_carrier_data_field|intent_mutation_payload_column_live",
+        "intent_carrier_data_field|intent_mutation_matched_key");
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather

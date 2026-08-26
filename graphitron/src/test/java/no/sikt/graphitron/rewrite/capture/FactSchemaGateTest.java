@@ -120,6 +120,23 @@ class FactSchemaGateTest {
      * declares two foreign keys to {@code language}, so a decode between them is ambiguous and
      * contributes no hop at all. {@code sequelTo} stays for the instruction population's sake and
      * contributes no hop either, its own type being what it binds against.
+     *
+     * <p>{@code updateCategory} is here for the write-payload family, which no read surface
+     * populates. A walker-driven write is the whole population of
+     * {@code intent_mutation_payload_column}: it needs the mutation, the sole input-object argument,
+     * and at least one input field the walkers admit, which is why the input names two columns of
+     * {@code category} and nothing else. Both fields name-match, one through a {@code @field}
+     * binding and one directly, so the target holds a row per field rather than a row that happens
+     * to survive. {@code notAColumn} is the third field and it is here for the other target in that
+     * family: {@code intent_mutation_payload_refusal} holds only what the walkers refuse, so a
+     * payload every field of which is admitted leaves it empty. A name reaching no column of
+     * {@code category} is the cheapest refusal to state and it does not disturb the other two, a
+     * refusal cutting its own occurrence and nothing beside it.
+     *
+     * <p>{@code Category} rather than {@code Film} because the write rungs all demand an
+     * unambiguous binding and {@code Film} has two here, its {@code @table} and the table-valued
+     * routine {@code filmsForActor} returns, so a mutation returning it would have no scope row at
+     * all and both targets would stay empty for a reason that has nothing to do with the write.
      */
     private static final String MATERIALIZED_FIXTURE = """
         type Query {
@@ -137,6 +154,13 @@ class FactSchemaGateTest {
         type Mutation {
           actorFilms(actorId: ID!, minLength: Int): ActorFilmsPayload
             @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+          updateCategory(in: CategoryUpdateInput!): Category @mutation(typeName: UPDATE)
+        }
+
+        input CategoryUpdateInput {
+          categoryId: ID! @field(name: "category_id")
+          name: String
+          notAColumn: String
         }
 
         type ActorFilmsFailed @error(handlers: [{
@@ -741,6 +765,7 @@ class FactSchemaGateTest {
                 .toList();
 
             captureMaterializationFixture(dsl, "own", ownDir);
+
 
             for (int i = 0; i < registrations.size(); i++) {
                 var registration = registrations.get(i);
