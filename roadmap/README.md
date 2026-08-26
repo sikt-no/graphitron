@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R834` | A top-level @service returning a @table type reads columns off the returned record instead of refetching by key | Spec | 2026-08-25 | [plan](root-service-table-return-skips-key-refetch.md) |
+| `R834` | A top-level @service returning a @table type reads columns off the returned record instead of refetching by key | Spec | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](root-service-table-return-skips-key-refetch.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R832` | CatalogRefreshTest budgets a real refresh like a no-op trigger | In Review | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](catalog-refresh-latch-budget-prices-a-real-trigger.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |

@@ -7,7 +7,7 @@ priority: 2
 theme: service
 depends-on: []
 created: 2026-08-25
-last-updated: 2026-08-25
+last-updated: 2026-08-26
 ---
 
 # A top-level @service returning a @table type reads columns off the returned record instead of refetching by key
@@ -89,53 +89,144 @@ The rule in one sentence: a root `@service` field returning a `@table`-bound typ
 requested fields by primary key, the contract the polymorphic and discriminated service returns
 already state, so the author's obligation everywhere becomes "populate the key columns and
 Graphitron fetches the rest". The mechanism, in dependency order; every named symbol was verified
-against the tree on 2026-08-25.
+against the tree on 2026-08-25 and re-verified after the round-2 revision on 2026-08-26.
 
 **1. Model: mint the reentry member.** The passthrough is one clause, `rootServicePassthrough`, in
 `OperationMembers.mintsReentry`, with a twin production in `OperationMemberRelation`; the two are
 pinned equal by `OperationMemberMintPinTest`, so they flip together. Deleting the clause makes the
 mint read as the positive fact it always gated: a bare table target holding produced records mints
 reentry, full stop. `OperationMembers.DECLARED_SHAPES` must simultaneously admit `Kind.REENTRY`
-into the optional set for `QueryServiceTableField` and `MutationServiceTableField`, or
-`validateAgainstDeclaredShape` hard-fails construction. After the flip, `emitsKeyedReQuery()` and
+for `QueryServiceTableField` and `MutationServiceTableField`, or `validateAgainstDeclaredShape`
+hard-fails construction; into the *required* set, not the optional one, because every instance
+of these leaves has a bare table target and a record-producing service call, so every instance
+mints (unlike `DmlTableField`, whose encoded return arms exempt it and make optional the honest
+slot there). The one wrapper that would break the "every instance" claim cannot be constructed:
+`ServiceDirectiveResolver` rejects Connection returns on root services outright ("@service at
+the root does not support Connection return types"). After the flip, `emitsKeyedReQuery()` and
 `requiresReFetch()` agree at every coordinate; the javadoc that currently explains their one
 disagreement (on `OutputField`, `OperationMember.Reentry`, and the two service-table leaves)
 rewrites to the new rule.
 
-**2. Launcher: a root-service verdict.** `LauncherCommands.verdictOf` answers `Launch.NONE` for a
-root service today (the `SERVICE` rule is gated on not-root), and `LauncherRelationClosureTest`
-pins that absence. Add a `Launch` arm for the root-service reentry, verdict "root, has a
-`ServiceCall` member, has a `Reentry` member", minting a `LaunchSource.ProjectedReentry` whose
-`ParentCorrelation.OnLiftedSlots` correlation is the return table's own primary key. That is PK
-self-identity, the same correlation `FilmCardWrapperFetchers.rowsFilm` runs on. `Launch` is a total
-switch at every consumer, so the compiler walks the cascade. `RootLauncherRenderer` already
-dispatches `ProjectedReentry` to `ReentryRowsFragments`; the renderer needs no change.
+**2. Launcher: a root-service verdict, sourced by the existing reentry arm.**
+`LauncherCommands.verdictOf` answers `Launch.NONE` for a root service today (the `SERVICE` rule
+is gated on not-root), and `LauncherRelationClosureTest` pins that absence. Add a `Launch` enum
+arm (`SERVICE_REENTRY`), verdict "root, has a `ServiceCall` member, has a `Reentry` member",
+whose payload dispatch mints the *existing* `LaunchSource.ProjectedReentry` with a
+`ParentCorrelation.OnLiftedSlots` over the return table's own primary key: PK self-identity,
+the same correlation `FilmCardWrapperFetchers.rowsFilm` runs on. `Launch` is a total switch at
+every consumer (`mintedMethodOf`, the `produce` dispatch, the schema-free walk), so the
+compiler walks the cascade, and the membership census's per-arm non-vacuity floor makes the new
+arm demand fixture coverage. Unlike `DML_REENTRY`, the schema-free walk serves this arm: the
+skip reason there ("a schema-free assembly builds no mutation writes") does not apply, the
+unit-tier fetcher assemblies do build `QueryServiceTableField` leaves, and the payload needs
+only leaf facts (the return table's PK, the projection unit). The row mirrors `reentryRow`'s
+shape otherwise: the `reentryRows<Field>` unit name, a null WHERE slot (the root service leaves
+declare no filter surface), single tenancy, single/list result off the wrapper.
 
-**3. Emitted body: reuse `ReentryRowsFragments`.** `projectedBody` already emits both
-cardinalities: `VALUES(idx, pk...)` join plus `$project` from the live selection set plus
-`ORDER BY idx` for lists, and a degenerate plain key equality for single. Its three inputs (target
-table, key columns, projection unit) all derive from facts the leaf already carries. One real type
-decision remains: `LauncherCommands.INVOCATION_BY_SOURCE` has no arm for "keys captured by the
-caller from a service return"; `Invocation.Batched` presumes a loader and `ReturningKeyed` presumes
-a DML `RETURNING`. Recommendation: a new `Invocation` arm rather than a widened `ReturningKeyed`,
-because `ReentryRowsFragments.keysType` derives the keys-parameter type from the invocation and an
-honest arm keeps the census readable; implementation may land on widening if the type plumbing
-turns out identical, with the constraint that the keys type matches what `projectedBody` consumes.
+Reusing `ProjectedReentry` is a decision between three shapes, and the other two are rejected
+with their costs named. `LauncherCommands.INVOCATION_BY_SOURCE` admits exactly one `Invocation`
+arm per concrete `LaunchSource` leaf
+(`LauncherMembershipTest.invocationDeterminationIsTotalOverTheSourceArms` pins the key set
+against the sealed leaves), and `ProjectedReentry`'s arm is `Invocation.ReturningKeyed`, so
+reuse entails `ReturningKeyed`, taken deliberately in point 3. The alternatives:
 
-**4. Caller-side lift.** `buildServiceFetcherCommon` in `TypeFetcherGenerator` (shared by the query
-and mutation twins) grows a post-call step: lift each returned record's primary key, call the
-minted `rows<Field>` companion, return its result instead of the raw records. The lift loop shape
-already exists twice, in `MultiTablePolymorphicEmitter.buildServiceDispatchBlock` and
-`ServiceRowsFragments.liftBody`. When the service method declared no `dsl` parameter, synthesize
-the local from `TenantDslEmitter.dslExpression`, exactly as `MultiTablePolymorphicEmitter` does for
-the polymorphic refetch. The refetch therefore runs on `graphitronContext(env).getDslContext(env)`,
-the request's connection, matching the polymorphic path.
+- *Mint a new `Reentry` leaf plus a new `Invocation` arm.* Buys nothing but a name: the emitted
+  SQL, the keys-parameter type and the payload type would be byte-identical to what
+  `ReentryRowsFragments` already renders for `ProjectedReentry` (its `keysType` reads the
+  *source* correlation, not the invocation), while costing a `permits` edit on
+  `LaunchSource.Reentry`, an `INVOCATION_BY_SOURCE` entry, and three new switch arms in
+  `RootLauncherRenderer` (the body dispatch plus its two invocation switches).
+- *The `ServiceTableLift` shape: move the service call inside the rows method*, the way the
+  child `@service` table arm and every root catalog read work (`QueryFetchers.filmsConnection`
+  is a thin call to `rowsFilmsConnection(dsl, env)`). The fork is real, and the child arm's
+  javadoc is this item's mechanism at the child coordinate, but it cannot be taken by reuse:
+  `INVOCATION_BY_SOURCE` pins `ServiceTableLift` to `Invocation.Batched`, whose two payload
+  facts (`SourceKey`, `LoaderRegistration`) a root coordinate does not have, so the shape
+  forces a new `LaunchSource` arm mapped to `Invocation.Direct` anyway, plus a new SQL
+  fragment: `ServiceRowsFragments.liftBody` is loader-container-shaped end to end (per-parent
+  bucket normalisation, the `seq` cell, the four-tail container re-wrap), so the root variant
+  would duplicate what `ReentryRowsFragments.projectedBody` already is. It would also pull the
+  service call inside the SQL-composing unit while the Jakarta validation pre-step and the
+  try/catch envelope stay in the fetcher, splitting one call's envelope across two units. The
+  DML precedent decides against it: `TypeFetcherGenerator.emitReentry`'s javadoc states the
+  mutation entry point is "deliberately not thin" (it owns the write, the guards and the
+  channel envelope; only the re-select is the launcher's), and the root service fetcher stands
+  in exactly that position, with the service call as its write-analog.
 
-**5. Domain return type.** `QueryServiceTableField.domainReturnType()` is
-`DomainReturnType.Record(table)` today because children walked the service's typed record. After
-the change children walk the re-fetched projected row, like every catalog read, so the domain
-return type moves to whatever the catalog root read answers and downstream child wiring agrees.
-This is the widest-reaching edit in the item; see Risks.
+With `ProjectedReentry` reused, `RootLauncherRenderer` needs no change at any of its three
+switches: the body dispatch already routes `ProjectedReentry` to
+`ReentryRowsFragments.projectedBody`, and the keys-parameter and `valueTypeOf` switches already
+route `ReturningKeyed` to the same fragments.
+
+**3. Delivery: `Invocation.ReturningKeyed`, widened in prose only.** `ReturningKeyed` is
+payload-free by design; its own javadoc says every fact the arm would carry already rides
+another axis (the keys type from the source correlation, the list lift from the result shape,
+the `dsl` from the shell's declaration fragment). The mechanism it names, the entry point
+produces keys itself and calls the launcher once with them, is exactly what the root service
+fetcher does after the lift, so nothing structural widens: no new `Invocation` arm, no
+`INVOCATION_BY_SOURCE` edit, and `LauncherAxisPins`' declared-arm agreement holds on the minted
+rows unchanged. What rewrites is the DML-specific wording: `Invocation.ReturningKeyed`'s
+javadoc ("the mutation entry point runs the write itself"), `LaunchSource.Reentry`'s ("the
+mutation's captured `RETURNING` keys"), `ProjectedReentry`'s ("a projected mutation
+companion"), the `ReentryRowsFragments` class javadoc, and its `ValuesJoinRowBuilder`
+diagnostic context string ("@mutation @table-return reentry key") all restate as "keys captured
+at the call site", with the DML `RETURNING` capture and the root-service key lift as the two
+callers. `projectedBody` itself already emits both cardinalities the item needs:
+`VALUES(idx, pk...)` join plus `$project` from the live selection set plus `ORDER BY idx` for
+lists, and plain key equality for single; its inputs (target table, key columns, projection
+unit) all derive from facts the leaf carries. The companion's deliberate absence of an
+empty-input gate ("the companion is only ever called with captured keys") becomes a stated
+obligation on both callers; the root service fetcher's half is in point 4.
+
+**4. Caller-side lift in the fetcher.** `buildServiceFetcherCommon` in `TypeFetcherGenerator`
+(shared by the query and mutation twins) grows a post-call step on its success arm for the two
+table-bound leaves: lift each returned record's primary key into the companion's keys
+container, call the reentry companion, return its result instead of the raw records. The
+primary precedent is `TypeFetcherGenerator.emitReentry`, the DML caller of the same companion:
+it registers the rendered companion through `ctx.addCompanionMethod` with
+`RootLauncherRenderer.render` handed the `TenantDslEmitter`-resolved `dsl` declaration as the
+shell fragment, guards the single-cardinality no-keys case before calling, and calls the
+companion once with `(keys, env)`; the service emit does the same, with the lift loop standing
+where the DML has its `RETURNING` capture (the loop shape itself already exists in
+`MultiTablePolymorphicEmitter.buildServiceDispatchBlock` and `ServiceRowsFragments.liftBody`).
+Two concrete obligations:
+
+- *The keys container.* `ReentryRowsFragments.keysType` pins the companion's parameter to the
+  typed key row (`RecordN<...>`), lifted to `Result<RecordN<...>>` for the list shape. The DML
+  caller gets that container for free from `returningResult(...).fetch()`; the service caller
+  constructs it with jOOQ's typed `DSLContext.newResult(fields...)` and
+  `newRecord(fields...).values(...)` overloads (typed through degree 22, the same ceiling as
+  the `Row22` cap every keyed path already has). This makes the fetcher's `dsl` local
+  arm-entailed for the table-bound leaves regardless of the service method's own `needsDsl`
+  answer; the record leaves keep the conditional declaration.
+- *The empty gate is the caller's.* Single cardinality: a null service return skips the
+  companion and resolves null, mirroring `emitReentry`'s `keys == null` guard. List
+  cardinality: an empty service return skips the companion and resolves the empty list; this
+  gate is load-bearing, not cosmetic, because the companion's list arm builds
+  `DSL.values(keyRows)` and jOOQ rejects an empty row array.
+
+The companion's own `dsl` binds inside its body from the shell fragment, i.e.
+`graphitronContext(env).getDslContext(env)`, so the refetch runs on the request's connection,
+matching the polymorphic path. The validation pre-step and the try/catch envelope stay in the
+fetcher, unchanged, wrapped around both the call and the lift.
+
+**5. The emitted fetcher's payload type moves; the model's `domainReturnType()` stays put.**
+`QueryServiceTableField.domainReturnType()` already answers `DomainReturnType.Record(table)`,
+verbatim what the catalog root table reads answer, and it does not change:
+`ChildField.ServiceTableField`, the arm that already performs exactly this lift, keeps the same
+value, its javadoc naming the reason (agreeing with the SQL-emit table-bound producers so a
+`@table`-bound SDL type reached by both a service and an SQL-emit producer does not surface as
+a spurious conflict). Editing it would reintroduce that conflict; no model edit happens here.
+
+What does move is the emitted fetcher's declared Java payload type, which is what determines
+the `env.getSource()` every child hanging off the parent receives. Today
+`buildQueryServiceTableFetcher` declares the service's own container
+(`DataFetcherResult<Result<FilmRecord>>` for `filmsByService`, pinned by literal FQN in
+`TypeFetcherGeneratorTest.queryServiceTableField_emittedFetcher_declaresTypedResult`); after
+the change the payload is the companion's `ReentryRowsFragments.valueTypeOf`: `List<Record>`
+for the list shape, `Record` for single. Children then walk a projected row, which is what
+children already walk under every catalog read and under the child `@service` arm; the pin
+re-asserts the new type. See Risks for the residual exposure.
 
 **6. Missing-row contract.** A lifted key with no matching table row drops from a list result and
 resolves a single result to null, matching the drop contract `ContentSearchService` already pins
@@ -151,18 +242,27 @@ identity re-projection", `GraphitronSchemaValidator.validateServiceTableField`);
 that currently build; changelog and docs say so. Second, the reentry implementedness guard
 currently rejects any `emitsKeyedReQuery()` leaf that is neither a `BatchKeyField` nor a
 `MutationField.DmlTableField`; it must admit the new leaves in the same commit that mints the
-member. Third, the existing rejection of an error channel on a reentry `@service` field (the
-reentry fetcher inlines its channel arms on a single-channel premise) must be checked against root
-services carrying error channels, which become reentry under this item; if the combination is
-live in fixtures, the reentry emit learns the channel arms rather than the rejection widening, and
-either outcome gets a pipeline pin.
+member. Third, the error channel: structurally, no table-bound service return can carry one
+today, root or child, because `FieldBuilder.resolveErrorChannel` answers no-channel for anything
+but a class-backed `ResultReturnType` and a `@table`-bound return is not one, so the reentry
+emit needs no channel arms. The child arm's validator guard (`validateServiceTableField`'s
+reentry-plus-channel rejection) exists to pin that premise at the build boundary; the root arm
+gains the mirror guard in the same currently-empty `validateQueryServiceTableField` (and its
+mutation twin), so a future widening of channel resolution to table-bound payloads fails loudly
+at the new coordinate too, with a pipeline pin.
 
 ## The backlog's four questions, settled
 
-**Escape hatch reach.** The no-`@table` shape works today and is pinned: `FilmDetails` has no
-`@table`, is backed by jOOQ's `FilmRecord` (`JooqTableRecordType`, asserted by
-`SharedDomainTypeProducerPipelineTest`), and `FilmDetailsFetchers.title` reads the column straight
-off whatever the producer handed over. So the escape hatch exists and costs nothing new. What it
+**Escape hatch reach.** The no-`@table` shape works today at exactly the coordinate this item
+changes, and is pinned: `FilmDetailsCarrier` carries no `@table`, is produced by the root
+`@service` `Query.filmDetailsBatch` returning `List<FilmRecord>`, and its fetchers read columns
+straight off the record the service handed over; the schema keeps it distinct from `FilmDetails`
+precisely because a single SDL type cannot have two producers that disagree on the
+`env.getSource()` Java type. (`FilmDetails` is the same no-`@table` direct-read shape, backed by
+jOOQ's `FilmRecord` per `SharedDomainTypeProducerPipelineTest`, but it is reached as a
+same-table nesting child, not from a root `@service`; `FilmDetailsCarrier` is the witness for
+the shape the hatch is offered for.) So the escape hatch exists at the right coordinate and
+costs nothing new. What it
 cannot do is mask one column on an otherwise ordinary `@node` entity, because `@node` requires
 `@table`; no current surface (condition, tenant scoping) offers per-caller column redaction. Per
 the backlog's own framing that is a follow-up item to file if demand appears, not a blocker; the
@@ -193,9 +293,10 @@ reject-plus-control shape of `PkLessParentServiceSourcesRejectionTest`. Lands al
 before any behaviour changes.
 
 **Phase 2, cutover.** One commit, because the pieces are coupled by the implementedness guard:
-the model flip (both mint homes plus `DECLARED_SHAPES`), the `Launch` and `Invocation` arms with
-the `ProjectedReentry` row producer, the caller-side lift in `buildServiceFetcherCommon`, the
-domain-return-type move, and the guard admission. Pin updates ride along:
+the model flip (both mint homes plus `DECLARED_SHAPES`), the `Launch` arm with its
+`ProjectedReentry` row producer in both walks, the caller-side lift in
+`buildServiceFetcherCommon`, the emitted-payload-type move, the guard admission, and the
+reentry-family javadoc widening from point 3. Pin updates ride along:
 `OperationMemberMintPinTest`, `ReFetchDerivationTest`, `LauncherRelationClosureTest` (the pinned
 absence of a root-service launcher row becomes a pinned presence),
 `GraphitronSchemaBuilderTest`'s service rows, the corpus examples whose outcome tables show the
@@ -212,10 +313,13 @@ contracts (`SampleQueryService` states the passthrough today; `PolymorphicSearch
 ## Test surface
 
 - Pipeline: the pin updates named in Phase 2; new reject-plus-control tests for the keyless root
-  return; a pin for the error-channel outcome of Design point 7.
+  return; a pin for the root mirror of the reentry-plus-channel guard from Design point 7.
+  `LauncherMembershipTest`'s invocation-determination pin needs no edit and proves the point:
+  neither `LaunchSource`'s sealed leaves nor `INVOCATION_BY_SOURCE` change; the membership
+  census gains fixture coverage for the new `Launch` arm's non-vacuity floor.
 - Unit: `TypeFetcherGeneratorTest.queryServiceTableField_emittedFetcher_declaresTypedResult`
-  re-asserts the new declared return type; body shape stays delegated to execution tier per its
-  own comment.
+  re-asserts the new declared payload type (`DataFetcherResult<List<Record>>` for the list
+  shape); body shape stays delegated to execution tier per its own comment.
 - Execution (`graphitron-sakila-example`): key-only service records resolve full column data;
   absent key drops from a list and nulls a single; full-select siblings return unchanged results;
   `filmsByService_titleTitlecase_resolvesOnServiceReturnedTypedParent` stays green with its
@@ -256,13 +360,12 @@ the new keyless rejection loudly.
 
 ## Risks
 
-- The domain-return-type move (Design point 5) is the widest unknown: every child shape hanging
-  off a service-returned `@table` parent (nesting fields, batched children, reference paths, the
-  `titleTitlecase` wrap) must agree on the projected-row source. Each child shape is already
-  execution-covered off catalog reads; the residual risk is an arm keyed specifically on the
-  service parent's typed record, and the verification build surfaces it.
-- The error-channel interaction (Design point 7) may force the reentry emit to learn channel arms,
-  which grows Phase 2.
+- The emitted-payload-type move (Design point 5) is the widest unknown: every child shape
+  hanging off a service-returned `@table` parent (nesting fields, batched children, reference
+  paths, the `titleTitlecase` wrap) must resolve off the projected `Record` where it resolved
+  off the typed record before. Each child shape is already execution-covered off catalog reads
+  and off the child `@service` arm's projected rows; the residual risk is an arm keyed
+  specifically on the service parent's typed record, and the verification build surfaces it.
 - A consumer whose service deliberately returned column values differing from the table gets
   table values after upgrading. That is the intended fix of the reported bug, but it is a silent
   semantic change for anyone relying on it; the changelog and the escape-hatch paragraph are the
@@ -272,8 +375,8 @@ the new keyless rejection loudly.
 
 ## Done criteria
 
-- Generated `QueryFetchers.filmsByService` lifts keys and returns the `rows<Field>` companion's
-  result; no direct passthrough of service records bound to a `@table` type remains.
+- Generated `QueryFetchers.filmsByService` lifts keys and returns the `reentryRows<Field>`
+  companion's result; no direct passthrough of service records bound to a `@table` type remains.
 - Named execution test proves key-only service records resolve full column data, and another
   proves the missing-row drop/null contract.
 - The keyless root return is rejected naming the table, classifier and validator both, with
@@ -431,3 +534,42 @@ argument needs.
 Nothing else to add. Settling findings 1 and 2 is the whole of what stands between this spec and
 Ready; the establishing read, the phase decomposition, the test surface and the doc plan are in
 good shape and I would not ask for changes to them.
+
+### Revision after round 2 (2026-08-26)
+
+Design points 2 through 5 rewritten, with the ripples (point 7's channel touchpoint, the
+escape-hatch witness, Phases, Test surface, Risks, Done criteria). What changed, against the two
+findings:
+
+**Finding 1 settled by choosing an arm and naming the fork.** The design reuses
+`LaunchSource.ProjectedReentry`, accepting `Invocation.ReturningKeyed` as the pinned consequence
+and taking the javadoc widening ("keys captured at the call site") deliberately; the renderer is
+untouched at all three switches, for the reason round 1 itself supplied (`keysType` derives from
+the source correlation). The `ServiceTableLift` fork round 1 and round 2 flagged is now stated
+in the body and rejected on three verified grounds: the pinned
+`ServiceTableLift -> Invocation.Batched` determination forces a new source arm anyway (a root
+has no `SourceKey` or `LoaderRegistration`), the root variant of the loader-container-shaped
+`liftBody` would duplicate `projectedBody`, and moving the call inside the rows method splits
+the validation/channel envelope across two units against `emitReentry`'s "deliberately not thin"
+entry-point precedent, which is the structural analogy the whole design now leans on (service
+call at root : reentry companion :: DML write : reentry companion). Two caller obligations the
+old text lacked are stated: constructing the `Result<RecordN>` keys container (typed
+`DSLContext.newResult`/`newRecord`, degree 22 ceiling) and owning the empty-input gate the
+companion deliberately lacks.
+
+**Finding 2 settled as the reviewer proposed.** Design point 5 no longer edits
+`domainReturnType()` (it stays `Record(table)`, with `ChildField.ServiceTableField`'s
+conflict-avoidance javadoc cited as the reason); the point now names the real move, the emitted
+fetcher's declared payload type and the `env.getSource()` consequence, and the Risks entry
+shrinks to that.
+
+**Non-blocking note taken.** The escape-hatch witness is `FilmDetailsCarrier`, with
+`FilmDetails` demoted to the same-shape-different-producer aside.
+
+Facts re-verified first-hand against the tree on 2026-08-26 during this revision, beyond
+re-reading the rounds: `INVOCATION_BY_SOURCE` and both membership pins, `ReturningKeyed`'s
+payload-free javadoc, `projectedBody`/`liftBody`/`keysType`/`valueTypeOf`, `emitReentry` and
+`emitKeysTransaction`, the mint and `DECLARED_SHAPES` at both homes, and
+`resolveErrorChannel`'s class-backed-`ResultReturnType` guard, which settles the channel
+touchpoint structurally (a table-bound return can never carry a channel today, so the reentry
+emit needs no channel arms and the root validator arm gains the mirror guard).
