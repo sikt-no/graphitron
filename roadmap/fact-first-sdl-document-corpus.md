@@ -217,6 +217,38 @@ whatever the walk still needs at that point dies with the zoo under R682.
 
 ## Slice 2: the assertion becomes a fact expectation
 
+**The assertion form shipped at `317b08b`.** The directive is declared in the prelude, all 57
+documents carry blocks for `intent_resolved_field_claim` and `intent_bound_table` and the 33 with
+authored claims carry `intent_authored_field_claim`, `CorpusExpectations` reads the applications out of
+the store and compares them by anti-join in both directions, and `CorpusExpectationTest` carries the
+four floors with `CorpusExpectationsTest` planting a regression under each. What the rest of this
+section describes and the shipped work does not yet do, in the order it should be picked up:
+
+1. **The emitted-names approval files.** The verdict half of an outcome block is now an
+   `@expectEquals` table, but the emitted names are still pinned only by `OutcomeBlockDocTest`'s page
+   comparison. Landing the approval files as a second generation sweep beside that test doubles a
+   133-second cost for the interim, so the cheaper shape is to land them and the page collapse
+   together: have the approval test own the one generation run and render the page fragment from the
+   approved names plus the store's verdicts, rather than generating twice.
+2. **The per-axis `@classified` retirement.** The claim relations are asserted beside the tuple
+   directives rather than instead of them, because no `@classified` axis is *covered* by a claim
+   relation alone: the claim relations spell which classifier claimed a coordinate and at what tier,
+   while the tuple's axes are source, operations, target and the two shapes. So the enum wall and the
+   mirror family survive slice 2 as landed, and what retires an axis is a relation that spells it,
+   which is R682's to produce. The plan said "each mirror dies in slice 2 with the enum it mirrors";
+   the honest form of that is "with the axis it mirrors", and no axis moved yet.
+
+Two smaller findings from the landed work:
+
+- **The prelude is part of every document's expectation.** `CorpusAnchor` contributes one bound table
+  and one inferred claim to every graph, so every block carries those rows. Masking them out in the
+  harness would be exactly the skip-list coordinating two passes that this item's own text refuses,
+  so they are declared like any other row.
+- **Values are compared as text.** The comparison casts both sides to VARCHAR and matches on
+  `IS NOT DISTINCT FROM`, so an empty cell is how a document spells NULL and a boolean column reads as
+  `TRUE` / `FALSE`. That is a property of the block being a text literal, and it is worth stating
+  because it decides what an author writes.
+
 One directive, declared once in the prelude document, applied at the schema and repeated per
 relation. Its payload is the relation's expected content as CSV:
 
@@ -376,6 +408,18 @@ cannot see the classes such a check needs).
 `docs/pom.xml` at `process-resources` with `classpathScope=compile`, taking the corpus folder and the
 output path as arguments the way that renderer takes a source root. `CorpusDocuments` and the two
 renderers move from the test tree into that package; the harness goes on consuming them.
+
+**A defect in this arm, found while landing slice 2 and unresolved.** The renderers cannot simply move
+to main sources: `OutcomeBlockRenderer` captures through `CapturedStore` and configures through
+`TestConfiguration`, both test-tree infrastructure, so moving it to `no.sikt.graphitron.docs` drags the
+capture harness into main with it. The plan's own answer, a provided-scope dependency on `graphitron`'s
+test-jar, does not close it either: `-Pquick` sets `maven.test.skip`, which skips test compilation, so
+the test-jar is empty under exactly the profile the plan invokes it to survive. Whoever picks up slice 3
+decides between three arms rather than assuming this one: give the docs render a main-side capture
+entry point (the real fix, and the largest), let the fragment be written by the `graphitron` test tier
+into the docs module's staging directory and accept that `-Pquick` skips both the fragment and the
+render, or keep the page's blocks committed and collapse only the outcome tables. The first is the only
+one that leaves an unconditional `include::` honest.
 
 The arm this rejects, and why, because it looks cheaper: an `exec` in `graphitron/pom.xml` with
 `classpathScope=test` would keep everything in the test tree and add no docs dependency, but
