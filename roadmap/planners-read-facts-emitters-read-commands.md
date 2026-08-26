@@ -2750,6 +2750,85 @@ Better-shaped either way, and the same lever the input-field role relation's own
 **What this increment leaves owing**: the write destination at the column grain, which is the UPDATE
 partition with its straddle rules, its agreement obligations and its empty-SET refusal. Then the fold.
 
+### Conditions, thirteenth increment: where each column goes, and the four ways the partition refuses
+
+Three relations, and the middle one is why there are three. `intent_mutation_write_destination` says what
+each column a payload contributes is for. `intent_mutation_write_refusal` says why an UPDATE the walker
+admitted field by field is refused anyway. Both reduce `intent_mutation_payload_key_membership`, which
+says which of the contributed columns fall inside the key the payload matched and how each carrier as a
+whole falls against that boundary.
+
+**Why the substrate is a relation and not a step.** The two consumers need the per-column answer and the
+per-carrier one together: where a column goes turns on where its carrier falls and not only on where the
+column itself does. Writing it inside either consumer states it twice, and stating it once in whichever
+consumer happened to be written first makes the other read a rule shaped for someone else's question. It
+also carries a claim neither consumer makes: it is what the straddle diagnostic renders, that error
+carrying exactly the two column lists this relation partitions one carrier into.
+
+The vocabulary is three values and the third is what this increment is about. WHOLE is a carrier every
+column of which is in the key and NONE one no column of which is; the answer is an all-of rather than a
+majority, which is what makes the remaining value a straddle rather than a lean. STRADDLE is a carrier
+with a column on each side, and it is the only shape whose columns may be dispositioned apart.
+
+The population is the write payload's narrowed twice and both narrowings are the walkers'. The verb is
+UPDATE alone: a DELETE matches a key too, but that key is a cardinality guard rather than a partition, so
+measuring a DELETE here would answer a question no consumer of one asks and invite a partition to be read
+into a statement that has none. And the verdict is IDENTIFIED alone, a payload that pins no key having no
+boundary to be measured against.
+
+**The refusals, and why the ranking is load-bearing.** Four causes in three stages. The walker collects a
+stage's refusals without short-circuiting and returns at the end of it, so a cause from a later stage on
+the same coordinate is not merely unreported: it would have been computed over a partition an earlier
+refusal made the walker abandon. The relation keeps, per coordinate, only the causes of the first stage
+that has any. That is the eleventh increment's shape one level up: there a precedence ranked six causes at
+one site, here a whole stage is kept and the rest dropped.
+
+The first stage carries both straddles and reports them together, an author fixing one meeting the other.
+`MIXED_CARRIER_KEY_MEMBERSHIP` is a carrier of the row's own columns split by the key: half of it is the
+identity the statement finds the row by and half is a value it writes, which is moving the row rather than
+updating it. `NULLABLE_STRADDLING_REFERENCE` is a cross-table reference in the same position, where the
+split is legitimate and the spelling is not, clearing a nullable pointer writing half a foreign key and
+leaving the other half where the predicate put it. The two are pinned against each other over one
+reference that differs only in its non-null wrapper, because either alone reads as a fact about straddling
+rather than about the spelling. The second stage carries `PLAIN_COLUMN_COLLISION`, two plain carriers
+assigning one column, which would silently last-write-win; an overlap one of whose writers decodes its
+value is admitted and reconciled at runtime instead, which is why the cause is about plain writers rather
+than about writers. The third carries `NO_SET_FIELDS`, an UPDATE every column of which is the key it
+filters on.
+
+Where a row is located varies by cause, and that is the shape of the underlying errors rather than an
+unfilled slot. A straddle is a fact about one occurrence and carries no column. A collision is a fact
+about one column and names every occurrence writing it; the walker's own diagnostic quotes two of them,
+which is an artefact of the order it built the assignment half in rather than a fact about the payload, so
+the relation names the contributors and leaves the choice of two to whoever renders one. An empty
+assignment is a fact about the statement and names neither, its position being the `@mutation`
+application's rather than any field's.
+
+**The third destination.** PREDICATE and VALUE were the vocabulary this increment was scoped with and they
+are not enough. Where a straddler's in-key column is already pinned by another carrier the straddler
+neither filters nor writes it: the two decoded values are compared before any DML runs. That is a
+contribution with no place in the statement, and leaving it as an absence would say the occurrence
+contributes nothing to that column, which is false. So CHECKED, and the agreement obligations the walker
+mints are then a reduction of this relation rather than a fact beside it: each is a PREDICATE row and a
+non-PREDICATE row over one column of one statement.
+
+**One thing nearly got wrong.** Where more than one straddler claims a key column and nothing else pins
+it, the walker resolves in input-field order, and its own comment says the choice is observationally
+irrelevant because the agreement check runs either way. True of the running program and false of the
+artefact: which claim wins decides which field's decode the emitted WHERE clause reads. So the order is
+transcribed rather than left to whatever order a row arrives in, and pinned in both directions over a
+mirrored fixture with the two fields declared the other way round.
+
+How it is transcribed is a second small finding. The obvious spelling is a sort key assembled from each
+step's declaration ordinal along the path, and the fact schema's collection-valued column gate refuses it:
+a key of that shape is a collection folded into one value. What replaced it is a pairwise precedence, two
+occurrences comparing at the outermost step where they differ. More SQL, and better, because it is asked
+only of the occurrences that contend, which is a handful wherever it is asked at all. The gate was right
+and finding that out cost one test run.
+
+**What this increment leaves owing**: the agreement obligations as their own reduction over the
+destination, and then the fold.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the

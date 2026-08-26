@@ -133,6 +133,14 @@ class FactSchemaGateTest {
      * {@code category} is the cheapest refusal to state and it does not disturb the other two, a
      * refusal cutting its own occurrence and nothing beside it.
      *
+     * <p>{@code updateCategoryName} is the same write with the refused field left out, and it is
+     * here because the third target in that family needs a payload the walkers admit whole.
+     * {@code intent_mutation_payload_key_membership} measures the admitted columns against the key
+     * the payload matched, and a payload with any refusal never reaches a key at all, so
+     * {@code updateCategory} beside it populates that target with nothing. Two mutations over one
+     * type rather than one carrying both readings, because the two targets want opposite payloads
+     * and neither can be made to hold rows by weakening the other.
+     *
      * <p>{@code Category} rather than {@code Film} because the write rungs all demand an
      * unambiguous binding and {@code Film} has two here, its {@code @table} and the table-valued
      * routine {@code filmsForActor} returns, so a mutation returning it would have no scope row at
@@ -155,12 +163,18 @@ class FactSchemaGateTest {
           actorFilms(actorId: ID!, minLength: Int): ActorFilmsPayload
             @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
           updateCategory(in: CategoryUpdateInput!): Category @mutation(typeName: UPDATE)
+          updateCategoryName(in: CategoryNameInput!): Category @mutation(typeName: UPDATE)
         }
 
         input CategoryUpdateInput {
           categoryId: ID! @field(name: "category_id")
           name: String
           notAColumn: String
+        }
+
+        input CategoryNameInput {
+          categoryId: ID! @field(name: "category_id")
+          name: String
         }
 
         type ActorFilmsFailed @error(handlers: [{

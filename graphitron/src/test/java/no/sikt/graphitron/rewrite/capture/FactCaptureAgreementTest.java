@@ -453,6 +453,10 @@ class FactCaptureAgreementTest {
         registrations.put("intent_mutation_payload_column", Arm.DERIVED);
         registrations.put("intent_mutation_payload_column_live", Arm.DERIVED);
         registrations.put("intent_mutation_matched_key", Arm.DERIVED);
+        registrations.put("intent_mutation_payload_key_membership", Arm.DERIVED);
+        registrations.put("intent_mutation_payload_key_membership_live", Arm.DERIVED);
+        registrations.put("intent_mutation_write_refusal", Arm.DERIVED);
+        registrations.put("intent_mutation_write_destination", Arm.DERIVED);
         registrations.put("intent_node_id_instruction", Arm.DERIVED);
         registrations.put("intent_node_id_decode_endpoint", Arm.DERIVED);
         registrations.put("intent_node_id_decode_hop", Arm.DERIVED);

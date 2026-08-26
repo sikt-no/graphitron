@@ -122,10 +122,18 @@ class MaterializeRegistryGateTest {
      *   relation collects the columns a payload contributes as a {@code DISTINCT} over every row of
      *   this target and then joins the candidate keys onto that, so there is no probe for an index
      *   to serve and a declared one would only be maintained. The shape that would change the
-     *   answer is a reader keyed by one mutation coordinate, which the write destination relation
-     *   will be; the coordinate to declare then is {@code (graph_name, type_name, field_name)}, and
-     *   it should be timed at that point rather than declared now, an index without a measurement
-     *   being a claim with nothing behind it.</li>
+     *   answer is a reader keyed by one mutation coordinate. The write destination relation was
+     *   expected to be that reader and is not: it reads this target whole in its DELETE arm and
+     *   reaches it otherwise through the key-membership target below, so nothing probes it by
+     *   coordinate yet and there is still no seek for an index to serve.</li>
+     *   <li>{@code intent_mutation_payload_key_membership}: five namings and not one of them probes
+     *   in. Two arms of {@code intent_mutation_write_refusal} drive from this target, and
+     *   {@code intent_mutation_write_destination} names it three times, twice as a set it collects
+     *   from and once as the population it disposes. Every one of those reads the target whole, so
+     *   there is no coordinate an index could serve, and the registration exists to stop the rule
+     *   being re-derived per naming rather than to make any one naming seek. A reader keyed by one
+     *   mutation coordinate would change the answer, and none of the readers this increment adds
+     *   is one.</li>
      * </ul>
      */
     private static final Set<String> NO_INDEX = Set.of(
@@ -137,7 +145,8 @@ class MaterializeRegistryGateTest {
         "intent_carrier_data_field",
         "intent_node_id_instruction",
         "intent_input_field_resolving_table",
-        "intent_mutation_payload_column");
+        "intent_mutation_payload_column",
+        "intent_mutation_payload_key_membership");
 
     @Test
     @DisplayName("every registered source is a view and every registered target is a table")

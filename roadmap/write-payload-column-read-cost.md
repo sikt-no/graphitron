@@ -43,17 +43,26 @@ side of a registration it lands, and the gate's synthetic fixture understates it
 R839 is the same shape found independently at another site, a correlated `EXISTS` re-deriving a rule
 once per driving row inside `intent_carrier_data_field_live`, and it is the stronger evidence of the
 two because it is measured against a real consumer store rather than a scaled fixture. Read it before
-this one. If a third instance turns up, the shape has earned a written rule of its own rather than a
-third item.
+this one. If a third instance of the probe turns up, the shape has earned a written rule of its own
+rather than a third item.
+
+A third registration has since landed in this family and it is deliberately not counted as that third
+instance. `intent_mutation_payload_key_membership` was registered because five namings across two view
+bodies each re-expand it, which is the ordinary breadth case every other row in `meta_materialize`
+argues, not because anything correlates into it: its readers join it as a set. Worth stating because
+the two look alike from the outside, both being a derived relation that had to become a table, and only
+the probe shape is the one whose cost the gate's fixture understates by orders of magnitude.
 
 ## What this item is about
 
 Whether four seconds of refresh is a real cost or an artefact of a fixture that is twelve repetitions
 of a node cluster.
 
-1. **Time both refreshes against the sakila example schema.** Every other registration quotes its
-   refresh there rather than against the scaled fixture. If both are milliseconds, this item closes
-   with two figures added to the registrations' own comments.
+1. **Time all three refreshes against the sakila example schema.** Every other registration quotes its
+   refresh there rather than against the scaled fixture. The key-membership registration has since
+   joined the two this item was filed for and is refilled on the same cadence, so it belongs in the
+   same measurement. If all three are milliseconds, this item closes with three figures added to the
+   registrations' own comments.
 2. **If the column refresh is real, the remaining expansion is the write payload.**
    `intent_mutation_payload_column_live` names `intent_mutation_write_payload` in its admitted set and
    the admitted set once per column-resolving arm, so the scope family is still expanded twice per
