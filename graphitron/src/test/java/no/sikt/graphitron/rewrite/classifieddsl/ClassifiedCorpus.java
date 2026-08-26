@@ -1194,12 +1194,14 @@ public final class ClassifiedCorpus {
          * backing clusters of `result-backing` and `input-backing`. @classifiedType asserts the
          * verdicts directly; there is no field-side dimensional lesson.
          *
-         * Corpus-only, and the input half is not promotable at all. PlainJooqRecord is abstract, and
-         * making it concrete is not the fix: jOOQ's own bare-Record implementations are all
-         * package-private, so no public concrete type has this shape. {@code InputBeanResolver} has
-         * one jOOQ arm and it is gated on the table-bound case, so a table-less jOOQ record falls
-         * through to the JavaBean path and is refused there. Whatever did reach this input leaf would
-         * be populated as a plain bean, which is what PojoInputType already means.
+         * Corpus-only: the input half does not generate today, and the reason is a missing arm rather
+         * than a missing class. PlainJooqRecord is abstract, so the JavaBean path refuses it, and no
+         * public concrete class has the bare-Record shape to swap in (jOOQ's own implementations are
+         * package-private). But a no-arg constructor is the wrong primitive for this shape anyway: a
+         * bare jOOQ record is built by DSLContext#newRecord(Field...), which needs a field list.
+         * InputBeanResolver's only jOOQ arm is gated on the table-bound case, so nothing supplies
+         * that list and a table-less record falls through to the bean path. Resolving the columns per
+         * consuming field, the way an unbound PojoInputType already does, is what would close it.
          */
         new Example("plain-jooq-record-backing", """
             type PlainJooqRecordBacked @classifiedType(as: JooqRecordType) { id: ID }

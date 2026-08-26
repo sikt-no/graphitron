@@ -912,24 +912,31 @@ is worth recording because it is not the same kind of reason as the other five. 
 hand-written, abstract, and implements `org.jooq.Record` without implementing `org.jooq.TableRecord`.
 That is deliberate: it exists to name the one shape that reaches `JooqRecordType` /
 `JooqRecordInputType`, a jOOQ record with no table behind it. jOOQ's generator never produces such a
-class. The bare-`Record` shape is what an ad-hoc projection yields at runtime, and its concrete
-classes (`org.jooq.impl.AbstractRecord` and the `RecordImplN` family) are all package-private, so
-there is no public concrete type to extend and no `dsl.newRecord` call that names one.
+class, and its own implementations of the shape (`org.jooq.impl.AbstractRecord` and the `RecordImplN`
+family) are all package-private, so there is no public concrete type to extend.
 
-On the result axis this costs nothing, and that half of the fixture generates today. On the input
-axis it is a wall, and the wall is structural rather than accidental. `InputBeanResolver` has exactly
-one jOOQ arm and it is gated on `JooqTableRecordInputType`, the column-bound case; a table-less jOOQ
-record falls through to the JavaBean path, which needs a concrete class with a no-arg constructor and
-setters. Meanwhile `looksLikeBeanCandidate` excludes everything under `org.jooq.*`, so declaring the
-parameter as `org.jooq.Record` itself does not reach that path either. The only class that can reach
-`JooqRecordInputType` at all is a consumer-authored class outside `org.jooq` that implements `Record`
-by hand, and for it to generate it would have to implement the whole `Record` surface concretely.
+On the result axis that costs nothing, and that half of the fixture generates today, because the
+result path only casts and reads. The input axis is where it stops, and the first reading of why was
+wrong. It looked structural: no concrete class means no `new`, so nothing can be built. The owner's
+correction is that `DSLContext#newRecord(Field...)` builds exactly this shape, along with the
+arity-typed `Record1` to `Record22` overloads. Instantiation was never the missing piece. What is
+missing is the *field list* those calls take, and a bare `Record` has no table to source one from.
 
-So `JooqRecordInputType` is a classification leaf with no generation behaviour of its own: whatever
-lands on it is populated as a plain bean, exactly as `PojoInputType` would be. That is a finding
-about the input path, not about the fixture, and it belongs in its own item rather than in a docs
-round: either the input path should refuse a table-less jOOQ record with a message that says why, or
-the leaf should not exist on the input side.
+That makes it a missing arm rather than a wall. `InputBeanResolver` has exactly one jOOQ arm and it
+is gated on `JooqTableRecordInputType`, the column-bound case, which is the only place a field list
+is available today; a table-less jOOQ record falls through to the JavaBean path, which asks for a
+no-arg constructor and setters, the wrong primitive for a jOOQ record entirely. That is why the
+rejection message talks about instantiating a bean.
+
+Closing it does not need `PlainJooqRecord` to change at all. A `newRecord`-based arm constructs the
+record itself and hands it to the method, so the declared parameter type only has to be assignable,
+abstract or not. The field list would come from resolving each input field against the consuming
+field's table, which is precisely what an unbound `PojoInputType` already does. Two smaller things
+sit alongside it: `looksLikeBeanCandidate` excludes everything under `org.jooq.*`, so a parameter
+declared as `org.jooq.Record` or `Record2<...>` does not reach any arm today, and until such an arm
+exists the rejection should say what is actually wrong rather than reporting a bean-construction
+failure. That is a feature gap in the input path, not a defect in the fixture, and it belongs in its
+own item rather than in a docs round.
 
 **The outcome block, and the fork the owner settled.** Building it turned up something the plan
 does not cover: **not every doc example generates.** The corpus is a classification corpus, and a
