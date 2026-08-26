@@ -378,3 +378,56 @@ returning `List<FilmRecord>`, carrying no `@table`, with the schema stating outr
 kept distinct "because a single SDL type cannot have two producers that disagree on the
 `env.getSource()` Java type". Both types exist and both are pinned; naming the second makes the
 escape hatch load-bearing for the shape it is offered for.
+
+### Round 2 (Spec → Ready gate, session_b5d1f000-b26e-43bd-ad31-1759b68c6a89, 2026-08-26)
+
+Independent reviewer session, different from round 1's. Status stays `Spec`. No new blocking
+finding; round 1's two are re-confirmed first-hand, and the plan body is byte-identical to the
+copy round 1 reviewed (`git diff` over the file since the Backlog → Spec commit is the findings
+section and nothing else). So the bounce stands on the same two grounds, and this round exists to
+close off the one thing that could have lifted it: that round 1 had misread the tree. It had not.
+
+Re-verified independently, not by reading round 1:
+
+- `LauncherCommands.INVOCATION_BY_SOURCE` is a `Map<Class<? extends LaunchSource>, Class<?
+  extends Invocation>>` with `ProjectedReentry.class -> ReturningKeyed.class`, and
+  `LauncherMembershipTest.invocationDeterminationIsTotalOverTheSourceArms` asserts its key set
+  equals `LaunchSource`'s sealed leaves exactly, so one arm per leaf is pinned, not merely
+  conventional. `LaunchSource.Reentry permits ProjectedReentry, DiscriminatedReentry` and both
+  hold a `ParentCorrelation.OnLiftedSlots`, so a third reentry arm also edits the `permits`
+  clause. `ReentryRowsFragments.keysType` reads
+  `((LaunchSource.Reentry) row.source()).correlation()`: source, not invocation, as round 1 said.
+- `QueryServiceTableField.domainReturnType()` returns `new DomainReturnType.Record(returnType
+  .table())`, and `ChildField.ServiceTableField.domainReturnType()` returns the same expression
+  with the javadoc naming the reason ("agreeing with the SQL-emit table-bound producers ... so a
+  `@table`-bound SDL type reached by both a service and an SQL-emit producer does not surface as
+  a spurious conflict"). Design point 5's edit is a no-op, and performing it reintroduces that
+  conflict.
+- The plan's other named facts hold where I sampled them: `rootServicePassthrough` lives at both
+  mint homes, `DECLARED_SHAPES` gives `QueryServiceTableField` `shape(Set.of(Kind.SERVICE_CALL),
+  Set.of())`, `verdictOf`'s `SERVICE` rule is `!root && hasKind(SERVICE_CALL)`,
+  `validateQueryServiceTableField` is a body of one comment, the child arm's PK rejection
+  sentence is verbatim, `SampleQueryService.filmsByService` is `selectFrom(Tables.FILM)`, and the
+  four doc sentences slated for rewrite exist at the quoted wording.
+
+One sharpening on round 1's "weigh `ServiceTableLift`", because it makes the unnamed fork cheaper
+than the arm the plan chose rather than merely different: `RootLauncherRenderer.valueTypeOf`
+short-circuits on `LaunchSource.ServiceCall` and `LaunchSource.ServiceTableLift` *ahead* of its
+invocation switch and delegates to `ServiceRowsFragments`, and `INVOCATION_BY_SOURCE` already maps
+`ServiceTableLift.class -> Invocation.Batched.class`. So the service-shaped arm is wired through
+the renderer at the value-type view already, and taking it would delete Design point 4's
+caller-side lift instead of adding to it. What blocks it is narrower than a renderer cascade:
+`Launch.SERVICE` is gated on `!root`, and `LauncherCommands.serviceRow` switches over
+`ChildField.ServiceTableField` / `ChildField.ServiceRecordField` with a throwing default, so the
+root leaves would have to be admitted there. Naming that cost and rejecting it is a fine answer;
+what the plan cannot do is leave the fork unstated while citing `ServiceRowsFragments.liftBody`
+only for its loop shape.
+
+The non-blocking note also holds: `FilmDetails` carries no `@table` but is reached as a same-table
+nesting child, while `FilmDetailsCarrier` is produced by the root `@service` `Query
+.filmDetailsBatch` returning `List<FilmRecord>`. The second is the witness the escape-hatch
+argument needs.
+
+Nothing else to add. Settling findings 1 and 2 is the whole of what stands between this spec and
+Ready; the establishing read, the phase decomposition, the test surface and the doc plan are in
+good shape and I would not ask for changes to them.
