@@ -50,10 +50,16 @@ window.
 
 The values, each argued on its own axis:
 
-- Ceiling: `DEBOUNCE_MS + 15_000`. Sized so machine load cannot reach it, not snug around the
-  measured cost: the real-work trigger's refresh (cold javac parse plus jOOQ store writes)
-  measured 854 ms on a passing full-suite run, so this is roughly 17x headroom where the old
-  window gave under 2x. If this ceiling is ever hit, the refresher is broken or hung, not slow.
+- Ceiling: `DEBOUNCE_MS + 60_000`. Sized so machine load cannot reach it, not snug around the
+  measured cost. (Corrected under the round 1 finding below; this bullet read `15_000`, "854 ms",
+  and "roughly 17x" when Spec signed off, and those three figures came from a single quiet-machine
+  sample. The measurement that replaces them is in the next paragraph, and the finding that forced
+  it is recorded under "Reviewer findings".) The real-work trigger's refresh (cold javac parse plus
+  jOOQ store writes) was re-measured with a `System.nanoTime` bracket under this module's own
+  four-way class concurrency on a loaded fourteen-core machine: sixteen samples between 483 ms and
+  4,308 ms. Sized against the top of that spread, this is roughly 14x headroom, where the retired
+  1,600 ms budget sat *inside* the spread, under five of the sixteen samples. If this ceiling is
+  ever hit, the refresher is broken or hung, not slow.
 - Window: `DEBOUNCE_MS + 1500`, the current value, now deliberate rather than inherited. On its
   own axis the window prices dispatch plus debounce for a fire that must *not* happen, so the
   floor is a small multiple of the 100 ms debounce; it stays at 16x that multiple because under
@@ -74,8 +80,19 @@ For a flake fix, a green build is nearly zero evidence: the test was green on mo
 change too, and the original failure is not practically reproducible on demand (it needs a loaded
 machine and a cold surefire JVM). The completeness answer is the headroom ratio, which is
 falsifiable: the measured refresh cost and the ceiling both live in the constant's javadoc, so a
-reviewer can re-measure, divide, and compare. Roughly 17x over the 854 ms measurement, against
-under 2x before. The full verification build then confirms the mechanical edit broke nothing.
+reviewer can re-measure, divide, and compare. Roughly 14x over the worst of sixteen samples
+(4,308 ms), against a retired budget that five of those sixteen samples exceeded outright. The
+full verification build then confirms the mechanical edit broke nothing.
+
+Round 1 taught the item how the measurement has to be taken, and that method is now part of what is
+being verified, not just the number it produced. A single sample from a quiet machine is not a
+measurement of a figure whose whole job is to survive a loaded one. To re-measure: bracket the
+`refreshJavaSources` call in `javaSourceWriteMovesTheStoreRowWithoutAGeneratorPass` with
+`System.nanoTime`, run `mvn test -pl :graphitron-maven-plugin` repeatedly with the module's suite
+running its classes four-way concurrent and the machine held under real load (concurrent module
+test runs will do it), and take the worst sample rather than the typical one. The spread is wide
+because the refresh's own work is milliseconds and the clock is mostly measuring scheduling delay,
+so a handful of samples on an idle machine says nothing about the ceiling.
 
 ## Out of scope
 
@@ -105,13 +122,18 @@ Two things the plan left to the implementer and how they were settled:
   ceiling's javadoc also links the two test methods that take it and the window's links the one
   that takes it, so each budget names its own call sites.
 - The ceiling's javadoc carries the history paragraph the precedent uses, stating that the figure
-  was previously the window's and that under 2x over a measured 854 ms is a race with machine load
-  rather than a ceiling. That is what makes the number re-derivable at the next gate: the
-  measurement and the ceiling are both in the text, so the ratio can be checked by division.
+  was previously the window's and that 1,600 ms was a race with machine load rather than a ceiling.
+  That is what makes the number re-derivable at the next gate: the measurement and the ceiling are
+  both in the text, so the ratio can be checked by division. (Round 1 found that the measurement in
+  that text was the wrong measurement; the rework below replaced it and the ceiling with it, and
+  the re-derivability property is what made the finding possible.)
 
 Per-run cost is unchanged, which is the property that says the split landed on the right axis: the
 only figure that grew is one a green run never pays. The class runs 3/3 green in isolation in
 3.5 s against 3.9 s before, the 1.6 s of that which is the negative test's sleep being untouched.
+That property is what made the round 1 rework cheap: raising the ceiling from 15.1 s to 60.1 s
+changed no green run's wall clock at all, which is the whole argument for choosing the ceiling axis
+over the honest-smaller-ratio one.
 
 ## Reviewer findings
 
@@ -180,3 +202,52 @@ in the root pom) reads main sources only; `test-javadoc-no-fork` is named in tha
 the pair for test sources but is not wired. So the live-symbol `{@link}`s this item deliberately
 chose over `{@code}` are compiler-checked for the statically imported symbol and unchecked for the
 rest. They resolve today, verified above. Worth a Backlog item, not a condition on this gate.
+
+### Round 1 response (rework, 2026-08-26)
+
+The finding is accepted in full and its diagnosis is the right one: 854 ms and 17x were a
+quiet-machine sample presented as a measurement, and an argument that names loaded conditions has to
+be measured under them.
+
+**Re-measured.** A `System.nanoTime` bracket around the `refreshJavaSources` call, twelve runs of
+`mvn test -pl :graphitron-maven-plugin` with the module's classes four-way concurrent and the
+fourteen-core machine held at load average seventeen to thirty-four by three concurrent module test
+suites (`graphitron`, `graphitron-lsp`, `graphitron-mcp`) looping alongside:
+
+    483  701  919  939  1016  1106  1259  1364  1465  2098  2154  2459   (ms)
+
+Folded together with the reviewer's four samples (528, 801, 3,588, 4,308 ms), taken the same way on
+the same machine class, that is sixteen samples spanning 483 ms to 4,308 ms. The worst case is the
+reviewer's 4,308 ms, so the review's number stands as the campaign's worst and is the one the
+javadoc is sized against. The spread itself is the substantive finding: the refresh parses one small
+source file and writes a handful of rows, so its intrinsic work is milliseconds and almost the whole
+clock reading is scheduling delay under contention. Nothing about a five-fold spread is knowable
+from one sample, which is exactly why the original figure did not travel.
+
+**Of the two options offered, the ceiling was raised** rather than the ratio restated, because the
+ceiling axis is free on the green path and the "broken or hung, not slow" claim is worth keeping
+true rather than weakening. `FIRE_CEILING_MS` is now `DEBOUNCE_MS + 60_000`, about 14x the 4,308 ms
+worst case, restoring the order of magnitude the original argument wanted and paying for it only on
+a run that was already going to fail. The javadoc states the sixteen-sample spread, the conditions
+it was taken under, the worst case it is sized against, and the derived ratio, so the same division
+the reviewer performed still checks out.
+
+**One claim in the javadoc got stronger, not weaker.** The history paragraph no longer says the
+retired 1,600 ms budget gave "under 2x"; it says the retired budget falls inside the measured
+spread, below five of the sixteen samples. That is a checkable statement about the defect rather
+than a ratio against a sample, and it is the sharpest available evidence that the item was real: on
+the measurements now recorded here, the old budget would have failed roughly a third of the
+refreshes.
+
+**Two edits reach approved Spec prose,** disclosed rather than made quietly. The Plan's ceiling
+bullet and the Verification section both carried the 854 ms / 17x premise the finding rejected;
+leaving them would leave this file asserting the same false measurement the item exists to correct.
+Both now carry the re-measured figures, the ceiling bullet says in-line which three figures it
+replaced, and the Verification section additionally records *how* the measurement must be taken,
+since round 1 showed that the method, not just the number, was the thing missing.
+
+**The non-blocking observation** (the `verify`-bound reference gate reads main sources only, so the
+cross-module `{@link}`s here are checked by `test-javadoc-no-fork` on demand and not by the build)
+is left where the reviewer put it, as Backlog material rather than a condition on this gate. The
+links were re-verified green on the reworked file with `mvn javadoc:test-javadoc-no-fork -pl
+:graphitron-maven-plugin -Ddoclint=reference`.

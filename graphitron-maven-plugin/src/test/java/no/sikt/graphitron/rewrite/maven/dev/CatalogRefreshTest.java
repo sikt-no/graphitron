@@ -41,24 +41,36 @@ class CatalogRefreshTest {
      * {@link no.sikt.graphitron.rewrite.FactWriters#refreshJavaSources} is a
      * {@link no.sikt.graphitron.rewrite.capture.SourceWalker} parse through the Compiler Tree API,
      * cold on its first use in the surefire JVM, plus the jOOQ writes that land the walk in the
-     * store. That refresh measured 854 ms on a passing full-suite run, so this leaves it roughly
-     * seventeen times the room it took.
+     * store.
+     *
+     * <p>What that refresh costs, measured under the conditions this figure has to survive rather
+     * than on a quiet machine. A {@code System.nanoTime} bracket around the call, with this
+     * module's suite running its classes four-way concurrent on a fourteen-core machine held at
+     * load average seventeen to thirty-four, put sixteen samples between 483 ms and 4,308 ms. The
+     * spread is the finding: the refresh parses one small source file and writes a handful of rows,
+     * so its own work is milliseconds and almost everything the clock sees is scheduling delay
+     * under contention. Sized against the worst of that spread rather than its floor, this ceiling
+     * leaves about fourteen times the room the refresh took.
      *
      * <p>Generous on purpose, and the direction is what makes that safe.
      * {@link java.util.concurrent.CountDownLatch#await} returns the moment the latch counts down,
      * so a green run never pays this figure at all; it is spent only on a run that was going to
      * fail anyway. That is also why the near-free rebuilder in
-     * {@link #classFileWriteReachesTheWorkspace} takes the same ceiling: an await budget is a
-     * bound on failure, not an estimate of the work, and nothing holds that rebuilder cheap.
+     * {@link #classFileWriteReachesTheWorkspace} takes the same ceiling: an await budget is a bound
+     * on failure, not an estimate of the work, and nothing holds that rebuilder cheap.
      *
-     * <p>It was the same figure as {@link #QUIESCENCE_MS}, and that figure was too tight to be a
-     * fact about the code. Under twice a measured 854 ms is not a ceiling, it is a race with
-     * machine load: this module's test classes run four-way concurrent, and
-     * {@link no.sikt.graphitron.rewrite.maven.DevMojoTest}'s real generator work competes for the
-     * same cores, which on a cold first build is enough to lose that race. If this ceiling is ever
-     * reached, the refresher is broken or hung, not slow.
+     * <p>So reaching it means the refresher is broken or hung, not slow. A machine that stretched a
+     * sub-second unit of work past a full minute has failed at something larger than this test, and
+     * a merely slow refresh has an order of magnitude to travel first.
+     *
+     * <p>It was the same figure as {@link #QUIESCENCE_MS}, 1,600 ms serving both, and that figure
+     * was never a ceiling: it falls inside the spread measured above, under five of those sixteen
+     * samples, so it was a coin toss with machine load rather than a fact about the code. That is
+     * the race this module loses on a cold first build, its test classes running four-way
+     * concurrent while {@link no.sikt.graphitron.rewrite.maven.DevMojoTest}'s real generator work
+     * competes for the same cores.
      */
-    private static final long FIRE_CEILING_MS = DEBOUNCE_MS + 15_000;
+    private static final long FIRE_CEILING_MS = DEBOUNCE_MS + 60_000;
 
     /**
      * How long {@link #graphqlsWriteDoesNotFireClasspathWatcher} watches a watcher that must not
