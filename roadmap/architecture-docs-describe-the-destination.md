@@ -1,7 +1,7 @@
 ---
 id: R814
 title: "The architecture docs describe the surface being drained as if it were the design"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 3
 theme: docs
@@ -540,516 +540,123 @@ open.
 
 ## Implementation state
 
-Slices 0, 1, 2 and 4 are on trunk. What follows is
-what the next session inherits.
-
-**Landed.** Slice 0's section marks; slice 1's two gates, each carrying an explicit burn-down list
-of what it currently finds; slice 2 in full, both renderers; slice 4 in full.
-
-Slice 2's second renderer puts an outcome block under each of the eight worked examples already on
-the page, stating each coordinate's verdict from `intent_resolved_field_claim` and the methods the
-generator emitted for it, held verbatim by `OutcomeBlockDocTest` the way `ClassifiedDocTest` holds
-the SDL half. The "what gets generated" half of those eight examples is drift-guarded rather than
-ungated prose.
-
-**The burn-down lists are gone.** They emptied with slice 3's skeleton commit and were deleted with
-it, which is what a burn-down list is for. `TransientCitationCheck.KNOWN_CITATIONS` went 43 → 3 → 0,
-`ArchitectureDocSymbolGuardTest.KNOWN_DANGLING` 11 → 4 → 0, and each list's stale-entry check went
-with it: with nothing left to burn down there is nothing for it to check. What replaces them is a
-direct assertion in each guard's own tier that the trees are clean, so a reintroduced id or dangling
-symbol fails without a list to be added to.
-
-Deleting the symbol list surfaced three exemptions (`ConnectionHelper`, `GraphitronValues`,
-`QueryNodeFetcher`) whose only citation was the Source Map's runtime-helpers row.
-`exemptionsAreAllStillCited` caught all three the moment that row went, and they were deleted rather
-than kept: an exemption for text no page carries is an unguarded census of its own. That is the
-second time that check has paid for itself.
-
-**Scope added at the owner's direction.** The citation gate now walks `docs/manual` as well as
-`docs/architecture`, and the manual's three item ids are gone. It was left out at first on the
-claim that the manual cited nothing from `roadmap/`, which was half right: no path citations, but
-three ids. The rule does not weaken across the seam, since both trees render to the same public
-site where the `roadmap/` directory is not the reader's to search.
-
-Slice 0's marking followed the citation gate into the manual, at the owner's direction. Eleven
-author-facing pages name graphitron's own classification taxonomy in their own prose
-(`TableField`, `BatchedTableField`, `NodeType`, `GraphitronType.ResultType` and kin), and
-`how-to/result-types.adoc` enumerated the sealed hierarchy's permits with source line numbers.
-Each now carries one shared note, included from `docs/manual/_generator-internals-note.adoc`: the
-names are accurate today and worth knowing when a rejection message quotes one, but they are not
-part of the authoring contract, and they retire with the walk. One partial rather than eleven
-admonitions, so the statement has one edit point.
-
-The boundary is deliberate. Pages naming the diagnostics closed set (`AuthorError`,
-`NotAScalarType` and kin) are not marked: the glossary exists to publish those, so a reader is
-meant to rely on them. Nor are pages naming jOOQ's `TableRecord` or the user-facing
-`SortDirection`. The note is unenforced, on the precedent R810 sets for its own markers: the
-population was found by resolving backticked spans against the walk's model package on the
-classpath, but the same rule run as a gate fires on 65 of 65 manual pages, because that package
-declares types called `Query`, `Table`, `Field` and `On`. A gate that cannot tell those from
-`BatchedTableField` would be suppressed rather than obeyed.
-
-The sibling symbol gate stays on `docs/architecture` alone, and measurement now backs the reason
-the plan's second open fork gave rather than only asserting it. The manual cites 257 distinct
-type-shaped spans, 96 of which resolve to nothing, against 65 of 495 for the architecture tree,
-and the architecture tree's 65 reduced to 4 real findings once categorised. The manual's 96 are
-almost entirely the three weakest exemption categories: GraphQL types from worked examples, names
-the generator emits into a consumer's sources, and classes in modules that tier does not depend
-on. Widening would roughly triple the exemption list while adding no finding of the kind the gate
-exists to catch, which is the fork's own stated objection, now with a number on it.
-
-**Slice 3, part one: the skeleton.** The page is now organized as the chain. Landed: the chain
-intro with its diagram; "How a coordinate gets its verdict", the verdict-layer section that is the
-page's new closed vocabulary, naming each `intent_` relation and linking the generated schema
-reference rather than restating a rule; "What one generated thing is", carrying the
-`_command-relations.adoc` include plus the single-mint rule and the closure statement with its three
-disclosed absences; "When nothing is generated", the rejection section, with the
-`rejection_validation_error` three-way `kind` fork; and "Where the code lives", a six-package
-ownership map that replaces the Source Map.
-
-Deleted with them: the "Classification Vocabulary" section and the Source Map, and with those the
-last three roadmap-id citations and all four dangling symbols. The axis subsections went whole;
-"Derived tables" and "Conditions" were kept and moved under the command-relation section, because
-they describe live batching mechanics rather than the superseded axis framing the section's own NOTE
-declared historical. "Structural properties" was rewritten as prose stating what `@splitQuery` and
-`@lookupKey` do to the batch, with the leaf names and the archaeology dropped.
-
-**Slice 3, part two: promotion, and why "all 47" is the wrong target.** Twenty-two of the corpus's
-fixtures now render on the page, up from eight. The plan counted the remaining examples and called
-promoting each of them the work. Running the loop showed that count measures the wrong thing, for
-two reasons that are properties of the outcome block rather than of any one fixture.
-
-The first is that the block has three columns, and most fixtures vary something none of them show.
-The `arrival-*` family is the clearest case: it pins the `source` axis, the fold that decides whether
-a coordinate arrives once or batched, and three of its fixtures render blocks that are identical
-except for the root's name. Prose claiming a difference the reader cannot see in the block beside it
-is worse than no example, so those stay corpus-only. The same test rejected `polymorphic-filter`,
-whose lesson is entirely in the SDL half that `union` already carries.
-
-The second is that a fixture earns its corpus place by pinning a verdict, which does not require it
-to generate. That is the fork the owner settled below, and it holds. What it did not anticipate is
-how often "does not generate" was an artifact: seven fixtures shared a `type Query { x: String }`
-filler that is itself an author error, so the page told readers a plain INSERT does not generate.
-Pointing each filler at a real type fixed all seven at once. Promotion also surfaced three fixture
-defects that classification alone cannot see, because assembling a schema for generation checks more
-than classifying one does: two missing `interface Node` declarations, a root lookup returning
-non-null elements, and a column the `actor` table does not have.
-
-The measure that does hold is the closed vocabulary. `intent_authored_field_claim.classifier` admits
-six values for a field, and the page now carries a worked example for each: `TABLE_COLUMN` and
-`SERVICE` and `EXTERNAL_FIELD` and `NODE_ID` and `ROUTINE` and `MUTATION`. `LOOKUP_KEY` was the last,
-and finding its example is what turned up two of the fixture defects. The type-claim vocabulary
-(`TABLE`, `ERROR`) cannot be measured the same way, because the block renders field claims only.
-
-**Slice 3, part three: promoting against the tables.** The DML payload carrier landed as the page's
-23rd example, and it retired the two Mutation Fields rows that were the mechanism's only description.
-Choosing by what the block shows is the right filter for finding a candidate; choosing by which
-reference row a candidate would let go is the right filter for shrinking the transitional sections,
-and the two agree more often than not, because a row survives exactly when nothing on the page shows
-what it names.
-
-Reading the tables that way turned up a second kind of retirement that needs no corpus work at all.
-Seven rows named a verdict a worked example on the same page already demonstrated, and carried only a
-leaf name and a line of generator output that the example's prose did not happen to state. Folding
-that line into the example retires the row without losing anything: three from the type reference
-table (`RootType`, `InterfaceType`, `UnionType`, all three asserted by fixtures already rendered on
-the page) and four from Query Fields (the plain `@table` root and the three polymorphic returns).
-What is left in Query Fields is the two Relay roots, the two `@service` roots, and the failure row,
-none of which the page shows.
-
-The loop also rejected a candidate, which is worth recording because the reason is structural.
-`result-backing` pins the three-way split of how a non-`@table` result acquires its backing class, a
-genuine gap in the page, but one of its three arms is backed by an empty class, so the fixture
-classifies and cannot generate. The fix would be to give that class a readable property, which
-reaches the input axis, where the same class grounds the unbound `PojoInputType` default. Promoting
-it needs that question answered first, and it is not a documentation question.
-
-**Slice 3, part four: the class-backed parent, and a row that was not true.** The class-backed table
-went from eight rows to three. Two were retired by promoting `service-child-class-backed-parent` as
-the page's 24th example, placed beside the `@table`-parented service pair so the two read as a
-minimal pair on the parent's shape alone. Three more were the fold-in kind from part three: two
-`RecordReadField` rows the `target` shape example already demonstrates, and the FK-reached `@table`
-row the record-handoff example already demonstrates.
-
-The sixth row is the finding. It claimed an async DataLoader fetcher and a `rows*()` method for
-`@table` + `@lookupKey` under a record parent, and that cell emits nothing at all. Single cardinality
-is rejected at validate time; the list spelling the rejection message points at passes validation and
-reaches no producer. That second half is not a discovery so much as something the tree already knew
-and the page did not: `record-method` is the corpus's one recorded launcher-production-gap entry, and
-`ClassifiedDslTest` pins the roster at exactly that one fixture with the gap's reason spelled out.
-The row was describing the destination while a test three directories away described the surface.
-
-This is the shape of defect the item was filed for, and it argues for a filter the earlier parts did
-not state: a reference row claiming generated output is worth checking against a fixture even when
-no promotion is in view, because a row nothing renders is a row nothing has ever checked. It also
-sets the honest handling. The row stays, corrected to say what happens and pointing at the fixture
-that pins it, because deleting it would drop a known gap rather than document one. `record-method`'s
-comment now records why it cannot be promoted, so the next pass does not spend the same afternoon on
-it. Attempting the list spelling to make it promotable is what surfaced all of this, and backing that
-out was correct: it would have moved the fixture off the guard it is the recorded entry for.
-
-**Slice 3, part five: the four spellings of a `@table` child.** The `@table`-parent Object-return
-table went from twelve rows to eight. The four retired are one shape under two independent
-directives: `@lookupKey` moves the operation axis to `Lookup`, `@splitQuery` moves the derived query
-layer and nothing else, and the four combinations of them are the four spellings a `@table` child
-has. The page had all four in the corpus and rendered only one of them.
-
-Two promotions closed that. `split-lookup` became a doc example, the batched keyed spelling, placed
-directly under the root-lookup example. And the `lookup` example's doc query was extended to select
-the child coordinate it already carried: the page's prose *claimed* that "the same corpus example
-pins that child form beside the root one" while the rendered SDL showed only the root, so a reader
-had to take the claim on trust. Now both coordinates are in one outcome block, one reading
-`LOOKUP_KEY`, authored and the other reading no claiming directive, which is a sharper way to make
-the point about position than the sentence was.
-
-The remaining two rows were fold-ins into the derived-layer example, and they took a piece of
-generator detail with them that the prose had been missing: what inline and split actually mean
-(a `DSL.multiset` correlated subquery in the parent's `$project`, with a `.limit(1)` and an unwrap
-lambda at single cardinality, against a DataLoader fetcher plus a `rows*()` method). Every `@table`
-child on the page is one of those two, so naming them once beside the example that contrasts them is
-where the sentence belongs.
-
-**Slice 3, part six: the cardinality fork, and a second stale claim.** The same table went from
-eight rows to three, which is every row that describes something the build generates. What is left
-is the three the build refuses.
-
-One promotion did the work again, and again by selecting a coordinate the corpus already carried.
-`table-interface` renders the discriminated interface child at list cardinality; the single-cardinality
-coordinate was sitting in the same fixture unrendered, so the doc query now selects both. The fork is
-worth showing rather than asserting, because this is the one polymorphic child where cardinality
-decides anything: list batches through a DataLoader keyed on the foreign-key hop's source side,
-single fetches per parent row, and either way the discriminated re-projection is its own statement
-rather than a fold into the parent's SELECT. Before touching the rows I checked the claim against
-`BatchedDiscriminatedInterfaceChildPipelineTest`, which pins exactly that fork; this time the
-reference row was true.
-
-The finding this round is smaller than part four's but the same species. The polymorphic section
-introduced the discriminated interface child and closed with "they are asserted corpus-only
-(`table-interface`, `relay-node`)" while `table-interface` was rendering as a worked example one
-subsection below. A sentence about the state of the evidence, written once and never rechecked. It
-now points at the example instead. Worth noting that the *first* filter this item produced would not
-have caught it: it is not a claim about generated output, it is a claim about the docs themselves.
-Prose that says where a thing is documented rots the same way prose that says what a thing generates
-does.
-
-Three more rows folded in with no new text needed, the polymorphic section already carrying what
-they carried. The fifth, `NestingField`, took one sentence, and it is a sentence the outcome blocks
-had made available without anyone reading it: a coordinate with a read to launch takes a
-`DataFetchingEnvironment` and one that is only a value read off the row in hand takes an `Object`,
-so `Film.details` returning an object and still taking an `Object` is the passthrough, visible in a
-block the page had already printed.
-
-**Slice 3, part seven: a table that restated the page.** The prediction at the end of part six was
-wrong. "DataLoader-backed field categories" did not need trimming; it needed retiring, and it is
-gone. Reading its twenty cells one at a time, exactly one said something the page did not already
-say somewhere else. Derived tables and the N x M result contract are defined in "Derived tables";
-that `@lookupKey` blocks pagination is in "Batch-shaping directives"; the condition contract has its
-own row in the "Conditions" table. The table was a cross product restating rules the page states
-once each, which is why it read as a summary and was in fact a second source of truth.
-
-Its title was a third stale claim of the same species as parts four and six. A section called
-"DataLoader-backed field categories" whose first two rows read "No ; synchronous" and "No ;
-correlated subquery": half the categories in it are not DataLoader-backed. `TypeFetcherGenerator`
-registers a DataLoader for the batched leaf, the service leaf and the batched polymorphic pair, and
-for nothing else. The title was true of the rows it had when it was written, and stayed on the page
-after the rows changed under it.
-
-The one showable cell became the promotion: pagination is allowed on `@splitQuery` without
-`@lookupKey`, and nothing on the page showed it. The new `paginated-child` example does, and asking
-why the other three cells read "Never" turned up a better fact than the cell itself. Pagination is
-available on exactly one of the four spellings of a `@table` child, and the other three refuse for
-two different reasons: the inline child has no statement of its own to put a window on, so
-`@asConnection` without `@splitQuery` is rejected outright, while either lookup-keyed spelling
-refuses because a page breaks the positional correspondence the argument establishes. Both
-rejections were already pinned, so the composition rule was true and simply unwritten.
-
-One fact lived only in that table and moved rather than died: the root lookup's read is synchronous,
-a thin fetcher over a `lookupFilmById` rows method. It is worth keeping because a rows method is
-easy to read as evidence of batching, and here it is what makes the statement callable from outside
-the fetcher instead.
-
-A smaller lesson, for whoever adds the next anchor. Giving the pagination section an explicit
-`[#pagination-and-facets]` id silently broke an existing cross-reference that had been using the
-auto-generated one. The AsciiDoctor run reports it as "possible invalid reference" at INFO level,
-not as a failure, so it is worth grepping for the old auto-id whenever a section that already had
-inbound links gains an explicit anchor.
-
-**Still to do.** The two remaining marked sections ("Type Classification", "Field Classification")
-keep their marks until the examples that subsume them land; "Implicit Classification Rules" is
-already gone. Both Child Fields tables are now down to what does not generate: three refusal rows on
-the `@table` parent, and on the class-backed parent `@sourceRow`, the `errors:` slot, and the
-corrected `@lookupKey` gap.
-
-Counting the remaining reference tables rather than guessing at them, three output-side candidates
-are left, and the cheapest is the same move parts five and six made. The Query Fields table's five
-rows include the two Relay ones, `node` and `nodes`, and the corpus already carries both in the
-`relay-node` fixture, which has no query and so renders nowhere. Giving it one promotes two rows at
-the cost of a query. Behind that sit the mutation payload-wrapper table at eight rows and the type-
-side Reference table at twelve, the second of which is the residue of one of the two sections still
-carrying a transitional mark.
-
-Input Fields, at six rows, remains the only input-side table, and it should still be sized before it
-is started rather than picked up by momentum. Input-side leaves are on the enum truth table by
-design (see the partitioned obligation in `VariantCoverageTest`), so whether a corpus example is
-even the right vehicle for them is the first question to answer, not an assumption to carry in.
-
-**Slice 3, part eight: a trigger the table got wrong, and a fixture nobody ran.** Part seven named
-the Relay pair as the cheapest next promotion, and it was, but not for the reason given. The two
-rows did not just fail to render. They stated the wrong trigger.
-
-Both read as a field *name*: "Field named `node`", "Field named `nodes`". The generator says the
-opposite, in a comment written against exactly this misreading: Relay node fetchers are recognised
-by signature, not by name, and any `Query` field whose element type is the `Node` interface is one.
-The comment goes on to name the consequence, which is why it is worth stating on the page: a
-federation subgraph publishing an extra by-id entry point under its own name would classify as a
-plain interface root under a name-based rule and get a keyed query over the participants instead of
-node resolution. The `nodes` row carried a second false claim, "auto-emitted": nothing synthesises
-that field, the author declares it. What the build does synthesise for a node type is the federation
-`@key`, which is a different fact about a different artifact.
-
-The third column of both rows held. The single form is a synchronous read, the list form fans ids
-into per-path DataLoaders and returns a future, and both go through one generated dispatcher that
-peels the type prefix off each id and resolves it through the same entity dispatch `_entities` uses.
-That is the shared destination the two rows had no column for, so it is now prose.
-
-The promotion turned up something else. Giving `relay-node` a projection query runs it through the
-outcome block, which generates, and the fixture did not: `Film` declared `id: ID!` with neither
-`@node` on the type nor `@nodeId` on the field, so the build rejected `Film.id` as an unresolvable
-column. It had been in the corpus passing `ClassifiedDslTest` the whole time, because the fixture's
-`@classified` claims are all on the three `Query` coordinates and nothing asserted that the schema
-was one the generator would accept. This is the sharpest argument yet for promoting corpus-only
-fixtures rather than leaving them: a fixture that renders nowhere is a fixture whose schema no gate
-runs end to end.
-
-**Still to do.** Query Fields is down to three rows: the `@service` pair and the failure row. Two
-output-side candidates remain, the mutation payload-wrapper table at eight rows and the type-side
-Reference table at twelve, the second still the residue of a transitionally marked section. Input
-Fields is unchanged from part seven, including the question of whether a corpus example is the right
-vehicle at all.
-
-Worth carrying forward: part seven found a stale section title, this part found two false cells and
-a fixture the build refuses. The reference tables are not merely redundant with the worked examples,
-they are the part of the page nothing checks, and the promotion loop is finding that out one table
-at a time.
-
-**Slice 3, part nine: the type-verdict fixtures do not generate, and the renderer would not have
-shown them anyway.** Part eight found one corpus-only fixture the build refuses. Probing the rest of
-the type-side cluster found that every one of them is refused, each for its own mundane reason:
-
-- `input-backing`: three errors, one per coordinate. The plain-class input names a field the empty
-  `DummyRecord` does not have; the Java-record input misses a component the canonical constructor
-  needs; the jOOQ-record input names `id` on a table whose key is `film_id`.
-- `result-backing`: `PojoBacked.id` has no accessor on `DummyRecord`. The fixture's own comment
-  already said this, and said what would fix it.
-- `plain-jooq-record-backing`: `PlainJooqRecord` is abstract, so the bean helper cannot instantiate
-  it as a parameter.
-- `scalar-type` and `error-type`: both returned their subject type from a bare root, which is not a
-  legal root return at all.
-- `connection`: `Film.id` names no column, the same error `relay-node` had.
-
-Read together these are not six accidents. A corpus fixture is admitted on whether it pins a
-verdict, and nothing asks whether the schema it pins that verdict on is one the generator would
-accept, so the type-verdict cluster drifted into a state where none of it does. That is exactly the
-gap the promotion loop closes, one fixture at a time, because a doc example runs generation to
-render its outcome block.
-
-The second obstacle was the renderer. `QueryViewRenderer` deliberately left scalars and enums
-unexpanded as "leaf vocabulary", which meant an example about a scalar could not show the
-`@scalarType` declaration that is its entire trigger. The renderer's own closure-honesty rule is the
-argument against that: an excerpt must not name a type it never shows. It now emits a scalar or enum
-the fixture declares and the excerpt reaches, leaving spec built-ins and the prelude's assertion
-vocabulary out. Two rendered blocks changed as a result, `enum-column` gaining its `Rating`
-declaration and `scalar-type` its two scalars.
-
-With both fixed, `scalar-type` was rewritten from a bare `Money` root into a `BigDecimal` column on
-`payment` plus a `Money` service parameter, which are the two places the reflected Java type is
-actually consumed. Four rows retire: the two scalar rows, the scalar rejection row (its fact moved
-into the new section's prose), and the enum row, whose verdict was already on the page as a field
-example and only needed the type's own sentence. The type-side Reference table is down from twelve
-rows to eight.
-
-**Still to do.** The remaining eight rows of the type-side Reference table are the two backing-class
-rows, the `PojoInputType` row, `@error`, `PageInfo`, the deprecated input `@table` location, and two
-refusal rows. The first three are the `result-backing` / `input-backing` / `plain-jooq-record-backing`
-cluster, and they cannot be promoted until their fixtures generate. Two of the three need a change to
-a shared test class (`DummyRecord` gaining a readable property, `PlainJooqRecord` becoming
-concrete), which is a wider blast radius than a docs round should take on its own; that is worth
-splitting out rather than absorbing. `@error` and `PageInfo` need only a legal root, so they are the
-next cheap pair. Mutation Fields, at eight rows, is unchanged from part eight, and its first two rows
-are already restated by the section's own worked example.
-
-**Slice 3, part ten: the shared test class was the cheap half, and the feared blast radius was not
-there.** Part nine split the backing-class cluster out on the grounds that changing `DummyRecord`
-reaches roughly fourteen test files. The owner directed the change anyway, and the estimate was
-wrong: giving `DummyRecord` one `id` property with a getter and a setter broke nothing. The whole
-generator tier, 3984 tests, stayed green. The caution was about the number of files that name the
-class, not about what any of them asserts, and what they assert is the binding, never the member
-set. Two of the sites do lean on an absence, and both spell it precisely enough to survive: they say
-`DummyRecord` exposes no accessor returning a *`film` record*, which a `String` property does not
-change.
-
-That one property unblocked both halves of the cluster at once, because the same class grounds the
-result axis (a readable accessor for a field to resolve against) and the input axis (a JavaBean
-setter for a field to populate). The remaining two failures in `input-backing` were fixture defects
-with nothing shared about them: the Java-record input had to declare every component the canonical
-constructor needs, and the jOOQ-record input had to name a column that exists on `film`.
-
-Both fixtures now generate and both are promoted, into one section rather than two. The lesson is
-symmetric, so splitting it across two sections would have hidden the one thing worth noticing: the
-direction of the obligation flips. On the result side an SDL field must find something on the class,
-and a member the schema ignores is simply not exposed; on the input side a Java record inverts it,
-because the canonical constructor needs every component, so the input type must declare a field per
-component. That is why the rendered input block carries `value` and the result block does not. Two
-rows retire (the `ResultType` row and the reflected-`InputType` row), and the two intermediate-
-interface bullets under the table fold into a cross-reference, leaving six rows.
-
-`PojoInputType` did not retire as a row of its own; its fact (an input no `@service` parameter
-reflects is unbound, and resolves per usage against each consuming field's table) moved into the new
-section's prose, and the row goes when the next round confirms nothing else needs it.
-
-**The one that is not a fixture defect.** `plain-jooq-record-backing` stays refused, and the reason
-is worth recording because it is not the same kind of reason as the other five. `PlainJooqRecord` is
-hand-written, abstract, and implements `org.jooq.Record` without implementing `org.jooq.TableRecord`.
-That is deliberate: it exists to name the one shape that reaches `JooqRecordType` /
-`JooqRecordInputType`, a jOOQ record with no table behind it. jOOQ's generator never produces such a
-class, and its own implementations of the shape (`org.jooq.impl.AbstractRecord` and the `RecordImplN`
-family) are all package-private, so there is no public concrete type to extend.
-
-On the result axis that costs nothing, and that half of the fixture generates today, because the
-result path only casts and reads. The input axis is where it stops, and the first reading of why was
-wrong. It looked structural: no concrete class means no `new`, so nothing can be built. The owner's
-correction is that `DSLContext#newRecord(Field...)` builds exactly this shape, along with the
-arity-typed `Record1` to `Record22` overloads. Instantiation was never the missing piece. What is
-missing is the *field list* those calls take, and a bare `Record` has no table to source one from.
-
-That makes it a missing arm rather than a wall. `InputBeanResolver` has exactly one jOOQ arm and it
-is gated on `JooqTableRecordInputType`, the column-bound case, which is the only place a field list
-is available today; a table-less jOOQ record falls through to the JavaBean path, which asks for a
-no-arg constructor and setters, the wrong primitive for a jOOQ record entirely. That is why the
-rejection message talks about instantiating a bean.
-
-Closing it does not need `PlainJooqRecord` to change at all. A `newRecord`-based arm constructs the
-record itself and hands it to the method, so the declared parameter type only has to be assignable,
-abstract or not. The field list would come from resolving each input field against the consuming
-field's table, which is precisely what an unbound `PojoInputType` already does. Two smaller things
-sit alongside it: `looksLikeBeanCandidate` excludes everything under `org.jooq.*`, so a parameter
-declared as `org.jooq.Record` or `Record2<...>` does not reach any arm today, and until such an arm
-exists the rejection should say what is actually wrong rather than reporting a bean-construction
-failure. That is a feature gap in the input path, not a defect in the fixture, and it belongs in its
-own item rather than in a docs round, and it is now filed as R837
-(`table-less-jooq-record-input`).
-
-**The outcome block, and the fork the owner settled.** Building it turned up something the plan
-does not cover: **not every doc example generates.** The corpus is a classification corpus, and a
-fixture earns its place by pinning a verdict rather than by producing output, so a fixture can pin
-a verdict on a pattern the generator then rejects. Two of the eight doc examples do: `mapping` and
-`dml`. Their `@classified` assertions all pass, so neither is a rejection example in the sense
-section 5 of the page means, but neither has emitted names for a block to render.
-
-Settled at the owner's direction, option 2 of three: where a fixture does not generate, the block
-renders the verdict half and states that the pattern generates nothing, pointing at
-`explanation/typed-rejection.adoc`. "No emitted names" becomes a visible fact about the example
-rather than a hole in the table, and no second rejection-rendering mechanism stands beside section
-5's before section 5 exists. The two alternatives were to render the rejection itself through
-section 5's machinery, which needs an arm rather than a message to be drift-guardable, and to give
-every such fixture a projection that generates, which may not be reachable and would treat a
-classification-only fixture as a corpus defect.
-
-**Slice 3, part eleven: the type table hits its floor, and one row turned out to be wrong about
-generation.** The two candidates part ten named, `@error` and `PageInfo`, both landed, and neither
-landed the way it was scoped. Both were expected to be cheap promotions needing only a legal root.
-
-`@error` was not. The `error-type` fixture had `extend type Query { err: ExtraFieldError }`, a legal
-root that classifies, and adding a query to it produced an outcome block reading "this pattern
-classifies but does not generate: the build rejects it". That is the part-nine mechanism working
-exactly as designed, and it caught a promotion that would have taught the opposite of the truth: a
-reader would have concluded that an `@error` type generates nothing, which is what the reference row
-said and is not so. An `@error` type does not reach the schema through a root of its own; it reaches
-it through an `errors:` slot on a `@service` payload, which is the slot that wires the try/catch.
-Rebuilding the fixture around `SakPayload` (the existing `TestServiceStub.runSak` carrier, so no new
-test class) made it generate, and the rendered block is a better lesson than the one planned: `path`
-and `message` each emit a method taking `DataFetchingEnvironment`, because graphitron supplies both
-values itself, while the extra field `severity` reads `no method of its own`, because the schema
-registration wires a `PropertyDataFetcher` straight onto the accessor. The retired row claimed "No
-generation (error mapping config)". Three coordinates on the block contradict it.
-
-`PageInfo` went the other way: the right move was not to promote at all. The `connection` fixture
-declares the Relay triad outright, and its root carries no claim, so it classifies and does not
-generate. Rendering it would have put a rejection beside a rule that holds, which is the failure mode
-this item exists to remove. The two facts the row carried that the page did not already state (one
-`PageInfoType` per schema, and a declared `PageInfo` is reused rather than re-minted) went into the
-existing pagination section as prose, cited to the `connection` example, which asserts the reuse half
-without needing to render. The synthesised half was already asserted there by `faceted-connection`.
-
-That leaves the type-side reference table at three rows, and they are the floor: a deprecation
-warning and two rejections. The corpus is success-only by construction, so no worked example can
-subsume any of them, and the table now says so in a lead-in rather than leaving a reader to wonder
-which rows are still waiting their turn. Whether the section's transitional NOTE should come off with
-the table at its floor is a call for the owner, not a mechanical consequence: the NOTE marks the walk
-being drained as much as the table.
-
-**Slice 3, part twelve: the mutation table's first field-side cut, and one verdict that had a corpus
-home but no page.**
-
-With the type-side table at its floor, the promotion moved to the field side, where the mutation
-table stood at eight rows. Two of those rows, `@service` returning a `@table` type and `@service`
-returning a non-table type, were already asserted by the corpus: the `mutation-roots` fixture carried
-both coordinates. They just were not in its rendered query, so the page told the reader about them in
-a leaf-name table while a machine-checked example of them sat one file away, unshown. That is the
-shape this item is about, and it is worth naming: a verdict can be *tested* and still be *undescribed*.
-
-Rather than widen `mutation-roots`, the two coordinates moved out of it into a `mutation-service`
-example of their own. `mutation-roots` renders a minimal pair on the write verb (`UPDATE` projects
-the row back, `DELETE` cannot), and adding two service roots to that query would have blunted exactly
-the difference the pair is isolating. One verdict, one home; the fixture that teaches a difference
-should carry nothing that is not that difference. Its comment also said "Corpus-only" while carrying a
-query, a leftover from before it was promoted, now corrected.
-
-A third row went without any new fixture: `@mutation(typeName: INSERT)` returning a `@table` type was
-already rendered, with prose, by the `dml` worked example a few paragraphs above the table. It had
-been left in place as a summary of what the example already showed, which is the duplication the item
-treats as the defect rather than the convenience.
-
-Mutation table eight rows to five. Four of the five are rejections and are floor, for the reason the
-type-side lead-in gives. The fifth, `INSERT` returning an encoded `ID`, is a live generating pattern
-with no example yet and is the next candidate here; the lead-in says so rather than letting a reader
-guess which rows are waiting their turn.
-
-**Slice 3, part thirteen: the same wrong sentence, twice, one of them mine.**
-
-The class-backed-parent child table carried a row saying the `errors:` slot on a service payload is a
-"passthrough; graphql-java's default `PropertyDataFetcher` reads the list the carrier's try/catch
-wrapper produced." The outcome block landed in part eleven, on the same page, says
-`SakPayload.errors` emits `fetchers.SakPayloadFetchers#errors(Object)`. A generated method on the
-payload's fetchers class is not graphql-java's default fetcher, and the block has a way to say
-"nothing was emitted": it printed exactly that for `severity`, three rows up.
-
-The generator has three emit forms for that coordinate, selected by a transport the classifier
-resolves once with the parent's channel in scope. One is an inline `PropertyDataFetcher` registration
-and emits no method; one emits a method taking the `DataFetchingEnvironment` and reading the local
-context; one emits a method taking the source and unwrapping an error-list arm, which is the
-`(Object)` signature the block shows. The row described the first and the example takes the third, so
-the page's table and the page's evidence were describing different carriers as if there were one.
-
-Two things about this are worth keeping. First, it is the second instance of the same defect: the
-`@error` type row retired in part eleven was wrong in the same direction, and in nearly the same
-words, about a neighbouring coordinate. A row that says "graphql-java handles it" has now twice meant
-"nobody re-read the emitter after it grew an arm." That is a repeatable smell, not a one-off.
-
-Second, and less comfortable: the correction landed on my own prose too. Part eleven's closing
-paragraph said the payload's "own two fields are plain passthroughs over the record the service
-returned." `data` is. `errors` never was. I wrote that sentence in the same commit that rendered the
-block contradicting it, having read the block. The retired row and my paragraph failed the same way,
-which is the argument for the direction the fact-first corpus item takes: the outcome block is
-machine-checked and the sentence beside it is not, so the sentence is where the rot goes. Restating
-in prose what the block already proves is not redundancy, it is a second place to be wrong.
-
-That item's "three parallel habitats" claim has a fresh instance from part twelve, too. The
-`mutation-service` promotion required the example's story in a Java comment nothing renders, `#`
-comments inside the projection query, and hand prose on the page. And `mutation-roots` was still
-labelled "Corpus-only" in its Java comment long after it had gained a doc query, because nothing
-renders that comment and so nothing could catch it. It was fixed as hygiene in part twelve. It is
-better read as the predicted failure, arriving on schedule.
+All five slices are on trunk. This section states where the work ended up; the round-by-round
+narrative it replaces was thirteen parts long, and reconstructing the current state from it meant
+replaying each part and applying its retirements in order, which is the wrong shape for the one
+question a reviewer at the Done gate has to answer.
+
+### What shipped
+
+**Slices 0, 1, 2 and 4, in full.** Slice 0's section marks (extended into `docs/manual` at the
+owner's direction, as one shared included note rather than eleven copies). Slice 1's two gates.
+Slice 2's two renderers. Slice 4's sweep of the rest of the tree.
+
+**Both gates carry anti-vacuous floors and no exemption list.** `TransientCitationCheck` and
+`ArchitectureDocSymbolGuardTest` each started with an explicit burn-down list of what they found on
+day one. Both lists emptied and were deleted with the commit that emptied them, which is what a
+burn-down list is for: `KNOWN_CITATIONS` went 43 → 3 → 0, `KNOWN_DANGLING` 11 → 4 → 0. What replaced
+them is a direct assertion in each guard's own tier that the real trees are clean, so a reintroduced
+id or dangling symbol fails without a list to be added to. Deleting the symbol list surfaced three
+exemptions whose only citation was a page section that had since gone; `exemptionsAreAllStillCited`
+caught all three, and they were deleted rather than kept, an exemption for text no page carries being
+an unguarded census of its own.
+
+**The page is organised as the chain,** with the "Classification Vocabulary" section (95 lines,
+self-declared historical) and the Source Map deleted. Thirty-two worked examples now render from the
+corpus, each with both halves held verbatim by a build guard: the SDL by `ClassifiedDocTest`, the
+generated-output block by `OutcomeBlockDocTest`. The corpus grew from 55 fixtures to 57, and from 8
+rendered examples to 32.
+
+**The command-relation fragment renders itself** at build time and is never committed, and the
+outcome block's two refusals (no command rows, no method bodies) are enforced by
+`theBlockRendersNoCommandRowsAndNoBodies` rather than asserted in prose.
+
+### What the promotion loop turned up
+
+The point of moving a claim from hand prose onto a rendered block is that the block is derived from a
+run of the real pipeline. Doing it thirty-two times produced a result worth recording, because it is
+the argument for the whole exercise: **several reference-table rows turned out to be wrong, not
+merely redundant.** Two asserted that graphql-java's default fetcher handles a coordinate the
+generator emits a method for. Two named the wrong trigger entirely, describing Relay node resolution
+as keyed on a field's name when the generator recognises it by signature and says so in a comment
+written against exactly that misreading. One claimed the build synthesises a field the author has to
+declare. In each case the row had read as plausible for as long as nothing executed it, and the
+rendered block contradicted it on the first capture.
+
+Promotion also found a defect on the other side. Giving the `relay-node` fixture a projection query
+ran it through the outcome block, which builds, and the fixture did not: its `Film` declared `id: ID!`
+with neither `@node` on the type nor `@nodeId` on the field, so the build rejected the coordinate. It
+had been passing `ClassifiedDslTest` the whole time, because that test asserts the claims written on
+the fixture and nothing asserted the schema was one the generator would accept. A fixture that renders
+nowhere is a fixture no gate runs end to end, which is the sharpest argument the work produced for
+promoting corpus-only fixtures rather than leaving them.
+
+The same thing happened to prose this item authored. A sentence describing a payload's two fields as
+"plain passthroughs over the record the service returned" was true of `data` and never true of
+`errors`, and it was written in the same commit that rendered the block contradicting it. That is the
+predicted failure arriving on schedule, and it is the reason the closing argument below is about
+gates rather than about care.
+
+Two gaps surfaced that are the generator's rather than the corpus's, and both were filed rather than
+worked around. `record-method` pins the one launcher-production gap the corpus records: a batched
+lookup arm that classifies and reaches no emitter. `plain-jooq-record-backing` stays refused on its
+input axis, and the first reading of why was wrong in a way worth recording. It looked structural, no
+concrete class so nothing can be built, and the owner's correction was that `DSLContext#newRecord`
+builds exactly that shape; what is missing is the field list those calls take, which a jOOQ record
+with no table behind it cannot source. That is a missing arm rather than a wall, and it is filed as
+R837.
+
+### What is left, and who owns it
+
+One of the four goals is not met and one is met only in part, both deliberately. The reasoning is
+recorded here rather than in a commit message so that it survives this file's deletion at the Done
+gate.
+
+**Goal 2 (the pages describe the present tense) is met.** All five archaeology instances the survey
+named are gone. Four of them survived the first pass as parentheticals inside cells that otherwise
+stated today's behaviour, and were deleted in the rework round.
+
+**Goal 3 (every enumerable claim renders from a gated source, or is not on the page) is not met, by
+decision.** What remains on the reference tables splits three ways, each with a named owner:
+
+- *Refusals*, about a dozen rows across six tables. The corpus is success-only: a refused pattern
+  generates nothing, so no worked example can subsume it and the drain has genuinely reached its
+  floor here. **R842** takes these, gathering them in one place instead of leaving a residue under
+  every table.
+- *Live generating patterns with no example yet*: the two root `@service` rows in Query Fields, the
+  encoded-`ID` row in Mutation Fields, the `@sourceRow` row under Child Fields on a class-backed
+  parent, and the six Input Fields rows. **R845** takes these, and states why they are worth waiting
+  for rather than promoting now: promotion today is the manual capture-and-paste loop that **R840**
+  exists to abolish, on artifacts R840 plans to regenerate, and the rows are written in the sealed
+  leaf vocabulary **R682** deletes at its terminal step, so an example authored before the re-key
+  states its verdict in a vocabulary that has to be rewritten anyway. The input-side table needs its
+  own answer first, since the corpus asserts output verdicts only and there is no vehicle to promote
+  an input row into.
+- *Rows a rendered block already subsumes.* These are pure deletion, not promotion, so the waiting
+  argument above does not cover them and they were folded in during the rework round. The
+  `@field(name:)` scalar-child row was the last one: both its spellings appear in rendered blocks
+  with outcome blocks beside them, and the verdict it stated appears in those blocks around thirty
+  times.
+
+**Goal 1 is met in structure, and partly in vocabulary.** The type-side section headings named their
+sealed leaf (`@table` type → `TableType`) and now name the schema trigger alone. The section bodies
+still state each verdict as a leaf name, and that is not an oversight: the field side has three axes
+to state a verdict on, and the type side has only the leaf, so there is no surviving vocabulary to
+move onto until R682 supplies one. The section's transitional NOTE discloses exactly this.
+
+**Goal 4 is met,** verified against the tree rather than read off this body: zero `R<n>` citations
+across `docs/architecture` and `docs/manual`, zero dangling symbols. The rework round found and
+closed a third citation shape the gate could not see, a bare slug in a code span; see the answer to
+finding 2 below.
+
+### Answers to questions this item left open
+
+**Part eleven asked the owner whether a section's transitional NOTE comes off when its reference
+table reaches its floor.** The type-side table has since reached that floor, so the question is live.
+The answer is no. The NOTE is not about the table; it says the section describes sealed type leaves
+that the walk is being drained into something else, which stays true after the last row goes and
+until R682 lands. A table reaching its floor says the corpus has taught everything it can teach about
+that section, not that the section has stopped describing a transitional surface.
 
 ## Reviewer findings
 
@@ -1158,3 +765,64 @@ as an amendment, where it survives the file's deletion.
   is the cheapest place left to finish the move.
 - The em-dash substitution reads awkwardly in several cells and bullets ("*Derived source table* ;
   built from...", "Validation error ; build fails"). Style only, and not unique to this page.
+
+#### Round 1 response (implementer, session 01G1PtvAJds4HMrDNKLUARfp)
+
+Both blocking findings accepted, both closed. Both non-blocking findings acted on, one of them
+differently from what was suggested, for a reason stated below.
+
+**Finding 1, the archaeology.** Deleted, all four. Each was a parenthetical inside a cell stating
+today's behaviour, and the finding is right that removing it loses nothing.
+
+**Finding 1, the `@field(name:)` row.** Folded in. The reviewer's argument is the deciding one: the
+waiting argument is about the cost of promotion, and this row cost nothing, because both its
+spellings already render. Verified at the coordinate before deleting rather than taken on trust: the
+column matched by name renders in the `@table` type example and the column renamed by
+`@field(name:)` in the derived-layer example, each with an outcome block naming the emitted accessor,
+and the `TABLE_COLUMN` verdict appears in rendered blocks about thirty times. The table it left is
+now one rejection row.
+
+**Finding 1, where the stopping argument lives.** Moved into the body, in a rewritten Implementation
+state section that replaces the thirteen-part narrative. The finding that reconstructing the current
+state meant replaying thirteen parts is correct and was the real defect: a log of how the work went
+is not an answer to whether the work is done. The remainder is now split three ways with a named
+owner for each, R842 for the refusals and R845 for the live rows, and the input-side table is
+described as what it is rather than as unsized.
+
+**Finding 2, the slug citation.** The sentence now names the live anchor the code itself uses,
+`Rejection.StubKey.VariantClass`, instead of pointing at a plan. The gate was widened here rather
+than deferred, because leaving the hole open with a filed item nobody has picked up is how the
+citation got onto the page in the first place. `TransientCitationCheck` now resolves a third shape: a
+backticked span whose content names a file living under `roadmap/`. Resolution rather than pattern
+matching is what makes it affordable, and the backtick requirement is load-bearing. A survey of the
+scanned trees found a live item slug already spelled out in the manual as an ordinary hyphenated
+adjective, so a shape-only match would report English prose as a citation and the only repair would
+be an exemption list, which is the cost this check exists without. The pattern is honestly weaker
+than the other two in one direction, since it goes quiet once an item ships and its file is deleted;
+that is stated in its javadoc rather than papered over. Confirmed by planting the original citation
+back on the page and watching both real-tree assertions fail on it before restoring.
+
+**Non-blocking, the type-side headings.** Done, with a boundary. The five headings name the schema
+trigger alone now, and the four cross-references that named a leaf in their link text went with them.
+The section bodies still state each verdict as a leaf name, and that is deliberate: a heading
+organises the page, which is what Goal 1 was about, while a body sentence states a fact about today's
+classifier. More to the point, there is nothing else to say. The field side can state a verdict on
+three axes; the type side has only the leaf until R682 supplies a replacement. Stripping the name
+from the bodies now would cost information without closing any rot, since the transitional NOTE at
+the top of the section already discloses exactly what those names are.
+
+**Non-blocking, the semicolon substitutions.** Filed as R844 rather than fixed here. The finding is
+right that it reads as a typo, and right that it is not unique to this page: it is about 75 sites
+across both published trees. Fixing only the ones on this page would leave the trees inconsistent,
+which is worse than leaving them all alone, and fixing all 75 needs a reading per site rather than a
+substitution. The item also raises the question the sweep should settle, whether the style rule
+itself should say what to substitute so the next pass does not reproduce the same shape.
+
+**The build observation.** Filed as R843, with the reviewer's reproduction and this session's
+diagnosis, which agree. `DmlBulkMutationsExecutionTest` seeds real `film_actor` rows for films 3 and
+4 and removes them in a `finally`; `GraphQLQueryTest.splitTableField_bridgingConditionJoin_returnsActorsPerFilm`
+asserts film 3 has exactly one actor; the module runs classes concurrently at parallelism 4 against
+one shared database. It is a test-isolation defect rather than a flake, and the item says so, because
+the failure mode looks exactly like a flake and each session that meets it pays to re-derive the
+same diagnosis. It is filed rather than fixed because the repair is a design choice among three
+shapes, none obviously right.

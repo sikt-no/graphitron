@@ -189,7 +189,7 @@ classifier actually produces the stated verdict for. The reference table that fo
 verdicts not yet migrated to a worked example.
 
 [#table-type]
-=== `@table` type → `TableType`
+=== `@table` over an object type
 
 A type carrying `@table(name:)` classifies as `TableType`, the pivot for SQL generation, unless a
 nodehood or discrimination trigger takes precedence: `@node`, `@discriminate`, or `implements Node`
@@ -235,7 +235,7 @@ The field descriptions come from `# ...` comments authored on the example's proj
 as SDL descriptions by `QueryViewRenderer`.
 
 [#node-type]
-=== `@node` over a table → `NodeType`
+=== `@node` over a table
 
 A `@table` type that also carries nodehood classifies as `NodeType` rather than `TableType`: either
 `@node(keyColumns:)` written on it, or `implements Node` over a table whose jOOQ class publishes
@@ -336,7 +336,7 @@ difference is which key shape gets encoded, not which verdict is reached. Assert
 `composite-node-key` corpus example.
 
 [#nesting-type]
-=== Object type with no binding → `NestingType`
+=== An object type with no binding
 
 An object type carrying no `@table` and reached from no producer is a grouping type: it has no table
 of its own, and its fields resolve against whatever scope its parent opened. It generates a fetchers
@@ -393,7 +393,7 @@ object and still takes an `Object`, which is what makes it a passthrough rather 
 Asserted by the `nesting` corpus example via `@classifiedType(as: NestingType)`.
 
 [#scalar-type]
-=== `@scalarType` over a scalar → `ScalarType`
+=== `@scalarType` over a scalar
 
 A `scalar` declaration carrying `@scalarType(scalar:)` names a `public static final GraphQLScalarType`
 constant, and that constant is the whole binding:
@@ -607,7 +607,7 @@ same input reused on two different tables resolves differently at each one.
 Asserted by the `result-backing` and `input-backing` corpus examples.
 
 [#error-type]
-=== `@error` over an object type → `ErrorType`
+=== `@error` over an object type
 
 Every type so far takes its values from something the generator can go and read: a table, a service
 return, a component of a record. An `@error` type is the one that does not. Its values come from a
@@ -723,7 +723,7 @@ they stay stated rather than demonstrated.
 
 | Input type with `@table` (deprecated location; see `docs/manual/reference/directives/table.adoc`) | Whatever the same input without the directive classifies as | No generation decision of its own: the directive is ignored, `name:` is never read, and no reader consults it (the input-axis binding arm and the three nesting guards that once did were all deleted, so inertness is uniform). A non-fatal per-usage build warning announces the deprecation and carries the per-verb migration guidance (drop the directive for filters and lookup args; `@mutation(table:)` for DELETE and encoded-ID / scalar returns; return-derivation for INSERT/UPDATE). A future release rejects the location.
 | Unresolvable directives | `UnclassifiedType` | Validation error ; build fails
-| Conflicting type directives (`@table` with `@error`) | Arm-order winner (the walk no longer tombstones conflicts) | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`) ; build fails
+| Conflicting type directives (`@table` with `@error`) | Arm-order winner | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`) ; build fails
 |===
 
 *Intermediate sealed interfaces* (not shown in the table ; grouping nodes in the hierarchy):
@@ -1550,7 +1550,7 @@ corpus example.
 
 A root field's position is an axis value, not a separate classification: `source = Query` is what
 makes it a root, and the return type decides the rest exactly as it does on a child. The default case
-is the plain `@table` return of the <<table-type,`TableType` example>>, which emits a full
+is the plain `@table` return of the <<table-type,`@table` type example>>, which emits a full
 fetcher: the condition call, the orderBy build, and the inline DSL chain
 (`dsl.select(Type.$project(...)).from(table)...`) that opens the query scope. The polymorphic returns
 are the <<polymorphic-fields,polymorphic section>> above, where a
@@ -1647,7 +1647,7 @@ comes back as `null` rather than an error, which is what the Relay spec asks for
 emitted only when the schema classifies at least one `NodeType`.
 
 `Film` carries `@node` and its `id` carries `@nodeId`, which is what makes it reachable by global id at
-all; that declaration is the <<node-type,`NodeType` example>> above. Asserted by the `relay-node`
+all; that declaration is the <<node-type,`@node` example>> above. Asserted by the `relay-node`
 corpus example.
 
 [#mutation-fields]
@@ -1890,7 +1890,7 @@ first row is the exception, a live pattern still stated rather than shown.
 | `@mutation(typeName: UPSERT, table: "…")` (`table:` on a verb that does not read it) | `UnclassifiedField` (typed `MutationTableArgError.UnsupportedVerb`) | Validation error ; build fails. `table:` is wired for `DELETE`, `INSERT`, and `UPDATE` only
 | `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `UnclassifiedField` (typed deferral; the Upsert write arm has no live producer) | Rejected at classification. UPSERT is recognised and deliberately not generated: the write arm has no producer today, so the coordinate defers rather than erroring.
 | Neither `@service` nor `@mutation` | `UnclassifiedField`** | Validation error ; build fails
-| Both `@service` and `@mutation` | Arm-order winner (the walk no longer tombstones conflicts) | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`) ; build fails. The LSP/MCP projection reports `FieldClassification.Conflicted` carrying both claims' decoded slot facts (verb, table, method)
+| Both `@service` and `@mutation` | Arm-order winner | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`) ; build fails. The LSP/MCP projection reports `FieldClassification.Conflicted` carrying both claims' decoded slot facts (verb, table, method)
 |===
 
 The direct-return `DmlTableField` permit is guaranteed never to carry a class-backed (record-shaped) return: every DML mutation whose return type reflects to a record carrier routes through the DML-carrier permits (`MutationDmlRecordField` / `MutationBulkDmlRecordField`) via `BuildContext.scanStructuralDmlPayload`. The narrowness is enforced structurally by the routing in `FieldBuilder.classifyMutationField`, not by an Invariant the validator restates.
@@ -2253,11 +2253,16 @@ aggregate rather than matched against a column. The `nn` and `nb` fields get the
 
 ==== Scalar / Enum return type
 
+A scalar child of a `@table` parent takes its value from a column, and both spellings of that are
+worked through above: the column matched by name in the <<table-type,`@table` type example>>, and the
+column renamed by `@field(name:)` in the <<derived-layer,derived layer example>>. Either way the
+coordinate's verdict is `TABLE_COLUMN`, and the outcome block beside each shows the emitted accessor.
+What is left is the one spelling the build refuses:
+
 |===
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
-| `@field(name:)` or matching column name | `ColumnBackedField` (arity 1, `compaction = Direct`) | Wiring value (`ColumnFetcher`)
-| `@nodeId(typeName:)`, non-FK-mirror target | `ColumnBackedReferenceField` (`compaction = NodeIdEncodeKeys`; arity = the target key's column count) | Nothing yet ; rooted-at-parent NodeId reference, rejected at validate time as deferred (any arity), pending `nodeidreferencefield-join-projection-form`
+| `@nodeId(typeName:)`, non-FK-mirror target | `ColumnBackedReferenceField` (`compaction = NodeIdEncodeKeys`; arity = the target key's column count) | Nothing yet. A rooted-at-parent NodeId reference is rejected at validate time as deferred, at every arity, because no emitter brings the target's key columns into scope. The rejection is keyed on the variant class itself (`Rejection.StubKey.VariantClass`), so what the deferral names is the shape that has to grow an emitter
 |===
 
 ==== Object return type
@@ -2267,12 +2272,12 @@ spellings of a plain `@table` child are the <<derived-layer,derived layer exampl
 <<lookup-child,child lookup pair>>; the polymorphic return types are
 <<polymorphic-fields,Polymorphic fields>>, with the discriminated interface child's cardinality fork
 under <<one-table-many-participants,One table, many participants>>; the plain object with no `@table`
-is the <<nesting-type,`NestingType` example>>. What is left is the three rows the build refuses:
+is the <<nesting-type,unbound object type example>>. What is left is the three rows the build refuses:
 
 |===
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
-| Conflicting directives | Arm-order winner (the walk no longer tombstones conflicts) | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`); build fails. The LSP/MCP projection reports `FieldClassification.Conflicted` carrying the claims
+| Conflicting directives | Arm-order winner | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`); build fails. The LSP/MCP projection reports `FieldClassification.Conflicted` carrying the claims
 | `@notGenerated` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; fields must be fully described by the schema.
 | `@multitableReference` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; the rewrite generates multi-table interface dispatch from `@discriminate` / `@discriminator`.
 |===
@@ -2280,8 +2285,7 @@ is the <<nesting-type,`NestingType` example>>. What is left is the three rows th
 === Child Fields (on a class-backed parent)
 
 The parent here is a type whose backing class is reflection-derived from its producer (a `@service`
-return, or a parent-accessor chain), not declared via a directive. The `Record*` variant names below
-are reflection-derived classifications, kept stable from earlier naming.
+return, or a parent-accessor chain), not declared via a directive.
 
 A class-backed parent is not a separate classification either. It moves the source axis to
 `Child(Record)` and, with it, the key the child's query is built from; it does not move the claim or
@@ -2289,7 +2293,7 @@ the target. The worked examples above cover most of what that means: scalars and
 objects under such a parent in the <<target-shape,`target` shape example>>, an FK-reached `@table`
 child in the <<record-handoff,record-handoff example>>, and both `@service` forms in the
 <<class-backed-service,class-backed service pair>>, and the `errors:` slot in the
-<<error-type,`ErrorType` example>>. What is left is the two forms no example shows, one of which does
+<<error-type,`@error` example>>. What is left is the two forms no example shows, one of which does
 not currently generate:
 
 |===

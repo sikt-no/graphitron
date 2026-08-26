@@ -8,14 +8,15 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Fails the build when an agent-onboarding prose document cites a roadmap item by id
- * ({@code R<n>}) or by {@code roadmap/<slug>} path. Items are renumbered, ship and leave a
- * numbering gap, or are discarded, so a citation is stale the moment the item moves and a
- * reader with no {@code roadmap/} directory has nothing to resolve it against. The durable
- * reference (a live symbol, a published doc page, or simply the fact) is what belongs in
- * prose instead.
+ * ({@code R<n>}), by {@code roadmap/<slug>} path, or by its bare slug in a code span. Items are
+ * renumbered, ship and leave a numbering gap, or are discarded, so a citation is stale the moment
+ * the item moves and a reader with no {@code roadmap/} directory has nothing to resolve it
+ * against. The durable reference (a live symbol, a published doc page, or simply the fact) is what
+ * belongs in prose instead.
  *
  * <p>The rule this enforces is stated in {@code CLAUDE.md} under "Javadoc conventions" and is
  * already enforced across Java sources by the generator module's roadmap-reference guard test.
@@ -29,6 +30,23 @@ import java.util.regex.Pattern;
  * and the fixed list never reached {@code docs/}. Those pages render to a public site where the
  * {@code roadmap/} directory is not the reader's to search, so a stale id there resolves to
  * nothing at all.
+ *
+ * <p><b>Three citation shapes, not two.</b> An id and a {@code roadmap/} path are both spelled with
+ * something the regex can anchor on. A bare slug is not: stripped of its directory it is just a
+ * hyphenated word, indistinguishable by shape from any other, and one reached a published
+ * architecture page for exactly that reason. {@link #liveItemSlugs} closes the gap by resolving the
+ * candidate instead of matching it, so a span counts as a citation when a file of that name exists
+ * under {@code roadmap/}.
+ *
+ * <p>That third pattern is deliberately weaker than the other two in one direction and stricter in
+ * another. Weaker, because it goes quiet once the item ships and its file is deleted, which is the
+ * moment the citation becomes least resolvable; it catches the citation when it is written, not
+ * after it rots. Stricter, because the span must be backticked. Dropping that requirement is not an
+ * improvement available for free: slugs are named after the work they describe, so a slug's own
+ * words recur in ordinary prose about the same subject, and a hyphenated compound adjective in a
+ * sentence can spell one exactly. A survey of the scanned trees found such a collision already
+ * present in the manual. Requiring backticks separates a name being used from words being written,
+ * and keeps the check free of the one thing that would make it expensive, an exemption list.
  *
  * <p>Build configuration is a third habitat this check does not reach: {@code pom.xml} comments
  * carry item ids too, and no scan covers them.
@@ -102,6 +120,16 @@ final class TransientCitationCheck {
     private static final Set<String> PERMANENT_ARTIFACTS =
         Set.of("changelog.md", "workflow.adoc", "README.md", "index.adoc");
 
+    /** The directory the third pattern resolves a candidate slug against. */
+    private static final String ROADMAP_DIR = "roadmap";
+
+    /**
+     * A backticked span, and the slug candidate inside it. Only the content is examined, so a
+     * cited slug is caught wherever a page happens to wrap it, and a bare word in running prose
+     * is not a candidate at all.
+     */
+    private static final Pattern BACKTICKED_SLUG = Pattern.compile("`([a-z0-9]+(?:-[a-z0-9]+)+)`");
+
     private TransientCitationCheck() {}
 
     /**
@@ -145,9 +173,11 @@ final class TransientCitationCheck {
 
         System.err.println("check-transient-citations: found " + result.findings().size()
             + " transient roadmap citation(s) in agent-onboarding prose."
-            + " Replace each with a durable reference (a live symbol, a published docs page) or"
-            + " state the fact and drop the citation; the permanent artifacts"
-            + " roadmap/changelog.md, roadmap/workflow.adoc and roadmap/README.md stay citable.");
+            + " An id, a roadmap/ path, and a bare slug in a code span all name a file that moves,"
+            + " ships, or is discarded. Replace each with a durable reference (a live symbol, a"
+            + " published docs page) or state the fact and drop the citation; the permanent"
+            + " artifacts roadmap/changelog.md, roadmap/workflow.adoc and roadmap/README.md stay"
+            + " citable.");
         for (Finding f : result.findings()) {
             System.err.println("  " + f.doc() + ":" + f.line() + ": " + f.citation() + " in: " + f.content().strip());
         }
@@ -161,6 +191,7 @@ final class TransientCitationCheck {
     static Result scan(Path root) throws IOException {
         List<Finding> findings = new ArrayList<>();
         List<String> missing = new ArrayList<>();
+        Set<String> slugs = liveItemSlugs(root);
         int scanned = 0;
         for (String doc : SCANNED_DOCS) {
             Path file = root.resolve(doc);
@@ -169,7 +200,7 @@ final class TransientCitationCheck {
                 continue;
             }
             scanned++;
-            for (Finding f : scanFile(file)) {
+            for (Finding f : scanFile(file, slugs)) {
                 findings.add(new Finding(doc, f.line(), f.citation(), f.content()));
             }
         }
@@ -182,12 +213,36 @@ final class TransientCitationCheck {
             for (Path page : pages) {
                 scanned++;
                 String relative = root.relativize(page).toString().replace('\\', '/');
-                for (Finding f : scanFile(page)) {
+                for (Finding f : scanFile(page, slugs)) {
                     findings.add(new Finding(relative, f.line(), f.citation(), f.content()));
                 }
             }
         }
         return new Result(findings, missing, scanned);
+    }
+
+    /**
+     * The slug of every item file living under {@code roadmap/} right now, which is the universe
+     * the bare-slug pattern resolves a candidate against. The permanent artifacts are excluded,
+     * since prose may name them.
+     *
+     * <p>An empty set is a legitimate answer rather than a failure: it says no item is currently
+     * filed, and then no bare slug can be cited either. This is not the vacuous-scan case the two
+     * habitats above guard against, where an empty result would mean the scan looked in the wrong
+     * place. Here the scan looks at the same tree the rest of the tooling writes to, and the tree
+     * being absent is caught by every other roadmap command long before this one runs.
+     */
+    static Set<String> liveItemSlugs(Path root) throws IOException {
+        Path dir = root.resolve(ROADMAP_DIR);
+        if (!Files.isDirectory(dir)) return Set.of();
+        try (var paths = Files.list(dir)) {
+            return paths.filter(Files::isRegularFile)
+                .map(p -> p.getFileName().toString())
+                .filter(name -> name.endsWith(".md"))
+                .filter(name -> !PERMANENT_ARTIFACTS.contains(name))
+                .map(name -> name.substring(0, name.length() - ".md".length()))
+                .collect(Collectors.toUnmodifiableSet());
+        }
     }
 
     /**
@@ -209,11 +264,20 @@ final class TransientCitationCheck {
 
 
     /**
-     * Flags every item-id and non-permanent {@code roadmap/} path citation in {@code file}.
-     * The {@code doc} field of each finding carries the file's own name; {@link #scan} rewrites
-     * it to the repo-relative path it walked.
+     * Scans {@code file} against the two pattern-matched citation shapes only. The bare-slug
+     * shape needs a slug universe to resolve against, which a lone file does not carry; the
+     * overload below takes one.
      */
     static List<Finding> scanFile(Path file) throws IOException {
+        return scanFile(file, Set.of());
+    }
+
+    /**
+     * Flags every item-id citation, non-permanent {@code roadmap/} path citation, and backticked
+     * span naming one of {@code liveSlugs} in {@code file}. The {@code doc} field of each finding
+     * carries the file's own name; {@link #scan} rewrites it to the repo-relative path it walked.
+     */
+    static List<Finding> scanFile(Path file, Set<String> liveSlugs) throws IOException {
         List<Finding> findings = new ArrayList<>();
         List<String> lines = Files.readAllLines(file);
         String name = file.getFileName().toString();
@@ -227,6 +291,16 @@ final class TransientCitationCheck {
             while (paths.find()) {
                 if (!PERMANENT_ARTIFACTS.contains(paths.group(1))) {
                     findings.add(new Finding(name, i + 1, paths.group(), line));
+                }
+            }
+            if (liveSlugs.isEmpty()) continue;
+            Matcher slugs = BACKTICKED_SLUG.matcher(line);
+            while (slugs.find()) {
+                String candidate = slugs.group(1);
+                // A path citation already reported this line's slug; reporting it twice would
+                // make one sentence look like two problems.
+                if (liveSlugs.contains(candidate) && !line.contains(ROADMAP_DIR + "/" + candidate)) {
+                    findings.add(new Finding(name, i + 1, candidate, line));
                 }
             }
         }
