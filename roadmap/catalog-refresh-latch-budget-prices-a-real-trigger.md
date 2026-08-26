@@ -1,13 +1,13 @@
 ---
 id: R832
 title: "CatalogRefreshTest budgets a real refresh like a no-op trigger"
-status: Spec
+status: Ready
 bucket: dx
 priority: 2
 theme: tooling
 depends-on: []
 created: 2026-08-25
-last-updated: 2026-08-25
+last-updated: 2026-08-26
 ---
 
 # CatalogRefreshTest budgets a real refresh like a no-op trigger
