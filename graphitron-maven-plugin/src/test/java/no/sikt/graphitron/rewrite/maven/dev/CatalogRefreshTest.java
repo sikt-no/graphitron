@@ -32,7 +32,48 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CatalogRefreshTest {
 
     private static final long DEBOUNCE_MS = 100;
-    private static final long WAIT_MS = DEBOUNCE_MS + 1500;
+
+    /**
+     * How long a positive test waits before concluding the trigger never fired, in milliseconds.
+     * The awaited window holds the watcher's dispatch, the {@link DebounceExecutor} delay, and
+     * whatever the trigger itself does, which in
+     * {@link #javaSourceWriteMovesTheStoreRowWithoutAGeneratorPass} is real work:
+     * {@link no.sikt.graphitron.rewrite.FactWriters#refreshJavaSources} is a
+     * {@link no.sikt.graphitron.rewrite.capture.SourceWalker} parse through the Compiler Tree API,
+     * cold on its first use in the surefire JVM, plus the jOOQ writes that land the walk in the
+     * store. That refresh measured 854 ms on a passing full-suite run, so this leaves it roughly
+     * seventeen times the room it took.
+     *
+     * <p>Generous on purpose, and the direction is what makes that safe.
+     * {@link java.util.concurrent.CountDownLatch#await} returns the moment the latch counts down,
+     * so a green run never pays this figure at all; it is spent only on a run that was going to
+     * fail anyway. That is also why the near-free rebuilder in
+     * {@link #classFileWriteReachesTheWorkspace} takes the same ceiling: an await budget is a
+     * bound on failure, not an estimate of the work, and nothing holds that rebuilder cheap.
+     *
+     * <p>It was the same figure as {@link #QUIESCENCE_MS}, and that figure was too tight to be a
+     * fact about the code. Under twice a measured 854 ms is not a ceiling, it is a race with
+     * machine load: this module's test classes run four-way concurrent, and
+     * {@link no.sikt.graphitron.rewrite.maven.DevMojoTest}'s real generator work competes for the
+     * same cores, which on a cold first build is enough to lose that race. If this ceiling is ever
+     * reached, the refresher is broken or hung, not slow.
+     */
+    private static final long FIRE_CEILING_MS = DEBOUNCE_MS + 15_000;
+
+    /**
+     * How long {@link #graphqlsWriteDoesNotFireClasspathWatcher} watches a watcher that must not
+     * fire, in milliseconds, before it is satisfied that nothing did. The window prices dispatch
+     * plus the {@link DebounceExecutor} delay for a fire that should never arrive, so its floor is
+     * a small multiple of {@link #DEBOUNCE_MS}; this is sixteen times that.
+     *
+     * <p>The opposite axis from {@link #FIRE_CEILING_MS}, which is why the two are separate
+     * constants rather than one figure serving both. {@link Thread#sleep} pays this in full on
+     * every green run, so a larger figure is strictly slower and a shorter one strictly less
+     * sensitive: under the same load that makes a late fire possible, a mis-wired watcher's fire
+     * could land after a short window had closed, and a loud failure would come back as a silent
+     * pass. The 1.6 s per run buys that sensitivity.
+     */
+    private static final long QUIESCENCE_MS = DEBOUNCE_MS + 1500;
 
     private DebounceExecutor debounce;
     private SchemaWatcher watcher;
@@ -64,7 +105,7 @@ class CatalogRefreshTest {
 
         DispatchTestSupport.dispatch(watcher, classesDir, entryCreateEvent(Path.of("Tables.class")));
 
-        assertThat(fired.await(WAIT_MS, TimeUnit.MILLISECONDS))
+        assertThat(fired.await(FIRE_CEILING_MS, TimeUnit.MILLISECONDS))
             .as("rebuilder must fire on .class write")
             .isTrue();
 
@@ -85,7 +126,7 @@ class CatalogRefreshTest {
 
         DispatchTestSupport.dispatch(watcher, classesDir, entryModifyEvent(Path.of("schema.graphqls")));
 
-        Thread.sleep(WAIT_MS);
+        Thread.sleep(QUIESCENCE_MS);
         assertThat(rebuilds.get())
             .as(".graphqls write under a .class watcher must not fire")
             .isZero();
@@ -124,7 +165,7 @@ class CatalogRefreshTest {
             DispatchTestSupport.dispatch(watcher, javaFile.getParent(),
                 entryModifyEvent(Path.of("PriceService.java")));
 
-            assertThat(fired.await(WAIT_MS, TimeUnit.MILLISECONDS))
+            assertThat(fired.await(FIRE_CEILING_MS, TimeUnit.MILLISECONDS))
                 .as("source refresher must fire on .java write")
                 .isTrue();
 

@@ -1,7 +1,7 @@
 ---
 id: R832
 title: "CatalogRefreshTest budgets a real refresh like a no-op trigger"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 2
 theme: tooling
