@@ -1,0 +1,19 @@
+type Query {
+    customer: Customer
+}
+
+type Customer @table {
+    customerId: Int @field(name: "CUSTOMER_ID")
+    # Same table as the parent, reached without @splitQuery, so it is inlined into the parent's row.
+    profile: CustomerProfile
+}
+
+type CustomerProfile @table(name: "CUSTOMER") {
+    firstName: String @field(name: "FIRST_NAME")
+    # Object-valued field below the inlined wrapper. Its table differs, so it needs a helper method.
+    address: Address
+}
+
+type Address @table {
+    addressId: Int @field(name: "ADDRESS_ID")
+}

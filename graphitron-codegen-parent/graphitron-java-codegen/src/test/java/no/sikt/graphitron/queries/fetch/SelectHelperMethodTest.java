@@ -80,4 +80,22 @@ public class SelectHelperMethodTest extends GeneratorTest {
                 "_2_rentalForQuery_rental_staff_store()"
         );
     }
+
+    @Test
+    @DisplayName("Object fields under a same-table wrapper are called by the names they are defined with")
+    void sameTableWrapper() {
+        assertGeneratedContentContains(
+                "sameTableWrapper",
+                // The wrapper shares the parent's table and so is inlined into the parent's row. Its own path
+                // segment is therefore not part of the name, and address stays at the parent's depth.
+                "DSL.select(_1_customerForQuery_customer_address())",
+                "private static SelectField<Address> _1_customerForQuery_customer_address("
+        );
+    }
+
+    @Test
+    @DisplayName("An inlined same-table wrapper gets no helper method of its own")
+    void sameTableWrapperGetsNoHelper() {
+        resultDoesNotContain("sameTableWrapper", "customerForQuery_customer_profile");
+    }
 }

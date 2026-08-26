@@ -7,6 +7,7 @@ import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.AliasWrapper;
+import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
@@ -269,7 +270,7 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
             }
 
             // Check if this field should skip helper generation but continue traversing to children
-            if (shouldSkipHelperAndTraverse(objectField, recordType, nestedRecordType, depth, methodState.rootField.getArguments().stream().anyMatch(processedSchema::hasInputJOOQRecord))) {
+            if (shouldSkipHelperAndTraverse(objectField, recordType, nestedRecordType, parentContext.getTargetTable(), depth, methodState.rootField.getArguments().stream().anyMatch(processedSchema::hasInputJOOQRecord))) {
                 nestedMethods.addAll(generateNestedHelperMethods(objectField, parentHelperMethodName, parentContext.nextContext(objectField), siblingVisitedTypes, depth));
                 continue;
             }
@@ -308,7 +309,7 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
      * Determines if a field represents a structural wrapper where helper method generation should be skipped,
      * but traversal to children should continue.
      * <p>
-     * Two patterns are handled:
+     * Three patterns are handled:
      * <ul>
      *   <li><b>Input parameter container</b> (depth 0 only): A non-table type that wraps input parameters
      *       for a nested table field. Example: {@code type FilmContainer { films: Film }} where the Query
@@ -317,18 +318,27 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
      *   <li><b>Structural wrapper</b> (any depth): A non-table type with a single non-list field without
      *       {@code @reference}. Example: {@code type Wrapper { customer: Customer }} where Wrapper has no table.
      *       Helper is skipped because no table means no SELECT to generate.</li>
+     *   <li><b>Same-table wrapper</b> (any depth): A table type mapped to the parent's own table, reached
+     *       without a {@code @reference} and without {@code @splitQuery}. Example:
+     *       {@code type Customer @table { profile: CustomerProfile }} where {@code CustomerProfile} is
+     *       {@code @table(name: "CUSTOMER")}. Helper is skipped because
+     *       {@link FetchDBMethodGenerator#generateSelectRow} inlines such a field's columns straight into the
+     *       parent's row rather than selecting it separately, so the wrapper contributes no SELECT of its own.</li>
      * </ul>
+     * In every case the children keep the parent's helper name and depth, which is what makes the call sites
+     * emitted while generating the parent's row line up with the definitions generated here.
      *
      * @param field The field being evaluated
      * @param parentType The parent type containing this field
      * @param nestedType The type this field references
+     * @param parentTable The table the parent's row is selected from, or null if the parent has no table
      * @param depth Current recursion depth (0 = root helper level)
      * @param rootFieldHasInputTableArguments Whether the root field has input table arguments
      * @return true if helper should be skipped and children should be traversed, false otherwise
      */
     private boolean shouldSkipHelperAndTraverse(ObjectField field, RecordObjectSpecification<?> parentType,
-                                                RecordObjectSpecification<?> nestedType, int depth,
-                                                boolean rootFieldHasInputTableArguments) {
+                                                RecordObjectSpecification<?> nestedType, JOOQMapping parentTable,
+                                                int depth, boolean rootFieldHasInputTableArguments) {
         // Input parameter container at root (depth 0)
         if (depth == CONTAINER_PATTERN_DEPTH &&
                 !parentType.hasTable() &&
@@ -336,6 +346,15 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
                 !field.hasFieldReferences() &&
                 nestedType != null && nestedType.hasTable() &&
                 rootFieldHasInputTableArguments) {
+            return true;
+        }
+
+        // Same-table wrapper (any depth), inlined into the parent's row instead of selected on its own
+        if (nestedType != null && nestedType.hasTable() &&
+                !field.createsDataFetcher() &&
+                !field.isIterableWrapped() &&
+                !field.hasFieldReferences() &&
+                !processedSchema.invokesSubquery(field, parentTable)) {
             return true;
         }
 

@@ -40,4 +40,23 @@ public class SelectHelperMethodEntityTest extends GeneratorTest {
                 "_1_customerFor_Entity_customer_addresses() {"
         );
     }
+
+    @Test
+    @DisplayName("Object fields under a same-table wrapper are called by the names they are defined with")
+    void sameTableWrapper() {
+        assertGeneratedContentContains("sameTableWrapper",
+                // The wrapper is inlined into the entity's row, so its own path segment is not part of the
+                // names below and the children sit at the entity's depth.
+                "DSL.select(_1_customerFor_Entity_customer_address())",
+                "_1_customerFor_Entity_customer_address() {",
+                "DSL.select(_1_customerFor_Entity_customer_store())",
+                "_1_customerFor_Entity_customer_store() {"
+        );
+    }
+
+    @Test
+    @DisplayName("An inlined same-table wrapper gets no helper method of its own")
+    void sameTableWrapperGetsNoHelper() {
+        resultDoesNotContain("sameTableWrapper", "_customerFor_Entity_customer_profile");
+    }
 }

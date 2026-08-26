@@ -1,0 +1,27 @@
+union _Entity = Customer
+
+type Customer @table @key(fields: "id") {
+    id: ID
+    # Same table as the entity, reached without @splitQuery, so it is inlined into the entity's row.
+    profile: CustomerProfile
+}
+
+type CustomerProfile @table(name: "CUSTOMER") {
+    firstName: String @field(name: "FIRST_NAME")
+    # Object-valued field below the inlined wrapper. Its table differs, so it needs a helper method.
+    address: Address
+    # Tableless wrapper below the inlined wrapper, holding a reference of its own.
+    storeInfo: StoreInfo
+}
+
+type Address @table {
+    id: ID
+}
+
+type StoreInfo {
+    store: Store @reference(path: [{key: "CUSTOMER__CUSTOMER_STORE_ID_FKEY"}])
+}
+
+type Store @table {
+    id: ID
+}
