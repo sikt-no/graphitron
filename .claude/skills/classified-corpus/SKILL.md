@@ -100,7 +100,7 @@ per-leaf net, so it stays green when a *different* example already covers the le
 shape this row pinned is gone. The step-3 harness run records the sealed leaf per `@classified`
 coordinate; confirm your example's coordinate lands on the exact leaf the row asserts, and that the row
 asserted nothing else, before deleting. Replace each deleted case with a one-line comment naming the
-corpus example that took it over (and where it renders, if it is a doc example). **Never retire**:
+corpus example that took it over (and where it renders, if it carries a projection). **Never retire**:
 - slot-asserting cases (keep them),
 - rejection / `UnclassifiedField` / `UnclassifiedType` rows (failure path is out of scope; a separate mechanism replaces them),
 - input-field rows (`InputField.*`; a different game, out of scope).
@@ -135,6 +135,6 @@ fast-forward trunk).
   *shape* a deleted row pinned survived. Verify at the coordinate per step 6.
 - **Success-only.** The corpus asserts the happy path. Rejection and input-field rows stay in the enum table.
 - **Verdict, not slots.** Assert the `(source, operations, target)` axes / `TypeVerdict`. Slot detail stays in the pipeline tier (the slot-asserting enum cases).
-- **Drift is exact.** The page must contain the rendered block byte-for-byte; re-capture after any fixture change.
+- **Drift is exact.** The committed fragment must equal what the corpus renders byte-for-byte; after any fixture change re-run `CorpusFragmentTest` and copy its render over the approved file.
 - **Test-only directives** live in `_prelude.graphqls`, never in production `directives.graphqls`; the classifier ignores them.
 - **Adding an example is one new file.** If a change to the corpus needs a `.java` edit, either the vocabulary changed (a new assertion directive, a widened enum: that is a prelude edit) or the fixture names a Java class by FQN and the stub it names needs a method. Nothing else belongs in Java.
