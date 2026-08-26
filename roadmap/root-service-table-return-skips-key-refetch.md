@@ -1,7 +1,7 @@
 ---
 id: R834
 title: "A top-level @service returning a @table type reads columns off the returned record instead of refetching by key"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: service
@@ -573,3 +573,73 @@ payload-free javadoc, `projectedBody`/`liftBody`/`keysType`/`valueTypeOf`, `emit
 `resolveErrorChannel`'s class-backed-`ResultReturnType` guard, which settles the channel
 touchpoint structurally (a table-bound return can never carry a channel today, so the reentry
 emit needs no channel arms and the root validator arm gains the mirror guard).
+
+### Round 3 (Spec -> Ready gate, session_4aeb0540-b3c1-475f-875f-582b4f6b80af, 2026-08-26)
+
+Independent reviewer session, different from rounds 1 and 2 and from the session that landed the
+revision. **Sign off.** Status `Spec` -> `Ready`.
+
+Both gate questions pass, and the revision settles rounds 1 and 2 on grounds I checked against the
+tree rather than against the rounds.
+
+Question 1. What changes for a consumer: an author who writes a root `@service` whose GraphQL
+return type carries `@table` stops owning the rows they hand back. Today the generated fetcher
+passes the jOOQ records to graphql-java and every column field reads off the record, so a method
+that selected only the key resolves every other selected field to `null` with nothing thrown;
+after this lands the fetcher lifts each returned record's primary key and re-selects the requested
+fields from the table, one batched query on the request's connection, ordered back to the service's
+own order. Three consequences the author feels: a schema whose returned `@table` type has no
+primary key stops building; a lifted key with no live row drops from a list and nulls a single; and
+a service that deliberately returned values differing from the table now gets table values, with
+"drop `@table` and name the columns with `@field(name:)`" as the escape hatch. Reachable: the
+machinery is emitted at neighbouring coordinates and I read it there, `searchManyService` lifting
+per-participant keys in the fetcher and `rowsFilm` running the `VALUES(idx, pk)` join through
+`$project`.
+
+Question 2. The design extends one shape rather than standing a second beside it. Reusing
+`LaunchSource.ProjectedReentry` is forced to `Invocation.ReturningKeyed` by
+`INVOCATION_BY_SOURCE`, which is what point 3 now takes deliberately, and the "renderer untouched"
+claim holds at all three of `RootLauncherRenderer`'s switches. The `ServiceTableLift` fork rounds 1
+and 2 asked for is stated and rejected on grounds that check out. The `DECLARED_SHAPES`
+required-versus-optional argument holds: the only root leaves that gain a reentry member when the
+passthrough clause goes are the two service-table leaves, because every other root leaf with a
+`ServiceCall` member carries an `Interface` or `Record` target, and the Connection wrapper that
+would break the "every instance" claim is rejected at classify time. Point 5 leaves
+`domainReturnType()` alone with the right citation and names the emitted-payload move instead. I
+would hand this to an implementer as it stands.
+
+**Non-blocking, three notes.**
+
+1. *The reentry key-arity mirror is a fourth validator touchpoint.* Point 7 enumerates three, and
+   Risks says the `Row22` cap is "no new constraint", which is true of the cap but not of the
+   diagnostic. `ReentryRowsFragments`' own javadoc on `ROW_CONTEXT`, the string point 3 rewrites,
+   asserts that `GraphitronSchemaValidator` rejects an over-arity reentry key at validate time so
+   the row builder's throw is only a backstop for objects built outside the pipeline. That
+   assertion is currently true because `validateDmlReentryKeyArity` is the only in-pipeline caller;
+   a root-service caller without the mirror makes the row builder's `IllegalStateException` the
+   primary diagnostic at a new coordinate. Two lines beside the keyless rejection Phase 1 already
+   specifies, off the same `returnType().table()` fact, or a weakened javadoc if the author would
+   rather match the child `@service` lift, which carries no arity guard either.
+
+2. *The delete-and-return mutation service.* `MutationServiceTableField` is in scope, and the DML
+   family's `Delete`-pairs-only-with-`Encoded` invariant exists because a row that is gone cannot
+   be re-selected. A root `@mutation @service` that deletes rows and hands back the deleted records
+   bound to a `@table` type renders those records today and, under the new rule, refetches nothing
+   and resolves an empty list or a null. Unlike the differing-column-values case Risks already
+   names, no key-only rewrite recovers it; only dropping `@table` does. Worth its own Risks bullet
+   and a changelog sentence, since the mutation twin is the coordinate where an author is most
+   likely to hold rows the table no longer has.
+
+3. *Context for Phase 2's corpus work, from a commit that landed after the revision.* `cff68d271`
+   moved the two mutation `@service` returns out of `mutation-roots` into a new `mutation-service`
+   corpus example whose prose already states this item's destination ("the coordinate re-queries
+   the catalog keyed on what the service handed back"). So the corpus edit is the `@classified`
+   `operations:` list at `Mutation.importFilm` and `Query.externalFilm`, with no prose to rewrite
+   at the mutation coordinate. Separately, the "root `@service` passthrough" line in
+   `docs/architecture/reference/code-generation-triggers.adoc` is a fifth doc surface; the Retired
+   vocabulary section already covers it through the Done-gate sweep.
+
+One imprecision in Retired vocabulary, mentioned only because a Done criterion turns on the sweep
+finding none of it: "universal passthrough" also names the success arm of the record-returning and
+scalar-returning service leaves, where it stays accurate. The phrase retires at
+`buildServiceFetcherCommon`, whose success arm stops being universal, not everywhere it appears.

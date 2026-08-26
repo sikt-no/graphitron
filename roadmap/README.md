@@ -14,8 +14,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R834` | A top-level @service returning a @table type reads columns off the returned record instead of refetching by key | Spec | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](root-service-table-return-skips-key-refetch.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
+| `R834` | A top-level @service returning a @table type reads columns off the returned record instead of refetching by key | Ready | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](root-service-table-return-skips-key-refetch.md) |
 | `R832` | CatalogRefreshTest budgets a real refresh like a no-op trigger | In Progress | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](catalog-refresh-latch-budget-prices-a-real-trigger.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Spec | 2026-08-26 | [plan](declarative-comment-style.md) |
@@ -451,7 +451,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R834` [**A top-level @service returning a @table type reads columns off the returned record instead of refetching by key**](root-service-table-return-skips-key-refetch.md) — Spec, bug
+- `R834` [**A top-level @service returning a @table type reads columns off the returned record instead of refetching by key**](root-service-table-return-skips-key-refetch.md) — Ready, bug
 - `R703` [**Generated list-valued bean members emit an unchecked cast that fails a consumer build under -Werror**](list-valued-bean-member-unchecked-cast.md) — Backlog, bug
 - `R694` [**Key the @service input-bean helper dedup on binding shape, the member-axis twin of R437**](service-bean-helper-dedup-by-binding-shape.md) — Backlog, architecture
 - `R674` [**Reconcile @service record projection: a monomorphic record return passes through while the polymorphic route auto-fetches by PK**](service-record-return-pk-autofetch.md) — Backlog, bug
