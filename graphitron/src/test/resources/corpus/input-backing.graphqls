@@ -1,0 +1,20 @@
+input PojoBackedInput @classifiedType(as: PojoInputType) { id: ID }
+input JavaRecordBackedInput @classifiedType(as: JavaRecordInputType) { name: String value: Int }
+input JooqTableRecordBackedInput @classifiedType(as: JooqTableRecordInputType) { title: String }
+extend type Query {
+  pojo(in: PojoBackedInput): String
+    @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "consumeDummyRecord"})
+  javaRecord(in: JavaRecordBackedInput): String
+    @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "consumeTestRecordDto"})
+  jooqRecord(in: JooqTableRecordBackedInput): String
+    @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "consumeFilmRecord"})
+}
+
+{
+  # A plain Java class: each input field populates a JavaBean setter.
+  pojo(in: {id: "1"})
+  # A Java record: every component must bind, so the input declares them all.
+  javaRecord(in: {name: "A", value: 1})
+  # A jOOQ TableRecord: each input field binds to a column of the record's table.
+  jooqRecord(in: {title: "ACADEMY DINOSAUR"})
+}

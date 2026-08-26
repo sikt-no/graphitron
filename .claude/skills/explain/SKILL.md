@@ -76,8 +76,8 @@ Every concept gets SDL. An explanation with no schema in it is a definition, not
 - **Mine real SDL, do not invent it.** In order of preference:
   - `docs/architecture/reference/code-generation-triggers.adoc`, SDL paired with the verdict it
     produces;
-  - `graphitron/src/test/java/no/sikt/graphitron/rewrite/classifieddsl/ClassifiedCorpus.java`, the
-    corpus those blocks render from, where each example carries its declared dimensions;
+  - `graphitron/src/test/resources/corpus/*.graphqls`, the corpus those blocks render from, where
+    each document carries its declared dimensions;
   - `graphitron-sakila-example/src/main/resources/graphql/*.graphqls`, schemas that actually build;
   - the directive's own reference page.
 - **Sakila tables, real columns.** `film`, `actor`, `customer`, `city`, `country`, `rental`, not

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
-import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus.Example;
+import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments.Document;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -19,11 +19,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * SDL against the corpus, so the schema pattern on the page cannot drift; this holds what the page
  * says graphitron <em>does</em> with that pattern, so the answer beside it cannot drift either.
  *
- * <p>For each documentation example this re-runs {@link OutcomeBlockRenderer} over the fixture,
- * capturing its facts and generating from it, and asserts the page still contains exactly the
- * rendered block. To update one, run this test and paste the block from the failure message.
+ * <p>For each document carrying a projection this re-runs {@link OutcomeBlockRenderer} over the
+ * fixture, capturing its facts and generating from it, and asserts the page still contains exactly
+ * the rendered block. To update one, run this test and paste the block from the failure message.
  *
- * <p>Before this existed, the "what gets generated" half of every example was ungated prose: a
+ * <p>Before this existed, the "what gets generated" half of every worked example was ungated prose: a
  * verdict restated by hand beside a machine-checked schema. That asymmetry is what let the page
  * accumulate leaf names for classifications the walk had stopped producing.
  */
@@ -35,23 +35,23 @@ class OutcomeBlockDocTest {
         Path.of("..", "docs", "architecture", "reference", "code-generation-triggers.adoc"),
         Path.of("docs", "architecture", "reference", "code-generation-triggers.adoc"));
 
-    static Stream<Example> docExamples() {
-        return ClassifiedCorpus.docExamples().stream();
+    static Stream<Document> documentsWithProjection() {
+        return CorpusDocuments.withProjection().stream();
     }
 
     @ParameterizedTest(name = "{0}")
-    @MethodSource("docExamples")
-    void pageStatesTheOutcomeEveryDocExampleActuallyProduces(Example example, @TempDir Path workDir)
+    @MethodSource("documentsWithProjection")
+    void pageStatesTheOutcomeEveryProjectionActuallyProduces(Document document, @TempDir Path workDir)
             throws IOException {
         String page = Files.readString(page());
-        String rendered = OutcomeBlockRenderer.render(example, workDir);
+        String rendered = OutcomeBlockRenderer.render(document, workDir);
 
         assertThat(page)
             .as("code-generation-triggers.adoc must contain the outcome block rendered for doc "
-                + "example '%s'. The block states each coordinate's verdict from the store and the "
+                + "document '%s'. The block states each coordinate's verdict from the store and the "
                 + "methods the generator emitted for it, so a change to either shows up here "
-                + "rather than leaving the page quietly wrong. Paste this under the example's SDL "
-                + "block:%n%n%s%n", example.id(), rendered)
+                + "rather than leaving the page quietly wrong. Paste this under the document's SDL "
+                + "block:%n%n%s%n", document.id(), rendered)
             .contains(rendered);
     }
 

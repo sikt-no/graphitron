@@ -1,0 +1,8 @@
+interface Searchable @classifiedType(as: InterfaceType) { name: String }
+type Film implements Searchable @table(name: "film") { name: String @field(name: "TITLE") }
+type Actor implements Searchable @table(name: "actor") { name: String @field(name: "FIRST_NAME") }
+extend type Query {
+  searchService: Searchable
+    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+    @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Interface)
+}

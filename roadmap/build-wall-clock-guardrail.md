@@ -634,7 +634,7 @@ lands.
 **1. Memoise the corpus classification.** Five sweep classes (`ClassifiedDslTest`,
 `DeliveryFactPinTest`, `OperationMemberMintPinTest`, `SourceShapeProjectionTest`,
 `WrapperAlgebraTest`) plus the two shared readers they go through, `ExemptionRegistry` and
-`ClassifiedCorpus.coveredLeaves`, call `ClassifiedHarness.classify(example.sdl())` per example with no
+`CorpusDocuments.coveredLeaves`, call `ClassifiedHarness.classify(document.sdl())` per document with no
 memoisation, several from more than one test method. The precedent is in the same class:
 `launcherProductions()` is memoised once per JVM and its javadoc says why. A static map keyed on the
 fixture SDL is nearly the whole change, with one caveat. `ClassifiedHarness.Result` is a record but

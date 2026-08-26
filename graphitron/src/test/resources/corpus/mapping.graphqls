@@ -1,0 +1,22 @@
+type FilmStats {
+  count: Int @classified(source: Child, operations: [], target: Single, targetShape: Field, sourceShape: Record)
+}
+
+type FilmDetails {
+  stats: FilmStats @classified(source: Child, operations: [], target: Single, targetShape: Field, sourceShape: Record)
+}
+
+type Film @table(name: "film") {
+  title: String @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
+  details: FilmDetails
+}
+
+extend type Query {
+  film: Film @commits(source: AnchorTable, result: SingleRecord)
+  prodFilmDetails: FilmDetails
+    @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRecord"})
+  prodFilmStats: FilmStats
+    @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmStatsRecord"})
+}
+
+{ film { title details { stats { count } } } }

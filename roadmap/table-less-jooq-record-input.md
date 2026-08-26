@@ -178,7 +178,7 @@ is not served by the column-list arm, never that it cannot be built.
 
 **Fixtures.** Delete `PlainJooqRecord`. Retype `DummyService.consumePlainJooqRecord` to take
 `org.jooq.Record2<String, Integer>` and `makePlainJooqRecord` to return the same, and update the
-`plain-jooq-record-backing` example in `ClassifiedCorpus` so its consuming field carries `table:` and
+`plain-jooq-record-backing` corpus document so its consuming field carries `table:` and
 its leaves carry `@field` column references matching those generics. `NodeIdReadEncodePipelineTest` also names `makePlainJooqRecord`
 and moves with it. The `@classifiedType` verdicts on both halves are unchanged: `Record2` is
 assignable to `Record` and not to `TableRecord`, `RecordBindingResolver.peelReturnElement` returns

@@ -1,0 +1,27 @@
+type Language @table(name: "language") { name: String }
+
+type FilmDetails {
+  title: String @classified(source: Child, operations: [], target: Single, targetShape: Field, sourceShape: Record)
+}
+
+type Film @table(name: "film") {
+  details: FilmDetails
+  rating: String
+    @service(service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRatingMapped"})
+    @classified(source: Child, operations: [ServiceCall], target: Single, targetShape: Record)
+    @commits(source: ServiceCall, result: LoaderDelegated)
+  language: Language
+    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguageByKey"})
+    @classified(source: Child, operations: [Reentry, ServiceCall], target: Single, targetShape: Table)
+    @commits(source: ServiceTableLift, result: LoaderDelegated)
+}
+
+extend type Query {
+  film: Film
+  prodFilmDetails: FilmDetails
+    @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDetailsProps"})
+  externalFilm: Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+    @classified(source: Query, operations: [Reentry, ServiceCall], target: Single, targetShape: Table)
+    @commits(source: ProjectedReentry, result: SingleRecord)
+}

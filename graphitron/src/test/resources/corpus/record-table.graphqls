@@ -1,0 +1,21 @@
+type Language @table(name: "language") { name: String }
+
+type FilmDetails {
+  language: Language @reference(path: [{key: "film_language_id_fkey"}])
+    @classified(source: Child, operations: [Join, Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
+    @commits(source: CorrelatedChain, result: SingleRecord)
+}
+
+type Film @table(name: "film") {
+  language: Language @reference(path: [{key: "film_language_id_fkey"}])
+    @classified(source: OnlyChild, operations: [Join, Select], target: Single, targetShape: Table)
+  details: FilmDetails
+}
+
+extend type Query {
+  film: Film @commits(source: AnchorTable, result: SingleRecord)
+  prodFilmDetails: FilmDetails
+    @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+}
+
+{ film { language { name } details { language { name } } } }

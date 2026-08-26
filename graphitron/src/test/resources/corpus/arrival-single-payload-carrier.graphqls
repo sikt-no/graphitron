@@ -1,0 +1,10 @@
+type Film @table(name: "film") { title: String }
+type FilmPayload {
+  film: Film
+    @classified(source: OnlyChild, operations: [Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
+    @commits(source: CorrelatedChain, result: SingleRecord)
+}
+type Mutation {
+  runFilm: FilmPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
+}

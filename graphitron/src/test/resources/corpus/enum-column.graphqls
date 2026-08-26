@@ -1,0 +1,12 @@
+enum Rating @classifiedType(as: EnumType) { G PG PG13 R NC17 }
+type Film @table(name: "film") {
+  rating: Rating @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
+}
+extend type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+
+{
+  film {
+    # A GraphQL enum return, still a plain column read.
+    rating
+  }
+}

@@ -1,0 +1,15 @@
+interface Named @classifiedType(as: InterfaceType) { name: String }
+type Address implements Named @table(name: "address") { name: String @field(name: "ADDRESS") }
+type Customer @table(name: "customer") {
+  address: Named @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Interface)
+}
+type City @table(name: "city") {
+  namedPlaces: [Named!]! @classified(source: OnlyChild, operations: [Select], target: List, targetShape: Interface)
+}
+extend type Query {
+  customer: Customer @commits(source: AnchorTable, result: SingleRecord)
+  city: City @commits(source: AnchorTable, result: SingleRecord)
+  anyNamed: Named @classified(source: Query, operations: [Select], target: Single, targetShape: Interface)
+}
+
+{ customer { address { name } } }

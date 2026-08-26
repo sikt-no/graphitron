@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus;
+import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
  * <ul>
  *   <li><b>Output-field and type leaves</b> ({@link OutputField} leaves and every non-failure
  *       {@link GraphitronType} leaf): the spec-by-example corpus is the single source of truth;
- *       {@link ClassifiedCorpus#coveredLeaves()} is the covered set.</li>
+ *       {@link CorpusDocuments#coveredLeaves()} is the covered set.</li>
  *   <li><b>Input-field leaves</b> ({@link InputField}): covered by the
  *       {@link GraphitronSchemaBuilderTest} enum truth table ({@link ClassificationCase}).</li>
  *   <li>The failure leaves ({@code UnclassifiedField} / {@code UnclassifiedType}) are out of

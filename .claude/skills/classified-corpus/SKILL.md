@@ -17,13 +17,14 @@ retirement note under *The files*.
 
 All under the repo root:
 
-- **Corpus** (source of truth): `graphitron/src/test/java/no/sikt/graphitron/rewrite/classifieddsl/ClassifiedCorpus.java`. A `List<Example>`; each `Example(id, sdl[, query])`. A non-null `query` makes it a doc example.
+- **Corpus** (source of truth): `graphitron/src/test/resources/corpus/`, one GraphQL document per example, named `<id>.graphqls`. A document carries its annotated fixture, its prose as SDL descriptions, and optionally a projection operation as its last definition; a document with a projection is what the page renders. `_prelude.graphqls` beside them holds the test-only directives and their enums, and is excluded from the document glob by its leading underscore.
+- **Loader**: `.../classifieddsl/CorpusDocuments.java`. `documents()` and `withProjection()` are what every reader reads; `Document(id, sdl, projection)` splits the file by truncating at the projection's own line. `CorpusDocumentsTest` holds the floors that keep a folder from passing while empty.
 - **Harness / DSL test**: `.../classifieddsl/ClassifiedHarness.java` (classifies a fixture, reads `@classified`/`@classifiedType` off the AST, records the sealed leaf each coordinate landed on), `ClassifiedDslTest.java` (asserts every annotated coordinate classifies to its declared dimensions, and that every dimension arm is exercised or on a stated known-gap list).
-- **Renderer + drift guard**: `QueryViewRenderer.java` (query-as-view, AST-print, strips the internal directives; expands argument input-type closure and renders unions/interfaces reached by a kept field or a `fragment on Type`), `ClassifiedDocTest.java` (asserts each doc example's rendered SDL appears verbatim in the page).
-- **Dimensional vocabulary**: `ClassifiedDsl.java` (the `@classified`/`@classifiedType` directives plus the `SourceWrapper` / `Member` / `TargetWrapper` / `TargetShape` / `SourceShape` / `TypeVerdict` SDL prelude, declared test-only, ignored by the classifier), `DimensionTuple` (the verdict record, `source` + the `operations` member-arm token multiset + `TargetVerdict`).
+- **Renderer + drift guard**: `QueryViewRenderer.java` (query-as-view, AST-print, strips the internal directives; expands argument input-type closure and renders unions/interfaces reached by a kept field or a `fragment on Type`), `ClassifiedDocTest.java` (asserts each rendered projection's SDL appears verbatim in the page).
+- **Dimensional vocabulary**: `_prelude.graphqls` (the `@classified`/`@classifiedType` directives plus the `SourceWrapper` / `Member` / `TargetWrapper` / `TargetShape` / `SourceShape` / `TypeVerdict` enums, declared test-only, ignored by the classifier), `ClassifiedDsl.java` (those directive names, by symbol), `DimensionTuple` (the verdict record, `source` + the `operations` member-arm token multiset + `TargetVerdict`).
 - **The page**: `docs/architecture/reference/code-generation-triggers.adoc`.
 - **Enum truth table**: `graphitron/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java` (the `*Case implements ClassificationCase` enums). It keeps the slot-asserting, rejection, and input-side rows by design; those are not corpus material.
-- **Coverage obligations**: `graphitron/src/test/java/no/sikt/graphitron/rewrite/VariantCoverageTest.java`. Two partitioned checks, no union: `everyOutputFieldAndTypeLeafIsDemonstratedByTheCorpus` reads `ClassifiedCorpus.coveredLeaves()` **alone** (so a green run *is* proof the corpus carries an output-field or type verdict), and `everyInputFieldLeafHasAnEnumClassificationCase` keeps input-field leaves on the enum table. Its `NO_CASE_REQUIRED` allowlist documents leaves unreachable from the standard Sakila catalog; those stay allowlisted rather than forced into a fixture.
+- **Coverage obligations**: `graphitron/src/test/java/no/sikt/graphitron/rewrite/VariantCoverageTest.java`. Two partitioned checks, no union: `everyOutputFieldAndTypeLeafIsDemonstratedByTheCorpus` reads `CorpusDocuments.coveredLeaves()` **alone** (so a green run *is* proof the corpus carries an output-field or type verdict), and `everyInputFieldLeafHasAnEnumClassificationCase` keeps input-field leaves on the enum table. Its `NO_CASE_REQUIRED` allowlist documents leaves unreachable from the standard Sakila catalog; those stay allowlisted rather than forced into a fixture.
 - **Historical retirement inventory**: `roadmap/audits/classification-test-dsl-inventory.md`. The bulk migration's deletion whitelist, **exhausted and closed**: all 35 eligible rows retired, and a 2026-07-25 re-derivation found no pure-verdict rows left in the enum. Read it as lineage, not as a work queue; a large surviving `GraphitronSchemaBuilderTest` is the excluded buckets, not residue.
 
 ## The loop
@@ -37,18 +38,21 @@ current leaf set:
 - **slot-asserting** = the lambda reads an accessor: `joinPath()`, `returnType().wrapper()`, `filters()`, `sourceKey()`, `columnName()`, key columns, warnings. **Keep these** — the corpus asserts the three-axis verdict, not slots; slot detail is the pipeline tier's job. Note the trap: a slot read asserted with `isInstanceOf` (e.g. `assertThat(field.returnType().wrapper()).isInstanceOf(FieldWrapper.List.class)`) is slot-asserting, not pure.
 - **rejection** or **input-side** = out of scope entirely (see the never-retire list in step 6).
 
-### 2. Author the corpus example
-Add an `Example` to `ClassifiedCorpus.EXAMPLES`. Rules:
+### 2. Author the corpus document
+Write one new file, `graphitron/src/test/resources/corpus/<id>.graphqls`. No `.java` edit: the filename
+is the id, and the loader picks the document up. Rules:
 - Fixtures classify against the **standard Sakila catalog**. Use real tables/columns/FKs. Prefer unambiguous single FKs (e.g. `city -> country`; **avoid** `film -> language`, which has two FKs and is ambiguous). Mine working SDL from an existing enum case or pipeline test covering the shape.
-- Annotate each coordinate: output fields with `@classified(source: ..., operations: [...], target: ..., targetShape: ...)` (plus `sourceShape:` where the arrival shape matters; `operations:` lists the coordinate's operation-member arm tokens, sorted, one entry per member row, `[]` legal), types with `@classifiedType(as: ...)`. The enum value spaces live in `ClassifiedDsl.PRELUDE`, and a typo is a schema-assembly error before the harness runs.
-- For a doc example, add a `query` selecting exactly the coordinates to show. **Minimal pairs teach best**: vary one axis, hold the rest constant (e.g. the same return type with and without `@splitQuery` to isolate the batched delivery; a scalar under a `@table` vs a `@record` parent to isolate `targetShape`).
-- A `query` may also be a bare `fragment F on Type { ... }` when the coordinate has no reachable root path; the renderer resolves argument input-type closure and polymorphic members, so mutation and type verdicts can render honest excerpts too. Omit `query` (and skip steps 4-5) when an example is worth testing but not worth featuring in the page.
+- Annotate each coordinate: output fields with `@classified(source: ..., operations: [...], target: ..., targetShape: ...)` (plus `sourceShape:` where the arrival shape matters; `operations:` lists the coordinate's operation-member arm tokens, sorted, one entry per member row, `[]` legal), types with `@classifiedType(as: ...)`. The enum value spaces live in `_prelude.graphqls`, and a typo is a schema-assembly error before the harness runs.
+- Say why a coordinate exists **on that coordinate**, as an SDL description. The document is the one habitat for the example's prose; a description reaches the store as `graphql_field.description` / `graphql_type.description`, which is what a rendered page can read back. The example-level narrative, having no coordinate to sit on, stays on the page.
+- To feature the example on the page, end the document with a projection operation selecting exactly the coordinates to show. It must be the document's **last** definition: the loader splits the file by truncating at its line, and asserts nothing follows it. **Minimal pairs teach best**: vary one axis, hold the rest constant (e.g. the same return type with and without `@splitQuery` to isolate the batched delivery; a scalar under a `@table` vs a `@record` parent to isolate `targetShape`).
+- The projection may also be a bare `fragment F on Type { ... }` when the coordinate has no reachable root path; the renderer resolves argument input-type closure and polymorphic members, so mutation and type verdicts can render honest excerpts too. Leave the projection out (and skip steps 4-5) when an example is worth testing but not worth featuring in the page.
+- Raise `CorpusDocuments.MIN_DOCUMENTS` to the new count. It is the ratchet that keeps a folder which stops resolving from reading as a corpus with no findings.
 
 ### 3. Validate the dimensions (discover the true verdict)
 ```bash
 export JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64
 mvn -pl :graphitron -am test -Plocal-db -P'!docs' \
-  -Dtest='ClassifiedDslTest' -Dsurefire.failIfNoSpecifiedTests=false
+  -Dtest='ClassifiedDslTest,CorpusDocumentsTest' -Dsurefire.failIfNoSpecifiedTests=false
 ```
 `corpusClassifiesToDeclaredDimensions` fails if a declared `@classified` doesn't match what the
 classifier produces. Fix the declared dimensions (or the fixture) until green — this step is where you
@@ -114,4 +118,5 @@ fast-forward trunk).
 - **Success-only.** The corpus asserts the happy path. Rejection and input-field rows stay in the enum table.
 - **Verdict, not slots.** Assert the `(source, operations, target)` axes / `TypeVerdict`. Slot detail stays in the pipeline tier (the slot-asserting enum cases).
 - **Drift is exact.** The page must contain the rendered block byte-for-byte; re-capture after any fixture change.
-- **Test-only directives** live in `ClassifiedDsl.PRELUDE`, never in production `directives.graphqls`; the classifier ignores them.
+- **Test-only directives** live in `_prelude.graphqls`, never in production `directives.graphqls`; the classifier ignores them.
+- **Adding an example is one new file.** If a change to the corpus needs a `.java` edit, either the vocabulary changed (a new assertion directive, a widened enum: that is a prelude edit) or the fixture names a Java class by FQN and the stub it names needs a method. Nothing else belongs in Java.

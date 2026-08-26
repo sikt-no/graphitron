@@ -1,0 +1,11 @@
+type Language @table(name: "language") { name: String }
+type FilmDetails {
+  language(language_id: ID! @lookupKey): Language @reference(path: [{key: "film_language_id_fkey"}])
+    @classified(source: Child, operations: [Join, Lookup, Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
+}
+type Film @table(name: "film") { details: FilmDetails }
+extend type Query {
+  film: Film
+  prodFilmDetails: FilmDetails
+    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+}

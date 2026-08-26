@@ -4,7 +4,7 @@ import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus;
+import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedDsl;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField;
@@ -73,15 +73,15 @@ class ColumnMatchShadowTest {
     void maskedClaimsAgreeWithTheColumnMatchArmOverTheCorpus() {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        var examples = ClassifiedCorpus.examples();
+        var examples = CorpusDocuments.documents();
         int comparedCoordinates = 0;
         try (var captured = CapturedStore.ofCatalog(tmp, examples.getFirst().id(),
                 fullSdl(examples.getFirst()), jooq)) {
-            for (ClassifiedCorpus.Example example : examples.subList(1, examples.size())) {
+            for (CorpusDocuments.Document example : examples.subList(1, examples.size())) {
                 captured.andCatalogGraph(example.id(), fullSdl(example), jooq);
             }
             var maskedByGraph = maskedClaimsByGraph(captured.dsl());
-            for (ClassifiedCorpus.Example example : examples) {
+            for (CorpusDocuments.Document example : examples) {
                 var schema = TestSchemaHelper.buildSchema(fullSdl(example));
 
                 // The walk's side: the column-match arm's product, keyed "Type.field", valued by
@@ -203,8 +203,8 @@ class ColumnMatchShadowTest {
     // ===== Helpers =====
 
     /** One corpus example as the parser sees it: the shared prelude in front of the example's own SDL. */
-    private static String fullSdl(ClassifiedCorpus.Example example) {
-        return ClassifiedDsl.PRELUDE + "\n" + example.sdl();
+    private static String fullSdl(CorpusDocuments.Document example) {
+        return CorpusDocuments.prelude() + "\n" + example.sdl();
     }
 
     /** One masked claim: the classifier's coordinate and the witness it resolved. */

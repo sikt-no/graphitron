@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus;
+import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedHarness;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * produced by the <em>type</em>-classification step ({@link GraphitronType}), separately from the
  * <em>field</em>-leaf classification that {@code sourceShape()} switches on. The invariant
  * ({@link #projectedFromParentBacking}) is asserted for <em>every</em> classified {@link ChildField}
- * the spec-by-example corpus demonstrates ({@link ClassifiedCorpus}), so the leaf-identity switch is
+ * the spec-by-example corpus demonstrates ({@link CorpusDocuments}), so the leaf-identity switch is
  * cross-checked against a genuinely independent derivation rather than against itself. The walk
  * descends the ridden lists ({@code NestingField.nestedFields()}, {@code PivotSpec.slots()}), whose
  * fields have no top-level coordinate; their independent expectation is the ridden container's
@@ -48,7 +48,7 @@ class SourceShapeProjectionTest {
 
     @Test
     void everyCorpusChildFieldSourceShapeMirrorsParentBacking() {
-        for (var example : ClassifiedCorpus.examples()) {
+        for (var example : CorpusDocuments.documents()) {
             var schema = ClassifiedHarness.classify(example.sdl()).schema();
             schema.fields().forEach((coord, field) -> {
                 if (field instanceof ChildField c) {
@@ -62,7 +62,7 @@ class SourceShapeProjectionTest {
         }
         // The walk is only a mirror if it actually exercises both projection arms.
         var observedShapes = new HashSet<SourceShape>();
-        for (var example : ClassifiedCorpus.examples()) {
+        for (var example : CorpusDocuments.documents()) {
             var schema = ClassifiedHarness.classify(example.sdl()).schema();
             schema.fields().values().forEach(f -> {
                 if (f instanceof ChildField c) observedShapes.add(c.sourceShape());

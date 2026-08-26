@@ -1,0 +1,17 @@
+type Film @table(name: "film") {
+  languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
+    @classified(source: OnlyChild, operations: [Join, Select], target: Single, targetShape: Column)
+  computedRating: String
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
+    @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
+}
+extend type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+
+{
+  film {
+    # Reached over a named foreign key.
+    languageName
+    # Computed in Java, not read from a column.
+    computedRating
+  }
+}

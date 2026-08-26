@@ -108,13 +108,13 @@ public final class QueryViewRenderer {
 
     /**
      * The test-only directive names to strip from rendered excerpts, derived from the parsed
-     * {@link ClassifiedDsl#PRELUDE}'s directive definitions (the
+     * {@link CorpusDocuments#prelude()}'s directive definitions (the
      * {@link no.sikt.graphitron.rewrite.schema.DeclaredDirectives} derivation shape) rather
      * than hand-maintained, so a new corpus directive cannot leak into the published triggers
      * page by construction.
      */
     private static final Set<String> INTERNAL_DIRECTIVES = Set.copyOf(
-        new graphql.schema.idl.SchemaParser().parse(ClassifiedDsl.PRELUDE)
+        new graphql.schema.idl.SchemaParser().parse(CorpusDocuments.prelude())
             .getDirectiveDefinitions().keySet());
 
     /**
@@ -123,7 +123,7 @@ public final class QueryViewRenderer {
      * vocabulary is not part of any example and would be noise on the page.
      */
     private static final Set<String> PRELUDE_TYPES = Set.copyOf(
-        new graphql.schema.idl.SchemaParser().parse(ClassifiedDsl.PRELUDE).types().keySet());
+        new graphql.schema.idl.SchemaParser().parse(CorpusDocuments.prelude()).types().keySet());
 
     /**
      * The output-field coordinates the {@code selection} touches, parent type to field names.
@@ -133,7 +133,7 @@ public final class QueryViewRenderer {
      * the fixture, would let the two halves of one example disagree about what the example is.
      */
     public static Map<String, Set<String>> touchedCoordinates(String fixtureSdl, String selection) {
-        String full = ClassifiedDsl.PRELUDE + "\n" + fixtureSdl;
+        String full = CorpusDocuments.prelude() + "\n" + fixtureSdl;
         TypeDefinitionRegistry registry = TestSchemaHelper.parseRegistryWithPrelude(full);
         GraphQLSchema schema = GraphitronSchemaBuilder.buildBundle(registry, TestConfiguration.testContext()).assembled();
 
@@ -145,7 +145,7 @@ public final class QueryViewRenderer {
 
     /** Renders the SDL closure the {@code selection} (a query/mutation or fragment document) touches over {@code fixtureSdl}. */
     public static String render(String fixtureSdl, String selection) {
-        String full = ClassifiedDsl.PRELUDE + "\n" + fixtureSdl;
+        String full = CorpusDocuments.prelude() + "\n" + fixtureSdl;
         TypeDefinitionRegistry registry = TestSchemaHelper.parseRegistryWithPrelude(full);
         GraphQLSchema schema = GraphitronSchemaBuilder.buildBundle(registry, TestConfiguration.testContext()).assembled();
 
@@ -339,7 +339,7 @@ public final class QueryViewRenderer {
      *
      * <p>graphql-java keeps a type's extensions beside its definition rather than in it. A fixture
      * contributes its roots with {@code extend type Query}, because the base schema in
-     * {@link ClassifiedDsl#PRELUDE} declares the root once for every fixture, so reading the
+     * {@link CorpusDocuments#prelude()} declares the root once for every fixture, so reading the
      * definition alone would render the base schema's {@code Query} and none of the fields the
      * example is about. Folding here also keeps {@code extend} out of the rendered block: the page
      * shows the reader the schema they would write, not how the corpus assembles it.

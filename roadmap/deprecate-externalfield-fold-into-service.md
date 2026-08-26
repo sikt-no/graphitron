@@ -356,7 +356,7 @@ javadoc to scope the invariant accordingly.
    structurally equal `ComputedField`, which is the fold's actual contract
    pinned at the tier that owns it. Where that coverage lands is an
    implementation choice between the `GraphitronSchemaBuilderTest` enum
-   table and the spec-by-example corpus: `ClassifiedCorpus` already carries
+   table and the spec-by-example corpus: the corpus already carries
    an `@externalField` classification example and is the source of truth
    `VariantCoverageTest` reads for output-field leaves, so the
    both-spellings-converge row plausibly belongs there and renders into the

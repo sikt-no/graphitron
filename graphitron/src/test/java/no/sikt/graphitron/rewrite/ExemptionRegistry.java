@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus;
+import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedHarness;
 import no.sikt.graphitron.rewrite.generators.GeneratorCoverageTest;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -228,7 +228,7 @@ public final class ExemptionRegistry {
      */
     private static Set<Class<?>> corpusDeclaredMemberArms() {
         var covered = new HashSet<Class<?>>();
-        for (var example : ClassifiedCorpus.examples()) {
+        for (var example : CorpusDocuments.documents()) {
             for (var fc : ClassifiedHarness.classify(example.sdl()).fields()) {
                 if (fc.expected().operations().equals(fc.actual().operations())) {
                     covered.addAll(fc.expected().operations());
@@ -245,7 +245,7 @@ public final class ExemptionRegistry {
      */
     private static Set<Class<?>> corpusObservedChildFieldLeaves() {
         var covered = new HashSet<Class<?>>();
-        for (var example : ClassifiedCorpus.examples()) {
+        for (var example : CorpusDocuments.documents()) {
             var schema = ClassifiedHarness.classify(example.sdl()).schema();
             schema.fields().values().forEach(f -> {
                 if (f instanceof ChildField c) {
@@ -270,7 +270,7 @@ public final class ExemptionRegistry {
         GeneratorCoverageTest.sealedLeaves(no.sikt.graphitron.command.ResultShape.class)
             .forEach(c -> resultArms.put(c.getSimpleName(), c));
         var covered = new HashSet<Class<?>>();
-        for (var example : ClassifiedCorpus.examples()) {
+        for (var example : CorpusDocuments.documents()) {
             var result = ClassifiedHarness.classify(example.sdl());
             var production = ClassifiedHarness.launcherProductions().get(example.id());
             for (var cc : ClassifiedHarness.commitCases(result, production)) {
@@ -289,7 +289,7 @@ public final class ExemptionRegistry {
     public static final Obligation VARIANT_COVERAGE_OUTPUT = new Obligation(
         "variant-coverage: output-field and type leaves vs the corpus walk",
         memo(ExemptionRegistry::corpusOwnedLeaves),
-        memo(ClassifiedCorpus::coveredLeaves),
+        memo(CorpusDocuments::coveredLeaves),
         CORPUS_NO_CASE_REQUIRED);
 
     public static final Obligation VARIANT_COVERAGE_INPUT = new Obligation(

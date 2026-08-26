@@ -1,0 +1,22 @@
+type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
+extend type Query {
+  node(id: ID!): Node @classified(source: Query, operations: [NodeResolve], target: Single, targetShape: Interface)
+  nodes(ids: [ID!]!): [Node] @classified(source: Query, operations: [NodeResolve], target: List, targetShape: Interface)
+  internalFilmNode(id: ID): Node @classified(source: Query, operations: [NodeResolve], target: Single, targetShape: Interface)
+}
+
+{
+  # Relay's own entry point: one global id at a time.
+  node(id: "1") {
+    id
+    ... on Film { title }
+  }
+  # The list form of the same signature.
+  nodes(ids: ["1", "2"]) {
+    id
+  }
+  # Not named `node`, and classified as one anyway: the signature is the trigger.
+  internalFilmNode(id: "1") {
+    id
+  }
+}

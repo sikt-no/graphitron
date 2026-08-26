@@ -1,0 +1,13 @@
+type Film @table(name: "film") { title: String }
+type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
+union FilmOrActor @classifiedType(as: UnionType) = Film | Actor
+type FilmActor @table(name: "film_actor") {
+  related: FilmOrActor @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Union)
+  relatedList: [FilmOrActor!]! @classified(source: OnlyChild, operations: [Select], target: List, targetShape: Union)
+}
+extend type Query {
+  filmActor: FilmActor @commits(source: AnchorTable, result: SingleRecord)
+  search: FilmOrActor @classified(source: Query, operations: [Select], target: Single, targetShape: Union)
+}
+
+{ filmActor { related { ... on Film { title } ... on Actor { firstName } } } }

@@ -129,7 +129,7 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("Film", "doesNotExist")).isInstanceOf(UnclassifiedField.class)),
 
         // The bare `enum return type -> ColumnBackedField` verdict lives in the spec-by-example
-        // corpus (`enum-column` ClassifiedCorpus example); enum-ness is a GraphQL-to-Java
+        // corpus (`enum-column` corpus document); enum-ness is a GraphQL-to-Java
         // conversion concern, not a classification one. This enum keeps the slot-asserting rows.
 
         UNRESOLVED_TABLE(
@@ -822,11 +822,11 @@ class GraphitronSchemaBuilderTest {
             }),
 
         // The bare `@splitQuery -> BatchedTableField` verdict lives in the spec-by-example corpus
-        // (`child-table` ClassifiedCorpus example, the minimal pair against the inline TableField).
+        // (`child-table` corpus document, the minimal pair against the inline TableField).
         // This enum keeps the slot-asserting split cases below.
 
         // The bare `@splitQuery + @lookupKey -> BatchedTableField` verdict lives in the
-        // spec-by-example corpus (`split-lookup` ClassifiedCorpus example). This enum keeps the
+        // spec-by-example corpus (`split-lookup` corpus document). This enum keeps the
         // slot-asserting / rejection cases below (IMPLICIT_REFERENCE_SPLIT_LOOKUP_TABLE,
         // SPLIT_LOOKUP_TABLE_SINGLE_CARDINALITY_REJECTED).
 
@@ -1379,7 +1379,7 @@ class GraphitronSchemaBuilderTest {
 
     enum NestingFieldCase implements ClassificationCase {
         // The bare `plain-object child on a @table parent -> NestingField` verdict (single and
-        // list-wrapped) lives in the spec-by-example corpus (`nesting` ClassifiedCorpus example).
+        // list-wrapped) lives in the spec-by-example corpus (`nesting` corpus document).
         // This enum keeps the slot-asserting nested-projection cases below (nestedFields() shape,
         // remap, roll-up, multi-level).
 
@@ -1749,8 +1749,8 @@ class GraphitronSchemaBuilderTest {
 
     enum ServiceFieldCase implements ClassificationCase {
         // The bare `@service on a @table parent returning a scalar -> ServiceRecordField` verdict
-        // lives in the spec-by-example corpus (Film.rating in the `service` ClassifiedCorpus
-        // example). This enum keeps the slot-asserting service cases below.
+        // lives in the spec-by-example corpus (Film.rating in the `service` corpus
+        // document). This enum keeps the slot-asserting service cases below.
 
         TABLE_TYPE_RETURN(
             "@service on @table parent returning another @table type → ServiceTableField",
@@ -2267,7 +2267,7 @@ class GraphitronSchemaBuilderTest {
         SERVICE_FIELD_ON_RESULT_TYPE(
             "class-backed parent + @service whose declared batch key the parent cannot produce → AUTHOR_ERROR",
             // The supported half of this coordinate (a parent that can produce the key) is taught by
-            // the `service-child-class-backed-parent` ClassifiedCorpus example; this row keeps the
+            // the `service-child-class-backed-parent` corpus document; this row keeps the
             // surviving rejection, which is about the parent's inability to produce the record the
             // Sources element type names rather than about the coordinate being unsupported.
             """
@@ -2290,7 +2290,7 @@ class GraphitronSchemaBuilderTest {
 
         // The bare `record-backed parent + @table return (no @lookupKey) -> BatchedTableField`
         // verdict lives in the spec-by-example corpus (FilmDetails.language in the `record-table`
-        // ClassifiedCorpus example). This enum keeps the slot-asserting record-table cases below
+        // corpus document). This enum keeps the slot-asserting record-table cases below
         // (FK inference, single cardinality, @splitQuery warning, @sourceRow lifters).
 
         RECORD_LOOKUP_TABLE_FIELD(
@@ -2358,8 +2358,8 @@ class GraphitronSchemaBuilderTest {
         },
 
         // The bare `record-backed parent + non-table object return -> RecordReadField` verdict
-        // lives in the spec-by-example corpus (FilmDetails.stats in the `mapping` ClassifiedCorpus
-        // example). This enum keeps the slot-asserting record cases above.
+        // lives in the spec-by-example corpus (FilmDetails.stats in the `mapping` corpus
+        // document). This enum keeps the slot-asserting record cases above.
 
         RECORD_TABLE_FIELD_SINGLE_CARDINALITY(
             "record-backed parent + @table return + single cardinality → BatchedTableField (R61 lifted Invariant #10)",
@@ -2384,7 +2384,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         // The bare `@service + @table return -> ServiceTableField` verdict lives in the
-        // spec-by-example corpus (Film.language in the `service` ClassifiedCorpus example). This
+        // spec-by-example corpus (Film.language in the `service` corpus document). This
         // enum keeps the slot-asserting service cases above (e.g. TABLE_TYPE_RETURN, the
         // @reference origin-defaulting cases).
 
@@ -3363,7 +3363,7 @@ class GraphitronSchemaBuilderTest {
     // A result type's backing comes from the producing @service field's reflected return
     // type, or, for a DML carrier, a DML RETURNING payload, never the @record directive.
     // The bare backing verdicts (PojoResultType.Backed, JavaRecordType, JooqTableRecordType) live
-    // in the spec-by-example corpus (`result-backing` ClassifiedCorpus example, confirmed by
+    // in the spec-by-example corpus (`result-backing` corpus document, confirmed by
     // VariantCoverageTest); the resultTypeBackingProjectionsCarryClassNameAndTablePayloads
     // projection test below keeps the backing-class / table-payload detail under test.
 
@@ -5486,7 +5486,7 @@ class GraphitronSchemaBuilderTest {
 
     enum TypeClassificationCase implements ClassificationCase {
         // The bare `@table -> TableType` verdict lives in the spec-by-example corpus (the
-        // `catalog` ClassifiedCorpus example). This enum keeps
+        // `catalog` corpus document). This enum keeps
         // TABLE_NAME_DEFAULTS_TO_LOWERCASE_TYPE_NAME (which also asserts the resolved table())
         // and the projection test below.
         TABLE_NAME_DEFAULTS_TO_LOWERCASE_TYPE_NAME(
@@ -5514,7 +5514,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         // The bare `Query / Mutation root -> RootType` verdict lives in the spec-by-example
-        // corpus (the `catalog` ClassifiedCorpus example's Query). This enum keeps the
+        // corpus (the `catalog` corpus document's Query). This enum keeps the
         // typeClassificationProjectionsCarryTableNodeAndRootShapes projection test below.
 
         ARG_MAPPING_INERT_ON_ENUM(
@@ -6021,7 +6021,7 @@ class GraphitronSchemaBuilderTest {
                 .contains("message")),
 
         // The `@error with a field beyond path/message -> ErrorType` admission nuance lives in
-        // the spec-by-example corpus (the `error-type` ClassifiedCorpus example's ExtraFieldError).
+        // the spec-by-example corpus (the `error-type` corpus document's ExtraFieldError).
         // This enum keeps the slot-asserting ErrorTypeCase rows and the projection test below.
 
         REJECT_WRONG_PATH_SHAPE(
@@ -6132,7 +6132,7 @@ class GraphitronSchemaBuilderTest {
 
         // The `@error co-located with @record -> ErrorType` precedence rule (@record is
         // deprecated and silently ignored on an @error type; @error wins) lives in the
-        // spec-by-example corpus (the `error-type` ClassifiedCorpus example's RecordIgnoredError).
+        // spec-by-example corpus (the `error-type` corpus document's RecordIgnoredError).
         // This enum keeps the slot-asserting ErrorTypeCase rows and the projection test below.
 
         final String sdl;
@@ -6154,7 +6154,7 @@ class GraphitronSchemaBuilderTest {
     // ===== Fields on @error parents =====
 
     // The `@error parent path/message -> RecordReadField (DefaultRead)` verdict lives in the
-    // spec-by-example corpus (the `error-field` ClassifiedCorpus example, MyError.path /
+    // spec-by-example corpus (the `error-field` corpus document, MyError.path /
     // MyError.message); both fields resolve off the developer-supplied @error class via
     // graphql-java's default PropertyDataFetcher. No ErrorFieldCase enum exists here; the
     // RecordReadField leaf is also covered by the slot-asserting record cases above.
@@ -6596,8 +6596,8 @@ class GraphitronSchemaBuilderTest {
         },
 
         // The bare `root @service into a non-table record-backed type -> QueryServiceRecordField`
-        // verdict lives in the spec-by-example corpus (`query-service-record` ClassifiedCorpus
-        // example, Query.filmDetails).
+        // verdict lives in the spec-by-example corpus (`query-service-record` corpus
+        // document, Query.filmDetails).
 
         // The bare DML write-then-project verdicts live in the spec-by-example corpus: INSERT ->
         // DmlTableField (`dml` example, createFilm) and UPDATE ->

@@ -1,0 +1,27 @@
+enum Sprak {
+  nn @field(name: "nno")
+  nb @field(name: "nob")
+}
+type TranslatedTexts @classifiedType(as: NestingType) {
+  nn: String
+  nb: String
+}
+type Film @table(name: "film") {
+  titleTexts: TranslatedTexts
+    @reference(path: [{table: "film_translation"}])
+    @pivot(on: "lang_code", value: "title_txt", vocabulary: "Sprak")
+    @classified(source: OnlyChild, operations: [Join, Pivot], target: Single, targetShape: Record)
+  titleTextsSplit: TranslatedTexts @splitQuery
+    @reference(path: [{table: "film_translation"}])
+    @pivot(on: "lang_code", value: "title_txt", vocabulary: "Sprak")
+    @classified(source: OnlyChild, operations: [Join, Pivot], target: Single, targetShape: Record)
+    @commits(source: PivotAggregate, result: SingleRecord)
+}
+extend type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+
+{
+  film {
+    # One row of translations, pivoted out of a per-language table.
+    titleTexts { nn nb }
+  }
+}

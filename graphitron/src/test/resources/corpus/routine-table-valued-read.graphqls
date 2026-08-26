@@ -1,0 +1,19 @@
+type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
+  organisasjonskode: Int
+  rollekode: String
+}
+extend type Query {
+  tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+    @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+    @defaultOrder(fields: [{name: "organisasjonskode"}, {name: "rollekode"}])
+    @classified(source: Query, operations: [OrderBy, Select], target: List, targetShape: Table)
+    @commits(source: RoutineChain, result: RecordList)
+}
+
+{
+  # A table-valued database routine, read like a table.
+  tilganger(env: "test", serviceId: "svc", feideId: "user@example.org") {
+    organisasjonskode
+    rollekode
+  }
+}

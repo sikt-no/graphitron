@@ -10,7 +10,7 @@ import graphql.language.Type;
 import graphql.language.TypeDefinition;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus;
+import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedHarness;
 import no.sikt.graphitron.rewrite.generators.GeneratorCoverageTest;
 import no.sikt.graphitron.rewrite.model.OutputField;
@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code One} / {@code Many} enum: the {@link Source} arm is the field's arrival cardinality and the
  * {@link Target} arm is its output cardinality. This test pins the two-position algebra the
  * {@code source} and {@code target} axes encode (the wrapper algebra), walking every field the
- * spec-by-example corpus demonstrates ({@link ClassifiedCorpus}), the same corpus-mirror shape
+ * spec-by-example corpus demonstrates ({@link CorpusDocuments}), the same corpus-mirror shape
  * {@link SourceShapeProjectionTest} uses for the source-shape projection.
  *
  * <p>Two halves, each cross-checked against an <em>independent</em> source of truth rather than against
@@ -83,7 +83,7 @@ class WrapperAlgebraTest {
     @Test
     void targetWrapperEqualsTheFieldsOwnOutputWrapper() {
         var observedWrappers = new HashSet<Class<?>>();
-        for (var example : ClassifiedCorpus.examples()) {
+        for (var example : CorpusDocuments.documents()) {
             var registry = TestSchemaHelper.parseRegistryWithPrelude(example.sdl());
             var schema = ClassifiedHarness.classify(example.sdl()).schema();
             schema.fields().forEach((coord, field) -> {
@@ -124,7 +124,7 @@ class WrapperAlgebraTest {
     @Test
     void connectionTargetIsAlwaysSingleWrapped() {
         var sawConnection = false;
-        for (var example : ClassifiedCorpus.examples()) {
+        for (var example : CorpusDocuments.documents()) {
             var schema = ClassifiedHarness.classify(example.sdl()).schema();
             for (var entry : schema.fields().entrySet()) {
                 if (!(entry.getValue() instanceof OutputField out)) continue;
@@ -146,7 +146,7 @@ class WrapperAlgebraTest {
     @Test
     void sourceWrapperIsTheFoldOfAncestorTargetWrappers() {
         var observedSources = new HashSet<Class<?>>();
-        for (var example : ClassifiedCorpus.examples()) {
+        for (var example : CorpusDocuments.documents()) {
             var registry = TestSchemaHelper.parseRegistryWithPrelude(example.sdl());
             var roots = rootOperationTypeNames(registry);
             var schema = ClassifiedHarness.classify(example.sdl()).schema();

@@ -1,0 +1,23 @@
+interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") @classifiedType(as: TableInterfaceType) {
+  contentId: Int! @field(name: "CONTENT_ID")
+  title: String! @field(name: "TITLE")
+}
+type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+  contentId: Int! @field(name: "CONTENT_ID")
+  title: String! @field(name: "TITLE")
+}
+type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+  contentId: Int! @field(name: "CONTENT_ID")
+  title: String! @field(name: "TITLE")
+}
+input ContentInput {
+  title: String! @field(name: "TITLE")
+  contentType: String! @field(name: "CONTENT_TYPE")
+}
+extend type Query { content: Content @commits(source: DiscriminatedTable, result: SingleRecord) }
+type Mutation {
+  createContent(in: ContentInput!): Content
+    @mutation(typeName: INSERT, table: "content")
+    @classified(source: Mutation, operations: [Insert, Reentry], target: Single, targetShape: Table)
+    @commits(source: DiscriminatedReentry, result: SingleRecord)
+}

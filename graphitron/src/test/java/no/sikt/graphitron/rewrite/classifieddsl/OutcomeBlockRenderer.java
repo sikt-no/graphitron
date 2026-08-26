@@ -8,7 +8,7 @@ import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
-import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus.Example;
+import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments.Document;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 
 import java.io.IOException;
@@ -25,11 +25,11 @@ import java.util.TreeSet;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
 
 /**
- * Renders the outcome block beside a doc example's SDL: what the pipeline makes of the coordinates
- * that example shows.
+ * Renders the outcome block beside a worked example's SDL: what the pipeline makes of the coordinates
+ * that document shows.
  *
  * <p><b>What it is for.</b> {@link ClassifiedDocTest} already holds the SDL half of every worked
- * example against the corpus, so a schema pattern on the page cannot drift. The other half, what
+ * document against the corpus, so a schema pattern on the page cannot drift. The other half, what
  * graphitron does with that pattern, was ungated prose beside it. This renders that half from a
  * real run so {@link OutcomeBlockDocTest} can hold it the same way.
  *
@@ -49,7 +49,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
  * corpus: a fixture earns its place by pinning a verdict, not by producing output. Some pin a
  * verdict on a pattern the generator then rejects, so there are no emitted names to render. Rather
  * than omit the column and leave a reader to guess, such a block renders the verdicts and states
- * that the pattern generates nothing. "No emitted names" becomes a visible fact about the example
+ * that the pattern generates nothing. "No emitted names" becomes a visible fact about the document
  * instead of a hole in the table.
  *
  * <p><b>Clean against the oracle rule.</b> The block compares this run's own output against a
@@ -71,16 +71,16 @@ final class OutcomeBlockRenderer {
 
     /**
      * What one fixture produced. {@code generated} is false when the generator rejected the
-     * pattern, which is a fact about the example rather than a failure of this renderer.
+     * pattern, which is a fact about the document rather than a failure of this renderer.
      */
     record Run(List<Outcome> outcomes, boolean generated) {}
 
     /**
-     * The rendered block for one doc example, ready to paste under its SDL. Needs a directory to
+     * The rendered block for one document, ready to paste under its SDL. Needs a directory to
      * capture and generate in; callers pass a JUnit temp directory.
      */
-    static String render(Example example, Path workDir) throws IOException {
-        Run run = run(example, workDir);
+    static String render(Document document, Path workDir) throws IOException {
+        Run run = run(document, workDir);
 
         StringBuilder out = new StringBuilder();
         // The marker is part of the block, so it lands on the page and the doc-symbol scan skips
@@ -117,14 +117,14 @@ final class OutcomeBlockRenderer {
     }
 
     /**
-     * One row per coordinate the example's projection query touches, in a stable order, plus
+     * One row per coordinate the document's projection query touches, in a stable order, plus
      * whether the fixture generated at all.
      */
-    static Run run(Example example, Path workDir) throws IOException {
+    static Run run(Document document, Path workDir) throws IOException {
         Map<String, Set<String>> touched =
-            QueryViewRenderer.touchedCoordinates(example.sdl(), example.query());
-        Map<String, String> verdicts = verdicts(example, workDir.resolve("store"));
-        Optional<Map<String, List<String>>> emitted = emitted(example, touched, workDir.resolve("generate"));
+            QueryViewRenderer.touchedCoordinates(document.sdl(), document.projection());
+        Map<String, String> verdicts = verdicts(document, workDir.resolve("store"));
+        Optional<Map<String, List<String>>> emitted = emitted(document, touched, workDir.resolve("generate"));
 
         List<Outcome> outcomes = new ArrayList<>();
         for (String parent : new TreeSet<>(touched.keySet())) {
@@ -145,10 +145,10 @@ final class OutcomeBlockRenderer {
      * that produced it. Captured through the standard catalog, which is what the corpus fixtures
      * classify against, so a column match resolves the way it does in a real run.
      */
-    private static Map<String, String> verdicts(Example example, Path directory) throws IOException {
+    private static Map<String, String> verdicts(Document document, Path directory) throws IOException {
         Files.createDirectories(directory);
         RewriteContext ctx = TestConfiguration.testContext();
-        var store = CapturedStore.ofCatalog(directory, ClassifiedDsl.PRELUDE + "\n" + example.sdl(),
+        var store = CapturedStore.ofCatalog(directory, CorpusDocuments.prelude() + "\n" + document.sdl(),
             new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
 
         Map<String, String> verdicts = new LinkedHashMap<>();
@@ -175,10 +175,10 @@ final class OutcomeBlockRenderer {
      * keeps the block clear of the command tier entirely, which is the first of the two refusals.
      */
     private static Optional<Map<String, List<String>>> emitted(
-            Example example, Map<String, Set<String>> touched, Path directory) throws IOException {
+            Document document, Map<String, Set<String>> touched, Path directory) throws IOException {
         Files.createDirectories(directory);
         Path schemaFile = directory.resolve("schema.graphqls");
-        Files.writeString(schemaFile, ClassifiedDsl.PRELUDE + "\n" + example.sdl());
+        Files.writeString(schemaFile, CorpusDocuments.prelude() + "\n" + document.sdl());
         RewriteContext ctx = new RewriteContext(
             List.of(SchemaInput.file(schemaFile)),
             directory, "outcome-block", directory.resolve("generated-sources"),

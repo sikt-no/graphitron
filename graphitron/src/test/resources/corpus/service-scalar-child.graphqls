@@ -1,0 +1,16 @@
+type Language @table(name: "language") {
+  name: String
+  rank: Int @service(
+    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRankMapped"})
+    @classified(source: OnlyChild, operations: [ServiceCall], target: Single, targetShape: Record)
+    @commits(source: ServiceCall, result: LoaderDelegated)
+}
+extend type Query { language: Language @commits(source: AnchorTable, result: SingleRecord) }
+
+{
+  language {
+    name
+    # A scalar a service produces; no SQL of its own.
+    rank
+  }
+}

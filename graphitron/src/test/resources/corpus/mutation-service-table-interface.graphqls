@@ -1,0 +1,8 @@
+interface MediaItem @table(name: "film") @discriminate(on: "text_rating") @classifiedType(as: TableInterfaceType) { title: String }
+type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
+extend type Query { film: FilmItem @commits(source: AnchorTable, result: SingleRecord) }
+type Mutation {
+  mediaSearch: [MediaItem]
+    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
+    @classified(source: Mutation, operations: [ServiceCall], target: List, targetShape: Interface)
+}

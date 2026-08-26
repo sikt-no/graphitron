@@ -1,0 +1,5 @@
+type MyError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+  path: [String!]! @classified(source: OnlyChild, operations: [], target: List, targetShape: Field, sourceShape: Record)
+  message: String! @classified(source: OnlyChild, operations: [], target: Single, targetShape: Field, sourceShape: Record)
+}
+extend type Query { err: MyError }

@@ -1,0 +1,29 @@
+type Film @table(name: "film") @classifiedType(as: TableType) {
+  title: String @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
+}
+type Actor @table(name: "actor") @classifiedType(as: TableType) {
+  firstName: String @field(name: "first_name") @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
+}
+type CreateFilmsError @error(handlers: [{handler: DATABASE}]) {
+  path: [String!]!
+  message: String!
+}
+union CreateFilmsErr = CreateFilmsError
+type CreateFilmsResult @classifiedType(as: JavaRecordType) {
+  film: Film! @field(name: "filmRecord")
+    @classified(source: Child, operations: [Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
+    @commits(source: CorrelatedChain, result: SingleRecord)
+  actors: [Actor] @field(name: "actorRecords")
+    @classified(source: Child, operations: [OrderBy, Reentry, Select], target: List, targetShape: Table, sourceShape: Record)
+    @commits(source: CorrelatedChain, result: SingleRecord)
+}
+type CreateFilmsPayload @classifiedType(as: JavaRecordType) {
+  results: [CreateFilmsResult]
+    @classified(source: OnlyChild, operations: [], target: List, targetShape: Record, sourceShape: Record)
+  errors: [CreateFilmsErr]
+}
+type Mutation {
+  createFilms: CreateFilmsPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "createFilmsWithActors"})
+    @classified(source: Mutation, operations: [ServiceCall], target: Single, targetShape: Record)
+}

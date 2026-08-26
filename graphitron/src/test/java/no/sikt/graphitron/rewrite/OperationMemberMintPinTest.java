@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.LaunchSource;
-import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus;
+import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedHarness;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
@@ -119,7 +119,7 @@ class OperationMemberMintPinTest {
         int coordinates = 0;
 
         var schemas = new LinkedHashMap<String, GraphitronSchema>();
-        for (var example : ClassifiedCorpus.examples()) {
+        for (var example : CorpusDocuments.documents()) {
             schemas.put(example.id(), ClassifiedHarness.classify(example.sdl()).schema());
         }
         int fixture = 0;
@@ -237,7 +237,7 @@ class OperationMemberMintPinTest {
         var reentryLaunchers = new TreeSet<String>();
         int reentryCapableCoordinates = 0;
         var productions = ClassifiedHarness.launcherProductions();
-        for (var example : ClassifiedCorpus.examples()) {
+        for (var example : CorpusDocuments.documents()) {
             // The corpus deliberately carries shapes the launcher producer rejects (recorded
             // mirror gaps); the harness's guarded production names them, and the agreement's
             // domain is the producible examples.

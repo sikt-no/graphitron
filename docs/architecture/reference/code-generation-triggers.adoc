@@ -181,7 +181,7 @@ xref:../explanation/pipeline-overview.adoc[Pipeline overview].
 ====
 
 The worked examples in this section render directly from the classification test corpus
-(`ClassifiedCorpus` in `graphitron`'s test sources): the SDL shown is the live fixture the classifier
+(`graphitron/src/test/resources/corpus`, one GraphQL document per example): the SDL shown is the live fixture the classifier
 runs against, projected through a documented query by the query-as-view renderer, with the test-only
 `@classified` / `@classifiedType` assertion directives stripped. The `ClassifiedDocTest` build guard
 fails if this page ever drifts from what the corpus renders, so a displayed example is always one the

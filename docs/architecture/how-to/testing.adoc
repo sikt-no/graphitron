@@ -90,6 +90,13 @@ Two shapes:
 *Classification truth tables:* `GraphitronSchemaBuilderTest`.
 Each variant family is a `// ===== VariantName =====` section with an enum where each constant is one `(description, SDL, assertion)` triple; one parameterised test iterates the table.
 
+*The spec-by-example corpus:* `graphitron/src/test/resources/corpus/`, one GraphQL document per example, loaded by `CorpusDocuments`.
+This is the tree's only folder-of-documents fixture set, and the only fixture home a test reads from the source tree rather than the classpath, so what is asserted is exactly what an author edits.
+A document carries its annotated fixture, its prose as SDL descriptions, and optionally a projection operation as its last definition; the loader splits the file at that line, hands the type-system half to classification and the operation to the documentation renderer.
+Every reader of the corpus goes through the loader (`ClassifiedDslTest`, `VariantCoverageTest`, the `derive/*ShadowTest` sweeps, the two documentation drift guards), and nothing else lists the directory.
+`CorpusDocumentsTest` carries the floors that keep a folder from passing while empty: a ratcheted document count, agreement between the loader's admissions and an independent listing, and a document nothing runs failing rather than being skipped.
+Adding an example is one new file; a `.java` edit means the assertion vocabulary changed, which is a prelude edit (`_prelude.graphqls`), not a container one.
+
 *Deeper SDL → TypeSpec / variant-shape tests:* `*PipelineTest` files: `NodeIdPipelineTest`, `BatchedTableFieldPipelineTest`, `TableFieldPipelineTest`, `LookupPipelineTest`, `NestingFieldPipelineTest`, `ServiceRootFetcherPipelineTest`, `TaggedInputsPipelineTest`, `StubbedVariantPipelineTest`; and in `generators/`: `FetcherPipelineTest`, `TablePipelineTest`.
 Build a schema with `TestSchemaHelper.buildSchema(sdl)`, assert structural shape on the resulting variant or generated `TypeSpec`.
 Banned: code-string body matching.

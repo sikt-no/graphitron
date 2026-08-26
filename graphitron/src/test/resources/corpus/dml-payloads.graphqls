@@ -1,0 +1,28 @@
+type Film @table(name: "film") { title: String }
+type FilmInsertBulkPayload { films: [Film!] @commits(source: CorrelatedChain, result: SingleRecord) }
+type FilmUpdatePayload {
+  film: Film
+    @classified(source: OnlyChild, operations: [Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
+    @commits(source: CorrelatedChain, result: SingleRecord)
+}
+type FilmUpdateBulkPayload { films: [Film!] @commits(source: CorrelatedChain, result: SingleRecord) }
+input FilmCreateInput { title: String }
+input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
+type Mutation {
+  createFilmsPayload(in: [FilmCreateInput!]!): FilmInsertBulkPayload
+    @mutation(typeName: INSERT)
+    @classified(source: Mutation, operations: [Insert], target: Single, targetShape: Record)
+  updateFilmPayload(in: FilmUpdateInput!): FilmUpdatePayload
+    @mutation(typeName: UPDATE)
+    @classified(source: Mutation, operations: [Update], target: Single, targetShape: Record)
+  updateFilmsPayload(in: [FilmUpdateInput!]!): FilmUpdateBulkPayload
+    @mutation(typeName: UPDATE)
+    @classified(source: Mutation, operations: [Update], target: Single, targetShape: Record)
+}
+
+mutation {
+  updateFilmPayload {
+    # The data field owns the read-back, a new keyed query off the written record's keys.
+    film { title }
+  }
+}

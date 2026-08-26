@@ -336,7 +336,7 @@ projection descriptor-erased.
 Migrated: the one-base-many-views layering, code generation as the narrowest view, and the re-sourcing
 invariant live in `docs/architecture/explanation/fact-model.adoc`, section "One base, many views". What stays here is
 the test-side obligation not yet discharged: the `@classified` corpus (`ClassifiedHarness`,
-`ClassifiedCorpus.coveredLeaves()`, `VariantCoverageTest`) still builds its verdict from the leaf zoo, so
+`CorpusDocuments.coveredLeaves()`, `VariantCoverageTest`) still builds its verdict from the leaf zoo, so
 the harness is in scope for the re-sourcing and its coverage net needs restating once leaves are not the
 unit; widening the corpus directive to the fact set is filed separately.
 

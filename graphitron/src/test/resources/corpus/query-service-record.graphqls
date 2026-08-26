@@ -1,0 +1,6 @@
+type FilmDetails { title: String }
+extend type Query {
+  filmDetails: FilmDetails
+    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getDetails"})
+    @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Record)
+}

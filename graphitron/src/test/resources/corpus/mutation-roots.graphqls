@@ -1,0 +1,29 @@
+type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
+type FilmPayload { film: Film @classified(source: OnlyChild, operations: [Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
+    @commits(source: CorrelatedChain, result: SingleRecord) }
+input FilmKeyInput { filmId: Int! @field(name: "film_id") }
+input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
+input FilmTitleInput { title: String @field(name: "title") }
+input FilmCreateInput { title: String }
+type Mutation {
+  updateFilm(in: FilmUpdateInput!): Film
+    @mutation(typeName: UPDATE)
+    @classified(source: Mutation, operations: [Reentry, Update], target: Single, targetShape: Table)
+    @commits(source: ProjectedReentry, result: SingleRecord)
+  deleteFilm(in: FilmKeyInput!): ID
+    @mutation(typeName: DELETE, table: "film")
+    @classified(source: Mutation, operations: [Delete], target: Single, targetShape: Column)
+  deleteFilmsBroadcast(in: FilmTitleInput!): ID
+    @mutation(typeName: DELETE, multiRow: true, table: "film")
+    @classified(source: Mutation, operations: [Delete], target: Single, targetShape: Column)
+  createFilmPayload(in: FilmCreateInput!): FilmPayload
+    @mutation(typeName: INSERT)
+    @classified(source: Mutation, operations: [Insert], target: Single, targetShape: Record)
+}
+
+mutation {
+  # Writes the row, then projects it back through the catalog.
+  updateFilm { title }
+  # Cannot project a row that is gone; hands back the deleted row's id.
+  deleteFilm
+}

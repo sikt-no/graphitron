@@ -18,7 +18,7 @@ Non-gating residue recorded during R435, none of it blocking the shipped surface
   `DSL.val(v, dataType)`; jOOQ's TVF codegen exposes no `Parameter` constants to reference.
   Shares the enum/ID-as-String coercion residue with the R300 root slice. Lift the parameter
   `DataType` onto `RoutineRef.ArgBinding` at the parse boundary when either site needs it.
-* **`ClassifiedCorpus` entries** for the chain shapes: the R435 fixtures live in
+* **Corpus documents** for the chain shapes: the R435 fixtures live in
   `GraphitronSchemaBuilderTest`'s R435 block; authoring corpus examples for them per the
   classified-corpus loop retires whatever in that block is pure verdict and leaves the slot
   assertions where they are.

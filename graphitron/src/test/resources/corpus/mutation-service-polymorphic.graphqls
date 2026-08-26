@@ -1,0 +1,9 @@
+interface Searchable @classifiedType(as: InterfaceType) { name: String }
+type Film implements Searchable @table(name: "film") { name: String @field(name: "TITLE") }
+type Actor implements Searchable @table(name: "actor") { name: String @field(name: "FIRST_NAME") }
+extend type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+type Mutation {
+  doSearch: [Searchable]
+    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
+    @classified(source: Mutation, operations: [ServiceCall], target: List, targetShape: Interface)
+}

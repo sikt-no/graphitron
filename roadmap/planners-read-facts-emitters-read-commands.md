@@ -3132,7 +3132,7 @@ read against:
 * **The completeness gates re-key before the last leaf reader moves, not with the deletion
   commit.** Output identity is only as strong as the corpus, and the corpus's completeness is
   today enforced by vocabularies this item deletes: `VariantCoverageTest` covers
-  `ClassifiedCorpus.coveredLeaves()` against the sealed leaf sets, and `GeneratorCoverageTest`'s
+  `CorpusDocuments.coveredLeaves()` against the sealed leaf sets, and `GeneratorCoverageTest`'s
   dispatch partition is closed by the compiler because the vocabulary is sealed. Rows of a command
   relation are closed by nothing, so after the deletion an unhandled shape would simply produce no
   command row, which output identity cannot see and nothing would refuse. The

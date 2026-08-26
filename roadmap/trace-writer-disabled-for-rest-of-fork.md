@@ -246,7 +246,7 @@ recorded above: this item deliberately does not touch the row key.
   family or a successor relation. R333's restatement owns both.
 * The `@classified` corpus directives. Their grain has already migrated: the operation-member,
   synthesis and launcher arms are all stated against relation rows rather than against a welded leaf
-  (see `ClassifiedDsl`'s own javadoc), and the leaf-keyed residue is `@classifiedType(as:
+  (see the corpus prelude document), and the leaf-keyed residue is `@classifiedType(as:
   TypeVerdict!)`, whose enum is drift-checked against the live `GraphitronType` leaf set. That residue
   and the corpus-side coverage net are one question, and it belongs to R333's restatement.
 * R133's flip of the `leaf-coverage` profile to opt-in. This item corrects that profile's comment; it

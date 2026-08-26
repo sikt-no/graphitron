@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.schema.FieldCoordinates;
-import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus;
+import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedHarness;
 import no.sikt.graphitron.rewrite.model.DeliveryFact;
 import no.sikt.graphitron.rewrite.model.OutputField;
@@ -74,7 +74,7 @@ class DeliveryFactPinTest {
     @Test
     void computedDeliveryEqualsTheLeafCrosswalkOverTheCorpusAndFixture() {
         var schemas = new LinkedHashMap<String, GraphitronSchema>();
-        for (var example : ClassifiedCorpus.examples()) {
+        for (var example : CorpusDocuments.documents()) {
             schemas.put(example.id(), ClassifiedHarness.classify(example.sdl()).schema());
         }
         schemas.put("marker-fixture", TestSchemaHelper.buildSchema(MARKER_FIXTURE));

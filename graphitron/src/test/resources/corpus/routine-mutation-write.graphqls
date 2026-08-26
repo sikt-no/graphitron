@@ -1,0 +1,10 @@
+type Rental @table(name: "rental") {
+  rentalId: Int! @field(name: "rental_id")
+}
+extend type Query { rental: Rental @commits(source: AnchorTable, result: SingleRecord) }
+type Mutation {
+  rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+    @classified(source: Mutation, operations: [RoutineWrite], target: List, targetShape: Table)
+}

@@ -1,0 +1,12 @@
+type Staff @table(name: "staff") {
+  store: Store @reference(path: [{key: "staff_store_id_fkey"}])
+    @classified(source: Child, operations: [Join, Select], target: Single, targetShape: Table)
+}
+type Store @table(name: "store") {
+  manager: Staff @reference(path: [{key: "store_manager_staff_id_fkey"}])
+    @classified(source: Child, operations: [Join, Select], target: Single, targetShape: Table)
+}
+extend type Query {
+  store: Store @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
+    @commits(source: AnchorTable, result: SingleRecord)
+}

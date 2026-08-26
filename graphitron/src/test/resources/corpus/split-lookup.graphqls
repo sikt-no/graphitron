@@ -1,0 +1,9 @@
+type Customer @table(name: "customer") { firstName: String @field(name: "FIRST_NAME") }
+type Store @table(name: "store") {
+  customers(customer_id: ID! @lookupKey): [Customer!]! @splitQuery
+    @classified(source: OnlyChild, operations: [Join, Lookup, OrderBy, Select], target: List, targetShape: Table)
+    @commits(source: CorrelatedLookupChain, result: RecordList)
+}
+extend type Query { store: Store @commits(source: AnchorTable, result: SingleRecord) }
+
+{ store { customers(customer_id: "1") { firstName } } }

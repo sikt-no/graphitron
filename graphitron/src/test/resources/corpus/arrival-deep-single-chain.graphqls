@@ -1,0 +1,11 @@
+type Language @table(name: "language") {
+  name: String @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
+}
+type Film @table(name: "film") {
+  language: Language @reference(path: [{key: "film_language_id_fkey"}])
+    @classified(source: OnlyChild, operations: [Join, Select], target: Single, targetShape: Table)
+}
+extend type Query {
+  film: Film @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
+    @commits(source: AnchorTable, result: SingleRecord)
+}

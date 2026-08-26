@@ -25,7 +25,7 @@ a property it does not have.
 The same root-contract language sits on two test-side descriptions of the same cell:
 `GraphitronSchemaBuilderTest`'s `AS_CONNECTION_LOOKUP_REJECTED` prose (which also asserts
 `.contains("positional correspondence")`, so the message and the assertion move together) and
-`ClassifiedCorpus`'s `split-lookup` comment, which opens "a list child whose `@lookupKey` argument
+the `split-lookup` corpus document's prose, which opens "a list child whose `@lookupKey` argument
 establishes a positional input-list <-> output-list correspondence".
 
 Predates the positional-contract work and was left alone by it deliberately: that item's blocking

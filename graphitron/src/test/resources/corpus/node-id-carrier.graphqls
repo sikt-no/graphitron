@@ -1,0 +1,14 @@
+type Film implements Node @node @table(name: "film") { id: ID! @nodeId  title: String }
+type FilmErr @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+  path: [String!]!
+  message: String!
+}
+union DeleteFilmsError = FilmErr
+type FilmIdsPayload {
+  filmIds: [ID] @nodeId(typeName: "Film") @classified(source: OnlyChild, operations: [], target: List, targetShape: Column, sourceShape: Record)
+  errors: [DeleteFilmsError]
+}
+type Mutation {
+  deleteFilms: FilmIdsPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsAsList"})
+}

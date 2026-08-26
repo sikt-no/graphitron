@@ -1,0 +1,22 @@
+interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+  contentId: Int! @field(name: "CONTENT_ID")
+}
+type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+  contentId: Int! @field(name: "CONTENT_ID")
+  rating: String @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
+    @classified(source: OnlyChild, operations: [Join, Select], target: Single, targetShape: Column)
+}
+type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+  contentId: Int! @field(name: "CONTENT_ID")
+}
+extend type Query { content: Content @commits(source: DiscriminatedTable, result: SingleRecord) }
+
+{
+  content {
+    contentId
+    ... on FilmContent {
+      # Reached over a foreign key from one participant only.
+      rating
+    }
+  }
+}

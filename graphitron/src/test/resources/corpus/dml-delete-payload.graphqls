@@ -1,0 +1,16 @@
+type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeId }
+input FilmActorRef { id: ID! @nodeId }
+type DeletedFilmActorPayload {
+  deletedId: ID @classified(source: OnlyChild, operations: [], target: Single, targetShape: Column, sourceShape: Record)
+}
+type DeletedFilmActorsPayload {
+  deletedIds: [ID!] @classified(source: OnlyChild, operations: [], target: List, targetShape: Column, sourceShape: Record)
+}
+type Mutation {
+  deleteFilmActor(in: FilmActorRef!): DeletedFilmActorPayload
+    @mutation(typeName: DELETE, table: "film_actor")
+    @classified(source: Mutation, operations: [Delete], target: Single, targetShape: Record)
+  deleteFilmActors(in: [FilmActorRef!]!): DeletedFilmActorsPayload
+    @mutation(typeName: DELETE, table: "film_actor")
+    @classified(source: Mutation, operations: [Delete], target: Single, targetShape: Record)
+}

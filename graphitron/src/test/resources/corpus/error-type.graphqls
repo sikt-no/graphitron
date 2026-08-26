@@ -1,0 +1,20 @@
+enum Severity { LOW HIGH }
+type ExtraFieldError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}])
+    @classifiedType(as: ErrorType) {
+  path: [String!]! @classified(source: Child, operations: [], target: List, targetShape: Field, sourceShape: Record)
+  message: String!
+  severity: Severity!
+}
+type SakPayload @classifiedType(as: JavaRecordType) {
+  data: String
+  errors: [ExtraFieldError]
+}
+extend type Query {
+  sak: SakPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSak"})
+}
+
+{
+  # The @error type reaches the schema through a payload's errors slot.
+  sak { data errors { path message severity } }
+}

@@ -1,0 +1,23 @@
+type FilmActor implements Node @table(name: "film_actor") @node @classifiedType(as: NodeType) {
+  id: ID! @nodeId @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
+}
+type FilmActorNote @table(name: "film_actor_note") @classifiedType(as: TableType) {
+  note: String @field(name: "note_txt") @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
+  filmActorId: ID @nodeId(typeName: "FilmActor") @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
+}
+extend type Query {
+  filmActor: FilmActor @commits(source: AnchorTable, result: SingleRecord)
+  filmActorNote: FilmActorNote @commits(source: AnchorTable, result: SingleRecord)
+}
+
+{
+  filmActor {
+    # A global id over a two-column key.
+    id
+  }
+  filmActorNote {
+    note
+    # The same key, encoded from another table that names the target type.
+    filmActorId
+  }
+}

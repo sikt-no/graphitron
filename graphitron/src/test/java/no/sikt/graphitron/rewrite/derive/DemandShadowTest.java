@@ -4,7 +4,7 @@ import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus;
+import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedDsl;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -94,7 +94,7 @@ class DemandShadowTest {
         var seenVerdicts = new LinkedHashSet<String>();
         var seenRules = new LinkedHashSet<String>();
         try (var store = captureCorpus()) {
-            for (ClassifiedCorpus.Example example : ClassifiedCorpus.examples()) {
+            for (CorpusDocuments.Document example : CorpusDocuments.documents()) {
                 var bundle = TestSchemaHelper.buildBundle(preluded(example));
                 var legacy = ClaimDomain.of(bundle.model());
                 var residue = DemandResidue.of(bundle.model());
@@ -361,7 +361,7 @@ class DemandShadowTest {
     private CapturedStore captureCorpus() {
         var jooq = jooq();
         CapturedStore store = null;
-        for (ClassifiedCorpus.Example example : ClassifiedCorpus.examples()) {
+        for (CorpusDocuments.Document example : CorpusDocuments.documents()) {
             store = store == null
                 ? CapturedStore.ofCatalog(tmp, example.id(), preluded(example), jooq)
                 : store.andCatalogGraph(example.id(), preluded(example), jooq);
@@ -374,8 +374,8 @@ class DemandShadowTest {
      * so the captured document matches the one the walk parses, {@link TestSchemaHelper} injecting
      * it there.
      */
-    private static String preluded(ClassifiedCorpus.Example example) {
-        String full = ClassifiedDsl.PRELUDE + "\n" + example.sdl();
+    private static String preluded(CorpusDocuments.Document example) {
+        String full = CorpusDocuments.prelude() + "\n" + example.sdl();
         return full.contains("interface Node") ? full : full + "\ninterface Node { id: ID! }\n";
     }
 

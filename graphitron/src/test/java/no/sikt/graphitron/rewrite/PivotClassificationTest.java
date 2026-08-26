@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * SDL → classified model for {@code @pivot} (the dimensional verdict itself is pinned by the
- * {@code pivot} entry in {@code ClassifiedCorpus}; these cases pin the leaf payloads and the
+ * {@code pivot} entry in {@code CorpusDocuments}; these cases pin the leaf payloads and the
  * type-level facts the corpus's {@code @classified} dimensions cannot express).
  */
 @PipelineTier

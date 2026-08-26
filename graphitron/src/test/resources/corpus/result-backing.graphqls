@@ -1,0 +1,22 @@
+type PojoBacked @classifiedType(as: Backed) { id: ID }
+type JavaRecordBacked @classifiedType(as: JavaRecordType) {
+  name: String @classified(source: OnlyChild, operations: [], target: Single, targetShape: Field, sourceShape: Record)
+}
+type JooqTableRecordBacked @classifiedType(as: JooqTableRecordType) { title: String }
+extend type Query {
+  pojo: PojoBacked
+    @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+  javaRecord: JavaRecordBacked
+    @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeTestRecordDto"})
+  jooqRecord: JooqTableRecordBacked
+    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+}
+
+{
+  # A plain Java class: the field resolves against a readable accessor.
+  pojo { id }
+  # A Java record: the field resolves against a record component.
+  javaRecord { name }
+  # A jOOQ TableRecord: the field resolves against a column of the record's table.
+  jooqRecord { title }
+}

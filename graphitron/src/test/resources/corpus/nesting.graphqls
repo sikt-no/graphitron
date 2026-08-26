@@ -1,0 +1,15 @@
+type FilmDetails @classifiedType(as: NestingType) { title: String description: String }
+type Film @table(name: "film") {
+  details: FilmDetails @classified(source: OnlyChild, operations: [], target: Single, targetShape: Table)
+}
+extend type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+
+{
+  film {
+    # A grouping type with no table of its own.
+    details {
+      title
+      description
+    }
+  }
+}

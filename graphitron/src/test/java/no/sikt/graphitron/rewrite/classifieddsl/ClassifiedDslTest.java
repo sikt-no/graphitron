@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
 import no.sikt.graphitron.rewrite.ExemptionRegistry;
-import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus.Example;
+import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments.Document;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OperationMembers;
 import no.sikt.graphitron.rewrite.model.OutputField;
@@ -63,18 +63,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class ClassifiedDslTest {
 
-    static Stream<Example> corpus() {
-        return ClassifiedCorpus.examples().stream();
+    static Stream<Document> corpus() {
+        return CorpusDocuments.documents().stream();
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("corpus")
-    void corpusClassifiesToDeclaredDimensions(Example example) {
-        var result = ClassifiedHarness.classify(example.sdl());
+    void corpusClassifiesToDeclaredDimensions(Document document) {
+        var result = ClassifiedHarness.classify(document.sdl());
 
         assertThat(result.fields().isEmpty() && result.types().isEmpty())
             .as("fixture %s must annotate at least one coordinate (@classified field or "
-                + "@classifiedType type); some coverage fixtures assert only a type verdict", example)
+                + "@classifiedType type); some coverage fixtures assert only a type verdict", document)
             .isFalse();
 
         for (var fc : result.fields()) {
@@ -97,7 +97,7 @@ class ClassifiedDslTest {
         // names per coordinate. A declaration on a coordinate with no produced row fails (the
         // null produced side mismatches); a produced row with no declaration is fine, since the
         // directive makes no membership claim.
-        var production = ClassifiedHarness.launcherProductions().get(example.id());
+        var production = ClassifiedHarness.launcherProductions().get(document.id());
         for (var cc : ClassifiedHarness.commitCases(result, production)) {
             assertThat(cc.producedSource())
                 .as("%s.%s declares @commits but the canonical run produced no launcher row at "
@@ -117,11 +117,11 @@ class ClassifiedDslTest {
     /**
      * The launcher production sweep's failure roster, bound by equality in both directions: a
      * landed validator rejection (or emission) for a recorded gap shows up as a roster
-     * mismatch, and a second example acquiring a gap is loud. The entry's reason is grounded on
+     * mismatch, and a second document acquiring a gap is loud. The entry's reason is grounded on
      * the recorded validator-mirror gap it rides.
      *
      * <p>The roster shrank by one when the classifier started rejecting a child {@code @service}
-     * declaring no {@code Sources} parameter: the {@code service} example's no-key coordinates now
+     * declaring no {@code Sources} parameter: the {@code service} document's no-key coordinates now
      * carry real batch parameters and produce their rows, so the guard they rode is unreachable by
      * construction rather than merely unexercised.
      */
@@ -133,9 +133,9 @@ class ClassifiedDslTest {
             .map(Map.Entry::getKey)
             .collect(Collectors.toSet());
         assertThat(failed)
-            .as("exactly the one recorded validator-mirror-gap example fails launcher production;"
+            .as("exactly the one recorded validator-mirror-gap document fails launcher production;"
                 + " an entry leaving means its gap closed (celebrate and shrink the roster), an"
-                + " entry joining means a new example rides an unrecorded gap")
+                + " entry joining means a new document rides an unrecorded gap")
             .containsExactly("record-method");
         assertThat(((ClassifiedHarness.LauncherProduction.Failed) productions.get("record-method")).reason())
             .as("record-method rides the batched-lookup single-record-per-key guard: the"
@@ -161,7 +161,7 @@ class ClassifiedDslTest {
 
     /**
      * The launcher-arm occupancy census, the classification axis-pair census's launcher
-     * sibling: sourced off the canonical per-example production sweep, it prints per-axis
+     * sibling: sourced off the canonical per-document production sweep, it prints per-axis
      * occupancy and pairwise co-variation over the four launcher axes
      * ({@code source} / {@code invocation} / {@code tenancy} / {@code result}) so the next
      * re-measurement is a test run rather than a scratch file. The assertion is non-vacuity
@@ -252,8 +252,8 @@ class ClassifiedDslTest {
     private static List<CoordinateAxes> corpusAxes() {
         if (corpusAxes == null) {
             var rows = new ArrayList<CoordinateAxes>();
-            for (var example : ClassifiedCorpus.examples()) {
-                for (var fc : ClassifiedHarness.classify(example.sdl()).fields()) {
+            for (var document : CorpusDocuments.documents()) {
+                for (var fc : ClassifiedHarness.classify(document.sdl()).fields()) {
                     Source source = fc.actual().source();
                     SourceShape shape = switch (source) {
                         case Source.OnlyChild(var s) -> s;
@@ -333,8 +333,8 @@ class ClassifiedDslTest {
      */
     @Test
     void declaredMemberListsSitInsideTheLeafsDeclaredShape() {
-        for (var example : ClassifiedCorpus.examples()) {
-            for (var fc : ClassifiedHarness.classify(example.sdl()).fields()) {
+        for (var document : CorpusDocuments.documents()) {
+            for (var fc : ClassifiedHarness.classify(document.sdl()).fields()) {
                 @SuppressWarnings("unchecked")
                 var shape = OperationMembers.declaredShapeOf(
                     (Class<? extends no.sikt.graphitron.rewrite.model.OutputField>) fc.leaf());
@@ -348,13 +348,13 @@ class ClassifiedDslTest {
                 assertThat(admitted)
                     .as("declared operations: kinds at %s: %s.%s must sit inside the %s leaf's "
                             + "declared shape (required %s, optional %s)",
-                        example.id(), fc.parentType(), fc.fieldName(), fc.leaf().getSimpleName(),
+                        document.id(), fc.parentType(), fc.fieldName(), fc.leaf().getSimpleName(),
                         shape.required(), shape.optional())
                     .containsAll(declaredKinds);
                 assertThat(declaredKinds)
                     .as("declared operations: kinds at %s: %s.%s must include the %s leaf's "
                             + "required kinds %s",
-                        example.id(), fc.parentType(), fc.fieldName(), fc.leaf().getSimpleName(),
+                        document.id(), fc.parentType(), fc.fieldName(), fc.leaf().getSimpleName(),
                         shape.required())
                     .containsAll(shape.required());
             }
@@ -447,8 +447,8 @@ class ClassifiedDslTest {
         record MemberRow(Class<?> leaf, Set<OperationMember.Kind> kinds, String source,
                          String targetWrapper, String targetShape) {}
         var rows = new ArrayList<MemberRow>();
-        for (var example : ClassifiedCorpus.examples()) {
-            var schema = ClassifiedHarness.classify(example.sdl()).schema();
+        for (var document : CorpusDocuments.documents()) {
+            var schema = ClassifiedHarness.classify(document.sdl()).schema();
             for (var entry : schema.fields().entrySet()) {
                 if (!(entry.getValue() instanceof OutputField leaf)) {
                     continue;

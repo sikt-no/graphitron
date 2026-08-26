@@ -44,7 +44,7 @@ import java.util.stream.Collectors;
  * {@code sourceOf} / {@code operationMembersOf} schema seams and the leaf's {@code target()} for fields, off the sealed leaf's
  * simple name for types).
  *
- * <p>The fixture's test-only directives ({@link ClassifiedDsl#PRELUDE}) are prepended before the
+ * <p>The fixture's test-only directives ({@link CorpusDocuments#prelude()}) are prepended before the
  * classifier runs; the classifier ignores them, and this harness reads them straight off the parsed
  * AST. The SDL is the example, the directive is the assertion.
  */
@@ -55,7 +55,7 @@ public final class ClassifiedHarness {
     /**
      * One {@code @classified} output-field coordinate: its declared tuple vs. the adapter's, plus the
      * sealed {@code OutputField} leaf the classifier landed on (the corpus's contribution to leaf
-     * coverage, see {@link ClassifiedCorpus#coveredLeaves()}).
+     * coverage, see {@link CorpusDocuments#coveredLeaves()}).
      */
     public record FieldCase(String parentType, String fieldName, DimensionTuple expected,
                             DimensionTuple actual, Class<? extends GraphitronField> leaf) {}
@@ -108,11 +108,11 @@ public final class ClassifiedHarness {
                          GraphitronSchema schema) {}
 
     /**
-     * Classifies {@code fixtureSdl} (the {@link ClassifiedDsl#PRELUDE} prepended automatically) and
+     * Classifies {@code fixtureSdl} (the {@link CorpusDocuments#prelude()} prepended automatically) and
      * resolves every {@code @classified} / {@code @classifiedType} coordinate it carries.
      */
     public static Result classify(String fixtureSdl) {
-        String full = ClassifiedDsl.PRELUDE + "\n" + fixtureSdl;
+        String full = CorpusDocuments.prelude() + "\n" + fixtureSdl;
         TypeDefinitionRegistry registry = TestSchemaHelper.parseRegistryWithPrelude(full);
         GraphitronSchema schema = GraphitronSchemaBuilder.build(registry, TestConfiguration.testContext());
 
@@ -202,8 +202,8 @@ public final class ClassifiedHarness {
     public static synchronized Map<String, LauncherProduction> launcherProductions() {
         if (launcherProductions == null) {
             var map = new LinkedHashMap<String, LauncherProduction>();
-            for (var example : ClassifiedCorpus.examples()) {
-                var schema = classify(example.sdl()).schema();
+            for (var document : CorpusDocuments.documents()) {
+                var schema = classify(document.sdl()).schema();
                 LauncherProduction outcome;
                 try {
                     var conditions = no.sikt.graphitron.plan.ConditionCommands.produce(
@@ -214,7 +214,7 @@ public final class ClassifiedHarness {
                 } catch (IllegalStateException e) {
                     outcome = new LauncherProduction.Failed(e.getMessage());
                 }
-                map.put(example.id(), outcome);
+                map.put(document.id(), outcome);
             }
             launcherProductions = Collections.unmodifiableMap(map);
         }
@@ -451,12 +451,12 @@ public final class ClassifiedHarness {
 
     // ----- meta-test support: the SDL-vs-Java enum mirrors -----
 
-    /** The {@code TypeVerdict} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    /** The {@code TypeVerdict} enum constants as declared in {@link CorpusDocuments#prelude()}. */
     public static Set<String> typeVerdictEnumConstants() {
         return preludeEnumConstants("TypeVerdict");
     }
 
-    /** The {@code SourceWrapper} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    /** The {@code SourceWrapper} enum constants as declared in {@link CorpusDocuments#prelude()}. */
     public static Set<String> sourceWrapperEnumConstants() {
         return preludeEnumConstants("SourceWrapper");
     }
@@ -470,7 +470,7 @@ public final class ClassifiedHarness {
         return sealedLeafSimpleNames(Source.class);
     }
 
-    /** The {@code Member} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    /** The {@code Member} enum constants as declared in {@link CorpusDocuments#prelude()}. */
     public static Set<String> memberEnumConstants() {
         return preludeEnumConstants("Member");
     }
@@ -485,7 +485,7 @@ public final class ClassifiedHarness {
         return sealedLeafSimpleNames(OperationMember.class);
     }
 
-    /** The {@code TargetWrapper} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    /** The {@code TargetWrapper} enum constants as declared in {@link CorpusDocuments#prelude()}. */
     public static Set<String> targetWrapperEnumConstants() {
         return preludeEnumConstants("TargetWrapper");
     }
@@ -495,7 +495,7 @@ public final class ClassifiedHarness {
         return sealedLeafSimpleNames(Target.class);
     }
 
-    /** The {@code TargetShape} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    /** The {@code TargetShape} enum constants as declared in {@link CorpusDocuments#prelude()}. */
     public static Set<String> targetShapeEnumConstants() {
         return preludeEnumConstants("TargetShape");
     }
@@ -505,17 +505,17 @@ public final class ClassifiedHarness {
         return sealedLeafSimpleNames(TargetShape.class);
     }
 
-    /** The {@code SourceShape} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    /** The {@code SourceShape} enum constants as declared in {@link CorpusDocuments#prelude()}. */
     public static Set<String> sourceShapeEnumConstants() {
         return preludeEnumConstants("SourceShape");
     }
 
-    /** The {@code SynthesisedType} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    /** The {@code SynthesisedType} enum constants as declared in {@link CorpusDocuments#prelude()}. */
     public static Set<String> synthesisedTypeEnumConstants() {
         return preludeEnumConstants("SynthesisedType");
     }
 
-    /** The {@code LauncherSource} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    /** The {@code LauncherSource} enum constants as declared in {@link CorpusDocuments#prelude()}. */
     public static Set<String> launcherSourceEnumConstants() {
         return preludeEnumConstants("LauncherSource");
     }
@@ -530,7 +530,7 @@ public final class ClassifiedHarness {
         return sealedLeafSimpleNames(no.sikt.graphitron.command.LaunchSource.class);
     }
 
-    /** The {@code LauncherResult} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    /** The {@code LauncherResult} enum constants as declared in {@link CorpusDocuments#prelude()}. */
     public static Set<String> launcherResultEnumConstants() {
         return preludeEnumConstants("LauncherResult");
     }
@@ -555,9 +555,9 @@ public final class ClassifiedHarness {
             .toList();
     }
 
-    /** The constant names of an enum declared in {@link ClassifiedDsl#PRELUDE}, in declaration order. */
+    /** The constant names of an enum declared in {@link CorpusDocuments#prelude()}, in declaration order. */
     private static Set<String> preludeEnumConstants(String enumName) {
-        TypeDefinitionRegistry registry = new SchemaParser().parse(ClassifiedDsl.PRELUDE);
+        TypeDefinitionRegistry registry = new SchemaParser().parse(CorpusDocuments.prelude());
         EnumTypeDefinition def = registry.getTypeOrNull(enumName, EnumTypeDefinition.class);
         if (def == null) {
             throw new AssertionError(enumName + " enum missing from the DSL prelude");

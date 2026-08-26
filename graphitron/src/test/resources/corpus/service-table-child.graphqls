@@ -1,0 +1,17 @@
+type Film @table(name: "film") { title: String }
+type Language @table(name: "language") {
+  name: String
+  filmsViaService: [Film!]! @service(
+    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsMapped"})
+    @classified(source: OnlyChild, operations: [Reentry, ServiceCall], target: List, targetShape: Table)
+    @commits(source: ServiceTableLift, result: LoaderDelegated)
+}
+extend type Query { language: Language @commits(source: AnchorTable, result: SingleRecord) }
+
+{
+  language {
+    name
+    # Films for this language, produced by a service and re-queried as table rows.
+    filmsViaService { title }
+  }
+}

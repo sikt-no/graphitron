@@ -1,0 +1,11 @@
+type Film @table(name: "film") {
+  title: String @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
+}
+type FilmsConnection {
+  edges: [FilmsEdge!]! nodes: [Film!]! pageInfo: PageInfo!
+}
+type FilmsEdge { cursor: String! node: Film! }
+type PageInfo {
+  hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String
+}
+extend type Query { films: FilmsConnection @commits(source: AnchorTable, result: Connection) }

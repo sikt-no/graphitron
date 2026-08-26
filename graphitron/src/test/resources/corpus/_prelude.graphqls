@@ -1,0 +1,92 @@
+# The corpus prelude: the test-only assertion directives, their SDL enums, and the base schema every
+# corpus document is classified against. Prepended to every document by CorpusDocuments.prelude().
+# The leading underscore keeps this file out of the document glob, so the prelude is a document the
+# loader reads and never one the corpus asserts over.
+#
+# The enums make an assertion validated SDL-side: a typo in a source, operations or target value is a
+# parse or assembly error graphql-java rejects before the harness runs. Each mirrors a sealed arm set
+# in the field model, and ClassifiedDslTest fails the build if the two sides ever drift.
+#
+# Why a base schema lives here. A GraphQL document is only a schema if it has a query root, so a
+# document about mutations alone used to carry a throwaway Query of its own. The cheapest throwaway, a
+# String-returning field, is itself an author error, so those documents classified but could not be
+# assembled for generation, and the documentation page rendered from them reported that a plain INSERT
+# generates nothing. Declaring the root once here removes the need for a throwaway: a document
+# contributes its own roots with `extend type Query`, and a document with no roots of its own declares
+# nothing.
+#
+# The same reasoning puts Node here. It was previously injected only when a document did not declare
+# it, and only on the classification path, so a document could say `implements Node` without declaring
+# the interface and pass classification while failing assembly. One declaration on the one path every
+# reader shares is what keeps the two halves of an example talking about the same schema.
+#
+# CorpusAnchor binds `category`, deliberately a table no document uses: the anchor is present in every
+# document, so a table any document reached would change that document's arrival fold by existing.
+
+enum SourceWrapper { Query Mutation OnlyChild Child }
+
+enum Member {
+  Select Join OnReturnTable OnParticipant OrderBy Paginate Lookup ServiceCall
+  NodeResolve EntityResolve Count Facet Pivot Reentry
+  Insert Upsert Update Delete UpdateMatching DeleteMatching RoutineWrite
+}
+
+enum TargetWrapper { Single List }
+
+enum SourceShape { Table Record }
+
+enum TargetShape { Table Record Column Field Connection Interface Union }
+
+# Mirrors the non-failure leaves of GraphitronType.
+enum TypeVerdict {
+  TableType NodeType TableInterfaceType
+  JavaRecordType Backed JooqRecordType JooqTableRecordType
+  RootType InterfaceType UnionType ErrorType
+  JavaRecordInputType PojoInputType JooqRecordInputType JooqTableRecordInputType
+  NestingType EnumType ScalarType
+  ConnectionType EdgeType PageInfoType FacetsType FacetValueType
+}
+
+enum SynthesisedType { ConnectionType EdgeType PageInfoType FacetsType FacetValueType }
+
+enum LauncherSource {
+  AnchorTable RoutineChain CorrelatedChain CorrelatedLookupChain
+  DiscriminatedCorrelatedChain
+  ServiceCall ServiceTableLift PivotAggregate KeyedLookup
+  ProjectedReentry DiscriminatedReentry DiscriminatedTable
+}
+
+enum LauncherResult { SingleRecord LoaderDelegated RecordList Connection }
+
+input Mint { name: String!, as: SynthesisedType! }
+
+# Asserts the dimensional tuple a field classifies to: each endpoint is a wrapper plus a shape, and
+# the operations: list asserts the coordinate's operation-member rows as a multiset of sealed-arm
+# tokens (arm identity and row count, never payloads or the condition rows' table keys).
+directive @classified(
+  source: SourceWrapper!, operations: [Member!]!, target: TargetWrapper!, targetShape: TargetShape!
+  sourceShape: SourceShape
+) on FIELD_DEFINITION
+
+# Asserts the GraphitronType sealed leaf a type classifies to.
+directive @classifiedType(as: TypeVerdict!) on
+  OBJECT | INTERFACE | UNION | INPUT_OBJECT | ENUM | SCALAR
+
+# Asserts the type names a connection carrier causes to exist, and the synthesised arm each is minted
+# as. The synthesised types have no SDL declaration to carry @classifiedType, so the expectation is
+# stated at the coordinate that causes the synthesis; coverage is derived from the agreement of the
+# declaration with the connection-synthesis relation's produced rows, never from the producer's output
+# alone.
+directive @synthesises(mints: [Mint!]!) on FIELD_DEFINITION
+
+# Asserts the arm tokens of the coordinate's launcher command row, checked against the relation the
+# harness produces under its one canonical run configuration on declared-equals-produced agreement. It
+# makes no membership claim; the invocation axis is not an argument because the source arm determines
+# it, and tenancy is a run-configuration fact outside the coordinate's reach.
+directive @commits(source: LauncherSource!, result: LauncherResult!) on FIELD_DEFINITION
+
+interface Node { id: ID! }
+
+type Query { corpusAnchor: CorpusAnchor }
+
+type CorpusAnchor @table(name: "category") { name: String }

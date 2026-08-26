@@ -1,0 +1,12 @@
+type Rental @table(name: "rental") {
+  rentalId: Int! @field(name: "rental_id")
+}
+type RentFilmPayload {
+  rental: Rental @commits(source: CorrelatedChain, result: SingleRecord)
+}
+extend type Query { rental: Rental @commits(source: AnchorTable, result: SingleRecord) }
+type Mutation {
+  rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @classified(source: Mutation, operations: [RoutineWrite], target: Single, targetShape: Record)
+}

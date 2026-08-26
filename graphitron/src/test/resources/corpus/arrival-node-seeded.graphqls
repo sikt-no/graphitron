@@ -1,0 +1,9 @@
+type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"])
+    @classifiedType(as: NodeType) {
+  id: ID! @nodeId
+  title: String @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
+}
+extend type Query {
+  film: Film @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
+    @commits(source: AnchorTable, result: SingleRecord)
+}

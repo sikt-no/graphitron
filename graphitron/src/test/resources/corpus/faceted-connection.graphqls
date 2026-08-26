@@ -1,0 +1,22 @@
+type Film @table(name: "film") { title: String }
+input FilmFilter {
+    title: [String!] @field(name: "title") @asFacet
+}
+extend type Query {
+    films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+        @classified(source: Query, operations: [OnReturnTable, OrderBy, Paginate, Select], target: Single, targetShape: Connection)
+        @commits(source: AnchorTable, result: Connection)
+        @synthesises(mints: [
+            {name: "QueryFilmsConnection", as: ConnectionType},
+            {name: "QueryFilmsEdge", as: EdgeType},
+            {name: "QueryFilmsConnectionFacets", as: FacetsType},
+            {name: "StringFacetValue", as: FacetValueType},
+            {name: "PageInfo", as: PageInfoType}])
+}
+
+{
+  # A paginated read whose filter input also yields facet counts.
+  films(filter: {title: ["A"]}) {
+    edges { node { title } }
+  }
+}

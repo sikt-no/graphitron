@@ -1,0 +1,8 @@
+type PlainJooqRecordBacked @classifiedType(as: JooqRecordType) { id: ID }
+input PlainJooqRecordBackedInput @classifiedType(as: JooqRecordInputType) { id: ID }
+extend type Query {
+  plainRecord: PlainJooqRecordBacked
+    @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makePlainJooqRecord"})
+  consumePlainRecord(in: PlainJooqRecordBackedInput): String
+    @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "consumePlainJooqRecord"})
+}

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
-import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus.Example;
+import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments.Document;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -22,11 +22,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 class QueryViewRendererTest {
 
     private static String sdlOf(String id) {
-        return ClassifiedCorpus.examples().stream()
+        return CorpusDocuments.documents().stream()
             .filter(e -> e.id().equals(id))
-            .map(Example::sdl)
+            .map(Document::sdl)
             .findFirst()
-            .orElseThrow(() -> new AssertionError("no corpus example with id '" + id + "'"));
+            .orElseThrow(() -> new AssertionError("no corpus document with id '" + id + "'"));
     }
 
     private static final String FIXTURE = """

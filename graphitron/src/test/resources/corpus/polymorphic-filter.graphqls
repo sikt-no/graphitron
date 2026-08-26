@@ -1,0 +1,7 @@
+type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
+union Person @classifiedType(as: UnionType) = Customer | Staff
+extend type Query {
+  people(firstName: [String!] @field(name: "first_name")): [Person!]!
+    @classified(source: Query, operations: [OnParticipant, OnParticipant, Select], target: List, targetShape: Union)
+}
