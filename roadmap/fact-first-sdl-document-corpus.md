@@ -18,7 +18,7 @@ simultaneously tests (`ClassifiedDslTest`) and the source of the worked examples
 `reference/code-generation-triggers.adoc`; 32 of them carry a projection query and render onto that
 page. Two defects, one per half of that sentence.
 
-The container is Java. Every new example is an edit to a hand-maintained 1781-line Java list,
+The container is Java. Every new example is an edit to a hand-maintained 1783-line Java list,
 featuring it on the page is a manual paste loop (run the drift test, copy the block from the failure
 message, paste), and the example's own story lives in three parallel habitats: a Java comment
 nothing renders, `#` comments in the projection query, and hand prose on the page. The failure
@@ -66,7 +66,7 @@ The measurable forms, each checkable on the landed tree:
   Java class by FQN (a `@service` stub, a backing record) may still need a method on that stub, which
   is what `DummyRecord` gaining a property and `PlainJooqRecord`'s abstractness were in R814's
   slice 3.
-- `ClassifiedCorpus.java` (1781 lines) and `ClassifiedDsl.java` (the Java prelude string) are gone;
+- `ClassifiedCorpus.java` (1783 lines) and `ClassifiedDsl.java` (the Java prelude string) are gone;
   the corpus is 57 or more documents in one folder, and the prelude is one document beside them.
 - The authored page's committed `[source,graphql]` blocks and `.What the pipeline makes of it`
   tables (32 of each today) go to zero, replaced by include lines; the page's line count falls by
@@ -102,7 +102,7 @@ extend type Query {
   city: City @commits(source: AnchorTable, result: SingleRecord)
 }
 
-extend schema @expectRows(relation: "intent_resolved_field_claim", rows: """
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
   type_name, field_name,   classifier,   tier
   Country,   name,         COLUMN_MATCH, INFERRED
   City,      country,      COLUMN_MATCH, INFERRED
@@ -119,7 +119,7 @@ extend schema @expectRows(relation: "intent_resolved_field_claim", rows: """
    coordinate to sit on, stays on the authored page.
 3. **Its assertions, as expected-row tables.** Today's four coordinate-level directives
    (`@classified`, `@classifiedType`, `@synthesises`, `@commits`) move verbatim in slice 1; slice 2
-   replaces them with `extend schema @expectRows(relation:, rows:)` applications, one per asserted
+   replaces them with `extend schema @expectEquals(relation:, rows:)` applications, one per asserted
    relation, each carrying that relation's expected content for this document as CSV.
 4. **Its projection operation, optionally**, in the same file: an anonymous query, or a bare
    `fragment F on Type` where the coordinate has no reachable root path (both forms
@@ -217,7 +217,7 @@ One directive, declared once in the prelude document, applied at the schema and 
 relation. Its payload is the relation's expected content as CSV:
 
 ```graphql
-directive @expectRows(relation: String!, rows: String!) repeatable on SCHEMA
+directive @expectEquals(relation: String!, rows: String!) repeatable on SCHEMA
 ```
 
 Two earlier drafts are recorded because the reasons they lost are the reasons this one holds. The
@@ -231,7 +231,7 @@ or catalog side by a family of mirror tests. That is the "hand-copied mirrors" d
 own opening paragraph, re-erected one layer out. A CSV block has no enum to mirror, so the mirror
 family retires here rather than acquiring a new right-hand side.
 
-Seven properties make this the successor form rather than a re-spelling of the walk tuple.
+Eight properties make this the successor form rather than a re-spelling of the walk tuple.
 
 **The block is a relation literal, so every relation is reachable.** The header names columns, each
 line is a row, and the coordinate is a column like any other. `graph_name` is the one column a
@@ -263,9 +263,15 @@ per-coordinate scoping would lose, and an empty block (header only) asserts the 
 nothing for this document. Exactness makes the block an approval table, which is the shape this
 item's own direction endorses, and the cost is honest: a fixture gaining a coordinate updates the
 block. That paste goes into the document that is also the source of truth, not into a third copy on
-a page, which is the whole difference from the loop being retired. If some relation's per-document
-table proves unworkably large, the fallback is subset semantics declared per application rather than
-inferred, and the implementer records why exactness failed there.
+a page, which is the whole difference from the loop being retired.
+
+**The name is the semantics, and the weaker sibling is not declared yet.** `@expectEquals` says what
+it does, so a reader does not have to learn a convention to know whether an unlisted row passes. A
+containment form, `@expectContains(relation:, rows:)`, is the obvious weaker sibling and is
+deliberately absent: a directive nothing applies is a vocabulary with no consumer, and offering both
+from the start invites the weaker one where the stronger is merely inconvenient. It gets declared if
+and when some relation's per-document table proves unworkably large, in the increment that meets
+that relation, with the reason exactness failed there recorded beside it.
 
 **Asserted absence needs the relation's own permission.** An empty block is legal only for relations
 whose comment says what their silence means, per the fact model's rule that "not reached" is not
@@ -324,13 +330,13 @@ infer it.
 it exists: the claim axes (`intent_resolved_field_claim`, `intent_authored_field_claim`,
 `intent_column_match_claim`, `intent_bound_table`) can move as soon as this slice starts; the
 operation-member arms, target shape and arrival shape wait on R682's relations. A document keeps
-`@classified` on its coordinates for the axes with no spelling and gains an `@expectRows` block for
+`@classified` on its coordinates for the axes with no spelling and gains an `@expectEquals` block for
 each relation that has one, which makes every remaining tuple axis a visible request for a relation
 rather than an invisible dependency. `@commits` straddles the command tier R682 reshapes and gets the same scrutiny rather
 than a mechanical port. The last `@classified` dies with the zoo, under R682, not here.
 
 **The emitted-names half moves too, and this is why the slice precedes the doc collapse.** The
-verdict half of an outcome block becomes an `@expectRows` table in the document. The emitted
+verdict half of an outcome block becomes an `@expectEquals` table in the document. The emitted
 unit and method names are not a store fact, so they get the other habitat the tree already has for a
 checked-in expectation: one approval file per document in the corpus folder, holding exactly what
 `OutcomeBlockRenderer` renders for the emitted column today, in the `ApprovalQueryExampleTest` sense.
