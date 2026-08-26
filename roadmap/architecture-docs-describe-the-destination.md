@@ -936,7 +936,8 @@ sit alongside it: `looksLikeBeanCandidate` excludes everything under `org.jooq.*
 declared as `org.jooq.Record` or `Record2<...>` does not reach any arm today, and until such an arm
 exists the rejection should say what is actually wrong rather than reporting a bean-construction
 failure. That is a feature gap in the input path, not a defect in the fixture, and it belongs in its
-own item rather than in a docs round.
+own item rather than in a docs round, and it is now filed as R837
+(`table-less-jooq-record-input`).
 
 **The outcome block, and the fork the owner settled.** Building it turned up something the plan
 does not cover: **not every doc example generates.** The corpus is a classification corpus, and a
