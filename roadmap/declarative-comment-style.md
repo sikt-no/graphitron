@@ -1,7 +1,7 @@
 ---
 id: R838
 title: "Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations"
-status: Spec
+status: Ready
 bucket: dx
 priority: 3
 theme: docs
@@ -148,3 +148,31 @@ two smells the spec says it names and carries the *Enforced by* line; the `revie
 "What to look for" list has the "Stale references" entry to sit beside; and the `srp` skill's
 template design intent does forbid re-accreting checklists and does name phrasing as out of the
 gate's scope.
+
+### Round 2 (2026-08-26, Spec -> Ready, reviewer session 019rsBkkANNVxMVAiBaCdV5L)
+
+Verdict: sign off. Both round-1 findings are answered, and the adoption arm the rework picked is
+the one that leaves no suppression behind.
+
+Phase 3 now names all three roster readers and says what the widening does to each.
+`FactStores.inMemory()` is `GraphitronModelStore.open()` plus a boot count, so
+`SchemaReferencePagesTest`'s swap is behaviour-preserving, and holding the handle in a `var` leaves
+no `GraphitronModelStore` identifier token in a code region for `StoreFixtureScanner` to find. The
+test-jar dependency is a trodden path rather than a new one: `graphitron-model`'s pom already
+republishes its tests for exactly this harness, and `graphitron`, `graphitron-lsp`,
+`graphitron-mcp` and `graphitron-maven-plugin` all consume it with the shape the phase describes,
+so roadmap-tool adds a `<type>test-jar</type>` entry beside a compile dependency it already
+declares. `StoreFixtureGuardTest.Why` does carry exactly `LIFETIME` and `ORACLE`, which is what
+rules out the subtraction and the `EXEMPT` entry. The anti-vacuity floors are lower bounds and the
+widening only adds files, so "they hold as-is" is right. `RetiredVocabularyGuardTest`'s widening is
+benign as stated: neither registry finds anything in roadmap-tool's Java sources, its one
+`.graphqls` fixture, or the reverse-enforcer's main-source identifier scan.
+
+The hit-list correction went further than either arm round 1 named, and better: three files listed,
+with `BuildOutputReportPipelineTest` placed explicitly in the guard's disclosed residue rather than
+dropped in silence, which is the same honesty the phase asks of the guard's own javadoc.
+
+One convention note, not a finding: the round-1 findings carry no per-finding response notes
+beneath them. The commit message records the responses in full, so nothing is lost here; the
+adjacency convention exists so the Done-gate reviewer audits a delta instead of re-reading, and it
+is worth keeping to on the next round.
