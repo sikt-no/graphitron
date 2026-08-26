@@ -283,3 +283,98 @@ the new keyless rejection loudly.
 - All four documentation surfaces state the one-sentence contract, the inbound and outbound rules
   cross-reference each other, and the escape hatch is documented with what it gives up.
 - The retirement sweep at the Done gate finds none of the retired vocabulary.
+
+## Reviewer findings
+
+### Round 1 (Spec → Ready gate, session_2f64b812-3033-42e0-951e-bbd5a6fb0508, 2026-08-26)
+
+Independent reviewer session, status stays `Spec`. Two blocking findings and one non-blocking
+note.
+
+Question 1's establishing read holds. Every symbol, code site, test, message fragment and doc
+sentence the body names exists as named, checked by FQN-aware grep, including the generated
+bodies in `graphitron-sakila-example/target/generated-sources/` that are not in the tree. What
+changes for a consumer is plain without the phase list: an author who writes a root `@service`
+whose GraphQL return type carries `@table` stops being responsible for populating the rows they
+return. Today graphitron hands their jOOQ records to graphql-java and every column field reads
+off the record, so a method that selected only the key resolves every other field to `null`
+silently; after this lands graphitron lifts each returned record's primary key and re-SELECTs the
+requested fields from the table, one batched query on the request's connection. Two consequences
+the author will feel: a schema whose returned `@table` type has no primary key stops building,
+and a service that deliberately returned values differing from the table gets table values, with
+"drop `@table` and name columns with `@field(name:)`" as the escape hatch. The outcome is
+reachable: the machinery is emitted at neighbouring coordinates and was read there, not taken on
+trust.
+
+Question 2 is where the plan does not survive contact. Two of its named mechanisms are
+contradicted by the tree.
+
+1. **Question 2. Design points 2 and 3 cannot both hold: `INVOCATION_BY_SOURCE` admits exactly
+   one `Invocation` arm per concrete `LaunchSource` leaf, and `ProjectedReentry`'s is already
+   spoken for.** Point 2 mints a `LaunchSource.ProjectedReentry` and states that
+   `RootLauncherRenderer` "needs no change"; point 3 recommends "a new `Invocation` arm rather
+   than a widened `ReturningKeyed`". `LauncherCommands.INVOCATION_BY_SOURCE` is a
+   `Map<Class<? extends LaunchSource>, Class<? extends Invocation>>` carrying
+   `ProjectedReentry.class -> ReturningKeyed.class`, and the one-arm-per-leaf property is
+   enforced twice: `LauncherMembershipTest.invocationDeterminationIsTotalOverTheSourceArms`
+   pins the key set against `LaunchSource`'s sealed leaves, and
+   `LauncherAxisPins.assertInvocationMatchesDeclaredDetermination` pins every produced row's
+   invocation against the declared arm at every relation the test tree builds. So minting
+   `ProjectedReentry` forces `ReturningKeyed`, which is the widening point 3 argues against;
+   and a new `Invocation` arm forces a new `LaunchSource` arm, which falsifies point 2's
+   renderer claim, `RootLauncherRenderer` carrying a total `switch (row.source())` for the body
+   and two total `switch (row.invocation())` for the keys parameter and for `valueTypeOf`.
+   The stated reason for the recommendation does not hold either:
+   `ReentryRowsFragments.keysType(row)` reads `((LaunchSource.Reentry) row.source()).correlation()`,
+   deriving the keys type from the *source*, not from the invocation; the renderer merely
+   selects it on the invocation arm.
+
+   What would satisfy this: pick one arm and state its consequence. Either reuse
+   `ProjectedReentry` and accept that `Invocation.ReturningKeyed` and the `LaunchSource.Reentry`
+   javadoc widen from "the write's captured `RETURNING` keys" to "keys captured at the call
+   site" (renderer untouched), or mint a new `Reentry` arm plus a new `Invocation` arm and say
+   the renderer gains three.
+
+   The choice should also weigh `LaunchSource.ServiceTableLift`, which the plan never mentions.
+   Its javadoc is this item's mechanism at the child coordinate: "A `@service` table child: the
+   developer's method produces real table records; the rows method lifts them back by
+   re-projecting each returned record's primary key by identity through `projection`'s
+   `$project` over an `(idx, seq, pk...)` VALUES join against `table`". It differs from the
+   plan's shape in where the service call sits: inside the `rows<Field>` method rather than in
+   the caller. That is a third design, and it is the one the root catalog shape already uses
+   (`QueryFetchers.filmsConnection` is a thin call to `rowsFilmsConnection(dsl, env)`); taking
+   it would delete Design point 4's caller-side lift outright. The plan cites
+   `ServiceRowsFragments.liftBody` only as a loop-shape precedent for the caller-side lift, so
+   the fork was passed without being named. Say why the caller-side lift wins, or take the
+   other arm.
+
+2. **Question 1. Design point 5 names an edit that is a no-op, and Risks makes it the item's
+   widest unknown.** The point says `QueryServiceTableField.domainReturnType()` "moves to
+   whatever the catalog root read answers". It already answers
+   `new DomainReturnType.Record(returnType.table())`, which is verbatim what the catalog root
+   table reads answer (`QueryField.QueryTableField` and `QueryField.QueryTableFilterField`).
+   Further, `ChildField.ServiceTableField`, the child `@service` arm that already performs
+   exactly this lift, keeps `Record(table)`, and its javadoc gives the reason: the value
+   "agree[s] with the SQL-emit table-bound producers ... so a `@table`-bound SDL type reached by
+   both a service and an SQL-emit producer does not surface as a spurious conflict". So the
+   named edit changes nothing, and making it would reintroduce the conflict the sibling arm
+   guards against. The precedent the plan needs is sitting in the arm it already cites for the
+   rejection wording.
+
+   There is a real change the point conflates with this one, and it deserves the Risks entry
+   instead: the *emitted fetcher's* declared Java return type. `filmsByService` is emitted as
+   `DataFetcherResult<Result<FilmRecord>>` today, pinned by literal FQN string in
+   `TypeFetcherGeneratorTest.queryServiceTableField_emittedFetcher_declaresTypedResult`, and it
+   is that type, not `domainReturnType()`, that determines what `env.getSource()` hands every
+   child hanging off the parent. Restating point 5 as the emitted-type and `env.getSource()`
+   move, with the child arm cited as the precedent that the model-level `DomainReturnType`
+   stays put, would satisfy this and shrink the declared risk to its true size.
+
+**Non-blocking.** The escape-hatch argument cites the wrong witness. `FilmDetails` is reached via
+`Film.filmDetails` as a same-table `NestingField` passthrough, not from a root `@service`; the
+schema comment beside it says it "lost" the producer coverage when it was reclassified. The type
+the argument needs is `FilmDetailsCarrier`, produced by the root `@service` `Query.filmDetailsBatch`
+returning `List<FilmRecord>`, carrying no `@table`, with the schema stating outright that it is
+kept distinct "because a single SDL type cannot have two producers that disagree on the
+`env.getSource()` Java type". Both types exist and both are pinned; naming the second makes the
+escape hatch load-bearing for the shape it is offered for.
