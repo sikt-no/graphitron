@@ -1,7 +1,7 @@
 ---
 id: R814
 title: "The architecture docs describe the surface being drained as if it were the design"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 3
 theme: docs
@@ -1050,3 +1050,111 @@ comments inside the projection query, and hand prose on the page. And `mutation-
 labelled "Corpus-only" in its Java comment long after it had gained a doc query, because nothing
 renders that comment and so nothing could catch it. It was fixed as hygiene in part twelve. It is
 better read as the predicted failure, arriving on schedule.
+
+## Reviewer findings
+
+### Round 1 (2026-08-26, In Review -> Ready, reviewer session 01LC7PaM739idMHePsZ83v1D)
+
+Verdict: rework. Two blocking findings, both on question two (how do we know the item is complete),
+one of them reaching question one (is this the change the spec approved).
+
+Most of the item landed, and landed well. Both gates carry anti-vacuous floors and planted
+regressions in both directions; the symbol guard's `exemptionsAreAllStillCited` is a genuinely good
+second direction. Both renderers landed, the command-relation fragment is generated at build and
+never committed as designed, and the outcome block's two refusals are enforced by test
+(`theBlockRendersNoCommandRowsAndNoBodies`) rather than asserted in prose. The page is reorganised
+around the chain, the "Classification Vocabulary" section and the Source Map are gone, 32 examples are
+drift-guarded on both halves, and slice 4 shipped whole. Goal 4's measurable form is met, verified
+against the tree rather than read off the body: zero `R<n>` citations across `docs/architecture` and
+`docs/manual`, zero dangling symbols. Every gate this item added runs and passes. The findings below
+are about what the delivery stopped short of and where that stop is recorded, not about the quality of
+what shipped.
+
+One build note that is not this item's: reviewing after a rebase onto R834, the full reactor build
+failed once on
+`GraphQLQueryTest.splitTableField_bridgingConditionJoin_returnsActorsPerFilm`, expecting `[1]` and
+getting `[1, 3]`. It passes alone, passes with its whole class (388 tests), and passes on a full
+`graphitron-sakila-example` re-run, so it is a cross-class state leak in the execution tier that
+surfaces under some interleaving of the parallel reactor run, not a defect in this item's docs-only
+surface. Worth its own item; it is recorded here only because a reviewer after this one will otherwise
+re-derive it.
+
+#### 1. Two of the four stated goals are unmet, and the stop lives only in a commit message
+
+Goal 2 (the pages describe the present tense): four of the five archaeology instances the survey named
+on this page survive verbatim. "the walk no longer tombstones conflicts" is still the parenthetical in
+three conflict cells, and "kept stable from earlier naming" still introduces the class-backed child
+table. Each sits inside a cell whose job is to state today's behaviour ("Arm-order winner"), so
+deleting the parenthetical loses nothing. The `R432` sentences and the retired-`LiftedHop` row did go,
+with the Source Map.
+
+Goal 3 (every enumerable claim renders from a gated source, or is not on the page): live generating
+patterns are still stated as hand-maintained leaf-name rows with neither a rendered example nor a
+named gate. The two root `@service` rows in Query Fields, the encoded-`ID` row in Mutation Fields, the
+`@field(name:)` row under Child Fields (`@table` parent), the `@sourceRow` row under Child Fields
+(class-backed), and all six Input Fields rows. The design's escape hatch for a non-corpus row was
+"kept with its gate named on the page, so an ungated-looking table is visibly not ungated"; these rows
+disclose that they are waiting, which is honest, but they name no gate.
+
+The stopping argument in the In Review commit is sound on its own terms: the remaining live rows need
+new worked examples, that is the hand-paste loop the fact-first corpus item exists to abolish, and
+promoting them now buys drained rows on artifacts that item plans to regenerate. Accepted for the root
+`@service` pair and for Input Fields, where sizing the vehicle is genuinely the first question.
+
+What makes this blocking is where the reasoning is written, and that it is being applied further than
+it reaches.
+
+- It is in the commit message only. The In Review commit changed front-matter and nothing else. The
+  body names no successor item, and the commit's claim that "the item body records what is left, what
+  is floor, and why the input-side table is at floor for a different reason than the others" does not
+  hold against the body: the input-side table is described there as unsized rather than as floor, and
+  the latest "Still to do" predates parts nine through thirteen, so reconstructing the current state
+  means replaying thirteen parts and applying each one's retirements. On Done this file is deleted, so
+  a deliberate reduction of two of the item's four goals would go with it.
+- R842 (refused patterns gather in one section) was filed on trunk after the In Review flip and takes
+  the refusal residue across all six tables, which is the floor half of what is left. That is the
+  successor this body should have named, and it makes the gap sharper rather than smaller: the
+  successor work is being filed by other sessions reading the page while this item's own body records
+  no handoff. R842 also confirms the live rows are not covered ("the two or three still holding a live
+  pattern keep only that"), so Goal 3's remainder still has no owner.
+- Part eleven left a question to the owner, whether the section's transitional NOTE comes off with the
+  table at its floor. The type-side table has since reached its floor and the question is still
+  unanswered in the delivered state.
+- The argument is about promotion cost, so it does not cover work that costs nothing. The archaeology
+  above is pure deletion. So is the `@field(name:)` row: `@field(name:)` on a scalar child appears in
+  six rendered SDL blocks on this page, each with an outcome block beside it, which makes it the
+  fold-in retirement the loop already performed seven times, not a promotion.
+
+#### 2. A roadmap plan slug is cited on a public page, and this item's own gate cannot see it
+
+The `@nodeId(typeName:)` row under Child Fields (`@table` parent) ends "pending
+`nodeidreferencefield-join-projection-form`", which names a live item file. It is the forward-pointer
+shape the survey filed under its fifth finding ("UPSERT generation gated pending R145"), on the page
+this item rebuilt, and it contradicts both this item's own constraint that no roadmap-internal
+vocabulary survives in the prose and the workflow's User-facing-doc check, which names references to
+plans by slug.
+
+The gate half matters more than the line. `TransientCitationCheck` matches `R\d+` and
+`roadmap/<slug>`; a backticked bare slug with no `roadmap/` prefix escapes both, so Goal 4's "a
+citation cannot rot silently" has a hole this delivery demonstrates rather than closes. Editing the
+sentence closes the instance and leaves the hole. Whether widening the gate (a backticked span naming
+a file that exists under `roadmap/`) belongs here or in a follow-up is the next pass's call, but the
+finding should not be closed without making it.
+
+#### What would satisfy the gate
+
+Delete the four archaeology fragments and fold in the `@field(name:)` row. Fix the slug citation and
+decide the gate question. Collapse this section to what shipped, with the remaining work and the
+deliberate stop named in the body, R842 cited for the refusal residue and something named for the live
+rows it excludes, and part eleven's owner question answered or explicitly handed off. If the owner
+ratifies stopping short of Goals 2 and 3 for the promotion work, that ratification belongs in the body
+as an amendment, where it survives the file's deletion.
+
+#### Non-blocking
+
+- Goal 1 is delivered in structure but not in vocabulary on the type side: that section's headings are
+  still sealed leaf names (`TableType`, `NodeType`, `NestingType`, `ScalarType`, `ErrorType`), which
+  the design meant to leave behind ("never as leaf names"). Its reference table is at its floor, so it
+  is the cheapest place left to finish the move.
+- The em-dash substitution reads awkwardly in several cells and bullets ("*Derived source table* ;
+  built from...", "Validation error ; build fails"). Style only, and not unique to this page.
