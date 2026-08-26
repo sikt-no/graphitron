@@ -168,6 +168,31 @@ class TestServiceStub {
     public static java.util.List<FilmRecord> getFilmsAsList() { throw new UnsupportedOperationException(); }
 
     /**
+     * Returns records of {@code film_list}, the tree's primary-key-less table. Fixture for the
+     * root {@code @service} keyed-re-projection rejection: the coordinate re-selects by the
+     * returned record's primary key, and this table has none. The signature itself is the
+     * accepted root shape, so nothing but the missing key can be reported.
+     */
+    public static Result<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmListRecord> getFilmLists() {
+        throw new UnsupportedOperationException();
+    }
+
+    /** Single-cardinality twin of {@link #getFilmLists()}, and the mutation arm's fixture. */
+    public static no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmListRecord getFilmList() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * The escape hatch's fixture: the same {@code film_list} records handed to a return type that
+     * carries no {@code @table}, so the columns are read straight off the record and no key is
+     * needed. {@code List} rather than {@code Result} because a record-backed payload's expected
+     * root list shape is {@code java.util.List<X>}.
+     */
+    public static java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmListRecord> getFilmListsAsList() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Returns {@link FilmRecord} but takes a {@code List<Row1<Integer>>} parameter — classifies
      * as {@link no.sikt.graphitron.rewrite.model.ParamSource.Sources}. Used to verify
      * Invariants §2 fires after the strict-return-type check passes.

@@ -393,14 +393,17 @@ public class GraphitronSchemaValidator {
             List<ValidationError> errors) {
         // Reentry implementedness guard: a leaf that derives site-level reentry
         // (emitsKeyedReQuery) without being one of the shapes the reentry emit handles
-        // (the DataLoader-backed BatchKeyField leaves and the projected/discriminated
-        // DmlTableField arms) must fail at validate time, not reach the generator. No current
-        // leaf can fire this (the sealed hierarchy admits no such combination); preserving
-        // that state is the guard's job.
+        // (the DataLoader-backed BatchKeyField leaves, the projected/discriminated
+        // DmlTableField arms, and the two table-bound root @service leaves, whose fetcher lifts
+        // the returned records' keys and calls the same companion) must fail at validate time,
+        // not reach the generator. No current leaf can fire this (the sealed hierarchy admits no
+        // such combination); preserving that state is the guard's job.
         if (field instanceof no.sikt.graphitron.rewrite.model.OutputField out
                 && out.emitsKeyedReQuery()
                 && !(field instanceof no.sikt.graphitron.rewrite.model.BatchKeyField)
-                && !(field instanceof no.sikt.graphitron.rewrite.model.MutationField.DmlTableField)) {
+                && !(field instanceof no.sikt.graphitron.rewrite.model.MutationField.DmlTableField)
+                && !(field instanceof no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField)
+                && !(field instanceof no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField)) {
             var memberKinds = schema
                 .operationMembersOf(graphql.schema.FieldCoordinates.coordinates(
                     out.parentTypeName(), out.name()))
@@ -412,8 +415,8 @@ public class GraphitronSchemaValidator {
                 Rejection.invalidSchema("Field '" + out.qualifiedName() + "': site-level reentry "
                     + "(a reentry member among " + memberKinds + " x target " + out.target()
                     + ") on " + out.getClass().getSimpleName() + ", which carries no reentry emit — "
-                    + "the keyed re-query is emitted only for DataLoader-backed leaves and "
-                    + "projected/discriminated DML arms"),
+                    + "the keyed re-query is emitted only for DataLoader-backed leaves, "
+                    + "projected/discriminated DML arms, and table-bound root @service returns"),
                 out.location()));
         }
         // An array-typed column used as a DataLoader batch key (@splitQuery / SourceKey key
@@ -944,6 +947,77 @@ public class GraphitronSchemaValidator {
     }
     private void validateQueryServiceTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         // Unresolved service method is caught by the builder (UnclassifiedField).
+        validateRootServiceTableReturn(field, field.returnType(),
+            field.errorChannel().isPresent(), errors);
+    }
+
+    /**
+     * The three guards a table-bound root {@code @service} return owes, stated once for the
+     * query leaf and its mutation twin. All three mirror an invariant the emit relies on rather
+     * than being the primary diagnostic (the house pattern), and the first is
+     * classifier-guaranteed outright, so the field normally arrives here as
+     * {@code UnclassifiedField} instead:
+     *
+     * <ul>
+     *   <li><b>A keyed return table.</b> The coordinate re-selects the requested fields from the
+     *       returned table keyed on each returned record's primary key, so a key-less table
+     *       leaves the emitter nothing to key on. The root twin of the clause in
+     *       {@link #validateServiceTableField}; primary diagnostic in
+     *       {@link ServiceDirectiveResolver}'s STRICT_ROOT classify arm.</li>
+     *   <li><b>Key arity.</b> The list arm's companion joins a {@code VALUES (idx, key...)}
+     *       derived table whose typed row tops out at jOOQ's {@code Row22}, so the key is capped
+     *       at 21 columns. The root sibling of {@code validateDmlReentryKeyArity}, and what
+     *       keeps {@code ReentryRowsFragments}' claim true that the row builder's own throw is
+     *       only a backstop for objects built outside the pipeline.</li>
+     *   <li><b>No error channel.</b> Structurally empty today, and the guard exists to keep it
+     *       that way: {@code FieldBuilder.resolveErrorChannel} answers no-channel for anything
+     *       but a class-backed {@code ResultReturnType}, and a {@code @table}-bound return is not
+     *       one, so the lift emit carries no channel arms. The child arm's mirror in
+     *       {@link #validateServiceTableField} pins the same premise at its coordinate; if
+     *       channel resolution ever widens to table-bound payloads, the first schema exercising
+     *       it fails here rather than inheriting an arm shape never designed for a channel.</li>
+     * </ul>
+     */
+    private void validateRootServiceTableReturn(
+            no.sikt.graphitron.rewrite.model.OutputField field,
+            ReturnTypeRef.TableBoundReturnType returnType,
+            boolean hasErrorChannel, List<ValidationError> errors) {
+        TableRef returnTable = returnType.table();
+        if (!returnTable.hasPrimaryKey()) {
+            errors.add(new ValidationError(
+                field.qualifiedName(),
+                Rejection.structural("Field '" + field.qualifiedName() + "': @service on a "
+                    + "table-bound return type requires the returned table '"
+                    + returnTable.tableName() + "' to have a primary key for the keyed "
+                    + "re-projection of the returned records"),
+                field.location()
+            ));
+            return;
+        }
+        int keyArity = returnTable.primaryKeyColumns().size();
+        if (returnType.wrapper().isList() && keyArity > 21) {
+            errors.add(new ValidationError(
+                field.qualifiedName(),
+                Rejection.structural("Field '" + field.qualifiedName() + "': a list-returning "
+                    + "@service on a @table type re-fetches the returned rows through a keyed "
+                    + "re-query whose key is table '" + returnTable.tableName() + "'s primary "
+                    + "key; " + keyArity + " key columns exceeds jOOQ's typed Row22 cap (key + "
+                    + "idx must fit in Row<N+1>). Use a narrower primary key, or drop @table "
+                    + "from the return type to keep reading the columns off the returned record"),
+                field.location()
+            ));
+        }
+        if (hasErrorChannel) {
+            errors.add(new ValidationError(
+                field.qualifiedName(),
+                Rejection.structural("Field '" + field.qualifiedName() + "': a root @service "
+                    + "field with a @table-bound return carrying an error channel is not "
+                    + "supported — the keyed re-projection emit inlines its channel arms on the "
+                    + "single-channel premise; widening channel resolution to table-bound "
+                    + "payloads requires designing that arm first"),
+                field.location()
+            ));
+        }
     }
     private void validateQueryServiceRecordField(no.sikt.graphitron.rewrite.model.QueryField.QueryServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
     }
@@ -1010,6 +1084,8 @@ public class GraphitronSchemaValidator {
     }
     private void validateMutationServiceTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField field, List<ValidationError> errors) {
         // Unresolved service method is caught by the builder (UnclassifiedField).
+        validateRootServiceTableReturn(field, field.returnType(),
+            field.errorChannel().isPresent(), errors);
     }
     private void validateMutationServiceRecordField(no.sikt.graphitron.rewrite.model.MutationField.MutationServiceRecordField field, List<ValidationError> errors) {}
     private void validateMutationServicePolymorphicField(no.sikt.graphitron.rewrite.model.MutationField.MutationServicePolymorphicField field, List<ValidationError> errors) {

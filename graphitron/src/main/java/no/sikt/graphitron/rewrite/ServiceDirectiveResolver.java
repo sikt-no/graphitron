@@ -313,6 +313,22 @@ final class ServiceDirectiveResolver {
                 "@service at the root does not support Connection return types — use [T] or T instead"));
         }
 
+        // Also field shape, and for the same reason it outranks the signature: the framework
+        // re-selects the requested fields from the returned table, keyed on each returned
+        // record's primary key, so a key-less table gives it nothing to key on. Same invariant
+        // the child table-bound arm carries (mirrored in
+        // GraphitronSchemaValidator.validateServiceTableField), stated at the root coordinate.
+        if (regime == Regime.STRICT_ROOT
+                && returnType instanceof ReturnTypeRef.TableBoundReturnType tb
+                && !tb.table().hasPrimaryKey()) {
+            return new ParentKeyResolution.Rejected(Rejection.structural(
+                "@service on a table-bound return type requires the returned table '"
+                + tb.table().tableName() + "' to have a primary key: the returned records are"
+                + " read as key carriers and the requested fields are re-selected from the"
+                + " table by that key. Add a primary key, or drop @table from the return type"
+                + " to keep reading the columns off the record the service returned"));
+        }
+
         // The coordinate's answer to a SOURCES-shaped parameter.
         ParentKeyResolution keyResolution =
             classifySourcesCoordinate(parentTypeName, parent, signature, claims);
