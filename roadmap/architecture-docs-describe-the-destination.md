@@ -1,13 +1,13 @@
 ---
 id: R814
 title: "The architecture docs describe the surface being drained as if it were the design"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 3
 theme: docs
 depends-on: []
 created: 2026-08-23
-last-updated: 2026-08-23
+last-updated: 2026-08-26
 ---
 
 # The architecture docs describe the surface being drained as if it were the design
