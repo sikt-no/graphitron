@@ -205,6 +205,35 @@ class NodeIdParticipantRoutePipelineTest {
     }
 
     @Test
+    void argumentCoordinate_everyParticipantUnresolvedUnderOverride_handsThePredicateToTheMethod() {
+        // The same escape one coordinate over. The lift is minted by a different arm against a
+        // different carrier (ArgumentRef.ScalarArg.ConditionOwnedArg rather than
+        // InputField.ConditionOwnedField), and the argument's @condition is reflected on a path of
+        // its own, so the input-field case above does not stand in for this one.
+        var schema = TestSchemaHelper.buildSchema(LANGUAGE_FILM_INVENTORY + """
+            type Query {
+                stock(
+                    languageId: ID @nodeId(typeName: "Language")
+                        @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "argConditionTypeUnique"}, override: true)
+                ): [Stock!]!
+            }
+            """);
+
+        assertThat(schema.field("Query", "stock")).isInstanceOf(QueryField.QueryUnionField.class);
+        var filters = participantFilters(schema, "stock");
+        assertThat(filters).hasSize(2);
+        for (var pf : filters) {
+            assertThat(pf.filters())
+                .as("participant '" + pf.participant().typeName() + "' fires the authored method")
+                .anySatisfy(f -> assertThat(f).isInstanceOf(
+                    no.sikt.graphitron.rewrite.model.ConditionFilter.class));
+            assertThat(pf.filters())
+                .as("and emits no implicit column predicate of its own")
+                .noneSatisfy(f -> assertThat(f).isInstanceOf(GeneratedConditionFilter.class));
+        }
+    }
+
+    @Test
     void everyParticipantUnresolvedWithoutOverrideStillFails() {
         // The boundary pair: the same leaf without override: true is the shape that fails today, and
         // still does. override: false means the implicit column predicate has to compose, and there
