@@ -1,5 +1,7 @@
 type Film @table(name: "film") { title: String }
+"Reached by exactly one single mutation field, so the carrier arrives once and folds to One."
 type FilmPayload {
+  "OnlyChild off a record source: a re-fetch keyed on what the producer handed back. The bulk and fan-in Record carriers elsewhere in the corpus stay Child."
   film: Film
     @classified(source: OnlyChild, operations: [Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
     @commits(source: CorrelatedChain, result: SingleRecord)

@@ -1,3 +1,4 @@
+"Maps slot names to discriminator tokens at @field(name:)'s canonical enum-value site; the identity case, where the slot names are the tokens, omits the enum. It carries no type verdict of its own: @pivot(vocabulary:) names it by string, so the classify-and-emit walk never reaches it."
 enum Sprak {
   nn @field(name: "nno")
   nb @field(name: "nob")
@@ -7,10 +8,12 @@ type TranslatedTexts @classifiedType(as: NestingType) {
   nb: String
 }
 type Film @table(name: "film") {
+  "One row of translations, pivoted out of a per-language table."
   titleTexts: TranslatedTexts
     @reference(path: [{table: "film_translation"}])
     @pivot(on: "lang_code", value: "title_txt", vocabulary: "Sprak")
     @classified(source: OnlyChild, operations: [Join, Pivot], target: Single, targetShape: Record)
+  "The batched sibling classifies to the identical verdict, which is what makes delivery a derived consequence rather than a tuple axis."
   titleTextsSplit: TranslatedTexts @splitQuery
     @reference(path: [{table: "film_translation"}])
     @pivot(on: "lang_code", value: "title_txt", vocabulary: "Sprak")
@@ -21,7 +24,6 @@ extend type Query { film: Film @commits(source: AnchorTable, result: SingleRecor
 
 {
   film {
-    # One row of translations, pivoted out of a per-language table.
     titleTexts { nn nb }
   }
 }

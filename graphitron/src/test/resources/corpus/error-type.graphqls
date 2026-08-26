@@ -10,11 +10,11 @@ type SakPayload @classifiedType(as: JavaRecordType) {
   errors: [ExtraFieldError]
 }
 extend type Query {
+  "The @error type reaches the schema through a payload's errors slot."
   sak: SakPayload
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSak"})
 }
 
 {
-  # The @error type reaches the schema through a payload's errors slot.
   sak { data errors { path message severity } }
 }

@@ -3,6 +3,7 @@ type City @table(name: "city") @classifiedType(as: TableType) {
 }
 
 type Country @table(name: "country") @classifiedType(as: TableType) {
+  "A batched child that also paginates: @splitQuery opened the statement the page needs."
   cities: [City!]! @splitQuery @asConnection @defaultOrder(primaryKey: true)
     @classified(source: OnlyChild, operations: [Join, OrderBy, Paginate, Select], target: Single, targetShape: Connection)
     @commits(source: CorrelatedChain, result: Connection)
@@ -15,7 +16,6 @@ extend type Query {
 
 {
   country {
-    # A batched child that also paginates: @splitQuery opened the statement the page needs.
     cities(first: 2) {
       edges { node { city } }
     }

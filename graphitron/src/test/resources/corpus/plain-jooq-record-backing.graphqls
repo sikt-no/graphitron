@@ -1,4 +1,6 @@
+"A backing class assignable to org.jooq.Record but not to org.jooq.TableRecord, which is the verdict this document exists for; it completes the reflection-driven backing clusters the result-backing and input-backing documents carry."
 type PlainJooqRecordBacked @classifiedType(as: JooqRecordType) { id: ID }
+"The input half does not generate today, and the reason is a missing arm rather than a missing class: a bare jOOQ record is built from a field list, and the only jOOQ arm of the input resolver is gated on the table-bound case, so a table-less record falls through to the bean path."
 input PlainJooqRecordBackedInput @classifiedType(as: JooqRecordInputType) { id: ID }
 extend type Query {
   plainRecord: PlainJooqRecordBacked

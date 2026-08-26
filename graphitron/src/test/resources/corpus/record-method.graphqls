@@ -1,5 +1,7 @@
 type Language @table(name: "language") { name: String }
+"Record-bound as the producer's jOOQ TableRecord return type, which is what supplies the FK source key below."
 type FilmDetails {
+  "A @table child reached by @lookupKey under a record-backed parent. The record handoff has already opened a keyed scope, so the child re-queries rather than folding into a parent SELECT. Not promotable to a worked example: single cardinality is rejected outright, and the list spelling the rejection points at rides the batched-lookup gap where the validator accepts the shape and no emission exists, so a worked example could only state that nothing is generated."
   language(language_id: ID! @lookupKey): Language @reference(path: [{key: "film_language_id_fkey"}])
     @classified(source: Child, operations: [Join, Lookup, Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
 }

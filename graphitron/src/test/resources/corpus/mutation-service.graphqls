@@ -1,18 +1,18 @@
 type Film @table(name: "film") { title: String }
 type FilmDetails { title: String }
 type Mutation {
+  "A @table return: the service's rows are re-queried through the catalog."
   importFilm: Film
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
     @classified(source: Mutation, operations: [Reentry, ServiceCall], target: Single, targetShape: Table)
     @commits(source: ProjectedReentry, result: SingleRecord)
+  "A non-table return: what the service produced is the answer."
   summariseFilm: FilmDetails
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runDetails"})
     @classified(source: Mutation, operations: [ServiceCall], target: Single, targetShape: Record)
 }
 
 mutation {
-  # A @table return: the service's rows are re-queried through the catalog.
   importFilm { title }
-  # A non-table return: what the service produced is the answer.
   summariseFilm { title }
 }

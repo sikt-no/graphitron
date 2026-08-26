@@ -1,6 +1,7 @@
 type Film @table(name: "film") { title: String }
 type FilmInsertBulkPayload { films: [Film!] @commits(source: CorrelatedChain, result: SingleRecord) }
 type FilmUpdatePayload {
+  "The data field owns the read-back, a new keyed query off the written record's keys."
   film: Film
     @classified(source: OnlyChild, operations: [Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
     @commits(source: CorrelatedChain, result: SingleRecord)
@@ -9,12 +10,14 @@ type FilmUpdateBulkPayload { films: [Film!] @commits(source: CorrelatedChain, re
 input FilmCreateInput { title: String }
 input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
 type Mutation {
+  "The bulk INSERT carrier: the same claim as the single UPDATE carrier with a list-shaped data field, on distinct payload types so the per-kind carrier scans stay isolated."
   createFilmsPayload(in: [FilmCreateInput!]!): FilmInsertBulkPayload
     @mutation(typeName: INSERT)
     @classified(source: Mutation, operations: [Insert], target: Single, targetShape: Record)
   updateFilmPayload(in: FilmUpdateInput!): FilmUpdatePayload
     @mutation(typeName: UPDATE)
     @classified(source: Mutation, operations: [Update], target: Single, targetShape: Record)
+  "The bulk UPDATE carrier, the list sibling of the payload above."
   updateFilmsPayload(in: [FilmUpdateInput!]!): FilmUpdateBulkPayload
     @mutation(typeName: UPDATE)
     @classified(source: Mutation, operations: [Update], target: Single, targetShape: Record)
@@ -22,7 +25,6 @@ type Mutation {
 
 mutation {
   updateFilmPayload {
-    # The data field owns the read-back, a new keyed query off the written record's keys.
     film { title }
   }
 }

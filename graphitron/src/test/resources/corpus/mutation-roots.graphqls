@@ -6,24 +6,26 @@ input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
 input FilmTitleInput { title: String @field(name: "title") }
 input FilmCreateInput { title: String }
 type Mutation {
+  "Writes the row, then projects it back through the catalog."
   updateFilm(in: FilmUpdateInput!): Film
     @mutation(typeName: UPDATE)
     @classified(source: Mutation, operations: [Reentry, Update], target: Single, targetShape: Table)
     @commits(source: ProjectedReentry, result: SingleRecord)
+  "Cannot project a row that is gone; hands back the deleted row's id."
   deleteFilm(in: FilmKeyInput!): ID
     @mutation(typeName: DELETE, table: "film")
     @classified(source: Mutation, operations: [Delete], target: Single, targetShape: Column)
+  "The second way onto the DELETE verdict: an explicit multiRow broadcast over a non-key filter, where deleteFilm above admits through a key-covering filter input."
   deleteFilmsBroadcast(in: FilmTitleInput!): ID
     @mutation(typeName: DELETE, multiRow: true, table: "film")
     @classified(source: Mutation, operations: [Delete], target: Single, targetShape: Column)
+  "The carrier form: a plain object wrapping one @table data field exposes the RETURNING rows as a record, so the carrier is the write and the follow-up projection is the data field's own concern."
   createFilmPayload(in: FilmCreateInput!): FilmPayload
     @mutation(typeName: INSERT)
     @classified(source: Mutation, operations: [Insert], target: Single, targetShape: Record)
 }
 
 mutation {
-  # Writes the row, then projects it back through the catalog.
   updateFilm { title }
-  # Cannot project a row that is gone; hands back the deleted row's id.
   deleteFilm
 }

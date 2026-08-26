@@ -1,5 +1,6 @@
 type FilmDetails { title: String }
 extend type Query {
+  "A root @service into a record-backed type: the call produces the record, which is materialized rather than projected from the catalog. The root analog of a scalar service child, with the producer's reflected return type binding the payload."
   filmDetails: FilmDetails
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getDetails"})
     @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Record)

@@ -2,6 +2,7 @@ interface Searchable @classifiedType(as: InterfaceType) { name: String }
 type Film implements Searchable @table(name: "film") { name: String @field(name: "TITLE") }
 type Actor implements Searchable @table(name: "actor") { name: String @field(name: "FIRST_NAME") }
 extend type Query {
+  "A root @service returning a multi-table interface: the method hands back a key-populated table record per branch and the fetcher dispatches on its runtime class, which needs the participants to sit in distinct tables. A @service returning a union is rejected at classify."
   searchService: Searchable
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
     @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Interface)

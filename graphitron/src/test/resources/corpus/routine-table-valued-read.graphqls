@@ -3,6 +3,7 @@ type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
   rollekode: String
 }
 extend type Query {
+  "A table-valued database routine, read like a table."
   tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
     @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
     @defaultOrder(fields: [{name: "organisasjonskode"}, {name: "rollekode"}])
@@ -11,7 +12,6 @@ extend type Query {
 }
 
 {
-  # A table-valued database routine, read like a table.
   tilganger(env: "test", serviceId: "svc", feideId: "user@example.org") {
     organisasjonskode
     rollekode

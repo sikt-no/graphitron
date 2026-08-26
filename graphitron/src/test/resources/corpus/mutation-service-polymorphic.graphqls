@@ -3,6 +3,7 @@ type Film implements Searchable @table(name: "film") { name: String @field(name:
 type Actor implements Searchable @table(name: "actor") { name: String @field(name: "FIRST_NAME") }
 extend type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
 type Mutation {
+  "The mutation analogue of the multi-table interface @service root, at list cardinality: the same runtime-class dispatch over the records the method returns."
   doSearch: [Searchable]
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
     @classified(source: Mutation, operations: [ServiceCall], target: List, targetShape: Interface)

@@ -1,18 +1,19 @@
 extend type Query @classifiedType(as: RootType) {
+  "A single film, fetched by primary key."
   film: Film @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
     @commits(source: AnchorTable, result: SingleRecord)
+  "The same table as a Relay connection: the window and the order it needs are operations of their own."
   films: [Film!]! @asConnection @classified(source: Query, operations: [OrderBy, Paginate, Select], target: Single, targetShape: Connection)
     @commits(source: AnchorTable, result: Connection)
 }
 
 type Film @table(name: "film") @classifiedType(as: TableType) {
+  "The film's display title."
   title: String @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
 }
 
 {
-  # A single film, fetched by primary key.
   film {
-    # The film's display title.
     title
   }
 }

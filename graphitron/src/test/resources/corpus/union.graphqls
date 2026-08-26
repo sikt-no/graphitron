@@ -3,10 +3,12 @@ type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") 
 union FilmOrActor @classifiedType(as: UnionType) = Film | Actor
 type FilmActor @table(name: "film_actor") {
   related: FilmOrActor @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Union)
+  "The batched half of the union child; the film_actor foreign-key columns sit inside its primary key, which is what makes the parent-holds-FK side list-valued."
   relatedList: [FilmOrActor!]! @classified(source: OnlyChild, operations: [Select], target: List, targetShape: Union)
 }
 extend type Query {
   filmActor: FilmActor @commits(source: AnchorTable, result: SingleRecord)
+  "The union root, same Select verdict as the child."
   search: FilmOrActor @classified(source: Query, operations: [Select], target: Single, targetShape: Union)
 }
 

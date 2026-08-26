@@ -3,11 +3,13 @@ scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBi
 scalar Money @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY")
     @classifiedType(as: ScalarType)
 type Payment @table(name: "payment") @classifiedType(as: TableType) {
+  "A library-supplied scalar over a real numeric column."
   amount: BigDecimal
     @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
 }
 extend type Query {
   payment: Payment @commits(source: AnchorTable, result: SingleRecord)
+  "The same reflection, one use over: the resolved Java type is the service parameter's."
   price(amount: Money): String
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "wireMoney"})
     @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Record)
@@ -15,9 +17,7 @@ extend type Query {
 
 {
   payment {
-    # A library-supplied scalar over a real numeric column.
     amount
   }
-  # The same reflection, one use over: the resolved Java type is the service parameter's.
   price(amount: "1.00")
 }

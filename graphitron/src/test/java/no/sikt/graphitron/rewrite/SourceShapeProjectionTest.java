@@ -32,6 +32,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * hand-off (a nesting leaf passes its table row through; a pivot leaf hands its slots the
  * graphitron-built jOOQ record).
  *
+ * <p>One corpus document is load-bearing here rather than merely covered: the
+ * {@code service-child-class-backed-parent} document is the only one hosting service children on a
+ * parent that is not a table. Both service leaves are minted on both parent kinds, so neither leaf's
+ * identity answers what arrives at the fetcher, and without that document this mirror never sees the
+ * {@code Record} answer on either of them.
+ *
  * <p>{@link #everyChildFieldLeafIsCoveredOrDocumented()} keeps it honest as the leaf set grows:
  * every concrete {@link ChildField} sealed leaf is either observed by the corpus walk or carries a
  * typed {@link Exemption} on the {@code ExemptionRegistry.SOURCE_SHAPE_CORPUS} obligation, so the

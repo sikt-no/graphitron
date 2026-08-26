@@ -3,6 +3,7 @@ input FilmFilter {
     title: [String!] @field(name: "title") @asFacet
 }
 extend type Query {
+    "A paginated read whose filter input also yields facet counts."
     films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
         @classified(source: Query, operations: [OnReturnTable, OrderBy, Paginate, Select], target: Single, targetShape: Connection)
         @commits(source: AnchorTable, result: Connection)
@@ -15,7 +16,6 @@ extend type Query {
 }
 
 {
-  # A paginated read whose filter input also yields facet counts.
   films(filter: {title: ["A"]}) {
     edges { node { title } }
   }

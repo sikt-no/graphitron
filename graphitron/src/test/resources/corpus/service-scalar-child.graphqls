@@ -1,5 +1,6 @@
 type Language @table(name: "language") {
   name: String
+  "A scalar a service produces; no SQL of its own."
   rank: Int @service(
     service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRankMapped"})
     @classified(source: OnlyChild, operations: [ServiceCall], target: Single, targetShape: Record)
@@ -10,7 +11,6 @@ extend type Query { language: Language @commits(source: AnchorTable, result: Sin
 {
   language {
     name
-    # A scalar a service produces; no SQL of its own.
     rank
   }
 }

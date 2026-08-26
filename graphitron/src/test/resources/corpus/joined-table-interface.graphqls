@@ -13,6 +13,7 @@ type Company implements Party @table(name: "party_company") @discriminator(value
   orgNumber: String @field(name: "org_number")
 }
 extend type Query {
+  "A discriminated interface root over participants in tables of their own: each participant reaches the shared display_name over its own foreign key back to party."
   allParties: [Party!]! @classified(source: Query, operations: [OrderBy, Select], target: List, targetShape: Table)
     @commits(source: DiscriminatedTable, result: RecordList)
 }

@@ -1,9 +1,13 @@
+"Reached over two of film's foreign keys at once, so it folds to Many with no fixed point."
 type Language @table(name: "language") {
+  "Child, because two coordinates co-materialize Language instances in one request."
   name: String @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
 }
 type Film @table(name: "film") {
+  "OnlyChild even though the type it reaches is Many: fan-in is a property of the reached type, not of the reaching edge."
   language: Language @reference(path: [{key: "film_language_id_fkey"}])
     @classified(source: OnlyChild, operations: [Join, Select], target: Single, targetShape: Table)
+  "The second edge, and the whole reason Language fans in. Each edge alone is single."
   originalLanguage: Language @reference(path: [{key: "film_original_language_id_fkey"}])
     @classified(source: OnlyChild, operations: [Join, Select], target: Single, targetShape: Table)
 }

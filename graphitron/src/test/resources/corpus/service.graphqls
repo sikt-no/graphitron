@@ -1,15 +1,18 @@
 type Language @table(name: "language") { name: String }
 
 type FilmDetails {
+  "A terminal record read: the property comes off the record the producer handed back, so there is no operation at all."
   title: String @classified(source: Child, operations: [], target: Single, targetShape: Field, sourceShape: Record)
 }
 
 type Film @table(name: "film") {
   details: FilmDetails
+  "A scalar a service produces. A child @service resolves through a DataLoader, so the developer method takes the batch keys and returns them keyed, and a per-parent call has no emission."
   rating: String
     @service(service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRatingMapped"})
     @classified(source: Child, operations: [ServiceCall], target: Single, targetShape: Record)
     @commits(source: ServiceCall, result: LoaderDelegated)
+  "A service re-query into a @table: what the method hands back becomes catalog rows again, which is the Reentry member beside the call."
   language: Language
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguageByKey"})
     @classified(source: Child, operations: [Reentry, ServiceCall], target: Single, targetShape: Table)
@@ -20,6 +23,7 @@ extend type Query {
   film: Film
   prodFilmDetails: FilmDetails
     @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDetailsProps"})
+  "The root spelling of the same re-query: a service produces the rows and the coordinate projects them from the catalog."
   externalFilm: Film
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
     @classified(source: Query, operations: [Reentry, ServiceCall], target: Single, targetShape: Table)

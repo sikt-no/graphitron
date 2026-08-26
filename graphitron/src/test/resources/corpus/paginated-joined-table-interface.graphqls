@@ -13,13 +13,13 @@ type Company implements Party @table(name: "party_company") @discriminator(value
   orgNumber: String @field(name: "org_number")
 }
 extend type Query {
+  "A page of parties, each routed to its concrete type by the discriminator."
   parties: [Party!]! @asConnection
     @classified(source: Query, operations: [OrderBy, Paginate, Select], target: Single, targetShape: Connection)
     @commits(source: DiscriminatedTable, result: Connection)
 }
 
 {
-  # A page of parties, each routed to its concrete type by the discriminator.
   parties(first: 2) {
     edges {
       node {

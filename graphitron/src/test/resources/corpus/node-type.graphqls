@@ -1,12 +1,12 @@
 type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"])
     @classifiedType(as: NodeType) {
+  "The Relay global id, encoded from the node key columns."
   id: ID! @nodeId
 }
 extend type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
 
 {
   film {
-    # The Relay global id, encoded from the node key columns.
     id
   }
 }

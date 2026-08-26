@@ -1,6 +1,8 @@
+"@node seeds the arrival fold: node and entity lookups arrive batched, so this type is Many however few field edges reach it."
 type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"])
     @classifiedType(as: NodeType) {
   id: ID! @nodeId
+  "Child under a single root, which is what the seed arm of the fold means: the absorbing Many wins."
   title: String @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
 }
 extend type Query {

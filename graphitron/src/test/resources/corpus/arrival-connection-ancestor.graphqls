@@ -1,6 +1,8 @@
 type Film @table(name: "film") {
+  "Child, and the reason is the edges and nodes lists rather than the connection field, which is single."
   title: String @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
 }
+"The wrapper that transmits the arrival: its list edges are what make the element Many."
 type FilmsConnection {
   edges: [FilmsEdge!]! nodes: [Film!]! pageInfo: PageInfo!
 }

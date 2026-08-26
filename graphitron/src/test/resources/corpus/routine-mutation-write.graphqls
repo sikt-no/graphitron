@@ -3,6 +3,7 @@ type Rental @table(name: "rental") {
 }
 extend type Query { rental: Rental @commits(source: AnchorTable, result: SingleRecord) }
 type Mutation {
+  "A @routine call that is itself the write, in its chain form: the volatile set-returning function runs inside the per-field transaction and its keys are captured, then the committed rows are re-read from the hop's table, so the response always observes committed state."
   rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
     @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
     @reference(path: [{table: "rental"}])

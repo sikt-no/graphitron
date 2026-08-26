@@ -5,7 +5,9 @@ type FilmErr @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalA
 }
 union DeleteFilmsError = FilmErr
 type FilmIdsPayload {
+  "The @service id carrier: node ids encoded straight off the producer's in-memory records, with no re-fetch. The @nodeId(typeName:) grounds the encode on Film's @table."
   filmIds: [ID] @nodeId(typeName: "Film") @classified(source: OnlyChild, operations: [], target: List, targetShape: Column, sourceShape: Record)
+  "The payload's error channel."
   errors: [DeleteFilmsError]
 }
 type Mutation {

@@ -1,11 +1,14 @@
 type Language @table(name: "language") {
+  "Child, not OnlyChild: the Many the list root injected reaches down here through the tensor."
   name: String @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
 }
 type Film @table(name: "film") {
+  "A single edge that still arrives Many, because Many (x) One is Many: the edge's own cardinality is not what decides arrival."
   language: Language @reference(path: [{key: "film_language_id_fkey"}])
     @classified(source: Child, operations: [Join, Select], target: Single, targetShape: Table)
 }
 extend type Query {
+  "One list wrapper anywhere above a type absorbs its whole subtree to Many. This is the fold's list-ancestor arm."
   films: [Film!]! @classified(source: Query, operations: [OrderBy, Select], target: List, targetShape: Table)
     @commits(source: AnchorTable, result: RecordList)
 }

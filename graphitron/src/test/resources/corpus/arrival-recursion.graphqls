@@ -1,8 +1,11 @@
 type Staff @table(name: "staff") {
+  "Half of the store to staff FK cycle. A reachable cycle implies a second reaching edge, so both ends fold to Many."
   store: Store @reference(path: [{key: "staff_store_id_fkey"}])
     @classified(source: Child, operations: [Join, Select], target: Single, targetShape: Table)
 }
+"Reached by the root and by Staff.store, so the multi-edge rule folds it to Many without a fixed point."
 type Store @table(name: "store") {
+  "Child for the same reason its own reacher is: the cycle leaves no field on either type at One."
   manager: Staff @reference(path: [{key: "store_manager_staff_id_fkey"}])
     @classified(source: Child, operations: [Join, Select], target: Single, targetShape: Table)
 }

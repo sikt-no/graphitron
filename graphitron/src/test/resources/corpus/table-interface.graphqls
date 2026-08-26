@@ -1,12 +1,15 @@
 interface MediaItem @table(name: "film") @discriminate(on: "text_rating") @classifiedType(as: TableInterfaceType) { title: String }
 type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
 type Inventory @table(name: "inventory") {
+  "The same interface at single cardinality."
   media: MediaItem @classified(source: OnlyChild, operations: [Join, Select], target: Single, targetShape: Table)
 }
 type Language @table(name: "language") {
+  "Discriminated participants, read from one table."
   mediaList: [MediaItem!]! @reference(path: [{key: "film_language_id_fkey"}])
     @classified(source: OnlyChild, operations: [Join, OrderBy, Select], target: List, targetShape: Table)
     @commits(source: DiscriminatedCorrelatedChain, result: RecordList)
+  "The batched half paginated: the same launcher row with the windowed per-parent page tail, which is what makes the delivery pin a gate at connection cardinality."
   mediaConnection: [MediaItem!]! @asConnection @reference(path: [{key: "film_language_id_fkey"}])
     @classified(source: OnlyChild, operations: [Join, OrderBy, Paginate, Select], target: Single, targetShape: Connection)
     @commits(source: DiscriminatedCorrelatedChain, result: Connection)
@@ -14,17 +17,16 @@ type Language @table(name: "language") {
 extend type Query {
   inventory: Inventory @commits(source: AnchorTable, result: SingleRecord)
   language: Language @commits(source: AnchorTable, result: SingleRecord)
+  "The discriminated root: one base table, discriminated, so the target shape is Table rather than Interface."
   topMedia: MediaItem @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
     @commits(source: DiscriminatedTable, result: SingleRecord)
 }
 
 {
   language {
-    # Discriminated participants, read from one table.
     mediaList { title }
   }
   inventory {
-    # The same interface at single cardinality.
     media { title }
   }
 }

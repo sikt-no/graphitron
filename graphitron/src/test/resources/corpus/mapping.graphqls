@@ -13,8 +13,10 @@ type Film @table(name: "film") {
 
 extend type Query {
   film: Film @commits(source: AnchorTable, result: SingleRecord)
+  "What binds FilmDetails to a record: a type acquires its backing class by reflection on the @service producer's return type, never from a directive."
   prodFilmDetails: FilmDetails
     @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRecord"})
+  "The same binding one level down, which is what makes FilmStats.count a property read rather than a column."
   prodFilmStats: FilmStats
     @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmStatsRecord"})
 }

@@ -1,6 +1,8 @@
+"One @table @discriminate table shared by every implementer, so a service hands back records of that one table."
 interface MediaItem @table(name: "film") @discriminate(on: "text_rating") @classifiedType(as: TableInterfaceType) { title: String }
 type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
 extend type Query {
+  "Unlike the multi-table form, the fetcher collects the returned rows' keys and re-fetches by key, routing each row off the live discriminator rather than off its record class."
   mediaService: MediaItem
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
     @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Interface)

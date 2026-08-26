@@ -1,9 +1,7 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
 import graphql.language.AstPrinter;
-import graphql.language.Comment;
 import graphql.language.Definition;
-import graphql.language.Description;
 import graphql.language.Directive;
 import graphql.language.Document;
 import graphql.language.EnumTypeDefinition;
@@ -14,7 +12,6 @@ import graphql.language.FragmentSpread;
 import graphql.language.InlineFragment;
 import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InterfaceTypeDefinition;
-import graphql.language.Node;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.OperationDefinition;
 import graphql.language.ScalarTypeDefinition;
@@ -50,8 +47,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Consumer;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -93,14 +88,13 @@ import java.util.stream.Stream;
  * fixture's to show, so they stay out; so do the generated {@code @asConnection} wrappers, where the
  * authored field that produces them prints instead.
  *
- * <p><strong>Descriptions.</strong> The projection query is the per-example place to say <em>why</em>
- * a coordinate exists, which the shared description-free corpus fixture cannot. A {@code # ...}
- * comment line above a selected coordinate renders as that coordinate's SDL {@code Description}:
- * above a field it describes the field, above {@code ... on T} or a top-level
- * {@code fragment f on T} it describes type {@code T}; multiple comment lines join into a
- * block-string description. Comments carry field prose because {@code Field} is not a
- * {@code DescribedNode} in any graphql-java version; see {@link #descriptionOf(Node)}. A projection
- * with no comments renders unchanged.
+ * <p><strong>Descriptions.</strong> The prose saying <em>why</em> a coordinate exists is the
+ * coordinate's own SDL description in the corpus document, so it survives regeneration here without
+ * this renderer knowing about it, and capture transcribes the same text into
+ * {@code graphql_field.description} / {@code graphql_type.description}. The projection used to be
+ * that prose's home, as {@code # ...} comments this renderer stamped on as descriptions; a document
+ * carrying both its fixture and its projection has no need of the indirection, and the prose is worth
+ * more where a store can read it back.
  */
 public final class QueryViewRenderer {
 
@@ -158,7 +152,7 @@ public final class QueryViewRenderer {
         for (var entry : touched.fieldsByParent.entrySet()) {
             TypeDefinition<?> def = merged(registry, entry.getKey());
             if (def != null) {
-                append(sb, prune(def, entry.getValue(), touched));
+                append(sb, prune(def, entry.getValue()));
             }
         }
         // 2. Abstract output types referenced but not field-selected (unions; interfaces reached only via fragments).
@@ -166,7 +160,7 @@ public final class QueryViewRenderer {
             if (!touched.fieldsByParent.containsKey(name)) {
                 TypeDefinition<?> def = merged(registry, name);
                 if (def != null) {
-                    append(sb, stripInternalDirectives(def, touched));
+                    append(sb, stripInternalDirectives(def));
                 }
             }
         }
@@ -174,7 +168,7 @@ public final class QueryViewRenderer {
         for (String name : touched.inputTypes) {
             TypeDefinition<?> def = merged(registry, name);
             if (def != null) {
-                append(sb, stripInternalDirectives(def, touched));
+                append(sb, stripInternalDirectives(def));
             }
         }
         // 4. Leaf types the fixture declares and the excerpt names (closure honesty).
@@ -184,7 +178,7 @@ public final class QueryViewRenderer {
             }
             TypeDefinition<?> def = merged(registry, name);
             if (def != null) {
-                append(sb, stripInternalDirectives(def, touched));
+                append(sb, stripInternalDirectives(def));
             }
         }
         return sb.toString().strip();
@@ -206,19 +200,14 @@ public final class QueryViewRenderer {
     }
 
     /**
-     * The coordinates a selection touches: pruned field containers, the abstract/input closures to
-     * emit whole, and the comment-authored description prose. Field comments land under
-     * {@link #fieldDescriptions} keyed by {@code (parent, field)}; type comments land under
-     * {@link #typeDescriptions} keyed by type name. The emit loop reads these back and stamps them
-     * on as SDL descriptions.
+     * The coordinates a selection touches: the pruned field containers, and the abstract, input and
+     * leaf closures to emit whole.
      */
     private static final class Touched {
         final Map<String, Set<String>> fieldsByParent = new LinkedHashMap<>();
         final Set<String> abstractTypes = new LinkedHashSet<>();
         final Set<String> inputTypes = new LinkedHashSet<>();
         final Set<String> leafTypes = new LinkedHashSet<>();
-        final Map<String, String> typeDescriptions = new LinkedHashMap<>();
-        final Map<String, Map<String, String>> fieldDescriptions = new LinkedHashMap<>();
     }
 
     /** Walks a parsed selection against the assembled schema, recording the {@link Touched} closure. */
@@ -239,9 +228,7 @@ public final class QueryViewRenderer {
                 if (def instanceof OperationDefinition op) {
                     walk(op.getSelectionSet(), rootType(op));
                 } else if (def instanceof FragmentDefinition frag) {
-                    String typeName = frag.getTypeCondition().getName();
-                    recordTypeDescription(typeName, frag);
-                    walk(frag.getSelectionSet(), schema.getType(typeName));
+                    walk(frag.getSelectionSet(), schema.getType(frag.getTypeCondition().getName()));
                 }
             }
         }
@@ -264,11 +251,8 @@ public final class QueryViewRenderer {
             for (Selection<?> selection : selectionSet.getSelections()) {
                 switch (selection) {
                     case Field field -> visitField(field, parent);
-                    case InlineFragment inline -> {
-                        String typeName = inline.getTypeCondition().getName();
-                        recordTypeDescription(typeName, inline);
-                        walk(inline.getSelectionSet(), schema.getType(typeName));
-                    }
+                    case InlineFragment inline ->
+                        walk(inline.getSelectionSet(), schema.getType(inline.getTypeCondition().getName()));
                     case FragmentSpread spread -> {
                         FragmentDefinition frag = fragments.get(spread.getName());
                         if (frag != null) {
@@ -289,12 +273,6 @@ public final class QueryViewRenderer {
                 return;
             }
             out.fieldsByParent.computeIfAbsent(container.getName(), k -> new LinkedHashSet<>()).add(field.getName());
-            String description = descriptionOf(field);
-            if (description != null) {
-                out.fieldDescriptions
-                    .computeIfAbsent(container.getName(), k -> new LinkedHashMap<>())
-                    .put(field.getName(), description);
-            }
             for (GraphQLArgument arg : fieldDef.getArguments()) {
                 collectInputClosure(GraphQLTypeUtil.unwrapAll(arg.getType()));
             }
@@ -326,12 +304,6 @@ public final class QueryViewRenderer {
             }
         }
 
-        private void recordTypeDescription(String typeName, Node<?> carrier) {
-            String description = descriptionOf(carrier);
-            if (description != null) {
-                out.typeDescriptions.put(typeName, description);
-            }
-        }
     }
 
     /**
@@ -369,95 +341,43 @@ public final class QueryViewRenderer {
     }
 
     /** Keeps only the touched fields of {@code def} and strips the internal directives from what remains. */
-    private static TypeDefinition<?> prune(TypeDefinition<?> def, Set<String> keep, Touched touched) {
-        String typeDescription = touched.typeDescriptions.get(def.getName());
+    private static TypeDefinition<?> prune(TypeDefinition<?> def, Set<String> keep) {
         return switch (def) {
-            case ObjectTypeDefinition o -> o.transform(b -> {
-                b.fieldDefinitions(keptFields(o.getName(), o.getFieldDefinitions(), keep, touched))
-                    .directives(realDirectives(o.getDirectives()));
-                applyDescription(b::description, typeDescription);
-            });
-            case InterfaceTypeDefinition i -> i.transform(b -> {
-                b.definitions(keptFields(i.getName(), i.getFieldDefinitions(), keep, touched))
-                    .directives(realDirectives(i.getDirectives()));
-                applyDescription(b::description, typeDescription);
-            });
-            default -> stripInternalDirectives(def, touched);
+            case ObjectTypeDefinition o -> o.transform(b -> b
+                .fieldDefinitions(keptFields(o.getFieldDefinitions(), keep))
+                .directives(realDirectives(o.getDirectives())));
+            case InterfaceTypeDefinition i -> i.transform(b -> b
+                .definitions(keptFields(i.getFieldDefinitions(), keep))
+                .directives(realDirectives(i.getDirectives())));
+            default -> stripInternalDirectives(def);
         };
     }
 
     /** Emits a type whole (all fields kept), stripping only the internal test directives at every level. */
-    private static TypeDefinition<?> stripInternalDirectives(TypeDefinition<?> def, Touched touched) {
-        String typeDescription = touched.typeDescriptions.get(def.getName());
+    private static TypeDefinition<?> stripInternalDirectives(TypeDefinition<?> def) {
         return switch (def) {
-            case ObjectTypeDefinition o -> o.transform(b -> {
-                b.directives(realDirectives(o.getDirectives()));
-                applyDescription(b::description, typeDescription);
-            });
-            case InterfaceTypeDefinition i -> i.transform(b -> {
-                b.directives(realDirectives(i.getDirectives()));
-                applyDescription(b::description, typeDescription);
-            });
-            case UnionTypeDefinition u -> u.transform(b -> {
-                b.directives(realDirectives(u.getDirectives()));
-                applyDescription(b::description, typeDescription);
-            });
-            case EnumTypeDefinition e -> e.transform(b -> {
-                b.directives(realDirectives(e.getDirectives()));
-                applyDescription(b::description, typeDescription);
-            });
-            case ScalarTypeDefinition s -> s.transform(b -> {
-                b.directives(realDirectives(s.getDirectives()));
-                applyDescription(b::description, typeDescription);
-            });
-            case InputObjectTypeDefinition io -> io.transform(b -> {
-                b.directives(realDirectives(io.getDirectives()))
-                    .inputValueDefinitions(io.getInputValueDefinitions().stream()
-                        .map(iv -> iv.transform(vb -> vb.directives(realDirectives(iv.getDirectives()))))
-                        .toList());
-                applyDescription(b::description, typeDescription);
-            });
+            case ObjectTypeDefinition o -> o.transform(b -> b.directives(realDirectives(o.getDirectives())));
+            case InterfaceTypeDefinition i -> i.transform(b -> b.directives(realDirectives(i.getDirectives())));
+            case UnionTypeDefinition u -> u.transform(b -> b.directives(realDirectives(u.getDirectives())));
+            case EnumTypeDefinition e -> e.transform(b -> b.directives(realDirectives(e.getDirectives())));
+            case ScalarTypeDefinition s -> s.transform(b -> b.directives(realDirectives(s.getDirectives())));
+            case InputObjectTypeDefinition io -> io.transform(b -> b
+                .directives(realDirectives(io.getDirectives()))
+                .inputValueDefinitions(io.getInputValueDefinitions().stream()
+                    .map(iv -> iv.transform(vb -> vb.directives(realDirectives(iv.getDirectives()))))
+                    .toList()));
             default -> def;
         };
     }
 
-    private static List<FieldDefinition> keptFields(String parentName, List<FieldDefinition> fields, Set<String> keep, Touched touched) {
-        Map<String, String> descriptions = touched.fieldDescriptions.getOrDefault(parentName, Map.of());
+    private static List<FieldDefinition> keptFields(List<FieldDefinition> fields, Set<String> keep) {
         return fields.stream()
             .filter(f -> keep.contains(f.getName()))
-            .map(f -> f.transform(b -> {
-                b.directives(realDirectives(f.getDirectives()));
-                applyDescription(b::description, descriptions.get(f.getName()));
-            }))
+            .map(f -> f.transform(b -> b.directives(realDirectives(f.getDirectives()))))
             .toList();
     }
 
     private static List<Directive> realDirectives(List<Directive> directives) {
         return directives.stream().filter(d -> !INTERNAL_DIRECTIVES.contains(d.getName())).toList();
-    }
-
-    /**
-     * The single description-source seam: every description text comes from {@code # ...} comments
-     * on the selection AST. Native executable {@code getDescription()} reads (available in
-     * graphql-java releases past the pinned 25.0) fold in here without the output side changing;
-     * {@code Field} prose stays comment-sourced regardless, since {@code Field} is never a
-     * {@code DescribedNode}.
-     */
-    private static String descriptionOf(Node<?> node) {
-        List<Comment> comments = node.getComments();
-        if (comments == null || comments.isEmpty()) {
-            return null;
-        }
-        String joined = comments.stream()
-            .map(comment -> comment.getContent().strip())
-            .collect(Collectors.joining("\n"));
-        return joined.isEmpty() ? null : joined;
-    }
-
-    /** Stamps a recorded description onto a builder, as a block string when the text spans lines. */
-    private static void applyDescription(Consumer<Description> setter, String text) {
-        if (text != null) {
-            setter.accept(new Description(text, null, text.contains("\n")));
-        }
     }
 }

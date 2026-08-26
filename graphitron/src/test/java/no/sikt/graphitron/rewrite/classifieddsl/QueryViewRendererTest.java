@@ -121,8 +121,12 @@ class QueryViewRendererTest {
             "{ node(id: \"1\") { ... on Film { id title } } }");
 
         assertThat(out)
-            .as("the polymorphic root, its scalar argument, and the interface declaration render")
-            .contains("node(id: ID!): Node")
+            .as("the polymorphic root, its scalar argument, and the interface declaration render. "
+                + "The field and its argument are matched separately because AstPrinter breaks the "
+                + "argument list onto its own line once the field carries a description, which the "
+                + "corpus document gives this coordinate")
+            .contains("\"Relay's own entry point: one global id at a time.\"")
+            .contains("id: ID!): Node")
             .contains("interface Node")
             .contains("type Film implements Node")
             .doesNotContain("@classified");
@@ -149,85 +153,51 @@ class QueryViewRendererTest {
     }
 
     @Test
-    void fieldCommentRendersAsTheFieldsDescription() {
-        String out = QueryViewRenderer.render(FIXTURE, """
-            {
-              film {
-                # The film's display title.
-                title
-              }
+    void aFieldsOwnDescriptionSurvivesRegeneration() {
+        String out = QueryViewRenderer.render("""
+            extend type Query { film: Film }
+
+            type Film @table(name: "film") {
+              "The film's display title."
+              title: String @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
             }
-            """);
+            """, "{ film { title } }");
 
         assertThat(out)
-            .as("a # comment above a selected field renders as that field's SDL description")
+            .as("a description a document writes on a coordinate reaches the rendered block, which is "
+                + "what makes the document the one home for the prose")
             .contains("\"The film's display title.\"")
             .contains("title: String");
     }
 
     @Test
-    void inlineFragmentCommentRendersAsTheTypeDescription() {
-        String out = QueryViewRenderer.render(sdlOf("union"), """
-            {
-              filmActor {
-                related {
-                  # A film in the catalog.
-                  ... on Film { title }
-                  ... on Actor { firstName }
-                }
-              }
+    void aTypesOwnDescriptionSurvivesRegeneration() {
+        String out = QueryViewRenderer.render("""
+            extend type Query { film: Film }
+
+            "A film in the catalog."
+            type Film @table(name: "film") {
+              title: String @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
             }
-            """);
+            """, "{ film { title } }");
 
         assertThat(out)
-            .as("a # comment above ... on T renders as type T's description")
+            .as("a type description renders on the pruned type, so a document can say what a type is")
             .contains("\"A film in the catalog.\"")
-            .contains("type Film");
+            .contains("type Film @table");
     }
 
     @Test
-    void topLevelFragmentCommentRendersAsTheTypeDescription() {
-        String out = QueryViewRenderer.render(sdlOf("error-type"), """
-            # An error raised when an extra field is present.
-            fragment e on ExtraFieldError { path message severity }
-            """);
-
-        assertThat(out)
-            .as("a # comment above a top-level fragment renders as the fragment type's description")
-            .contains("\"An error raised when an extra field is present.\"")
-            .contains("type ExtraFieldError @error");
-    }
-
-    @Test
-    void multiLineCommentRendersAsABlockStringDescription() {
-        String out = QueryViewRenderer.render(FIXTURE, """
-            {
-              film {
-                # First line of prose.
-                # Second line of prose.
-                title
-              }
-            }
-            """);
-
-        assertThat(out)
-            .as("multiple # lines on one coordinate join into a block-string description")
-            .contains("\"\"\"")
-            .contains("First line of prose.")
-            .contains("Second line of prose.");
-    }
-
-    @Test
-    void aProjectionWithoutCommentsRendersNoDescriptions() {
+    void aFixtureWithoutDescriptionsRendersNone() {
         String out = QueryViewRenderer.render(FIXTURE, "{ film { releaseYear } }");
 
-        // The no-regression pin: with no authored comments the renderer stamps no descriptions, so no
-        // block string appears and no rendered line is a bare SDL description (a leading quoted string).
-        // The only quotes in this projection are directive argument values (@table(name: "film")), which
-        // never start a line.
+        // The no-regression pin: a fixture that describes nothing renders no description, so no block
+        // string appears and no rendered line is a bare SDL description (a leading quoted string). The
+        // only quotes in this excerpt are directive argument values (@table(name: "film")), which never
+        // start a line.
         assertThat(out).doesNotContain("\"\"\"");
         assertThat(out.lines().map(String::strip))
-            .as("no line in a comment-free projection is a bare SDL description string")
+            .as("no line in a description-free excerpt is a bare SDL description string")
             .noneMatch(line -> line.startsWith("\""));
         assertThat(out)
             .contains("type Film @table")

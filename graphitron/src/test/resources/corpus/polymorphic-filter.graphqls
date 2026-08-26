@@ -2,6 +2,7 @@ type Customer @table(name: "customer") { firstName: String @field(name: "first_n
 type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
 union Person @classifiedType(as: UnionType) = Customer | Staff
 extend type Query {
+  "A @field-mapped filter over a multi-table union lowers once per table-bound participant, against that participant's own table. Both participants carry first_name, so the coordinate mints one condition member each: the corpus's only two-condition-row coordinate, and the reason the member list is a multiset rather than a set."
   people(firstName: [String!] @field(name: "first_name")): [Person!]!
     @classified(source: Query, operations: [OnParticipant, OnParticipant, Select], target: List, targetShape: Union)
 }

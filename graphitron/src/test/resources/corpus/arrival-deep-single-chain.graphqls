@@ -1,11 +1,15 @@
+"The terminus of a chain with no list wrapper and no fan-in anywhere above it."
 type Language @table(name: "language") {
+  "The terminal column, still One: nothing on the chain above it multiplies it."
   name: String @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
 }
 type Film @table(name: "film") {
+  "A single @reference edge, so arrival stays the One identity: the coordinate folds to OnlyChild."
   language: Language @reference(path: [{key: "film_language_id_fkey"}])
     @classified(source: OnlyChild, operations: [Join, Select], target: Single, targetShape: Table)
 }
 extend type Query {
+  "A single root, so the whole subtree below it arrives once. This is the arrival fold's One corner."
   film: Film @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
     @commits(source: AnchorTable, result: SingleRecord)
 }

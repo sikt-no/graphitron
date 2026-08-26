@@ -1,8 +1,10 @@
 type Film @table(name: "film") { id: ID }
+"The Relay triad written structurally, the form the classifier promotes without the @asConnection transform, so the wrapper types exist in source SDL and can carry a type verdict of their own."
 type FilmsConnection @classifiedType(as: ConnectionType) {
   edges: [FilmsEdge!]! nodes: [Film!]! pageInfo: PageInfo!
 }
 type FilmsEdge @classifiedType(as: EdgeType) { cursor: String! node: Film! }
+"A declared PageInfo, which is what pins the reuse half of exactly one PageInfoType per schema; the synthesised half is the faceted-connection document's."
 type PageInfo @classifiedType(as: PageInfoType) {
   hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String
 }

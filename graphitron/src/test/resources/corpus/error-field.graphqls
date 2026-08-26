@@ -1,4 +1,6 @@
+"The @error contract restricts the field set to exactly path and message, and both resolve off the developer-supplied error class through graphql-java's default property read."
 type MyError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+  "The list-shaped half of the contract: the leaf carries the field's own return wrapper, so target follows the SDL list."
   path: [String!]! @classified(source: OnlyChild, operations: [], target: List, targetShape: Field, sourceShape: Record)
   message: String! @classified(source: OnlyChild, operations: [], target: Single, targetShape: Field, sourceShape: Record)
 }

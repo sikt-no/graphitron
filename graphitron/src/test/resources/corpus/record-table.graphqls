@@ -14,6 +14,7 @@ type Film @table(name: "film") {
 
 extend type Query {
   film: Film @commits(source: AnchorTable, result: SingleRecord)
+  "What binds FilmDetails to a record. The explicit @reference above disambiguates film's two foreign keys to language."
   prodFilmDetails: FilmDetails
     @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
 }

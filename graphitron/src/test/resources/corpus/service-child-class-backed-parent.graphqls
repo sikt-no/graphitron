@@ -1,9 +1,11 @@
 type Film @table(name: "film") { title: String }
 type Aggregated {
+  "A scalar the service produces off the parent's backing record."
   rank: Int
     @service(service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRankMappedByRecord"})
     @classified(source: OnlyChild, operations: [ServiceCall], target: Single, targetShape: Record, sourceShape: Record)
     @commits(source: ServiceCall, result: LoaderDelegated)
+  "Table rows the service produces, keyed on the record the parent hands down."
   filmsViaService: [Film!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsMappedByRecord"})
     @classified(source: OnlyChild, operations: [Reentry, ServiceCall], target: List, targetShape: Table, sourceShape: Record)
@@ -17,9 +19,7 @@ extend type Query {
 
 {
   aggregated {
-    # A scalar the service produces off the parent's backing record.
     rank
-    # Table rows the service produces, keyed on the record the parent hands down.
     filmsViaService { title }
   }
 }

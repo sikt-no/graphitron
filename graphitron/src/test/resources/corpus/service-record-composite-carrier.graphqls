@@ -10,6 +10,7 @@ type CreateFilmsError @error(handlers: [{handler: DATABASE}]) {
 }
 union CreateFilmsErr = CreateFilmsError
 type CreateFilmsResult @classifiedType(as: JavaRecordType) {
+  "A @field-mapped @table child read off the composite through the record-backed accessor path."
   film: Film! @field(name: "filmRecord")
     @classified(source: Child, operations: [Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
     @commits(source: CorrelatedChain, result: SingleRecord)
@@ -18,11 +19,13 @@ type CreateFilmsResult @classifiedType(as: JavaRecordType) {
     @commits(source: CorrelatedChain, result: SingleRecord)
 }
 type CreateFilmsPayload @classifiedType(as: JavaRecordType) {
+  "A source-passthrough projection of the producer's in-memory composite list: no re-fetch and no DataLoader. The payload names the per-element composite class, with the arrival cardinality carried here."
   results: [CreateFilmsResult]
     @classified(source: OnlyChild, operations: [], target: List, targetShape: Record, sourceShape: Record)
   errors: [CreateFilmsErr]
 }
 type Mutation {
+  "A @service producer returning a list of a consumer-authored composite (one film record plus its actor records), which the payload exposes as a two-level carrier."
   createFilms: CreateFilmsPayload
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "createFilmsWithActors"})
     @classified(source: Mutation, operations: [ServiceCall], target: Single, targetShape: Record)

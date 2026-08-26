@@ -1,15 +1,20 @@
+"Its synthesised node metadata grounds the encode, and the @nodeId input filter covers the composite primary key, which is what satisfies DELETE's key-coverage admission."
 type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeId }
 input FilmActorRef { id: ID! @nodeId }
 type DeletedFilmActorPayload {
+  "A DELETE's only admissible data field: an id encoded off the RETURNING record. A @table-element projection is impossible, because the row is gone."
   deletedId: ID @classified(source: OnlyChild, operations: [], target: Single, targetShape: Column, sourceShape: Record)
 }
 type DeletedFilmActorsPayload {
+  "The same read at list cardinality; the bulk-ness rides the input cardinality and this field's list wrapper, not the verdict."
   deletedIds: [ID!] @classified(source: OnlyChild, operations: [], target: List, targetShape: Column, sourceShape: Record)
 }
 type Mutation {
+  "A payload-returning DELETE: the carrier exposes the affected rows as a record, so the write verb is the operation and the target is the carrier's record."
   deleteFilmActor(in: FilmActorRef!): DeletedFilmActorPayload
     @mutation(typeName: DELETE, table: "film_actor")
     @classified(source: Mutation, operations: [Delete], target: Single, targetShape: Record)
+  "The bulk sibling, one input list in and one id list out."
   deleteFilmActors(in: [FilmActorRef!]!): DeletedFilmActorsPayload
     @mutation(typeName: DELETE, table: "film_actor")
     @classified(source: Mutation, operations: [Delete], target: Single, targetShape: Record)

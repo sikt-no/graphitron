@@ -2,6 +2,7 @@ interface MediaItem @table(name: "film") @discriminate(on: "text_rating") @class
 type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
 extend type Query { film: FilmItem @commits(source: AnchorTable, result: SingleRecord) }
 type Mutation {
+  "The mutation analogue of the single-table discriminated @service root, at list cardinality: the same by-key re-fetch off the shared table."
   mediaSearch: [MediaItem]
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
     @classified(source: Mutation, operations: [ServiceCall], target: List, targetShape: Interface)
