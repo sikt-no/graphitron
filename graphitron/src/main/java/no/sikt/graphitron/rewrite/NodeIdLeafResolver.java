@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
+import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
@@ -15,9 +16,12 @@ import java.util.List;
 import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_PATH;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE_FOR;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 
@@ -88,7 +92,7 @@ final class NodeIdLeafResolver {
     static final String CONDITION_STEP_MARKER = "must be a foreign key";
 
     /**
-     * Outcome of {@link #resolve}. Three terminal arms; callers exhaustively switch.
+     * Outcome of {@link #resolve}. Four terminal arms; callers exhaustively switch.
      */
     sealed interface Resolved {
         /**
@@ -220,6 +224,26 @@ final class NodeIdLeafResolver {
         }
 
         /**
+         * Author-owned-predicate arm: no route from the containing table to {@code T.table()}
+         * resolved, and the leaf's own {@code @condition(override: true)} has taken responsibility
+         * for the whole {@code WHERE} contribution. The generator emits no decode and no implicit
+         * predicate; the authored method receives the resolving table (each branch's own alias on a
+         * multitable consumer) plus the raw wire id and decodes it through the generated
+         * {@code NodeIdEncoder} helpers.
+         *
+         * <p>Produced here rather than at the two consumers so one predicate is evaluated once over
+         * one pre-resolved value: a consumer cannot silently omit the ownership question, and the two
+         * cannot answer it differently. {@code override: false} plus the same unresolvable route
+         * stays {@link Rejected}, mirroring the column-miss arm's boundary pair.
+         *
+         * @param refTypeName    the resolved (or inferred) GraphQL type name of {@code T}
+         * @param unresolvedPath the route refusal the ownership supersedes, kept so a caller that
+         *                       finds the ownership inadmissible (the mixed-contract enforcer) can
+         *                       say why the route did not resolve rather than only that it did not
+         */
+        record AuthorOwnedPredicate(String refTypeName, Rejection unresolvedPath) implements Resolved {}
+
+        /**
          * Rejected: the leaf cannot be classified as either shape. Carries a single fully
          * formatted message ready for the caller's accumulating errors list or
          * {@code Unresolved} / {@code UnclassifiedArg} carrier.
@@ -241,8 +265,22 @@ final class NodeIdLeafResolver {
      * {@code @nodeId}; the resolver does not check those preconditions.
      *
      * <p>{@code leafName} is the GraphQL field-/argument-name; surfaces only in error messages.
+     *
+     * <p>{@code participant} is the participant of a multi-table interface / union the consuming
+     * field is standing on, or {@code null} at a single-table coordinate. It selects the
+     * {@code @referenceFor} route for that participant and scopes the auto-discovery refusals'
+     * remedies, which is the whole of why it is threaded: without it the refusal at a per-participant
+     * coordinate can only name {@code @reference}, a remedy that is stated once and cannot describe
+     * two differently-keyed tables.
+     *
+     * <p>{@code authorOwnedPredicate} is the leaf's own {@code @condition(override: true)}, read by
+     * the caller off the directive rather than off a built condition (condition resolution stays the
+     * caller's, per this class's note above). It turns an unresolvable route from a rejection into
+     * {@link Resolved.AuthorOwnedPredicate}: the author has taken the predicate, so the generator
+     * owes no route.
      */
-    Resolved resolve(GraphQLDirectiveContainer leaf, String leafName, TableRef containingTable) {
+    Resolved resolve(GraphQLDirectiveContainer leaf, String leafName, TableRef containingTable,
+                     ParticipantRef.TableBound participant, boolean authorOwnedPredicate) {
         var typeNameInference = inferTypeName(leaf, containingTable);
         if (typeNameInference.error() != null) {
             return new Resolved.Rejected(Rejection.structural(typeNameInference.error()));
@@ -312,9 +350,15 @@ final class NodeIdLeafResolver {
         }
         TableRef targetTable = targetTableResolved.entry().toTableRef(targetTableName);
         var walk = resolveFkJoinPath(leaf, leafName, containingTable, targetTableName, targetTable,
-            keys.keyColumns());
+            keys.keyColumns(), participant);
         if (walk instanceof PathResolution.Refused refused) {
-            return new Resolved.Rejected(refused.rejection());
+            // The author-owned escape sits exactly here: after the leaf's own shape is settled (the
+            // node type exists, is a node, and its key fits a typed Row) and only the route from this
+            // table to it is missing. A malformed leaf stays a rejection under override too, because
+            // no authored method makes @nodeId(typeName: "Nope") mean anything.
+            return authorOwnedPredicate
+                ? new Resolved.AuthorOwnedPredicate(refTypeName, refused.rejection())
+                : new Resolved.Rejected(refused.rejection());
         }
         var walked = (PathResolution.Walked) walk;
         var firstHop = pairs(walked.path().get(0));
@@ -382,25 +426,109 @@ final class NodeIdLeafResolver {
     private record KeyLanding(ColumnRef keyColumn, Optional<ColumnRef> localColumn) {}
 
     /**
-     * Resolves the FK join path from {@code containingTable} to {@code targetTableName} and lands
-     * {@code keyColumns} on it. {@code targetTable} is the already-resolved {@link TableRef} for
-     * {@code targetTableName}, threaded into the explicit-{@code @reference}
-     * {@link BuildContext#parsePath} call so its terminal-target verdict compares jOOQ table-class
-     * identity rather than the {@code @table} echo.
+     * Which route the leaf takes from the containing table to the {@code @nodeId} target. Three
+     * ways to get there and one way not to, sealed so {@link #resolveFkJoinPath} dispatches on the
+     * choice instead of re-testing the same directives down an if-chain, and so a fourth route
+     * (were the plain-{@code @reference} input rail to gain per-participant paths) arrives as an arm
+     * rather than as another branch.
+     */
+    private sealed interface Route {
+
+        /** An explicit {@code @reference} on the leaf: one path, read once, applied at every participant. */
+        record UniformReference() implements Route {}
+
+        /**
+         * The {@code @referenceFor} application naming the participant in scope: that participant's
+         * complete path from its own table to the target's.
+         */
+        record ParticipantRoute(String participantType, List<?> elements) implements Route {}
+
+        /** No stated route for this coordinate: single-hop FK auto-discovery answers. */
+        record AutoDiscover() implements Route {}
+
+        /** The stated routes contradict each other or are malformed; nothing to walk. */
+        record Refused(Rejection rejection) implements Route {}
+    }
+
+    /**
+     * Picks the leaf's route. The leaf-local contradictions are settled here rather than at the
+     * consuming field, because they are facts of the one leaf and would otherwise be re-derived once
+     * per participant at a coordinate that only sees them all at once.
      *
-     * <p>Two intake shapes:
+     * <p>An application whose {@code type:} is not the participant in scope is <em>inert</em>, not an
+     * error: the same input type may be consumed by two queries with different participant sets, and
+     * demanding that every application match at every consumer would force an author to fork the
+     * input type. The typo that inertness alone would swallow is caught whole-schema, at the one
+     * altitude that sees every consumer of the input surface.
+     */
+    private static Route selectRoute(GraphQLDirectiveContainer leaf, String leafName,
+                                     ParticipantRef.TableBound participant) {
+        boolean hasReferenceFor = !leaf.getAppliedDirectives(DIR_REFERENCE_FOR).isEmpty();
+        if (!hasReferenceFor) {
+            return leaf.hasAppliedDirective(DIR_REFERENCE)
+                ? new Route.UniformReference()
+                : new Route.AutoDiscover();
+        }
+        if (leaf.hasAppliedDirective(DIR_REFERENCE)) {
+            return new Route.Refused(Rejection.directiveConflict(List.of(DIR_REFERENCE, DIR_REFERENCE_FOR),
+                "@nodeId leaf '" + leafName + "' carries both @reference and @referenceFor. A leaf"
+                + " states one uniform path or per-participant paths, not both: keep the"
+                + " @reference if every participant reaches the target the same way, otherwise"
+                + " replace it with one @referenceFor per participant that needs its own route."));
+        }
+        var byType = new java.util.LinkedHashMap<String, List<?>>();
+        for (var app : leaf.getAppliedDirectives(DIR_REFERENCE_FOR)) {
+            var typeArg = app.getArgument(ARG_TYPE);
+            String type = typeArg != null && typeArg.getValue() != null ? typeArg.getValue().toString() : null;
+            if (type == null || type.isBlank()) {
+                return new Route.Refused(Rejection.structural(
+                    "@nodeId leaf '" + leafName + "': a @referenceFor application is missing its"
+                    + " 'type' argument."));
+            }
+            if (byType.containsKey(type)) {
+                return new Route.Refused(Rejection.structural(
+                    "@nodeId leaf '" + leafName + "': @referenceFor names participant '" + type
+                    + "' more than once. Repeated @referenceFor applications are independent, one"
+                    + " per participant; each participant may have at most one route (unlike"
+                    + " @reference, they do not concatenate)."));
+            }
+            var pathArg = app.getArgument(ARG_PATH);
+            Object pathValue = pathArg != null ? pathArg.getValue() : null;
+            byType.put(type, pathValue instanceof List<?> l ? l
+                : pathValue != null ? List.of(pathValue) : List.of());
+        }
+        if (participant == null || !byType.containsKey(participant.typeName())) {
+            return new Route.AutoDiscover();
+        }
+        return new Route.ParticipantRoute(participant.typeName(), byType.get(participant.typeName()));
+    }
+
+    /**
+     * Resolves the join path from {@code containingTable} to {@code targetTableName} and lands
+     * {@code keyColumns} on it. {@code targetTable} is the already-resolved {@link TableRef} for
+     * {@code targetTableName}, threaded into the path-parsing calls so their terminal-target verdict
+     * compares jOOQ table-class identity rather than the {@code @table} echo.
+     *
+     * <p>Three routes, chosen by {@link #selectRoute}:
      * <ul>
      *   <li>Explicit {@code @reference(path: [{key: ...}, ...])}: parsed elements are taken as-is.
      *       Length 1 is the single-hop shape; length &ge; 2 is a chain, and a chain whose adjacent
      *       pairs stop carrying the departing columns forward lands no key position, which is a
-     *       remote binding rather than a refusal. Every step must join on {@link On.ColumnPairs};
-     *       condition-only steps are rejected with the {@link #CONDITION_STEP_MARKER} text, that
-     *       one gate surviving because the {@code EXISTS} emitter is hop-general over foreign-key
-     *       hops and over nothing else.</li>
-     *   <li>No {@code @reference}: single-hop FK auto-discovery via
-     *       {@link JooqCatalog#findOutgoingFkToTable}. Multi-hop is always explicit; auto-discovery
-     *       does not search past one hop.</li>
+     *       remote binding rather than a refusal. A single stated path stays legal under a multitable
+     *       consumer: the terminus is fixed by {@code typeName:} and the stated hops resolve once per
+     *       participant against that participant's own table, so a uniform path survives exactly
+     *       where the per-participant resolutions coincide.</li>
+     *   <li>Explicit {@code @referenceFor(type: "<Participant>", path: [...])}: the same grammar,
+     *       scoped to the participant the consuming field is standing on. The path runs from that
+     *       participant's own table to the target's, which is the direction the generated predicate
+     *       reaches in.</li>
+     *   <li>Neither: single-hop FK auto-discovery via {@link JooqCatalog#findOutgoingFkToTable}.
+     *       Multi-hop is always explicit; auto-discovery does not search past one hop.</li>
      * </ul>
+     *
+     * <p>Every step of an explicit path must join on {@link On.ColumnPairs}; condition-only steps are
+     * rejected with the {@link #CONDITION_STEP_MARKER} text, that one gate surviving because the
+     * {@code EXISTS} emitter is hop-general over foreign-key hops and over nothing else.
      *
      * <p>On success the landings are one per key position, in key order, each carrying the column on
      * the parent's own table the position lands on or nothing. The caller reduces them to the arm;
@@ -408,51 +536,82 @@ final class NodeIdLeafResolver {
      */
     private PathResolution resolveFkJoinPath(GraphQLDirectiveContainer leaf, String leafName,
                                              TableRef containingTable, String targetTableName,
-                                             TableRef targetTable, List<ColumnRef> keyColumns) {
-        if (leaf.hasAppliedDirective(DIR_REFERENCE)) {
-            var path = ctx.parsePath(leaf, leafName, containingTable.tableName(), targetTableName, targetTable);
-            if (path.hasError()) {
-                return refuse(path.errorMessage());
+                                             TableRef targetTable, List<ColumnRef> keyColumns,
+                                             ParticipantRef.TableBound participant) {
+        switch (selectRoute(leaf, leafName, participant)) {
+            case Route.Refused refused -> {
+                return new PathResolution.Refused(refused.rejection());
             }
-            if (path.elements().isEmpty()) {
-                return refuse("@reference path on @nodeId leaf '" + leafName + "': path is empty");
-            }
-            for (int i = 0; i < path.elements().size(); i++) {
-                if (!(path.elements().get(i) instanceof JoinStep.Hop hop
-                        && hop.on() instanceof On.ColumnPairs)) {
-                    return refuse("@reference path on @nodeId leaf '" + leafName + "': step " + (i + 1)
-                        + " is a condition step; every step in a multi-hop @nodeId path "
-                        + CONDITION_STEP_MARKER + " (use { key: ... } at every position).");
+            case Route.UniformReference ignored -> {
+                var path = ctx.parsePath(leaf, leafName, containingTable.tableName(), targetTableName, targetTable);
+                if (path.hasError()) {
+                    return refuse(path.errorMessage());
                 }
+                if (path.elements().isEmpty()) {
+                    return refuse("@reference path on @nodeId leaf '" + leafName + "': path is empty");
+                }
+                return walkExplicit(path.elements(), leafName, "@reference", keyColumns);
             }
-            return new PathResolution.Walked(path.elements(),
-                landKeyColumns(path.elements(), keyColumns));
+            case Route.ParticipantRoute route -> {
+                // selfRefFkOnSource = !isList, and a decode leaf always binds decoded keys against
+                // the row's own table, so the orientation hint is the auto-discovery arm's.
+                var path = ctx.parseExplicitPath(route.elements(), leafName, containingTable.tableName(),
+                    targetTableName, targetTable, /*isList=*/false);
+                if (path.hasError()) {
+                    return refuse("@referenceFor(type: \"" + route.participantType() + "\") path on"
+                        + " @nodeId leaf '" + leafName + "': " + path.errorMessage());
+                }
+                return walkExplicit(path.elements(), leafName,
+                    "@referenceFor(type: \"" + route.participantType() + "\")", keyColumns);
+            }
+            case Route.AutoDiscover ignored -> {
+                // No stated route: single-hop FK auto-discovery. Multi-hop is always explicit; the
+                // auto-discovery fallback never searches past one hop. Disambiguation among
+                // A -> ? -> C chains is the author's responsibility via per-hop { key: ... }.
+                var lookup = ctx.catalog.findOutgoingFkToTable(
+                    containingTable.tableName(), targetTableName);
+                if (!(lookup instanceof JooqCatalog.OutgoingFkLookup.Unique unique)) {
+                    return refuse(autoDiscoveryRefusal(lookup, containingTable.tableName(),
+                        targetTableName, participant));
+                }
+                // The search resolved endpoints by class and answers with the FK object itself; hand
+                // it straight to synthesizeFkJoin rather than round-tripping through a bare-name
+                // re-lookup that risks cross-schema constraint-name collision.
+                // NodeId leafs are single-cardinality decoded keys against the parent's own table;
+                // the shim's invariant places the FK on the parent (source) side, so
+                // selfRefFkOnSource=true.
+                var fkStepResolution = ctx.synthesizeFkJoin(
+                    unique.fk(), containingTable.tableName(), leafName, 0, null, /*selfRefFkOnSource=*/true);
+                return switch (fkStepResolution) {
+                    case BuildContext.FkJoinResolution.Resolved r ->
+                        new PathResolution.Walked(List.of(r.hop()),
+                            landKeyColumns(List.of(r.hop()), keyColumns));
+                    case BuildContext.FkJoinResolution.UnknownTable u ->
+                        new PathResolution.Refused(
+                            ctx.unknownTableRejection(u.failure(), u.requestedName()));
+                    case BuildContext.FkJoinResolution.UnknownForeignKey uf ->
+                        new PathResolution.Refused(ctx.unknownForeignKeyRejection(uf.fkName()));
+                };
+            }
         }
-        // No @reference: single-hop FK auto-discovery. Multi-hop is always explicit; the
-        // auto-discovery fallback never searches past one hop. Disambiguation among A → ? → C
-        // chains is the author's responsibility via per-hop { key: ... }.
-        var lookup = ctx.catalog.findOutgoingFkToTable(
-            containingTable.tableName(), targetTableName);
-        if (!(lookup instanceof JooqCatalog.OutgoingFkLookup.Unique unique)) {
-            return refuse(autoDiscoveryRefusal(lookup, containingTable.tableName(), targetTableName));
+    }
+
+    /**
+     * The shared tail of both explicit routes: gate every step on being a foreign-key hop, then land
+     * the key. {@code sourceLabel} is the directive spelling the refusal names, so an author reading
+     * it is pointed at the application they wrote rather than at the grammar in the abstract.
+     */
+    private static PathResolution walkExplicit(List<JoinStep> elements, String leafName,
+                                               String sourceLabel, List<ColumnRef> keyColumns) {
+        for (int i = 0; i < elements.size(); i++) {
+            if (!(elements.get(i) instanceof JoinStep.Hop hop
+                    && hop.on() instanceof On.ColumnPairs)) {
+                return refuse(sourceLabel + " path on @nodeId leaf '" + leafName + "': step " + (i + 1)
+                    + " is a condition step; every step in a multi-hop @nodeId path "
+                    + CONDITION_STEP_MARKER + " (use { key: ... } at every position).");
+            }
         }
-        // The search resolved endpoints by class and answers with the FK object itself; hand it
-        // straight to synthesizeFkJoin rather than round-tripping through a bare-name re-lookup
-        // that risks cross-schema constraint-name collision.
-        // NodeId leafs are single-cardinality decoded keys against the parent's own table; the
-        // shim's invariant places the FK on the parent (source) side, so selfRefFkOnSource=true.
-        var fkStepResolution = ctx.synthesizeFkJoin(
-            unique.fk(), containingTable.tableName(), leafName, 0, null, /*selfRefFkOnSource=*/true);
-        return switch (fkStepResolution) {
-            case BuildContext.FkJoinResolution.Resolved r ->
-                new PathResolution.Walked(List.of(r.hop()),
-                    landKeyColumns(List.of(r.hop()), keyColumns));
-            case BuildContext.FkJoinResolution.UnknownTable u ->
-                new PathResolution.Refused(
-                    ctx.unknownTableRejection(u.failure(), u.requestedName()));
-            case BuildContext.FkJoinResolution.UnknownForeignKey uf ->
-                new PathResolution.Refused(ctx.unknownForeignKeyRejection(uf.fkName()));
-        };
+        return new PathResolution.Walked(elements, landKeyColumns(elements, keyColumns));
     }
 
     /**
@@ -474,40 +633,87 @@ final class NodeIdLeafResolver {
      *
      * <p>The vocabulary is {@link BuildContext#fkCountMessage}'s, which has split zero from several
      * for the direction-agnostic {@code @reference} resolution all along: "no foreign key found
-     * between tables", "multiple foreign keys found", candidates named, one worked
-     * {@code @reference} spelling. The third arm is what only a <em>directional</em> search can
-     * have. Two deliberate divergences from that message: the chained remedy names
-     * {@code { key: ... }} per hop rather than a two-element example, and the condition-step escape
-     * hatch is not offered, because a {@code @nodeId} path rejects condition steps.
+     * between tables", "multiple foreign keys found", candidates named, one worked spelling. The
+     * third arm is what only a <em>directional</em> search can have. Two deliberate divergences from
+     * that message: the chained remedy names {@code { key: ... }} per hop rather than a two-element
+     * example, and the condition-step escape hatch is not offered, because a {@code @nodeId} path
+     * rejects condition steps.
      *
-     * @param source the table the search departed from, the table the slot's own parent is on
-     * @param target the node type's table
+     * <p>Which directive the remedy spells follows the coordinate, which is the whole point of
+     * threading the participant this far: under a participant a {@code @reference} is stated once and
+     * applies to every branch, so it cannot describe two differently-keyed tables and naming it would
+     * be advice that cannot be taken. The participant-scoped wording names {@code @referenceFor} for
+     * this branch and the {@code @condition(override: true)} escape for the case where no generated
+     * route fits any branch. Single-table wording is unchanged.
+     *
+     * @param source      the table the search departed from, the table the slot's own parent is on
+     * @param target      the node type's table
+     * @param participant the participant the consuming field is standing on, or {@code null} at a
+     *                    single-table coordinate
      */
     private static String autoDiscoveryRefusal(JooqCatalog.OutgoingFkLookup lookup,
-                                               String source, String target) {
+                                               String source, String target,
+                                               ParticipantRef.TableBound participant) {
         return switch (lookup) {
             case JooqCatalog.OutgoingFkLookup.Unique u -> throw new IllegalStateException(
                 "unreachable: the caller resolves the unique arm instead of refusing it");
             case JooqCatalog.OutgoingFkLookup.Ambiguous a ->
                 "multiple foreign keys found from table '" + source + "' to '" + target
-                + "'; add a @reference directive to specify which one. Candidates: "
-                + String.join(", ", a.fkNames()) + " (e.g. '@reference(path: [{key: \""
-                + a.fkNames().get(0) + "\"}])')";
+                + "'; " + disambiguationRemedy(participant, a.fkNames().get(0))
+                + ". Candidates: " + String.join(", ", a.fkNames());
             case JooqCatalog.OutgoingFkLookup.NoneInDirection n when !n.reverseFkNames().isEmpty() ->
                 "no foreign key found from table '" + source + "' to '" + target
                 + "', and auto-discovery searches that direction only. The foreign "
                 + (n.reverseFkNames().size() == 1 ? "key" : "keys") + " connecting them "
                 + (n.reverseFkNames().size() == 1 ? "is" : "are") + " declared on '" + target
-                + "': " + String.join(", ", n.reverseFkNames()) + ". A @reference reaches "
-                + (n.reverseFkNames().size() == 1 ? "it" : "the one you mean")
-                + " by naming it (e.g. '@reference(path: [{key: \""
-                + n.reverseFkNames().get(0) + "\"}])')";
+                + "': " + String.join(", ", n.reverseFkNames()) + ". "
+                + namingRemedy(participant, n.reverseFkNames().get(0),
+                    n.reverseFkNames().size() == 1 ? "it" : "the one you mean");
             case JooqCatalog.OutgoingFkLookup.NoneInDirection n ->
                 "no foreign key found between tables '" + source + "' and '" + target
                 + "'; auto-discovery is single-hop, so reach '" + target + "' through the tables"
-                + " in between with one '{key: \"<fk-name>\"}' element per hop, or correct"
-                + " @nodeId(typeName:) if '" + target + "' is not the type this filter means";
+                + " in between with one '{key: \"<fk-name>\"}' element per hop"
+                + (participant == null ? "" : " stated as " + referenceForSketch(participant, "<fk-name>"))
+                + ", or correct @nodeId(typeName:) if '" + target + "' is not the type this filter"
+                + " means" + overrideEscape(participant);
         };
+    }
+
+    /** "add a @reference / state this participant's path" half of the several-candidates arm. */
+    private static String disambiguationRemedy(ParticipantRef.TableBound participant, String exampleFk) {
+        return participant == null
+            ? "add a @reference directive to specify which one (e.g. '@reference(path: [{key: \""
+                + exampleFk + "\"}])')"
+            : "state this participant's path with " + referenceForSketch(participant, exampleFk)
+                + overrideEscape(participant);
+    }
+
+    /** "a @reference reaches it by naming it" half of the reverse-FK arm. */
+    private static String namingRemedy(ParticipantRef.TableBound participant, String exampleFk,
+                                       String pronoun) {
+        return participant == null
+            ? "A @reference reaches " + pronoun + " by naming it (e.g. '@reference(path: [{key: \""
+                + exampleFk + "\"}])')"
+            : "Reach " + pronoun + " for this participant by naming it in "
+                + referenceForSketch(participant, exampleFk) + overrideEscape(participant);
+    }
+
+    /** One worked {@code @referenceFor} spelling for the participant in scope. */
+    private static String referenceForSketch(ParticipantRef.TableBound participant, String exampleFk) {
+        return "'@referenceFor(type: \"" + participant.typeName() + "\", path: [{key: \""
+            + exampleFk + "\"}])'";
+    }
+
+    /**
+     * The second remedy, offered only under a participant: where no generated route fits any branch,
+     * the authored method takes the whole predicate. The build's own column-miss guidance has
+     * promised this sentence for a while; at this coordinate it is now true.
+     */
+    private static String overrideEscape(ParticipantRef.TableBound participant) {
+        return participant == null ? ""
+            : ", or set @condition(override: true) on this leaf so your condition method owns the"
+                + " whole WHERE predicate (it receives each branch's own table and the raw id;"
+                + " decode it with the generated NodeIdEncoder helpers)";
     }
 
     /**

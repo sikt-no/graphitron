@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLInputObjectType;
 import no.sikt.graphitron.rewrite.model.InputField;
+import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
@@ -59,11 +60,17 @@ final class InputFieldResolver {
      * lifts to {@link InputField.UnboundField}); the flag rides through for nested-input cascade
      * propagation and future-growth axes.
      *
+     * <p>{@code participant} is the participant of a multi-table interface / union this call is
+     * standing on, or {@code null} at a single-table coordinate. It rides the same
+     * {@link ClassifyContext} as the cascade flag and reaches the {@code @nodeId} decode rail, which
+     * is the one classifier branch that resolves a per-participant path.
+     *
      * <p>Returns {@link Resolution.Ok} with an empty list when {@code rt} is {@code null} or the
      * schema type is not an input object (no work to do). Returns {@link Resolution.Rejected}
      * when at least one field fails column resolution or any {@code @condition} reflection fails.
      */
-    Resolution resolve(String typeName, TableRef rt, boolean enclosingOverride) {
+    Resolution resolve(String typeName, TableRef rt, boolean enclosingOverride,
+                       ParticipantRef.TableBound participant) {
         if (rt == null) return new Resolution.Ok(List.of());
         var rawType = ctx.schema.getType(typeName);
         if (!(rawType instanceof GraphQLInputObjectType iot)) return new Resolution.Ok(List.of());
@@ -72,7 +79,7 @@ final class InputFieldResolver {
         var failures = new ArrayList<InputFieldResolution.Unresolved>();
         for (var f : iot.getFieldDefinitions()) {
             var res = ctx.classifyInputField(f, typeName, rt,
-                ClassifyContext.withEnclosingOverride(enclosingOverride), conditionFailures);
+                ClassifyContext.forParticipant(enclosingOverride, participant), conditionFailures);
             switch (res) {
                 case InputFieldResolution.Resolved r -> classified.add(r.field());
                 case InputFieldResolution.Unresolved u -> failures.add(u);

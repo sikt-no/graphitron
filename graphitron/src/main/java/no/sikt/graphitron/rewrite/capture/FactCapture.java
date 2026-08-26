@@ -10,6 +10,7 @@ import no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimRejectionRows;
 import no.sikt.graphitron.rewrite.derive.NodeIdDecodeDefects;
+import no.sikt.graphitron.rewrite.derive.ReferenceForParticipantDefects;
 import no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections;
 import no.sikt.graphitron.rewrite.derive.StoreDetections;
 import no.sikt.graphitron.rewrite.derive.ClassifiedRun;
@@ -404,6 +405,7 @@ public final class FactCapture {
                 yield new StoreDetections(AuthoredClaimConflicts.detect(dsl, graph.name()),
                     ArgmappingProjectionDefects.detect(dsl, graph.name()),
                     NodeIdDecodeDefects.detect(dsl, graph.name()),
+                    ReferenceForParticipantDefects.detect(dsl, graph.name()),
                     ResolvedKeyProjections.read(dsl, graph.name()));
             }
         };

@@ -37,6 +37,9 @@ import java.util.Optional;
  *   <li>{@link ScalarArg.ColumnBackedReferenceArg} — FK-target {@code @nodeId(typeName: T)}
  *       scalar arg with a resolved single-hop {@code joinPath}; carries the target NodeType's
  *       key columns (arity 1..N).</li>
+ *   <li>{@link ScalarArg.ConditionOwnedArg} — {@code @nodeId} scalar arg whose
+ *       {@code @condition(override: true)} method owns the whole {@code WHERE} contribution
+ *       because no route to the target table resolved.</li>
  *   <li>{@link ScalarArg.UnboundArg} — scalar arg whose column could not be resolved;
  *       surfaced as a validation error.</li>
  *   <li>{@link InputTypeArg.TableInputArg} — table-resolved input arg; carries per-field
@@ -201,6 +204,37 @@ public sealed interface ArgumentRef {
              * re-evaluating the size predicate.
              */
             public boolean isComposite() { return columns.size() > 1; }
+        }
+
+        /**
+         * Scalar {@code @nodeId} arg whose explicit {@code @condition(override: true)} method owns
+         * the {@code WHERE} predicate entirely: no route from the field's table to the node type's
+         * table resolved, and the author took responsibility instead. The argument coordinate's
+         * counterpart to {@link no.sikt.graphitron.rewrite.model.InputField.ConditionOwnedField},
+         * with the same defining fact and the same reason for having no columns: there is nothing
+         * for the generator to bind, and a column slot would be dead storage.
+         *
+         * <p>The method receives the resolving table (each branch's own alias on a multitable
+         * consumer) plus the raw wire id, and decodes it through the generated {@code NodeIdEncoder}
+         * helpers. The compact constructor pins {@code override: true}; consumers branch on carrier
+         * identity rather than re-deriving it from the condition.
+         */
+        record ConditionOwnedArg(
+            String name,
+            String typeName,
+            boolean nonNull,
+            boolean list,
+            ArgConditionRef condition
+        ) implements ScalarArg {
+
+            public ConditionOwnedArg {
+                java.util.Objects.requireNonNull(condition, "condition");
+                if (!condition.override()) {
+                    throw new IllegalArgumentException(
+                        "ArgumentRef.ScalarArg.ConditionOwnedArg '" + name
+                        + "' requires @condition(override: true); got override: false");
+                }
+            }
         }
 
         /**

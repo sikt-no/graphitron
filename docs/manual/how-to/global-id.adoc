@@ -161,6 +161,30 @@ Invalid node id "MjAwMTE6LTE2" for this argument: decodes to type "20011", expec
 
 Two shapes stay outside dispatch. Writing `@nodeId(typeName: "Address")` pins one node type for every branch, which is the shape to reach for when the argument really does mean one type (an FK-target filter, say), and it keeps the single-type error message. And a bare `@nodeId` on a *nested input field* of such a field is rejected at build time rather than dispatched: name the type explicitly there.
 
+[#multitable-filter-inputs]
+=== Multitable filter inputs
+
+A `@nodeId` filter on a query returning a multi-table interface decodes once and filters each participant branch. When every participant reaches the target through a unique single-hop FK, discovery is automatic. When a participant's route is ambiguous or longer, state it per participant with xref:../reference/directives/referenceFor.adoc[`@referenceFor`]:
+
+[source,graphql]
+----
+input ApplicationFilter {
+    environmentId: ID @nodeId(typeName: "Environment")
+        @referenceFor(type: "FeideApplication", path: [{key: "feide_app_environment_fkey"}])
+        @referenceFor(type: "IdmApplication",  path: [{key: "idm_app_env_fkey"}])
+}
+
+type Query {
+    applications(filter: ApplicationFilter): [Application!]!
+}
+----
+
+The path runs from each participant's own table toward the target, which is the direction the generated predicate reaches in. Participants you do not name keep automatic discovery.
+
+When no generated route fits, xref:../reference/directives/condition.adoc[`@condition(override: true)`] on the leaf hands the whole predicate to your method: it receives each branch's table and the raw ID, and the generated `NodeIdEncoder` decodes it (`peekTypeId(id)` reads the type discriminator without committing to a type; `decodeEnvironment(id)` returns the typed key record, `null` on malformed input or a type mismatch). `override: false` plus an unresolvable route still fails the build, because the implicit column predicate is then required to compose and there is nothing for it to bind.
+
+Mixing the two contracts on one leaf, some branches generator-routed and some method-owned, is rejected at build time. The condition method's table parameter is `Table<?>`-shaped, so a split would compile and show up only as a wrong `WHERE` at request time; the build names the split participants and the two remedies that work.
+
 == `Query.node` and `Query.nodes` dispatch
 
 The two Relay entry points are emitted automatically when at least one `@node` type is classified for the schema:

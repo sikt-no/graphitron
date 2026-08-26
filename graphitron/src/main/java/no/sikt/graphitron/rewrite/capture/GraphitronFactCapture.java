@@ -33,6 +33,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_FIELD;
@@ -738,6 +741,52 @@ final class GraphitronFactCapture {
                     int pair = 0;
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
                         var pairRow = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR);
+                        pairRow.setTypeName(type);
+                        pairRow.setFieldName(field);
+                        pairRow.setArgumentName(argument);
+                        pairRow.setOrdinal(ordinal);
+                        pairRow.setStepPosition(position);
+                        pairRow.setPosition(pair++);
+                        pairRow.setParamName(entry.key());
+                        pairRow.setArgumentPath(argumentPath(sink, type, field, entry));
+                        sink.add(pairRow);
+                    }
+                    position++;
+                }
+            }
+            case "referenceFor" -> {
+                if (!sink.claim(GRAPHITRON_ARGUMENT_REFERENCE_FOR, type, field, argument, ordinal)) return;
+                String participant = string(directive, "type");
+                if (participant == null) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_FOR);
+                record.setTypeName(type);
+                record.setFieldName(field);
+                record.setArgumentName(argument);
+                record.setOrdinal(ordinal);
+                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
+                record.setParticipantTypeRef(participant);
+                sink.add(record);
+                int position = 0;
+                for (Value<?> element : list(directive, "path")) {
+                    var step = referenceElement(element, directive);
+                    if (step == null) continue;
+                    var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP);
+                    row.setTypeName(type);
+                    row.setFieldName(field);
+                    row.setArgumentName(argument);
+                    row.setOrdinal(ordinal);
+                    row.setPosition(position);
+                    qualified(step.table(), row::setTableRef,
+                        row::setTableRefNamespacePart, row::setTableRefNamePart);
+                    qualified(step.key(), row::setKeyRef,
+                        row::setKeyRefNamespacePart, row::setKeyRefNamePart);
+                    row.setClassName(step.className());
+                    row.setMethod(step.method());
+                    row.setArgMapping(step.argMapping());
+                    sink.add(row);
+                    int pair = 0;
+                    for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
+                        var pairRow = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR);
                         pairRow.setTypeName(type);
                         pairRow.setFieldName(field);
                         pairRow.setArgumentName(argument);

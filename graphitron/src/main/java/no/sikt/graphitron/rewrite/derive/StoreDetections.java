@@ -23,6 +23,12 @@ import java.util.List;
  * keys its rows on the coordinate its own remedy names. One family spanning both would have had to
  * pick one keying and restate the other's rows under it.
  *
+ * <p>{@link #referenceForParticipants} is the family whose question no single coordinate can ask:
+ * a {@code @referenceFor} on a {@code @nodeId} filter input field names a participant of the
+ * <em>consuming</em> query's return type, and one input type may be consumed by several queries with
+ * different participant sets. Per use site the classifier treats a non-matching name as inert; that
+ * this family exists is what keeps inertness from swallowing a typo.
+ *
  * <p>Not every member is a detection, and {@link #keyProjections} is the first that is not: it is the
  * positive half of the {@code argMapping} node-id resolution, read for the plan to emit from rather
  * than to reject. It rides here because the store handle does, opened for the capture and closed with
@@ -33,6 +39,7 @@ import java.util.List;
 public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                               ArgmappingProjectionDefects.Detection argmappingProjections,
                               NodeIdDecodeDefects.Detection nodeIdDecodes,
+                              ReferenceForParticipantDefects.Detection referenceForParticipants,
                               ResolvedKeyProjections.Projections keyProjections) {
 
     /** The empty detection, for callers running capture without the detection pass. */
@@ -40,6 +47,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         return new StoreDetections(AuthoredClaimConflicts.Detection.empty(),
             ArgmappingProjectionDefects.Detection.empty(),
             NodeIdDecodeDefects.Detection.empty(),
+            ReferenceForParticipantDefects.Detection.empty(),
             ResolvedKeyProjections.Projections.empty());
     }
 
@@ -48,6 +56,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         var out = new ArrayList<>(claims.violations());
         out.addAll(argmappingProjections.violations());
         out.addAll(nodeIdDecodes.violations());
+        out.addAll(referenceForParticipants.violations());
         return List.copyOf(out);
     }
 

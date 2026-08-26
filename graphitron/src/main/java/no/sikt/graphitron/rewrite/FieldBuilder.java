@@ -370,18 +370,29 @@ class FieldBuilder {
      *                                   {@link NodeIdArgPlan#dispatching}: the answer is a property of
      *                                   the participant <em>set</em>, which a single-table plan has no
      *                                   view of. Empty everywhere else.
+     * @param participant                the participant of a multi-table interface / union this plan
+     *                                   was built against, or {@code null} at a single-table
+     *                                   coordinate. A plan is already built once per participant, so
+     *                                   it is the natural carrier for the identity, and every
+     *                                   classification the plan reaches ({@link #classifyArgument}'s
+     *                                   {@code @nodeId} arm, and the plain-input descent's
+     *                                   {@link ClassifyContext}) reads the same one. Type name and
+     *                                   table travel together as the model's own pair rather than as
+     *                                   a bare String that could disagree with the table beside it.
      */
     record NodeIdArgPlan(
             Map<String, NodeIdLeafResolver.Resolved> byArgName,
             SameTableHit firstRequiredSameTableHit,
-            Set<String> dispatchedArgNames) {
+            Set<String> dispatchedArgNames,
+            ParticipantRef.TableBound participant) {
 
         /** Empty plan for non-table-bound fields and fields with no {@code @nodeId} leaves. */
-        static final NodeIdArgPlan EMPTY = new NodeIdArgPlan(Map.of(), null, Set.of());
+        static final NodeIdArgPlan EMPTY = new NodeIdArgPlan(Map.of(), null, Set.of(), null);
 
         /** A plan with no dispatched arguments: every caller except the participant loop. */
-        NodeIdArgPlan(Map<String, NodeIdLeafResolver.Resolved> byArgName, SameTableHit firstRequiredSameTableHit) {
-            this(byArgName, firstRequiredSameTableHit, Set.of());
+        NodeIdArgPlan(Map<String, NodeIdLeafResolver.Resolved> byArgName,
+                      SameTableHit firstRequiredSameTableHit, ParticipantRef.TableBound participant) {
+            this(byArgName, firstRequiredSameTableHit, Set.of(), participant);
         }
 
         /**
@@ -393,7 +404,7 @@ class FieldBuilder {
         NodeIdArgPlan dispatching(Set<String> argNames) {
             return argNames.isEmpty()
                 ? this
-                : new NodeIdArgPlan(byArgName, firstRequiredSameTableHit, Set.copyOf(argNames));
+                : new NodeIdArgPlan(byArgName, firstRequiredSameTableHit, Set.copyOf(argNames), participant);
         }
 
         /**
@@ -421,7 +432,8 @@ class FieldBuilder {
      * Cycle protection on nested input types is scoped (add on entry, remove on return) so
      * sibling subtrees that share an input-type subgraph are each visited independently.
      */
-    private NodeIdArgPlan buildNodeIdArgPlan(GraphQLFieldDefinition fieldDef, TableRef containingTable) {
+    private NodeIdArgPlan buildNodeIdArgPlan(GraphQLFieldDefinition fieldDef, TableRef containingTable,
+                                            ParticipantRef.TableBound participant) {
         var resolver = ctx.nodeIdLeafResolver();
         var byArgName = new java.util.LinkedHashMap<String, NodeIdLeafResolver.Resolved>();
         var firstRequiredHit = new NodeIdArgPlan.SameTableHit[]{null};
@@ -431,7 +443,8 @@ class FieldBuilder {
             if (arg.hasAppliedDirective(DIR_NODE_ID)) {
                 var unwrapped = GraphQLTypeUtil.unwrapAll(arg.getType());
                 if (unwrapped instanceof GraphQLNamedType named && "ID".equals(named.getName())) {
-                    var resolved = resolver.resolve(arg, arg.getName(), containingTable);
+                    var resolved = resolver.resolve(arg, arg.getName(), containingTable,
+                        participant, leafOverride(arg));
                     byArgName.put(arg.getName(), resolved);
                     if (resolved instanceof NodeIdLeafResolver.Resolved.SameTable st) {
                         anyHit = true;
@@ -446,7 +459,8 @@ class FieldBuilder {
             if (argType instanceof GraphQLInputObjectType iot) {
                 boolean[] sawNested = {false};
                 walkInputTypeForSameTableNodeId(
-                    resolver, iot, containingTable, argRequired, new java.util.LinkedHashSet<>(),
+                    resolver, iot, containingTable, participant, argRequired,
+                    new java.util.LinkedHashSet<>(),
                     hit -> {
                         sawNested[0] = true;
                         if (hit.required() && firstRequiredHit[0] == null) {
@@ -457,15 +471,30 @@ class FieldBuilder {
             }
         }
         if (byArgName.isEmpty() && !anyHit) {
-            return NodeIdArgPlan.EMPTY;
+            // EMPTY carries no participant, and deliberately: with no @nodeId leaf anywhere in the
+            // argument set there is no classification the identity would reach.
+            return participant == null ? NodeIdArgPlan.EMPTY
+                : new NodeIdArgPlan(Map.of(), null, participant);
         }
-        return new NodeIdArgPlan(Map.copyOf(byArgName), firstRequiredHit[0]);
+        return new NodeIdArgPlan(Map.copyOf(byArgName), firstRequiredHit[0], participant);
+    }
+
+    /**
+     * The leaf's own {@code @condition(override: true)}, read off the authored directive rather than
+     * off a built {@code ArgConditionRef}: a failing condition build empties the carrier by design,
+     * and what the resolver is being told is what the author declared. An enclosing cascade does not
+     * count here, the ownership being a claim this leaf makes about its own predicate.
+     */
+    private boolean leafOverride(graphql.schema.GraphQLDirectiveContainer leaf) {
+        var cond = ctx.readConditionDirective(leaf);
+        return cond != null && cond.override();
     }
 
     private record SameTableHitWithRequired(NodeIdArgPlan.SameTableHit hit, boolean required) {}
 
     private void walkInputTypeForSameTableNodeId(
             NodeIdLeafResolver resolver, GraphQLInputObjectType iot, TableRef containingTable,
+            ParticipantRef.TableBound participant,
             boolean pathRequiredSoFar, java.util.LinkedHashSet<String> visited,
             java.util.function.Consumer<SameTableHitWithRequired> hits) {
         if (!visited.add(iot.getName())) return;
@@ -476,7 +505,8 @@ class FieldBuilder {
                 if (inputField.hasAppliedDirective(DIR_NODE_ID)) {
                     var unwrapped = GraphQLTypeUtil.unwrapAll(inputField.getType());
                     if (unwrapped instanceof GraphQLNamedType named && "ID".equals(named.getName())) {
-                        var resolved = resolver.resolve(inputField, inputField.getName(), containingTable);
+                        var resolved = resolver.resolve(inputField, inputField.getName(),
+                            containingTable, participant, leafOverride(inputField));
                         if (resolved instanceof NodeIdLeafResolver.Resolved.SameTable st) {
                             hits.accept(new SameTableHitWithRequired(
                                 new NodeIdArgPlan.SameTableHit(
@@ -488,7 +518,7 @@ class FieldBuilder {
                 var nestedType = GraphQLTypeUtil.unwrapAll(inputField.getType());
                 if (nestedType instanceof GraphQLInputObjectType nestedIot) {
                     walkInputTypeForSameTableNodeId(
-                        resolver, nestedIot, containingTable, pathRequired, visited, hits);
+                        resolver, nestedIot, containingTable, participant, pathRequired, visited, hits);
                 }
             }
         } finally {
@@ -839,11 +869,17 @@ class FieldBuilder {
      *        (the leaf reaches the branch through a Map traversal rather than a top-level argument),
      *        and it rejects at classification time rather than dispatching; lifting it to dispatch is
      *        a later change if a consumer asks for it.
+     * @param mixedContract non-{@code null} when one {@code @nodeId} leaf resolves a generated route
+     *        on some branches and hands its predicate to the author's method on others. Nothing
+     *        downstream fails on that split: the condition method's first parameter is
+     *        {@code Table<?>}-shaped, so both contracts compile and the defect surfaces as a wrong
+     *        {@code WHERE} on a real request. Rejecting it here is the only place it can be seen.
      */
     private record NodeIdParticipantTargets(
             Map<String, NodeIdArgPlan> plansByParticipant,
             Map<String, NodeIdArgTarget> targetsByArgName,
-            Rejection nestedDivergence) {
+            Rejection nestedDivergence,
+            Rejection mixedContract) {
 
         /** Argument names whose verdict is {@link NodeIdArgTarget.PerParticipant}. */
         Set<String> dispatchedArgNames() {
@@ -880,26 +916,26 @@ class FieldBuilder {
             GraphQLFieldDefinition fieldDef, List<ParticipantRef.TableBound> participants) {
         var resolver = ctx.nodeIdLeafResolver();
         var plans = new LinkedHashMap<String, NodeIdArgPlan>();
-        var argDecodes = new LinkedHashMap<String, SequencedMap<String, HelperRef.Decode>>();
-        var nestedDecodes = new LinkedHashMap<String, SequencedMap<String, HelperRef.Decode>>();
+        var argResolutions = new LinkedHashMap<String, SequencedMap<String, NodeIdLeafResolver.Resolved>>();
+        var nestedResolutions = new LinkedHashMap<String, SequencedMap<String, NodeIdLeafResolver.Resolved>>();
         for (var participant : participants) {
-            var plan = buildNodeIdArgPlan(fieldDef, participant.table());
+            var plan = buildNodeIdArgPlan(fieldDef, participant.table(), participant);
             plans.put(participant.typeName(), plan);
-            plan.byArgName().forEach((argName, resolved) -> {
-                var decode = decodeTargetOf(resolved);
-                if (decode != null) {
-                    argDecodes.computeIfAbsent(argName, k -> new LinkedHashMap<>())
-                        .put(participant.typeName(), decode);
-                }
-            });
-            collectNestedNodeIdDecodes(resolver, fieldDef, participant.table())
-                .forEach((path, decode) -> nestedDecodes.computeIfAbsent(path, k -> new LinkedHashMap<>())
-                    .put(participant.typeName(), decode));
+            plan.byArgName().forEach((argName, resolved) ->
+                argResolutions.computeIfAbsent(argName, k -> new LinkedHashMap<>())
+                    .put(participant.typeName(), resolved));
+            collectNestedNodeIdResolutions(resolver, fieldDef, participant.table(), participant)
+                .forEach((path, resolved) -> nestedResolutions.computeIfAbsent(path, k -> new LinkedHashMap<>())
+                    .put(participant.typeName(), resolved));
         }
         var targets = new LinkedHashMap<String, NodeIdArgTarget>();
-        argDecodes.forEach((argName, byParticipant) -> targets.put(argName, verdictOf(byParticipant)));
+        argResolutions.forEach((argName, byParticipant) -> {
+            var decodes = decodesOf(byParticipant);
+            if (!decodes.isEmpty()) targets.put(argName, verdictOf(decodes));
+        });
         return new NodeIdParticipantTargets(Map.copyOf(plans), Map.copyOf(targets),
-            firstNestedDivergence(nestedDecodes));
+            firstNestedDivergence(nestedResolutions),
+            firstMixedContract(argResolutions, nestedResolutions));
     }
 
     /** One participant's answer for one leaf, or {@code null} when the leaf did not resolve there. */
@@ -908,8 +944,23 @@ class FieldBuilder {
             case NodeIdLeafResolver.Resolved.SameTable st -> st.decodeMethod();
             case NodeIdLeafResolver.Resolved.FkTarget.DirectFk direct -> direct.decodeMethod();
             case NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk translated -> translated.decodeMethod();
+            // An author-owned predicate decodes nothing the generator emits: the method holds the raw
+            // id and calls NodeIdEncoder itself. Absent here, so it neither votes in the divergence
+            // verdict nor turns into a dispatch fact.
+            case NodeIdLeafResolver.Resolved.AuthorOwnedPredicate ignored -> null;
             case NodeIdLeafResolver.Resolved.Rejected ignored -> null;
         };
+    }
+
+    /** The participants that answered one leaf with a generator-emitted decoder, in participant order. */
+    private static SequencedMap<String, HelperRef.Decode> decodesOf(
+            SequencedMap<String, NodeIdLeafResolver.Resolved> byParticipant) {
+        var out = new LinkedHashMap<String, HelperRef.Decode>();
+        byParticipant.forEach((participant, resolved) -> {
+            var decode = decodeTargetOf(resolved);
+            if (decode != null) out.put(participant, decode);
+        });
+        return out;
     }
 
     /**
@@ -925,27 +976,33 @@ class FieldBuilder {
     }
 
     /**
-     * Every nested-input {@code @nodeId} {@code ID} leaf reachable from {@code fieldDef}'s arguments,
-     * resolved against one participant's table and keyed by its dotted wire path
+     * Every {@code @nodeId} {@code ID} leaf reachable from {@code fieldDef}'s arguments through a
+     * nested input object, resolved against one participant's table and keyed by its dotted wire path
      * ({@code filter.occupantId}). Sibling of {@link #walkInputTypeForSameTableNodeId}, which answers
-     * the narrower hygiene question (is there a required same-table hit) and cannot answer this one:
-     * the decode target is what diverges, and it exists on every arm.
+     * the narrower hygiene question (is there a required same-table hit) and cannot answer these two:
+     * the decode target is what diverges and the route is what splits, and both exist on every arm.
+     *
+     * <p>Unresolved leaves are kept rather than dropped. The two cross-participant questions asked of
+     * this map are about which arm each participant landed on, and an arm that answers "none" is one
+     * of the answers.
      */
-    private Map<String, HelperRef.Decode> collectNestedNodeIdDecodes(
-            NodeIdLeafResolver resolver, GraphQLFieldDefinition fieldDef, TableRef containingTable) {
-        var out = new LinkedHashMap<String, HelperRef.Decode>();
+    private Map<String, NodeIdLeafResolver.Resolved> collectNestedNodeIdResolutions(
+            NodeIdLeafResolver resolver, GraphQLFieldDefinition fieldDef, TableRef containingTable,
+            ParticipantRef.TableBound participant) {
+        var out = new LinkedHashMap<String, NodeIdLeafResolver.Resolved>();
         for (var arg : fieldDef.getArguments()) {
             if (GraphQLTypeUtil.unwrapAll(arg.getType()) instanceof GraphQLInputObjectType iot) {
-                collectNestedNodeIdDecodes(resolver, iot, containingTable, arg.getName(),
-                    new LinkedHashSet<>(), out);
+                collectNestedNodeIdResolutions(resolver, iot, containingTable, participant,
+                    arg.getName(), new LinkedHashSet<>(), out);
             }
         }
         return out;
     }
 
-    private void collectNestedNodeIdDecodes(
+    private void collectNestedNodeIdResolutions(
             NodeIdLeafResolver resolver, GraphQLInputObjectType iot, TableRef containingTable,
-            String pathPrefix, LinkedHashSet<String> visited, Map<String, HelperRef.Decode> out) {
+            ParticipantRef.TableBound participant, String pathPrefix, LinkedHashSet<String> visited,
+            Map<String, NodeIdLeafResolver.Resolved> out) {
         if (!visited.add(iot.getName())) return;
         try {
             for (var inputField : iot.getFieldDefinitions()) {
@@ -953,12 +1010,12 @@ class FieldBuilder {
                 var unwrapped = GraphQLTypeUtil.unwrapAll(inputField.getType());
                 if (inputField.hasAppliedDirective(DIR_NODE_ID)
                         && unwrapped instanceof GraphQLNamedType named && "ID".equals(named.getName())) {
-                    var decode = decodeTargetOf(
-                        resolver.resolve(inputField, inputField.getName(), containingTable));
-                    if (decode != null) out.put(path, decode);
+                    out.put(path, resolver.resolve(inputField, inputField.getName(), containingTable,
+                        participant, leafOverride(inputField)));
                 }
                 if (unwrapped instanceof GraphQLInputObjectType nested) {
-                    collectNestedNodeIdDecodes(resolver, nested, containingTable, path, visited, out);
+                    collectNestedNodeIdResolutions(resolver, nested, containingTable, participant,
+                        path, visited, out);
                 }
             }
         } finally {
@@ -967,14 +1024,66 @@ class FieldBuilder {
     }
 
     /**
+     * The mixed-contract enforcer: the first {@code @nodeId} leaf whose participants disagree about
+     * <em>who owns the predicate</em>, some taking a generated route to the target table and others
+     * handing the whole {@code WHERE} contribution to the author's method.
+     *
+     * <p>Both contracts are individually correct and neither fails downstream. The generated route
+     * hands the condition method the FK-target table's alias; the author-owned arm hands it the
+     * branch's own table. The parameter is {@code Table<?>}-shaped either way, so the build stays
+     * green, the generated code compiles, and the split shows up only as a wrong {@code WHERE} on a
+     * real request. This is the one site holding every branch's answer at once, so it is the only
+     * place the split is visible at all.
+     *
+     * <p>Monotone against today's builds: all-resolve is unchanged, all-author-owned is the new
+     * capability, and a split failed before this arm existed (the unresolved participants were plain
+     * rejections) and still fails, now naming remedies that exist. Participants whose leaf simply did
+     * not resolve are not part of the split: they carry their own rejection and fail the build on
+     * their own terms.
+     */
+    private static Rejection firstMixedContract(
+            Map<String, SequencedMap<String, NodeIdLeafResolver.Resolved>> argResolutions,
+            Map<String, SequencedMap<String, NodeIdLeafResolver.Resolved>> nestedResolutions) {
+        var all = new LinkedHashMap<String, SequencedMap<String, NodeIdLeafResolver.Resolved>>();
+        all.putAll(argResolutions);
+        all.putAll(nestedResolutions);
+        for (var entry : all.entrySet()) {
+            var authorOwned = new ArrayList<String>();
+            var generatorRouted = new ArrayList<String>();
+            entry.getValue().forEach((participant, resolved) -> {
+                if (resolved instanceof NodeIdLeafResolver.Resolved.AuthorOwnedPredicate) {
+                    authorOwned.add(participant);
+                } else if (!(resolved instanceof NodeIdLeafResolver.Resolved.Rejected)) {
+                    generatorRouted.add(participant);
+                }
+            });
+            if (authorOwned.isEmpty() || generatorRouted.isEmpty()) continue;
+            return Rejection.structural(
+                "@nodeId leaf '" + entry.getKey() + "': @condition(override: true) makes the"
+                + " condition method own the predicate only where no generated route resolves, and"
+                + " the participants split. " + String.join(", ", generatorRouted)
+                + (generatorRouted.size() == 1 ? " reaches" : " reach")
+                + " the target through a generated join, so the method would receive the target"
+                + " table; " + String.join(", ", authorOwned)
+                + (authorOwned.size() == 1 ? " has" : " have")
+                + " no route, so the method would receive that branch's own table. One method cannot"
+                + " mean both. Either state the missing routes with @referenceFor(type: ...,"
+                + " path: ...) so every branch takes the generated contract, or drop @nodeId and"
+                + " filter on a plain ID condition leaf so the method owns every branch against its"
+                + " own table.");
+        }
+        return null;
+    }
+
+    /**
      * The nested-leaf backstop: the first nested-input {@code @nodeId} leaf whose participants
      * disagree on the node type, as an author error naming the leaf, the participants, and the node
      * types they resolved. A shared-target nested leaf is silent and keeps working unchanged.
      */
     private static Rejection firstNestedDivergence(
-            Map<String, SequencedMap<String, HelperRef.Decode>> nestedDecodes) {
-        for (var entry : nestedDecodes.entrySet()) {
-            var byParticipant = entry.getValue();
+            Map<String, SequencedMap<String, NodeIdLeafResolver.Resolved>> nestedResolutions) {
+        for (var entry : nestedResolutions.entrySet()) {
+            var byParticipant = decodesOf(entry.getValue());
             if (Set.copyOf(byParticipant.values()).size() < 2) continue;
             var perParticipant = byParticipant.entrySet().stream()
                 .map(e -> e.getKey() + " resolves '" + e.getValue().nodeTypeName() + "'")
@@ -1015,8 +1124,12 @@ class FieldBuilder {
         if (targets.nestedDivergence() != null) {
             return new ParticipantFiltersResult.Rejected(targets.nestedDivergence());
         }
+        if (targets.mixedContract() != null) {
+            return new ParticipantFiltersResult.Rejected(targets.mixedContract());
+        }
         var dispatchedArgNames = targets.dispatchedArgNames();
         var result = new ArrayList<ParticipantFilters>();
+        var participantFailures = new ArrayList<ParticipantFailure>();
         boolean advisoryEmitted = false;
         for (var tb : tableBound) {
             var plan = targets.plansByParticipant().get(tb.typeName()).dispatching(dispatchedArgNames);
@@ -1027,23 +1140,65 @@ class FieldBuilder {
             }
             var components = resolveTableFieldComponents(parentTypeName, fieldDef, tb.table(), tb.typeName(), plan, false);
             if (components instanceof TableFieldComponents.Rejected rj) {
-                return new ParticipantFiltersResult.Rejected(rj.rejection());
+                participantFailures.add(new ParticipantFailure(tb.typeName(), rj.rejection()));
+                continue;
             }
             var tfc = (TableFieldComponents.Ok) components;
             var unsupported = firstUnsupportedFilterArg(tfc.filters());
             if (unsupported != null) {
-                return new ParticipantFiltersResult.Rejected(Rejection.structural(
+                participantFailures.add(new ParticipantFailure(tb.typeName(), Rejection.structural(
                     "filter argument '" + unsupported + "' on a multitable interface/union is not "
                     + "supported: the polymorphic branch emitter handles plain scalar, enum, "
                     + "jOOQ-converted (e.g. ID-typed), and @nodeId-decoded column filters plus "
                     + "developer @condition filters (top-level or nested-input), but this argument's "
-                    + "extraction is a record/bean-decode shape the branch path does not carry "
-                    + "(participant '" + tb.typeName() + "')"));
+                    + "extraction is a record/bean-decode shape the branch path does not carry")));
+                continue;
             }
             result.add(new ParticipantFilters(tb, tfc.filters()));
         }
+        if (!participantFailures.isEmpty()) {
+            return new ParticipantFiltersResult.Rejected(
+                mintParticipantFailures(parentTypeName, fieldDef, participantFailures));
+        }
         return new ParticipantFiltersResult.Ok(List.copyOf(result),
             dispatchFacts(fieldDef, targets));
+    }
+
+    /** One participant's lowering failure, kept with the participant it belongs to. */
+    private record ParticipantFailure(String participantTypeName, Rejection rejection) {}
+
+    /**
+     * Mints every failing participant's rejection at its own coordinate and returns the consuming
+     * field's single consequence rejection.
+     *
+     * <p>The loop above used to return on the first failing participant, which on a three-participant
+     * field with three unresolvable routes told the author about one of them per build. Each cause is
+     * a fact of one participant, so each is minted where it belongs; the field keeps one statement of
+     * the consequence. Same shape {@code BuildContext.mintInputFieldFailures} gives a broken input
+     * type and its members, and the same shape a compiler gives "cannot instantiate" plus its member
+     * errors.
+     *
+     * <p>Not {@link #aggregateChildPolymorphicErrors}: that one string-joins the messages into one
+     * rejection, flattening typed arms into prose and putting every cause at the consuming field's
+     * coordinate rather than at the participant's.
+     */
+    private Rejection mintParticipantFailures(String parentTypeName, GraphQLFieldDefinition fieldDef,
+                                              List<ParticipantFailure> failures) {
+        String fieldCoordinate = parentTypeName + "." + fieldDef.getName();
+        for (var failure : failures) {
+            ctx.addDiagnostic(new ValidationError(
+                fieldCoordinate + "/" + failure.participantTypeName(),
+                failure.rejection().prefixedWith(
+                    "Field '" + fieldCoordinate + "', participant '"
+                    + failure.participantTypeName() + "': "),
+                locationOf(fieldDef)));
+        }
+        return Rejection.structural(
+            "multitable interface/union field '" + fieldCoordinate + "': "
+            + failures.size() + " participant" + (failures.size() == 1 ? "" : "s")
+            + " could not be lowered ("
+            + failures.stream().map(ParticipantFailure::participantTypeName)
+                .collect(Collectors.joining(", ")) + ")");
     }
 
     /**
@@ -1196,7 +1351,7 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(mismatch.diagnostic()));
             }
             var components = resolveTableFieldComponents(parentTypeName, fieldDef, returnType.table(), elementTypeName,
-                buildNodeIdArgPlan(fieldDef, returnType.table()));
+                buildNodeIdArgPlan(fieldDef, returnType.table(), null));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, rj.rejection());
             var tfc = (TableFieldComponents.Ok) components;
             boolean hasSplitQuery = forcesSplitDelivery(fieldDef);
@@ -1258,7 +1413,7 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(mismatch.diagnostic()));
             }
             var components = resolveTableFieldComponents(parentTypeName, fieldDef, tableInterfaceType.table(), elementTypeName,
-                buildNodeIdArgPlan(fieldDef, tableInterfaceType.table()));
+                buildNodeIdArgPlan(fieldDef, tableInterfaceType.table(), null));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, rj.rejection());
             var tfc = (TableFieldComponents.Ok) components;
             var joinPathError = validateSingleHopFkJoin(referencePath.elements(), name);
@@ -1865,7 +2020,7 @@ class FieldBuilder {
             // the consumer's walk.
             boolean enclosingOverride = fieldOverride
                 || argCondition.map(c -> c.override()).orElse(false);
-            return switch (inputFieldResolver.resolve(typeName, rt, enclosingOverride)) {
+            return switch (inputFieldResolver.resolve(typeName, rt, enclosingOverride, plan.participant())) {
                 case InputFieldResolver.Resolution.Ok ok -> new ArgumentRef.InputTypeArg.PlainInputArg(
                     name, typeName, nonNull, list, argCondition, ok.fields());
                 case InputFieldResolver.Resolution.Rejected r -> new ArgumentRef.UnclassifiedArg(
@@ -1892,11 +2047,26 @@ class FieldBuilder {
             }
             var resolved = plan.byArgName().get(name);
             if (resolved == null) {
-                resolved = ctx.nodeIdLeafResolver().resolve(arg, name, rt);
+                resolved = ctx.nodeIdLeafResolver().resolve(arg, name, rt,
+                    plan.participant(), leafOverride(arg));
             }
             switch (resolved) {
                 case NodeIdLeafResolver.Resolved.Rejected r ->
                     { return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list, r.rejection()); }
+                case NodeIdLeafResolver.Resolved.AuthorOwnedPredicate ignored -> {
+                    // No route resolved and this argument's own @condition(override: true) took the
+                    // predicate. The condition build has already run above; an argCondition that is
+                    // empty here means the reflection failed and its error is on the errors list, so
+                    // the argument falls through as unclassified rather than minting a carrier whose
+                    // invariant it cannot satisfy.
+                    if (argCondition.isEmpty()) {
+                        return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                            Rejection.structural("@condition(override: true) owns this @nodeId"
+                            + " argument's predicate, but the condition method could not be resolved"));
+                    }
+                    return new ArgumentRef.ScalarArg.ConditionOwnedArg(
+                        name, typeName, nonNull, list, argCondition.get());
+                }
                 case NodeIdLeafResolver.Resolved.SameTable st -> {
                     // Same-table @nodeId arg = filter semantics (WHERE pk IN (decoded_ids) /
                     // RowIn for composite PKs). A malformed or wrong-type encoded id throws a
@@ -1949,6 +2119,20 @@ class FieldBuilder {
                         extraction, argCondition, fieldOverride);
                 }
             }
+        }
+
+        // @referenceFor is the per-participant path surface, and the decode rail is the only
+        // consumer of one at this coordinate so far. Worded on the axis rather than on the
+        // directive: the plain-@reference argument rail has the same expressibility gap and is the
+        // natural place for the next arm, so nothing here should teach that only @nodeId arguments
+        // may carry @referenceFor.
+        if (arg.hasAppliedDirective(DIR_REFERENCE_FOR)) {
+            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                Rejection.structural(
+                    "@referenceFor states a per-participant join path, and the only per-participant"
+                    + " path an argument resolves today is the one a @nodeId decode leaf walks. Add"
+                    + " @nodeId(typeName:) if this argument carries an encoded node id, or state the"
+                    + " path with @reference, which applies uniformly."));
         }
 
         // An argument naming its target's `Node.id` is that node id, implicitly. This follows from
@@ -2373,6 +2557,11 @@ class FieldBuilder {
                     errors.add(u.rejection().prefixedWith("argument '" + u.name() + "': "));
                     hadError = true;
                 }
+                case ArgumentRef.ScalarArg.ConditionOwnedArg co ->
+                    // The authored method owns the whole WHERE contribution; there is no implicit
+                    // predicate to suppress, so unlike ColumnBackedArg there is no four-state
+                    // projection table here, just the method's own filter.
+                    argConditions.add(co.condition().filter());
                 case ArgumentRef.ScalarArg.UnboundArg u -> {
                     errors.add(Rejection.structural("argument '" + u.name() + "': " + u.reason()));
                     hadError = true;
@@ -3017,7 +3206,7 @@ class FieldBuilder {
             GraphQLFieldDefinition fieldDef, ChainWalk.Ok walk) {
         var terminus = walk.tb().returnType().table();
         return resolveTableFieldComponents(parentTypeName, fieldDef, terminus,
-            walk.tb().returnType().returnTypeName(), buildNodeIdArgPlan(fieldDef, terminus),
+            walk.tb().returnType().returnTypeName(), buildNodeIdArgPlan(fieldDef, terminus, null),
             /*emitAsConnectionAdvisory=*/true, routineBoundArgNames(walk.tb().routine()));
     }
 
@@ -5239,7 +5428,7 @@ class FieldBuilder {
         String lookupTypeName = baseTypeName(fieldDef);
         var lookupReturnType = ctx.resolveReturnType(lookupTypeName, buildWrapper(fieldDef));
         NodeIdArgPlan lookupPlan = lookupReturnType instanceof ReturnTypeRef.TableBoundReturnType tableBound
-            ? buildNodeIdArgPlan(fieldDef, tableBound.table())
+            ? buildNodeIdArgPlan(fieldDef, tableBound.table(), null)
             : NodeIdArgPlan.EMPTY;
         if (hasLookupKeyAnywhere(fieldDef)) {
             return switch (lookupKeyResolver.resolveAtRoot(lookupReturnType)) {
@@ -5288,7 +5477,7 @@ class FieldBuilder {
             // collision still hard-fails the build at validateNodeTypeIdUniqueness before generation.
             var returnType = new ReturnTypeRef.TableBoundReturnType(elementTypeName, tbt.table(), wrapper);
             var components = resolveTableFieldComponents(parentTypeName, fieldDef, returnType.table(), elementTypeName,
-                buildNodeIdArgPlan(fieldDef, returnType.table()));
+                buildNodeIdArgPlan(fieldDef, returnType.table(), null));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, rj.rejection());
             var tfc = (TableFieldComponents.Ok) components;
             return new QueryField.QueryTableField(parentTypeName, name, location, returnType, tfc.filters(), tfc.orderBy(), tfc.pagination(), tfc.lookup(), RoutineResolution.None.INSTANCE);
@@ -5300,7 +5489,7 @@ class FieldBuilder {
             // has nothing to dispatch on here. What keeps that true is the resolver's bare-@nodeId
             // ambiguity rejection, which nodeIdDecodeKeys names and the reference gate pins.
             var components = resolveTableFieldComponents(parentTypeName, fieldDef, tableInterfaceType.table(), elementTypeName,
-                buildNodeIdArgPlan(fieldDef, tableInterfaceType.table()));
+                buildNodeIdArgPlan(fieldDef, tableInterfaceType.table(), null));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, rj.rejection());
             var tfc = (TableFieldComponents.Ok) components;
             var knownValues = knownDiscriminatorValues(tableInterfaceType);
@@ -6750,7 +6939,7 @@ class FieldBuilder {
             }
             var ok = (SourceRowDirectiveResolver.Resolved.Ok) sourceRowResult;
             var components = resolveTableFieldComponents(parentTypeName, fieldDef, ok.tbReturnType().table(), elementTypeName,
-                buildNodeIdArgPlan(fieldDef, ok.tbReturnType().table()));
+                buildNodeIdArgPlan(fieldDef, ok.tbReturnType().table(), null));
             if (components instanceof TableFieldComponents.Rejected rj) {
                 return new UnclassifiedField(parentTypeName, name, location, rj.rejection());
             }
@@ -6817,7 +7006,7 @@ class FieldBuilder {
         return switch (resolvedReturnType) {
             case ReturnTypeRef.TableBoundReturnType tb -> {
                 var components = resolveTableFieldComponents(parentTypeName, fieldDef, tb.table(), elementTypeName,
-                    buildNodeIdArgPlan(fieldDef, tb.table()));
+                    buildNodeIdArgPlan(fieldDef, tb.table(), null));
                 if (components instanceof TableFieldComponents.Rejected rj) yield new UnclassifiedField(parentTypeName, name, location, rj.rejection());
                 var tfc = (TableFieldComponents.Ok) components;
                 var resolution = resolveRecordParentSource(name, columnName, tb, objectPath.elements(), parentResultType, "BatchedTableField");

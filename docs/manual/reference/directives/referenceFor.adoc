@@ -1,10 +1,14 @@
 = @referenceFor
-:description: Declare an explicit per-participant join path for one participant of a multi-table interface or union child field.
+:description: Declare an explicit per-participant join path for one participant of a multi-table interface or union.
 :!toc:
 
-`@referenceFor` declares an explicit join path for one participant of a multi-table interface or union child field. By default the rewrite auto-discovers each participant's join as the single foreign key from the participant's table to the parent's table; `@referenceFor` replaces that discovery for the named participant only. Use it when a participant has more than one foreign key to the parent (pick one with `{key:}`), is reached through an intermediate table (chain multiple elements), correlates by a non-foreign-key predicate (`{condition:}`), or shares the parent's own table (state the self-referencing `{key:}`).
+`@referenceFor` declares an explicit join path for one participant of a multi-table interface or union.
 
-The directive is repeatable on output field definitions, one application per participant. Applications are keyed by `type` and are independent; each `path` is that participant's complete path from the parent's table. This is the opposite of repeated xref:reference.adoc[`@reference`] applications, which concatenate into one running chain. Declaring the same `type` twice is a build error. Participants you do not name keep automatic discovery (override-merge): `@referenceFor` on the ambiguous participant is enough, its siblings still auto-discover.
+**The path runs in the direction the generated join runs, starting from the table the query is standing on at that coordinate.** On an output field the query stands on the parent row and joins outward to the participant, so `path` runs from the parent's table to the participant's table. On a xref:nodeId.adoc[`@nodeId`] filter input field or argument the predicate stands on each participant's row and reaches toward the decoded target, so `path` runs from the participant's own table to the `@nodeId` target's table. `type` names the participant in both cases; what varies is whether the participant's table is the terminus or the start.
+
+By default the rewrite auto-discovers each participant's join: on an output field the single foreign key from the participant's table to the parent's table, on a `@nodeId` leaf the single foreign key from the participant's table to the target's table. `@referenceFor` replaces that discovery for the named participant only. Use it when a participant has more than one foreign key to the other end (pick one with `{key:}`), is reached through an intermediate table (chain multiple elements), correlates by a non-foreign-key predicate (`{condition:}`, output coordinate only), or shares the other end's own table (state the self-referencing `{key:}`).
+
+The directive is repeatable, one application per participant. Applications are keyed by `type` and are independent; each `path` is that participant's complete path. This is the opposite of repeated xref:reference.adoc[`@reference`] applications, which concatenate into one running chain. Declaring the same `type` twice is a build error. Participants you do not name keep automatic discovery (override-merge): `@referenceFor` on the ambiguous participant is enough, its siblings still auto-discover.
 
 == SDL signature
 
@@ -13,7 +17,7 @@ The directive is repeatable on output field definitions, one application per par
 directive @referenceFor(
   type: String!
   path: [ReferenceElement!]!
-) repeatable on FIELD_DEFINITION
+) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
 
 input ReferenceElement {
   table: String,
@@ -27,8 +31,8 @@ input ReferenceElement {
 [cols="1,1,1,3",options="header"]
 |===
 | Name | Type | Default | Description
-| `type` | `String!` | (required) | Name of the participant type this path applies to. Case sensitive. Must be a table-bound participant of the field's return type.
-| `path` | `[ReferenceElement!]!` | (required) | Join path from the parent type's table to this participant's table, read from parent toward participant. Same element grammar as `@reference`: `{table:}`, `{key:}`, `{condition:}`.
+| `type` | `String!` | (required) | Name of the participant type this path applies to. Case sensitive. Must be a table-bound participant of the consuming field's return type.
+| `path` | `[ReferenceElement!]!` | (required) | Join path in the direction the generated join runs: from the parent type's table to this participant's table on an output field, from this participant's table to the `@nodeId` target's table on a decode leaf. Same element grammar as `@reference`: `{table:}`, `{key:}`, `{condition:}`.
 |===
 
 `ReferenceElement` fields are identical to xref:reference.adoc[`@reference`]'s: `table` (jOOQ table identifier for the hop's destination), `key` (foreign-key constraint name, optionally schema-qualified as `schema.constraint`; see xref:reference.adoc#schema-qualified-keys[Schema-qualified keys]), `condition` (external join condition).
@@ -55,6 +59,29 @@ type Category @table(name: "category") {
 }
 ----
 
+== On `@nodeId` filter inputs and arguments
+
+`@referenceFor` is also legal on an input field or argument that carries xref:nodeId.adoc[`@nodeId`], when the consuming query returns a multi-table interface or union. The invariant is the same at every coordinate: the path runs in the direction the generated join runs, starting from the table the query is standing on. Here the query stands on each participant's row, so `type` names a participant of the consuming query's return type and `path` runs from that participant's table to the `@nodeId` target's table.
+
+[source,graphql]
+----
+input ApplicationFilter {
+    environmentId: ID @nodeId(typeName: "Environment")
+        @referenceFor(type: "FeideApplication", path: [{key: "feide_app_environment_fkey"}])
+        @referenceFor(type: "IdmApplication",  path: [{key: "idm_app_env_fkey"}])
+}
+
+type Query {
+    applications(filter: ApplicationFilter): [Application!]!   # multi-table interface
+}
+----
+
+Participants you do not name keep automatic discovery. The path grammar at this coordinate is the decode rail's: foreign-key hops only, no `{condition:}` steps. An application whose `type` is not a participant of one consuming query is inert at that consumer; a `type` that matches no participant at any consumer is an error naming every consumer and its participants. On a single-table consumer there is no participant set; use xref:reference.adoc[`@reference`].
+
+A plain `@reference` on a decode leaf stays legal under a multi-table consumer. The terminus is fixed by `typeName`, so the stated hops resolve once per participant against that participant's own table, and a uniform path survives exactly where those resolutions coincide; the check is per participant rather than a blanket rule.
+
+Where no generated route fits any participant, xref:condition.adoc[`@condition(override: true)`] on the leaf hands the whole `WHERE` predicate to your method. See xref:../../how-to/global-id.adoc#multitable-filter-inputs[Multitable filter inputs] for that ladder.
+
 == Contrast with @reference
 
 Repeated `@reference` applications concatenate into one chain in authored order; repeated `@referenceFor` applications are independent, one per participant, and each `path` is that participant's complete path. Two directives on the same location share the `ReferenceElement` payload but have opposite repetition semantics, so keep them straight:
@@ -64,17 +91,20 @@ Repeated `@reference` applications concatenate into one chain in authored order;
 | | `@reference` (repeated) | `@referenceFor` (repeated)
 | Grain | One field's whole path | One (field, participant) pair
 | Repetition | Concatenates in order | Independent, keyed by `type`
-| Placement | Single-table field / argument / input field | Multi-table interface/union child field only
+| Placement | Field / argument / input field | Multi-table interface/union child field, and `@nodeId` input fields / arguments of a multi-table consumer
 |===
 
 A bare field-level `@reference` on a multi-table interface/union child field is rejected: a single stated path applies the same hops to every participant, so it can be terminal-correct for at most one. `@referenceFor` is the sanctioned per-participant surface.
 
 == Constraints
 
-* Legal only on a child field returning a multi-table interface or union (table-backed and record-backed parents alike). On single-table (discriminated) polymorphic fields, non-polymorphic fields, and root fields the directive is rejected: there is no participant set to bind a path to.
-* `type` must name a table-bound participant of the field's return type, case-sensitively. An unknown, non-member, or unbound name is rejected with the list of valid participant names.
+* On an output field, legal only on a child field returning a multi-table interface or union (table-backed and record-backed parents alike). On single-table (discriminated) polymorphic fields, non-polymorphic fields, and root fields the directive is rejected: there is no participant set to bind a path to.
+* On an input field or argument, legal only on a leaf carrying `@nodeId`: the decode rail is the only per-participant path an input coordinate resolves today. A `@referenceFor` on any other input field or argument is rejected.
+* `type` must name a table-bound participant of the consuming field's return type, case-sensitively. At an output field or an argument the consumer is the field itself and an unknown name is rejected there with the list of valid participant names. At an input field there may be several consumers with different participant sets, so a name matching none of a given consumer's participants is inert at that consumer, and only a name matching no participant at *any* consumer is rejected.
 * Declaring the same `type` on two applications of one field is a build error (applications are independent, not concatenated).
-* The path must terminate on the named participant's table; a terminal-target mismatch is rejected naming the participant.
+* On an output field the path must terminate on the named participant's table; a terminal-target mismatch is rejected naming the participant. On a `@nodeId` leaf the terminus is the node type's table, fixed by `typeName`.
+* `@reference` and `@referenceFor` on one `@nodeId` leaf are rejected as ambiguous: a leaf states one uniform path or per-participant paths, not both.
+* On a `@nodeId` leaf every step must be a foreign-key hop; `{condition:}` steps are rejected there.
 * Every shape the path grammar can state is emittable, except a first-hop filter (see the next constraint): a single-hop foreign key (multi-FK disambiguation, same-table self-FK), a multi-hop key chain through intermediate join tables, and a `{condition:}` correlation. A route that joins real tables bridges each intermediate hop back toward the parent and, for a `{condition:}` correlation, joins the parent table (aliased, bound to the parent's key) and applies the two-arg condition between the parent and the participant.
 * A `condition:` filter alongside a `key:`/`table:` on the *first* hop is rejected. The parent side of the first hop correlates by value (the parent's key), not a joined SQL alias, so the filter's parent-table source parameter has nothing to bind against and would be silently dropped. Express the correlation as a pure `{condition:}` first hop (which joins the parent table aliased), or move the filter onto a later (intermediate) hop, where it ANDs onto the branch's `WHERE` between the two hop aliases.
 

@@ -2808,10 +2808,28 @@ class BuildContext {
         // inference for bare @nodeId, so the singular and list branches see a single sealed
         // result rather than re-deriving the typeName independently.
         if ("ID".equals(typeName) && field.hasAppliedDirective(DIR_NODE_ID)) {
-            var resolved = nodeIdLeafResolver.resolve(field, name, resolvedTable);
+            // The ownership bit is read off the authored directive, not off the built
+            // ArgConditionRef: a failing condition build empties the carrier by design, and what the
+            // resolver is being told is what the author declared.
+            var leafCondition = readConditionDirective(field);
+            var resolved = nodeIdLeafResolver.resolve(field, name, resolvedTable,
+                ctx.participant(), leafCondition != null && leafCondition.override());
             return inputFieldFromNodeIdResolved(
                 resolved, parentTypeName, field, name, typeName, nonNull, list,
                 resolvedTable, conditionFailures);
+        }
+        // @referenceFor is the per-participant path surface, and the decode rail is the only
+        // consumer of one at this coordinate so far. The wording is on the axis rather than on the
+        // directive: the plain-@reference input rail has the same expressibility gap and is the
+        // natural place for the next arm, so nothing here should teach that only @nodeId fields may
+        // carry @referenceFor.
+        if (field.hasAppliedDirective(DIR_REFERENCE_FOR)) {
+            return unresolved(field, name, Rejection.structural(
+                "input field '" + parentTypeName + "." + name + "': @referenceFor states a"
+                + " per-participant join path, and the only per-participant path an input field"
+                + " resolves today is the one a @nodeId decode leaf walks. Add @nodeId(typeName:)"
+                + " if this field carries an encoded node id, or state the path with @reference,"
+                + " which applies uniformly."));
         }
         if (field.hasAppliedDirective(DIR_REFERENCE)) {
             // @reference is repeatable, so field-level applications compose the table
@@ -3019,6 +3037,23 @@ class BuildContext {
         switch (resolved) {
             case NodeIdLeafResolver.Resolved.Rejected r -> {
                 return unresolved(field, name, r.rejection());
+            }
+            case NodeIdLeafResolver.Resolved.AuthorOwnedPredicate ignored -> {
+                // No route resolved and the leaf's own @condition(override: true) took the
+                // predicate. Same carrier the column-miss arm mints for the same reason: the method
+                // owns the whole WHERE contribution, so there is nothing for the generator to decode
+                // or bind and the carrier records no columns. A condition build that fails here
+                // leaves the field unresolved rather than silently dropping to an unbound carrier
+                // the resolver has already ruled out.
+                Optional<ArgConditionRef> cond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
+                if (cond.isEmpty()) {
+                    return unresolved(field, name, Rejection.structural(
+                        "input field '" + parentTypeName + "." + name + "': @condition(override:"
+                        + " true) owns this @nodeId leaf's predicate, but the condition method could"
+                        + " not be resolved."));
+                }
+                return new InputFieldResolution.Resolved(new InputField.ConditionOwnedField(
+                    parentTypeName, name, locationOf(field), typeName, nonNull, list, cond.get()));
             }
             case NodeIdLeafResolver.Resolved.SameTable st -> {
                 Optional<ArgConditionRef> cond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);

@@ -180,27 +180,40 @@ directive @reference(
 ) repeatable on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
 """
-Declares an explicit join path for one participant of a multi-table interface or union child field.
+Declares an explicit join path for one participant of a multi-table interface or union.
 
-By default the rewrite auto-discovers each participant's join as the single foreign key from the
-participant's table to the parent's table; `@referenceFor` replaces that discovery for the named
-participant only. Use it when a participant has more than one foreign key to the parent (pick one
-with `{key:}`), is reached through an intermediate table (chain multiple elements), correlates by a
-non-foreign-key predicate (`{condition:}`), or shares the parent's own table (state the
-self-referencing `{key:}`).
+The path runs in the direction the generated join runs, starting from the table the query is
+standing on at that coordinate. On an output field the query stands on the parent row and joins
+outward to the participant, so `path` runs from the parent's table to the participant's table. On a
+`@nodeId` filter input field or argument the predicate stands on each participant's row and reaches
+toward the decoded target, so `path` runs from the participant's own table to the `@nodeId` target's
+table. `type` names the participant in both cases.
+
+By default the rewrite auto-discovers each participant's join: on an output field the single foreign
+key from the participant's table to the parent's table, on a `@nodeId` leaf the single foreign key
+from the participant's table to the target's table. `@referenceFor` replaces that discovery for the
+named participant only. Use it when a participant has more than one foreign key to the other end
+(pick one with `{key:}`), is reached through an intermediate table (chain multiple elements),
+correlates by a non-foreign-key predicate (`{condition:}`, output coordinate only), or shares the
+other end's own table (state the self-referencing `{key:}`).
 
 Repeated applications are keyed by `type` and are independent, one per participant; each `path` is
-that participant's complete path from the parent's table. This is the opposite of repeated
-`@reference` applications, which concatenate into one running chain. Declaring the same `type` twice
-is a build error. Participants you do not name keep automatic discovery.
+that participant's complete path. This is the opposite of repeated `@reference` applications, which
+concatenate into one running chain. Declaring the same `type` twice is a build error. Participants
+you do not name keep automatic discovery.
+
+On a `@nodeId` input field or argument the grammar is the decode rail's: foreign-key hops only, no
+`{condition:}` steps. An application whose `type` names no participant of one consuming query is
+inert at that consumer; a `type` that names no participant at any consumer is a build error. A
+single-table consumer has no participant set at all; use `@reference` there.
 """
 directive @referenceFor(
   """Name of the participant type this path applies to. Case sensitive."""
   type: String!
 
-  """Join path from the parent type's table to this participant's table, read as the same element grammar as @reference."""
+  """Join path in the direction the generated join runs: from the parent type's table to this participant's table on an output field, from this participant's table to the @nodeId target's table on a decode leaf. Read as the same element grammar as @reference."""
   path: [ReferenceElement!]!
-) repeatable on FIELD_DEFINITION
+) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
 
 """
 Removed. `@multitableReference` is no longer supported. The directive stays declared here only so

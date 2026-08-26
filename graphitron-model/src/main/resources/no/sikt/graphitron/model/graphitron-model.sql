@@ -1393,7 +1393,7 @@ CREATE TABLE graphitron_reference_for (
   PRIMARY KEY (graph_name, type_name, field_name, ordinal),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
 );
-COMMENT ON TABLE graphitron_reference_for IS '@referenceFor on a field: an explicit join path for one participant of a multi-table interface or union child. Keyed by ordinal per the repeatable rule; the consumption-side keying by participant makes a repeated participant a detection, never a collision.';
+COMMENT ON TABLE graphitron_reference_for IS '@referenceFor at a field coordinate: an explicit join path for one participant of a multi-table interface or union. Two populations share the relation, and they share it because graphql_field spans both: an output field, where the path runs from the parent''s table to the participant''s, and a @nodeId filter input field, where it runs from the participant''s own table to the decoded target''s. Which of the two a row is about is a fact of the owning coordinate''s type kind and is not restated as a column here, on graphql_field''s own terms: the join decides. Keyed by ordinal per the repeatable rule; the consumption-side keying by participant makes a repeated participant a detection, never a collision.';
 COMMENT ON COLUMN graphitron_reference_for.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_reference_for.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_reference_for.field_name IS 'the field name within the owning type';
@@ -1401,7 +1401,7 @@ COMMENT ON COLUMN graphitron_reference_for.ordinal IS 'capture-assigned position
 COMMENT ON COLUMN graphitron_reference_for.source_name IS 'the SDL file the row was captured from';
 COMMENT ON COLUMN graphitron_reference_for.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_reference_for.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_reference_for.participant_type_ref IS 'the type argument as written; author-spelled, no FK';
+COMMENT ON COLUMN graphitron_reference_for.participant_type_ref IS 'the type argument as written; author-spelled, no FK. It names a participant of the polymorphic type the consuming field returns, and which field that is differs by coordinate: an output field consumes its own named type, while an input field is consumed by every field whose argument surface reaches it, possibly several with different participant sets. That is why a spelling matching no participant is a whole-schema detection over the occurrence paths rather than a check one row can carry, and why no FK could stand here even if the participant set were a relation: at an input coordinate there is no single consumer for it to point at.';
 
 CREATE TABLE graphitron_reference_for_step (
   graph_name  VARCHAR NOT NULL,
@@ -1468,6 +1468,101 @@ COMMENT ON COLUMN graphitron_reference_for_step_arg_mapping_pair.step_position I
 COMMENT ON COLUMN graphitron_reference_for_step_arg_mapping_pair.position IS '0-based position within the owning list';
 COMMENT ON COLUMN graphitron_reference_for_step_arg_mapping_pair.param_name IS 'the Java or routine parameter (left side of the pair)';
 COMMENT ON COLUMN graphitron_reference_for_step_arg_mapping_pair.argument_path IS 'the right side as written, and written is the whole of what this column claims: capture records the author''s spelling verbatim and resolves nothing. A dot opens the thing at that position, and what a thing opens into depends on what it is: an input object opens into its fields, and an ID carrying @nodeId opens into the key columns of the node type it names, so a trailing segment may be a key column rather than a field of any SDL type. Which of those a segment turned out to be is intent_argmapping_segment_binding''s answer and the key projection''s beside it; enumerating the forms here would be a second statement of a resolution those views own, and the enumeration this column carried before the key-column form existed was exactly that mistake caught late. graphitron_argument_path_segment holds the decomposition, so nothing splits this string';
+
+CREATE TABLE graphitron_argument_reference_for (
+  graph_name           VARCHAR NOT NULL,
+  type_name            VARCHAR NOT NULL,
+  field_name           VARCHAR NOT NULL,
+  argument_name        VARCHAR NOT NULL,
+  ordinal              INT     NOT NULL,
+  source_name          VARCHAR,
+  source_line          INT,
+  source_column        INT,
+  participant_type_ref VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, argument_name, ordinal),
+  FOREIGN KEY (graph_name, type_name, field_name, argument_name)
+    REFERENCES graphql_argument_coordinate (graph_name, type_name, field_name, argument_name)
+);
+COMMENT ON TABLE graphitron_argument_reference_for IS '@referenceFor on an argument: the same family over the four-part coordinate. A sibling relation rather than an argument_name column on graphitron_reference_for, on the discipline the argument-site @reference family already keeps: the two coordinates are different lengths, so one relation over both would carry a column NULL by kind on half its rows and every reader would have to say which kind it meant. The participant set this row''s spelling is checked against is the consuming field''s own, which at this coordinate is the field the argument sits on rather than a set reached through the occurrence paths, so the whole-schema detection the input-field population needs is a local join here.';
+COMMENT ON COLUMN graphitron_argument_reference_for.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_argument_reference_for.type_name IS 'the GraphQL type this row is about';
+COMMENT ON COLUMN graphitron_argument_reference_for.field_name IS 'the field name within the owning type';
+COMMENT ON COLUMN graphitron_argument_reference_for.argument_name IS 'the argument name within the owning field';
+COMMENT ON COLUMN graphitron_argument_reference_for.ordinal IS 'capture-assigned position in document order';
+COMMENT ON COLUMN graphitron_argument_reference_for.source_name IS 'the SDL file the row was captured from';
+COMMENT ON COLUMN graphitron_argument_reference_for.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_argument_reference_for.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_argument_reference_for.participant_type_ref IS 'the type argument as written; author-spelled, no FK. Names a participant of the polymorphic type the owning field returns';
+
+CREATE TABLE graphitron_argument_reference_for_step (
+  graph_name    VARCHAR NOT NULL,
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  argument_name VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  position      INT     NOT NULL,
+  table_ref     VARCHAR,
+  table_ref_namespace_part VARCHAR,
+  table_ref_name_part      VARCHAR,
+  key_ref       VARCHAR,
+  key_ref_namespace_part   VARCHAR,
+  key_ref_name_part        VARCHAR,
+  class_name    VARCHAR,
+  method        VARCHAR,
+  arg_mapping   VARCHAR,
+  table_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_namespace_part)),
+  table_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_name_part)),
+  key_ref_namespace_part_upper   VARCHAR GENERATED ALWAYS AS (UPPER(key_ref_namespace_part)),
+  key_ref_name_part_upper        VARCHAR GENERATED ALWAYS AS (UPPER(key_ref_name_part)),
+  PRIMARY KEY (graph_name, type_name, field_name, argument_name, ordinal, position),
+  FOREIGN KEY (graph_name, type_name, field_name, argument_name, ordinal)
+    REFERENCES graphitron_argument_reference_for (graph_name, type_name, field_name, argument_name, ordinal)
+);
+COMMENT ON TABLE graphitron_argument_reference_for_step IS 'An ordered path element of one argument-site @referenceFor application: the participant''s complete path, read as the same element grammar as @reference. The direction is the coordinate''s and not this relation''s: at the one coordinate an argument-site application is admitted on today, a @nodeId decode leaf, the path departs the participant''s own table and reaches the decoded target''s.';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.type_name IS 'the GraphQL type this row is about';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.field_name IS 'the field name within the owning type';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.argument_name IS 'the argument name within the owning field';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.ordinal IS 'the owning @referenceFor application''s ordinal';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.position IS '0-based position within the owning list';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.table_ref IS 'the table name as written (may carry a schema qualifier)';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.table_ref_namespace_part IS 'left of table_ref''s first period, NULL when no period appeared and the empty string when one appeared with nothing before it; for a table name this namespace is the SQL schema in every dialect jOOQ models. Written by capture, because splitting on a period is a decode and decodes happen there';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.table_ref_name_part IS 'right of table_ref''s first period, or the whole value when none; the empty string when a period was written with nothing after it, which joins nothing and is meant to';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.key_ref IS 'the constraint name as written (may carry a schema qualifier)';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.key_ref_namespace_part IS 'left of key_ref''s first period, NULL when no period appeared and the empty string when one appeared with nothing before it. This qualifier does not name the constraint''s own schema, because a constraint has none: it is scoped to its table, which is why sql_constraint takes its schema through the table. It names which schema''s table holds the constraint, disambiguating a constraint name that occurs in more than one, and the resolver reads it that way. Which namespace that is is dialect-dependent (the schema namespace in Oracle, the table namespace in PostgreSQL), which is why the column is not called a schema part';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.key_ref_name_part IS 'right of key_ref''s first period, or the whole value when none; joins sql_constraint.constraint_name narrowed by the source table the walk is standing on, not by this row alone';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.class_name IS 'the fully-qualified Java class name as written';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.method IS 'the Java method name as written';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.arg_mapping IS 'the argMapping string as written; the pair child is its decode';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.table_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.key_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint.table_schema_upper, the schema of the table holding the constraint. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
+COMMENT ON COLUMN graphitron_argument_reference_for_step.key_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s constraint_name_upper and jooq_name_upper, in that precedence. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
+
+CREATE TABLE graphitron_argument_reference_for_step_arg_mapping_pair (
+  graph_name    VARCHAR NOT NULL,
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  argument_name VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  step_position INT     NOT NULL,
+  position      INT     NOT NULL,
+  param_name    VARCHAR NOT NULL,
+  argument_path VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, argument_name, ordinal, step_position, position),
+  FOREIGN KEY (graph_name, type_name, field_name, argument_name, ordinal, step_position)
+    REFERENCES graphitron_argument_reference_for_step (graph_name, type_name, field_name, argument_name, ordinal, position)
+);
+COMMENT ON TABLE graphitron_argument_reference_for_step_arg_mapping_pair IS 'An ordered pair of an argument-site @referenceFor step condition''s argMapping. Capture is total across every SDL-legal location, so this relation is populated wherever the grammar admits a condition step even though the one coordinate consuming an argument-site application today rejects condition steps: the scoping is the validator''s, which is what lets a later widening be a validator change alone.';
+COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.type_name IS 'the GraphQL type this row is about';
+COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.field_name IS 'the field name within the owning type';
+COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.argument_name IS 'the argument name within the owning field';
+COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.ordinal IS 'the owning @referenceFor application''s ordinal';
+COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.step_position IS '0-based position of the owning step within its application''s path';
+COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.position IS '0-based position within the owning list';
+COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.param_name IS 'the Java or routine parameter (left side of the pair)';
+COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.argument_path IS 'the right side as written, and written is the whole of what this column claims: capture records the author''s spelling verbatim and resolves nothing. A dot opens the thing at that position, and what a thing opens into depends on what it is: an input object opens into its fields, and an ID carrying @nodeId opens into the key columns of the node type it names, so a trailing segment may be a key column rather than a field of any SDL type. Which of those a segment turned out to be is intent_argmapping_segment_binding''s answer and the key projection''s beside it; enumerating the forms here would be a second statement of a resolution those views own, and the enumeration this column carried before the key-column form existed was exactly that mistake caught late. graphitron_argument_path_segment holds the decomposition, so nothing splits this string';
 
 CREATE TABLE graphitron_service (
   graph_name    VARCHAR NOT NULL,
