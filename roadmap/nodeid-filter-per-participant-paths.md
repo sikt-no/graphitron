@@ -211,6 +211,52 @@ the site this plan's uniformity enforcer wants, and its message is the model for
 wording. The per-participant loop still returns `ParticipantFiltersResult.Rejected` on the first
 failing participant, so Deliverable 4's "stop short-circuiting" requirement stands unchanged.
 
+## What implementation settled differently
+
+Three places where the shipped code answers a question the plan left open or answers it differently,
+recorded so a reviewer reads the deviation rather than deriving it.
+
+**The participant rides `NodeIdArgPlan` as well as `ClassifyContext`.** The plan named
+`ClassifyContext` as the vehicle "from `resolveTableFieldComponents` through `InputFieldResolver.resolve`
+/ `classifyInputField` to the resolver". A plan is already built once per participant, in
+`resolveNodeIdArgTargets`, and is already the carrier for the other fact computed over the participant
+*set* (`dispatchedArgNames`), so it carries the identity to `classifyArgument` without a fourth
+parameter on three `resolveTableFieldComponents` overloads and two `classifyArguments` ones.
+`ClassifyContext` still carries it for the input-field descent exactly as the plan specifies; the plan
+seeds it from `plan.participant()`.
+
+**The whole-schema detection is a `derive/` join, not a new stored view.** The plan called it "a join
+over facts already captured" and named the three relations. `ReferenceForParticipantDefects` expresses
+that join in jOOQ inside the detection pass, the way `AuthoredClaimConflicts` and
+`ArgmappingProjectionDefects` express theirs, rather than adding a fourth
+`intent_*` view. The participant set comes from `intent_field_participant_scope_table`, which already
+carries the participant dimension the reconciliation section found missing from
+`intent_node_id_instruction`. Output-field applications are excluded structurally rather than by a
+type-kind test: an occurrence path's leaf is always an input object type, so an application on an
+object field matches no occurrence and never enters the population.
+
+**Two refusals stay refusals under `override: true`, where the plan's ladder said the escape applies.**
+The ladder reads "path resolves / path rejects / `override: false` plus rejection", and the middle rung
+is narrower in the code:
+
+- A leaf-local contradiction (`@reference` alongside `@referenceFor`, a repeated `type:`) rejects
+  before any route is walked. It is a malformed leaf rather than a missing route, and no authored
+  method makes a contradictory pair of directives mean something.
+- A route the author *stated* and got wrong (a `@referenceFor` naming a foreign key that does not
+  resolve) also rejects. Naming a key asks the build to check it, a stale route left behind by a
+  migration to `override: true` would otherwise pass silently, and that shape fails today, so
+  refusing it is what keeps the change monotone. Only an *undiscovered* route escapes.
+
+**One test the plan asks for is not implementable as written.** The execution-tier override case was
+specified with "one override-escape case whose condition method decodes via `NodeIdEncoder` against
+the branch alias". A `@condition` class is reflected *during* generation, so it compiles upstream of
+the code the generator emits and cannot reference `NodeIdEncoder` at all; the class would have to live
+in a module that does not exist. The fixture instead filters on the `film_id` column both participant
+tables carry, which still pins everything the escape promises: the method fires once per branch,
+against that branch's own table, with no implicit predicate of the generator's beside it. The
+`NodeIdEncoder` decode a production author writes is documented in the global-id how-to and in the
+fixture method's own javadoc, with the reason it cannot be exercised here.
+
 ## Acceptance
 
 - The reported schema shape is authorable two ways, per-participant `@referenceFor` paths and the `@condition(override: true)` escape, and both build and filter correctly per branch.

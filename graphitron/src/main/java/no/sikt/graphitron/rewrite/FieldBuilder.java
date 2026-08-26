@@ -1963,6 +1963,23 @@ class FieldBuilder {
             }
         };
 
+        // @referenceFor is the per-participant path surface, and the decode rail is the only
+        // consumer of one at this coordinate so far. Ahead of the input-like routing below, so an
+        // input-typed argument carrying the directive is caught rather than descending into a plain
+        // input classification that never asks the question. Worded on the axis rather than on the
+        // directive: the plain-@reference argument rail has the same expressibility gap and is the
+        // natural place for the next arm, so nothing here should teach that only @nodeId arguments
+        // may carry @referenceFor.
+        if (arg.hasAppliedDirective(DIR_REFERENCE_FOR)
+                && !("ID".equals(typeName) && arg.hasAppliedDirective(DIR_NODE_ID))) {
+            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                Rejection.structural(
+                    "@referenceFor states a per-participant join path, and the only per-participant"
+                    + " path an argument resolves today is the one a @nodeId decode leaf walks. Add"
+                    + " @nodeId(typeName:) if this argument carries an encoded node id, or state the"
+                    + " path with @reference, which applies uniformly."));
+        }
+
         // Route the arg to an input-shaped classification when the classifier recognises its type
         // as something input-like. InputType (Pojo / Java record / jOOQ record) and
         // UnclassifiedType (input resolution failed — e.g. FilmKey unresolvable against the
@@ -2119,20 +2136,6 @@ class FieldBuilder {
                         extraction, argCondition, fieldOverride);
                 }
             }
-        }
-
-        // @referenceFor is the per-participant path surface, and the decode rail is the only
-        // consumer of one at this coordinate so far. Worded on the axis rather than on the
-        // directive: the plain-@reference argument rail has the same expressibility gap and is the
-        // natural place for the next arm, so nothing here should teach that only @nodeId arguments
-        // may carry @referenceFor.
-        if (arg.hasAppliedDirective(DIR_REFERENCE_FOR)) {
-            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                Rejection.structural(
-                    "@referenceFor states a per-participant join path, and the only per-participant"
-                    + " path an argument resolves today is the one a @nodeId decode leaf walks. Add"
-                    + " @nodeId(typeName:) if this argument carries an encoded node id, or state the"
-                    + " path with @reference, which applies uniformly."));
         }
 
         // An argument naming its target's `Node.id` is that node id, implicitly. This follows from

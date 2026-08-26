@@ -829,6 +829,24 @@ type Query {
         className: "no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures",
         method: "firstNamePrefix"}, override: true)): [AddressOccupant!]!
 
+    # Per-participant @nodeId decode routes. Each participant of LanguageStock states its own path
+    # from its own table to the language the id decodes to (see LanguageStockFilter), so one filter
+    # leaf narrows both branches even though the two routes share no hop. An id encoded for another
+    # node type is still a client error: the leaf names one type, so the decode throws.
+    stockByLanguage(filter: LanguageStockFilter): [LanguageStock!]!
+
+    # The override escape, the second rung of the same ladder: no route is stated and neither
+    # participant can discover one, so the leaf's own @condition(override: true) takes the whole
+    # WHERE contribution. The method receives each branch's own table plus the raw wire id.
+    #
+    # A production author decodes that id with the generated NodeIdEncoder (peekTypeId reads the
+    # discriminator without committing to a type; decode<Type> returns the typed key record). This
+    # fixture cannot: a @condition class is reflected during generation, so it compiles upstream of
+    # the code the generator emits and cannot reference it. The method therefore filters on the
+    # film_id column both participant tables carry, which proves the contract the escape promises,
+    # that the method owns the predicate and is handed the branch's own table.
+    stockByLanguageOverride(filter: LanguageStockOverrideFilter): [LanguageStock!]!
+
     # R36 item 1 fixture: composite-PK participants in connection-mode. paged_a + paged_b have
     # composite (Integer, Integer) PKs; the polymorphic emitter projects DSL.jsonbArray(k1, k2)
     # as the synthetic __sort__ column and types it as JSONB so PostgreSQL's lexicographic
@@ -2552,6 +2570,49 @@ type Language @table(name: "language") {
     # @splitQuery path (SplitRowsMethodEmitter) with the same mixed filter.
     filmsByMixedFilterSplit(filter: FilmMixedNodeIdConditionFilter): [Film!]! @splitQuery
         @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+# Execution-tier fixture for per-participant @nodeId decode routes. The reported shape: a filter
+# leaf carrying @nodeId(typeName:) on a query returning a multi-table union whose participants each
+# reach the target through a differently-shaped route. film has TWO foreign keys to language
+# (language_id and original_language_id), so auto-discovery cannot pick one; inventory has none at
+# all and reaches language only through film. Neither participant resolves without a stated route,
+# and no single @reference could describe both, which is what makes @referenceFor the only surface
+# that authors this schema.
+#
+# LanguageNode is a second type over the `language` table, node-backed while the plain Language
+# above is not, so the table backs exactly one node type and typeName: resolves unambiguously.
+type LanguageNode implements Node @table(name: "language") @node {
+    id:   ID!     @nodeId
+    name: String! @field(name: "NAME")
+}
+
+type StockFilm @table(name: "film") {
+    filmId: Int!    @field(name: "FILM_ID")
+    title:  String! @field(name: "TITLE")
+}
+
+type StockInventory @table(name: "inventory") {
+    inventoryId: Int! @field(name: "INVENTORY_ID")
+    stockFilmId: Int! @field(name: "FILM_ID")
+}
+
+union LanguageStock = StockFilm | StockInventory
+
+input LanguageStockFilter {
+    # StockFilm's route is the one of its two foreign keys this filter means, so the decoded
+    # language key lands on film.language_id and the branch predicate binds locally. StockInventory's
+    # route leaves its own table at the first hop, so no column of inventory holds a decoded language
+    # key and its branch predicate reaches language through a correlated EXISTS.
+    languageId: ID @nodeId(typeName: "LanguageNode")
+        @referenceFor(type: "StockFilm", path: [{key: "film_language_id_fkey"}])
+        @referenceFor(type: "StockInventory", path: [{key: "inventory_film_id_fkey"}, {key: "film_language_id_fkey"}])
+}
+
+input LanguageStockOverrideFilter {
+    languageId: ID @nodeId(typeName: "LanguageNode") @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures",
+        method: "stockByRawNodeId"}, override: true)
 }
 
 type FilmsConnection {

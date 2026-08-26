@@ -63,7 +63,15 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
  * appropriate carrier ({@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField} /
  * {@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField} on the
  * input-field side; {@link ArgumentRef.ScalarArg.ColumnBackedArg} /
- * {@link ArgumentRef.ScalarArg.ColumnBackedReferenceArg} on the argument side).
+ * {@link ArgumentRef.ScalarArg.ColumnBackedReferenceArg} on the argument side, plus
+ * {@link no.sikt.graphitron.rewrite.model.InputField.ConditionOwnedField} /
+ * {@link ArgumentRef.ScalarArg.ConditionOwnedArg} for the author-owned arm).
+ *
+ * <p>The resolver knows <em>which</em> participant it is standing on and not the participant
+ * <em>set</em>. The identity is what lets it pick that participant's {@code @referenceFor} route and
+ * name a remedy that works at a per-participant coordinate; every question about the set (do the
+ * branches agree on a node type, do they agree on who owns the predicate) stays in
+ * {@code FieldBuilder}, which is the only site holding every branch's answer at once.
  *
  * <p>The failure mode is the caller's to pick, and the resolver takes no view: it resolves one leaf
  * against one containing table and never sees the participant set the choice depends on. Almost
@@ -234,7 +242,8 @@ final class NodeIdLeafResolver {
          * <p>Produced here rather than at the two consumers so one predicate is evaluated once over
          * one pre-resolved value: a consumer cannot silently omit the ownership question, and the two
          * cannot answer it differently. {@code override: false} plus the same unresolvable route
-         * stays {@link Rejected}, mirroring the column-miss arm's boundary pair.
+         * stays {@link Rejected}, mirroring the column-miss arm's boundary pair, and so does a route
+         * the author <em>stated</em> and got wrong: naming a foreign key asks the build to check it.
          *
          * @param refTypeName    the resolved (or inferred) GraphQL type name of {@code T}
          * @param unresolvedPath the route refusal the ownership supersedes, kept so a caller that
@@ -327,16 +336,25 @@ final class NodeIdLeafResolver {
         }
         var decodeMethod = decodeMethodOpt.get();
 
-        // Same-table short-circuit (own-PK identity) only when @reference is absent. An explicit
-        // @reference on a same-table @nodeId names a self-FK: "this field points at a *different*
-        // row of the same table". Falling through to resolveFkJoinPath resolves that self-FK;
-        // parsePath orients it with selfRefFkOnSource=true, so liftedSourceColumns become the
-        // self-FK's child columns on the row's own table, the same DirectFk data shape a
-        // cross-table FK carries. This single gate is shared by every resolve() caller, so a
-        // same-table @nodeId @reference is deliberately admitted as a self-FK filter on the read
-        // side too (WHERE child_cols IN (decoded keys), no self-join).
-        if (containingTable.sameTable(targetTableName)
-                && !leaf.hasAppliedDirective(DIR_REFERENCE)) {
+        // The route is chosen before the same-table short-circuit because the short-circuit's own
+        // condition is "no route was stated". A leaf-local contradiction (@reference alongside
+        // @referenceFor, a repeated participant) is a malformed leaf rather than a missing route, so
+        // it rejects here and stays a rejection under @condition(override: true): no authored method
+        // makes a contradictory pair of directives mean something.
+        var route = selectRoute(leaf, leafName, participant);
+        if (route instanceof Route.Refused refusedRoute) {
+            return new Resolved.Rejected(refusedRoute.rejection());
+        }
+
+        // Same-table short-circuit (own-PK identity) only when no route is stated for this
+        // coordinate. A stated route on a same-table @nodeId names a self-FK: "this field points at
+        // a *different* row of the same table". Falling through to resolveFkJoinPath resolves that
+        // self-FK; the path parse orients it with selfRefFkOnSource=true, so liftedSourceColumns
+        // become the self-FK's child columns on the row's own table, the same DirectFk data shape a
+        // cross-table FK carries. Reading the chosen route rather than the directive's presence is
+        // what makes a @referenceFor naming *another* participant inert here too: it states no route
+        // at this coordinate, so this participant keeps its own identity reading.
+        if (containingTable.sameTable(targetTableName) && route instanceof Route.AutoDiscover) {
             return new Resolved.SameTable(refTypeName, decodeMethod, keys.keyColumns());
         }
 
@@ -349,14 +367,19 @@ final class NodeIdLeafResolver {
             return new Resolved.Rejected(ctx.unknownTableRejection(targetTableResolution, targetTableName));
         }
         TableRef targetTable = targetTableResolved.entry().toTableRef(targetTableName);
-        var walk = resolveFkJoinPath(leaf, leafName, containingTable, targetTableName, targetTable,
-            keys.keyColumns(), participant);
+        var walk = resolveFkJoinPath(route, leaf, leafName, containingTable, targetTableName,
+            targetTable, keys.keyColumns(), participant);
         if (walk instanceof PathResolution.Refused refused) {
             // The author-owned escape sits exactly here: after the leaf's own shape is settled (the
             // node type exists, is a node, and its key fits a typed Row) and only the route from this
             // table to it is missing. A malformed leaf stays a rejection under override too, because
             // no authored method makes @nodeId(typeName: "Nope") mean anything.
-            return authorOwnedPredicate
+            //
+            // And only an *undiscovered* route escapes, never a stated one that failed to resolve.
+            // An author who names a foreign key has asked the build to check it, and a stale route
+            // left behind by a migration to override would otherwise pass silently; the shape also
+            // fails today, so refusing it keeps the change monotone.
+            return authorOwnedPredicate && route instanceof Route.AutoDiscover
                 ? new Resolved.AuthorOwnedPredicate(refTypeName, refused.rejection())
                 : new Resolved.Rejected(refused.rejection());
         }
@@ -509,7 +532,7 @@ final class NodeIdLeafResolver {
      * {@code targetTableName}, threaded into the path-parsing calls so their terminal-target verdict
      * compares jOOQ table-class identity rather than the {@code @table} echo.
      *
-     * <p>Three routes, chosen by {@link #selectRoute}:
+     * <p>{@code route} is the caller's already-made choice; the three arms it can carry are:
      * <ul>
      *   <li>Explicit {@code @reference(path: [{key: ...}, ...])}: parsed elements are taken as-is.
      *       Length 1 is the single-hop shape; length &ge; 2 is a chain, and a chain whose adjacent
@@ -534,14 +557,14 @@ final class NodeIdLeafResolver {
      * the parent's own table the position lands on or nothing. The caller reduces them to the arm;
      * it does not re-derive them.
      */
-    private PathResolution resolveFkJoinPath(GraphQLDirectiveContainer leaf, String leafName,
-                                             TableRef containingTable, String targetTableName,
-                                             TableRef targetTable, List<ColumnRef> keyColumns,
+    private PathResolution resolveFkJoinPath(Route route, GraphQLDirectiveContainer leaf,
+                                             String leafName, TableRef containingTable,
+                                             String targetTableName, TableRef targetTable,
+                                             List<ColumnRef> keyColumns,
                                              ParticipantRef.TableBound participant) {
-        switch (selectRoute(leaf, leafName, participant)) {
-            case Route.Refused refused -> {
-                return new PathResolution.Refused(refused.rejection());
-            }
+        switch (route) {
+            case Route.Refused refused -> throw new IllegalStateException(
+                "unreachable: resolve() rejects a malformed route before walking one");
             case Route.UniformReference ignored -> {
                 var path = ctx.parsePath(leaf, leafName, containingTable.tableName(), targetTableName, targetTable);
                 if (path.hasError()) {
@@ -552,17 +575,17 @@ final class NodeIdLeafResolver {
                 }
                 return walkExplicit(path.elements(), leafName, "@reference", keyColumns);
             }
-            case Route.ParticipantRoute route -> {
+            case Route.ParticipantRoute stated -> {
                 // selfRefFkOnSource = !isList, and a decode leaf always binds decoded keys against
                 // the row's own table, so the orientation hint is the auto-discovery arm's.
-                var path = ctx.parseExplicitPath(route.elements(), leafName, containingTable.tableName(),
+                var path = ctx.parseExplicitPath(stated.elements(), leafName, containingTable.tableName(),
                     targetTableName, targetTable, /*isList=*/false);
                 if (path.hasError()) {
-                    return refuse("@referenceFor(type: \"" + route.participantType() + "\") path on"
+                    return refuse("@referenceFor(type: \"" + stated.participantType() + "\") path on"
                         + " @nodeId leaf '" + leafName + "': " + path.errorMessage());
                 }
                 return walkExplicit(path.elements(), leafName,
-                    "@referenceFor(type: \"" + route.participantType() + "\")", keyColumns);
+                    "@referenceFor(type: \"" + stated.participantType() + "\")", keyColumns);
             }
             case Route.AutoDiscover ignored -> {
                 // No stated route: single-hop FK auto-discovery. Multi-hop is always explicit; the

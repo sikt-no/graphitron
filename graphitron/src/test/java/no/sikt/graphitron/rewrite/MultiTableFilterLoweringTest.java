@@ -205,7 +205,18 @@ class MultiTableFilterLoweringTest {
         assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
         var unc = (GraphitronField.UnclassifiedField) field;
         assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
-        assertThat(unc.reason()).contains("username");
+        // The cause is a fact of one participant and mints at that participant's own coordinate; the
+        // consuming field states only the consequence, the shape a compiler uses for "cannot
+        // instantiate" plus its member errors.
+        assertThat(unc.reason())
+            .contains("1 participant could not be lowered")
+            .contains("Customer");
+        assertThat(schema.diagnostics())
+            .as("the missing column is named at the participant that misses it")
+            .anySatisfy(e -> {
+                assertThat(e.coordinate()).isEqualTo("Query.occupants/Customer");
+                assertThat(e.message()).contains("username");
+            });
     }
 
     @Test

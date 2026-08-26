@@ -127,7 +127,7 @@ public final class ReferenceForParticipantDefects {
                 String coordinate = row.getTypeName() + "." + row.getFieldName();
                 var consumers = consumersOf(dsl, graphName, row.getTypeName());
                 return new Defect(coordinate, row.getParticipantTypeRef(),
-                    inputFieldRejection(coordinate, row.getParticipantTypeRef(), consumers),
+                    inputFieldRejection(row.getParticipantTypeRef(), consumers),
                     location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()));
             });
     }
@@ -155,8 +155,7 @@ public final class ReferenceForParticipantDefects {
                 String coordinate = row.getTypeName() + "." + row.getFieldName();
                 var participants = participantsOf(dsl, graphName, row.getTypeName(), row.getFieldName());
                 return new Defect(coordinate, row.getParticipantTypeRef(),
-                    argumentRejection(coordinate, row.getArgumentName(),
-                        row.getParticipantTypeRef(), participants),
+                    argumentRejection(row.getArgumentName(), row.getParticipantTypeRef(), participants),
                     location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()));
             });
     }
@@ -196,19 +195,19 @@ public final class ReferenceForParticipantDefects {
      * single-table has not mistyped a participant name; they have used the wrong directive, and being
      * shown an empty list of valid names would not say so.
      */
-    private static Rejection inputFieldRejection(String coordinate, String participantTypeRef,
+    private static Rejection inputFieldRejection(String participantTypeRef,
                                                  List<Consumer> consumers) {
         boolean anyPolymorphic = consumers.stream().anyMatch(c -> !c.participants().isEmpty());
         if (!anyPolymorphic) {
             return Rejection.structural(
-                "input field '" + coordinate + "': @referenceFor names participant '"
+                "@referenceFor names participant '"
                 + participantTypeRef + "', but every query consuming this input type returns a single"
                 + " table, so there is no participant set for the name to be in ("
                 + consumers.stream().map(Consumer::coordinate).collect(Collectors.joining(", "))
                 + "). A single stated path is correct at a single-table consumer; use @reference.");
         }
         return Rejection.structural(
-            "input field '" + coordinate + "': @referenceFor names participant '"
+            "@referenceFor names participant '"
             + participantTypeRef + "', which is not a table-bound participant at any query consuming"
             + " this input type. Consumers and their participants: "
             + consumers.stream()
@@ -220,18 +219,18 @@ public final class ReferenceForParticipantDefects {
     }
 
     /** The argument arm's prose; one consumer, so one participant list. */
-    private static Rejection argumentRejection(String coordinate, String argumentName,
-                                               String participantTypeRef, List<String> participants) {
+    private static Rejection argumentRejection(String argumentName, String participantTypeRef,
+                                               List<String> participants) {
         if (participants.isEmpty()) {
             return Rejection.structural(
-                "argument '" + coordinate + "(" + argumentName + ":)': @referenceFor names"
-                + " participant '" + participantTypeRef + "', but this field returns a single table,"
-                + " so there is no participant set for the name to be in. Use @reference.");
+                "argument '" + argumentName + "': @referenceFor names participant '"
+                + participantTypeRef + "', but this field returns a single table, so there is no"
+                + " participant set for the name to be in. Use @reference.");
         }
         return Rejection.structural(
-            "argument '" + coordinate + "(" + argumentName + ":)': @referenceFor names '"
-            + participantTypeRef + "', which is not a table-bound participant of the field's return"
-            + " type. Valid participant names: " + String.join(", ", participants) + ".");
+            "argument '" + argumentName + "': @referenceFor names '" + participantTypeRef
+            + "', which is not a table-bound participant of the field's return type. Valid"
+            + " participant names: " + String.join(", ", participants) + ".");
     }
 
     /** The store's position columns as a graphql-java location; {@code null} when unpositioned. */

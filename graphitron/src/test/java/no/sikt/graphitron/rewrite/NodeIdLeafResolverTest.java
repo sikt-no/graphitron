@@ -73,7 +73,7 @@ class NodeIdLeafResolverTest {
         GraphQLArgument arg = barField.getArgument("bazIds");
         var barTable = bctx.resolveTable("bar").orElseThrow();
 
-        var resolved = resolver.resolve(arg, "bazIds", barTable);
+        var resolved = resolver.resolve(arg, "bazIds", barTable, /*participant=*/null, /*authorOwnedPredicate=*/false);
 
         assertThat(resolved).isInstanceOf(NodeIdLeafResolver.Resolved.FkTarget.DirectFk.class);
         var direct = (NodeIdLeafResolver.Resolved.FkTarget.DirectFk) resolved;
@@ -107,7 +107,7 @@ class NodeIdLeafResolverTest {
         GraphQLArgument arg = queryField.getArgument("parentIds");
         var childRefTable = bctx.resolveTable("child_ref").orElseThrow();
 
-        var resolved = resolver.resolve(arg, "parentIds", childRefTable);
+        var resolved = resolver.resolve(arg, "parentIds", childRefTable, /*participant=*/null, /*authorOwnedPredicate=*/false);
 
         assertThat(resolved).isInstanceOf(NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk.class);
         var translated = (NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk) resolved;
@@ -139,7 +139,7 @@ class NodeIdLeafResolverTest {
         GraphQLArgument arg = barField.getArgument("tooWideIds");
         var barTable = bctx.resolveTable("bar").orElseThrow();
 
-        var resolved = resolver.resolve(arg, "tooWideIds", barTable);
+        var resolved = resolver.resolve(arg, "tooWideIds", barTable, /*participant=*/null, /*authorOwnedPredicate=*/false);
 
         assertThat(resolved).isInstanceOf(NodeIdLeafResolver.Resolved.Rejected.class);
         var rejected = (NodeIdLeafResolver.Resolved.Rejected) resolved;
@@ -180,7 +180,7 @@ class NodeIdLeafResolverTest {
         GraphQLArgument arg = queryField.getArgument("levelAId");
         var levelCTable = bctx.resolveTable("level_c").orElseThrow();
 
-        var resolved = resolver.resolve(arg, "levelAId", levelCTable);
+        var resolved = resolver.resolve(arg, "levelAId", levelCTable, /*participant=*/null, /*authorOwnedPredicate=*/false);
 
         assertThat(resolved).isInstanceOf(NodeIdLeafResolver.Resolved.FkTarget.DirectFk.class);
         var direct = (NodeIdLeafResolver.Resolved.FkTarget.DirectFk) resolved;
@@ -231,7 +231,7 @@ class NodeIdLeafResolverTest {
         GraphQLArgument arg = queryField.getArgument("aId");
         var liftFailCTable = bctx.resolveTable("lift_fail_c").orElseThrow();
 
-        var resolved = resolver.resolve(arg, "aId", liftFailCTable);
+        var resolved = resolver.resolve(arg, "aId", liftFailCTable, /*participant=*/null, /*authorOwnedPredicate=*/false);
 
         assertThat(resolved).isInstanceOf(NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk.class);
         var translated = (NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk) resolved;
@@ -277,7 +277,7 @@ class NodeIdLeafResolverTest {
         GraphQLArgument arg = queryField.getArgument("categoryIds");
         var filmTable = bctx.resolveTable("film").orElseThrow();
 
-        var resolved = resolver.resolve(arg, "categoryIds", filmTable);
+        var resolved = resolver.resolve(arg, "categoryIds", filmTable, /*participant=*/null, /*authorOwnedPredicate=*/false);
 
         assertThat(resolved).isInstanceOf(NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk.class);
         var translated = (NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk) resolved;
@@ -317,7 +317,7 @@ class NodeIdLeafResolverTest {
         GraphQLArgument arg = queryField.getArgument("levelAId");
         var levelBTable = bctx.resolveTable("level_b").orElseThrow();
 
-        var resolved = resolver.resolve(arg, "levelAId", levelBTable);
+        var resolved = resolver.resolve(arg, "levelAId", levelBTable, /*participant=*/null, /*authorOwnedPredicate=*/false);
 
         assertThat(resolved).isInstanceOf(NodeIdLeafResolver.Resolved.Rejected.class);
         var rejected = (NodeIdLeafResolver.Resolved.Rejected) resolved;
@@ -347,7 +347,7 @@ class NodeIdLeafResolverTest {
         GraphQLInputObjectField leaf = inputType.getFieldDefinition("bazIds");
         var barTable = bctx.resolveTable("bar").orElseThrow();
 
-        var resolved = resolver.resolve(leaf, "bazIds", barTable);
+        var resolved = resolver.resolve(leaf, "bazIds", barTable, /*participant=*/null, /*authorOwnedPredicate=*/false);
 
         assertThat(resolved).isInstanceOf(NodeIdLeafResolver.Resolved.FkTarget.DirectFk.class);
         var direct = (NodeIdLeafResolver.Resolved.FkTarget.DirectFk) resolved;
@@ -383,7 +383,7 @@ class NodeIdLeafResolverTest {
         GraphQLArgument arg = queryField.getArgument("parentId");
         var emailTable = bctx.resolveTable("email").orElseThrow();
 
-        var resolved = resolver.resolve(arg, "parentId", emailTable);
+        var resolved = resolver.resolve(arg, "parentId", emailTable, /*participant=*/null, /*authorOwnedPredicate=*/false);
 
         assertThat(resolved).isInstanceOf(NodeIdLeafResolver.Resolved.FkTarget.DirectFk.class);
         var direct = (NodeIdLeafResolver.Resolved.FkTarget.DirectFk) resolved;
@@ -419,7 +419,7 @@ class NodeIdLeafResolverTest {
         GraphQLArgument arg = queryField.getArgument("ids");
         var emailTable = bctx.resolveTable("email").orElseThrow();
 
-        var resolved = resolver.resolve(arg, "ids", emailTable);
+        var resolved = resolver.resolve(arg, "ids", emailTable, /*participant=*/null, /*authorOwnedPredicate=*/false);
 
         assertThat(resolved).isInstanceOf(NodeIdLeafResolver.Resolved.SameTable.class);
         var sameTable = (NodeIdLeafResolver.Resolved.SameTable) resolved;
@@ -451,7 +451,7 @@ class NodeIdLeafResolverTest {
         var arg = ((GraphQLObjectType) bctx.schema.getType("Query"))
             .getFieldDefinition("emailReplies").getArgument("parentId");
         var direct = (NodeIdLeafResolver.Resolved.FkTarget.DirectFk)
-            resolver.resolve(arg, "parentId", emailTable);
+            resolver.resolve(arg, "parentId", emailTable, /*participant=*/null, /*authorOwnedPredicate=*/false);
 
         // Classifier path: decoded keys land on the self-FK child columns.
         assertThat(direct.liftedSourceColumns()).extracting(c -> c.sqlName())
@@ -495,7 +495,7 @@ class NodeIdLeafResolverTest {
         var arg = ((GraphQLObjectType) bctx.schema.getType("Query"))
             .getFieldDefinition("childrenByParent").getArgument("parentIds");
         var direct = (NodeIdLeafResolver.Resolved.FkTarget.DirectFk)
-            resolver.resolve(arg, "parentIds", childTable);
+            resolver.resolve(arg, "parentIds", childTable, /*participant=*/null, /*authorOwnedPredicate=*/false);
 
         // Classifier-path reconciliation: the lifted columns arrive in node-key (decode) order,
         // each key position carrying whichever column landed on it.
