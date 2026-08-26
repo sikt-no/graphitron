@@ -453,20 +453,35 @@ public final class ClassifiedCorpus {
          * @error type-verdict admission nuance. An @error type classifies as ErrorType (the GraphQL
          * type whose @error contract carries the handler set). A field beyond the mandatory
          * path/message (`severity`) does not break the verdict: the per-handler accessor check fires
-         * on the carrier, not the @error type, so the type stays ErrorType. Corpus-only: the
-         * @classifiedType axis is asserted directly; `path` doubles as the fixture's required field
-         * coordinate (Child / Fetch / Field). (The @error-over-@record precedence verdict, @record
-         * silently ignored, is covered by RecordDirectiveIgnoredWarningTest.)
+         * on the carrier, not the @error type, so the type stays ErrorType. The @classifiedType axis
+         * is asserted directly; `path` doubles as the fixture's required field coordinate (Child /
+         * Fetch / Field). (The @error-over-@record precedence verdict, @record silently ignored, is
+         * covered by RecordDirectiveIgnoredWarningTest.)
+         *
+         * Doc example: the type whose values come from a caught exception rather than the catalog.
          */
         new Example("error-type", """
             enum Severity { LOW HIGH }
             type ExtraFieldError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}])
                 @classifiedType(as: ErrorType) {
-              path: [String!]! @classified(source: OnlyChild, operations: [], target: List, targetShape: Field, sourceShape: Record)
+              path: [String!]! @classified(source: Child, operations: [], target: List, targetShape: Field, sourceShape: Record)
               message: String!
               severity: Severity!
             }
-            extend type Query { err: ExtraFieldError }
+            type SakPayload @classifiedType(as: JavaRecordType) {
+              data: String
+              errors: [ExtraFieldError]
+            }
+            extend type Query {
+              sak: SakPayload
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSak"})
+            }
+            """,
+            """
+            {
+              # The @error type reaches the schema through a payload's errors slot.
+              sak { data errors { path message severity } }
+            }
             """),
 
         /*
@@ -1099,6 +1114,12 @@ public final class ClassifiedCorpus {
          * PageInfo shape, the form the classifier promotes without the @asConnection transform, so the
          * types exist in source SDL to carry @classifiedType). ConnectionType / EdgeType / PageInfoType
          * are pagination wrappers, asserted directly; no field-side lesson.
+         *
+         * Corpus-only, and it is the declared PageInfo that earns it: this fixture is what pins the
+         * reuse half of "exactly one PageInfoType per schema", which the page states under
+         * `pagination-and-facets` beside the synthesised half that `faceted-connection` asserts.
+         * The fixture itself does not generate (a structural connection root carries no claim), so
+         * rendering it as a worked example would put a rejection beside a rule that holds.
          */
         new Example("connection", """
             type Film @table(name: "film") { id: ID }

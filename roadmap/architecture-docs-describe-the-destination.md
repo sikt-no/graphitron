@@ -954,3 +954,36 @@ rather than a hole in the table, and no second rejection-rendering mechanism sta
 section 5's machinery, which needs an arm rather than a message to be drift-guardable, and to give
 every such fixture a projection that generates, which may not be reachable and would treat a
 classification-only fixture as a corpus defect.
+
+**Slice 3, part eleven: the type table hits its floor, and one row turned out to be wrong about
+generation.** The two candidates part ten named, `@error` and `PageInfo`, both landed, and neither
+landed the way it was scoped. Both were expected to be cheap promotions needing only a legal root.
+
+`@error` was not. The `error-type` fixture had `extend type Query { err: ExtraFieldError }`, a legal
+root that classifies, and adding a query to it produced an outcome block reading "this pattern
+classifies but does not generate: the build rejects it". That is the part-nine mechanism working
+exactly as designed, and it caught a promotion that would have taught the opposite of the truth: a
+reader would have concluded that an `@error` type generates nothing, which is what the reference row
+said and is not so. An `@error` type does not reach the schema through a root of its own; it reaches
+it through an `errors:` slot on a `@service` payload, which is the slot that wires the try/catch.
+Rebuilding the fixture around `SakPayload` (the existing `TestServiceStub.runSak` carrier, so no new
+test class) made it generate, and the rendered block is a better lesson than the one planned: `path`
+and `message` each emit a method taking `DataFetchingEnvironment`, because graphitron supplies both
+values itself, while the extra field `severity` reads `no method of its own`, because the schema
+registration wires a `PropertyDataFetcher` straight onto the accessor. The retired row claimed "No
+generation (error mapping config)". Three coordinates on the block contradict it.
+
+`PageInfo` went the other way: the right move was not to promote at all. The `connection` fixture
+declares the Relay triad outright, and its root carries no claim, so it classifies and does not
+generate. Rendering it would have put a rejection beside a rule that holds, which is the failure mode
+this item exists to remove. The two facts the row carried that the page did not already state (one
+`PageInfoType` per schema, and a declared `PageInfo` is reused rather than re-minted) went into the
+existing pagination section as prose, cited to the `connection` example, which asserts the reuse half
+without needing to render. The synthesised half was already asserted there by `faceted-connection`.
+
+That leaves the type-side reference table at three rows, and they are the floor: a deprecation
+warning and two rejections. The corpus is success-only by construction, so no worked example can
+subsume any of them, and the table now says so in a lead-in rather than leaving a reader to wonder
+which rows are still waiting their turn. Whether the section's transitional NOTE should come off with
+the table at its floor is a call for the owner, not a mechanical consequence: the NOTE marks the walk
+being drained as much as the table.

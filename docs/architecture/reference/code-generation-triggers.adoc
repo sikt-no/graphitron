@@ -608,14 +608,108 @@ same input reused on two different tables resolves differently at each one.
 
 Asserted by the `result-backing` and `input-backing` corpus examples.
 
+[#error-type]
+=== `@error` over an object type → `ErrorType`
+
+Every type so far takes its values from something the generator can go and read: a table, a service
+return, a component of a record. An `@error` type is the one that does not. Its values come from a
+Java exception thrown while some other field was being resolved, and `handlers:` is where the author
+says which exceptions those are.
+
+It also does not reach the schema on its own. It arrives through an `errors:` slot on a `@service`
+payload, and that slot is what wires the try/catch: the carrier's error channel records which
+`@error` types this call can produce, so the generated fetcher knows what to map a caught throwable
+into.
+
+[source,graphql]
+----
+type Query {
+  "The @error type reaches the schema through a payload's errors slot."
+  sak: SakPayload @service(service: {className : "no.sikt.graphitron.rewrite.TestServiceStub", method : "runSak"})
+}
+
+type SakPayload {
+  data: String
+  errors: [ExtraFieldError]
+}
+
+type ExtraFieldError @error(handlers: [{handler : GENERIC, className : "java.lang.IllegalArgumentException"}]) {
+  path: [String!]!
+  message: String!
+  severity: Severity!
+}
+
+enum Severity {
+  LOW
+  HIGH
+}
+----
+
+// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `ExtraFieldError.message`
+| no claiming directive
+| `fetchers.ExtraFieldErrorFetchers#message(DataFetchingEnvironment)`
+
+| `ExtraFieldError.path`
+| no claiming directive
+| `fetchers.ExtraFieldErrorFetchers#path(DataFetchingEnvironment)`
+
+| `ExtraFieldError.severity`
+| no claiming directive
+| no method of its own
+
+| `Query.sak`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#sak(DataFetchingEnvironment)`
+
+| `SakPayload.data`
+| no claiming directive
+| `fetchers.SakPayloadFetchers#data(Object)`
+
+| `SakPayload.errors`
+| no claiming directive
+| `fetchers.SakPayloadFetchers#errors(Object)`
+
+|===
+
+`path` and `message` are required on every `@error` type, and graphitron supplies both values itself.
+That is why each gets a generated method taking the `DataFetchingEnvironment` rather than a source
+object: `path` synthesises from the execution context's path, the SDL position the error fired at
+(a validation-derived source routes through `GraphQLError.getPath()` instead, so the per-element
+paths survive), and `message` resolves at build time to the handler's `description:` when the author
+wrote one and to the source's `getMessage()` when they did not.
+
+Any field beyond those two is the author's. `severity` is one, and its row reads `no method of its
+own` because nothing needs generating for it: the schema's registration wires a
+`PropertyDataFetcher` straight onto the accessor, reading `getSeverity()` off whatever was caught.
+The accessor name is the field's own unless `@field(name:)` names a different one. Graphitron does
+check at classify time that every extra field has an accessor to read from on every class in the
+channel, but that check fires on the carrier and not on the `@error` type, so an extra field never
+moves the type's verdict away from `ErrorType`.
+
+The payload's own two fields are plain passthroughs over the record the service returned, which is
+the reflection-derived backing of <<backing-class,the previous section>> and not an error concern.
+The rest of the `handlers:` option set (SQL-state and vendor-code matching, validation fan-out,
+`matches:` message filters) is in `docs/manual/reference/directives/error.adoc`; the classification
+verdict does not vary with any of it.
+
+Asserted by the `error-type` corpus example.
+
 === Reference table
+
+What is left here is the surface a worked example cannot show. The corpus renders patterns that
+classify and generate, so a deprecation warning and two rejections have no example to be pulled into;
+they stay stated rather than demonstrated.
 
 |===
 | Classification Trigger on Type | `GraphitronType` Variant | Generator Output
 
-| `@error` | `ErrorType` | No generation (error mapping config)
 | Input type with `@table` (deprecated location; see `docs/manual/reference/directives/table.adoc`) | Whatever the same input without the directive classifies as | No generation decision of its own: the directive is ignored, `name:` is never read, and no reader consults it (the input-axis binding arm and the three nesting guards that once did were all deleted, so inertness is uniform). A non-fatal per-usage build warning announces the deprecation and carries the per-verb migration guidance (drop the directive for filters and lookup args; `@mutation(table:)` for DELETE and encoded-ID / scalar returns; return-derivation for INSERT/UPDATE). A future release rejects the location.
-| Generated `PageInfo` type | `PageInfoType` | Connection page-info wrapper
 | Unresolvable directives | `UnclassifiedType` | Validation error ; build fails
 | Conflicting type directives (`@table` with `@error`) | Arm-order winner (the walk no longer tombstones conflicts) | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`) ; build fails
 |===
@@ -2021,6 +2115,13 @@ emit fetchers of their own: that is what makes them visible here at all, since n
 SDL mentions them. Neither carries a claim, because `@asConnection` shapes the read rather than
 claiming the coordinate. Asserted by the `faceted-connection` corpus example, whose `@synthesises`
 assertion pins the full mint set including the facets and page-info types this query does not select.
+
+Page-info is the one wrapper in that mint set that is not per-coordinate. A schema has exactly one
+`PageInfo`, landing on `PageInfoType`, however many connections it carries: the classifier synthesises
+it once when some connection exists and the author did not declare it, and reuses the author's own
+declaration when they did, which is what a hand-written or federated schema relies on. The reused
+half is asserted by the `connection` corpus example, whose SDL declares the whole Relay triad
+outright.
 
 === Turning rows into fields
 
