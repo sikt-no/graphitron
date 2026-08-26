@@ -67,3 +67,84 @@ Add a comment-style entry to the `reviewer-prompt` skill's "What to look for" li
 - A build-run guard test fails on the seed phrases in comment regions of in-scope sources including roadmap-tool, discloses its residue in its own javadoc, carries a both-directions synthetic phrase pin and a scanned-file floor, and states the rewrite rule in its failure message; the current hits are rewritten with real constraints restated in present tense, and the build is green.
 - `GuardScope` still has one module roster; per-guard subject subtractions carry their reasons; `roadmap-tool-store-site-and-guard-scope`'s body reflects the settled fork.
 - The `reviewer-prompt` skill instructs the reviewer to check diff comments against the convention; the `srp` templates are unchanged.
+
+## Reviewer findings
+
+### Round 1 (2026-08-26, Spec -> Ready, reviewer session 019rsBkkANNVxMVAiBaCdV5L)
+
+Verdict: withhold. One blocking finding on question two, one factual finding on question one. The
+goal comes across without reconstruction from the phase list, the diagnosis is well evidenced, and
+nearly every claim the spec makes about the tree checks out. The blocker is a single phase whose
+scope argument is built on a picture of `GuardScope` that is one guard out of date.
+
+**Finding 1 (question two: architecture fit). Phase 3's "Scope by axis split, not roster fork"
+breaks `StoreFixtureGuardTest`, and the spec does not say what to do about it.**
+
+Three guards walk `GuardScope.IN_SCOPE_MODULES` today, not two. Besides
+`RoadmapReferenceGuardTest` and `RetiredVocabularyGuardTest`, which the phase names,
+`StoreFixtureGuardTest.noTestStandsAStoreUpOutsideAHarness` iterates the same roster.
+`GuardScope`'s own class javadoc still calls it the "Shared walk scope for the prose guards", which
+is where the two-guard picture comes from, and `roadmap-tool-store-site-and-guard-scope`'s third
+bullet already records that sentence as stale.
+
+Under a single roster, subtraction can only remove, so "the phrase guard scans roadmap-tool" means
+the roster gains `roadmap-tool`. `StoreFixtureGuardTest` then walks
+`roadmap-tool/src/test/java`, where `SchemaReferencePagesTest.rendersEveryRelationOfTheLiveCatalogExactlyOnce`
+calls `GraphitronModelStore.open()` in a code region. `StoreFixtureScanner` recognises that type as
+a whole identifier token in code regions, the file is in neither `HOMES` nor `EXEMPT`, so the build
+goes red on a file this item never touches.
+
+The acceptance criterion "`GuardScope` still has one module roster; per-guard subject subtractions
+carry their reasons" is therefore not satisfiable as written. `StoreFixtureGuardTest`'s subject
+argues against a subtraction rather than for one: `roadmap-tool-store-site-and-guard-scope` names
+covering that site as the wanted outcome, and `StoreFixtureGuardTest.Why` carries exactly two
+permanent reasons, the store's own lifetime being the subject and the class being a capture oracle,
+neither of which fits. A subtraction written anyway would state "there is an unfixed violation
+here", which converts a declared scope gap into a suppression.
+
+What would satisfy this: pick an arm and write it into the phase. Adopt `FactStores` at the one
+roadmap-tool site inside this item, which is small and closes that Backlog item's first question;
+or give the phrase guard an additive scope of its own and say what becomes of the one-definition
+invariant the phase currently protects; or write the `StoreFixtureGuardTest` subtraction with its
+real reason and record in that Backlog item that the gap became declared rather than closed.
+Whichever arm, say what happens to `RetiredVocabularyGuardTest`, which also widens. Its Java, SDL
+and SQL scans over roadmap-tool find nothing today, so the widening is benign, but that is a fact
+the spec should state rather than one the implementer discovers. The phase's claim to settle the
+fork "for prose guards" is the framing that hides the third guard, so it needs revisiting too.
+
+**Finding 2 (question one: a checkable claim that does not hold). The tree has three seed-phrase
+hits, not four.**
+
+Scanning comment regions for the four seed phrases, with javadoc continuation lines rejoined, finds
+`InlineMultiplicityCheck`, `RewriteSchemaLoaderTest` and `TestFilmDetailsDto`.
+`BuildOutputReportPipelineTest`'s only archeological wording is "no longer" at line 43, and the
+admission criterion in the same paragraph deliberately keeps "no longer" off the seed list. So
+either the file list is wrong or the seed list is, and I cannot tell which from the spec. Left
+as-is, the acceptance criterion "the current hits are rewritten" disagrees with what the guard
+will actually report.
+
+**Non-blocking.**
+
+`DocSizeBudgetTest`'s headroom is 14 words: `development-principles.adoc` is 3,486 words against
+the 3,500-word budget. Phase 2's "if it cannot fit" reads as a contingency when displacement is
+certain. The document's own Constraints entry already makes displacement the policy, so this is
+phrasing rather than a design gap, but the implementer should not read the conditional as an
+option.
+
+Everything else checked. `RoadmapReferenceScanner.scanSource(Path, String)` exists with that shape
+and is unit-testable over in-memory strings; `RetiredVocabularyGuardTest` carries the
+demonstrated-recurrence bar, the scanned-file floors, and a both-directions synthetic phrase test
+whose `matchPhrases` already rejoins the projected habitat so a phrase broken across a javadoc
+continuation line matches, which is the exact mechanism phase 3 asks for;
+`CollectionValuedColumnGateTest` carries the disclosed-gap javadoc the phase cites, and
+`fact-model.adoc` names `CaptureCorpusIsolationTest` in its "Not mechanically enforced" list and
+does price its rejected rewrites in seconds; `GraphitronSchemaBuilder`'s class javadoc is one
+sentence of what plus a boundary paragraph plus a call-order paragraph, so it calibrates the
+paragraph-admission rule exactly as the phase claims; `InlineMultiplicityCheck`'s javadoc is the
+specimen described, with the report-versus-gate declaration separable from its defense;
+"rather than" and "instead of" appear 54 times in roadmap-tool main-source comments, so "40+"
+holds; `development-principles.adoc`'s "Documentation names only live tests/code" names exactly the
+two smells the spec says it names and carries the *Enforced by* line; the `reviewer-prompt` skill's
+"What to look for" list has the "Stale references" entry to sit beside; and the `srp` skill's
+template design intent does forbid re-accreting checklists and does name phrasing as out of the
+gate's scope.
