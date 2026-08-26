@@ -1,7 +1,7 @@
 ---
 id: R832
 title: "CatalogRefreshTest budgets a real refresh like a no-op trigger"
-status: In Progress
+status: In Review
 bucket: dx
 priority: 2
 theme: tooling
@@ -87,3 +87,28 @@ under 2x before. The full verification build then confirms the mechanical edit b
   enforces that its triggers stay no-ops; a future test wiring a real-work trigger to the
   inherited constant is exactly how this defect arrived, and the constraint there is review-only.
 - `DebounceExecutorTest`'s 2 s await: same no-op-trigger situation, same reasoning.
+
+## Implementation notes
+
+Shipped as planned, no design fork. `WAIT_MS` became `FIRE_CEILING_MS` (`DEBOUNCE_MS + 15_000`,
+taken by both positive awaits) and `QUIESCENCE_MS` (`DEBOUNCE_MS + 1500`, taken by the negative
+test's sleep), each with a javadoc arguing its own number: what runs inside the budget, the
+measurement it is sized against, which direction is safe, and what reaching it means. The names are
+the ones the plan floated. No production code, no other file.
+
+Two things the plan left to the implementer and how they were settled:
+
+- The javadoc links resolve as live symbols across module boundaries rather than falling back to
+  `{@code}`. `graphitron` is a compile-scope dependency of `graphitron-maven-plugin` and its
+  test-jar is on the test classpath, so `SourceWalker` and `FactWriters.refreshJavaSources` are
+  both linkable from here; `DevMojoTest` is linked by FQN so the citation costs no import. The
+  ceiling's javadoc also links the two test methods that take it and the window's links the one
+  that takes it, so each budget names its own call sites.
+- The ceiling's javadoc carries the history paragraph the precedent uses, stating that the figure
+  was previously the window's and that under 2x over a measured 854 ms is a race with machine load
+  rather than a ceiling. That is what makes the number re-derivable at the next gate: the
+  measurement and the ceiling are both in the text, so the ratio can be checked by division.
+
+Per-run cost is unchanged, which is the property that says the split landed on the right axis: the
+only figure that grew is one a green run never pays. The class runs 3/3 green in isolation in
+3.5 s against 3.9 s before, the 1.6 s of that which is the negative test's sleep being untouched.
