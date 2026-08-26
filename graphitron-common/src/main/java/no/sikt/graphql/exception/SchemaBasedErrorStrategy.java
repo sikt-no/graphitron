@@ -4,6 +4,7 @@ import graphql.execution.ResultPath;
 import graphql.schema.DataFetchingEnvironment;
 import org.jooq.exception.DataAccessException;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -64,6 +65,10 @@ public abstract class SchemaBasedErrorStrategy {
                             (IllegalArgumentException) exception,
                             operationName,
                             environment.getExecutionStepInfo().getPath());
+                } else if (exception instanceof PartialBatchFailureException) {
+                    return handlePartialBatchFailure(
+                            (PartialBatchFailureException) exception,
+                            operationName);
                 } else if (exception instanceof DataAccessException) {
                     return handleDataAccessException(
                             (DataAccessException) exception,
@@ -113,11 +118,63 @@ public abstract class SchemaBasedErrorStrategy {
     }
 
     /**
-     * Create a payload containing the errors for the operation.
+     * Handle a batch where some elements succeeded and some did not, by reporting the failures on the payload
+     * that was already built from the elements that succeeded.
+     * <p>
+     * Every failure has to be representable as a schema error for this to work. If any one of them has no
+     * {@code @error} mapping to be reported through, reporting a subset would hide the rest, so the whole
+     * operation falls through to a top-level error instead, which is what it did before per-item reporting
+     * existed.
+     */
+    protected Optional<CompletableFuture<Object>> handlePartialBatchFailure(PartialBatchFailureException e, String operationName) {
+        var errors = new ArrayList<>();
+        for (var failure : e.getFailures()) {
+            var error = mapItemFailure(failure, operationName);
+            if (error.isEmpty()) {
+                return Optional.empty();
+            }
+            errors.add(error.get());
+        }
+        return attachErrors(operationName, e.getPayload(), errors);
+    }
+
+    /**
+     * @return The schema error for one failed batch element, reported at that element's own path, or empty if
+     * the schema has no error type this exception maps to.
+     */
+    private Optional<Object> mapItemFailure(BatchItemFailure failure, String operationName) {
+        if (failure.cause() instanceof DataAccessException dataAccessException) {
+            return Optional.of(schemaErrorMapper.mapDataAccessException(
+                    dataAccessException,
+                    operationName,
+                    failure.path(),
+                    this::createDefaultDataAccessError
+            ));
+        }
+        return schemaErrorMapper.mapBusinessLogicException(failure.cause(), operationName, failure.path());
+    }
+
+    /**
+     * Create a payload containing the errors for the operation. The payload carries no data, which is what an
+     * operation that failed outright should report.
      */
     protected Optional<CompletableFuture<Object>> createPayload(String operationName, List<?> errors) {
+        return attachErrors(operationName, null, errors);
+    }
+
+    /**
+     * Put the errors on a payload that has already been built, so an operation can report both the work that
+     * succeeded and the work that did not. Passing {@code null} for the payload builds an empty one, making this
+     * the general form of {@link #createPayload}.
+     *
+     * @param operationName The query or mutation field these errors belong to.
+     * @param payload       The payload to put the errors on, or {@code null} for a payload with no data.
+     * @param errors        The errors to report.
+     * @return The payload, or empty if this operation has no errors field to put them in.
+     */
+    protected Optional<CompletableFuture<Object>> attachErrors(String operationName, Object payload, List<?> errors) {
         return Optional.ofNullable(configuration.getPayloadForField().get(operationName))
-                .map(creator -> creator.createPayload(errors))
+                .map(creator -> creator.attachErrors(payload, errors))
                 .map(CompletableFuture::completedFuture);
     }
 
@@ -126,4 +183,18 @@ public abstract class SchemaBasedErrorStrategy {
      * Can be overridden by subclasses to customize the default error format.
      */
     protected abstract Object createDefaultDataAccessError(String operationName, String message);
+
+    /**
+     * Create a default error for a data access exception that belongs to one element of a batch rather than to
+     * the operation as a whole. The default ignores the path and reports the error against the operation, which
+     * is what implementations written before per-item reporting existed do. Override it to report the element's
+     * own path, so a client can tell which element of the batch failed.
+     *
+     * @param operationName The query or mutation field this error belongs to.
+     * @param path          Path from the operation field down to the element that failed.
+     * @param message       The message extracted from the exception.
+     */
+    protected Object createDefaultDataAccessError(String operationName, List<String> path, String message) {
+        return createDefaultDataAccessError(operationName, message);
+    }
 }

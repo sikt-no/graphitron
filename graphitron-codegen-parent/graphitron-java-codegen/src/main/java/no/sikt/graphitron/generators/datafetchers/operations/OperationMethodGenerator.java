@@ -175,10 +175,36 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         return returnWrap(
                 CodeBlock.methodCall(
                         target.hasServiceReference() ? newServiceDataFetcherWithTransform() : newDataFetcher(),
-                        getFetcherMethodName(target, localObject),
+                        getFetcherMethodName(target, localObject, parser),
                         indentIfMultiline(innerCode)
                 )
         );
+    }
+
+    /**
+     * A service reports the outcome of each element of a batch separately by returning
+     * {@code List<BatchItemResult<T>>}. That only means anything for an operation that has both a single listed
+     * input to address the failures against and an errors field to report them in.
+     *
+     * @return Whether this operation should split the service result into successes and per-element failures.
+     */
+    private boolean reportsPerElementFailures(ObjectField target, InputParser parser) {
+        return target.hasServiceReference()
+                && target.getExternalMethod().returnsBatchItemResults()
+                && !parser.getAllErrors().isEmpty()
+                && parser.getSingleIterableInput().isPresent();
+    }
+
+    /**
+     * @return The name of the batch argument and the size of the list bound to it, which is what the resolver
+     * needs to address a failed element and to check that the service reported one outcome per element.
+     */
+    private CodeBlocks perElementFailureArguments(InputParser parser) {
+        var iterableInput = parser.getSingleIterableInput().orElseThrow();
+        return CodeBlocks
+                .create()
+                .add(CodeBlock.of("$S", iterableInput.getValue().getName()))
+                .add(CodeBlock.of("$N.size()", inputPrefix(iterableInput.getKey())));
     }
 
     private CodeBlock callQueryBlockInner(ObjectField target, String objectToCall, String method, InputParser parser, CodeBlock queryFunction) {
@@ -195,10 +221,14 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 ? transformOutputRecord(object.getName(), object.hasJavaRecordReference())
                 : CodeBlock.empty();
         if (!target.hasRequiredPaginationFields()) {
+            var blocks = CodeBlocks.create().add(queryFunction);
+            if (reportsPerElementFailures(target, parser)) {
+                blocks.addAll(perElementFailureArguments(parser));
+            }
             return CodeBlock
                     .builder()
                     .addIf(!localObject.isOperationRoot(), "\n")
-                    .add(CodeBlock.join(",\n", queryFunction, transformFunction))
+                    .add(blocks.add(transformFunction).join(",\n"))
                     .build();
         }
 
@@ -362,7 +392,11 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         return target.getArguments().stream().filter(AbstractField::isID).findFirst().orElse(null);
     }
 
-    private String getFetcherMethodName(ObjectField target, RecordObjectSpecification<?> localObject) {
+    private String getFetcherMethodName(ObjectField target, RecordObjectSpecification<?> localObject, InputParser parser) {
+        if (reportsPerElementFailures(target, parser)) {
+            return "loadPartial";
+        }
+
         if (processedSchema.isDeleteMutationWithReturning(target) || processedSchema.isInsertMutationWithReturning(target)) {
             return processedSchema.isObject(target) && !processedSchema.hasTableObject(target) ? "loadWrapped" : "load";
         }

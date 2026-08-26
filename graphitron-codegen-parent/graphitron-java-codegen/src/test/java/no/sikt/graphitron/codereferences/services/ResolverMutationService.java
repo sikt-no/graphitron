@@ -2,6 +2,7 @@ package no.sikt.graphitron.codereferences.services;
 
 import no.sikt.graphitron.codereferences.dummyreferences.DummyRecord;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
+import no.sikt.graphql.helpers.resolvers.BatchItemResult;
 
 import java.util.List;
 
@@ -49,6 +50,12 @@ public class ResolverMutationService {
         return null;
     }
     public DummyRecord mutationDummy() {
+        return null;
+    }
+    public List<BatchItemResult<CustomerRecord>> mutationBatch(List<CustomerRecord> customers) {
+        return null;
+    }
+    public List<CustomerRecord> mutationPlain(List<CustomerRecord> customers) {
         return null;
     }
 }

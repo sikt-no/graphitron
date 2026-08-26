@@ -1,0 +1,13 @@
+type Mutation {
+  mutation(in: [CustomerInputTable]): Response @service(service: {name: "RESOLVER_MUTATION_SERVICE", method: "mutationBatch"})
+}
+
+type Response {
+  customers: [CustomerTable]
+  errors: [BatchError]
+}
+
+type BatchError implements Error {
+  path: [String!]!
+  message: String!
+}

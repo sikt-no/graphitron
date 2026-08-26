@@ -18,7 +18,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -74,11 +74,14 @@ public class ExceptionStrategyTest {
     }
 
     @Test
-    @DisplayName("handleException returns payload when DataAccessException should be handled")
+    @DisplayName("handleException returns a payload with no data when DataAccessException should be handled")
     void shouldReturnPayloadWhenDataAccessExceptionShouldBeHandled() throws ExecutionException, InterruptedException {
         Throwable thrownException = new DataAccessException("error");
 
-        assertThat(underTest.handleException(mockEnvironment, thrownException).orElseThrow().get()).isEqualTo(MUTATION_1_PAYLOAD);
+        var payload = (TestPayload) underTest.handleException(mockEnvironment, thrownException).orElseThrow().get();
+
+        assertThat(payload.data()).isEmpty();
+        assertThat(payload.errors()).isEqualTo(List.of(new SomeError(List.of(MUTATION1_NAME), "configured exception message")));
     }
 
     @Test
@@ -86,7 +89,9 @@ public class ExceptionStrategyTest {
     void shouldReturnPayloadWhenExtensionOfDataAccessExceptionShouldBeHandled() throws ExecutionException, InterruptedException {
         Throwable thrownException = new IntegrityConstraintViolationException("error"); //IntegrityConstraintViolationException extends DataAccessException
 
-        assertThat(underTest.handleException(mockEnvironment, thrownException).orElseThrow().get()).isEqualTo(MUTATION_1_PAYLOAD);
+        var payload = (TestPayload) underTest.handleException(mockEnvironment, thrownException).orElseThrow().get();
+
+        assertThat(payload.errors()).hasSize(1);
     }
 
     @Test
@@ -94,7 +99,9 @@ public class ExceptionStrategyTest {
     void shouldReturnPayloadWhenSomeGenericExceptionMatches() throws ExecutionException, InterruptedException {
         Throwable thrownException = new BindException("the exception must contain substring of message to be handled");
 
-        assertThat(underTest.handleException(mockEnvironment, thrownException).orElseThrow().get()).isEqualTo(MUTATION_1_PAYLOAD);
+        var payload = (TestPayload) underTest.handleException(mockEnvironment, thrownException).orElseThrow().get();
+
+        assertThat(payload.errors()).hasSize(1);
     }
 
     @Test
@@ -109,6 +116,91 @@ public class ExceptionStrategyTest {
     @DisplayName("handleException returns empty when the exception type does not match")
     void shouldReturnEmptyWhenTheExceptionTypeDoesNotMatch() {
         Throwable thrownException = new ArithmeticException("some message");
+
+        assertThat(underTest.handleException(mockEnvironment, thrownException)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("A partial batch failure keeps the data that succeeded and reports the rest as errors")
+    void shouldKeepDataWhenPartOfABatchFailed() throws ExecutionException, InterruptedException {
+        var succeeded = new TestPayload(List.of("customer0", "customer2"), List.of());
+        Throwable thrownException = new PartialBatchFailureException(
+                succeeded,
+                List.of(new BatchItemFailure(List.of(MUTATION1_NAME, "in", "1"), new DataAccessException("error")))
+        );
+
+        var payload = (TestPayload) underTest.handleException(mockEnvironment, thrownException).orElseThrow().get();
+
+        assertThat(payload.data()).containsExactly("customer0", "customer2");
+        assertThat(payload.errors()).isEqualTo(List.of(
+                new SomeError(List.of(MUTATION1_NAME, "in", "1"), "configured exception message")
+        ));
+    }
+
+    @Test
+    @DisplayName("A failed element is reported at its own path, not at the operation")
+    void shouldReportEachFailedElementAtItsOwnPath() throws ExecutionException, InterruptedException {
+        Throwable thrownException = new PartialBatchFailureException(
+                new TestPayload(List.of("customer1"), List.of()),
+                List.of(
+                        new BatchItemFailure(List.of(MUTATION1_NAME, "in", "0"), new DataAccessException("error")),
+                        new BatchItemFailure(List.of(MUTATION1_NAME, "in", "2"),
+                                new BindException("the exception must contain substring of message to be handled"))
+                )
+        );
+
+        var payload = (TestPayload) underTest.handleException(mockEnvironment, thrownException).orElseThrow().get();
+
+        assertThat(payload.errors())
+                .extracting(it -> ((SomeError) it).path())
+                .containsExactly(List.of(MUTATION1_NAME, "in", "0"), List.of(MUTATION1_NAME, "in", "2"));
+    }
+
+    @Test
+    @DisplayName("A strategy that does not override the path-aware default reports at the operation instead")
+    void shouldFallBackToTheOperationPathForAnOlderStrategy() throws ExecutionException, InterruptedException {
+        var strategyWithoutPathSupport = new TestSchemaBasedErrorStrategy(
+                new TestMutationExceptionStrategyConfiguration(),
+                new TestExceptionToErrorMappingProvider(),
+                dataAccessExceptionMapper
+        ) {
+            @Override
+            protected Object createDefaultDataAccessError(String operationName, List<String> path, String message) {
+                return super.createDefaultDataAccessError(operationName, message);
+            }
+        };
+        Throwable thrownException = new PartialBatchFailureException(
+                new TestPayload(List.of("customer0"), List.of()),
+                List.of(new BatchItemFailure(List.of(MUTATION1_NAME, "in", "1"), new DataAccessException("error")))
+        );
+
+        var payload = (TestPayload) strategyWithoutPathSupport.handleException(mockEnvironment, thrownException).orElseThrow().get();
+
+        assertThat(payload.errors()).isEqualTo(List.of(new SomeError(List.of(MUTATION1_NAME), "configured exception message")));
+    }
+
+    @Test
+    @DisplayName("A partial batch failure falls through to a top-level error when one element cannot be mapped")
+    void shouldFallThroughWhenAnElementHasNoErrorMapping() {
+        Throwable thrownException = new PartialBatchFailureException(
+                new TestPayload(List.of("customer0"), List.of()),
+                List.of(
+                        new BatchItemFailure(List.of(MUTATION1_NAME, "in", "1"), new DataAccessException("error")),
+                        new BatchItemFailure(List.of(MUTATION1_NAME, "in", "2"), new BindException("wrong message"))
+                )
+        );
+
+        assertThat(underTest.handleException(mockEnvironment, thrownException)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("A partial batch failure is not handled for a mutation that is not configured for it")
+    void shouldNotHandlePartialBatchFailureForUnconfiguredMutation() {
+        when(mockFieldDefinition.getName()).thenReturn("unconfigured_mutation");
+        Throwable thrownException = new PartialBatchFailureException(
+                new TestPayload(List.of(), List.of()),
+                List.of(new BatchItemFailure(List.of("unconfigured_mutation", "in", "0"), new DataAccessException("error")))
+        );
 
         assertThat(underTest.handleException(mockEnvironment, thrownException)).isEmpty();
     }
@@ -152,10 +244,10 @@ public class ExceptionStrategyTest {
         }
 
         @Override
-        protected Optional<CompletableFuture<Object>> createPayload(String operationName, List<?> errors) {
-            // For testing, just return the constant payload
-            return Optional.of(CompletableFuture.completedFuture(MUTATION_1_PAYLOAD));
+        protected Object createDefaultDataAccessError(String operationName, List<String> path, String message) {
+            return new SomeError(path, message);
         }
+
     }
 
     // Test configuration classes
@@ -167,13 +259,19 @@ public class ExceptionStrategyTest {
             fieldMapping.put(IllegalArgumentException.class, Set.of(MUTATION1_NAME));
             fieldMapping.put(DataAccessException.class, Set.of(MUTATION1_NAME));
             fieldMapping.put(BindException.class, Set.of(MUTATION1_NAME));
+            fieldMapping.put(PartialBatchFailureException.class, Set.of(MUTATION1_NAME));
             return fieldMapping;
         }
 
         @Override
         public Map<String, PayloadCreator> getPayloadForField() {
             Map<String, PayloadCreator> payloadMapping = new HashMap<>();
-            payloadMapping.put(MUTATION1_NAME, errors -> MUTATION_1_PAYLOAD);
+            // Mirrors what the generator emits: a null payload means build a fresh one, and errors are set on
+            // whichever payload comes back.
+            payloadMapping.put(MUTATION1_NAME, (existingPayload, errors) ->
+                    existingPayload instanceof TestPayload payload
+                            ? new TestPayload(payload.data(), errors)
+                            : new TestPayload(List.of(), errors));
             return payloadMapping;
         }
     }
@@ -218,5 +316,9 @@ public class ExceptionStrategyTest {
 
     // Simple error class for testing
     private record SomeError(List<String> path, String msg) {
+    }
+
+    // Stands in for a generated payload: a data field and an errors field.
+    private record TestPayload(List<String> data, List<?> errors) {
     }
 }

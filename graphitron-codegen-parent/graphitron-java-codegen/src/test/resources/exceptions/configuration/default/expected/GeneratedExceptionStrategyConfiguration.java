@@ -25,8 +25,8 @@ public class GeneratedExceptionStrategyConfiguration implements ExceptionStrateg
         payloadForField = new HashMap<>();
         fieldsForException.computeIfAbsent(ValidationViolationGraphQLException.class, k -> new HashSet<>()).add("mutation");
         fieldsForException.computeIfAbsent(IllegalArgumentException.class, k -> new HashSet<>()).add("mutation");
-        payloadForField.put("mutation", errors -> {
-            var payload = new Response();
+        payloadForField.put("mutation", (existingPayload, errors) -> {
+            var payload = existingPayload != null ? (Response) existingPayload : new Response();
             payload.setErrors((List<ValidationError>) errors);
             return payload;
         });

@@ -186,6 +186,24 @@ public class InputParser {
     }
 
     /**
+     * The one listed input this operation batches over, if there is exactly one.
+     * <p>
+     * Per-element reporting addresses a failure by its position in this list, so it only means anything when a
+     * single list is in play. An operation with no listed input has no batch, and one with several has no single
+     * list a position could refer to.
+     *
+     * @return The variable name the list is bound to, mapped to the schema argument it came from.
+     */
+    public Optional<Map.Entry<String, InputField>> getSingleIterableInput() {
+        var iterableInputs = methodInputs
+                .entrySet()
+                .stream()
+                .filter(it -> it.getValue().isIterableWrapped())
+                .toList();
+        return iterableInputs.size() == 1 ? Optional.of(iterableInputs.get(0)) : Optional.empty();
+    }
+
+    /**
      * @return List of all error types this operation has specified in the schema.
      */
     public List<ObjectField> getAllErrors() {

@@ -1,0 +1,18 @@
+mutation {
+    updateCustomerEmailPerItem(input: [
+        {customerId: 1, email: "first@example.com"},
+        {customerId: -1, email: "second@example.com"},
+        {customerId: 2, email: "third@example.com"}
+    ]) {
+        emailUpdates {
+            customerEmail {
+                customerId
+                email
+            }
+        }
+        errors {
+            path
+            message
+        }
+    }
+}

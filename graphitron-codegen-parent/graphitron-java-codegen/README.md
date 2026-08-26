@@ -63,6 +63,7 @@ using Java and [jOOQ](https://www.jooq.org/).
     - [Response mapping](#response-mapping)
   - [Custom table resolution with @tableMethod](#custom-table-resolution-with-tablemethod)
   - [Exception handling with @error](#exception-handling-with-error)
+    - [Reporting failures per element of a batch](#reporting-failures-per-element-of-a-batch)
   - [Custom field logic with @externalField](#custom-field-logic-with-externalfield)
     - [Example](#example)
   - [Polymorphic queries (unions and interfaces)](#polymorphic-queries-unions-and-interfaces)
@@ -1474,6 +1475,75 @@ In this instance, certain exceptions are mapped to be handled as _MyError_. The 
 
 > **Note**: `code` and `sqlState` can be used together when you need to match on both. When both are specified, the exception must match on all provided criteria. Which parameter is most useful depends on your database,
 > check your database's documentation for how it reports error codes and SQL states.
+
+#### Reporting failures per element of a batch
+
+A mutation that takes a list normally succeeds or fails as a whole. If one element fails, the exception it raised
+becomes the operation's error and the payload carries no data, so a client cannot tell "element 3 of 9 failed"
+apart from "nothing happened".
+
+A `@service` method can report the outcome of each element separately by returning
+`List<BatchItemResult<T>>` instead of `List<T>`. Graphitron builds the payload from the elements that succeeded,
+and reports the ones that failed through the payload's `errors` field.
+
+```graphql
+type Mutation {
+  updateCustomers(in: [CustomerInput!]!): UpdateCustomersPayload
+    @service(service: {className: "some.path.CustomerService"})
+}
+
+type UpdateCustomersPayload {
+  customers: [Customer!]!
+  errors: [UpdateError!]
+}
+
+type UpdateError implements Error @error(handlers: [
+  {handler: GENERIC, className: "some.path.NoSuchCustomerException"}
+]) {
+  path: [String!]!
+  message: String!
+}
+```
+
+The service returns one result per input element, in input order:
+
+```java
+public List<BatchItemResult<CustomerRecord>> updateCustomers(List<CustomerRecord> customers) {
+    return customers.stream()
+            .map(customer -> {
+                try {
+                    return BatchItemResult.success(update(customer));
+                } catch (NoSuchCustomerException e) {
+                    return BatchItemResult.<CustomerRecord>failure(e);
+                }
+            })
+            .toList();
+}
+```
+
+A response then carries both halves, with each failure addressed by its position in the input list:
+
+```json
+{
+  "customers": [ { "id": "1" }, { "id": "3" } ],
+  "errors": [ { "path": ["updateCustomers", "in", "1"], "message": "No such customer" } ]
+}
+```
+
+Notes on the contract:
+
+- The returned list must have one entry per input element, in input order. That is how the position in `path` is
+  worked out, and a mismatch raises an `IllegalStateException` rather than reporting the wrong element.
+- The field must have exactly one listed argument, and its return type must have an `errors` field. Graphitron
+  rejects the schema at generation time otherwise, rather than ignoring the wrapper.
+- Each failure needs an error type it maps to, through `@error` as usual. If any one of them has none, reporting
+  the rest would hide it, so the whole operation falls back to a top-level error.
+- For failures that fall back to the default data access error, override
+  `createDefaultDataAccessError(String operationName, List<String> path, String message)` on your
+  `SchemaBasedErrorStrategy`. The two-argument form reports every failure against the operation instead of
+  against the element, which is what implementations written before per-element reporting existed do.
+- The elements that succeeded are whatever the service committed. Graphitron does not open a transaction per
+  element, so a service that runs the whole batch in one transaction still rolls all of it back.
 
 ### Custom field logic with @externalField
 The **@externalField** directive indicates that the annotated field is

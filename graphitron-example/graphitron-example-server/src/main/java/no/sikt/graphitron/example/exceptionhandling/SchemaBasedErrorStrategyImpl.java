@@ -57,4 +57,10 @@ public class SchemaBasedErrorStrategyImpl extends SchemaBasedErrorStrategy {
                 message
         );
     }
+
+    @Override
+    protected Object createDefaultDataAccessError(String operationName, List<String> path, String message) {
+        // Report the failure where it happened, so a client can tell which element of a batch it belongs to.
+        return new InvalidInput(path, message);
+    }
 }

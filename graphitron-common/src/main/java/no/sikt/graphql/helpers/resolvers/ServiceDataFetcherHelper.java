@@ -1,6 +1,8 @@
 package no.sikt.graphql.helpers.resolvers;
 
 import graphql.schema.DataFetchingEnvironment;
+import no.sikt.graphql.exception.BatchItemFailure;
+import no.sikt.graphql.exception.PartialBatchFailureException;
 import no.sikt.graphql.helpers.functions.TransformCall;
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import no.sikt.graphql.helpers.transform.AbstractTransformer;
@@ -8,6 +10,7 @@ import no.sikt.graphql.relay.ConnectionImpl;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jooq.UpdatableRecord;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -61,6 +64,66 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
      */
     public <T, U> CompletableFuture<U> load(Supplier<T> dbFunction, TransformCall<A, T, U> dbTransform) {
         return CompletableFuture.completedFuture(dbTransform.transform(abstractTransformer, dbFunction.get()));
+    }
+
+    /**
+     * Load the data for a root resolver whose service reports the outcome of each element of the batch
+     * separately.
+     * <p>
+     * The elements that succeeded are mapped to the payload as usual. If any element failed, the payload is
+     * still built from the ones that did not, and a {@link PartialBatchFailureException} carrying both is
+     * thrown so the execution strategy can put the failures on that same payload.
+     *
+     * @param serviceCall   Function to call to run the batch.
+     * @param argumentName  Name of the schema argument the batch came from, used to address the failures.
+     * @param inputSize     Number of elements that were sent to the service.
+     * @param dbTransform   Function that maps the successful elements to the resolver output.
+     * @return A resolver result.
+     * @param <T> Type the service returns for a single element.
+     * @param <U> Type that the resolver fetches.
+     */
+    public <T, U> CompletableFuture<U> loadPartial(
+            Supplier<List<BatchItemResult<T>>> serviceCall,
+            String argumentName,
+            int inputSize,
+            TransformCall<A, List<T>, U> dbTransform
+    ) {
+        var results = Optional.ofNullable(serviceCall.get()).orElse(List.of());
+        if (results.size() != inputSize) {
+            throw new IllegalStateException(
+                    "A service returning BatchItemResult must return one result per input element, in input order. Got "
+                            + results.size() + " result(s) for " + inputSize + " input element(s)."
+            );
+        }
+
+        var successes = new ArrayList<T>();
+        var failures = new ArrayList<BatchItemFailure>();
+        for (int i = 0; i < results.size(); i++) {
+            var result = results.get(i);
+            if (result.isSuccess()) {
+                successes.add(result.value());
+            } else {
+                failures.add(new BatchItemFailure(elementPath(argumentName, i), result.cause()));
+            }
+        }
+
+        var payload = dbTransform.transform(abstractTransformer, successes);
+        if (!failures.isEmpty()) {
+            throw new PartialBatchFailureException(payload, failures);
+        }
+        return CompletableFuture.completedFuture(payload);
+    }
+
+    /**
+     * @return Path from the operation field down to one element of a batch, matching how record validation
+     * addresses the elements it rejects.
+     */
+    private List<String> elementPath(String argumentName, int index) {
+        var path = new ArrayList<String>();
+        env.getExecutionStepInfo().getPath().toList().forEach(it -> path.add(it.toString()));
+        path.add(argumentName);
+        path.add(String.valueOf(index));
+        return path;
     }
 
     /**

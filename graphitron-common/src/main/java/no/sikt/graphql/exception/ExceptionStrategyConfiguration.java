@@ -26,8 +26,29 @@ public interface ExceptionStrategyConfiguration {
      */
     Map<String, PayloadCreator> getPayloadForField();
 
+    /**
+     * Puts errors onto a payload for one operation.
+     * <p>
+     * The single operation is {@link #attachErrors}, which takes the payload the errors belong on. Passing
+     * {@code null} for that payload asks for a fresh, otherwise empty one, which is what
+     * {@link #createPayload} does and what an operation that failed outright wants. Passing a payload that
+     * already carries data is what lets an operation report that some of its work succeeded and some did not.
+     */
     @FunctionalInterface
     interface PayloadCreator {
-        Object createPayload(List<?> errors);
+        /**
+         * @param payload The payload to put the errors on, or {@code null} to build an empty one first.
+         * @param errors  The errors to set on the payload's errors field.
+         * @return The payload, with the errors set on it.
+         */
+        Object attachErrors(Object payload, List<?> errors);
+
+        /**
+         * @param errors The errors to set on a new payload.
+         * @return A payload carrying only these errors and no data.
+         */
+        default Object createPayload(List<?> errors) {
+            return attachErrors(null, errors);
+        }
     }
 }

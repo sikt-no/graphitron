@@ -87,6 +87,19 @@ public class ResolverTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Service reporting the outcome of each element of the batch")
+    void batchItemResults() {
+        assertGeneratedContentContains("batchItemResults", Set.of(CUSTOMER_INPUT_TABLE, CUSTOMER_TABLE, ERROR),
+                ".loadPartial(",
+                "() -> _rs_resolverMutationService.mutationBatch(_mi_inRecordList)",
+                "\"in\",",
+                "_mi_inRecordList.size(),",
+                // The wrapper is stripped before the payload mapper sees the elements.
+                "(_iv_recordTransform, _iv_response) -> _iv_recordTransform.responseRecordToGraphType(_iv_response, \"\")"
+        );
+    }
+
+    @Test
     @DisplayName("Listed record input")
     void listedRecordInput() {
         assertGeneratedContentContains("listedRecordInput", Set.of(CUSTOMER_INPUT_TABLE), ".mutation(_mi_inRecordList)");

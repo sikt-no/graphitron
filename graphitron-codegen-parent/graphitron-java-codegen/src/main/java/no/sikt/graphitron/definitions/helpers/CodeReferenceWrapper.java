@@ -5,6 +5,7 @@ import graphql.language.NamedNode;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.externalreferences.CodeReference;
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.directives.GenerationDirectiveParam;
@@ -15,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static no.sikt.graphitron.mappings.JavaPoetClassName.BATCH_ITEM_RESULT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.OBJECT;
 import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentStringList;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.CONTEXT_ARGUMENTS;
@@ -79,10 +81,41 @@ abstract public class CodeReferenceWrapper {
     }
 
     /**
+     * The {@link no.sikt.graphql.helpers.resolvers.BatchItemResult} wrapper is stripped, because it says how the
+     * service reports per-element outcomes rather than what it returns. Everything downstream of the resolver
+     * works with the unwrapped element type.
+     *
      * @return The class of the return type for this referenced method.
      */
     public TypeName getGenericReturnType() {
-        return ClassName.get(method.getGenericReturnType());
+        return withoutBatchItemResults(TypeName.get(method.getGenericReturnType()));
+    }
+
+    /**
+     * @return Whether this method reports the outcome of each element of a batch separately, by returning
+     * {@code List<BatchItemResult<T>>} rather than {@code List<T>}.
+     */
+    public boolean returnsBatchItemResults() {
+        return method != null && isBatchItemResultList(TypeName.get(method.getGenericReturnType()));
+    }
+
+    private static boolean isBatchItemResultList(TypeName type) {
+        return type instanceof ParameterizedTypeName parameterized
+                && parameterized.typeArguments().size() == 1
+                && parameterized.typeArguments().get(0) instanceof ParameterizedTypeName element
+                && element.rawType().equals(BATCH_ITEM_RESULT.className);
+    }
+
+    /**
+     * @return {@code List<T>} for a {@code List<BatchItemResult<T>>}, and the type unchanged otherwise.
+     */
+    private static TypeName withoutBatchItemResults(TypeName type) {
+        if (!isBatchItemResultList(type)) {
+            return type;
+        }
+        var parameterized = (ParameterizedTypeName) type;
+        var element = (ParameterizedTypeName) parameterized.typeArguments().get(0);
+        return ParameterizedTypeName.get(parameterized.rawType(), element.typeArguments().get(0));
     }
 
     /**

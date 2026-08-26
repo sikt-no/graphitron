@@ -36,9 +36,18 @@ public class SchemaErrorMapper {
      * First tries to find a matching configured mapping, otherwise returns a default error.
      */
     public Object mapDataAccessException(DataAccessException exception, String operationName, DataAccessDefaultErrorCreator defaultErrorCreator) {
+        return mapDataAccessException(exception, operationName, List.of(operationName), defaultErrorCreator);
+    }
+
+    /**
+     * Maps a DataAccessException to an error object, reported at the given path rather than at the operation
+     * itself. Used when the failure belongs to one element of a batch instead of to the whole operation.
+     */
+    public Object mapDataAccessException(DataAccessException exception, String operationName, List<String> path,
+                                         DataAccessDefaultErrorCreator defaultErrorCreator) {
         return Optional.ofNullable(dataAccessMappingsForOperation.get(operationName))
-                .flatMap(mappings -> findMatchingDataAccessMapping(exception, operationName, mappings))
-                .orElseGet(() -> defaultErrorCreator.createDefaultError(operationName, dataAccessExceptionMapper.getMsgFromException(exception)));
+                .flatMap(mappings -> findMatchingDataAccessMapping(exception, path, mappings))
+                .orElseGet(() -> defaultErrorCreator.createDefaultError(operationName, path, dataAccessExceptionMapper.getMsgFromException(exception)));
     }
 
     /**
@@ -46,24 +55,32 @@ public class SchemaErrorMapper {
      * Returns an Optional containing the mapped error if a matching mapping is found.
      */
     public Optional<Object> mapBusinessLogicException(Throwable exception, String operationName) {
-        return Optional.ofNullable(genericMappingsForOperation.get(operationName))
-                .flatMap(mappings -> findMatchingGenericMapping(exception, operationName, mappings));
+        return mapBusinessLogicException(exception, operationName, List.of(operationName));
     }
 
-    private Optional<Object> findMatchingDataAccessMapping(DataAccessException exception, String operationName,
+    /**
+     * Maps a generic business logic exception to an error object, reported at the given path rather than at the
+     * operation itself. Used when the failure belongs to one element of a batch instead of to the whole operation.
+     */
+    public Optional<Object> mapBusinessLogicException(Throwable exception, String operationName, List<String> path) {
+        return Optional.ofNullable(genericMappingsForOperation.get(operationName))
+                .flatMap(mappings -> findMatchingGenericMapping(exception, path, mappings));
+    }
+
+    private Optional<Object> findMatchingDataAccessMapping(DataAccessException exception, List<String> path,
                                                            List<DataAccessExceptionContentToErrorMapping> mappings) {
         return mappings.stream()
                 .filter(mapping -> mapping.matches(exception))
                 .findFirst()
-                .map(mapping -> mapping.handleError(List.of(operationName), exception.getMessage()));
+                .map(mapping -> mapping.handleError(path, exception.getMessage()));
     }
 
-    private Optional<Object> findMatchingGenericMapping(Throwable exception, String operationName,
+    private Optional<Object> findMatchingGenericMapping(Throwable exception, List<String> path,
                                                         List<GenericExceptionContentToErrorMapping> mappings) {
         return mappings.stream()
                 .filter(mapping -> mapping.matches(exception))
                 .findFirst()
-                .map(mapping -> mapping.handleError(List.of(operationName), exception.getMessage()));
+                .map(mapping -> mapping.handleError(path, exception.getMessage()));
     }
 
     /**
@@ -72,6 +89,6 @@ public class SchemaErrorMapper {
      */
     @FunctionalInterface
     public interface DataAccessDefaultErrorCreator {
-        Object createDefaultError(String operationName, String message);
+        Object createDefaultError(String operationName, List<String> path, String message);
     }
 }

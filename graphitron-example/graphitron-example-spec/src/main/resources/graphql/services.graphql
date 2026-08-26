@@ -124,6 +124,14 @@ extend type Mutation {
             method: "updateCustomerEmail"
         }
     )
+    """Reports the outcome of each element of the batch separately, through the payload's errors field."""
+    updateCustomerEmailPerItem(input: [UpdateCustomerEmailInput!]!)
+    : UpdateCustomerEmailPerItemPayload @service(
+        service: {
+            className: "no.sikt.graphitron.example.service.CustomerService",
+            method: "updateCustomerEmailPerItem"
+        }
+    )
     checkFilmFieldPresence(in: [FilmInsertWrapper!]!)
     : [FilmFieldPresence] @service(
         service: {
@@ -191,6 +199,17 @@ type UpdateCustomerEmailPayload{
 
 type UpdateCustomerEmail @record(record: {className: "no.sikt.graphitron.example.service.records.UpdateCustomerEmailResult"}){
   customerEmail: CustomerEmail!
+}
+
+type UpdateCustomerEmailPerItemPayload{
+  emailUpdates: [UpdateCustomerEmail!]
+  errors: [UpdateCustomerEmailError!]
+}
+
+type UpdateCustomerEmailError implements Error @error(handlers: [
+    {handler: GENERIC, matches: "unknown customer", className: "java.lang.IllegalStateException", description: "No such customer"}]) {
+  path: [String!]!
+  message: String!
 }
 
 type CustomerEmail @table(name: "CUSTOMER") {

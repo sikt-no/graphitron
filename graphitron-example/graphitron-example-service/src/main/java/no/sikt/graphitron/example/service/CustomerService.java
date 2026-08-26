@@ -5,6 +5,7 @@ import no.sikt.graphitron.example.service.records.CustomerEmailsRecordPayload;
 import no.sikt.graphitron.example.service.records.HelloWorldInput;
 import no.sikt.graphitron.example.service.records.UpdateCustomerEmailRecord;
 import no.sikt.graphitron.example.service.records.UpdateCustomerEmailResult;
+import no.sikt.graphql.helpers.resolvers.BatchItemResult;
 import org.jooq.DSLContext;
 
 import java.util.ArrayList;
@@ -88,6 +89,26 @@ public class CustomerService {
 
     public CustomerEmailsRecordPayload allCustomerEmails_recordPayload() {
         throw new IllegalStateException("Record payload exception");
+    }
+
+    /**
+     * Reports the outcome of each element of the batch separately, so a client can tell which elements were
+     * updated and which were not. Graphitron builds the payload from the successes and reports the failures
+     * through the payload's errors field, each addressed by its position in the input list.
+     */
+    public List<BatchItemResult<UpdateCustomerEmailResult>> updateCustomerEmailPerItem(List<UpdateCustomerEmailRecord> input) {
+        return input
+                .stream()
+                .map(it -> {
+                    if (it.getCustomerId() == null || it.getCustomerId() < 1) {
+                        return BatchItemResult.<UpdateCustomerEmailResult>failure(
+                                new IllegalStateException("unknown customer " + it.getCustomerId()));
+                    }
+                    var customer = new CustomerRecord();
+                    customer.setCustomerId(it.getCustomerId());
+                    return BatchItemResult.success(new UpdateCustomerEmailResult(customer));
+                })
+                .toList();
     }
 
     public List<UpdateCustomerEmailResult> updateCustomerEmail(List<UpdateCustomerEmailRecord> input) {

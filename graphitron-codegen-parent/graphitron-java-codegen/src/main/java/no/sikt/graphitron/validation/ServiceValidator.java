@@ -35,7 +35,42 @@ class ServiceValidator extends AbstractSchemaValidator {
         validateServiceMethods(serviceFields);
         validateServiceInputTypes(serviceFields);
         validateServiceMethodParameterTypes(serviceFields);
+        validateBatchItemResultReturns(serviceFields);
         validateRecursiveRecordInputs();
+    }
+
+    /**
+     * A service that returns {@code List<BatchItemResult<T>>} is asking for its failures to be reported per
+     * element. Graphitron can only honour that when the payload has somewhere to put them and the operation has
+     * a single list to address them against, so a schema that asks for it without either is rejected rather than
+     * having the wrapper silently ignored.
+     */
+    private void validateBatchItemResultReturns(List<ObjectField> serviceFields) {
+        serviceFields
+                .stream()
+                .filter(field -> field.getExternalMethod().returnsBatchItemResults())
+                .forEach(field -> {
+                    var parser = new InputParser(field, schema);
+                    if (parser.getAllErrors().isEmpty()) {
+                        addErrorMessage(
+                                "Service method '%s' for field '%s.%s' returns BatchItemResult, but the return type '%s' has no errors field. "
+                                        + "Add a field of a type implementing the Error interface, or return the element type directly.",
+                                field.getExternalMethod().getMethodName(),
+                                field.getContainerTypeName(),
+                                field.getName(),
+                                field.getTypeName()
+                        );
+                    }
+                    if (parser.getSingleIterableInput().isEmpty()) {
+                        addErrorMessage(
+                                "Service method '%s' for field '%s.%s' returns BatchItemResult, but the field does not have exactly one listed argument. "
+                                        + "Per-element failures are reported by their position in that list, so there has to be exactly one.",
+                                field.getExternalMethod().getMethodName(),
+                                field.getContainerTypeName(),
+                                field.getName()
+                        );
+                    }
+                });
     }
 
     private void validateServiceMethods(List<ObjectField> serviceFields) {

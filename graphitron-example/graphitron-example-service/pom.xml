@@ -20,5 +20,11 @@
             <artifactId>graphitron-example-db</artifactId>
             <version>${revision}${changelist}</version>
         </dependency>
+        <!-- Needed only by services that report the outcome of each element of a batch through BatchItemResult. -->
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-common</artifactId>
+            <version>${revision}${changelist}</version>
+        </dependency>
     </dependencies>
 </project>

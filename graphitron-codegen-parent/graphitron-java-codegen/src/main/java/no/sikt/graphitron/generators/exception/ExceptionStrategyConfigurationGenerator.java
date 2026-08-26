@@ -26,6 +26,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_FIELD;
 public class ExceptionStrategyConfigurationGenerator extends AbstractSchemaClassGenerator<SchemaDefinition> {
     private static final String
             PAYLOAD_NAME = "payload",
+            EXISTING_PAYLOAD_NAME = "existingPayload",
             PAYLOAD_FOR_FIELD_NAME = PAYLOAD_NAME + "ForField",
             EXCEPTION_FIELD = "fieldsForException";
     private static final ParameterizedTypeName FIELDS_FOR_EXCEPTIONS_TYPE =
@@ -72,6 +73,10 @@ public class ExceptionStrategyConfigurationGenerator extends AbstractSchemaClass
                                 .add(createFieldsForExceptionBlock(field, ILLEGAL_ARGUMENT_EXCEPTION.className));
                     }
 
+                    if (reportsPerElementFailures(field, ctx)) {
+                        payloadBlockBuilder.add(createFieldsForExceptionBlock(field, PARTIAL_BATCH_FAILURE_EXCEPTION.className));
+                    }
+
                     for (var errorField : ctx.getAllErrors()) {
                         for (var exc : processedSchema.getExceptionDefinitions(errorField.getTypeName())) {
 
@@ -99,6 +104,19 @@ public class ExceptionStrategyConfigurationGenerator extends AbstractSchemaClass
                             .build();
                 })
                 .collect(CodeBlock.joining());
+    }
+
+    /**
+     * Mirrors the condition the resolver generator uses to emit per-element reporting: without this
+     * registration the resolver would throw a partial batch failure that nothing is configured to catch.
+     *
+     * @return Whether this operation reports the outcome of each element of a batch separately.
+     */
+    private static boolean reportsPerElementFailures(ObjectField field, InputParser ctx) {
+        return field.hasServiceReference()
+                && field.getExternalMethod().returnsBatchItemResults()
+                && !ctx.getAllErrors().isEmpty()
+                && ctx.getSingleIterableInput().isPresent();
     }
 
     private CodeBlock createFieldsForExceptionBlock(ObjectField field, ClassName exceptionClassName) {
@@ -135,11 +153,12 @@ public class ExceptionStrategyConfigurationGenerator extends AbstractSchemaClass
                         )
                 )
                 .toList();
+        var payloadClass = processedSchema.getObject(field.getTypeName()).getGraphClassName();
         return CodeBlock
                 .builder()
                 .add("$N.put($S, ", PAYLOAD_FOR_FIELD_NAME, field.getName())
-                .beginControlFlow("$L ->", ERROR_FIELD.getName())
-                .declareNew(PAYLOAD_NAME, processedSchema.getObject(field.getTypeName()).getGraphClassName())
+                .beginControlFlow("($L, $L) ->", EXISTING_PAYLOAD_NAME, ERROR_FIELD.getName())
+                .declare(PAYLOAD_NAME, "$1N != null ? ($2T) $1N : new $2T()", EXISTING_PAYLOAD_NAME, payloadClass)
                 .addAll(errorBlocks)
                 .add(returnWrap(PAYLOAD_NAME))
                 .endControlFlow(")")

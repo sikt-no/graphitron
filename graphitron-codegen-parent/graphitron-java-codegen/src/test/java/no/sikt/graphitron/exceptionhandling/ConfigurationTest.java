@@ -16,8 +16,8 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.DUMMY_SERVICE;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.MUTATION_RESPONSE;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.VALIDATION_ERROR;
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.RESOLVER_MUTATION_SERVICE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Exception handling - Exception configuration class generation")
@@ -29,7 +29,7 @@ public class ConfigurationTest extends GeneratorTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(DUMMY_SERVICE);
+        return makeReferences(DUMMY_SERVICE, RESOLVER_MUTATION_SERVICE);
     }
 
     @Override
@@ -61,7 +61,7 @@ public class ConfigurationTest extends GeneratorTest {
                 "query",
                 "ValidationViolationGraphQLException.class, k -> new HashSet<>()).add(\"query\"",
                 "IllegalArgumentException.class, k -> new HashSet<>()).add(\"query\"",
-                "payloadForField.put(\"query\", errors -> {var payload = new Response();payload.setErrors((List<ValidationError>"
+                "payloadForField.put(\"query\", (existingPayload, errors) -> {var payload = existingPayload != null ? (Response) existingPayload : new Response();payload.setErrors((List<ValidationError>"
         );
     }
 
@@ -72,7 +72,7 @@ public class ConfigurationTest extends GeneratorTest {
                 "service",
                 ".computeIfAbsent(ValidationViolationGraphQLException.class, k -> new HashSet<>()).add(\"mutation\")",
                 ".computeIfAbsent(IllegalArgumentException.class, k -> new HashSet<>()).add(\"mutation\")",
-                "payloadForField.put(\"mutation\", errors -> {var payload = new Response();payload.setErrors((List<ValidationError>) errors);return payload;"
+                "payloadForField.put(\"mutation\", (existingPayload, errors) -> {var payload = existingPayload != null ? (Response) existingPayload : new Response();payload.setErrors((List<ValidationError>) errors);return payload;"
         );
     }
 
@@ -93,14 +93,34 @@ public class ConfigurationTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("A service reporting per-element outcomes registers the partial batch failure")
+    void batchItemResults() {
+        assertGeneratedContentContains(
+                "batchItemResults", Set.of(CUSTOMER_INPUT_TABLE, CUSTOMER_TABLE, ERROR),
+                ".computeIfAbsent(PartialBatchFailureException.class, k -> new HashSet<>()).add(\"mutation\")",
+                // The payload creator merges onto the payload built from the elements that succeeded.
+                "payloadForField.put(\"mutation\", (existingPayload, errors) -> {var payload = existingPayload != null ? (Response) existingPayload : new Response();"
+        );
+    }
+
+    @Test  // The same schema, with the service returning the element type directly rather than the wrapper.
+    @DisplayName("A service returning a plain list registers no partial batch failure")
+    void plainListReturn() {
+        resultDoesNotContain(
+                "plainListReturn", Set.of(CUSTOMER_INPUT_TABLE, CUSTOMER_TABLE, ERROR),
+                "PartialBatchFailureException"
+        );
+    }
+
+    @Test
     @DisplayName("Two mutations with an error")
     void twoMutations() {
         assertGeneratedContentContains(
                 "twoMutations",
-                "\"mutation0\", errors -> {",
+                "\"mutation0\", (existingPayload, errors) -> {",
                 "fieldsForException.get(ValidationViolationGraphQLException.class).add(\"mutation1\")",
                 "fieldsForException.get(IllegalArgumentException.class).add(\"mutation1\")",
-                "\"mutation1\", errors -> {"
+                "\"mutation1\", (existingPayload, errors) -> {"
         );
     }
 

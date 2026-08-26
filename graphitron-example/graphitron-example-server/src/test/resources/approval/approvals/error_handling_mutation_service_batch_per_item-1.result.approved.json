@@ -1,0 +1,30 @@
+{
+    "data": {
+        "updateCustomerEmailPerItem": {
+            "emailUpdates": [
+                {
+                    "customerEmail": {
+                        "customerId": 1,
+                        "email": "MARY.SMITH@sakilacustomer.org"
+                    }
+                },
+                {
+                    "customerEmail": {
+                        "customerId": 2,
+                        "email": "PATRICIA.JOHNSON@sakilacustomer.org"
+                    }
+                }
+            ],
+            "errors": [
+                {
+                    "path": [
+                        "updateCustomerEmailPerItem",
+                        "input",
+                        "1"
+                    ],
+                    "message": "No such customer"
+                }
+            ]
+        }
+    }
+}

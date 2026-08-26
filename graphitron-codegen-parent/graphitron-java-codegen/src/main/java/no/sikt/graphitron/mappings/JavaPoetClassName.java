@@ -17,6 +17,7 @@ import no.sikt.graphql.helpers.mappers.MapperHelper;
 import no.sikt.graphql.helpers.query.QueryHelper;
 import no.sikt.graphql.helpers.resolvers.DataFetcherHelper;
 import no.sikt.graphql.helpers.resolvers.ArgumentPresence;
+import no.sikt.graphql.helpers.resolvers.BatchItemResult;
 import no.sikt.graphql.helpers.resolvers.EnvironmentHandler;
 import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphql.helpers.resolvers.ServiceDataFetcherHelper;
@@ -89,10 +90,12 @@ public enum JavaPoetClassName {
     RECORD3(org.jooq.Record3.class),
     RECORD_VALIDATOR(RecordValidator.class),
     RESOLVER_HELPERS(ResolverHelpers.class),
+    BATCH_ITEM_RESULT(BatchItemResult.class),
     SELECTION_SET(SelectionSet.class),
     SET(java.util.Set.class),
     STRING(java.lang.String.class),
     THROWABLE(Throwable.class),
+    PARTIAL_BATCH_FAILURE_EXCEPTION(PartialBatchFailureException.class),
     VALIDATION_VIOLATION_EXCEPTION(ValidationViolationGraphQLException.class),
     RECORD_TRANSFORMER(getGeneratedClassName(TransformerClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME, TransformerClassGenerator.FILE_NAME_SUFFIX)),
     ABSTRACT_TRANSFORMER(AbstractTransformer.class),
