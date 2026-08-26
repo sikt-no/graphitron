@@ -133,6 +133,13 @@ class MaterializeRegistryGateTest {
      *   serve. An index was declared here first, on the assumption that the matched key sought it,
      *   and removed when the rewrite that made that relation one pass removed the seek along with
      *   the join.</li>
+     *   <li>{@code intent_mutation_payload_key_membership}: five namings and none of them probes in.
+     *   Two arms of {@code intent_mutation_write_refusal} drive from this target and
+     *   {@code intent_mutation_write_destination} names it three times, twice as a set it collects
+     *   from and once as the population it disposes. The registration is there to stop the rule
+     *   being re-derived per driving row, not to make any one naming seek, so there is no coordinate
+     *   an index would serve. A reader keyed by one mutation coordinate would change that, and none
+     *   of the readers this family has today is one.</li>
      * </ul>
      */
     private static final Set<String> NO_INDEX = Set.of(
@@ -145,7 +152,8 @@ class MaterializeRegistryGateTest {
         "intent_node_id_instruction",
         "intent_input_field_resolving_table",
         "intent_mutation_payload_column",
-        "intent_mutation_write_payload");
+        "intent_mutation_write_payload",
+        "intent_mutation_payload_key_membership");
 
     @Test
     @DisplayName("every registered source is a view and every registered target is a table")
