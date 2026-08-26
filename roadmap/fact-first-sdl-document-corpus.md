@@ -552,6 +552,12 @@ the reviewer should ask it explicitly: for each expectation `ClassifiedDocTest` 
 - `docs/architecture/how-to/testing.adoc` gains the corpus folder as a named fixture home, since it
   is the first folder-of-documents fixture set in the tree (there are no `.graphqls` test resources
   in `graphitron` today).
+- **Decided while landing slice 1: no principles displacement is worth making.** The doctrine landed
+  where the plan's own fallback puts it, in the testing how-to and beside the mechanism it governs
+  (`CorpusDocumentsTest`'s javadoc states the executed-never-surveyed rule and what each floor exists to
+  catch). Displacing 3,500 words of principles prose to restate it at altitude would have cost a
+  section that carries more, and the corollary is not general: it is a rule about fixture containers,
+  which is what the testing how-to is for. The paragraph below records what was considered.
 - A doctrine corollary for `development-principles.adoc`, with its displacement named. Most of the
   candidate sentence is already there: "Principles are stated at altitude" carries the
   anything-enumerable-is-a-materialized-view rule, and "Documentation names only live tests/code"
