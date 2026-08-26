@@ -101,11 +101,28 @@ to the bean path.
 
 Not from a table. An earlier reading of this item proposed resolving each SDL input field to a column
 the way an unbound `PojoInputType` does, against the consuming field's return table. That precedent
-does not reach this seat, for two reasons. A `@service` field frequently has no return table at all
-(the goal example returns `String`, and `FieldBuilder.classifyPlainLookupKeyArg` already carries an
-explicit null-table guard for that case). And where a `@service` field does return a `@table` type,
-that table describes the field's *result*; binding its parameter's record to it would be an
-arbitrary coupling, not a resolution.
+covers a population this seat is not in.
+
+An unbound `PojoInputType` is, by definition, an input type that *no* `@service` parameter reflects
+(`docs/architecture/reference/code-generation-triggers.adoc`). Having no backing class, nothing
+receives its fields as a value; they become filters on the rows the consuming field returns, and
+filtering is table-relative by construction, which is why the table comes from the consumer there. An
+input reaching a `@service` parameter is the complement of that case: the parameter is what binds its
+backing class, and having a jOOQ backing class is what makes it a `JooqRecordInputType` rather than
+an unbound `PojoInputType`. The two populations never overlap, so the rule does not transfer.
+
+The arm that already works answers the question directly. `JooqTableRecordInputType` takes its table
+from the parameter's own class, matching `Table#getRecordType()` against the backing class
+(`ServiceCatalog.resolveTableByRecordClass`, read by `TypeBuilder.buildPlainInputType`). A record's
+shape comes from the record, not from the field its parameter sits on. A table-less record names no
+table, so the answer is not to borrow one from the enclosing field; it is that there is none to
+consult.
+
+Borrowing one would be unreliable even where it is available. `@service` hands the field's resolution
+to consumer code, and nothing requires a parameter to relate to the field's return type. The two
+often coincide (in `updateFilm(in: FilmInput): Film` the return table is the table the parameter's
+record wants), but that is a convention rather than a constraint, and it is not always available at
+all: the goal example's field returns `String`.
 
 The field list comes from the SDL input type itself. Each leaf yields
 `DSL.field(DSL.name(<leaf name>), <SQLDataType for the leaf's Java type>)`, where the Java type is
