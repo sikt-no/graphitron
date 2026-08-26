@@ -104,10 +104,10 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 101;
+    private static final int READERS_IN_SCHEMA = 104;
 
     /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 62;
+    private static final int READERS_WITH_CELLS = 65;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -124,7 +124,7 @@ class DerivedReadCostTest {
      * So a drop here is not the matrix quietly seeing less; it is cost moving off a reader and onto
      * a refresh, and the refresh is a view in this domain and priced like any other.
      */
-    private static final int CELLS = 167;
+    private static final int CELLS = 184;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -285,6 +285,24 @@ class DerivedReadCostTest {
      * twelve clusters wide understates it by as much as it takes to turn four seconds into no
      * termination at all.
      *
+     * <p>The three relations that partition a matched key landed next and met the same wall from the
+     * other direction, which is why they get a paragraph beside that one rather than inside it.
+     * {@code intent_mutation_write_destination} names
+     * {@code intent_mutation_payload_key_membership} three times and then names
+     * {@code intent_mutation_write_refusal}, which names it twice more, so one read of the
+     * destination expands that rule eight times over and each expansion reaches the matched key and
+     * through it the whole write-payload family. Nothing correlates into anything: all five namings
+     * are set joins. Written as three plain views this test went from about a minute to not finishing
+     * inside eleven, and registering the substrate answered it in one step, with no rewrite measured
+     * and none needed; the run is 222 seconds with the registration in place, the rise over the
+     * minute being the fourth store this test now captures and the seventeen cells the three new
+     * readers add rather than any one read.
+     *
+     * <p>So the two shapes are worth telling apart. The probe above is the one this fixture
+     * understates by orders of magnitude, and it is the one that turns into a build that does not
+     * finish. Breadth is the ordinary registration case every row of {@code meta_materialize} argues,
+     * and for it this test's own runtime is a serviceable instrument: it was the instrument here.
+     *
      * <p>Three larger pairs stood here until the targets were indexed, and how they left is worth
      * knowing before adding more. They were not the registrations' fault and no reader had to be
      * restructured: a materialized target was the only kind of table in this schema with no key on it,
@@ -341,7 +359,11 @@ class DerivedReadCostTest {
         "intent_carrier_data_field|intent_mutation_write_payload",
         "intent_carrier_data_field|intent_mutation_payload_refusal_live",
         "intent_carrier_data_field|intent_mutation_payload_column_live",
-        "intent_carrier_data_field|intent_mutation_matched_key");
+        "intent_carrier_data_field|intent_mutation_matched_key",
+        // The same rung again, reached by the two relations that partition a matched key. Their
+        // substrate is registered and does not appear here; these two are views over it.
+        "intent_carrier_data_field|intent_mutation_write_refusal",
+        "intent_carrier_data_field|intent_mutation_write_destination");
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather

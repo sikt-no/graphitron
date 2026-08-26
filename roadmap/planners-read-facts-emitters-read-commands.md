@@ -2826,6 +2826,24 @@ occurrences comparing at the outermost step where they differ. More SQL, and bet
 only of the occurrences that contend, which is a handful wherever it is asked at all. The gate was right
 and finding that out cost one test run.
 
+**The cost, and the shape it was not.** Written as three plain views these took the read-cost gate from
+about a minute to not finishing inside eleven. The diagnosis took one look rather than three measured
+rewrites: the destination names the membership rule three times and then names the refusal, which names
+it twice more, so one read expands that rule eight times over, and each expansion reaches the matched key
+and through it the whole write-payload family. Registering the substrate answered it in one step. The two
+consumers stay plain views, having no reader yet beyond each other, and no index is declared on the
+target, all five namings reading it whole. The gate now runs in 222 seconds, the rise over the minute
+being the fourth store it captures and the seventeen cells the three new readers add rather than any one
+read.
+
+This is deliberately not counted as the third instance of the twelfth increment's finding, and the
+distinction is written into both the registry reason and R841. That one was a per-row probe into a
+derived relation, which the gate's fixture understates by orders of magnitude and which turned into a
+build that did not finish. This is breadth, the ordinary registration case every row of
+`meta_materialize` argues, and for it the gate's own runtime was a serviceable instrument. They look
+alike from outside, both being a derived relation that had to become a table, and only one of them is the
+shape worth a written rule.
+
 **What this increment leaves owing**: the agreement obligations as their own reduction over the
 destination, and then the fold.
 
