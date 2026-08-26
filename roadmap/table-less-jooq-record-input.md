@@ -101,15 +101,20 @@ to the bean path.
 
 Not from a table. An earlier reading of this item proposed resolving each SDL input field to a column
 the way an unbound `PojoInputType` does, against the consuming field's return table. That precedent
-covers a population this seat is not in.
+describes a different job.
 
-An unbound `PojoInputType` is, by definition, an input type that *no* `@service` parameter reflects
-(`docs/architecture/reference/code-generation-triggers.adoc`). Having no backing class, nothing
-receives its fields as a value; they become filters on the rows the consuming field returns, and
-filtering is table-relative by construction, which is why the table comes from the consumer there. An
-input reaching a `@service` parameter is the complement of that case: the parameter is what binds its
-backing class, and having a jOOQ backing class is what makes it a `JooqRecordInputType` rather than
-an unbound `PojoInputType`. The two populations never overlap, so the rule does not transfer.
+The rule belongs to a seat where graphitron writes the query. It lives in
+`FieldBuilder.resolveTableFieldComponents`, which takes the table as a required argument, classifies
+the field's arguments against it, and hands them to `projectForFilter`: the input's fields become
+filter predicates on the rows graphitron is about to select. A `@service` field never reaches that
+path. `@service` hands the field's entire resolution to consumer code, so graphitron selects no rows
+there and there is nothing for a filter to narrow.
+
+The two seats also cannot overlap, and through a single mechanism rather than two aligned facts. On a
+`@service` field the arguments correspond to the service method's parameters, and matching a
+parameter is exactly the act that binds a backing class. So an input with no backing class is
+unbound *because* no parameter takes it, which leaves the graphitron-generated seats as the only
+place it can appear, which is where a consuming table exists in the first place.
 
 The arm that already works answers the question directly. `JooqTableRecordInputType` takes its table
 from the parameter's own class, matching `Table#getRecordType()` against the backing class
@@ -118,11 +123,22 @@ shape comes from the record, not from the field its parameter sits on. A table-l
 table, so the answer is not to borrow one from the enclosing field; it is that there is none to
 consult.
 
-Borrowing one would be unreliable even where it is available. `@service` hands the field's resolution
-to consumer code, and nothing requires a parameter to relate to the field's return type. The two
-often coincide (in `updateFilm(in: FilmInput): Film` the return table is the table the parameter's
-record wants), but that is a convention rather than a constraint, and it is not always available at
-all: the goal example's field returns `String`.
+Borrowing the field's return table instead would be unreliable even where one exists. Nothing
+requires a `@service` parameter to relate to the field's return type. The two often coincide (in
+`updateFilm(in: FilmInput): Film` the return table is the table the parameter's record wants), but
+that is a convention rather than a constraint, and it is not always available at all: the goal
+example's field returns `String`.
+
+That leaves one live alternative, which the item raised at filing: require the author to name the
+columns explicitly. It is rejected here, but not as worthless. Naming real columns would make the
+field list `newRecord(FILM.TITLE, FILM.RELEASE_YEAR)`, so the constructed record would carry each
+column's `DataType` and any registered `Converter`, and would be assignable into a
+`dsl.insertInto(FILM).set(rec)`. Synthesized fields carry only the SDL leaf's own type and cannot do
+that. The cost is a new authored claim naming the table, since `@table` on an input is deprecated and
+inert and no other directive names one for an input. That is more surface than the goal needs, and
+nothing asks for the converter fidelity yet. If a consumer ever does, this is the extension point,
+and it is additive: an authored table would replace the synthesized field list without changing the
+arm around it.
 
 The field list comes from the SDL input type itself. Each leaf yields
 `DSL.field(DSL.name(<leaf name>), <SQLDataType for the leaf's Java type>)`, where the Java type is
