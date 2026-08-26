@@ -11,6 +11,25 @@ extend type Query {
     @commits(source: RoutineChain, result: RecordList)
 }
 
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name,        classifier,   tier
+  CorpusAnchor, name,              TABLE_COLUMN, INFERRED
+  Query,        tilganger,         ROUTINE,      AUTHORED
+  Tilgang,      organisasjonskode, TABLE_COLUMN, INFERRED
+  Tilgang,      rollekode,         TABLE_COLUMN, INFERRED
+  """)
+
+extend schema @expectEquals(relation: "intent_authored_field_claim", rows: """
+  type_name, field_name, classifier, trigger, decoded
+  Query,     tilganger,  ROUTINE,    routine, TRUE
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  CorpusAnchor, category
+  Tilgang,      tilganger_for_feidebruker_med_fs_fiktivt_fnr
+  """)
+
 {
   tilganger(env: "test", serviceId: "svc", feideId: "user@example.org") {
     organisasjonskode

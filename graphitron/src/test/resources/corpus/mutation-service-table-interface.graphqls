@@ -7,3 +7,23 @@ type Mutation {
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
     @classified(source: Mutation, operations: [ServiceCall], target: List, targetShape: Interface)
 }
+
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name,  classifier,   tier
+  CorpusAnchor, name,        TABLE_COLUMN, INFERRED
+  FilmItem,     title,       TABLE_COLUMN, INFERRED
+  MediaItem,    title,       TABLE_COLUMN, INFERRED
+  Mutation,     mediaSearch, SERVICE,      AUTHORED
+  """)
+
+extend schema @expectEquals(relation: "intent_authored_field_claim", rows: """
+  type_name, field_name,  classifier, trigger, decoded
+  Mutation,  mediaSearch, SERVICE,    service, TRUE
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  CorpusAnchor, category
+  FilmItem,     film
+  MediaItem,    film
+  """)

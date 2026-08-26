@@ -15,6 +15,24 @@ extend type Query {
     @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Record)
 }
 
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name, classifier,   tier
+  CorpusAnchor, name,       TABLE_COLUMN, INFERRED
+  Payment,      amount,     TABLE_COLUMN, INFERRED
+  Query,        price,      SERVICE,      AUTHORED
+  """)
+
+extend schema @expectEquals(relation: "intent_authored_field_claim", rows: """
+  type_name, field_name, classifier, trigger, decoded
+  Query,     price,      SERVICE,    service, TRUE
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  CorpusAnchor, category
+  Payment,      payment
+  """)
+
 {
   payment {
     amount

@@ -43,6 +43,15 @@ Write one new file, `graphitron/src/test/resources/corpus/<id>.graphqls`. No `.j
 is the id, and the loader picks the document up. Rules:
 - Fixtures classify against the **standard Sakila catalog**. Use real tables/columns/FKs. Prefer unambiguous single FKs (e.g. `city -> country`; **avoid** `film -> language`, which has two FKs and is ambiguous). Mine working SDL from an existing enum case or pipeline test covering the shape.
 - Annotate each coordinate: output fields with `@classified(source: ..., operations: [...], target: ..., targetShape: ...)` (plus `sourceShape:` where the arrival shape matters; `operations:` lists the coordinate's operation-member arm tokens, sorted, one entry per member row, `[]` legal), types with `@classifiedType(as: ...)`. The enum value spaces live in `_prelude.graphqls`, and a typo is a schema-assembly error before the harness runs.
+- State what the fact store holds for the document, once per relation, as CSV. The header names columns and each line is a row; `graph_name` is the document's own identity and is never spelled. The claim is exact, so an unlisted row fails, which is what makes a coordinate that silently starts producing a row loud. Every document carries the prelude's anchor rows. To learn a relation's rows rather than guess them, write the header alone and run the test: every produced row comes back as a `NOT_DECLARED` line to paste. Cells are trimmed, so pad the columns.
+
+  ```graphql
+  extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+    type_name,    field_name, classifier,   tier
+    CorpusAnchor, name,       TABLE_COLUMN, INFERRED
+    Country,      name,       TABLE_COLUMN, INFERRED
+    """)
+  ```
 - Say why a coordinate exists **on that coordinate**, as an SDL description. The document is the one habitat for the example's prose; a description reaches the store as `graphql_field.description` / `graphql_type.description`, which is what a rendered page can read back. The example-level narrative, having no coordinate to sit on, stays on the page.
 - To feature the example on the page, end the document with a projection operation selecting exactly the coordinates to show. It must be the document's **last** definition: the loader splits the file by truncating at its line, and asserts nothing follows it. **Minimal pairs teach best**: vary one axis, hold the rest constant (e.g. the same return type with and without `@splitQuery` to isolate the batched delivery; a scalar under a `@table` vs a `@record` parent to isolate `targetShape`).
 - The projection may also be a bare `fragment F on Type { ... }` when the coordinate has no reachable root path; the renderer resolves argument input-type closure and polymorphic members, so mutation and type verdicts can render honest excerpts too. Leave the projection out (and skip steps 4-5) when an example is worth testing but not worth featuring in the page.
@@ -52,7 +61,7 @@ is the id, and the loader picks the document up. Rules:
 ```bash
 export JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64
 mvn -pl :graphitron -am test -Plocal-db -P'!docs' \
-  -Dtest='ClassifiedDslTest,CorpusDocumentsTest' -Dsurefire.failIfNoSpecifiedTests=false
+  -Dtest='ClassifiedDslTest,CorpusDocumentsTest,CorpusExpectationTest' -Dsurefire.failIfNoSpecifiedTests=false
 ```
 `corpusClassifiesToDeclaredDimensions` fails if a declared `@classified` doesn't match what the
 classifier produces. Fix the declared dimensions (or the fixture) until green — this step is where you

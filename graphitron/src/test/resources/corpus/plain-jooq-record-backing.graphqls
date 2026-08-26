@@ -8,3 +8,21 @@ extend type Query {
   consumePlainRecord(in: PlainJooqRecordBackedInput): String
     @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "consumePlainJooqRecord"})
 }
+
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name,         classifier,   tier
+  CorpusAnchor, name,               TABLE_COLUMN, INFERRED
+  Query,        consumePlainRecord, SERVICE,      AUTHORED
+  Query,        plainRecord,        SERVICE,      AUTHORED
+  """)
+
+extend schema @expectEquals(relation: "intent_authored_field_claim", rows: """
+  type_name, field_name,         classifier, trigger, decoded
+  Query,     consumePlainRecord, SERVICE,    service, TRUE
+  Query,     plainRecord,        SERVICE,    service, TRUE
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  CorpusAnchor, category
+  """)

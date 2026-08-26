@@ -23,6 +23,28 @@ type Mutation {
     @classified(source: Mutation, operations: [Update], target: Single, targetShape: Record)
 }
 
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name,         classifier,   tier
+  CorpusAnchor, name,               TABLE_COLUMN, INFERRED
+  Film,         title,              TABLE_COLUMN, INFERRED
+  Mutation,     createFilmsPayload, MUTATION,     AUTHORED
+  Mutation,     updateFilmPayload,  MUTATION,     AUTHORED
+  Mutation,     updateFilmsPayload, MUTATION,     AUTHORED
+  """)
+
+extend schema @expectEquals(relation: "intent_authored_field_claim", rows: """
+  type_name, field_name,         classifier, trigger,  decoded
+  Mutation,  createFilmsPayload, MUTATION,   mutation, TRUE
+  Mutation,  updateFilmPayload,  MUTATION,   mutation, TRUE
+  Mutation,  updateFilmsPayload, MUTATION,   mutation, TRUE
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  CorpusAnchor, category
+  Film,         film
+  """)
+
 mutation {
   updateFilmPayload {
     film { title }

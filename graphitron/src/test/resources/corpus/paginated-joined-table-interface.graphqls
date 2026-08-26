@@ -19,6 +19,27 @@ extend type Query {
     @commits(source: DiscriminatedTable, result: Connection)
 }
 
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name,  classifier,   tier
+  Company,      displayName, TABLE_COLUMN, INFERRED
+  Company,      orgNumber,   TABLE_COLUMN, INFERRED
+  Company,      partyId,     TABLE_COLUMN, INFERRED
+  CorpusAnchor, name,        TABLE_COLUMN, INFERRED
+  Individual,   birthDate,   TABLE_COLUMN, INFERRED
+  Individual,   displayName, TABLE_COLUMN, INFERRED
+  Individual,   partyId,     TABLE_COLUMN, INFERRED
+  Party,        displayName, TABLE_COLUMN, INFERRED
+  Party,        partyId,     TABLE_COLUMN, INFERRED
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  Company,      party_company
+  CorpusAnchor, category
+  Individual,   party_individual
+  Party,        party
+  """)
+
 {
   parties(first: 2) {
     edges {

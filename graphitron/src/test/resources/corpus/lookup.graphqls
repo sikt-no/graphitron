@@ -12,6 +12,27 @@ extend type Query {
     @commits(source: KeyedLookup, result: RecordList)
 }
 
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name, classifier,   tier
+  Actor,        firstName,  TABLE_COLUMN, INFERRED
+  CorpusAnchor, name,       TABLE_COLUMN, INFERRED
+  Film,         filmId,     TABLE_COLUMN, INFERRED
+  Query,        filmById,   LOOKUP_KEY,   AUTHORED
+  """)
+
+extend schema @expectEquals(relation: "intent_authored_field_claim", rows: """
+  type_name, field_name, classifier, trigger,   decoded
+  Query,     filmById,   LOOKUP_KEY, lookupKey, TRUE
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  Actor,        actor
+  CorpusAnchor, category
+  Film,         film
+  FilmActor,    film_actor
+  """)
+
 {
   filmById(film_id: ["1", "2"]) {
     filmId

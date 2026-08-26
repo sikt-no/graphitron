@@ -5,6 +5,18 @@ type Film @table(name: "film") {
 }
 extend type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
 
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name, classifier,   tier
+  CorpusAnchor, name,       TABLE_COLUMN, INFERRED
+  Film,         rating,     TABLE_COLUMN, INFERRED
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  CorpusAnchor, category
+  Film,         film
+  """)
+
 {
   film {
     rating

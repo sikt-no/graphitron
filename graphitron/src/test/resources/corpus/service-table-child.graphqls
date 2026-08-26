@@ -9,6 +9,26 @@ type Language @table(name: "language") {
 }
 extend type Query { language: Language @commits(source: AnchorTable, result: SingleRecord) }
 
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name,      classifier,   tier
+  CorpusAnchor, name,            TABLE_COLUMN, INFERRED
+  Film,         title,           TABLE_COLUMN, INFERRED
+  Language,     filmsViaService, SERVICE,      AUTHORED
+  Language,     name,            TABLE_COLUMN, INFERRED
+  """)
+
+extend schema @expectEquals(relation: "intent_authored_field_claim", rows: """
+  type_name, field_name,      classifier, trigger, decoded
+  Language,  filmsViaService, SERVICE,    service, TRUE
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  CorpusAnchor, category
+  Film,         film
+  Language,     language
+  """)
+
 {
   language {
     name

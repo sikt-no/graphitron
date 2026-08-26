@@ -14,4 +14,18 @@ extend type Query {
   anyNamed: Named @classified(source: Query, operations: [Select], target: Single, targetShape: Interface)
 }
 
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name, classifier,   tier
+  Address,      name,       TABLE_COLUMN, INFERRED
+  CorpusAnchor, name,       TABLE_COLUMN, INFERRED
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  Address,      address
+  City,         city
+  CorpusAnchor, category
+  Customer,     customer
+  """)
+
 { customer { address { name } } }

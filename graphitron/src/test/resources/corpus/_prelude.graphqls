@@ -22,6 +22,9 @@
 #
 # CorpusAnchor binds `category`, deliberately a table no document uses: the anchor is present in every
 # document, so a table any document reached would change that document's arrival fold by existing.
+# Being present in every document, it also appears in every document's expectation blocks, one bound
+# table and one inferred column claim. That is the prelude being part of what each document means, and
+# the alternative, a harness that masks the anchor out, would be a skip-list coordinating two passes.
 
 enum SourceWrapper { Query Mutation OnlyChild Child }
 
@@ -78,6 +81,15 @@ directive @classifiedType(as: TypeVerdict!) on
 # declaration with the connection-synthesis relation's produced rows, never from the producer's output
 # alone.
 directive @synthesises(mints: [Mint!]!) on FIELD_DEFINITION
+
+# Asserts that a fact-store relation holds exactly these rows for this document, as CSV: the header
+# names columns, each line is a row, and the coordinate is a column like any other, so a relation keyed
+# on something other than a coordinate is assertable on the same mechanism. graph_name is the one
+# column a document never spells, being the document's own identity. Repeatable, once per asserted
+# relation, and the union of a document's blocks for one relation is what has to equal that relation's
+# rows. The name is the semantics: an unlisted row fails. A containment sibling is deliberately absent
+# until some relation's per-document table proves unworkably large.
+directive @expectEquals(relation: String!, rows: String!) repeatable on SCHEMA
 
 # Asserts the arm tokens of the coordinate's launcher command row, checked against the relation the
 # harness produces under its one canonical run configuration on declared-equals-produced agreement. It

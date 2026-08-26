@@ -29,3 +29,28 @@ extend type Query {
     @classified(source: Query, operations: [Reentry, ServiceCall], target: Single, targetShape: Table)
     @commits(source: ProjectedReentry, result: SingleRecord)
 }
+
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name,      classifier,   tier
+  CorpusAnchor, name,            TABLE_COLUMN, INFERRED
+  Film,         language,        SERVICE,      AUTHORED
+  Film,         rating,          SERVICE,      AUTHORED
+  Language,     name,            TABLE_COLUMN, INFERRED
+  Query,        externalFilm,    SERVICE,      AUTHORED
+  Query,        prodFilmDetails, SERVICE,      AUTHORED
+  """)
+
+extend schema @expectEquals(relation: "intent_authored_field_claim", rows: """
+  type_name, field_name,      classifier, trigger, decoded
+  Film,      language,        SERVICE,    service, TRUE
+  Film,      rating,          SERVICE,    service, TRUE
+  Query,     externalFilm,    SERVICE,    service, TRUE
+  Query,     prodFilmDetails, SERVICE,    service, TRUE
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  CorpusAnchor, category
+  Film,         film
+  Language,     language
+  """)

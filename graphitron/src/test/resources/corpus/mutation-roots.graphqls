@@ -25,6 +25,32 @@ type Mutation {
     @classified(source: Mutation, operations: [Insert], target: Single, targetShape: Record)
 }
 
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name,           classifier,   tier
+  CorpusAnchor, name,                 TABLE_COLUMN, INFERRED
+  Film,         id,                   NODE_ID,      AUTHORED
+  Film,         title,                TABLE_COLUMN, INFERRED
+  Mutation,     createFilmPayload,    MUTATION,     AUTHORED
+  Mutation,     deleteFilm,           MUTATION,     AUTHORED
+  Mutation,     deleteFilmsBroadcast, MUTATION,     AUTHORED
+  Mutation,     updateFilm,           MUTATION,     AUTHORED
+  """)
+
+extend schema @expectEquals(relation: "intent_authored_field_claim", rows: """
+  type_name, field_name,           classifier, trigger,  decoded
+  Film,      id,                   NODE_ID,    nodeId,   TRUE
+  Mutation,  createFilmPayload,    MUTATION,   mutation, TRUE
+  Mutation,  deleteFilm,           MUTATION,   mutation, TRUE
+  Mutation,  deleteFilmsBroadcast, MUTATION,   mutation, TRUE
+  Mutation,  updateFilm,           MUTATION,   mutation, TRUE
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  CorpusAnchor, category
+  Film,         film
+  """)
+
 mutation {
   updateFilm { title }
   deleteFilm

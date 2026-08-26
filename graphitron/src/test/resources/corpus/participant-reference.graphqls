@@ -12,6 +12,23 @@ type ShortContent implements Content @table(name: "content") @discriminator(valu
 }
 extend type Query { content: Content @commits(source: DiscriminatedTable, result: SingleRecord) }
 
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name, classifier,   tier
+  Content,      contentId,  TABLE_COLUMN, INFERRED
+  CorpusAnchor, name,       TABLE_COLUMN, INFERRED
+  FilmContent,  contentId,  TABLE_COLUMN, INFERRED
+  FilmContent,  rating,     TABLE_COLUMN, INFERRED
+  ShortContent, contentId,  TABLE_COLUMN, INFERRED
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  Content,      content
+  CorpusAnchor, category
+  FilmContent,  content
+  ShortContent, content
+  """)
+
 {
   content {
     contentId

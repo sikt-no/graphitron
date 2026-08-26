@@ -22,3 +22,28 @@ type Mutation {
     @classified(source: Mutation, operations: [Insert, Reentry], target: Single, targetShape: Table)
     @commits(source: DiscriminatedReentry, result: SingleRecord)
 }
+
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name,    classifier,   tier
+  Content,      contentId,     TABLE_COLUMN, INFERRED
+  Content,      title,         TABLE_COLUMN, INFERRED
+  CorpusAnchor, name,          TABLE_COLUMN, INFERRED
+  FilmContent,  contentId,     TABLE_COLUMN, INFERRED
+  FilmContent,  title,         TABLE_COLUMN, INFERRED
+  Mutation,     createContent, MUTATION,     AUTHORED
+  ShortContent, contentId,     TABLE_COLUMN, INFERRED
+  ShortContent, title,         TABLE_COLUMN, INFERRED
+  """)
+
+extend schema @expectEquals(relation: "intent_authored_field_claim", rows: """
+  type_name, field_name,    classifier, trigger,  decoded
+  Mutation,  createContent, MUTATION,   mutation, TRUE
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  Content,      content
+  CorpusAnchor, category
+  FilmContent,  content
+  ShortContent, content
+  """)

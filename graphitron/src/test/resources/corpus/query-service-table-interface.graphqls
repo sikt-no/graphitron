@@ -7,3 +7,23 @@ extend type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
     @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Interface)
 }
+
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name,   classifier,   tier
+  CorpusAnchor, name,         TABLE_COLUMN, INFERRED
+  FilmItem,     title,        TABLE_COLUMN, INFERRED
+  MediaItem,    title,        TABLE_COLUMN, INFERRED
+  Query,        mediaService, SERVICE,      AUTHORED
+  """)
+
+extend schema @expectEquals(relation: "intent_authored_field_claim", rows: """
+  type_name, field_name,   classifier, trigger, decoded
+  Query,     mediaService, SERVICE,    service, TRUE
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  CorpusAnchor, category
+  FilmItem,     film
+  MediaItem,    film
+  """)

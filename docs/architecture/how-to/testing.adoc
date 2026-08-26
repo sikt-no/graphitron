@@ -94,6 +94,8 @@ Each variant family is a `// ===== VariantName =====` section with an enum where
 This is the tree's only folder-of-documents fixture set, and the only fixture home a test reads from the source tree rather than the classpath, so what is asserted is exactly what an author edits.
 A document carries its annotated fixture, its prose as SDL descriptions, and optionally a projection operation as its last definition; the loader splits the file at that line, hands the type-system half to classification and the operation to the documentation renderer.
 Every reader of the corpus goes through the loader (`ClassifiedDslTest`, `VariantCoverageTest`, the `derive/*ShadowTest` sweeps, the two documentation drift guards), and nothing else lists the directory.
+A document states what the fact store holds for it by applying `@expectEquals(relation:, rows:)` to the schema, once per asserted relation, its rows as CSV; `CorpusExpectationTest` captures the whole corpus into one store, one graph per document, and compares each block against its relation by anti-join in both directions, so a failure is a row.
+That is the successor to a coordinate directive naming sealed-arm tokens: a block names a relation and its columns, so it asserts a store fact and reaches relations no coordinate could key.
 `CorpusDocumentsTest` carries the floors that keep a folder from passing while empty: a ratcheted document count, agreement between the loader's admissions and an independent listing, and a document nothing runs failing rather than being skipped.
 Adding an example is one new file; a `.java` edit means the assertion vocabulary changed, which is a prelude edit (`_prelude.graphqls`), not a container one.
 
