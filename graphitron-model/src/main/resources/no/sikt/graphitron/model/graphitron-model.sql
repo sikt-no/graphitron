@@ -8840,7 +8840,32 @@ COMMENT ON COLUMN intent_mutation_write_refusal.source_name IS 'the declaration 
 COMMENT ON COLUMN intent_mutation_write_refusal.source_line IS 'source line of that declaration, 1-based';
 COMMENT ON COLUMN intent_mutation_write_refusal.source_column IS 'source column of that declaration, 1-based';
 
-CREATE VIEW intent_mutation_write_destination
+CREATE TABLE intent_mutation_write_destination (
+  graph_name          VARCHAR NOT NULL,
+  type_name           VARCHAR NOT NULL,
+  field_name          VARCHAR NOT NULL,
+  operation           VARCHAR NOT NULL,
+  path                VARCHAR NOT NULL,
+  container_type_name VARCHAR NOT NULL,
+  input_field_name    VARCHAR NOT NULL,
+  role                VARCHAR NOT NULL,
+  carrier_role        VARCHAR NOT NULL,
+  position            INT     NOT NULL,
+  column_name         VARCHAR NOT NULL,
+  destination         VARCHAR NOT NULL,
+  write_source_name   VARCHAR NOT NULL,
+  write_schema        VARCHAR NOT NULL,
+  write_table         VARCHAR NOT NULL,
+  source_name         VARCHAR NOT NULL,
+  source_line         INT,
+  source_column       INT,
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+
+CREATE INDEX ix_mutation_write_destination_column ON intent_mutation_write_destination
+  (graph_name, type_name, field_name, column_name);
+
+CREATE VIEW intent_mutation_write_destination_live
   (graph_name, type_name, field_name, operation,
    path, container_type_name, input_field_name, role, carrier_role,
    position, column_name, destination,
@@ -8964,8 +8989,26 @@ SELECT p.graph_name, p.type_name, p.field_name, 'UPDATE',
    AND w.field_name = p.field_name AND w.path = p.path
    AND w.position = p.position AND w.column_name = p.column_name
 ;
-
-COMMENT ON VIEW intent_mutation_write_destination IS 'What each column a write payload contributes is for, one row per contributing occurrence per decode slot: the finished partition, and what an emitter assembles a statement out of. The verb decides how many destinations are reachable at all. A DELETE reaches one. Every admitted column of it is a predicate and the matched key is a cardinality guard beside them rather than a subset of them, so the broadcast arm contributes predicates exactly as the identified one does and a self-referencing foreign key filters there exactly as a plain column does. An UPDATE reaches all three, and which one a column reaches turns on its carrier rather than on the column. A carrier wholly inside the key filters. One wholly outside it writes. A self-referencing foreign key writes however it falls, its columns pointing at a sibling row rather than at this one, so a key column it carries is an ordinary assignment and the foreign key forces it equal to what the predicate matched. A cross-table foreign key is the one carrier that splits, its in-key half being this row''s own identity and its out-of-key half a value, which is why the decode slot is a column here and not an implicit ordering: once a carrier is split, neither half recovers which slot of the decode a column came from. CHECKED is the destination that is easy to miss and the reason the vocabulary is not two values. Where a straddler''s in-key column is already pinned by some other carrier, the straddler neither filters nor writes it: the two decoded values are compared before any DML runs and the column has a contribution and no place in the statement. It is stated rather than left as an absence, an absence at this grain saying that the occurrence contributes nothing to that column, which is not what happens. Which carrier pins a contested key column, where more than one straddler claims it and nothing else does, is the walker''s input-field order, the first claim supplying the predicate and the rest being checked. The choice is observationally irrelevant, the agreement check running either way, but it decides which field''s decode appears in the emitted WHERE clause, so it is transcribed rather than left to whatever order a row arrives in. The order is the flattener''s descent: two occurrences compare at the outermost step where they differ, on the declaration ordinal of the field each takes there. It is written as a pairwise precedence over the contending occurrences rather than as a sort key assembled from the path, both because a key of that shape is a collection folded into one value and because the comparison is only ever asked of occurrences that contend, which is a handful wherever it is asked at all. Neither contender can be a prefix of the other, a prefix of a column-bearing occurrence being a grouping field that carries no column of its own, so the step they first differ at exists on both. A refused payload contributes nothing at all: the walker returns before building either half, so a coordinate with any refusal has no row here whichever of the three refusal relations carries it. The exclusion against the partition-stage refusals is written as a set difference rather than as a test per row, the per-row form re-deriving that whole rule once for every column it filters. Absence is a refused payload, a payload with no column-bearing occurrence in it, and every mutation offering no write surface at all. What this relation still does not say is which pairs of contributions must agree at runtime. Every such pair is a predicate row and a row of this relation over the same column of the same statement, so it is a reduction of this one rather than a fact beside it.';
+COMMENT ON VIEW intent_mutation_write_destination_live IS 'This states the rule and is evaluated on demand. The canonical name intent_mutation_write_destination beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_mutation_write_destination.';
+COMMENT ON COLUMN intent_mutation_write_destination_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_mutation_write_destination.graph_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.type_name IS 'the type_name of a row of this rule, materialized into intent_mutation_write_destination.type_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.field_name IS 'the field_name of a row of this rule, materialized into intent_mutation_write_destination.field_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.operation IS 'the operation of a row of this rule, materialized into intent_mutation_write_destination.operation, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.path IS 'the path of a row of this rule, materialized into intent_mutation_write_destination.path, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.container_type_name IS 'the container_type_name of a row of this rule, materialized into intent_mutation_write_destination.container_type_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.input_field_name IS 'the input_field_name of a row of this rule, materialized into intent_mutation_write_destination.input_field_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.role IS 'the role of a row of this rule, materialized into intent_mutation_write_destination.role, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.carrier_role IS 'the carrier_role of a row of this rule, materialized into intent_mutation_write_destination.carrier_role, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.position IS 'the position of a row of this rule, materialized into intent_mutation_write_destination.position, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.column_name IS 'the column_name of a row of this rule, materialized into intent_mutation_write_destination.column_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.destination IS 'the destination of a row of this rule, materialized into intent_mutation_write_destination.destination, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.write_source_name IS 'the write_source_name of a row of this rule, materialized into intent_mutation_write_destination.write_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.write_schema IS 'the write_schema of a row of this rule, materialized into intent_mutation_write_destination.write_schema, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.write_table IS 'the write_table of a row of this rule, materialized into intent_mutation_write_destination.write_table, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.source_name IS 'the source_name of a row of this rule, materialized into intent_mutation_write_destination.source_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.source_line IS 'the source_line of a row of this rule, materialized into intent_mutation_write_destination.source_line, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.source_column IS 'the source_column of a row of this rule, materialized into intent_mutation_write_destination.source_column, whose comment carries what the value means';
+COMMENT ON TABLE intent_mutation_write_destination IS 'What each column a write payload contributes is for, one row per contributing occurrence per decode slot: the finished partition, and what an emitter assembles a statement out of. The verb decides how many destinations are reachable at all. A DELETE reaches one. Every admitted column of it is a predicate and the matched key is a cardinality guard beside them rather than a subset of them, so the broadcast arm contributes predicates exactly as the identified one does and a self-referencing foreign key filters there exactly as a plain column does. An UPDATE reaches all three, and which one a column reaches turns on its carrier rather than on the column. A carrier wholly inside the key filters. One wholly outside it writes. A self-referencing foreign key writes however it falls, its columns pointing at a sibling row rather than at this one, so a key column it carries is an ordinary assignment and the foreign key forces it equal to what the predicate matched. A cross-table foreign key is the one carrier that splits, its in-key half being this row''s own identity and its out-of-key half a value, which is why the decode slot is a column here and not an implicit ordering: once a carrier is split, neither half recovers which slot of the decode a column came from. CHECKED is the destination that is easy to miss and the reason the vocabulary is not two values. Where a straddler''s in-key column is already pinned by some other carrier, the straddler neither filters nor writes it: the two decoded values are compared before any DML runs and the column has a contribution and no place in the statement. It is stated rather than left as an absence, an absence at this grain saying that the occurrence contributes nothing to that column, which is not what happens. Which carrier pins a contested key column, where more than one straddler claims it and nothing else does, is the walker''s input-field order, the first claim supplying the predicate and the rest being checked. The choice is observationally irrelevant, the agreement check running either way, but it decides which field''s decode appears in the emitted WHERE clause, so it is transcribed rather than left to whatever order a row arrives in. The order is the flattener''s descent: two occurrences compare at the outermost step where they differ, on the declaration ordinal of the field each takes there. It is written as a pairwise precedence over the contending occurrences rather than as a sort key assembled from the path, both because a key of that shape is a collection folded into one value and because the comparison is only ever asked of occurrences that contend, which is a handful wherever it is asked at all. Neither contender can be a prefix of the other, a prefix of a column-bearing occurrence being a grouping field that carries no column of its own, so the step they first differ at exists on both. A refused payload contributes nothing at all: the walker returns before building either half, so a coordinate with any refusal has no row here whichever of the three refusal relations carries it. The exclusion against the partition-stage refusals is written as a set difference rather than as a test per row, the per-row form re-deriving that whole rule once for every column it filters. Absence is a refused payload, a payload with no column-bearing occurrence in it, and every mutation offering no write surface at all. Which pairs of contributions must agree at runtime is the one thing this relation does not decide and intent_mutation_write_agreement does, as a reduction over these rows rather than a fact beside them: every such pair is a predicate row and a non-predicate row here over one column of one statement. Materialized: this relation is a table refilled from intent_mutation_write_destination_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
 COMMENT ON COLUMN intent_mutation_write_destination.graph_name IS 'the owning graph''s partition, carried from the write payload';
 COMMENT ON COLUMN intent_mutation_write_destination.type_name IS 'the type declaring the writing mutation field';
 COMMENT ON COLUMN intent_mutation_write_destination.field_name IS 'the mutation field whose statement this column takes part in; with the type, the coordinate intent_mutation_write_payload is keyed by';
@@ -8984,6 +9027,102 @@ COMMENT ON COLUMN intent_mutation_write_destination.write_table IS 'the write ta
 COMMENT ON COLUMN intent_mutation_write_destination.source_name IS 'the contributing input field''s own declaration file';
 COMMENT ON COLUMN intent_mutation_write_destination.source_line IS 'source line of the input field declaration, 1-based';
 COMMENT ON COLUMN intent_mutation_write_destination.source_column IS 'source column of the input field declaration, 1-based';
+COMMENT ON INDEX ix_mutation_write_destination_column IS 'Serves the one probe any reader of this relation makes. intent_mutation_write_agreement settles which occurrence supplies a column''s predicate over a derived pin of its own and then seeks this relation on exactly these four columns, once per pinned column, to find the reference contributions to that column. Declared because it was measured and not because the shape suggested it: on a store captured from the example schema, 66 rows of this target over 24 write surfaces, the agreement rule is 5.4 milliseconds without this index and 1.8 with it. The relation''s other namings read it whole and are indifferent.';
+
+CREATE VIEW intent_mutation_write_agreement
+  (graph_name, type_name, field_name, column_name,
+   key_path, key_container_type_name, key_input_field_name, key_position, key_role,
+   reference_path, reference_container_type_name, reference_input_field_name,
+   reference_position, reference_destination,
+   write_source_name, write_schema, write_table) AS
+WITH
+predicate (graph_name, type_name, field_name, column_name, path, container_type_name,
+           input_field_name, position, role) AS (
+  SELECT d.graph_name, d.type_name, d.field_name, d.column_name, d.path, d.container_type_name,
+         d.input_field_name, d.position, d.role
+    FROM intent_mutation_write_destination d
+   WHERE d.operation = 'UPDATE' AND d.destination = 'PREDICATE'
+),
+contended (graph_name, type_name, field_name, column_name, path, other_path, ordinal) AS (
+  SELECT p.graph_name, p.type_name, p.field_name, p.column_name, p.path, o.path,
+         MIN(sa.ordinal)
+    FROM predicate p
+    JOIN predicate o
+      ON o.graph_name = p.graph_name AND o.type_name = p.type_name
+     AND o.field_name = p.field_name AND o.column_name = p.column_name
+     AND o.path <> p.path
+    JOIN intent_input_occurrence_path_step sa
+      ON sa.graph_name = p.graph_name AND sa.path = p.path
+    JOIN intent_input_occurrence_path_step sb
+      ON sb.graph_name = o.graph_name AND sb.path = o.path AND sb.ordinal = sa.ordinal
+   WHERE sa.field_name <> sb.field_name
+      OR sa.container_type_name <> sb.container_type_name
+   GROUP BY p.graph_name, p.type_name, p.field_name, p.column_name, p.path, o.path
+),
+outranked (graph_name, type_name, field_name, column_name, path) AS (
+  SELECT DISTINCT c.graph_name, c.type_name, c.field_name, c.column_name, c.path
+    FROM contended c
+    JOIN intent_input_occurrence_path_step sa
+      ON sa.graph_name = c.graph_name AND sa.path = c.path AND sa.ordinal = c.ordinal
+    JOIN intent_input_occurrence_path_step sb
+      ON sb.graph_name = c.graph_name AND sb.path = c.other_path AND sb.ordinal = c.ordinal
+    JOIN graphql_field fa
+      ON fa.graph_name = sa.graph_name AND fa.type_name = sa.container_type_name
+     AND fa.field_name = sa.field_name
+    JOIN graphql_field fb
+      ON fb.graph_name = sb.graph_name AND fb.type_name = sb.container_type_name
+     AND fb.field_name = sb.field_name
+   WHERE fb.ordinal < fa.ordinal
+),
+pinning (graph_name, type_name, field_name, column_name, path, container_type_name,
+         input_field_name, position, role) AS (
+  SELECT graph_name, type_name, field_name, column_name, path, container_type_name,
+         input_field_name, position, role
+    FROM (SELECT p.graph_name, p.type_name, p.field_name, p.column_name, p.path,
+                 p.container_type_name, p.input_field_name, p.position, p.role,
+                 ROW_NUMBER() OVER (PARTITION BY p.graph_name, p.type_name, p.field_name,
+                                                 p.column_name
+                                    ORDER BY p.position) AS rn
+            FROM predicate p
+            LEFT JOIN outranked o
+              ON o.graph_name = p.graph_name AND o.type_name = p.type_name
+             AND o.field_name = p.field_name AND o.column_name = p.column_name
+             AND o.path = p.path
+           WHERE o.path IS NULL) ranked
+   WHERE rn = 1
+)
+SELECT k.graph_name, k.type_name, k.field_name, k.column_name,
+       k.path, k.container_type_name, k.input_field_name, k.position, k.role,
+       d.path, d.container_type_name, d.input_field_name, d.position, d.destination,
+       d.write_source_name, d.write_schema, d.write_table
+  FROM pinning k
+  JOIN intent_mutation_write_destination d
+    ON d.graph_name = k.graph_name AND d.type_name = k.type_name
+   AND d.field_name = k.field_name AND d.column_name = k.column_name
+ WHERE d.operation = 'UPDATE'
+   AND (d.destination = 'CHECKED'
+        OR (d.destination = 'VALUE' AND d.carrier_role = 'SELF_FK'))
+   AND d.input_field_name <> k.input_field_name
+;
+
+COMMENT ON VIEW intent_mutation_write_agreement IS 'Which two of an UPDATE''s contributions must be checked equal before any DML runs, one row per pair per column. A foreign key forces the two values equal for well-formed input and nothing forces the input to be well formed: both values arrive on the wire independently, so a disagreement is a runtime error and can only be a runtime error, which is why this states an obligation to emit a check rather than a refusal to generate. It is a reduction over intent_mutation_write_destination rather than a fact beside it, and the whole of the rule is a self-join and a tie-break: every pair is a PREDICATE row of that relation and a non-PREDICATE row of it over the same column of the same statement. Two carriers reach the non-PREDICATE side and the destination already tells them apart. A self-referencing foreign key routes every column it carries to the assignment half, so a key column among them is written and checked, and its row here carries VALUE. A straddling cross-table reference whose in-key column something else already pins neither filters nor writes it, so its row here carries CHECKED, which is that destination''s whole reason to exist. The predicate side is one occurrence per column even where several are dispositioned PREDICATE, because the statement filters on a column once: where two whole carriers bind one key column, which of them the check names is the flattener''s descent order, resolved by the same pairwise precedence intent_mutation_write_destination settles a contested straddler claim with, and stated here rather than left to whatever order a row arrives in for the same reason it is stated there. A field paired with itself is excluded in the join rather than filtered after it: the check this lowers to names two input fields, and a field cannot disagree with itself, so an occurrence and a same-named occurrence elsewhere in the payload produce no obligation. Absence is every payload with no reference carrier landing on a key column, which is most of them, and every payload the write partition refuses, a refused payload having no destination rows to reduce over. Source positions are not carried: a row here names two occurrences, both of which intent_mutation_write_destination already carries a position for at a key this relation states in full, and carrying one of the two would invite it to be read as the obligation''s position, which no author error attaches to. Nor is the order the checks are emitted in stated. That order is the reference occurrence''s place in the flattener''s descent and then its decode slot, which is the order the assignment and predicate halves are themselves emitted in, so it is one question at the grain of an occurrence rather than three at the grain of each partition; answering it here would state a third of it in a place the other two do not read.';
+COMMENT ON COLUMN intent_mutation_write_agreement.graph_name IS 'the owning graph''s partition, carried from the write destination';
+COMMENT ON COLUMN intent_mutation_write_agreement.type_name IS 'the type declaring the mutation field whose statement the check runs before';
+COMMENT ON COLUMN intent_mutation_write_agreement.field_name IS 'the mutation field; with the type, the coordinate both sides belong to and the statement the check guards';
+COMMENT ON COLUMN intent_mutation_write_agreement.column_name IS 'the column of the write table both sides supply a value for, and the column whose SQL type the comparison is coerced through';
+COMMENT ON COLUMN intent_mutation_write_agreement.key_path IS 'the occurrence path of the contributing input field the WHERE clause reads, intent_input_occurrence_path''s key';
+COMMENT ON COLUMN intent_mutation_write_agreement.key_container_type_name IS 'the input object type the predicate side''s field is declared on, its path''s last step''s container';
+COMMENT ON COLUMN intent_mutation_write_agreement.key_input_field_name IS 'the predicate side''s field name within that container, the first of the two names a disagreement quotes';
+COMMENT ON COLUMN intent_mutation_write_agreement.key_position IS 'the decode slot of the predicate side''s carrier holding this column''s value, counting from zero, and zero for a name match';
+COMMENT ON COLUMN intent_mutation_write_agreement.key_role IS 'which rule resolved the predicate side''s column, NAME_MATCHED or NODE_ID. It is the one thing about the two sides that varies, the reference side always being a decode, so a consumer deciding which side it can read a decoder off reads this and joins back for nothing';
+COMMENT ON COLUMN intent_mutation_write_agreement.reference_path IS 'the occurrence path of the reference carrier that supplies the column''s other value';
+COMMENT ON COLUMN intent_mutation_write_agreement.reference_container_type_name IS 'the input object type the reference side''s field is declared on';
+COMMENT ON COLUMN intent_mutation_write_agreement.reference_input_field_name IS 'the reference side''s field name within that container, the second name a disagreement quotes; never equal to key_input_field_name';
+COMMENT ON COLUMN intent_mutation_write_agreement.reference_position IS 'the decode slot of the reference carrier holding this column''s value. Carried rather than derived because a straddling carrier''s columns are split across the two halves of the statement, after which neither half''s ordering recovers which slot a column came from';
+COMMENT ON COLUMN intent_mutation_write_agreement.reference_destination IS 'what the reference side''s column is for in the statement, VALUE or CHECKED, carried from intent_mutation_write_destination. VALUE is the self-referencing foreign key, which writes the column as well as being checked on it; CHECKED is the straddler that does neither. A consumer emitting the assignment half reads this to know whether the column is already covered there';
+COMMENT ON COLUMN intent_mutation_write_agreement.write_source_name IS 'the catalog partition of the table the write targets';
+COMMENT ON COLUMN intent_mutation_write_agreement.write_schema IS 'the write table''s SQL schema';
+COMMENT ON COLUMN intent_mutation_write_agreement.write_table IS 'the write table''s SQL name; with the two columns above, sql_table''s full key';
 
 CREATE TABLE rejection_validation_error (
   graph_name    VARCHAR NOT NULL,
@@ -9391,7 +9530,9 @@ INSERT INTO meta_materialize VALUES
   ('intent_mutation_write_payload_live', 'intent_mutation_write_payload',
    'Four namings and every one of them expands the rule whole, H2 inlining a view wherever it is named. Two are the refresh sources of the registrations above it, intent_mutation_payload_refusal_live and intent_mutation_payload_column_live, so a capture paid this rule twice before anything read it. The other two arrived with the write partition: intent_mutation_matched_key drives from it, and the write refusal looks up a mutation''s own declared position in it. Measured against a store captured from the example schema, 24 write surfaces: one evaluation of this rule is 321 milliseconds and a read of the target is under one, so the matched key over it is 37 milliseconds where the same relation over the rule is 266. The refresh is that one 321-millisecond evaluation per graph, against four namings that each paid it. What the registration is not for is a seek. An index on the write coordinate was declared here first and has been removed: it was there for a probe the matched key performed before that relation was rewritten into a single pass, and every reader now drives from this target or joins it as a set, which the registry gate''s roster records.'),
   ('intent_mutation_payload_key_membership_live', 'intent_mutation_payload_key_membership',
-   'Five namings across two view bodies, and the one that matters is a derived relation on the inner side of a join, which H2 evaluates once per driving row. intent_mutation_write_destination reaches this rule that way through its own claim and winner terms, once for each column of each payload it disposes. Measured against a store captured from the example schema, 66 destination rows over 56 of these: that reader is 1527 milliseconds with this relation a view and 100 with it a table, and one evaluation of the rule, which is what the refresh costs, is 22 milliseconds. So the refresh is a seventieth of what a single read was paying. The order this was arrived at is the part worth keeping. This same registration was proposed first, before the rules in this family were rewritten, and priced then at 326 seconds of refresh per capture, because the rule it materializes was itself re-evaluating the matched key once per payload column. Registering at that point would have bought a read by making every capture five times slower. What made it affordable was fixing the shape underneath it, and the general form is that a registration prices the rule as it stands, so a rule with a re-evaluation inside it should be rewritten before it is priced. No index is declared on the target: every naming reads it whole or drives from it and none probes in.');
+   'Five namings across two view bodies, and the one that matters is a derived relation on the inner side of a join, which H2 evaluates once per driving row. intent_mutation_write_destination reaches this rule that way through its own claim and winner terms, once for each column of each payload it disposes. Measured against a store captured from the example schema, 66 destination rows over 56 of these: that reader is 1527 milliseconds with this relation a view and 100 with it a table, and one evaluation of the rule, which is what the refresh costs, is 22 milliseconds. So the refresh is a seventieth of what a single read was paying. The order this was arrived at is the part worth keeping. This same registration was proposed first, before the rules in this family were rewritten, and priced then at 326 seconds of refresh per capture, because the rule it materializes was itself re-evaluating the matched key once per payload column. Registering at that point would have bought a read by making every capture five times slower. What made it affordable was fixing the shape underneath it, and the general form is that a registration prices the rule as it stands, so a rule with a re-evaluation inside it should be rewritten before it is priced. No index is declared on the target: every naming reads it whole or drives from it and none probes in.'),
+  ('intent_mutation_write_destination_live', 'intent_mutation_write_destination',
+   'One reader, and it names this rule four times and correlates into it, which is the registration case at its narrowest. intent_mutation_write_agreement reduces these rows against themselves: it filters them to the predicate side, self-joins that side to settle a contested pin, and joins the relation back whole for the reference side, so one read of the agreement rule expands this one four times over and re-evaluates most of those expansions once per driving row. Measured against a store captured from the example schema, 66 rows here over 24 write surfaces: that read is 12983 milliseconds with this relation a view and 5.4 with it a table, and the refresh, which is one evaluation of the rule, is 56 milliseconds. The rewrite came first, as the row above this one says it must. The agreement rule was written driving from this relation with its own derived pin on the inner side of the join, which measured 75741 milliseconds; reversing that one join, so the small derived side drives and this relation is probed, is what took it to the 13 seconds the registration then took to 5.4. An index is declared on the target and argued at its own site: unlike the two registrations above it this one does leave a probe behind, the reversed join seeking a write coordinate and a column, and declaring it takes the reader from 5.4 milliseconds to 1.8.');
 
 CREATE TABLE meta_materialize_dependency (
   source_view_name VARCHAR NOT NULL,

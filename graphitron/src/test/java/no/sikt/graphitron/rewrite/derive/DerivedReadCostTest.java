@@ -104,10 +104,10 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 104;
+    private static final int READERS_IN_SCHEMA = 105;
 
     /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 65;
+    private static final int READERS_WITH_CELLS = 66;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -123,8 +123,16 @@ class DerivedReadCostTest {
      * net, and a delta rather than a pair of absolutes because every new view moves the baseline.
      * So a drop here is not the matrix quietly seeing less; it is cost moving off a reader and onto
      * a refresh, and the refresh is a view in this domain and priced like any other.
+     *
+     * <p>Registering {@code intent_mutation_write_destination} moved it by one, which is the smallest
+     * a registration can move it and worth the sentence because the arithmetic is not obvious. The
+     * relation was already a view in this domain with cells of its own; registering it renamed those
+     * cells onto the {@code _live} view rather than removing them, and the reader the registration was
+     * for, {@code intent_mutation_write_agreement}, reaches exactly one registration because the walk
+     * stops at the target it reads. A registration whose rule is read only through the relation being
+     * registered is the case that moves this figure least.
      */
-    private static final int CELLS = 174;
+    private static final int CELLS = 175;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -309,23 +317,35 @@ class DerivedReadCostTest {
      * with a re-evaluation inside it is rewritten before it is priced, and a refresh figure taken
      * before that is a measurement of the defect rather than of the registration.
      *
-     * <p>The three relations that partition a matched key landed next and met the same wall from the
-     * other direction, which is why they get a paragraph beside that one rather than inside it.
+     * <p>The three relations that partition a matched key landed next, and the first reading of what
+     * they cost here was wrong in a way worth keeping beside the correct one.
      * {@code intent_mutation_write_destination} names
      * {@code intent_mutation_payload_key_membership} three times and then names
      * {@code intent_mutation_write_refusal}, which names it twice more, so one read of the
-     * destination expands that rule eight times over and each expansion reaches the matched key and
-     * through it the whole write-payload family. Nothing correlates into anything: all five namings
-     * are set joins. Written as three plain views this test went from about a minute to not finishing
-     * inside eleven, and registering the substrate answered it in one step, with no rewrite measured
-     * and none needed; the run is 222 seconds with the registration in place, the rise over the
-     * minute being the fourth store this test now captures and the seventeen cells the three new
-     * readers add rather than any one read.
+     * destination expands that rule five times over and each expansion reaches the matched key and
+     * through it the whole write-payload family. That is breadth, the ordinary registration case, it
+     * is really there, and it is what an eleven-minute run was first attributed to. It was not the
+     * binding constraint. The registration taken on that reading priced at the 326 seconds the
+     * paragraph above records; the rewrites went in first, the same registration then cost 36
+     * milliseconds, and this test went from not finishing inside eleven minutes to 74 seconds.
      *
-     * <p>So the two shapes are worth telling apart. The probe above is the one this fixture
-     * understates by orders of magnitude, and it is the one that turns into a build that does not
-     * finish. Breadth is the ordinary registration case every row of {@code meta_materialize} argues,
-     * and for it this test's own runtime is a serviceable instrument: it was the instrument here.
+     * <p>So the two shapes are worth telling apart, and a third thing with them. The probe two
+     * paragraphs up is the one this fixture understates by orders of magnitude, and it is the one that
+     * turns into a build that does not finish. Breadth is the ordinary registration case every row of
+     * {@code meta_materialize} argues, and for it this test's own runtime is a serviceable instrument.
+     * It is not an instrument that can tell the two apart, which is the third thing: what separated
+     * them was a store captured from a real schema, H2's own query statistics over interleaved sweeps
+     * with result reuse off, and bisecting each rule one common table expression at a time.
+     *
+     * <p>The fifth instance of the inner-side defect arrived with
+     * {@code intent_mutation_write_agreement}, which reduces the destination against itself, and it
+     * is the first in this family to be met in the right order. One evaluation of that rule was 75741
+     * milliseconds with the destination a view and its own derived pin on the inner side of the
+     * outermost join; reversing that join, so the small derived side drives and the destination is
+     * probed, took it to 12983, registering the destination took it to 5.4, and an index on the write
+     * coordinate and column took it to 1.8, against a refresh of 56 milliseconds per graph. Pricing
+     * the registration before reversing the join would have measured the defect and called it the
+     * cost of a view, which is the mistake the paragraph above records being made once already.
      *
      * <p>Three larger pairs stood here until the targets were indexed, and how they left is worth
      * knowing before adding more. They were not the registrations' fault and no reader had to be

@@ -2874,6 +2874,85 @@ guess defended.
 **What this increment leaves owing**: the agreement obligations as their own reduction over the
 destination, and then the fold.
 
+### Conditions, fourteenth increment: which two contributions must agree, and the order nobody states yet
+
+The thirteenth increment left the destination saying where every column of a write payload goes and
+not saying which pairs of columns have to be checked against each other before the statement runs.
+`intent_mutation_write_agreement` says that, as a reduction over the destination rather than a fact
+beside it. Every obligation is a PREDICATE row of that relation and a non-PREDICATE row of it over
+one column of one statement, so the whole of the rule is a self-join and a tie-break, and the
+vocabulary it reduces over is the one the previous increment already had to invent.
+
+**Why an obligation rather than a refusal.** Where two input fields both decode a value for one
+column, a foreign key forces the two equal for well-formed input and nothing forces the input to be
+well formed: both values arrive on the wire independently, from a caller the generator does not
+control. So a disagreement is discoverable only when the values are in hand, which makes it a
+runtime error and can only make it a runtime error. The relation states an obligation to emit a
+check, and the emitters lower each row to one call naming both fields.
+
+**The two carriers that reach the reference side.** A self-referencing foreign key routes every
+column it carries to the assignment half, its columns pointing at a sibling row rather than at this
+one, so a key column among them is written and checked: its row here carries VALUE, and a consumer
+emitting the assignment half already covers that column. A straddling cross-table reference whose
+in-key column something else pins neither writes nor filters it: its row carries CHECKED, which is
+the destination value the previous increment added and the one this relation exists to consume. The
+two are not a distinction this relation makes; it reads them off the destination, which is the point
+of the reduction.
+
+**The predicate side is one occurrence per column, and this is where the choice arrives.** The
+destination marks every whole carrier on a key column PREDICATE, and it is right to: the statement
+filters on that column and each of them supplies it. It never has to say which one the WHERE clause
+reads, because both say the same thing. An obligation does have to say, because the check names one
+input field on each side and naming the second whole carrier instead of the first renders a
+different call at a different field. So the pairwise precedence the destination settles a contested
+straddler claim with is asked here of the predicate rows themselves: two occurrences compare at the
+outermost step where they differ, on the declaration ordinal of the field each takes there, and the
+one nothing precedes is the side the check names. It is the same shape one level over, which is the
+third time in this chain that a rule the walker resolves by list order has had to be transcribed as
+an order rather than left to whatever order a row arrives in.
+
+**One rule transcribed rather than judged.** Two occurrences of one input field name produce no
+obligation at all. The walker's carrier rejects a pair whose two sides name the same field, on the
+ground that a field cannot be reported as disagreeing with itself, so a payload nesting two
+same-named references onto one key column gets a predicate, a checked column, and no check between
+them. Whether that is the right behaviour is a live question and not this increment's; the relation
+transcribes what the generator does. The test that pins it asserts the destination's two rows beside
+the obligation's absence, so the case cannot pass by producing nothing to pair, which is the failure
+mode an emptiness assertion invites.
+
+**What it does not carry, and the question that belongs one level down.** No source positions. A row
+names two occurrences and the destination carries a position for each at a key this relation states
+in full, so carrying one of the two would invite it to be read as the obligation's position, which
+no author error attaches to. And no emission order, which is the more interesting omission. The
+order the checks are emitted in is the reference occurrence's place in the flattener's descent and
+then its decode slot, and that is the same order the assignment and predicate halves are themselves
+emitted in. It is one question at the grain of an occurrence, not three at the grain of each
+partition, and answering it here would state a third of it in a place the other two cannot read.
+What would answer all three is an ordinal on the occurrence itself, a rank over
+`intent_input_occurrence_path` in descent order, which would also retire the pairwise precedence now
+written twice. That is the next thing this family wants and it is not this relation's to add.
+
+**The cost, and the same defect a fifth time.** Written over the destination as a view, one
+evaluation of this rule was 75741 milliseconds. The shape was the one the thirteenth increment found
+four instances of: a derived relation on the inner side of a join, re-evaluated once per driving row,
+nested three deep here so that the multiplication compounded. Reversing the outermost join, so the
+small derived pin drives and the destination is probed, took it to 12983. Registering the destination
+took it to 5.4, and declaring an index on the write coordinate and column took it to 1.8. The refresh
+the registration installs is one evaluation of the destination rule, 56 milliseconds per graph. Every
+figure is against a store captured from the example schema, 66 destination rows over 24 write
+surfaces, with the row counts checked equal in both directions after each rewrite.
+
+Two things about that sequence are worth keeping. The rewrite came before the registration, which is
+the ordering the previous increment paid 326 seconds to learn and the first occasion since to apply
+it deliberately: pricing the registration against the un-reversed join would have measured the defect
+and called it the cost of a view. And the index was measured rather than reasoned about. It is the
+first index in this family that a reader genuinely seeks, the reversed join being a probe by
+coordinate, and the registry gate's rule that an index states its reader is what forced the
+measurement rather than a plausible sentence.
+
+**What this increment leaves owing**: the fold itself, unchanged, and the occurrence ordinal the
+paragraph above names, which is a small relation with three readers waiting for it.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the
