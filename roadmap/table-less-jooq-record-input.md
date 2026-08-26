@@ -23,16 +23,19 @@ A consumer writes a service that takes an ad-hoc jOOQ projection, and it works:
 
 ```graphql
 input FilmProjectionInput @classifiedType(as: JooqRecordInputType) {
-    title: String        @field(name: "film.title")
-    releaseYear: Int     @field(name: "film.release_year")
+    title: String        @field(name: "title")
+    releaseYear: Int     @field(name: "release_year")
 }
 
 extend type Query {
     describeProjection(in: FilmProjectionInput!): String
-        @service(service: {
-            className: "no.sikt.graphitron.rewrite.test.services.FilmProjectionService",
-            method: "describeProjection"
-        })
+        @service(
+            service: {
+                className: "no.sikt.graphitron.rewrite.test.services.FilmProjectionService",
+                method: "describeProjection"
+            },
+            table: "film"
+        )
 }
 ```
 
@@ -111,39 +114,45 @@ column would arrive as `Field<String>` against a consumer's `Record1<MpaaRating>
 has no `DataType` at all. It would also make flattening incoherent, because `InputRecordShape` holds
 one component per *declared* field rather than one per flattened leaf.
 
-## The design: each leaf names a real column
+## The design: the field names the table, the leaves name columns
 
 On the column axis `@field(name:)` on a jOOQ-record input leaf already means "the column this field
 writes", resolved by `InputBeanResolver.collectJooqBindings` through
-`ctx.catalog.findColumn(table.tableName(), key)`. The table comes from the record. When the record
-has none, the leaf supplies it by qualifying the name:
+`ctx.catalog.findColumn(table.tableName(), key)`. Only one thing is missing when the record has no
+table: the `TableRef` to resolve against.
+
+Graphitron already has an idiom for exactly this, and the `@table`-on-`INPUT_OBJECT` deprecation text
+names it while explaining why that location went away: *"a bare `ID` / `Boolean` / count return
+carries no table, so `@mutation(table: "film")` names it directly"*, described there as the field-level
+analogue of `@service(argMapping:)` and as the replacement for the input-side `@table` it deprecates.
+A `@service` parameter whose record has no table is the same problem at the sibling seat, so it takes
+the same answer: a `table:` argument on `@service`, naming the table its record parameter's columns
+resolve against.
 
 ```graphql
-title: String @field(name: "film.title")
+describeProjection(in: FilmProjectionInput!): String
+    @service(service: {...}, table: "film")
 ```
 
-Resolution is a column reference with an optional qualifier, and both halves already exist:
-`JooqCatalog.findTable` accepts unqualified and schema-qualified names, and `findColumn` resolves a
-column within a table. So `"film.title"` is table plus column, `"public.film.title"` is schema, table
-and column, and a bare `"title"` rejects: with no record table there is nothing to resolve it
-against, and guessing across the catalog would bind silently to whichever table happened to match.
+Nothing else about the column axis changes. The leaves keep plain `@field(name: "release_year")`
+references resolved against that table, which is what they already mean, and
+`collectJooqBindings` is reused as-is with a `TableRef` from a different source. Nested directiveless
+grouping inputs flatten exactly as they do today.
 
-This is the shape an ad-hoc projection actually has. The columns need not share a table, which is the
-one thing this arm can express that no `TableRecord` can:
+This is deliberately not a spelling inside the `@field` value. A qualified `@field(name: "film.title")`
+would parse, since `name` is a `String!`, but it would resolve to nothing (`JooqCatalog.findColumn`
+matches only a column's `javaName` or `sqlName`) and it would be the only place in the directive set
+where one string carries two levels of the catalog. Every other reference in graphitron names the
+table on an enclosing element and the columns relative to it, and this follows that.
 
-```graphql
-input FilmLanguageInput @classifiedType(as: JooqRecordInputType) {
-    title: String    @field(name: "film.title")
-    language: String @field(name: "language.name")
-}
-```
+The cost is that one `table:` names one table, so a projection whose columns span several tables is
+not expressible. That is the right trade for now: it keeps the shape inside the model graphitron
+already has, and no fixture or consumer asks for the cross-table case.
 
-Each resolved leaf yields a `(TableRef, ColumnRef)` pair. `TableRef` carries `constantsClass` and
-`javaFieldName`, `ColumnRef` carries `javaName` and `columnType`, so the emitter has both the
+Each resolved leaf yields a `ColumnRef` on that one `TableRef`. `TableRef` carries `constantsClass`
+and `javaFieldName`, `ColumnRef` carries `javaName` and `columnType`, so the emitter has both the
 `Tables.FILM.TITLE` reference to pass to `newRecord` and the Java type to check the declared
-parameter against. Nested directiveless grouping inputs flatten as they do on the column axis: the
-walk descends and keeps appending pairs in declaration order, and the record's field order is that
-order.
+parameter against.
 
 ## The declared-type gate
 
@@ -169,17 +178,20 @@ is not served by the column-list arm, never that it cannot be built.
 
 **Fixtures.** Delete `PlainJooqRecord`. Retype `DummyService.consumePlainJooqRecord` to take
 `org.jooq.Record2<String, Integer>` and `makePlainJooqRecord` to return the same, and update the
-`plain-jooq-record-backing` example in `ClassifiedCorpus` so its leaves carry qualified `@field`
-references matching those generics. `NodeIdReadEncodePipelineTest` also names `makePlainJooqRecord`
+`plain-jooq-record-backing` example in `ClassifiedCorpus` so its consuming field carries `table:` and
+its leaves carry `@field` column references matching those generics. `NodeIdReadEncodePipelineTest` also names `makePlainJooqRecord`
 and moves with it. The `@classifiedType` verdicts on both halves are unchanged: `Record2` is
 assignable to `Record` and not to `TableRecord`, `RecordBindingResolver.peelReturnElement` returns
 the raw `org.jooq.Record2` for a parameterized non-container type, and `shouldBind` admits it, so
 `TypeBuilder.buildPlainInputType` reaches the same leaf.
 
-**Qualified column resolution.** Extend the binding-key read used by `collectJooqBindings` to parse a
-one-, two-, or three-part column reference and resolve it through `JooqCatalog.findTable` plus
-`findColumn`. Unqualified rejects when there is no record table; ambiguity and not-in-catalog reuse
-the existing `TableResolution` arms and the `BuildContext.candidateHint` suggestion shape.
+**`@service(table:)`.** Add the argument to the `@service` directive declaration in
+`directives.graphqls` with documentation mirroring `@mutation(table:)`'s, and resolve it through
+`ServiceCatalog`'s existing table-by-SQL-name lookup (`ctx.catalog.findTable(...).asEntry()`), so a
+name that is not in the catalog or is ambiguous across schemas reuses the `TableResolution` arms and
+the `BuildContext.candidateHint` suggestion shape rather than inventing diagnostics. Supplying
+`table:` on a `@service` whose parameters include no table-less jOOQ record is rejected, matching how
+`@mutation(table:)` is rejected on verbs that derive their target by other means.
 
 **The arm.** Add a `JooqRecordInputType` branch to `InputBeanResolver.enrich`, sibling to the
 `JooqTableRecordInputType` one and placed *ahead* of the `looksLikeBeanCandidate` gate, which
@@ -197,13 +209,14 @@ new extraction has to force it; `ArgCallEmitter` needs the same wiring for the c
 
 ## Tests
 
-- **Unit**: qualified-reference resolution (two-part, three-part, unqualified rejects, unknown table,
-  unknown column, ambiguous unqualified schema) and the three declared-type gate outcomes, including
-  that a UDT-shaped declared type rejects with the not-served-here message rather than an
-  impossibility claim.
+- **Unit**: `@service(table:)` resolution (resolved, unknown table, ambiguous across schemas, present
+  on a service with no table-less record parameter, absent while a table-less record parameter needs
+  it) and the three declared-type gate outcomes, including that a UDT-shaped declared type rejects
+  with the not-served-here message rather than an impossibility claim.
 - **Pipeline**: the generated fetcher passes the helper's result to the service, and the helper's
   `newRecord` argument list is the resolved column constants in SDL declaration order. A second case
-  covers the cross-table projection, whose field list spans two `Tables` constants.
+  covers a leaf flattened out of a nested grouping input, whose column resolves against the same
+  table as its peers.
 - **Compilation** (`graphitron-sakila-example`): the emitted `newRecord` call compiles against the
   declared `Record2<String, Integer>`. This is the tier that catches a wrong generic, and the reason
   the fixture must be a real typed assignment rather than a bare `Record`.
@@ -221,8 +234,15 @@ Input path only. The result axis works and is not touched beyond retyping the fi
 real projection type.
 
 Out of scope, deliberately: UDT and embeddable record inputs, which are R234's; any Java-type to
-`SQLDataType` mapping; and any way to *declare* an ad-hoc projection in SDL beyond naming the columns
-its fields bind to.
+`SQLDataType` mapping; a projection whose columns span more than one table; and any way to *declare*
+an ad-hoc projection in SDL beyond naming its table and its columns.
+
+`@service(table:)` is new directive surface, so it is the part of this plan a reviewer should weigh
+hardest. It is proposed because the alternatives are worse, not because it is free: the input type
+cannot carry the table (`@table` on `INPUT_OBJECT` is deprecated, ignored, and slated for rejection),
+the record class has none by definition, and the consuming field's return table answers a different
+question. Naming it on the field is the shape `@mutation(table:)` already established for the same
+gap.
 
 ## Retired vocabulary
 
