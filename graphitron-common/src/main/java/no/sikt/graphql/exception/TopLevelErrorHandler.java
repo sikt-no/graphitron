@@ -39,7 +39,7 @@ public class TopLevelErrorHandler extends SimpleDataFetcherExceptionHandler {
 
         if (exception instanceof ValidationViolationGraphQLException) {
             errors = ((ValidationViolationGraphQLException) exception).getUnderlyingErrors();
-        } else if (exception instanceof IllegalArgumentException) {
+        } else if (exception instanceof IllegalArgumentException || exception instanceof NoRowsAffectedException) {
             errors = List.of(GraphqlErrorBuilder.newError(handlerParameters.getDataFetchingEnvironment())
                     .message(exception.getMessage())
                     .build());

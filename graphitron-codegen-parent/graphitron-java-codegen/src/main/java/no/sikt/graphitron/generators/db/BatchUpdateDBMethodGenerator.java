@@ -42,6 +42,19 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
 
     private static final String VARIABLE_RECORD_LIST = internalPrefix("recordList"), CONFIG = internalPrefix("config");
 
+    /**
+     * A write that reaches no rows is valid SQL that changes nothing, and the payload of these mutations comes from
+     * a separate read that would still find the untouched row. Updates and upserts therefore have to check the
+     * affected row count to notice, which {@link no.sikt.graphql.helpers.query.QueryHelper#requireRowsAffected}
+     * does. Inserts are left out because a write that inserts nothing raises an error of its own, and deletes
+     * because their payload already reports back the ids that were not deleted.
+     *
+     * @return whether mutations of this type should verify the row count their batched write reports.
+     */
+    private static boolean checksAffectedRows(MutationType type) {
+        return GeneratorConfig.validateAffectedRows() && (type == MutationType.UPDATE || type == MutationType.UPSERT);
+    }
+
     public BatchUpdateDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
     }
@@ -102,16 +115,29 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
                     });
         }
 
-        code.addStatement(
-                "return $N.transactionResult($L -> $T.stream($T.using($N).$L($N).execute()).sum())",
-                VariableNames.VAR_CONTEXT,
-                CONFIG,
-                ARRAYS.className,
-                DSL.className,
-                CONFIG,
-                recordMethod,
-                batchInputVariable
-        );
+        if (checksAffectedRows(target.getMutationType())) {
+            code.addStatement(
+                    "return $N.transactionResult($L -> $T.requireRowsAffected($T.using($N).$L($N).execute()))",
+                    VariableNames.VAR_CONTEXT,
+                    CONFIG,
+                    QUERY_HELPER.className,
+                    DSL.className,
+                    CONFIG,
+                    recordMethod,
+                    batchInputVariable
+            );
+        } else {
+            code.addStatement(
+                    "return $N.transactionResult($L -> $T.stream($T.using($N).$L($N).execute()).sum())",
+                    VariableNames.VAR_CONTEXT,
+                    CONFIG,
+                    ARRAYS.className,
+                    DSL.className,
+                    CONFIG,
+                    recordMethod,
+                    batchInputVariable
+            );
+        }
 
         return spec
                 .addCode(code.build())

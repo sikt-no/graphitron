@@ -1,0 +1,5 @@
+mutation {
+    updateFilmName(in: {filmId: "RmlsbTo5OTk5OQ", title: "ALIEN BASE"}) {
+        title
+    }
+}

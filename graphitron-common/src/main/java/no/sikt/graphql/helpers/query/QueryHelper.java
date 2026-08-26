@@ -1,5 +1,6 @@
 package no.sikt.graphql.helpers.query;
 
+import no.sikt.graphql.exception.NoRowsAffectedException;
 import org.jooq.Record;
 import org.jooq.*;
 import org.jooq.impl.DSL;
@@ -187,5 +188,43 @@ public class QueryHelper {
 
         tableRecord.fromArray(record.intoArray(), fields.toArray(TableField[]::new));
         return tableRecord;
+    }
+
+    /**
+     * Sums the affected row counts of a batched write, rejecting the batch if any statement affected no rows.
+     * <p>
+     * The database does not treat a write that reaches no rows as an error, so a mutation that skips this check
+     * reports success while having changed nothing. See {@link NoRowsAffectedException}.
+     * <p>
+     * Two properties of the count array are worth knowing. A driver that cannot report a count gives
+     * {@link java.sql.Statement#SUCCESS_NO_INFO}, which counts as neither success nor failure here. And the array
+     * can be shorter than the list of records handed to the batch, because jOOQ leaves out records whose statement
+     * would have had nothing to write, so its length is not a record count.
+     *
+     * @param rowCounts per statement affected row counts, as returned by a jOOQ batch execution
+     * @return the sum of the reported counts
+     * @throws NoRowsAffectedException if any statement in the batch affected no rows
+     */
+    public static int requireRowsAffected(int[] rowCounts) {
+        var sum = 0;
+        var unaffected = 0;
+        for (var count : rowCounts) {
+            if (count == java.sql.Statement.SUCCESS_NO_INFO) {
+                continue;
+            }
+            if (count > 0) {
+                sum += count;
+            } else {
+                unaffected++;
+            }
+        }
+
+        if (unaffected > 0) {
+            throw new NoRowsAffectedException(
+                    unaffected + " of " + rowCounts.length + " statements in this write affected no rows. "
+                            + "The rows may not exist, or may not be writable for the current user.");
+        }
+
+        return sum;
     }
 }

@@ -112,6 +112,15 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @SuppressWarnings("unused")
     protected OptionalSelect optionalSelect;
 
+    /**
+     * When enabled, generated update and upsert mutations check the affected row count reported by the batched
+     * write, and fail the mutation if a statement in it affected no rows. Without the check such a write reports
+     * success, because the payload is built by a separate read that still finds the untouched row.
+     */
+    @Parameter(property = "graphitron.validateAffectedRows", defaultValue = "true")
+    @SuppressWarnings("unused")
+    protected boolean validateAffectedRows;
+
     @Parameter(property = "generate.validateOverlappingInputFields", defaultValue = "true")
     @SuppressWarnings("unused")
     protected boolean validateOverlappingInputFields;
@@ -248,6 +257,11 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @Override
     public boolean validateOverlappingInputFields() {
         return validateOverlappingInputFields;
+    }
+
+    @Override
+    public boolean validateAffectedRows() {
+        return validateAffectedRows;
     }
 
     @Override

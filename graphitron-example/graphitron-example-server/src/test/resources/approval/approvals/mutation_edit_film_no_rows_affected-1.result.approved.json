@@ -1,0 +1,22 @@
+{
+    "errors": [
+        {
+            "message": "1 of 1 statements in this write affected no rows. The rows may not exist, or may not be writable for the current user.",
+            "locations": [
+                {
+                    "line": 2,
+                    "column": 5
+                }
+            ],
+            "path": [
+                "updateFilmName"
+            ],
+            "extensions": {
+                "classification": "DataFetchingException"
+            }
+        }
+    ],
+    "data": {
+        "updateFilmName": null
+    }
+}

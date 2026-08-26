@@ -44,6 +44,7 @@ public class GeneratorConfig {
     private static boolean useJdbcBatchingForInserts = true;
     private static boolean requireTypeIdOnNode = false;
     private static boolean validateOverlappingInputFields = true;
+    private static boolean validateAffectedRows = true;
     private static boolean generateUpsertAsStore = false;
     private static boolean failOnMerge = false;
 
@@ -123,6 +124,7 @@ public class GeneratorConfig {
         requireTypeIdOnNode = mojo.requireTypeIdOnNode();
         optionalSelect = mojo.getOptionalSelect();
         validateOverlappingInputFields = mojo.validateOverlappingInputFields();
+        validateAffectedRows = mojo.validateAffectedRows();
         generateUpsertAsStore = mojo.generateUpsertAsStore();
         failOnMerge = mojo.failOnMerge();
     }
@@ -186,6 +188,7 @@ public class GeneratorConfig {
         codeGenerationThresholds = null;
         requireTypeIdOnNode = false;
         validateOverlappingInputFields = false;
+        validateAffectedRows = false;
     }
 
     /**
@@ -345,6 +348,14 @@ public class GeneratorConfig {
 
     public static void setValidateOverlappingInputFields(boolean validate) {
         validateOverlappingInputFields = validate;
+    }
+
+    public static boolean validateAffectedRows() {
+        return validateAffectedRows;
+    }
+
+    public static void setValidateAffectedRows(boolean validate) {
+        validateAffectedRows = validate;
     }
 
     public static boolean failOnMerge() {

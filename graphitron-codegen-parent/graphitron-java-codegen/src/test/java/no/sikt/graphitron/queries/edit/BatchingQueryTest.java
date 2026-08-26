@@ -51,6 +51,32 @@ public class BatchingQueryTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Update verifies the row count its write reports")
+    void updateVerifiesAffectedRows() {
+        assertGeneratedContentContains("default", Set.of(NODE),
+                "QueryHelper.requireRowsAffected(DSL.using(_iv_config).batchUpdate(_mi_inRecord).execute())");
+    }
+
+    @Test
+    @DisplayName("Upsert verifies the row count its write reports")
+    void upsertVerifiesAffectedRows() {
+        assertGeneratedContentContains("upsert",
+                "QueryHelper.requireRowsAffected(DSL.using(_iv_config).batchMerge(_mi_inRecord).execute())");
+    }
+
+    @Test
+    @DisplayName("Delete does not verify the row count, its payload already reports the ids left behind")
+    void deleteDoesNotVerifyAffectedRows() {
+        resultDoesNotContain("delete", "requireRowsAffected");
+    }
+
+    @Test
+    @DisplayName("Insert does not verify the row count, a write that inserts nothing raises an error of its own")
+    void insertDoesNotVerifyAffectedRows() {
+        resultDoesNotContain("insert", "requireRowsAffected");
+    }
+
+    @Test
     @DisplayName("Delete")
     void delete() {
         assertGeneratedContentContains("delete", ".batchDelete(_mi_inRecord)");

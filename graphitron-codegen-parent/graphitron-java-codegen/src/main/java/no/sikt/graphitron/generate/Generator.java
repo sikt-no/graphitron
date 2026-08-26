@@ -42,6 +42,8 @@ public interface Generator {
 
     boolean validateOverlappingInputFields();
 
+    boolean validateAffectedRows();
+
     boolean failOnMerge();
 
     boolean generateUpsertAsStore();

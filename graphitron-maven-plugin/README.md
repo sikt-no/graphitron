@@ -203,6 +203,7 @@ The output is a JSON file (default: `target/graphitron-lsp-config.json`) with th
 | `maxAllowedPageSize`    | Maximum page size for connections                               | No       | `1000`                     |
 | `failOnMerge`           | Fail code generation if a upsert mutation with `MERGE` is found | No       | `false`                    |
 | `generateUpsertAsStore` | Use jOOQ `batchStore` instead of `batchMerge` for upserts       | No       | `false`                    |
+| `validateAffectedRows`  | Fail update and upsert mutations whose write affects no rows     | No       | `true`                     |
 
 \*\*\* Defaults to `schema.graphql` when using `<transform>`, otherwise defaults to `schemaFiles`.
 
