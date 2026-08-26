@@ -4036,131 +4036,6 @@ COMMENT ON COLUMN intent_poly_member.container_kind IS 'which population answere
 COMMENT ON COLUMN intent_poly_member.member_type_name IS 'the object type the container resolves to; on the interface arm the implementing type, on the union arm the listed member';
 COMMENT ON COLUMN intent_poly_member.position IS 'source order within the container, 1-based on the interface arm and the union''s own authored ordinal on the union arm. Authored on the union arm and derived on the interface arm, from the implementor''s declaration site with the type name breaking a tie; see the relation''s own note on what that costs a reader fingerprinting an ordered list';
 
-CREATE VIEW intent_field_participant_scope_table
-  (graph_name, type_name, field_name, member_type_name,
-   table_source_name, table_schema, table_name) AS
-SELECT f.graph_name, f.type_name, f.field_name, m.member_type_name,
-       bt.table_source_name, bt.table_schema, bt.table_name
-  FROM graphql_field f
-  LEFT JOIN graphitron_field_synthesis fs
-    ON fs.graph_name = f.graph_name AND fs.type_name = f.type_name
-   AND fs.field_name = f.field_name
-  JOIN intent_poly_member m
-    ON m.graph_name = f.graph_name
-   AND m.container_name = COALESCE(
-         REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''), '!', ''),
-         f.named_type)
-  JOIN intent_resolved_type_binding bt
-    ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
-   AND bt.candidates = 1
- WHERE NOT EXISTS (SELECT 1 FROM intent_resolved_type_binding cb
-                    WHERE cb.graph_name = m.graph_name
-                      AND cb.type_name = m.container_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_mutation mu
-                    JOIN intent_spelled_table sp
-                      ON sp.graph_name = mu.graph_name AND sp.spelling = mu.table_ref
-                     AND sp.candidates = 1
-                    WHERE mu.graph_name = f.graph_name AND mu.type_name = f.type_name
-                      AND mu.field_name = f.field_name);
-COMMENT ON VIEW intent_field_participant_scope_table IS 'Which table one participant of a field''s polymorphic named type binds: the table that participant''s own branch of the field''s generated SQL is rooted in. A field returning a union, or an interface carrying no @table of its own, resolves to several tables rather than to one, and the classifier answers it by lowering the field once per table-bound participant, each against that participant''s own table; this relation is that population, one row per participant the field''s named type holds a binding for. The participant''s type name is a key column and not provenance, because it is what a consumer needs beyond the table: the generated condition method is named after the participant rather than after the container, so two participants of one field are two named units and a row carrying only a table could not tell a consumer which. Disjoint from both of intent_field_scope_table''s ranked rungs by construction rather than by precedence, which is why that relation unions this one in outside its window instead of ranking it as a third rung. The container binding nothing of its own is this relation''s own precondition, and it is exactly what separates the shape from the single-table discriminated interface, whose interface does carry @table and whose participants therefore share one table and one filter surface; a field carrying a @mutation(table:) spelling that resolves is excluded for the symmetric reason, the author having said which table the coordinate''s SQL binds against. Each participant''s binding must be unambiguous, on intent_field_reference_discovery''s terms and for the reason the ranked rungs give: a branch is a statement and two candidate tables are two different statements. A member with no binding at all contributes no row and no rejection here, the container whose every member must bind being the type classifier''s invariant and not this relation''s; a partially bound container is therefore incomplete here and rejected there, which is the division of labour every rule relation in this family keeps. Two participants binding one table are two rows, the grain being the participant; a consumer that wants tables takes them through intent_field_scope_table, whose projection of this relation is distinct on the table for that reason. Nothing here says any argument or name at the coordinate is column-shaped: this relation answers where each branch is rooted, and what each branch filters on is the argument-site resolution''s answer, reached one table at a time through that projection. Read cost, measured on the sakila example schema at 917 fields and 267 arguments, 128 rows out, five interleaved sweeps with result reuse off, so every figure carries an execution count above one and a standard deviation. The shape that ships joins the membership directly onto the stripped type expression and costs 47 milliseconds. Projecting that expression into an inner derived table first and joining the membership on the column costs 27, a 42% saving that is measured, reproduced, and deliberately not taken; the paragraph after this one is why, and it is the more useful half of the measurement. Two controls decided the rest. Driving from the 52 membership rows rather than the 917 fields, which reads like the obvious win, measured 29 milliseconds with three times the spread, so the smaller driver bought nothing. And the shipped shape with both exclusions removed measured 42 against 47, so the two anti-joins are about a tenth of the cost and the expansion is the rest; both children price under a millisecond, the membership at 0.3 and the binding at 0.04, which is what says there is no expensive child to register underneath this. The faster shape is unshippable today and the reason is the instrument rather than the shape. The projection changes which plan H2 takes for this relation and for the two above it, and under that plan the registered read of intent_resolved_type_binding visits more rows than reading its source view would, for this relation, intent_field_scope_table and intent_argument_scope_table_live alike. DerivedReadCostTest asserts the opposite over every such pair, so the projection fails the verification build deterministically, on two full builds against one that passed before it. That is exactly the case the fact model warns of, a scan count ceasing to track cost when a change moves rows between a view and a table, and it is the gate encoding the metric its own doctrine says does not rank cost; taking the slower shape is the honest answer until somebody decides whether a wall-clock-justified scan inversion belongs in that gate, which is a discipline question one relation''s evidence should not settle. Read the sibling essay on intent_field_scope_table beside this, because the two look contradictory and are not: it was retired at the field grain once the far side of that join became a table, and there is nothing to re-evaluate per driving row when the far side is stored. intent_poly_member is a view, so the projection would pay here, and the condition is what generalises rather than either verdict. Not registered, and the reason is reader count rather than cost: one relation names this one, and one names that, so a registration here would pay one refresh to save one evaluation. The arm does raise intent_field_scope_table from 16 milliseconds to 59, which is the honest price of a question the store could not answer at all before, paid once per refresh of the argument scope it feeds. When the condition membership fold arrives as a second reader that trade changes and is worth re-measuring then. The population is stated structurally and not narrowed to where an emitter exists, on intent_node_id_encode''s terms: a child field whose named type is a multi-table container has the same fact as a root field with that type, whether or not the generator carries a per-participant filter surface there, and narrowing the rows to today''s emitter would make this relation track emitter maturity instead of the schema.';
-COMMENT ON COLUMN intent_field_participant_scope_table.graph_name IS 'the owning graph''s partition, carried from graphql_field';
-COMMENT ON COLUMN intent_field_participant_scope_table.type_name IS 'the type owning the field whose branches this row states; not the polymorphic container, which is the field''s named type';
-COMMENT ON COLUMN intent_field_participant_scope_table.field_name IS 'the field whose named type is the polymorphic container';
-COMMENT ON COLUMN intent_field_participant_scope_table.member_type_name IS 'the participant this row answers for: the union member or interface implementor whose table the branch is rooted in. Part of the grain, and what a consumer minting a per-participant unit name reads; the participant''s position within its container is intent_poly_member''s and is not restated here';
-COMMENT ON COLUMN intent_field_participant_scope_table.table_source_name IS 'the participant table''s catalog partition, the first column of the sql_table key this row names';
-COMMENT ON COLUMN intent_field_participant_scope_table.table_schema IS 'the participant table''s SQL schema';
-COMMENT ON COLUMN intent_field_participant_scope_table.table_name IS 'the participant table''s SQL name; with the two columns above this is sql_table''s full key, so the branch''s own columns are one join away';
-
-CREATE VIEW intent_field_scope_table
-  (graph_name, type_name, field_name, basis,
-   table_source_name, table_schema, table_name) AS
-SELECT graph_name, type_name, field_name, basis,
-       table_source_name, table_schema, table_name
-  FROM (SELECT arms.graph_name, arms.type_name, arms.field_name,
-               arms.basis, arms.table_source_name, arms.table_schema, arms.table_name,
-               DENSE_RANK() OVER (
-                 PARTITION BY arms.graph_name, arms.type_name, arms.field_name
-                 ORDER BY arms.precedence) AS rung
-          FROM (SELECT f.graph_name, f.type_name, f.field_name,
-                       'NAMED_TYPE_TABLE' AS basis, bt.table_source_name, bt.table_schema,
-                       bt.table_name, 0 AS precedence
-                  FROM graphql_field f
-                  LEFT JOIN graphitron_field_synthesis fs
-                    ON fs.graph_name = f.graph_name AND fs.type_name = f.type_name
-                   AND fs.field_name = f.field_name
-                  JOIN intent_resolved_type_binding bt
-                    ON bt.graph_name = f.graph_name
-                   AND bt.type_name = COALESCE(
-                         REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''),
-                                 '!', ''),
-                         f.named_type)
-                   AND bt.candidates = 1
-                UNION ALL
-                SELECT m.graph_name, m.type_name, m.field_name,
-                       'MUTATION_TABLE', sp.table_source_name, sp.table_schema,
-                       sp.table_name, 1
-                  FROM graphitron_mutation m
-                  JOIN intent_spelled_table sp
-                    ON sp.graph_name = m.graph_name AND sp.spelling = m.table_ref
-                   AND sp.candidates = 1) arms) picked
- WHERE rung = 1
- UNION ALL
-SELECT DISTINCT graph_name, type_name, field_name, 'PARTICIPANT_TABLE',
-       table_source_name, table_schema, table_name
-  FROM intent_field_participant_scope_table;
-COMMENT ON VIEW intent_field_scope_table IS 'Which table a field''s own generated SQL binds against: the table the field selects from, the table a predicate built at this coordinate correlates on, and the table a @nodeId or @reference path written here departs from. Stated at the field''s own grain rather than at an argument''s, which is the correction this relation is: the rule lived inside intent_argument_scope_table, keyed per argument, where nothing about it was ever an argument''s. The coordinate and the table together are the grain, one row where one table answers and one row per table where several do, which is not a widening for its own sake but what the polymorphic arm below states: a field returning a multi-table container is several statements, one per branch, and each is rooted in its own table. Two ranked rungs and one arm disjoint from both. The field''s named type''s own binding is the ordinary case, read through graphitron_field_synthesis so a connection field navigates as its element type rather than as its edge wrapper. Below it a @mutation(table:) spelling, which is what answers where the field returns a payload type nothing binds: a delete surface returns a scalar or a status type and its arguments still bind against the table the mutation names. The rungs are a precedence and not a union, because a mutation whose payload type is itself bound has both and the named type is the one the classifier reads; DENSE_RANK over the rungs rather than ROW_NUMBER, so a winning rung keeps every row it answered with and an ambiguity stays visible as rows instead of being resolved by window order. Both rungs demand an unambiguous binding, on intent_field_reference_discovery''s terms: a table this field''s content binds against is a table a predicate is emitted on, and two candidate tables are two different predicates, so a pair that is not certain is not the pair the classifier would have had in hand. Beside the two rungs and outside their window sits the participant arm, the distinct tables of intent_field_participant_scope_table under the basis PARTICIPANT_TABLE. It is unioned in rather than ranked as a third rung because it contends with neither: its own precondition is that the field''s named type binds no table at all, which is what the upper rung requires it to have, and it excludes the field carrying a resolving @mutation(table:) spelling, which is what the lower rung reads. Calling it a rung would state a precedence the site does not have. It is distinct on the table because the grain here is the table while that relation''s is the participant, so two participants of one field backed by one table are one statement''s root and one row; a consumer that needs to know which participant reads that relation directly, and one minting a per-participant unit name must, the generated condition method being named after the participant. A field whose named type binds nothing, whose named type is no polymorphic container over bound members, and which carries no @mutation therefore has no row here, and that absence is the ordinary case for every field that reads no table at all. The middle clause of that sentence is the one this relation once got wrong: the participant population was missing outright, so a multi-table polymorphic root read tables, plural, and had no row, and every reader below inherited a silence none of them owned. Nothing here says anything is column-shaped: this relation answers where a binding would land if there is one, and which arguments or names carry such content is each consumer''s own question. Not to be confused with intent_field_column_scope, whose name is close and whose question is not: that relation answers where a column name written at this site resolves, which for a leaf field is its own parent''s binding, where this relation answers where the field''s own statement is rooted. The two agree on an object-typed field and disagree on every scalar one, and they carry different guards for that reason. Two consumers read this. intent_argument_scope_table is this relation fanned out over the field''s arguments and adds nothing else, which is what makes the fan-out its whole content rather than a rule of its own. And the condition membership fold reads it at this grain, which is why the grain had to be corrected before that fold could exist: a @condition on a field with no arguments has a table to filter and no argument to carry it, and a @condition on a multi-table polymorphic root has one table to filter per branch and one generated method per branch to carry it. The upper rung joins the binding straight onto the stripped type expression, which is the shape the argument-grain spelling this rule came from carried an essay against, and the essay is kept here in corrected form because it was true when it was written and is not now. What that rung resolves against is a written expression and not a column, the author''s own type spelling with its wrappers stripped where a macro rewrote the field''s type, and joining a relation that is itself derived onto an expression is what makes H2 evaluate that relation once per driving row; projecting the expression into an inner derived table first and joining on that column was measured to be worth two orders of magnitude. What removed the hazard was not a rewrite here but the registration of intent_resolved_type_binding: once the relation on the other side of that join is a table rather than a windowed view, there is nothing to re-evaluate and the expression join is an ordinary scan. Re-measured on the sakila example schema, 918 fields and 268 arguments, both shapes returning the same 236 rows: this shape costs 13 milliseconds and the inner-derived-table shape 33, and at the argument grain the same pair is 7 against 27, so the shape the old comment steered away from is now the fastest one at either grain. The scan counts say the opposite and are the reason they are quoted rather than trusted: this shape visits 62264 rows and the derived-table shape 3014, so the cheap shape here is the one visiting twenty times the rows. A scan count is a row count. Narrowing the driving fields to those whose named type is neither SCALAR nor ENUM was measured too and is the worst of the three at 65 milliseconds for 4363 rows visited, which is the same lesson a third time: pruning the driver made the plan worse.';
-COMMENT ON COLUMN intent_field_scope_table.graph_name IS 'the owning graph''s partition, carried from graphql_field on the upper rung and the participant arm and from graphitron_mutation on the lower rung';
-COMMENT ON COLUMN intent_field_scope_table.type_name IS 'the type owning the field';
-COMMENT ON COLUMN intent_field_scope_table.field_name IS 'the field whose scope this row states; with the two columns above and the table below, the grain';
-COMMENT ON COLUMN intent_field_scope_table.basis IS 'which rule answered, in a closed vocabulary of three: NAMED_TYPE_TABLE from the field''s named type''s own binding, MUTATION_TABLE from the @mutation(table:) spelling where no named type binds, PARTICIPANT_TABLE from one branch of a named type that is a polymorphic container binding no table of its own. The first two are ranked rungs and the third is disjoint from both; which of them a row carries is therefore not only provenance but the fork a consumer takes, PARTICIPANT_TABLE being exactly where the coordinate is several statements rather than one. What lets a test pin which rule fired rather than only that a table came out; a reader wanting one of them filters on it and owns having chosen';
-COMMENT ON COLUMN intent_field_scope_table.table_source_name IS 'the scope table''s catalog partition, the first column of the sql_table key this row names';
-COMMENT ON COLUMN intent_field_scope_table.table_schema IS 'the scope table''s SQL schema';
-COMMENT ON COLUMN intent_field_scope_table.table_name IS 'the scope table''s SQL name; with the two columns above this is sql_table''s full key, so the table''s own columns and constraints are one join away';
-
-CREATE VIEW intent_argument_scope_table_live
-  (graph_name, type_name, field_name, argument_name, basis,
-   table_source_name, table_schema, table_name) AS
-SELECT a.graph_name, a.type_name, a.field_name, a.argument_name, ft.basis,
-       ft.table_source_name, ft.table_schema, ft.table_name
-  FROM graphql_argument a
-  JOIN intent_field_scope_table ft
-    ON ft.graph_name = a.graph_name AND ft.type_name = a.type_name
-   AND ft.field_name = a.field_name;
-COMMENT ON VIEW intent_argument_scope_table_live IS 'This states the rule and is evaluated on demand. The canonical name intent_argument_scope_table beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_argument_scope_table.';
-COMMENT ON COLUMN intent_argument_scope_table_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_argument_scope_table.graph_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_scope_table_live.type_name IS 'the type_name of a row of this rule, materialized into intent_argument_scope_table.type_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_scope_table_live.field_name IS 'the field_name of a row of this rule, materialized into intent_argument_scope_table.field_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_scope_table_live.argument_name IS 'the argument_name of a row of this rule, materialized into intent_argument_scope_table.argument_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_scope_table_live.basis IS 'the basis of a row of this rule, materialized into intent_argument_scope_table.basis, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_scope_table_live.table_source_name IS 'the table_source_name of a row of this rule, materialized into intent_argument_scope_table.table_source_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_scope_table_live.table_schema IS 'the table_schema of a row of this rule, materialized into intent_argument_scope_table.table_schema, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_scope_table_live.table_name IS 'the table_name of a row of this rule, materialized into intent_argument_scope_table.table_name, whose comment carries what the value means';
-
-CREATE TABLE intent_argument_scope_table (
-  graph_name        VARCHAR,
-  type_name         VARCHAR,
-  field_name        VARCHAR,
-  argument_name     VARCHAR,
-  basis             VARCHAR,
-  table_source_name VARCHAR,
-  table_schema      VARCHAR,
-  table_name        VARCHAR,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-COMMENT ON TABLE intent_argument_scope_table IS 'Which table an argument''s column-shaped content binds against: the table a predicate built from this argument correlates on, and the table a @nodeId or @reference path departs from. The field''s scope fanned out over the field''s arguments and nothing else: the rule is intent_field_scope_table''s, which is where the two ranked rungs, the disjoint participant arm and every demand any of them makes are documented, and this relation adds only the argument key. The argument and the table together are the grain, because the relation it fans out is keyed that way: a field whose named type is a multi-table polymorphic container is rooted in one table per branch, so each of its arguments binds against each of those tables and each pair is a predicate the generator emits. One row per argument is therefore the ordinary case and not the rule, and a reader that assumed it would silently take one branch of a coordinate that has several. It exists as its own relation because that key is what four readers join on and because a predicate is emitted per argument, so the fan-out is the shape every consumer here wants; it does not exist because an argument''s scope is a different question from its field''s. It was once spelled the other way round, the whole rule stated here and evaluated once per argument, and the fold over the condition membership is what found that: a @condition on a field with no arguments has a table to filter and no argument to carry it, so the rule had to be stated at the grain it was always about before anything could read it there. Nothing here says the argument''s content is column-shaped: this relation answers where it would bind if it is, and which arguments carry such content is each consumer''s own question. Materialized: this relation is a table refilled from intent_argument_scope_table_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in intent_field_scope_table; these rows are the fan-out of what it computed for each captured graph.';
-COMMENT ON COLUMN intent_argument_scope_table.graph_name IS 'the owning graph''s partition, carried from graphql_argument, which is the relation the fan-out drives from';
-COMMENT ON COLUMN intent_argument_scope_table.type_name IS 'the type owning the field the argument sits on';
-COMMENT ON COLUMN intent_argument_scope_table.field_name IS 'the field the argument sits on';
-COMMENT ON COLUMN intent_argument_scope_table.argument_name IS 'the argument whose scope this row states; part of the grain with the table below, so two arguments of one field each get their own row and neither reader has to know they agree, and one argument of a multi-table polymorphic root gets one row per branch it binds against';
-COMMENT ON COLUMN intent_argument_scope_table.basis IS 'which rule answered, carried unchanged from intent_field_scope_table, whose comment says what the three values mean. Every argument of one field carries the same value, and every branch of one argument does too, the rule being the field''s and not the argument''s or the branch''s; a reader wanting one of them filters on it and owns having chosen';
-COMMENT ON COLUMN intent_argument_scope_table.table_source_name IS 'the scope table''s catalog partition, the first column of the sql_table key this row names';
-COMMENT ON COLUMN intent_argument_scope_table.table_schema IS 'the scope table''s SQL schema';
-COMMENT ON COLUMN intent_argument_scope_table.table_name IS 'the scope table''s SQL name; with the two columns above this is sql_table''s full key, so the table''s own columns and constraints are one join away';
-
-CREATE INDEX ix_argument_scope_table_coordinate ON intent_argument_scope_table
-  (graph_name, type_name, field_name, argument_name);
-COMMENT ON INDEX ix_argument_scope_table_coordinate IS 'Serves the argument coordinate its three readers all join on: intent_node_id_instruction in three arms, intent_node_id_decode_endpoint, and intent_argument_reference_step_target, which adds the resolved table''s own three columns after these four. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the five indexes this file declares against none of them: intent_node_id_decode_endpoint costs 5439 scans without them and 3120 with them, intent_node_id_decode_hop 5824 against 3293, intent_argument_reference_step_target 114 against 8. The last of those three is this index alone and the first two are shared with the spelling index above, both readers reaching a spelling as well as an argument coordinate. Not UNIQUE and not the grain: basis discriminates two rows this key cannot tell apart, an argument whose scope is its own field''s binding and one whose scope a reference path fixed.';
-
 CREATE VIEW intent_resolved_node_key_column
   (graph_name, type_name, position, column_name, tier) AS
 SELECT graph_name, type_name, position, column_name, tier
@@ -4327,70 +4202,6 @@ COMMENT ON COLUMN intent_field_reference_step_target.fk_on_from IS 'TRUE when th
 COMMENT ON COLUMN intent_field_reference_step_target.targets IS 'how many distinct tables this element reaches, this row''s arrival being one of them; 1 where the destination is certain. Separate from candidates because the two arities answer different questions and genuinely differ: a table element with three foreign keys connecting the two tables reaches one table by three routes, so a reader that only needs the destination can trust it while a reader that has to render the join cannot';
 COMMENT ON COLUMN intent_field_reference_step_target.candidates IS 'how many rows this element resolved to, counting routes and not just destinations; 1 is the walk''s requirement for an expressible hop, and a larger number is what its own "which foreign key did you mean" rejection counts';
 
-CREATE VIEW intent_argument_reference_step_target
-  (graph_name, type_name, field_name, argument_name, ordinal, position, via, key_matched_by,
-   from_source_name, from_schema, from_table,
-   to_source_name, to_schema, to_table, constraint_name, fk_on_from,
-   targets, candidates) AS
-WITH RECURSIVE chain (graph_name, type_name, field_name, argument_name, ordinal, position,
-   via, key_matched_by, from_source_name, from_schema, from_table,
-   to_source_name, to_schema, to_table, constraint_name, fk_on_from) AS (
-  SELECT h.graph_name, h.type_name, h.field_name, h.argument_name, h.ordinal, h.position,
-         h.via, h.key_matched_by, h.from_source_name, h.from_schema, h.from_table,
-         h.to_source_name, h.to_schema, h.to_table, h.constraint_name, h.fk_on_from
-    FROM intent_argument_reference_step_hop h
-    JOIN intent_argument_scope_table sc
-      ON sc.graph_name = h.graph_name AND sc.type_name = h.type_name
-     AND sc.field_name = h.field_name AND sc.argument_name = h.argument_name
-     AND sc.table_source_name = h.from_source_name AND sc.table_schema = h.from_schema
-     AND sc.table_name = h.from_table
-   WHERE h.position = 0
-  UNION
-  SELECT h.graph_name, h.type_name, h.field_name, h.argument_name, h.ordinal, h.position,
-         h.via, h.key_matched_by, h.from_source_name, h.from_schema, h.from_table,
-         h.to_source_name, h.to_schema, h.to_table, h.constraint_name, h.fk_on_from
-    FROM chain p
-    JOIN intent_argument_reference_step_hop h
-      ON h.graph_name = p.graph_name AND h.type_name = p.type_name
-     AND h.field_name = p.field_name AND h.argument_name = p.argument_name
-     AND h.ordinal = p.ordinal AND h.position = p.position + 1
-     AND h.from_source_name = p.to_source_name AND h.from_schema = p.to_schema
-     AND h.from_table = p.to_table
-)
-SELECT graph_name, type_name, field_name, argument_name, ordinal, position, via, key_matched_by,
-       from_source_name, from_schema, from_table,
-       to_source_name, to_schema, to_table, constraint_name, fk_on_from,
-       CAST(MAX(target_rank) OVER (
-         PARTITION BY graph_name, type_name, field_name, argument_name,
-                      ordinal, position) AS INT),
-       CAST(COUNT(*) OVER (
-         PARTITION BY graph_name, type_name, field_name, argument_name,
-                      ordinal, position) AS INT)
-  FROM (SELECT c.*, DENSE_RANK() OVER (
-                 PARTITION BY c.graph_name, c.type_name, c.field_name, c.argument_name,
-                              c.ordinal, c.position
-                 ORDER BY c.to_source_name, c.to_schema, c.to_table) AS target_rank
-          FROM chain c) ranked;
-COMMENT ON VIEW intent_argument_reference_step_target IS 'Where each element of an argument-site @reference path actually lands: intent_argument_reference_step_hop walked one element at a time, so a row exists only for an element the chain can be shown to reach. The field-site sibling''s comment argues the walk, and everything it says about recursion, about absence meaning "not reached" rather than "resolves to nothing in particular", and about an element naming neither key nor table not being a hop this view knows, holds here unchanged. One thing does not, and it is the whole reason this view is not that one with a column added: the departure. A field-site path departs from the enclosing type''s own binding, because the field is a projection off that type''s row. An argument-site path departs from the table the argument''s own content binds against, because an argument filters what the field returns rather than what its parent is; the resolver states the same thing by passing the field''s target table as the path''s source. So a filter argument on a root field, whose parent type is bound to nothing at all, has a departure here where the field-site rule would give it none, and reading one view for both sites would have made that departure a case rather than the rule. That departure is intent_argument_scope_table''s whole subject and is read from it rather than restated: the field''s named type''s binding read through graphitron_field_synthesis so a connection-returning field departs its element type''s table and not the wrapper''s, and below it the @mutation(table:) spelling, which is what gives a delete surface''s argument a departure at all where its return type binds nothing. Reading the relation rather than spelling the upper rung inline is also what stops the two spellings of one rule from drifting, the rule having a second reader now. It costs one demand the earlier spelling did not make, and the demand is the scope relation''s and correct: a departure is a table a predicate is emitted on, so an ambiguously bound named type is no departure rather than two, which is intent_field_reference_discovery''s stance on the same question. The field-site sibling still admits the ambiguity, its departure being the enclosing type''s binding read directly and its arities counting what that reached. It gains one shape from the same relation and does not yet answer it fully, which is stated here rather than left to be discovered: an argument on a field returning a multi-table polymorphic container departs from one table per branch, so such a path is walked once per branch and each walk lands wherever that branch''s own keys reach. The rows come out; the two arity columns do not follow. They are counted per element and position and not per departure, so two branches walking the same element at the same position fall in one partition and their candidate counts are conflated, which would read as an ambiguity at a step that is unambiguous on each branch taken alone. Putting the departure in that partition is what would close it, and it is not done here because it would also split the candidate set at an ambiguous mid-chain landing, which is a change to what the arity means on a shape the tree does exercise. No graph in the tree writes an argument-site path at such a coordinate, so this is an unexercised limit rather than a wrong answer anybody reads, and it is the first thing to fix for whoever needs one.';
-COMMENT ON COLUMN intent_argument_reference_step_target.graph_name IS 'the owning graph''s partition, carried from the hop view';
-COMMENT ON COLUMN intent_argument_reference_step_target.type_name IS 'the type owning the field the argument sits on. Not the type whose binding started the chain, which is the field''s named type: the difference from the field-site sibling, where the two are one';
-COMMENT ON COLUMN intent_argument_reference_step_target.field_name IS 'the field owning the argument the @reference is applied to; also the field whose named type''s binding started the chain';
-COMMENT ON COLUMN intent_argument_reference_step_target.argument_name IS 'the argument the @reference is applied to';
-COMMENT ON COLUMN intent_argument_reference_step_target.ordinal IS 'the owning @reference application''s ordinal, as on the hop view';
-COMMENT ON COLUMN intent_argument_reference_step_target.position IS 'the element''s 0-based position within its application''s path; positions are contiguous from 0 up to wherever the chain stopped';
-COMMENT ON COLUMN intent_argument_reference_step_target.via IS 'which arm resolved the element, as on the hop view: KEY, TABLE or NAME_MATCH';
-COMMENT ON COLUMN intent_argument_reference_step_target.key_matched_by IS 'for a KEY element, the namespace that answered; NULL on a TABLE or NAME_MATCH element. As on the hop view';
-COMMENT ON COLUMN intent_argument_reference_step_target.from_source_name IS 'the departing table''s catalog partition; the argument''s own scope table at position 0, the previous element''s arrival after that';
-COMMENT ON COLUMN intent_argument_reference_step_target.from_schema IS 'the departing table''s SQL schema';
-COMMENT ON COLUMN intent_argument_reference_step_target.from_table IS 'the departing table''s SQL name';
-COMMENT ON COLUMN intent_argument_reference_step_target.to_source_name IS 'the arriving table''s catalog partition, first column of its sql_table key';
-COMMENT ON COLUMN intent_argument_reference_step_target.to_schema IS 'the arriving table''s SQL schema';
-COMMENT ON COLUMN intent_argument_reference_step_target.to_table IS 'the arriving table''s SQL name. At the path''s last position this is the table the argument''s own column name resolves against, which is where a filter predicate binds';
-COMMENT ON COLUMN intent_argument_reference_step_target.constraint_name IS 'the foreign key this element joins on, named or discovered; NULL on a NAME_MATCH element, as on the hop view';
-COMMENT ON COLUMN intent_argument_reference_step_target.fk_on_from IS 'TRUE when the departing table declares the foreign key; the element''s direction. NULL on a NAME_MATCH element, as on the hop view';
-COMMENT ON COLUMN intent_argument_reference_step_target.targets IS 'how many distinct tables this element reaches, this row''s arrival being one of them; 1 where the destination is certain. Separate from candidates for the reason the field-site sibling states: an element with three foreign keys connecting the same pair of tables reaches one table by three routes, and a reader that only needs the destination can trust that where one that has to render the join cannot';
-COMMENT ON COLUMN intent_argument_reference_step_target.candidates IS 'how many rows this element resolved to, counting routes and not just destinations; 1 is the requirement for an expressible hop';
-
 CREATE TABLE intent_field_column_scope (
   graph_name        VARCHAR NOT NULL,
   type_name         VARCHAR NOT NULL,
@@ -4538,158 +4349,6 @@ COMMENT ON COLUMN intent_column_match_claim.column_name IS 'witness: the matched
 COMMENT ON COLUMN intent_column_match_claim.source_name IS 'the claimed field''s own declaration file; the position a diagnostic would carry';
 COMMENT ON COLUMN intent_column_match_claim.source_line IS 'source line of the field declaration, 1-based';
 COMMENT ON COLUMN intent_column_match_claim.source_column IS 'source column of the field declaration, 1-based';
-
-CREATE TABLE intent_argument_column_scope (
-  graph_name        VARCHAR NOT NULL,
-  type_name         VARCHAR NOT NULL,
-  field_name        VARCHAR NOT NULL,
-  argument_name     VARCHAR NOT NULL,
-  basis             VARCHAR NOT NULL,
-  table_source_name VARCHAR NOT NULL,
-  table_schema      VARCHAR NOT NULL,
-  table_name        VARCHAR NOT NULL,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-
-CREATE VIEW intent_argument_column_scope_live
-  (graph_name, type_name, field_name, argument_name, basis,
-   table_source_name, table_schema, table_name) AS
-SELECT DISTINCT tg.graph_name, tg.type_name, tg.field_name, tg.argument_name,
-       'PATH_TERMINAL',
-       tg.to_source_name, tg.to_schema, tg.to_table
-  FROM intent_argument_reference_step_target tg
-  JOIN (SELECT graph_name, type_name, field_name, argument_name, COUNT(*) AS applications
-          FROM graphitron_argument_reference
-         GROUP BY graph_name, type_name, field_name, argument_name) only_application
-    ON only_application.graph_name = tg.graph_name
-   AND only_application.type_name = tg.type_name
-   AND only_application.field_name = tg.field_name
-   AND only_application.argument_name = tg.argument_name
-   AND only_application.applications = 1
-  JOIN (SELECT graph_name, type_name, field_name, argument_name, ordinal,
-               MAX(position) AS position
-          FROM graphitron_argument_reference_step
-         GROUP BY graph_name, type_name, field_name, argument_name, ordinal) last_element
-    ON last_element.graph_name = tg.graph_name
-   AND last_element.type_name = tg.type_name
-   AND last_element.field_name = tg.field_name
-   AND last_element.argument_name = tg.argument_name
-   AND last_element.ordinal = tg.ordinal
-   AND last_element.position = tg.position
- WHERE tg.targets = 1
-UNION ALL
-SELECT sc.graph_name, sc.type_name, sc.field_name, sc.argument_name,
-       'ARGUMENT_SCOPE',
-       sc.table_source_name, sc.table_schema, sc.table_name
-  FROM intent_argument_scope_table sc
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_argument_reference_step s
-                    WHERE s.graph_name = sc.graph_name
-                      AND s.type_name = sc.type_name
-                      AND s.field_name = sc.field_name
-                      AND s.argument_name = sc.argument_name);
-COMMENT ON TABLE intent_argument_column_scope IS 'Which table the column name written at an argument''s site resolves against: the argument''s own navigation, answered at every site where such a name resolves at all. The argument-site twin of intent_field_column_scope, and a second relation for the reason intent_argument_reference_step_target is one rather than that view with a column added: the departure differs. A field''s names resolve in the navigation off its own parent''s row, an argument''s in the navigation off the table its content binds against, which intent_argument_scope_table answers and which the argument of a root field has where the field-site rule would give it none. Two rules, disjoint rather than ranked, so this relation is a plain union with no windowed collapse over it and carries the one-row-per-site property its twin stands on. What counts as the site is the argument together with the table its content binds against, on intent_input_field_column_scope''s terms: a departure that is not a function of the coordinate puts the departing table in the key, and at a multi-table polymorphic root the argument''s scope is one table per branch rather than one table. So one row per argument is what a monomorphic coordinate has and not what the relation guarantees, and the property being kept is that no site resolves twice, not that no argument does. An authored @reference path resolves to its terminal element''s table, demanding the terminal reach exactly one table rather than exactly one row, so an element joining two tables by three keys still names its destination; an element that resolved to several rows all reaching one table is one row here, the arm taking DISTINCT over a projection that keeps only the table. An argument with no path element resolves in its own scope table, read from intent_argument_scope_table rather than restated, so the two spellings of that precedence cannot drift and the demands it makes hold here unchanged. One thing this relation does not inherit from its twin, and the difference belongs to the site rather than being a choice made here: repetition. A repeated @reference on a field composes an ordered chain and the field-site rule takes the first application. Repeated on an argument it is a conflict the resolver rejects outright, order composition having no meaning on an argument, so there is no first application to prefer and a site carrying two has no row here at all. The count is over the applications and not over their elements, so an author writing an empty one beside a real one is a conflict here too, which is the resolver''s own reading of that pair. Declining says "no answer", which is what a site the validator must reject deserves, where preferring one would encode a precedence the site does not have. An element-less @reference(path: []) is legal SDL and inert, and this relation reads it as the resolver does: the anti-join is on the path''s elements and never on the directive''s presence, so such a site takes the scope rule and resolves against the argument''s own table, which is the bare predicate a directive-less argument would have produced. Nothing here says the argument''s content is column-shaped, which is intent_argument_scope_table''s stance and holds one rung up: this relation answers where a name would resolve if one is written, and which arguments write one is each consumer''s own question. Two consumers ask different halves of that. intent_argument_column_match asks which column the name reaches; a predicate binding asks whether the resolved table is the one the field already selects from or somewhere a join away, which is basis read directly. Deriving the navigation once is what stops those two disagreeing at a path reaching two tables, where a presence test over the captured elements says "moved" and the resolution says "nowhere". Materialized: this relation is a table refilled from intent_argument_column_scope_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
-COMMENT ON COLUMN intent_argument_column_scope.graph_name IS 'the owning graph''s partition, carried from both rules'' base relations';
-COMMENT ON COLUMN intent_argument_column_scope.type_name IS 'the type owning the field the argument sits on. Not the type whose binding started the navigation, which is the field''s named type: the difference from the field-site twin, where the two are one';
-COMMENT ON COLUMN intent_argument_column_scope.field_name IS 'the field the argument sits on';
-COMMENT ON COLUMN intent_argument_column_scope.argument_name IS 'the argument whose site this row resolves; part of the grain with the resolved table below, so two arguments of one field each get their own row and neither reader has to know they agree, and one argument resolving against a branch each of a multi-table polymorphic root gets one row per branch';
-COMMENT ON COLUMN intent_argument_column_scope.basis IS 'which rule resolved this site, in a closed vocabulary of two disjoint rules: PATH_TERMINAL (an authored argument-site @reference path''s terminal element), ARGUMENT_SCOPE (the argument''s own scope table, no path element written). Also the fork a predicate binding takes, PATH_TERMINAL being exactly the case where the resolved table is not the one the field already selects from. Which rule answered underneath ARGUMENT_SCOPE is intent_argument_scope_table''s own basis and is deliberately not restated here, a reader wanting it joining the relation that states it; PARTICIPANT_TABLE there is what makes one argument resolve on several tables under this basis';
-COMMENT ON COLUMN intent_argument_column_scope.table_source_name IS 'the resolved table''s catalog partition, the first column of the sql_table key this row names';
-COMMENT ON COLUMN intent_argument_column_scope.table_schema IS 'the resolved table''s SQL schema';
-COMMENT ON COLUMN intent_argument_column_scope.table_name IS 'the resolved table''s SQL name. With the two columns above this is sql_table''s full key, so the table''s columns are one join away';
-COMMENT ON VIEW intent_argument_column_scope_live IS 'This states the rule and is evaluated on demand. The canonical name intent_argument_column_scope beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_argument_column_scope.';
-COMMENT ON COLUMN intent_argument_column_scope_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_argument_column_scope.graph_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_scope_live.type_name IS 'the type_name of a row of this rule, materialized into intent_argument_column_scope.type_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_scope_live.field_name IS 'the field_name of a row of this rule, materialized into intent_argument_column_scope.field_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_scope_live.argument_name IS 'the argument_name of a row of this rule, materialized into intent_argument_column_scope.argument_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_scope_live.basis IS 'the basis of a row of this rule, materialized into intent_argument_column_scope.basis, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_scope_live.table_source_name IS 'the table_source_name of a row of this rule, materialized into intent_argument_column_scope.table_source_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_scope_live.table_schema IS 'the table_schema of a row of this rule, materialized into intent_argument_column_scope.table_schema, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_scope_live.table_name IS 'the table_name of a row of this rule, materialized into intent_argument_column_scope.table_name, whose comment carries what the value means';
-
-CREATE TABLE intent_argument_column_match (
-  graph_name        VARCHAR NOT NULL,
-  type_name         VARCHAR NOT NULL,
-  field_name        VARCHAR NOT NULL,
-  argument_name     VARCHAR NOT NULL,
-  matched_name      VARCHAR NOT NULL,
-  matched_by        VARCHAR NOT NULL,
-  table_source_name VARCHAR NOT NULL,
-  table_schema      VARCHAR NOT NULL,
-  table_name        VARCHAR NOT NULL,
-  column_name       VARCHAR NOT NULL,
-  source_name       VARCHAR,
-  source_line       INT,
-  source_column     INT,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-
-CREATE VIEW intent_argument_column_match_live
-  (graph_name, type_name, field_name, argument_name, matched_name, matched_by,
-   table_source_name, table_schema, table_name, column_name,
-   source_name, source_line, source_column) AS
-SELECT graph_name, type_name, field_name, argument_name, matched_name, matched_by,
-       table_source_name, table_schema, table_name, column_name,
-       source_name, source_line, source_column
-  FROM (SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
-               COALESCE(ab.name_ref, a.argument_name) AS matched_name,
-               CASE WHEN c.jooq_name_upper
-                         = COALESCE(ab.name_ref_upper, a.argument_name_upper)
-                    THEN 'JOOQ_NAME' ELSE 'SQL_NAME' END AS matched_by,
-               sc.table_source_name, sc.table_schema, sc.table_name,
-               c.column_name,
-               a.source_name, a.source_line, a.source_column,
-               ROW_NUMBER() OVER (
-                 PARTITION BY a.graph_name, a.type_name, a.field_name, a.argument_name,
-                              sc.table_source_name, sc.table_schema, sc.table_name
-                 ORDER BY CASE WHEN c.jooq_name_upper
-                                    = COALESCE(ab.name_ref_upper, a.argument_name_upper)
-                               THEN 0 ELSE 1 END, c.ordinal) AS rn
-          FROM intent_argument_column_scope sc
-          JOIN graphql_argument a
-            ON a.graph_name = sc.graph_name AND a.type_name = sc.type_name
-           AND a.field_name = sc.field_name AND a.argument_name = sc.argument_name
-          JOIN graphql_type leaf
-            ON leaf.graph_name = a.graph_name AND leaf.type_name = a.named_type
-           AND leaf.kind IN ('SCALAR', 'ENUM')
-          LEFT JOIN graphitron_argument_binding ab
-            ON ab.graph_name = a.graph_name AND ab.type_name = a.type_name
-           AND ab.field_name = a.field_name AND ab.argument_name = a.argument_name
-          JOIN sql_column c
-            ON c.source_name = sc.table_source_name AND c.table_schema = sc.table_schema
-           AND c.table_name = sc.table_name
-           AND (c.jooq_name_upper = COALESCE(ab.name_ref_upper, a.argument_name_upper)
-                OR c.column_name_upper
-                   = COALESCE(ab.name_ref_upper, a.argument_name_upper))) matched
- WHERE rn = 1;
-COMMENT ON VIEW intent_argument_column_match_live IS 'This states the rule and is evaluated on demand. The canonical name intent_argument_column_match beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_argument_column_match.';
-COMMENT ON COLUMN intent_argument_column_match_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_argument_column_match.graph_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_match_live.type_name IS 'the type_name of a row of this rule, materialized into intent_argument_column_match.type_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_match_live.field_name IS 'the field_name of a row of this rule, materialized into intent_argument_column_match.field_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_match_live.argument_name IS 'the argument_name of a row of this rule, materialized into intent_argument_column_match.argument_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_match_live.matched_name IS 'the matched_name of a row of this rule, materialized into intent_argument_column_match.matched_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_match_live.matched_by IS 'the matched_by of a row of this rule, materialized into intent_argument_column_match.matched_by, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_match_live.table_source_name IS 'the table_source_name of a row of this rule, materialized into intent_argument_column_match.table_source_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_match_live.table_schema IS 'the table_schema of a row of this rule, materialized into intent_argument_column_match.table_schema, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_match_live.table_name IS 'the table_name of a row of this rule, materialized into intent_argument_column_match.table_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_match_live.column_name IS 'the column_name of a row of this rule, materialized into intent_argument_column_match.column_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_match_live.source_name IS 'the source_name of a row of this rule, materialized into intent_argument_column_match.source_name, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_match_live.source_line IS 'the source_line of a row of this rule, materialized into intent_argument_column_match.source_line, whose comment carries what the value means';
-COMMENT ON COLUMN intent_argument_column_match_live.source_column IS 'the source_column of a row of this rule, materialized into intent_argument_column_match.source_column, whose comment carries what the value means';
-COMMENT ON TABLE intent_argument_column_match IS 'Which column an argument''s own name resolves to on the table its site navigates to: the column a filter predicate built from that argument compares against. The argument-site counterpart of intent_column_match_claim, and deliberately not a claim. A claim view states a classification some coordinate is claimed by and unions with its siblings at the classifier grain, and no classifier vocabulary reaches an argument; what an argument gets from a resolved column is a predicate and not a kind, so these rows carry no classifier column and nothing reduces them. Everything else is the twin''s reading transcribed to this site. The argument''s named type has kind SCALAR or ENUM, which is the resolver''s own gate rather than an addition: an input-object argument expands into input fields that resolve at their own sites, so a name match against the argument itself would be a row no consumer asked for. The site resolves against exactly one table, the site being the argument together with that table, which is intent_argument_column_scope''s resolution and its grain; so every decline that relation makes is a silence here and this view adds none of its own. At a multi-table polymorphic root that means one row per branch on which the name reaches a column, and the per-branch divergence is where this relation earns the widened grain: a name reaching a column on one participant''s table and none on another''s is the classifier''s own per-participant rejection, which the walk states by lowering each branch and failing on the one that will not resolve, and which is here the difference between the branches intent_field_scope_table names for the coordinate and the ones this relation answers for. A detection over that pair rather than a column on either. The effective name is the @field(name:) binding where one was written, else the argument name, which is the resolver''s COALESCE, and the arm needs no undecoded-presence fallback for the reason the field-site view needs none: a declined decode leaves the COALESCE on the argument name, which is the fallback anyway. The match is two-tier, the generated Java name before the SQL name, both case-insensitive, collapsed to the first match in tier-then-ordinal order on the resolved table. On the table and not on the argument, and the difference is the whole content of this relation''s grain: what the collapse is for is two columns of one table answering one name, so partitioning it by the argument alone picks one branch of a multi-table polymorphic root and drops the rest. It did exactly that until the participant fan-out reached the scope below, which is the lesson a widened grain carries to every window over it. The scope drives the join and that is load-bearing rather than stylistic, on the measurement intent_column_match_claim''s comment carries: H2 re-evaluates a joined derived relation once per outer row, so reading the scope from underneath graphql_argument would cost the whole relation once per candidate argument, and every argument in the graph is a candidate. Absence is where a written name reaches no column on the resolved table, which is the resolver''s own unbound-argument rejection, and it is equally the ordinary answer for an argument whose content is not column-shaped at all. Nothing here tells those two apart, and what would is a defect relation over this one rather than a column on it. Materialized: this relation is a table refilled from intent_argument_column_match_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
-
-COMMENT ON COLUMN intent_argument_column_match.graph_name IS 'the owning graph''s partition, carried from graphql_argument';
-COMMENT ON COLUMN intent_argument_column_match.type_name IS 'the type owning the field the resolved argument sits on';
-COMMENT ON COLUMN intent_argument_column_match.field_name IS 'the field the resolved argument sits on';
-COMMENT ON COLUMN intent_argument_column_match.argument_name IS 'the resolved argument''s name within the owning field; part of the grain with the resolved table, the scope this reads keying the site that way';
-COMMENT ON COLUMN intent_argument_column_match.matched_name IS 'the effective name this resolved: the @field(name:) binding where one decoded, else the argument name. What the author wrote, so a diagnostic naming the unresolved spelling reads it here rather than deciding which of the two applied';
-COMMENT ON COLUMN intent_argument_column_match.matched_by IS 'which tier matched: JOOQ_NAME (the generated Java field name) or SQL_NAME. Makes the two-tier precedence observable rather than only its outcome';
-COMMENT ON COLUMN intent_argument_column_match.table_source_name IS 'witness: the resolved table''s catalog partition, the first column of the sql_column key this row names';
-COMMENT ON COLUMN intent_argument_column_match.table_schema IS 'witness: the resolved table''s SQL schema';
-COMMENT ON COLUMN intent_argument_column_match.table_name IS 'witness: the resolved table''s SQL name. Which navigation reached it is intent_argument_column_scope''s basis, and a consumer emitting the predicate needs both';
-COMMENT ON COLUMN intent_argument_column_match.column_name IS 'witness: the matched column''s SQL name. With the three columns above this is sql_column''s full key, so the column''s type and nullability are one join away';
-COMMENT ON COLUMN intent_argument_column_match.source_name IS 'the argument''s own declaration file; the position a diagnostic would carry';
-COMMENT ON COLUMN intent_argument_column_match.source_line IS 'source line of the argument declaration, 1-based';
-COMMENT ON COLUMN intent_argument_column_match.source_column IS 'source column of the argument declaration, 1-based';
 
 CREATE VIEW intent_facet_binding
   (graph_name, type_name, field_name, ordinal, column_name, value_type_name, value_nullable,
@@ -5551,6 +5210,366 @@ COMMENT ON COLUMN intent_carrier_data_field.field_name IS 'the data channel''s f
 COMMENT ON COLUMN intent_carrier_data_field.family IS 'which producing directive returns the payload, a closed three-value domain: SERVICE (@service), DML (@mutation), ROUTINE (@routine). Provenance and policy both, the two rejections that differ between families being this column''s; a payload two families return is a row per family, and a reader that means one of them filters on it';
 COMMENT ON COLUMN intent_carrier_data_field.element_kind IS 'what the channel''s element is, a closed three-value domain: TABLE (the named type is bound to one catalog table), RECORD (the backing closure reaches a class for it), ID (the ID scalar, the encoded-key echo). Never NULL here, an unrecognized element having dropped its whole payload';
 COMMENT ON COLUMN intent_carrier_data_field.data_fields IS 'how many data channels the payload declares, this row being one of them; 1 is what a carrier requires, and a larger number is what the generator''s own "require exactly one" rejection counts. Stated as a column rather than left to each reader''s count, because whether the payload is a carrier at all decides the reading and a reader that counted for itself would be re-deriving the scan''s arity';
+
+CREATE VIEW intent_field_participant_scope_table
+  (graph_name, type_name, field_name, member_type_name,
+   table_source_name, table_schema, table_name) AS
+SELECT f.graph_name, f.type_name, f.field_name, m.member_type_name,
+       bt.table_source_name, bt.table_schema, bt.table_name
+  FROM graphql_field f
+  LEFT JOIN graphitron_field_synthesis fs
+    ON fs.graph_name = f.graph_name AND fs.type_name = f.type_name
+   AND fs.field_name = f.field_name
+  JOIN intent_poly_member m
+    ON m.graph_name = f.graph_name
+   AND m.container_name = COALESCE(
+         REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''), '!', ''),
+         f.named_type)
+  JOIN intent_resolved_type_binding bt
+    ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
+   AND bt.candidates = 1
+ WHERE NOT EXISTS (SELECT 1 FROM intent_resolved_type_binding cb
+                    WHERE cb.graph_name = m.graph_name
+                      AND cb.type_name = m.container_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_mutation mu
+                    JOIN intent_spelled_table sp
+                      ON sp.graph_name = mu.graph_name AND sp.spelling = mu.table_ref
+                     AND sp.candidates = 1
+                    WHERE mu.graph_name = f.graph_name AND mu.type_name = f.type_name
+                      AND mu.field_name = f.field_name);
+COMMENT ON VIEW intent_field_participant_scope_table IS 'Which table one participant of a field''s polymorphic named type binds: the table that participant''s own branch of the field''s generated SQL is rooted in. A field returning a union, or an interface carrying no @table of its own, resolves to several tables rather than to one, and the classifier answers it by lowering the field once per table-bound participant, each against that participant''s own table; this relation is that population, one row per participant the field''s named type holds a binding for. The participant''s type name is a key column and not provenance, because it is what a consumer needs beyond the table: the generated condition method is named after the participant rather than after the container, so two participants of one field are two named units and a row carrying only a table could not tell a consumer which. Disjoint from both of intent_field_scope_table''s ranked rungs by construction rather than by precedence, which is why that relation unions this one in outside its window instead of ranking it as a third rung. The container binding nothing of its own is this relation''s own precondition, and it is exactly what separates the shape from the single-table discriminated interface, whose interface does carry @table and whose participants therefore share one table and one filter surface; a field carrying a @mutation(table:) spelling that resolves is excluded for the symmetric reason, the author having said which table the coordinate''s SQL binds against. Each participant''s binding must be unambiguous, on intent_field_reference_discovery''s terms and for the reason the ranked rungs give: a branch is a statement and two candidate tables are two different statements. A member with no binding at all contributes no row and no rejection here, the container whose every member must bind being the type classifier''s invariant and not this relation''s; a partially bound container is therefore incomplete here and rejected there, which is the division of labour every rule relation in this family keeps. Two participants binding one table are two rows, the grain being the participant; a consumer that wants tables takes them through intent_field_scope_table, whose projection of this relation is distinct on the table for that reason. Nothing here says any argument or name at the coordinate is column-shaped: this relation answers where each branch is rooted, and what each branch filters on is the argument-site resolution''s answer, reached one table at a time through that projection. Read cost, measured on the sakila example schema at 917 fields and 267 arguments, 128 rows out, five interleaved sweeps with result reuse off, so every figure carries an execution count above one and a standard deviation. The shape that ships joins the membership directly onto the stripped type expression and costs 47 milliseconds. Projecting that expression into an inner derived table first and joining the membership on the column costs 27, a 42% saving that is measured, reproduced, and deliberately not taken; the paragraph after this one is why, and it is the more useful half of the measurement. Two controls decided the rest. Driving from the 52 membership rows rather than the 917 fields, which reads like the obvious win, measured 29 milliseconds with three times the spread, so the smaller driver bought nothing. And the shipped shape with both exclusions removed measured 42 against 47, so the two anti-joins are about a tenth of the cost and the expansion is the rest; both children price under a millisecond, the membership at 0.3 and the binding at 0.04, which is what says there is no expensive child to register underneath this. The faster shape is unshippable today and the reason is the instrument rather than the shape. The projection changes which plan H2 takes for this relation and for the two above it, and under that plan the registered read of intent_resolved_type_binding visits more rows than reading its source view would, for this relation, intent_field_scope_table and intent_argument_scope_table_live alike. DerivedReadCostTest asserts the opposite over every such pair, so the projection fails the verification build deterministically, on two full builds against one that passed before it. That is exactly the case the fact model warns of, a scan count ceasing to track cost when a change moves rows between a view and a table, and it is the gate encoding the metric its own doctrine says does not rank cost; taking the slower shape is the honest answer until somebody decides whether a wall-clock-justified scan inversion belongs in that gate, which is a discipline question one relation''s evidence should not settle. Read the sibling essay on intent_field_scope_table beside this, because the two look contradictory and are not: it was retired at the field grain once the far side of that join became a table, and there is nothing to re-evaluate per driving row when the far side is stored. intent_poly_member is a view, so the projection would pay here, and the condition is what generalises rather than either verdict. Not registered, and the reason is reader count rather than cost: one relation names this one, and one names that, so a registration here would pay one refresh to save one evaluation. The arm does raise intent_field_scope_table from 16 milliseconds to 59, which is the honest price of a question the store could not answer at all before, paid once per refresh of the argument scope it feeds. When the condition membership fold arrives as a second reader that trade changes and is worth re-measuring then. The population is stated structurally and not narrowed to where an emitter exists, on intent_node_id_encode''s terms: a child field whose named type is a multi-table container has the same fact as a root field with that type, whether or not the generator carries a per-participant filter surface there, and narrowing the rows to today''s emitter would make this relation track emitter maturity instead of the schema.';
+COMMENT ON COLUMN intent_field_participant_scope_table.graph_name IS 'the owning graph''s partition, carried from graphql_field';
+COMMENT ON COLUMN intent_field_participant_scope_table.type_name IS 'the type owning the field whose branches this row states; not the polymorphic container, which is the field''s named type';
+COMMENT ON COLUMN intent_field_participant_scope_table.field_name IS 'the field whose named type is the polymorphic container';
+COMMENT ON COLUMN intent_field_participant_scope_table.member_type_name IS 'the participant this row answers for: the union member or interface implementor whose table the branch is rooted in. Part of the grain, and what a consumer minting a per-participant unit name reads; the participant''s position within its container is intent_poly_member''s and is not restated here';
+COMMENT ON COLUMN intent_field_participant_scope_table.table_source_name IS 'the participant table''s catalog partition, the first column of the sql_table key this row names';
+COMMENT ON COLUMN intent_field_participant_scope_table.table_schema IS 'the participant table''s SQL schema';
+COMMENT ON COLUMN intent_field_participant_scope_table.table_name IS 'the participant table''s SQL name; with the two columns above this is sql_table''s full key, so the branch''s own columns are one join away';
+
+CREATE VIEW intent_field_scope_table
+  (graph_name, type_name, field_name, basis,
+   table_source_name, table_schema, table_name) AS
+SELECT graph_name, type_name, field_name, basis,
+       table_source_name, table_schema, table_name
+  FROM (SELECT arms.graph_name, arms.type_name, arms.field_name,
+               arms.basis, arms.table_source_name, arms.table_schema, arms.table_name,
+               DENSE_RANK() OVER (
+                 PARTITION BY arms.graph_name, arms.type_name, arms.field_name
+                 ORDER BY arms.precedence) AS rung
+          FROM (SELECT f.graph_name, f.type_name, f.field_name,
+                       'NAMED_TYPE_TABLE' AS basis, bt.table_source_name, bt.table_schema,
+                       bt.table_name, 0 AS precedence
+                  FROM graphql_field f
+                  LEFT JOIN graphitron_field_synthesis fs
+                    ON fs.graph_name = f.graph_name AND fs.type_name = f.type_name
+                   AND fs.field_name = f.field_name
+                  JOIN intent_resolved_type_binding bt
+                    ON bt.graph_name = f.graph_name
+                   AND bt.type_name = COALESCE(
+                         REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''),
+                                 '!', ''),
+                         f.named_type)
+                   AND bt.candidates = 1
+                UNION ALL
+                SELECT m.graph_name, m.type_name, m.field_name,
+                       'PAYLOAD_TABLE', bt.table_source_name, bt.table_schema,
+                       bt.table_name, 1
+                  FROM graphitron_mutation m
+                  JOIN graphql_field mf
+                    ON mf.graph_name = m.graph_name AND mf.type_name = m.type_name
+                   AND mf.field_name = m.field_name
+                  JOIN intent_carrier_data_field cd
+                    ON cd.graph_name = m.graph_name AND cd.type_name = mf.named_type
+                   AND cd.family = 'DML' AND cd.element_kind = 'TABLE'
+                   AND cd.data_fields = 1
+                  JOIN graphql_field df
+                    ON df.graph_name = cd.graph_name AND df.type_name = cd.type_name
+                   AND df.field_name = cd.field_name
+                  JOIN intent_resolved_type_binding bt
+                    ON bt.graph_name = df.graph_name AND bt.type_name = df.named_type
+                   AND bt.candidates = 1
+                 WHERE m.operation IN ('INSERT', 'UPDATE')
+                UNION ALL
+                SELECT m.graph_name, m.type_name, m.field_name,
+                       'MUTATION_TABLE', sp.table_source_name, sp.table_schema,
+                       sp.table_name, 2
+                  FROM graphitron_mutation m
+                  JOIN intent_spelled_table sp
+                    ON sp.graph_name = m.graph_name AND sp.spelling = m.table_ref
+                   AND sp.candidates = 1) arms) picked
+ WHERE rung = 1
+ UNION ALL
+SELECT DISTINCT graph_name, type_name, field_name, 'PARTICIPANT_TABLE',
+       table_source_name, table_schema, table_name
+  FROM intent_field_participant_scope_table;
+COMMENT ON VIEW intent_field_scope_table IS 'Which table a field''s own generated SQL binds against: the table the field selects from, the table a predicate built at this coordinate correlates on, and the table a @nodeId or @reference path written here departs from. Stated at the field''s own grain rather than at an argument''s, which is the correction this relation is: the rule lived inside intent_argument_scope_table, keyed per argument, where nothing about it was ever an argument''s. The coordinate and the table together are the grain, one row where one table answers and one row per table where several do, which is not a widening for its own sake but what the polymorphic arm below states: a field returning a multi-table container is several statements, one per branch, and each is rooted in its own table. Three ranked rungs and one arm disjoint from all of them. The field''s named type''s own binding is the ordinary case, read through graphitron_field_synthesis so a connection field navigates as its element type rather than as its edge wrapper. Below it the write payload''s data channel, which is what answers where a DML mutation returns a carrier the author wrote to wrap the written row: the payload type binds nothing of its own, and the table the coordinate''s statement is rooted in is the one that carrier''s single data channel binds. It is read off intent_carrier_data_field rather than rederived, so the payload scan is applied where it is stated; demanding one channel of element kind TABLE is that relation''s own arity refusal transcribed, and it is also what makes the rest of the scan moot here, a payload with one bound channel having no second channel to be unrecognized and no ID channel to refuse. Below that a @mutation(table:) spelling, which is what answers where the return names no table at all: a delete surface returns a scalar or a status type and its arguments still bind against the table the mutation names. The rungs are a precedence and not a union, because a mutation whose payload type is itself bound has both and the named type is the one the classifier reads; DENSE_RANK over the rungs rather than ROW_NUMBER, so a winning rung keeps every row it answered with and an ambiguity stays visible as rows instead of being resolved by window order. Both rungs demand an unambiguous binding, on intent_field_reference_discovery''s terms: a table this field''s content binds against is a table a predicate is emitted on, and two candidate tables are two different predicates, so a pair that is not certain is not the pair the classifier would have had in hand. Beside the two rungs and outside their window sits the participant arm, the distinct tables of intent_field_participant_scope_table under the basis PARTICIPANT_TABLE. It is unioned in rather than ranked as a third rung because it contends with neither: its own precondition is that the field''s named type binds no table at all, which is what the upper rung requires it to have, and it excludes the field carrying a resolving @mutation(table:) spelling, which is what the lower rung reads. Calling it a rung would state a precedence the site does not have. It is distinct on the table because the grain here is the table while that relation''s is the participant, so two participants of one field backed by one table are one statement''s root and one row; a consumer that needs to know which participant reads that relation directly, and one minting a per-participant unit name must, the generated condition method being named after the participant. A field whose named type binds nothing, whose named type is no polymorphic container over bound members, and which carries no @mutation therefore has no row here, and that absence is the ordinary case for every field that reads no table at all. The middle clause of that sentence is the one this relation once got wrong: the participant population was missing outright, so a multi-table polymorphic root read tables, plural, and had no row, and every reader below inherited a silence none of them owned. The payload rung closed a second silence of the same kind, and it was the larger one. A @mutation(typeName: INSERT) or UPDATE field returning a carrier payload and naming no table had no row here, so its arguments had no scope, so the input fields under them had no resolving table, and the whole input-field family below that, the column scope, the column match, the filter role, the carrier role and the decode''s departure, was blank at exactly the coordinates a write surface is about. It read as a schema holding no such mutations rather than as a rule that could not answer them, and what hid it is that an input type is usually shared: an input reached both from a payload-returning coordinate and from a directly-returning one resolves its fields against the table the second one supplies, so the fields look classified while the mutation stays invisible. The rung is gated on the two verbs whose write target the classifier derives from the return, INSERT and UPDATE, which is the set the resolver itself holds; a DELETE cannot return the deleted row''s @table type, so its carrier''s data channel is an encoded key rather than a row and the table it writes is the rung below''s to state. That rung is also why this relation and the argument-grain fan-out beneath it are declared after the carrier family rather than beside the bindings they read: intent_carrier_data_field reaches the backing closure, and the order here is a dependency rather than a reading order. Nothing here says anything is column-shaped: this relation answers where a binding would land if there is one, and which arguments or names carry such content is each consumer''s own question. Not to be confused with intent_field_column_scope, whose name is close and whose question is not: that relation answers where a column name written at this site resolves, which for a leaf field is its own parent''s binding, where this relation answers where the field''s own statement is rooted. The two agree on an object-typed field and disagree on every scalar one, and they carry different guards for that reason. Two consumers read this. intent_argument_scope_table is this relation fanned out over the field''s arguments and adds nothing else, which is what makes the fan-out its whole content rather than a rule of its own. And the condition membership fold reads it at this grain, which is why the grain had to be corrected before that fold could exist: a @condition on a field with no arguments has a table to filter and no argument to carry it, and a @condition on a multi-table polymorphic root has one table to filter per branch and one generated method per branch to carry it. The upper rung joins the binding straight onto the stripped type expression, which is the shape the argument-grain spelling this rule came from carried an essay against, and the essay is kept here in corrected form because it was true when it was written and is not now. What that rung resolves against is a written expression and not a column, the author''s own type spelling with its wrappers stripped where a macro rewrote the field''s type, and joining a relation that is itself derived onto an expression is what makes H2 evaluate that relation once per driving row; projecting the expression into an inner derived table first and joining on that column was measured to be worth two orders of magnitude. What removed the hazard was not a rewrite here but the registration of intent_resolved_type_binding: once the relation on the other side of that join is a table rather than a windowed view, there is nothing to re-evaluate and the expression join is an ordinary scan. Re-measured on the sakila example schema, 918 fields and 268 arguments, both shapes returning the same 236 rows: this shape costs 13 milliseconds and the inner-derived-table shape 33, and at the argument grain the same pair is 7 against 27, so the shape the old comment steered away from is now the fastest one at either grain. The scan counts say the opposite and are the reason they are quoted rather than trusted: this shape visits 62264 rows and the derived-table shape 3014, so the cheap shape here is the one visiting twenty times the rows. A scan count is a row count. Narrowing the driving fields to those whose named type is neither SCALAR nor ENUM was measured too and is the worst of the three at 65 milliseconds for 4363 rows visited, which is the same lesson a third time: pruning the driver made the plan worse.';
+COMMENT ON COLUMN intent_field_scope_table.graph_name IS 'the owning graph''s partition, carried from graphql_field on the upper rung and the participant arm and from graphitron_mutation on the two mutation rungs';
+COMMENT ON COLUMN intent_field_scope_table.type_name IS 'the type owning the field';
+COMMENT ON COLUMN intent_field_scope_table.field_name IS 'the field whose scope this row states; with the two columns above and the table below, the grain';
+COMMENT ON COLUMN intent_field_scope_table.basis IS 'which rule answered, in a closed vocabulary of four: NAMED_TYPE_TABLE from the field''s named type''s own binding, PAYLOAD_TABLE from the single data channel of a DML write''s carrier payload where the payload itself binds nothing, MUTATION_TABLE from the @mutation(table:) spelling where neither of those answers, PARTICIPANT_TABLE from one branch of a named type that is a polymorphic container binding no table of its own. The first three are ranked rungs and the fourth is disjoint from all of them; which of them a row carries is therefore not only provenance but the fork a consumer takes, PARTICIPANT_TABLE being exactly where the coordinate is several statements rather than one. What lets a test pin which rule fired rather than only that a table came out; a reader wanting one of them filters on it and owns having chosen';
+COMMENT ON COLUMN intent_field_scope_table.table_source_name IS 'the scope table''s catalog partition, the first column of the sql_table key this row names';
+COMMENT ON COLUMN intent_field_scope_table.table_schema IS 'the scope table''s SQL schema';
+COMMENT ON COLUMN intent_field_scope_table.table_name IS 'the scope table''s SQL name; with the two columns above this is sql_table''s full key, so the table''s own columns and constraints are one join away';
+
+CREATE VIEW intent_argument_scope_table_live
+  (graph_name, type_name, field_name, argument_name, basis,
+   table_source_name, table_schema, table_name) AS
+SELECT a.graph_name, a.type_name, a.field_name, a.argument_name, ft.basis,
+       ft.table_source_name, ft.table_schema, ft.table_name
+  FROM graphql_argument a
+  JOIN intent_field_scope_table ft
+    ON ft.graph_name = a.graph_name AND ft.type_name = a.type_name
+   AND ft.field_name = a.field_name;
+COMMENT ON VIEW intent_argument_scope_table_live IS 'This states the rule and is evaluated on demand. The canonical name intent_argument_scope_table beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_argument_scope_table.';
+COMMENT ON COLUMN intent_argument_scope_table_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_argument_scope_table.graph_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_scope_table_live.type_name IS 'the type_name of a row of this rule, materialized into intent_argument_scope_table.type_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_scope_table_live.field_name IS 'the field_name of a row of this rule, materialized into intent_argument_scope_table.field_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_scope_table_live.argument_name IS 'the argument_name of a row of this rule, materialized into intent_argument_scope_table.argument_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_scope_table_live.basis IS 'the basis of a row of this rule, materialized into intent_argument_scope_table.basis, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_scope_table_live.table_source_name IS 'the table_source_name of a row of this rule, materialized into intent_argument_scope_table.table_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_scope_table_live.table_schema IS 'the table_schema of a row of this rule, materialized into intent_argument_scope_table.table_schema, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_scope_table_live.table_name IS 'the table_name of a row of this rule, materialized into intent_argument_scope_table.table_name, whose comment carries what the value means';
+
+CREATE TABLE intent_argument_scope_table (
+  graph_name        VARCHAR,
+  type_name         VARCHAR,
+  field_name        VARCHAR,
+  argument_name     VARCHAR,
+  basis             VARCHAR,
+  table_source_name VARCHAR,
+  table_schema      VARCHAR,
+  table_name        VARCHAR,
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE intent_argument_scope_table IS 'Which table an argument''s column-shaped content binds against: the table a predicate built from this argument correlates on, and the table a @nodeId or @reference path departs from. The field''s scope fanned out over the field''s arguments and nothing else: the rule is intent_field_scope_table''s, which is where the two ranked rungs, the disjoint participant arm and every demand any of them makes are documented, and this relation adds only the argument key. The argument and the table together are the grain, because the relation it fans out is keyed that way: a field whose named type is a multi-table polymorphic container is rooted in one table per branch, so each of its arguments binds against each of those tables and each pair is a predicate the generator emits. One row per argument is therefore the ordinary case and not the rule, and a reader that assumed it would silently take one branch of a coordinate that has several. It exists as its own relation because that key is what four readers join on and because a predicate is emitted per argument, so the fan-out is the shape every consumer here wants; it does not exist because an argument''s scope is a different question from its field''s. It was once spelled the other way round, the whole rule stated here and evaluated once per argument, and the fold over the condition membership is what found that: a @condition on a field with no arguments has a table to filter and no argument to carry it, so the rule had to be stated at the grain it was always about before anything could read it there. Nothing here says the argument''s content is column-shaped: this relation answers where it would bind if it is, and which arguments carry such content is each consumer''s own question. Materialized: this relation is a table refilled from intent_argument_scope_table_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in intent_field_scope_table; these rows are the fan-out of what it computed for each captured graph.';
+COMMENT ON COLUMN intent_argument_scope_table.graph_name IS 'the owning graph''s partition, carried from graphql_argument, which is the relation the fan-out drives from';
+COMMENT ON COLUMN intent_argument_scope_table.type_name IS 'the type owning the field the argument sits on';
+COMMENT ON COLUMN intent_argument_scope_table.field_name IS 'the field the argument sits on';
+COMMENT ON COLUMN intent_argument_scope_table.argument_name IS 'the argument whose scope this row states; part of the grain with the table below, so two arguments of one field each get their own row and neither reader has to know they agree, and one argument of a multi-table polymorphic root gets one row per branch it binds against';
+COMMENT ON COLUMN intent_argument_scope_table.basis IS 'which rule answered, carried unchanged from intent_field_scope_table, whose comment says what the four values mean. Every argument of one field carries the same value, and every branch of one argument does too, the rule being the field''s and not the argument''s or the branch''s; a reader wanting one of them filters on it and owns having chosen';
+COMMENT ON COLUMN intent_argument_scope_table.table_source_name IS 'the scope table''s catalog partition, the first column of the sql_table key this row names';
+COMMENT ON COLUMN intent_argument_scope_table.table_schema IS 'the scope table''s SQL schema';
+COMMENT ON COLUMN intent_argument_scope_table.table_name IS 'the scope table''s SQL name; with the two columns above this is sql_table''s full key, so the table''s own columns and constraints are one join away';
+
+CREATE INDEX ix_argument_scope_table_coordinate ON intent_argument_scope_table
+  (graph_name, type_name, field_name, argument_name);
+COMMENT ON INDEX ix_argument_scope_table_coordinate IS 'Serves the argument coordinate its three readers all join on: intent_node_id_instruction in three arms, intent_node_id_decode_endpoint, and intent_argument_reference_step_target, which adds the resolved table''s own three columns after these four. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the five indexes this file declares against none of them: intent_node_id_decode_endpoint costs 5439 scans without them and 3120 with them, intent_node_id_decode_hop 5824 against 3293, intent_argument_reference_step_target 114 against 8. The last of those three is this index alone and the first two are shared with the spelling index above, both readers reaching a spelling as well as an argument coordinate. Not UNIQUE and not the grain: basis discriminates two rows this key cannot tell apart, an argument whose scope is its own field''s binding and one whose scope a reference path fixed.';
+
+CREATE VIEW intent_argument_reference_step_target
+  (graph_name, type_name, field_name, argument_name, ordinal, position, via, key_matched_by,
+   from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table, constraint_name, fk_on_from,
+   targets, candidates) AS
+WITH RECURSIVE chain (graph_name, type_name, field_name, argument_name, ordinal, position,
+   via, key_matched_by, from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table, constraint_name, fk_on_from) AS (
+  SELECT h.graph_name, h.type_name, h.field_name, h.argument_name, h.ordinal, h.position,
+         h.via, h.key_matched_by, h.from_source_name, h.from_schema, h.from_table,
+         h.to_source_name, h.to_schema, h.to_table, h.constraint_name, h.fk_on_from
+    FROM intent_argument_reference_step_hop h
+    JOIN intent_argument_scope_table sc
+      ON sc.graph_name = h.graph_name AND sc.type_name = h.type_name
+     AND sc.field_name = h.field_name AND sc.argument_name = h.argument_name
+     AND sc.table_source_name = h.from_source_name AND sc.table_schema = h.from_schema
+     AND sc.table_name = h.from_table
+   WHERE h.position = 0
+  UNION
+  SELECT h.graph_name, h.type_name, h.field_name, h.argument_name, h.ordinal, h.position,
+         h.via, h.key_matched_by, h.from_source_name, h.from_schema, h.from_table,
+         h.to_source_name, h.to_schema, h.to_table, h.constraint_name, h.fk_on_from
+    FROM chain p
+    JOIN intent_argument_reference_step_hop h
+      ON h.graph_name = p.graph_name AND h.type_name = p.type_name
+     AND h.field_name = p.field_name AND h.argument_name = p.argument_name
+     AND h.ordinal = p.ordinal AND h.position = p.position + 1
+     AND h.from_source_name = p.to_source_name AND h.from_schema = p.to_schema
+     AND h.from_table = p.to_table
+)
+SELECT graph_name, type_name, field_name, argument_name, ordinal, position, via, key_matched_by,
+       from_source_name, from_schema, from_table,
+       to_source_name, to_schema, to_table, constraint_name, fk_on_from,
+       CAST(MAX(target_rank) OVER (
+         PARTITION BY graph_name, type_name, field_name, argument_name,
+                      ordinal, position) AS INT),
+       CAST(COUNT(*) OVER (
+         PARTITION BY graph_name, type_name, field_name, argument_name,
+                      ordinal, position) AS INT)
+  FROM (SELECT c.*, DENSE_RANK() OVER (
+                 PARTITION BY c.graph_name, c.type_name, c.field_name, c.argument_name,
+                              c.ordinal, c.position
+                 ORDER BY c.to_source_name, c.to_schema, c.to_table) AS target_rank
+          FROM chain c) ranked;
+COMMENT ON VIEW intent_argument_reference_step_target IS 'Where each element of an argument-site @reference path actually lands: intent_argument_reference_step_hop walked one element at a time, so a row exists only for an element the chain can be shown to reach. The field-site sibling''s comment argues the walk, and everything it says about recursion, about absence meaning "not reached" rather than "resolves to nothing in particular", and about an element naming neither key nor table not being a hop this view knows, holds here unchanged. One thing does not, and it is the whole reason this view is not that one with a column added: the departure. A field-site path departs from the enclosing type''s own binding, because the field is a projection off that type''s row. An argument-site path departs from the table the argument''s own content binds against, because an argument filters what the field returns rather than what its parent is; the resolver states the same thing by passing the field''s target table as the path''s source. So a filter argument on a root field, whose parent type is bound to nothing at all, has a departure here where the field-site rule would give it none, and reading one view for both sites would have made that departure a case rather than the rule. That departure is intent_argument_scope_table''s whole subject and is read from it rather than restated: the field''s named type''s binding read through graphitron_field_synthesis so a connection-returning field departs its element type''s table and not the wrapper''s, and below it the @mutation(table:) spelling, which is what gives a delete surface''s argument a departure at all where its return type binds nothing. Reading the relation rather than spelling the upper rung inline is also what stops the two spellings of one rule from drifting, the rule having a second reader now. It costs one demand the earlier spelling did not make, and the demand is the scope relation''s and correct: a departure is a table a predicate is emitted on, so an ambiguously bound named type is no departure rather than two, which is intent_field_reference_discovery''s stance on the same question. The field-site sibling still admits the ambiguity, its departure being the enclosing type''s binding read directly and its arities counting what that reached. It gains one shape from the same relation and does not yet answer it fully, which is stated here rather than left to be discovered: an argument on a field returning a multi-table polymorphic container departs from one table per branch, so such a path is walked once per branch and each walk lands wherever that branch''s own keys reach. The rows come out; the two arity columns do not follow. They are counted per element and position and not per departure, so two branches walking the same element at the same position fall in one partition and their candidate counts are conflated, which would read as an ambiguity at a step that is unambiguous on each branch taken alone. Putting the departure in that partition is what would close it, and it is not done here because it would also split the candidate set at an ambiguous mid-chain landing, which is a change to what the arity means on a shape the tree does exercise. No graph in the tree writes an argument-site path at such a coordinate, so this is an unexercised limit rather than a wrong answer anybody reads, and it is the first thing to fix for whoever needs one.';
+COMMENT ON COLUMN intent_argument_reference_step_target.graph_name IS 'the owning graph''s partition, carried from the hop view';
+COMMENT ON COLUMN intent_argument_reference_step_target.type_name IS 'the type owning the field the argument sits on. Not the type whose binding started the chain, which is the field''s named type: the difference from the field-site sibling, where the two are one';
+COMMENT ON COLUMN intent_argument_reference_step_target.field_name IS 'the field owning the argument the @reference is applied to; also the field whose named type''s binding started the chain';
+COMMENT ON COLUMN intent_argument_reference_step_target.argument_name IS 'the argument the @reference is applied to';
+COMMENT ON COLUMN intent_argument_reference_step_target.ordinal IS 'the owning @reference application''s ordinal, as on the hop view';
+COMMENT ON COLUMN intent_argument_reference_step_target.position IS 'the element''s 0-based position within its application''s path; positions are contiguous from 0 up to wherever the chain stopped';
+COMMENT ON COLUMN intent_argument_reference_step_target.via IS 'which arm resolved the element, as on the hop view: KEY, TABLE or NAME_MATCH';
+COMMENT ON COLUMN intent_argument_reference_step_target.key_matched_by IS 'for a KEY element, the namespace that answered; NULL on a TABLE or NAME_MATCH element. As on the hop view';
+COMMENT ON COLUMN intent_argument_reference_step_target.from_source_name IS 'the departing table''s catalog partition; the argument''s own scope table at position 0, the previous element''s arrival after that';
+COMMENT ON COLUMN intent_argument_reference_step_target.from_schema IS 'the departing table''s SQL schema';
+COMMENT ON COLUMN intent_argument_reference_step_target.from_table IS 'the departing table''s SQL name';
+COMMENT ON COLUMN intent_argument_reference_step_target.to_source_name IS 'the arriving table''s catalog partition, first column of its sql_table key';
+COMMENT ON COLUMN intent_argument_reference_step_target.to_schema IS 'the arriving table''s SQL schema';
+COMMENT ON COLUMN intent_argument_reference_step_target.to_table IS 'the arriving table''s SQL name. At the path''s last position this is the table the argument''s own column name resolves against, which is where a filter predicate binds';
+COMMENT ON COLUMN intent_argument_reference_step_target.constraint_name IS 'the foreign key this element joins on, named or discovered; NULL on a NAME_MATCH element, as on the hop view';
+COMMENT ON COLUMN intent_argument_reference_step_target.fk_on_from IS 'TRUE when the departing table declares the foreign key; the element''s direction. NULL on a NAME_MATCH element, as on the hop view';
+COMMENT ON COLUMN intent_argument_reference_step_target.targets IS 'how many distinct tables this element reaches, this row''s arrival being one of them; 1 where the destination is certain. Separate from candidates for the reason the field-site sibling states: an element with three foreign keys connecting the same pair of tables reaches one table by three routes, and a reader that only needs the destination can trust that where one that has to render the join cannot';
+COMMENT ON COLUMN intent_argument_reference_step_target.candidates IS 'how many rows this element resolved to, counting routes and not just destinations; 1 is the requirement for an expressible hop';
+
+CREATE TABLE intent_argument_column_scope (
+  graph_name        VARCHAR NOT NULL,
+  type_name         VARCHAR NOT NULL,
+  field_name        VARCHAR NOT NULL,
+  argument_name     VARCHAR NOT NULL,
+  basis             VARCHAR NOT NULL,
+  table_source_name VARCHAR NOT NULL,
+  table_schema      VARCHAR NOT NULL,
+  table_name        VARCHAR NOT NULL,
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+
+CREATE VIEW intent_argument_column_scope_live
+  (graph_name, type_name, field_name, argument_name, basis,
+   table_source_name, table_schema, table_name) AS
+SELECT DISTINCT tg.graph_name, tg.type_name, tg.field_name, tg.argument_name,
+       'PATH_TERMINAL',
+       tg.to_source_name, tg.to_schema, tg.to_table
+  FROM intent_argument_reference_step_target tg
+  JOIN (SELECT graph_name, type_name, field_name, argument_name, COUNT(*) AS applications
+          FROM graphitron_argument_reference
+         GROUP BY graph_name, type_name, field_name, argument_name) only_application
+    ON only_application.graph_name = tg.graph_name
+   AND only_application.type_name = tg.type_name
+   AND only_application.field_name = tg.field_name
+   AND only_application.argument_name = tg.argument_name
+   AND only_application.applications = 1
+  JOIN (SELECT graph_name, type_name, field_name, argument_name, ordinal,
+               MAX(position) AS position
+          FROM graphitron_argument_reference_step
+         GROUP BY graph_name, type_name, field_name, argument_name, ordinal) last_element
+    ON last_element.graph_name = tg.graph_name
+   AND last_element.type_name = tg.type_name
+   AND last_element.field_name = tg.field_name
+   AND last_element.argument_name = tg.argument_name
+   AND last_element.ordinal = tg.ordinal
+   AND last_element.position = tg.position
+ WHERE tg.targets = 1
+UNION ALL
+SELECT sc.graph_name, sc.type_name, sc.field_name, sc.argument_name,
+       'ARGUMENT_SCOPE',
+       sc.table_source_name, sc.table_schema, sc.table_name
+  FROM intent_argument_scope_table sc
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_argument_reference_step s
+                    WHERE s.graph_name = sc.graph_name
+                      AND s.type_name = sc.type_name
+                      AND s.field_name = sc.field_name
+                      AND s.argument_name = sc.argument_name);
+COMMENT ON TABLE intent_argument_column_scope IS 'Which table the column name written at an argument''s site resolves against: the argument''s own navigation, answered at every site where such a name resolves at all. The argument-site twin of intent_field_column_scope, and a second relation for the reason intent_argument_reference_step_target is one rather than that view with a column added: the departure differs. A field''s names resolve in the navigation off its own parent''s row, an argument''s in the navigation off the table its content binds against, which intent_argument_scope_table answers and which the argument of a root field has where the field-site rule would give it none. Two rules, disjoint rather than ranked, so this relation is a plain union with no windowed collapse over it and carries the one-row-per-site property its twin stands on. What counts as the site is the argument together with the table its content binds against, on intent_input_field_column_scope''s terms: a departure that is not a function of the coordinate puts the departing table in the key, and at a multi-table polymorphic root the argument''s scope is one table per branch rather than one table. So one row per argument is what a monomorphic coordinate has and not what the relation guarantees, and the property being kept is that no site resolves twice, not that no argument does. An authored @reference path resolves to its terminal element''s table, demanding the terminal reach exactly one table rather than exactly one row, so an element joining two tables by three keys still names its destination; an element that resolved to several rows all reaching one table is one row here, the arm taking DISTINCT over a projection that keeps only the table. An argument with no path element resolves in its own scope table, read from intent_argument_scope_table rather than restated, so the two spellings of that precedence cannot drift and the demands it makes hold here unchanged. One thing this relation does not inherit from its twin, and the difference belongs to the site rather than being a choice made here: repetition. A repeated @reference on a field composes an ordered chain and the field-site rule takes the first application. Repeated on an argument it is a conflict the resolver rejects outright, order composition having no meaning on an argument, so there is no first application to prefer and a site carrying two has no row here at all. The count is over the applications and not over their elements, so an author writing an empty one beside a real one is a conflict here too, which is the resolver''s own reading of that pair. Declining says "no answer", which is what a site the validator must reject deserves, where preferring one would encode a precedence the site does not have. An element-less @reference(path: []) is legal SDL and inert, and this relation reads it as the resolver does: the anti-join is on the path''s elements and never on the directive''s presence, so such a site takes the scope rule and resolves against the argument''s own table, which is the bare predicate a directive-less argument would have produced. Nothing here says the argument''s content is column-shaped, which is intent_argument_scope_table''s stance and holds one rung up: this relation answers where a name would resolve if one is written, and which arguments write one is each consumer''s own question. Two consumers ask different halves of that. intent_argument_column_match asks which column the name reaches; a predicate binding asks whether the resolved table is the one the field already selects from or somewhere a join away, which is basis read directly. Deriving the navigation once is what stops those two disagreeing at a path reaching two tables, where a presence test over the captured elements says "moved" and the resolution says "nowhere". Materialized: this relation is a table refilled from intent_argument_column_scope_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
+COMMENT ON COLUMN intent_argument_column_scope.graph_name IS 'the owning graph''s partition, carried from both rules'' base relations';
+COMMENT ON COLUMN intent_argument_column_scope.type_name IS 'the type owning the field the argument sits on. Not the type whose binding started the navigation, which is the field''s named type: the difference from the field-site twin, where the two are one';
+COMMENT ON COLUMN intent_argument_column_scope.field_name IS 'the field the argument sits on';
+COMMENT ON COLUMN intent_argument_column_scope.argument_name IS 'the argument whose site this row resolves; part of the grain with the resolved table below, so two arguments of one field each get their own row and neither reader has to know they agree, and one argument resolving against a branch each of a multi-table polymorphic root gets one row per branch';
+COMMENT ON COLUMN intent_argument_column_scope.basis IS 'which rule resolved this site, in a closed vocabulary of two disjoint rules: PATH_TERMINAL (an authored argument-site @reference path''s terminal element), ARGUMENT_SCOPE (the argument''s own scope table, no path element written). Also the fork a predicate binding takes, PATH_TERMINAL being exactly the case where the resolved table is not the one the field already selects from. Which rule answered underneath ARGUMENT_SCOPE is intent_argument_scope_table''s own basis and is deliberately not restated here, a reader wanting it joining the relation that states it; PARTICIPANT_TABLE there is what makes one argument resolve on several tables under this basis';
+COMMENT ON COLUMN intent_argument_column_scope.table_source_name IS 'the resolved table''s catalog partition, the first column of the sql_table key this row names';
+COMMENT ON COLUMN intent_argument_column_scope.table_schema IS 'the resolved table''s SQL schema';
+COMMENT ON COLUMN intent_argument_column_scope.table_name IS 'the resolved table''s SQL name. With the two columns above this is sql_table''s full key, so the table''s columns are one join away';
+COMMENT ON VIEW intent_argument_column_scope_live IS 'This states the rule and is evaluated on demand. The canonical name intent_argument_column_scope beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_argument_column_scope.';
+COMMENT ON COLUMN intent_argument_column_scope_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_argument_column_scope.graph_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_scope_live.type_name IS 'the type_name of a row of this rule, materialized into intent_argument_column_scope.type_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_scope_live.field_name IS 'the field_name of a row of this rule, materialized into intent_argument_column_scope.field_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_scope_live.argument_name IS 'the argument_name of a row of this rule, materialized into intent_argument_column_scope.argument_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_scope_live.basis IS 'the basis of a row of this rule, materialized into intent_argument_column_scope.basis, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_scope_live.table_source_name IS 'the table_source_name of a row of this rule, materialized into intent_argument_column_scope.table_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_scope_live.table_schema IS 'the table_schema of a row of this rule, materialized into intent_argument_column_scope.table_schema, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_scope_live.table_name IS 'the table_name of a row of this rule, materialized into intent_argument_column_scope.table_name, whose comment carries what the value means';
+
+CREATE TABLE intent_argument_column_match (
+  graph_name        VARCHAR NOT NULL,
+  type_name         VARCHAR NOT NULL,
+  field_name        VARCHAR NOT NULL,
+  argument_name     VARCHAR NOT NULL,
+  matched_name      VARCHAR NOT NULL,
+  matched_by        VARCHAR NOT NULL,
+  table_source_name VARCHAR NOT NULL,
+  table_schema      VARCHAR NOT NULL,
+  table_name        VARCHAR NOT NULL,
+  column_name       VARCHAR NOT NULL,
+  source_name       VARCHAR,
+  source_line       INT,
+  source_column     INT,
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+
+CREATE VIEW intent_argument_column_match_live
+  (graph_name, type_name, field_name, argument_name, matched_name, matched_by,
+   table_source_name, table_schema, table_name, column_name,
+   source_name, source_line, source_column) AS
+SELECT graph_name, type_name, field_name, argument_name, matched_name, matched_by,
+       table_source_name, table_schema, table_name, column_name,
+       source_name, source_line, source_column
+  FROM (SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
+               COALESCE(ab.name_ref, a.argument_name) AS matched_name,
+               CASE WHEN c.jooq_name_upper
+                         = COALESCE(ab.name_ref_upper, a.argument_name_upper)
+                    THEN 'JOOQ_NAME' ELSE 'SQL_NAME' END AS matched_by,
+               sc.table_source_name, sc.table_schema, sc.table_name,
+               c.column_name,
+               a.source_name, a.source_line, a.source_column,
+               ROW_NUMBER() OVER (
+                 PARTITION BY a.graph_name, a.type_name, a.field_name, a.argument_name,
+                              sc.table_source_name, sc.table_schema, sc.table_name
+                 ORDER BY CASE WHEN c.jooq_name_upper
+                                    = COALESCE(ab.name_ref_upper, a.argument_name_upper)
+                               THEN 0 ELSE 1 END, c.ordinal) AS rn
+          FROM intent_argument_column_scope sc
+          JOIN graphql_argument a
+            ON a.graph_name = sc.graph_name AND a.type_name = sc.type_name
+           AND a.field_name = sc.field_name AND a.argument_name = sc.argument_name
+          JOIN graphql_type leaf
+            ON leaf.graph_name = a.graph_name AND leaf.type_name = a.named_type
+           AND leaf.kind IN ('SCALAR', 'ENUM')
+          LEFT JOIN graphitron_argument_binding ab
+            ON ab.graph_name = a.graph_name AND ab.type_name = a.type_name
+           AND ab.field_name = a.field_name AND ab.argument_name = a.argument_name
+          JOIN sql_column c
+            ON c.source_name = sc.table_source_name AND c.table_schema = sc.table_schema
+           AND c.table_name = sc.table_name
+           AND (c.jooq_name_upper = COALESCE(ab.name_ref_upper, a.argument_name_upper)
+                OR c.column_name_upper
+                   = COALESCE(ab.name_ref_upper, a.argument_name_upper))) matched
+ WHERE rn = 1;
+COMMENT ON VIEW intent_argument_column_match_live IS 'This states the rule and is evaluated on demand. The canonical name intent_argument_column_match beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_argument_column_match.';
+COMMENT ON COLUMN intent_argument_column_match_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_argument_column_match.graph_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.type_name IS 'the type_name of a row of this rule, materialized into intent_argument_column_match.type_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.field_name IS 'the field_name of a row of this rule, materialized into intent_argument_column_match.field_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.argument_name IS 'the argument_name of a row of this rule, materialized into intent_argument_column_match.argument_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.matched_name IS 'the matched_name of a row of this rule, materialized into intent_argument_column_match.matched_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.matched_by IS 'the matched_by of a row of this rule, materialized into intent_argument_column_match.matched_by, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.table_source_name IS 'the table_source_name of a row of this rule, materialized into intent_argument_column_match.table_source_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.table_schema IS 'the table_schema of a row of this rule, materialized into intent_argument_column_match.table_schema, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.table_name IS 'the table_name of a row of this rule, materialized into intent_argument_column_match.table_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.column_name IS 'the column_name of a row of this rule, materialized into intent_argument_column_match.column_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.source_name IS 'the source_name of a row of this rule, materialized into intent_argument_column_match.source_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.source_line IS 'the source_line of a row of this rule, materialized into intent_argument_column_match.source_line, whose comment carries what the value means';
+COMMENT ON COLUMN intent_argument_column_match_live.source_column IS 'the source_column of a row of this rule, materialized into intent_argument_column_match.source_column, whose comment carries what the value means';
+COMMENT ON TABLE intent_argument_column_match IS 'Which column an argument''s own name resolves to on the table its site navigates to: the column a filter predicate built from that argument compares against. The argument-site counterpart of intent_column_match_claim, and deliberately not a claim. A claim view states a classification some coordinate is claimed by and unions with its siblings at the classifier grain, and no classifier vocabulary reaches an argument; what an argument gets from a resolved column is a predicate and not a kind, so these rows carry no classifier column and nothing reduces them. Everything else is the twin''s reading transcribed to this site. The argument''s named type has kind SCALAR or ENUM, which is the resolver''s own gate rather than an addition: an input-object argument expands into input fields that resolve at their own sites, so a name match against the argument itself would be a row no consumer asked for. The site resolves against exactly one table, the site being the argument together with that table, which is intent_argument_column_scope''s resolution and its grain; so every decline that relation makes is a silence here and this view adds none of its own. At a multi-table polymorphic root that means one row per branch on which the name reaches a column, and the per-branch divergence is where this relation earns the widened grain: a name reaching a column on one participant''s table and none on another''s is the classifier''s own per-participant rejection, which the walk states by lowering each branch and failing on the one that will not resolve, and which is here the difference between the branches intent_field_scope_table names for the coordinate and the ones this relation answers for. A detection over that pair rather than a column on either. The effective name is the @field(name:) binding where one was written, else the argument name, which is the resolver''s COALESCE, and the arm needs no undecoded-presence fallback for the reason the field-site view needs none: a declined decode leaves the COALESCE on the argument name, which is the fallback anyway. The match is two-tier, the generated Java name before the SQL name, both case-insensitive, collapsed to the first match in tier-then-ordinal order on the resolved table. On the table and not on the argument, and the difference is the whole content of this relation''s grain: what the collapse is for is two columns of one table answering one name, so partitioning it by the argument alone picks one branch of a multi-table polymorphic root and drops the rest. It did exactly that until the participant fan-out reached the scope below, which is the lesson a widened grain carries to every window over it. The scope drives the join and that is load-bearing rather than stylistic, on the measurement intent_column_match_claim''s comment carries: H2 re-evaluates a joined derived relation once per outer row, so reading the scope from underneath graphql_argument would cost the whole relation once per candidate argument, and every argument in the graph is a candidate. Absence is where a written name reaches no column on the resolved table, which is the resolver''s own unbound-argument rejection, and it is equally the ordinary answer for an argument whose content is not column-shaped at all. Nothing here tells those two apart, and what would is a defect relation over this one rather than a column on it. Materialized: this relation is a table refilled from intent_argument_column_match_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
+
+COMMENT ON COLUMN intent_argument_column_match.graph_name IS 'the owning graph''s partition, carried from graphql_argument';
+COMMENT ON COLUMN intent_argument_column_match.type_name IS 'the type owning the field the resolved argument sits on';
+COMMENT ON COLUMN intent_argument_column_match.field_name IS 'the field the resolved argument sits on';
+COMMENT ON COLUMN intent_argument_column_match.argument_name IS 'the resolved argument''s name within the owning field; part of the grain with the resolved table, the scope this reads keying the site that way';
+COMMENT ON COLUMN intent_argument_column_match.matched_name IS 'the effective name this resolved: the @field(name:) binding where one decoded, else the argument name. What the author wrote, so a diagnostic naming the unresolved spelling reads it here rather than deciding which of the two applied';
+COMMENT ON COLUMN intent_argument_column_match.matched_by IS 'which tier matched: JOOQ_NAME (the generated Java field name) or SQL_NAME. Makes the two-tier precedence observable rather than only its outcome';
+COMMENT ON COLUMN intent_argument_column_match.table_source_name IS 'witness: the resolved table''s catalog partition, the first column of the sql_column key this row names';
+COMMENT ON COLUMN intent_argument_column_match.table_schema IS 'witness: the resolved table''s SQL schema';
+COMMENT ON COLUMN intent_argument_column_match.table_name IS 'witness: the resolved table''s SQL name. Which navigation reached it is intent_argument_column_scope''s basis, and a consumer emitting the predicate needs both';
+COMMENT ON COLUMN intent_argument_column_match.column_name IS 'witness: the matched column''s SQL name. With the three columns above this is sql_column''s full key, so the column''s type and nullability are one join away';
+COMMENT ON COLUMN intent_argument_column_match.source_name IS 'the argument''s own declaration file; the position a diagnostic would carry';
+COMMENT ON COLUMN intent_argument_column_match.source_line IS 'source line of the argument declaration, 1-based';
+COMMENT ON COLUMN intent_argument_column_match.source_column IS 'source column of the argument declaration, 1-based';
 
 CREATE VIEW intent_field_error_channel
   (graph_name, type_name, field_name, transport, family, payload_type_name,
@@ -8090,6 +8109,54 @@ COMMENT ON COLUMN intent_input_field_carrier_role.resolving_source_name IS 'the 
 COMMENT ON COLUMN intent_input_field_carrier_role.resolving_schema IS 'the classifying table''s SQL schema; part of the grain, as above';
 COMMENT ON COLUMN intent_input_field_carrier_role.resolving_table IS 'the classifying table''s SQL name; with the two coordinate columns and the two columns above, the grain';
 COMMENT ON COLUMN intent_input_field_carrier_role.carrier_role IS 'what the carrier points at: OWN_COLUMNS, SELF_FK, CROSS_TABLE_FK or REMOTE, the four the classifier can answer. A closed vocabulary, and a fifth carrier shape is a new value here rather than a silence';
+
+CREATE VIEW intent_mutation_write_payload
+  (graph_name, type_name, field_name, operation, multi_row,
+   argument_name, argument_type_name, argument_list,
+   write_source_name, write_schema, write_table,
+   source_name, source_line, source_column) AS
+SELECT m.graph_name, m.type_name, m.field_name, m.operation,
+       COALESCE(m.multi_row, FALSE),
+       a.argument_name, a.named_type, a.is_list,
+       sc.table_source_name, sc.table_schema, sc.table_name,
+       m.source_name, m.source_line, m.source_column
+  FROM graphitron_mutation m
+  JOIN graphql_argument a
+    ON a.graph_name = m.graph_name AND a.type_name = m.type_name
+   AND a.field_name = m.field_name
+  JOIN graphql_type at
+    ON at.graph_name = a.graph_name AND at.type_name = a.named_type
+   AND at.kind = 'INPUT_OBJECT'
+  JOIN intent_field_scope_table sc
+    ON sc.graph_name = m.graph_name AND sc.type_name = m.type_name
+   AND sc.field_name = m.field_name
+   AND sc.basis IN ('NAMED_TYPE_TABLE', 'PAYLOAD_TABLE', 'MUTATION_TABLE')
+ WHERE m.operation IN ('UPDATE', 'DELETE')
+   AND (m.operation <> 'DELETE' OR sc.basis = 'MUTATION_TABLE')
+   AND (m.operation <> 'UPDATE' OR COALESCE(m.multi_row, FALSE) = FALSE)
+   AND NOT EXISTS (SELECT 1 FROM graphql_argument o
+                    WHERE o.graph_name = a.graph_name AND o.type_name = a.type_name
+                      AND o.field_name = a.field_name
+                      AND o.argument_name <> a.argument_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argument_condition ac
+                    WHERE ac.graph_name = a.graph_name AND ac.type_name = a.type_name
+                      AND ac.field_name = a.field_name
+                      AND ac.argument_name = a.argument_name);
+COMMENT ON VIEW intent_mutation_write_payload IS 'The write surface a walker-driven DML mutation offers: which coordinate writes, with which verb, over which table, through which argument. The relation everything about a generated UPDATE or DELETE statement hangs off, and the first one in this family keyed by the mutation rather than by an input field, because a statement is a coordinate''s and the input fields under it are only its parts. Two verbs, and the pair is a boundary rather than a sample. UPDATE and DELETE are the verbs whose input the generator walks column by column, partitioning it around a key it matches from the catalog, and the two walkers admit exactly the same input shapes; INSERT resolves its input through a different gate that admits a carrier these two refuse, and UPSERT is refused at the verb dispatch before any input is looked at. A relation covering all four would have to carry the gate as a column, and the two that share one gate are the two this is about. Three facts decide the population and all three are the argument''s own rather than any field''s, which is the line this relation draws and the reason it can fold them into an absence at all. A @mutation field takes exactly one argument and that argument''s type is an input object: two arguments, or one that is a scalar, is not a payload at all rather than a payload with something wrong in it. A @condition on that argument is refused outright. And multiRow: true on UPDATE is refused, the broadcast reading being a DELETE''s alone, where a DELETE carries the flag through as the arm that opts out of needing a key. What is deliberately not folded in is the per-field admissibility, which is a different kind of fact: a list-typed carrier, an @condition on an input field, an unbound field, a condition-owned field and a carrier whose value reaches its row only through a join are each a located refusal at a coordinate an author can be pointed at, and turning them into this relation''s absence would replace five diagnostics with one silence at the wrong coordinate. Those belong at the input-field grain, beside the roles that name them, and a consumer assembling a statement reads them there and refuses the whole payload itself. So a row here says the surface exists, not that every field on it is admissible. Two further gates are the return type''s and are equally not here: that a DML mutation returns ID, the written @table type, or a single carrier payload, and that a list-shaped input demands a list-shaped return. Both are refusals about the shape of what comes back, and this relation is about what goes in. Where the write table comes from is the scope relation''s answer read through the verb, and the reading differs between the two verbs because the classifier''s does. An UPDATE derives its target from the return, its own @table type or its carrier payload''s data channel, and falls to a written @mutation(table:) where the return names nothing; those are that relation''s first three rungs in that order, so taking whichever it ranked first is the classifier''s precedence transcribed rather than a second copy of it. A DELETE has no return-derived rung at all, the deleted row''s type being unreturnable, so only the written spelling answers and this relation demands that basis. The participant arm is excluded under both verbs: a write is one statement and a coordinate resolving one table per branch is not one. The multi_row column is the DELETE arm''s own fork and is carried rather than filtered on, because a consumer needs it: with it the walker admits an input covering no key and broadcasts, without it that input is a refusal, and the same two columns therefore describe a statement that deletes one row and one that deletes many. Absence is a @mutation coordinate that offers no such surface, which is every INSERT and UPSERT, every DELETE naming no table, every mutation whose argument shape is refused, and an UPDATE spelling multiRow: true.';
+COMMENT ON COLUMN intent_mutation_write_payload.graph_name IS 'the owning graph''s partition, carried from graphitron_mutation';
+COMMENT ON COLUMN intent_mutation_write_payload.type_name IS 'the type declaring the mutation field, which is a root operation type in every shape the generator emits and is not required to be one here';
+COMMENT ON COLUMN intent_mutation_write_payload.field_name IS 'the mutation field; with the type, the coordinate whose statement this row describes, and this relation''s grain, one row per writing coordinate';
+COMMENT ON COLUMN intent_mutation_write_payload.operation IS 'the verb as the author wrote it, UPDATE or DELETE, those being the two the walkers drive. Carried from graphitron_mutation unchanged and not narrowed to an enum here, on the open-column rule the capture relation states';
+COMMENT ON COLUMN intent_mutation_write_payload.multi_row IS 'whether @mutation(multiRow: true) is written, with the omitted spelling read as false. Meaningful on DELETE alone, where it is the opt-in to a statement that identifies no single row; an UPDATE carrying it has no row here at all, so this column is false on every UPDATE by construction rather than by a rule a reader has to remember';
+COMMENT ON COLUMN intent_mutation_write_payload.argument_name IS 'the sole argument carrying the payload; the name a consumer reads a wire value out of and the name an occurrence path under this coordinate roots at';
+COMMENT ON COLUMN intent_mutation_write_payload.argument_type_name IS 'the argument''s named input object type, the type whose fields the payload is assembled from. Not part of the grain, the argument being sole';
+COMMENT ON COLUMN intent_mutation_write_payload.argument_list IS 'whether the argument is list-shaped, which is the bulk form: one statement over several payload rows rather than one. Carried and not filtered on, the cardinality being the emitter''s fork and not an admissibility question here';
+COMMENT ON COLUMN intent_mutation_write_payload.write_source_name IS 'the write table''s catalog partition, the first column of the sql_table key this row names';
+COMMENT ON COLUMN intent_mutation_write_payload.write_schema IS 'the write table''s SQL schema';
+COMMENT ON COLUMN intent_mutation_write_payload.write_table IS 'the write table''s SQL name; with the two columns above, sql_table''s full key. Also the table every input field under this argument is classified against, which is what makes this the join key into the input-field family rather than only a fact about the statement';
+COMMENT ON COLUMN intent_mutation_write_payload.source_name IS 'the SDL file the @mutation application was captured from; the position a refusal about this statement would carry';
+COMMENT ON COLUMN intent_mutation_write_payload.source_line IS 'source line of the @mutation application, 1-based';
+COMMENT ON COLUMN intent_mutation_write_payload.source_column IS 'source column of the @mutation application, 1-based';
 
 CREATE TABLE rejection_validation_error (
   graph_name    VARCHAR NOT NULL,

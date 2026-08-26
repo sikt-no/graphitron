@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-25
+last-updated: 2026-08-26
 ---
 
 # Planners read facts, emitters read commands: dissolve the walk and the leaf zoo
@@ -2519,6 +2519,82 @@ that it stays empty, and it emptied itself once the registration landed.
 **What this increment leaves owing**, unchanged from the eighth except that the substrate under it is
 now the resolver's own: the destination at the column grain, the matched key over the identity
 columns, and then the fold.
+
+### Conditions, tenth increment: the mutations the store could not see
+
+This increment set out to author the destination and the matched key and found that the store had no
+rows to compute either one from at the coordinates that matter most. The finding is the increment;
+the two relations it was supposed to deliver are still owing.
+
+**What was missing.** `intent_field_scope_table` answers where a field's own generated SQL is rooted,
+and it had two rungs: the field's named type's own binding, then a written `@mutation(table:)`. The
+classifier has three. Between those two sits the write payload's data channel: an
+`@mutation(typeName: UPDATE)` or `INSERT` field returning a carrier the author wrote to wrap the
+written row derives its write target from that carrier's single `@table`-element data field, and the
+input fields under its argument are classified against exactly that table. With the rung missing such
+a coordinate had no scope row at all, so its arguments had no scope, so every input field under them
+had no resolving table, and the whole input-field family this chain has been building, the column
+scope, the column match, the filter role, the carrier role and the decode's departure, was blank
+there. Nine increments of relations, and the shape a write surface is most often written in was
+outside all of them.
+
+**Why nine increments of tests did not catch it.** An input type is usually shared. Where
+`FilmUpdateInput` is reached both from `updateFilmPayload`, which returns a carrier, and from
+`updateFilm`, which returns the bound type directly, its fields resolve against the table the second
+coordinate supplies. Every field-grain relation therefore has rows and looks right; only the mutation
+coordinate is invisible, and nothing was keyed by the mutation coordinate yet. The silence was
+exactly the shape the ninth increment's participant arm had been: a population missing outright
+rather than a rule answering wrongly, which no case about the rule can see.
+
+**The rung, and where it had to go.** `PAYLOAD_TABLE`, ranked between the named type and the written
+spelling, gated on the two verbs whose write target the classifier derives from the return. It reads
+`intent_carrier_data_field`, which is where the payload scan is already stated, rather than restating
+any of it: demanding one data channel of element kind `TABLE` is that relation's own arity refusal
+transcribed, and it also makes the rest of the scan moot, a payload with one bound channel having no
+second channel to be unrecognized and no ID channel to refuse.
+
+That relation reaches the backing closure, so it is declared far below the scope family, and the file
+is executed in order. Three blocks moved rather than one arm being written around the constraint: the
+participant scope, the field scope, the argument scope and the three argument-site resolution
+relations now sit after the carrier family. Nothing else moved and nothing changed shape; the refresh
+order is derived from recorded dependency edges rather than from declaration order, so it recomputed
+itself. The alternative was restating part of the payload scan early, which is the thing this whole
+chain exists not to do.
+
+**`intent_mutation_write_payload`**, the first relation in this family keyed by the mutation rather
+than by an input field: which coordinate writes, with which verb, over which table, through which
+argument, plus the two cardinalities. Two verbs, because UPDATE and DELETE are the pair whose input
+the walkers admit identically; INSERT resolves through a different gate and UPSERT is refused at the
+verb dispatch. The write table is read through the verb, which is where the scope relation alone
+would mislead: an UPDATE takes whichever of the three rungs ranked first, and a DELETE has no
+return-derived rung at all, so a DELETE returning a bound type and naming no table would otherwise
+read as writing that table.
+
+Three refusals are folded into the relation's absence and the rest deliberately are not, and the line
+is whose property the refusal is. Exactly one argument, of input-object type, with no `@condition`,
+and no `multiRow: true` on an UPDATE, are all facts about the argument: a coordinate failing one of
+them is not a payload with something wrong in it. The per-field admissibility, a list-typed carrier,
+an `@condition` on an input field, an unbound or condition-owned field, a carrier that reaches its
+row only through a join, is five located diagnostics at coordinates an author can be pointed at, and
+folding those into one silence at the mutation would be the store telling a worse story than the
+walker does. They belong at the input-field grain beside the roles that name them, which is the next
+piece rather than this one.
+
+**The cost, where the gate's metric and the clock disagree outright.** The rung makes the scope
+relation read a registered target, so `DerivedReadCostTest` records three new non-monotonic cells, the
+scope relation and the two above it. Registered they visit around 40,700 rows apiece and unregistered
+around 24,700, so by scan count all three are regressions by nearly a factor of two; the wall clocks
+are 42, 41 and 83 milliseconds registered against 73, 73 and 160 unregistered, three runs each with
+the spread inside two milliseconds. The shape visiting two thirds more rows takes half as long, on
+every relation and every run. That is the case the fact model's own doctrine describes and it is
+worth having measured rather than argued: a scan count is a row count. The rung's own price was taken
+by removing the arm, 21,653 scans and 33 milliseconds without it against 40,608 and 42 with it, so
+about nine milliseconds for a question the store could not answer at all, paid once per refresh
+rather than per read.
+
+**What this increment leaves owing**, the same two as the ninth plus one the finding added: the
+per-input-field refusal relation, the destination at the column grain, and the matched key over the
+identity columns. Then the fold.
 
 ### Emitter half: family by family
 

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
 import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_SCOPE_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_SCOPE_TABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
@@ -17,6 +18,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldSynthesis;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedMutation;
+import static no.sikt.graphitron.model.test.SeededStore.seedRootOperation;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
 import static no.sikt.graphitron.model.test.SeededStore.seedTableBinding;
@@ -30,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * starts.
  *
  * <p>The rung cases mirror {@code ArgumentScopeTableTest}'s and assert which rung answered rather
- * than only that a table came out, for the reason that test states: the two rungs reach the same
+ * than only that a table came out, for the reason that test states: the three rungs reach the same
  * table often enough that a case asserting the table alone would pass with the precedence inverted.
  *
  * <p>Two further sections carry what is this relation's own rather than inherited. One is the grain:
@@ -144,6 +146,75 @@ class FieldScopeTableTest {
 
             assertThat(rows(dsl).map(FieldScopeTableTest::render))
                 .containsExactly("Mutation.createFilm MUTATION_TABLE film");
+        });
+    }
+
+    // ===== PAYLOAD_TABLE =====
+
+    /**
+     * A write returning a carrier payload is rooted in the table its data channel binds. The rung
+     * that makes such a coordinate answerable at all, and its absence was a silence rather than a
+     * refusal: every input field under the argument of a payload-returning write resolved against
+     * no table, so the whole input-field family below was blank at exactly the coordinates a write
+     * surface is about.
+     */
+    @Test
+    void aCarrierPayloadsDataChannelIsTheScope() {
+        withCatalog(dsl -> {
+            seedPayloadReturningWrite(dsl, "updateFilmPayload", "UPDATE");
+
+            assertThat(writeRows(dsl))
+                .containsExactly("Mutation.updateFilmPayload PAYLOAD_TABLE film");
+        });
+    }
+
+    /**
+     * Both mutation rungs answer and the payload wins, which is the classifier's own order: the
+     * return names the table the RETURNING projection reads, so a {@code @mutation(table:)} beside
+     * it is either redundant or a coordinate that cannot emit at all.
+     */
+    @Test
+    void thePayloadOutranksTheMutationTable() {
+        withCatalog(dsl -> {
+            seedPayloadReturningWrite(dsl, "updateFilmPayload", "UPDATE");
+            dsl.deleteFrom(GRAPHITRON_MUTATION)
+                .where(GRAPHITRON_MUTATION.FIELD_NAME.eq("updateFilmPayload")).execute();
+            seedMutation(dsl, GRAPH, "Mutation", "updateFilmPayload", "UPDATE", "actor");
+
+            assertThat(writeRows(dsl))
+                .containsExactly("Mutation.updateFilmPayload PAYLOAD_TABLE film");
+        });
+    }
+
+    /**
+     * A DELETE gets no payload rung, which is the resolver's own gate rather than a shape this
+     * relation could not reach: a DELETE cannot return the deleted row's {@code @table} type, so a
+     * carrier under one wraps an encoded key rather than a row and the table it writes is the
+     * written spelling's to name.
+     */
+    @Test
+    void aDeleteTakesNoPayloadRung() {
+        withCatalog(dsl -> {
+            seedPayloadReturningWrite(dsl, "deleteFilmPayload", "DELETE");
+
+            assertThat(writeRows(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * A payload declaring two data channels is not a carrier, and the arity refusal is
+     * {@code intent_carrier_data_field}'s rather than one restated here. Asserted as no scope at
+     * all: picking one of the two channels would root the statement in a table the author never
+     * said to write.
+     */
+    @Test
+    void aPayloadWithTwoDataChannelsIsNoScope() {
+        withCatalog(dsl -> {
+            seedPayloadReturningWrite(dsl, "updateFilmPayload", "UPDATE");
+            seedTableBinding(dsl, GRAPH, "Actor", "actor");
+            seedField(dsl, GRAPH, "FilmPayload", "actor", "Actor", false);
+
+            assertThat(writeRows(dsl)).isEmpty();
         });
     }
 
@@ -268,6 +339,20 @@ class FieldScopeTableTest {
     }
 
     /**
+     * A mutation-root write returning a carrier payload: the payload type wrapping one data channel
+     * whose element is a bound type. The shape whose write target the classifier derives from the
+     * return rather than from a written spelling.
+     */
+    private static void seedPayloadReturningWrite(DSLContext dsl, String fieldName, String operation) {
+        seedRootOperation(dsl, GRAPH, "MUTATION", "Mutation");
+        seedTableBinding(dsl, GRAPH, "Film", "film");
+        seedType(dsl, GRAPH, "FilmPayload", "OBJECT");
+        seedField(dsl, GRAPH, "FilmPayload", "film", "Film", false);
+        seedField(dsl, GRAPH, "Mutation", fieldName, "FilmPayload", false);
+        seedMutation(dsl, GRAPH, "Mutation", fieldName, operation);
+    }
+
+    /**
      * One table name declared in two schemas, which is how a spelling resolves to two tables and a
      * binding over it becomes ambiguous. Stated as a catalog shape rather than as two bindings on one
      * type, the store keying a written {@code @table} by graph and type and admitting only one.
@@ -309,6 +394,18 @@ class FieldScopeTableTest {
                 + row.get(INTENT_ARGUMENT_SCOPE_TABLE.ARGUMENT_NAME) + ") "
                 + row.get(INTENT_ARGUMENT_SCOPE_TABLE.BASIS) + " "
                 + row.get(INTENT_ARGUMENT_SCOPE_TABLE.TABLE_NAME));
+    }
+
+    /**
+     * The rows the mutation root owns. The payload cases seed a carrier whose data channel is itself
+     * a bound field, so that field resolves a scope of its own and says nothing about the rung under
+     * test; narrowing to the writing coordinate is what keeps each case's claim its own.
+     */
+    private static List<String> writeRows(DSLContext dsl) {
+        return rows(dsl).stream()
+            .map(FieldScopeTableTest::render)
+            .filter(rendered -> rendered.startsWith("Mutation."))
+            .toList();
     }
 
     /** The coordinate, which rung answered, and the table it reached: the claim of every case here. */

@@ -102,10 +102,10 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 97;
+    private static final int READERS_IN_SCHEMA = 98;
 
     /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 58;
+    private static final int READERS_WITH_CELLS = 59;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -122,7 +122,7 @@ class DerivedReadCostTest {
      * So a drop here is not the matrix quietly seeing less; it is cost moving off a reader and onto
      * a refresh, and the refresh is a view in this domain and priced like any other.
      */
-    private static final int CELLS = 138;
+    private static final int CELLS = 143;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -226,6 +226,21 @@ class DerivedReadCostTest {
      * to fold into one, and the one-pass shape that would do it was written and measured and is not
      * an improvement: see that relation's own comment, which carries the figures and the reason.
      *
+     * <p>The last three are where the counter and the clock disagree outright, and they are the
+     * clearest case in this set for reading the instrument as a row count rather than as a cost. The
+     * scope relation gained a rung that reads the carrier relation, so the argument-grain fan-out
+     * above it and the write-payload relation above that inherit the cell. Registered, the three
+     * visit 40608, 40947 and 40735 rows; unregistered, 24620, 24959 and 24747, so by this gate's
+     * metric all three are regressions and by a factor of nearly two. The wall clocks are 42, 41 and
+     * 83 milliseconds registered against 73, 73 and 160 unregistered, three runs apiece on the
+     * twelve-unit fixture with the spread inside two milliseconds: the shape visiting two thirds
+     * more rows is the one that takes half as long, on every relation and on every run. Nothing here
+     * is an index question, the carrier target carrying one already and the join reaching it on its
+     * own graph and type. The rung's own price was measured the same way, by removing the arm: the
+     * scope relation is 21653 scans and 33 milliseconds without it against 40608 and 42 with it, so
+     * the question the store could not answer at all before costs about nine milliseconds, paid once
+     * per refresh of the argument scope rather than per read.
+     *
      * <p>Three larger pairs stood here until the targets were indexed, and how they left is worth
      * knowing before adding more. They were not the registrations' fault and no reader had to be
      * restructured: a materialized target was the only kind of table in this schema with no key on it,
@@ -269,7 +284,12 @@ class DerivedReadCostTest {
         // The same floor reached through the input-field reference walk, which the decode's hop
         // child took up when the input-field path stopped being unwalkable.
         "intent_field_reference_step_hop|intent_node_id_decode_hop",
-        "intent_field_reference_step_hop|intent_node_id_decode_hop_column_live");
+        "intent_field_reference_step_hop|intent_node_id_decode_hop_column_live",
+        // The scope family's payload rung, where the counter and the clock disagree outright;
+        // measured above.
+        "intent_carrier_data_field|intent_field_scope_table",
+        "intent_carrier_data_field|intent_argument_scope_table_live",
+        "intent_carrier_data_field|intent_mutation_write_payload");
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather
