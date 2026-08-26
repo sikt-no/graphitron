@@ -8158,6 +8158,128 @@ COMMENT ON COLUMN intent_mutation_write_payload.source_name IS 'the SDL file the
 COMMENT ON COLUMN intent_mutation_write_payload.source_line IS 'source line of the @mutation application, 1-based';
 COMMENT ON COLUMN intent_mutation_write_payload.source_column IS 'source column of the @mutation application, 1-based';
 
+CREATE VIEW intent_mutation_payload_refusal
+  (graph_name, type_name, field_name, operation,
+   path, container_type_name, input_field_name, role, cause,
+   write_source_name, write_schema, write_table,
+   source_name, source_line, source_column) AS
+WITH reached (graph_name, path, depth, type_name, field_name, operation,
+              write_source_name, write_schema, write_table) AS (
+  SELECT p.graph_name, p.path, p.depth, w.type_name, w.field_name, w.operation,
+         w.write_source_name, w.write_schema, w.write_table
+    FROM intent_mutation_write_payload w
+    JOIN intent_input_occurrence_path p
+      ON p.graph_name = w.graph_name AND p.root_type_name = w.type_name
+     AND p.root_field_name = w.field_name AND p.root_argument_name = w.argument_name
+   WHERE p.depth > 0
+),
+refused (graph_name, type_name, field_name,
+         resolving_source_name, resolving_schema, resolving_table,
+         role, cause, precedence) AS (
+  SELECT rt.graph_name, rt.type_name, rt.field_name,
+         rt.table_source_name, rt.table_schema, rt.table_name,
+         CAST(NULL AS VARCHAR), 'UNCLASSIFIED', 0
+    FROM intent_input_field_resolving_table rt
+   WHERE NOT EXISTS (SELECT 1 FROM intent_input_field_filter_role fr
+                      WHERE fr.graph_name = rt.graph_name AND fr.type_name = rt.type_name
+                        AND fr.field_name = rt.field_name
+                        AND fr.resolving_source_name = rt.table_source_name
+                        AND fr.resolving_schema = rt.table_schema
+                        AND fr.resolving_table = rt.table_name)
+   UNION ALL
+  SELECT cr.graph_name, cr.type_name, cr.field_name,
+         cr.resolving_source_name, cr.resolving_schema, cr.resolving_table,
+         fr.role, 'REMOTE_CARRIER', 1
+    FROM intent_input_field_carrier_role cr
+    JOIN intent_input_field_filter_role fr
+      ON fr.graph_name = cr.graph_name AND fr.type_name = cr.type_name
+     AND fr.field_name = cr.field_name
+     AND fr.resolving_source_name = cr.resolving_source_name
+     AND fr.resolving_schema = cr.resolving_schema
+     AND fr.resolving_table = cr.resolving_table
+   WHERE cr.carrier_role = 'REMOTE'
+   UNION ALL
+  SELECT fr.graph_name, fr.type_name, fr.field_name,
+         fr.resolving_source_name, fr.resolving_schema, fr.resolving_table,
+         fr.role, 'CONDITION_OWNED', 2
+    FROM intent_input_field_filter_role fr
+   WHERE fr.role = 'CONDITION_OWNED'
+   UNION ALL
+  SELECT fr.graph_name, fr.type_name, fr.field_name,
+         fr.resolving_source_name, fr.resolving_schema, fr.resolving_table,
+         fr.role, 'UNBOUND', 3
+    FROM intent_input_field_filter_role fr
+   WHERE fr.role = 'UNBOUND'
+   UNION ALL
+  SELECT fr.graph_name, fr.type_name, fr.field_name,
+         fr.resolving_source_name, fr.resolving_schema, fr.resolving_table,
+         fr.role, 'LIST_CARRIER', 4
+    FROM intent_input_field_filter_role fr
+    JOIN graphql_field f
+      ON f.graph_name = fr.graph_name AND f.type_name = fr.type_name
+     AND f.field_name = fr.field_name AND f.is_list = TRUE
+   WHERE fr.role IN ('NAME_MATCHED', 'NODE_ID', 'NESTING')
+   UNION ALL
+  SELECT fr.graph_name, fr.type_name, fr.field_name,
+         fr.resolving_source_name, fr.resolving_schema, fr.resolving_table,
+         fr.role, 'AUTHORED_CONDITION', 5
+    FROM intent_input_field_filter_role fr
+   WHERE fr.role IN ('NAME_MATCHED', 'NODE_ID', 'NESTING')
+     AND EXISTS (SELECT 1 FROM graphitron_field_condition fc
+                  WHERE fc.graph_name = fr.graph_name AND fc.type_name = fr.type_name
+                    AND fc.field_name = fr.field_name)
+)
+SELECT graph_name, type_name, field_name, operation,
+       path, container_type_name, input_field_name, role, cause,
+       write_source_name, write_schema, write_table,
+       source_name, source_line, source_column
+  FROM (SELECT rc.graph_name, rc.type_name, rc.field_name, rc.operation,
+               rc.path, s.container_type_name, s.field_name AS input_field_name,
+               d.role, d.cause,
+               rc.write_source_name, rc.write_schema, rc.write_table,
+               f.source_name, f.source_line, f.source_column,
+               ROW_NUMBER() OVER (PARTITION BY rc.graph_name, rc.path
+                                  ORDER BY d.precedence) AS rn
+          FROM reached rc
+          JOIN intent_input_occurrence_path_step s
+            ON s.graph_name = rc.graph_name AND s.path = rc.path AND s.ordinal = rc.depth
+          JOIN refused d
+            ON d.graph_name = s.graph_name AND d.type_name = s.container_type_name
+           AND d.field_name = s.field_name
+           AND d.resolving_source_name = rc.write_source_name
+           AND d.resolving_schema = rc.write_schema
+           AND d.resolving_table = rc.write_table
+          JOIN graphql_field f
+            ON f.graph_name = s.graph_name AND f.type_name = s.container_type_name
+           AND f.field_name = s.field_name
+         WHERE NOT EXISTS (SELECT 1 FROM intent_input_occurrence_path_step a
+                             JOIN refused c
+                               ON c.graph_name = a.graph_name
+                              AND c.type_name = a.container_type_name
+                              AND c.field_name = a.field_name
+                              AND c.resolving_source_name = rc.write_source_name
+                              AND c.resolving_schema = rc.write_schema
+                              AND c.resolving_table = rc.write_table
+                            WHERE a.graph_name = rc.graph_name AND a.path = rc.path
+                              AND a.ordinal < rc.depth)) ranked
+ WHERE rn = 1;
+COMMENT ON VIEW intent_mutation_payload_refusal IS 'Why a walker-driven write refuses one input field, located at the occurrence that reaches it. The refusal half of intent_mutation_write_payload: that relation folds the three refusals an argument owns into its own absence and deliberately leaves these out of it, because each of them is a refusal at a coordinate an author can be pointed at, and folding them into one silence at the mutation would throw the position away. The grain is the occurrence path rather than the input field, so a shared input type reached from two write surfaces is refused once under each and every row names both the mutation it broke and the step inside the payload that broke it. The path carries the mutation coordinate as its root, so the coordinate columns beside it are a projection rather than a widening of the key. The domain is the write payload''s and therefore the two verbs whose input a walker flattens, UPDATE and DELETE. An INSERT admits its payload through a gate of its own, which rejects a @lookupKey and a composing @condition on the input type outright and admits the condition-owned field this relation refuses, so its refusals are not these and putting them here would make one vocabulary stand for two rules. Two gates, in the order the build runs them, and the vocabulary keeps them apart. UNCLASSIFIED is the first and is not a walker''s refusal at all: the classifier declined the field, the validator mirror lifts that decline into a rejection on the mutation, and the walker never runs. Why it declined is intent_input_field_filter_role''s absence and the resolution relations under it; the cause here says which gate refused and leaves the diagnostic where the rule is stated. The other five are the walkers'' own, and they are one set rather than two: the DELETE and UPDATE flatteners refuse the same five shapes at the same two gates, and the only thing that differs between them is which typed error carries the message. The five are ranked rather than unioned because a field can be several of them at once and the build reports the first. REMOTE_CARRIER is decided at the binding switch ahead of every other test, so a reference carrier whose decoded value reaches its row only through a join is refused for that and not for whatever else it also is. CONDITION_OWNED and UNBOUND are carriers of their own and never reach the shape gate below them. LIST_CARRIER is that gate''s first test and AUTHORED_CONDITION its second, which is the order a list-typed field carrying a @condition is reported in. The role sits beside the cause because two of the causes cover two sites each. A list-typed field is refused whether it is a leaf carrier or a nesting grouping, and so is a field carrying a @condition; the walkers report those as four messages and this relation as two causes, the role telling a reader which of the four a row is. Widening the vocabulary instead would have restated at this grain a distinction the role relation already draws. AUTHORED_CONDITION is any @condition on a field whose role is not CONDITION_OWNED, of either override value, because what the walkers refuse is the directive on a shape they would otherwise admit rather than one of its readings: an override: true condition beside a @nodeId or a @reference is refused exactly as a composing one is, the classifier having given that field its own arm rather than the condition-owned carrier. That is also why this cause is not read off the role relation''s authored_condition column, which by construction says nothing about the override: true case. A refused nesting is never descended into, so nothing below it is classified and nothing below it is refused. This relation states that as a cut rather than as a rule: no row is emitted at a path any strict prefix of which carries a refusal of its own, whichever cause that prefix carries. The circular-nesting cut is not restated here at all, being intent_input_occurrence_path''s and already applied to the population this relation drives from. Absence is a payload the walkers admit at every occurrence of its input surface, which is the ordinary working write surface, and it is not a claim that the write succeeds. Whether the admitted remainder identifies a row is the matched key''s question and a refusal of the mutation rather than of a field, so it has no coordinate to be located at and no row here.';
+COMMENT ON COLUMN intent_mutation_payload_refusal.graph_name IS 'the owning graph''s partition, carried from the write payload';
+COMMENT ON COLUMN intent_mutation_payload_refusal.type_name IS 'the type owning the refused mutation field, which is the occurrence path''s root type';
+COMMENT ON COLUMN intent_mutation_payload_refusal.field_name IS 'the mutation field whose payload this row refuses; with the column above, the coordinate intent_mutation_write_payload is keyed by';
+COMMENT ON COLUMN intent_mutation_payload_refusal.operation IS 'the verb the walker was flattening for, UPDATE or DELETE. Carried because the two mint different typed errors from the same five refusals, so a consumer rendering one needs the verb without a second join';
+COMMENT ON COLUMN intent_mutation_payload_refusal.path IS 'the occurrence path of the refused input field, intent_input_occurrence_path''s key; with the graph, this relation''s grain';
+COMMENT ON COLUMN intent_mutation_payload_refusal.container_type_name IS 'the input object type the refused field is declared on, the path''s last step''s container';
+COMMENT ON COLUMN intent_mutation_payload_refusal.input_field_name IS 'the refused input field''s name within that container; named apart from field_name because that column is the mutation''s';
+COMMENT ON COLUMN intent_mutation_payload_refusal.role IS 'the role the classifier resolved for the field, which says which of the sites a cause covering two of them is about. NULL exactly where the cause is UNCLASSIFIED, the classifier having resolved no role to carry';
+COMMENT ON COLUMN intent_mutation_payload_refusal.cause IS 'which gate refused and why, in a closed vocabulary of six: UNCLASSIFIED where the classifier declined the field before a walker saw it, then the walkers'' own five in the order they are tested, REMOTE_CARRIER, CONDITION_OWNED, UNBOUND, LIST_CARRIER and AUTHORED_CONDITION. A new refusal in either walker is a new value here rather than a silence';
+COMMENT ON COLUMN intent_mutation_payload_refusal.write_source_name IS 'the catalog partition of the table the write targets, which is also the table the field was classified against; carried so a reader has the classification this refusal was reached under';
+COMMENT ON COLUMN intent_mutation_payload_refusal.write_schema IS 'the write table''s SQL schema';
+COMMENT ON COLUMN intent_mutation_payload_refusal.write_table IS 'the write table''s SQL name; with the two columns above, sql_table''s full key';
+COMMENT ON COLUMN intent_mutation_payload_refusal.source_name IS 'the refused input field''s own declaration file; the position a diagnostic would carry, and the whole reason these refusals are stated here rather than folded into the payload relation''s absence';
+COMMENT ON COLUMN intent_mutation_payload_refusal.source_line IS 'source line of the input field declaration, 1-based';
+COMMENT ON COLUMN intent_mutation_payload_refusal.source_column IS 'source column of the input field declaration, 1-based';
+
 CREATE TABLE rejection_validation_error (
   graph_name    VARCHAR NOT NULL,
   ordinal       INT     NOT NULL,

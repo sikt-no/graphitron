@@ -86,14 +86,16 @@ class DerivedReadCostTest {
      *
      * <p>{@link #KNOWN_NON_MONOTONIC} is scale-dependent, and not monotonically: it is empty at one
      * unit, where the gate would see nothing at all, three pairs at four units, four at eight, and
-     * the nine above at twelve, where several borderline cells' plans flip against the statistics
-     * that size implies. Every twelve-only pair was answered as an index question and declined on
+     * nine at twelve, where several borderline cells' plans flip against the statistics that size
+     * implies. Every twelve-only pair was answered as an index question and declined on
      * measurement, per the set's own javadoc, so what twelve adds is visibility rather than noise.
      * Twelve is kept because it is the size that ships and the fixture may grow and may not shrink;
      * the set is pinned at the size the gate actually runs, and the two smaller sizes are recorded
      * here so the next re-pin knows the boundary moved before and can move again. Those three
      * figures were re-taken when the fixture grew its input surface, because a size boundary is a
-     * measurement like any other and does not survive the fixture it was taken on.
+     * measurement like any other and does not survive the fixture it was taken on. They are the
+     * boundary and not a running count of the set, which has grown past nine since as relations
+     * were added and which the set below states for itself.
      *
      * <p>The fixture may grow and may not shrink. A smaller one is the single change that would make
      * this gate pass while seeing nothing, the registrations existing precisely because a rule is
@@ -102,10 +104,10 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 98;
+    private static final int READERS_IN_SCHEMA = 99;
 
     /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 59;
+    private static final int READERS_WITH_CELLS = 60;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -122,7 +124,7 @@ class DerivedReadCostTest {
      * So a drop here is not the matrix quietly seeing less; it is cost moving off a reader and onto
      * a refresh, and the refresh is a view in this domain and priced like any other.
      */
-    private static final int CELLS = 143;
+    private static final int CELLS = 152;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -241,6 +243,14 @@ class DerivedReadCostTest {
      * the question the store could not answer at all before costs about nine milliseconds, paid once
      * per refresh of the argument scope rather than per read.
      *
+     * <p>A fourth cell joined those three when the refusal relation was written over the write
+     * payload, and it is the same disagreement one relation further down rather than a new finding:
+     * registered it visits 59099 rows in 80 to 87 milliseconds, unregistered 43111 in 149 to 157,
+     * three runs apiece and the spread inside seven milliseconds on either side. Worth reading as
+     * the shape this arm keeps: everything built over the payload rung inherits the cell, so a new
+     * reader of that family arrives here by construction and the question to ask of it is whether
+     * its clock agrees with the three above rather than whether its counter does.
+     *
      * <p>Three larger pairs stood here until the targets were indexed, and how they left is worth
      * knowing before adding more. They were not the registrations' fault and no reader had to be
      * restructured: a materialized target was the only kind of table in this schema with no key on it,
@@ -285,11 +295,15 @@ class DerivedReadCostTest {
         // child took up when the input-field path stopped being unwalkable.
         "intent_field_reference_step_hop|intent_node_id_decode_hop",
         "intent_field_reference_step_hop|intent_node_id_decode_hop_column_live",
+        // The same floor again, twelve scans out of fifty-nine thousand, reached because the
+        // refusal relation reads the input-field family; measured above.
+        "intent_field_reference_step_hop|intent_mutation_payload_refusal",
         // The scope family's payload rung, where the counter and the clock disagree outright;
         // measured above.
         "intent_carrier_data_field|intent_field_scope_table",
         "intent_carrier_data_field|intent_argument_scope_table_live",
-        "intent_carrier_data_field|intent_mutation_write_payload");
+        "intent_carrier_data_field|intent_mutation_write_payload",
+        "intent_carrier_data_field|intent_mutation_payload_refusal");
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather

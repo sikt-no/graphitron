@@ -2596,6 +2596,74 @@ rather than per read.
 per-input-field refusal relation, the destination at the column grain, and the matched key over the
 identity columns. Then the fold.
 
+### Conditions, eleventh increment: the five located refusals
+
+The tenth increment promised these and named them as owing in one sentence. This is that sentence
+turned into a relation: `intent_mutation_payload_refusal`, which says why a walker-driven write
+refuses one input field, located at the occurrence that reaches it.
+
+**Why a relation and not an absence.** `intent_mutation_write_payload` folds three refusals into its
+own silence, and the argument owns all three: exactly one argument, of input-object type, carrying no
+`@condition`. A coordinate failing one of those is not a payload with something wrong in it. The
+per-field refusals are the other kind. Each of them is a fact about a coordinate an author wrote, at a
+line and column a diagnostic can point at, and collapsing five of those into one silence at the
+mutation would make the store tell a worse story than the walker already tells.
+
+**The grain is the occurrence, not the input field.** One input type reached from two write surfaces
+is refused once under each, and each row names both the mutation it broke and the step inside the
+payload that broke it. That is the whole reason for the choice: a consumer rendering the diagnostic
+needs the write surface, and the field alone does not carry it. The occurrence path already carries
+the mutation coordinate as its root, so the coordinate columns beside it are a projection rather than
+a widening of the key.
+
+**Two gates, and the vocabulary keeps them apart.** `UNCLASSIFIED` is the first and is not a walker's
+refusal at all: the classifier declined the field, the validator mirror lifts that decline into a
+rejection on the mutation, and the walker never runs. Why it declined stays where the rule is stated,
+in `intent_input_field_filter_role`'s absence and the relations under it. Including it as a cause
+rather than leaving it out is the tenth increment's lesson applied without waiting to be bitten: a
+payload whose fields the classifier declined would otherwise read here as a payload with nothing
+wrong in it, which is a silence of exactly the kind that increment was about.
+
+The other five are the walkers' own, and they are one set rather than two. The DELETE and UPDATE
+flatteners refuse the same five shapes at the same two gates and differ only in which typed error
+carries the message: `REMOTE_CARRIER`, `CONDITION_OWNED`, `UNBOUND`, `LIST_CARRIER`,
+`AUTHORED_CONDITION`.
+
+**Ranked, not unioned.** A field can be several of these at once and the build reports the first, so a
+union would hand a consumer a diagnostic the build never mints. The order is the walkers' own: the
+binding switch decides `REMOTE_CARRIER` ahead of every other test, the condition-owned and unbound
+carriers are variants that never reach the shape gate below them, and that gate tests the list shape
+before the condition. Two cases pin the ranking directly, a remote carrier that is also list-typed and
+a list-typed field that also carries a condition.
+
+**Two decisions worth recording.** The role sits beside the cause because two causes cover two sites
+each: a list-typed field and a `@condition`-carrying field are refused whether they are leaf carriers
+or nesting groupings, which the walkers report as four messages. Carrying the role instead of widening
+the vocabulary to seven keeps a distinction the role relation already draws from being restated at this
+grain. And `AUTHORED_CONDITION` is any `@condition` of either `override` value on a field whose role is
+not `CONDITION_OWNED`, because what the walkers refuse is the directive on a shape they would otherwise
+admit rather than one of its readings; an `override: true` condition beside a `@nodeId` is refused
+exactly as a composing one is, the classifier having given that field its own arm. That is why the
+cause is not read off the role relation's `authored_condition` column, which by construction says
+nothing about the `override: true` case.
+
+**The cut.** A refused nesting is never descended into, so nothing below it is classified and nothing
+below it is refused. The relation states that by emitting no row at a path any strict prefix of which
+carries a refusal of its own, whichever cause the prefix carries. The circular-nesting cut is not
+restated at all, being the occurrence path's and already applied to the population this drives from.
+
+**The cost.** Two new cells, both measured rather than rostered blind, and neither a new finding. The
+`intent_carrier_data_field` cell is the payload rung's disagreement one relation further down:
+registered 59,099 rows in 80 to 87 milliseconds, unregistered 43,111 in 149 to 157, three runs apiece
+with the spread inside seven milliseconds. Everything built over that rung inherits the cell by
+construction, so the question to ask of the next such reader is whether its clock agrees with the ones
+above it rather than whether its counter does. The `intent_field_reference_step_hop` cell is the
+instrument's own floor again, twelve scans out of fifty-nine thousand, reached because this relation
+reads the input-field family.
+
+**What this increment leaves owing**, now two rather than three: the destination at the column grain
+and the matched key over the identity columns. Then the fold.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the
