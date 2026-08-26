@@ -47,7 +47,8 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
      * a separate read that would still find the untouched row. Updates and upserts therefore have to check the
      * affected row count to notice, which {@link no.sikt.graphql.helpers.query.QueryHelper#requireRowsAffected}
      * does. Inserts are left out because a write that inserts nothing raises an error of its own, and deletes
-     * because their payload already reports back the ids that were not deleted.
+     * because their payload reports back the ids that are no longer present, so a row that could not be deleted
+     * comes back as null rather than as a false success.
      *
      * @return whether mutations of this type should verify the row count their batched write reports.
      */
