@@ -260,7 +260,9 @@ machinery already asserts once the `_live` view is registered with it.
   column shape, acyclicity, order, and nothing materializing outside the mechanism) are what check
   the pair, and they need nothing from the author.
 * `DerivedReadCostTest`: three pinned counts move and one pinned set may.
-  `READERS_IN_SCHEMA` rises from 99 to 100, the new `_live` view being a view in the schema.
+  `READERS_IN_SCHEMA` rises by one, the new `_live` view being a view in the schema; it was 99 when
+  this item was drafted and is 101 on trunk today, so re-pin it from the tree rather than from a
+  figure this file states.
   `READERS_WITH_CELLS` and `CELLS` move in both directions at once, which the constant's own javadoc
   explains: the reachability walk stops at a registered target, so every reader that reached a
   registration only through this relation loses those cells, while this registration and its `_live`
@@ -314,3 +316,73 @@ statement timings under `OPTIMIZE_REUSE_RESULTS FALSE`; the totals are the real 
 The one figure taken at a single execution is the per-registration table in the first section, which
 ranks and is provisional in its tail; the 41 s subject was measured six times across four programs
 and ranged 39.7 s to 49.1 s, the high end taken while a second probe shared the machine.
+
+## Reviewer findings
+
+### Round 1 (2026-08-26, Spec -> Ready, reviewer session 310ba981-0e52-442f-afd2-1a3cee64c049)
+
+Verdict: withhold. Two findings, both about the evidence the plan rests on rather than about the
+design, which holds up. The diagnosis is the kind this repo asks for: a real captured store, a
+bisect that names the term rather than the section, and a control that refuted the reading a reader
+following the plan's shape would reach first. Everything checkable against the tree checked out. The
+view's declared column list is `(graph_name, type_name, field_name, family, payload_type_name,
+root_operation)`, exactly the proposed table's columns in exactly that order; its inputs are the five
+captured base tables the plan names, so nothing in the file's declaration order moves; `store_graph`
+is declared at the top of the file and both reading bodies sit well below the insertion point; the
+pair order and the comment split match the `intent_errors_field_live` pair the plan cites;
+`intent_field_error_channel`'s view comment and its `transport` and `family` column comments do spell
+the canonical name three times, so the name moving to the table is what keeps
+`SchemaIdentifierDriftCheck` satisfied; grep finds no Java reader of the relation, so "two readers in
+SQL" is complete rather than approximate; and `meta_relation_family` is a census view over the
+catalog, so the new pair needs no authored roster row.
+
+**1. The gates named as confirming the refresh edge cannot confirm it.** "Nothing orders the refresh
+by hand" states that `MaterializeRegistryGateTest`'s acyclicity and order-respecting tests "are what
+confirm the edge arrived", and the "no new behavioural test, and that is the mechanism working
+rather than a gap" conclusion under Tests and gates rests on that claim. Neither test can carry it.
+`theDerivedDependenciesAdmitARefreshOrder` asserts only that every registration appears exactly once
+in the returned order, which is true whatever edges exist. `theRefreshOrderRespectsEveryDependencyRow`
+iterates the rows of `meta_materialize_dependency` and collects offenders, so an edge that was never
+derived contributes no row and therefore no offender: the test passes vacuously on the store where
+the edge is missing, which is the one store it needs to fail on.
+
+This is a finding about cited evidence and not a predicted defect. The mechanism looks sound:
+`MaterializeDependencies` walks the parsed query object model rather than the view text and filters
+on H2's schema-qualified spelling, its own javadoc calling out that CTE names stay unqualified while
+real relation references do not, so the qualified reference inside `intent_carrier_data_field_live`'s
+`producer` CTE is exactly the shape the walk collects. What is missing is a statement of what fails
+if it does not. That answer exists and is loud: a carrier refresh ordered before the producer refresh
+reads an empty producer table, so `intent_carrier_data_field` lands with zero rows, and
+`CarrierDataFieldTest` asserts each case's whole row set over a captured store rather than a
+projection of it, so every non-empty case fails. Name that, or an assertion that the edge row is
+present, in place of the two structural tests. The distinction matters here more than it usually
+would, because this is the item that decides no new test is needed.
+
+**2. The index question is elevated to "answered by measurement" and then answered against one
+shape.** The section is right that this is the first registration whose motivating reader probes in
+from a population larger than the target, and right that
+`intent_argument_column_match`'s roster row names that as the shape which would change its answer. But
+the probe carries a constraint the proposed index shape omits. The `producer` CTE is `SELECT DISTINCT
+graph_name, payload_type_name, family FROM intent_field_payload_producer WHERE root_operation =
+'MUTATION'`, so every one of the thousands of probes is an equality on `(graph_name,
+payload_type_name)` underneath a constant `root_operation = 'MUTATION'`, against a table whose rows
+are mostly not mutation-rooted: `root_operation` is null for every producing field on a
+non-root type and `'QUERY'` for most of the rest. Timing only `(graph_name, payload_type_name)`
+therefore measures a seek that still filters the bulk of its matches afterwards, and a `NO_INDEX`
+roster row resting on that one figure would be read as settled by the next reader, the roster being
+asserted by equality in both directions. Time a `root_operation`-carrying shape beside the named one
+on both fixtures, and let the roster row or the shipped index state which shapes were timed.
+
+**3. Minor, and it lands in a durable surface.** The plan twice calls `intent_field_error_channel`
+"indifferent to the registration", once in The lever and once in the list of what the `reason` must
+state. It is not indifferent, it is unmeasured and cheaper: driving from the relation in a plain
+`FROM` means it paid exactly one evaluation of the rule before and reads stored rows after, which is
+a small gain in the same direction as the carrier's large one. The `reason` column is read by
+consumers through the generated schema reference, so the word that goes there should be the accurate
+one. "Already paid exactly one evaluation, so the registration does not change how many times it
+reads the rule" says what is meant without claiming a cost that was not measured.
+
+Corrected in passing, in the same commit as these findings: the `READERS_IN_SCHEMA` line under Tests
+and gates pinned 99 rising to 100, and trunk moved that constant to 101 after this item was drafted.
+Rewritten to say it rises by one and to point at the tree for the figure, which is what the section's
+own "re-pin from the failure message rather than predicting them" already asks for.
