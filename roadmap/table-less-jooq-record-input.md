@@ -123,11 +123,25 @@ shape comes from the record, not from the field its parameter sits on. A table-l
 table, so the answer is not to borrow one from the enclosing field; it is that there is none to
 consult.
 
-Borrowing the field's return table instead would be unreliable even where one exists. Nothing
-requires a `@service` parameter to relate to the field's return type. The two often coincide (in
-`updateFilm(in: FilmInput): Film` the return table is the table the parameter's record wants), but
-that is a convention rather than a constraint, and it is not always available at all: the goal
-example's field returns `String`.
+Borrowing the field's return table instead would cross an axis the model keeps separate deliberately.
+`RecordBindingResolver` carries two observation sets and folds them independently. The result axis is
+thoroughly specified: a `@table`-bound SDL return grounds as `ProducerBinding.RootTable` under an
+explicit guard, a reflected `TableRecord` return grounds a `JooqTableRecordType`, a payload-returning
+write grounds a `ProducerBinding.ServiceEmitted` whose compact constructor requires the reflected
+class to equal `tableRef.recordClass()`, and a polymorphic return lifts every participant to its own
+table under validation that rejects PK-less participants and PK-arity mismatches. Result-to-table is
+specified machinery, not a coincidence worth distrusting.
+
+That is precisely why it is the wrong source here. The result axis answers where the rows this field
+*produces* live. The input axis answers what shape the value the caller *sends* has, and it is
+specified too: `groundServiceField` walks the method's parameters and calls `addInputObservation`, so
+an input type's backing comes from the parameter it flows into. Both questions have answers; they are
+different questions. The model states the separation rather than leaving it implicit, and
+`routineReturnMemo` and `serviceCarrierProducerArrivalMemo` each carry a javadoc note saying they are
+a separate axis answering a different question.
+
+The input axis's answer for this case is the parameter, and the parameter names a jOOQ record with no
+table. That is what leaves the SDL input as the source, not any doubt about the return table.
 
 That leaves one live alternative, which the item raised at filing: require the author to name the
 columns explicitly. It is rejected here, but not as worthless. Naming real columns would make the
