@@ -30,7 +30,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
-| `R726` | The @nodeId instruction population reaches the multitable coordinate but cannot key it by participant: state the limit and pin it | In Progress | 2026-08-26 <sub>created 2026-08-19</sub> | [plan](nodeid-bare-inference-per-participant-divergence.md) |
+| `R726` | The @nodeId instruction population reaches the multitable coordinate but cannot key it by participant: state the limit and pin it | In Review | 2026-08-26 <sub>created 2026-08-19</sub> | [plan](nodeid-bare-inference-per-participant-divergence.md) |
 | `R687` | A DML carrier payload with an errors field loses its return-derived write target | Spec | 2026-08-25 <sub>created 2026-08-17</sub> | [plan](dml-carrier-errors-field-blocks-return-derived-table.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
@@ -435,7 +435,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R835` [**The node-id decode read costs three quarters of a second and no gate holds a figure over it**](node-id-decode-read-is-dear-and-unpinned.md) — Backlog, architecture
 - `R588` [**Diagnostics for `implements Node @table` over a table with no node metadata**](node-without-metadata-diagnostics.md) — Backlog, dx
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
-- `R726` [**The @nodeId instruction population reaches the multitable coordinate but cannot key it by participant: state the limit and pin it**](nodeid-bare-inference-per-participant-divergence.md) — In Progress, architecture
+- `R726` [**The @nodeId instruction population reaches the multitable coordinate but cannot key it by participant: state the limit and pin it**](nodeid-bare-inference-per-participant-divergence.md) — In Review, architecture
 - `R273` [**Land or retire R265's deferred compile-tier guard**](bare-scalar-id-arm-modernisation.md) — Backlog, architecture
 - `R24` [**Rooted-at-parent NodeId reference JOIN-projection emitter (ColumnBackedReferenceField, both arities)**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 - `R419` [**Reject list-valued @nodeId+@reference carriers on INSERT inputs at build time**](list-nodeid-reference-insert-rejection.md) — Backlog, validation
