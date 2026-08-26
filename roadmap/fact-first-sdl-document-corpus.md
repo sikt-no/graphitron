@@ -73,7 +73,7 @@ The measurable forms, each checkable on the landed tree:
   roughly half.
 - No test failure message is the transport for a documentation update, and no oracle is lost buying
   that. Every expectation those pastes carried lives beside the document instead: the verdicts as
-  typed assertion directives in the document, the emitted names as a checked-in approval file in the
+  expected-row tables in the document, the emitted names as a checked-in approval file in the
   corpus folder. `ClassifiedDocTest` and `OutcomeBlockDocTest` retire only once their expectations
   have that home, which is why the doc collapse is the last slice and not the first.
 
@@ -88,7 +88,6 @@ A document carries four things, in this order by convention:
 type Country @table(name: "country") {
   "The country's name, an inline column read."
   name: String @field(name: "country")
-    @resolvedFieldClaim(classifier: COLUMN_MATCH, tier: INFERRED)
 }
 
 type City @table(name: "city") {
@@ -103,6 +102,13 @@ extend type Query {
   city: City @commits(source: AnchorTable, result: SingleRecord)
 }
 
+extend schema @expectRows(relation: "intent_resolved_field_claim", rows: """
+  type_name, field_name,   classifier,   tier
+  Country,   name,         COLUMN_MATCH, INFERRED
+  City,      country,      COLUMN_MATCH, INFERRED
+  City,      countrySplit, COLUMN_MATCH, INFERRED
+  """)
+
 { city { country { name } countrySplit { name } } }
 ```
 
@@ -111,9 +117,10 @@ extend type Query {
    coordinate: the `#` comment in today's projection query and the part of the Java comment that is
    about one coordinate become one description here. The example-level narrative, which has no
    coordinate to sit on, stays on the authored page.
-3. **Its assertions, as directive applications.** Today's four (`@classified`, `@classifiedType`,
-   `@synthesises`, `@commits`) move verbatim in slice 1; slice 2 replaces them coordinate by
-   coordinate with one typed directive per asserted relation.
+3. **Its assertions, as expected-row tables.** Today's four coordinate-level directives
+   (`@classified`, `@classifiedType`, `@synthesises`, `@commits`) move verbatim in slice 1; slice 2
+   replaces them with `extend schema @expectRows(relation:, rows:)` applications, one per asserted
+   relation, each carrying that relation's expected content for this document as CSV.
 4. **Its projection operation, optionally**, in the same file: an anonymous query, or a bare
    `fragment F on Type` where the coordinate has no reachable root path (both forms
    `QueryViewRenderer` already accepts). A document with no operation is corpus-only: it pins a
@@ -194,8 +201,9 @@ is the thing that makes them cheap.
 - The SDL-versus-Java mirror tests (`sourceWrapperMirrorsAdapterValues` and its four siblings, plus
   the `TypeVerdict`, `SynthesisedType`, `LauncherSource` and `LauncherResult` mirrors) read their SDL
   side out of the parsed prelude document instead of a Java string. They keep their meaning and lose
-  their transport. They do not die: slice 2 re-points them from the walk's sealed leaves to the
-  store's own verdict decoders, which is what keeps an SDL enum a top-rung claim.
+  their transport. They survive slice 1 because the walk-tuple directives they guard survive it; each
+  one dies in slice 2 with the enum it mirrors, since a CSV block declares no enum, and whatever the
+  walk still needs at that point dies with the zoo under R682.
 
 Where the descriptions go is the one judgment call in this slice. A Java comment that explains a
 minimal pair belongs on the two coordinates the pair contrasts, not on one of them; a comment about
@@ -205,69 +213,94 @@ transcribed.
 
 ## Slice 2: the assertion becomes a fact expectation
 
-One typed directive per asserted relation, defined in the prelude document, never one generic
-row-matcher. The generic form (`@expect(relation: String!, where: [{column:, is:}])`) was the first
-draft and is refused here for the reason the development principles' directive corollary gives: an
-input-object wrapper over several optional slots widens the failure surface from "the named thing did
-not resolve" to a cross-product of missing and inconsistent slots, and a string-valued column name
-forfeits the one property the prelude's enums exist for, which `ClassifiedDsl`'s own javadoc states:
-a typo in a declared value is a schema-assembly error graphql-java rejects before the harness runs. A
-`StoreCatalog` lookup catches the same typo one stage later and only when the harness runs.
+One directive, declared once in the prelude document, applied at the schema and repeated per
+relation. Its payload is the relation's expected content as CSV:
 
 ```graphql
-enum Classifier { SERVICE EXTERNAL_FIELD NODE_ID LOOKUP_KEY ROUTINE MUTATION COLUMN_MATCH }
-enum ClaimTier { AUTHORED INFERRED }
-
-directive @resolvedFieldClaim(classifier: Classifier!, tier: ClaimTier!)
-  repeatable on FIELD_DEFINITION
+directive @expectRows(relation: String!, rows: String!) repeatable on SCHEMA
 ```
 
-Six properties make this the successor form rather than a re-spelling of the walk tuple.
+Two earlier drafts are recorded because the reasons they lost are the reasons this one holds. The
+first was a generic row-matcher, `@expect(relation: String!, where: [{column:, is:}])`, refused for
+the reason the development principles' directive corollary gives: an input-object wrapper over
+several optional slots widens the failure surface from "the named thing did not resolve" into a
+cross-product of missing and inconsistent slots. The second was one typed directive per relation
+with enum-typed arguments, which bought parse-time rejection of a typo and paid for it in exactly
+the coin this item exists to stop spending: an SDL enum per vocabulary, hand-mirrored against a Java
+or catalog side by a family of mirror tests. That is the "hand-copied mirrors" defect in this item's
+own opening paragraph, re-erected one layer out. A CSV block has no enum to mirror, so the mirror
+family retires here rather than acquiring a new right-hand side.
 
-**The site supplies the key; the directive supplies the rest.** An application on a field definition
-keys `(graph_name, type_name, field_name)` from where it is written; on a type definition,
-`(graph_name, type_name)`. Nothing in a document restates a coordinate it is already written at,
-which is what makes an assertion survive a rename of the coordinate.
+Seven properties make this the successor form rather than a re-spelling of the walk tuple.
 
-**Which relations may get a directive is a precondition, not a preference.** A directive sits at a
-*definition* coordinate, so it can key a definition-keyed relation and cannot key a use-keyed one:
-the fact model's own rule is that authored facts are definition-keyed and derived bindings are
-use-keyed, and a relation like `intent_input_occurrence_path` is a definition-plus-consumer join. A
-relation earns a directive only when its key is reachable from a directive location. Naming the
-consumer as a directive argument to reach the rest is exactly the input-wrapper smell above and is
-refused.
+**The block is a relation literal, so every relation is reachable.** The header names columns, each
+line is a row, and the coordinate is a column like any other. `graph_name` is the one column a
+document never spells: it is the document's own identity, supplied by the harness. Because the key
+is spelled rather than implied by an application site, the use-keyed relations a coordinate-level
+directive structurally cannot key (`intent_input_occurrence_path` and the other
+definition-plus-consumer joins) are assertable on the same mechanism. The typed draft had to declare
+them out of scope, and that exclusion was a property of the encoding rather than of the domain.
 
-**A directive per relation, and no Java per relation.** The directive name maps to its relation and
-each argument name to a column by convention (`@resolvedFieldClaim` to
-`intent_resolved_field_claim`, `classifier:` to `classifier`), resolved through `StoreCatalog`, the
-booted store's catalog reader that `SchemaIdentifierDriftCheck` and the generated schema reference
-already share. A floor asserts the resolution: every assertion directive the prelude declares
-resolves to exactly one relation, and every argument to a column of it, or the build fails. If the
-convention proves lossy for some relation, the fallback is one declared mapping row per relation in
-the harness, which is a vocabulary-change edit and not corpus growth.
+**We own no CSV parser.** The block reaches the harness through the store's own client:
+`Parser.parseValue` recovers the text from `graphql_schema_directive_arg.value_sdl`, which holds the
+`AstPrinter.printAstCompact` form of the block string rather than its raw text, and
+`DSLContext.fetchFromCSV(text, true, ',')` turns it into a `Result<Record>` whose field names are the
+header. Quoting, embedded separators and escaping are jOOQ's and graphql-java's problem. The harness
+trims each cell, so a document may pad columns for legibility.
 
-**The comparison is set equality on the projection the document names.** For each
-`(coordinate, relation)` pair a document declares, the declared rows equal the relation's rows at
-that coordinate projected onto exactly the columns the directive carries. Two applications at one
-coordinate pin cardinality. This extends the declared-equals-produced discipline `@commits` and
-`@synthesises` already carry rather than introducing a second one.
+**Capture already carries it.** `SdlFactCapture.captureSchema` walks `registry.schemaDefinition()`
+and `getSchemaExtensionDefinitions()` alike and writes `graphql_schema_directive` plus its `_arg`
+child, assigning a per-name ordinal to each repeated application. A document needs no `schema`
+definition of its own: `extend schema` is enough, and the prelude's root declaration stays where it
+is. The decode path beside the generic write, `GraphitronFactCapture.captureSchemaDirective`, returns
+immediately for any name but federation's `@link`, so an assertion application is transcribed and
+interpreted by nothing.
 
-**Asserted absence needs the relation's own permission.** A `@noRow`-shaped directive exists only for
-relations whose comment says what their silence means, per the fact model's rule that "not reached"
-is not "resolves to nothing" and that a relation whose absence is load-bearing owes that sentence.
-Where the relation does not own its silence, the absence is not assertable and the document says
-nothing.
+**The comparison is set equality per document and relation.** The union of a document's blocks for
+one relation equals that relation's rows in that document's graph, projected onto the named columns.
+A coordinate that silently starts producing a row therefore fails, which is the property a
+per-coordinate scoping would lose, and an empty block (header only) asserts the relation holds
+nothing for this document. Exactness makes the block an approval table, which is the shape this
+item's own direction endorses, and the cost is honest: a fixture gaining a coordinate updates the
+block. That paste goes into the document that is also the source of truth, not into a third copy on
+a page, which is the whole difference from the loop being retired. If some relation's per-document
+table proves unworkably large, the fallback is subset semantics declared per application rather than
+inferred, and the implementer records why exactness failed there.
 
-**The harness never parses the directive.** Capture is total, so the assertion directives are
-themselves captured (`graphql_field_directive` plus `graphql_field_directive_arg.value_sdl`). The
-harness captures all 57 documents into one store, one graph per document, which is the pattern
-`derive/ColumnMatchShadowTest` and `CapturedStore.andCatalogGraph` already give it, and then the
-whole corpus's assertions are one query per asserted relation: an anti-join in both directions
-between the captured expectation rows and the relation's rows. **A failure is a row**, naming the
-document, the coordinate, the relation, and which side is missing it. This retires the
-`Argument` / `EnumValue` / `ArrayValue` cast pile in `ClassifiedHarness`, which is the containment
-rule pointed the right way: the assertion is data in the store, not a Java transcription of data in
-the store.
+**Asserted absence needs the relation's own permission.** An empty block is legal only for relations
+whose comment says what their silence means, per the fact model's rule that "not reached" is not
+"resolves to nothing". Where the relation does not own its silence, the document says nothing rather
+than asserting emptiness the relation cannot mean.
+
+**Names resolve, values are checked as far as the store allows.** `relation:` and every header cell
+resolve through `StoreCatalog`, the booted store's catalog reader `SchemaIdentifierDriftCheck` and
+the generated schema reference already share, so a misspelled relation or column fails loud. Values
+get the strongest check the store supports for their column, and the ladder is stated rather than
+uniform: for a base-table column the closed set is the `CHECK (x IN (...))` clause
+`StoreCatalog.checksByRelation` already reads, so membership is checked against the DDL; for a view
+column, which `intent_resolved_field_claim.classifier` is, there is no CHECK and the comment says
+outright that the vocabulary lives in the reading side's decode, so no membership check exists and a
+typo surfaces as a row mismatch. What recovers the diagnosis there is the failure message, not a
+second roster: when a declared value appears in no row of that relation in any document, the report
+says so, which reads as a typo rather than as a disagreement about behaviour. This is the loss the
+CSV form accepts against the typed draft, and it is bounded to view columns and to the message.
+
+**The assertions leave the rendered SDL alone.** Because the applications sit on a schema extension
+rather than on field and type definitions, the types a projection renders carry no assertion
+directives at all, so the doc fragment's SDL block needs nothing stripped from them. Today
+`QueryViewRenderer` strips the internal directives out of the printed types; under this form there
+is nothing to strip, and the block a reader might copy is the schema pattern and only that.
+
+**The harness reads the assertion out of the store, not off the AST.** Capture is total, so the
+applications are themselves rows (`graphql_schema_directive` plus
+`graphql_schema_directive_arg.value_sdl`). The harness captures all 57 documents into one store, one
+graph per document, which is the pattern `derive/ColumnMatchShadowTest` and
+`CapturedStore.andCatalogGraph` already give it, and then the whole corpus's assertions are one query
+per asserted relation: an anti-join in both directions between the expectation rows and the
+relation's rows. **A failure is a row**, naming the document, the relation, the row, and which side
+is missing it. This retires the `Argument` / `EnumValue` / `ArrayValue` cast pile in
+`ClassifiedHarness`, which is the containment rule pointed the right way: the assertion is data in
+the store, not a Java transcription of data in the store.
 
 **The assertable population is stated positively.** The corpus asserts over `intent_` and
 `graphitron_` relations only, never over the `graphql_*_directive` families. That is what keeps the
@@ -275,36 +308,29 @@ assertion vocabulary outside the population it measures by construction, rather 
 name filter of the kind `QueryViewRenderer` already carries for the same reason (a skip-list
 coordinating two passes implicitly is the shape the gathering principle refuses).
 
-**What the value spaces are, honestly.** The enums above are still SDL enums mirrored against a Java
-side, and the mirror family survives this slice with a new right-hand side. The vocabularies are not
-uniformly DDL: for a base-table column the closed set is a `CHECK (x IN (...))` clause that
-`StoreCatalog.checksByRelation` already reads off the catalog, so the mirror reads the catalog; for a
-*view* column, which `intent_resolved_field_claim.classifier` is, there is no CHECK and the DDL
-comment says outright that it is "a closed vocabulary the reading side decodes into a typed value",
-so the mirror pins the SDL enum against the decoder's arm set. That is the same shape
-`typeVerdictMirrorsGraphitronTypeLeaves` and `DiagnosticFactsTest` already use. An earlier draft
-proposed a third statement, a `meta_column_vocabulary` VALUES view beside `meta_family`; it is
-refused, because for base tables it would be a hand-kept copy of a catalog fact, which is the drift
-smell the fact model names, and for views the non-circular closer is the decoder, not a second
-roster.
+**No third statement of a vocabulary.** An earlier draft proposed declaring the closed sets as DDL
+rows, a `meta_column_vocabulary` VALUES view beside `meta_family`. It is refused: for a base table
+that is a hand-kept copy of a catalog fact, which is the drift smell the fact model names, and for a
+view the non-circular closer is the decoder that reads the column, not a second roster. The ladder in
+the paragraph above is the whole of what the corpus checks a value against.
 
 **Whose ratchet.** R682's Coverage section already claims the re-key of the completeness gates onto
-surviving vocabularies. This item therefore owns the **assertion form** and the mirror's re-point,
-and R682 keeps the **coverage ratchet** over those vocabularies. Two mechanisms arriving over one
-vocabulary is the thing the boundary exists to prevent; the boundary section below repeats it so
-neither item has to infer it.
+surviving vocabularies. This item therefore owns the **assertion form**, and R682 keeps the
+**coverage ratchet** over those vocabularies. Two mechanisms arriving over one vocabulary is the
+thing the boundary exists to prevent; the boundary section below repeats it so neither item has to
+infer it.
 
 **Axis by axis, and the leftovers stay visible.** A `@classified` axis moves when a fact spelling for
 it exists: the claim axes (`intent_resolved_field_claim`, `intent_authored_field_claim`,
 `intent_column_match_claim`, `intent_bound_table`) can move as soon as this slice starts; the
-operation-member arms, target shape and arrival shape wait on R682's relations. A coordinate keeps
-its `@classified` for the axes with no spelling and gains a typed directive for the axes that have
-one, which makes each remaining tuple axis a visible request for a relation rather than an invisible
-dependency. `@commits` straddles the command tier R682 reshapes and gets the same scrutiny rather
+operation-member arms, target shape and arrival shape wait on R682's relations. A document keeps
+`@classified` on its coordinates for the axes with no spelling and gains an `@expectRows` block for
+each relation that has one, which makes every remaining tuple axis a visible request for a relation
+rather than an invisible dependency. `@commits` straddles the command tier R682 reshapes and gets the same scrutiny rather
 than a mechanical port. The last `@classified` dies with the zoo, under R682, not here.
 
 **The emitted-names half moves too, and this is why the slice precedes the doc collapse.** The
-verdict half of an outcome block becomes a typed assertion directive in the document. The emitted
+verdict half of an outcome block becomes an `@expectRows` table in the document. The emitted
 unit and method names are not a store fact, so they get the other habitat the tree already has for a
 checked-in expectation: one approval file per document in the corpus folder, holding exactly what
 `OutcomeBlockRenderer` renders for the emitted column today, in the `ApprovalQueryExampleTest` sense.
@@ -377,16 +403,18 @@ the jOOQ codegen beyond the catalog the tier already has, which is where `Classi
   document, a mis-globbed file, a document no parameterized test claims, a document with no annotated
   coordinate). While the list drains, one more: the union's two sources hold disjoint ids, so an
   id cannot exist twice with different content.
-- The corpus assertion test (slice 2), renamed off the DSL vocabulary: per document, the captured
-  expectations agree with the produced rows, reported as rows. Beside it, the directive-resolution
-  floor (every prelude assertion directive resolves to exactly one relation and every argument to a
-  column of it) and the assertable-population floor (no assertion ranges over the
-  `graphql_*_directive` families).
+- The corpus assertion test (slice 2), renamed off the DSL vocabulary: per document and relation, the
+  expected-row table equals the produced rows over its own columns, reported as rows. Beside it three
+  floors: name resolution (`relation:` and every header cell resolve through `StoreCatalog`), block
+  well-formedness (no ragged row, no duplicate header cell, no `graph_name` column, and an empty
+  block only where the relation owns its silence), and the assertable population (no block ranges
+  over the `graphql_*_directive` families).
+- Value membership where the store closes the set (slice 2): a declared value outside a base-table
+  column's `CHECK (x IN (...))` clause fails as a membership error rather than as a row mismatch,
+  with a planted regression. For a view column, the weaker signal is the failure message's own
+  "no row in any document carries this value" line, and the test for it is that the message says so.
 - The emitted-names approval comparison (slice 2), one per document that generates, replacing
   `OutcomeBlockDocTest`'s page comparison with a corpus-folder one.
-- The mirror tests (slice 2), re-pointed: an SDL enum against a base-table column's CHECK clause as
-  `StoreCatalog.checksByRelation` reads it, or against the decoder's arm set for a view column, in
-  `typeVerdictMirrorsGraphitronTypeLeaves`'s shape.
 - The placement floor (slice 3): a document with a projection and no include fails; an include with
   no document fails. Planted regressions both ways.
 - Unchanged and load-bearing throughout: `VariantCoverageTest`'s corpus obligation, which R682 owns
@@ -405,8 +433,7 @@ the reviewer should ask it explicitly: for each expectation `ClassifiedDocTest` 
   gates (`VariantCoverageTest`'s corpus obligation must survive on surviving vocabularies); this item
   owns the container, the assertion form, and the doc collapse. The line inside slice 2 is worth
   stating twice because two mechanisms arriving over one vocabulary is exactly what it prevents: this
-  item owns the **assertion form** and the mirror's re-point onto the store's own vocabularies, and
-  R682 keeps the **coverage ratchet** over them. Neither item blocks the other. Slices 1 and 3 are
+  item owns the **assertion form**, and R682 keeps the **coverage ratchet** over the vocabularies. Neither item blocks the other. Slices 1 and 3 are
   independent of R682 entirely; slice 2 proceeds per axis as R682 lands relations, and its remainder
   is R682's to finish.
 - **Ownership boundary with R814.** R814 owns the page's rebuild onto the surviving vocabulary and
@@ -449,9 +476,14 @@ the reviewer should ask it explicitly: for each expectation `ClassifiedDocTest` 
 - Per axis in slice 2, and only as each axis moves: `@classified`, `@classifiedType`,
   `DimensionTuple`, "the dimensional tuple", "the three-axis verdict". Whatever survives slice 2
   retires with R682's zoo and is listed there, not here.
-- Explicitly **not** retired, correcting an earlier draft of this spec: the `*MirrorsAdapterValues`
-  mirror family. It re-points rather than dying, because a view column's closed vocabulary is closed
-  by its decoder and an SDL enum mirrored against that decoder is the top-rung claim available.
+- Per enum in slice 2, as its axis moves: the prelude's SDL enum wall (`SourceWrapper`, `Member`,
+  `TargetWrapper`, `SourceShape`, `TargetShape`, `TypeVerdict`, `SynthesisedType`, `LauncherSource`,
+  `LauncherResult`) and the `*MirrorsAdapterValues` family that pins it. An expected-row table
+  declares no enum, so there is nothing left to mirror. Two earlier drafts of this spec said
+  otherwise, one keeping the enums typed per relation and one re-pointing the mirrors at the store's
+  decoders; both re-erected the hand-copied mirror this item's opening paragraph indicts, one layer
+  out from where it found it.
+- `ClassifiedHarness`'s `Argument` / `EnumValue` / `ArrayValue` directive-reading cast pile (slice 2).
 
 ## Documentation deliverables
 
