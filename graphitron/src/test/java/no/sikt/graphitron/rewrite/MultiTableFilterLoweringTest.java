@@ -464,6 +464,32 @@ class MultiTableFilterLoweringTest {
     }
 
     @Test
+    void bareNodeIdOverPartiallyNodeBackedParticipants_rejects() {
+        // The mixed shape between the two verdicts above: one participant's table backs a node type
+        // and its sibling's backs none, so the leaf resolves on one branch and cannot on the other.
+        // There is no shared target to fall back on and no divergence to dispatch between; the
+        // sibling's own classification fails, which is what keeps a leaf that only half the branches
+        // can decode from lowering as though every branch had agreed.
+        //
+        // The message is deliberately not asserted. The single-table wording names the participant's
+        // own table, which identifies the participant, and offers the remedy that actually fixes it;
+        // that is enough at this coordinate, and leaving the prose unpinned keeps it revisable.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Customer implements Node @table(name: "customer") @node {
+                id: ID! @nodeId
+                firstName: String @field(name: "first_name")
+            }
+            type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
+            union Occupant = Customer | Staff
+            type Query { occupantById(id: ID! @nodeId): Occupant }
+            """);
+        var field = schema.field("Query", "occupantById");
+        assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        assertThat(((GraphitronField.UnclassifiedField) field).kind())
+            .isEqualTo(RejectionKind.AUTHOR_ERROR);
+    }
+
+    @Test
     void singleBaseTableInterface_ambiguousBareNodeId_rejects() {
         // The scope cut for the single-base-table polymorphic arms, made a test rather than a
         // claim. Those arms never dispatch because their participants share one table, hence one id

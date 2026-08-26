@@ -1,6 +1,6 @@
 ---
 id: R726
-title: "The @nodeId instruction population excludes the multitable coordinate: state the boundary and pin it"
+title: "The @nodeId instruction population reaches the multitable coordinate but cannot key it by participant: state the limit and pin it"
 status: In Progress
 bucket: architecture
 priority: 4
@@ -211,3 +211,105 @@ are disjoint.
 - The Done-gate changelog entry records that audit Finding 1 is closed by this item.
 
 Nothing is retired; no retirement sweep needed at the Done gate.
+
+---
+
+## Amendment: the exclusion the spec was signed off on no longer holds (2026-08-26)
+
+### What changed under the spec
+
+The decision above rests on one factual claim about the tree: "at the multitable coordinate a bare
+`@nodeId` leaf produces no instruction row and no defect row", because the consuming field's return
+type binds no table, so `intent_field_scope_table` has no row for it and the fan-out into
+`intent_argument_scope_table` is empty. That was true when the spec was written and when it was
+signed off. It is not true now.
+
+The participant fan-out landed on trunk the same day this item reached Ready and is not an ancestor
+of the sign-off commit, so neither the author nor the reviewer could have read it. It gives
+`intent_field_scope_table` a third arm, the distinct tables of the new
+`intent_field_participant_scope_table` under a `PARTICIPANT_TABLE` basis, unioned in outside the two
+ranked rungs. `intent_argument_scope_table` is a pure fan-out of that relation, so the departure at
+the multitable coordinate is now one table per table-bound participant rather than nothing.
+
+Measured rather than reasoned. A probe fixture, two node types over their own tables under an
+interface binding none, consumed by one root field, returns:
+
+```
+ARGUMENT    Query.media(filterId)   TARGET_TABLE_NODE_TYPE Actor
+ARGUMENT    Query.media(filterId)   TARGET_TABLE_NODE_TYPE Film
+INPUT_FIELD Query.media(where)/someId TARGET_TABLE_NODE_TYPE Actor
+INPUT_FIELD Query.media(where)/someId TARGET_TABLE_NODE_TYPE Film
+```
+
+Two rows per use site, on the bare arm, at both bare sites. The relation's own table comment already
+says so: the fan-out commit added a paragraph stating that an inferred instruction at such a field
+names one node type per branch, and that the two rows carrying two node types are what make the
+classifier's nested-leaf rejection a detection over this relation. So the population does not exclude
+the coordinate, and deliverables 1, 2 and 4 as written would have stated and pinned the opposite of
+what the tree does.
+
+### What the item becomes
+
+The intent survives unchanged: state what the population does at this coordinate in the relation's
+own terms, pin it, and record the key spelling once so a later widening cannot mint two. Only the
+polarity of the fact flips, from an exclusion to a limit.
+
+The limit is that the rows arrive without the participant. The relation is keyed on the use site and
+the one table the site's content binds against, so a use site with two table-bound participants is
+two rows differing in `node_type_name` and in nothing else, and no column says which participant
+resolved which. The pairing can be recovered by joining a row's node type back to its table and that
+table to the participant binding it, and that recovery is unsound in general: two participants over
+one table, or a node type that is not the participant type itself, each break it. A reader can
+therefore see that the branches disagree, which is exactly what the fan-out commit claimed for it,
+and cannot assemble one branch's decode from these rows.
+
+Everything the decision section argued for still holds against the corrected fact, and none of it
+needed the exclusion. The grain the answer has is still use site times participant, the relation
+still has no column for it, `FieldBuilder.resolveNodeIdArgTargets` is still its single reader, and
+the two-reader rule and the registration argument still decline the participant-keyed arm rather
+than defer it. The key spelling is unchanged. The coordination note to the per-participant path item
+is unchanged: nothing blocks it, and the arm stays unowned until a second reader asks.
+
+### Revised deliverables
+
+1. **The limit statement**, in place of the boundary statement. The relation's multiplicity paragraph
+   already says the rows come out; what it does not say is that nothing identifies the branch. That
+   sentence, the unsound recovery, the two shapes the fan-out does not reach (a written `typeName:`,
+   a discriminated interface binding one table), the key spelling, and the warning against relaxing
+   the single-candidate demand are appended to it. Store terms only, no Java class name and no
+   roadmap id, as before.
+
+2. **Store-tier pins**, positive where the spec asked for empty. Six cases in `NodeIdInstructionTest`:
+   the bare argument at an interface coordinate is one row per participant with an explicit
+   `typeName:` sibling as the control; the two rows agree on every column but the node type, which is
+   the limit made a test; the union spelling reads the same; one bare input field consumed by the
+   multitable field and by a single-table field is two rows against one, which is the fan-out
+   isolated as a delta at one instruction; a discriminated interface binding one table is one row;
+   and `intent_node_id_decode_defect` holds no row for the coordinate, which the spec asked for and
+   which survives the flip unchanged, the disagreement being the classifier's verdict rather than a
+   refused decode.
+
+3. **Pipeline-tier pin**: unchanged from the spec, the mixed shape being independent of the store
+   question.
+
+4. **The scaffolding sentence**: unchanged in purpose, corrected in content. It now states that the
+   producer owns the use-site-times-participant grain that the population reaches without keying,
+   rather than one the population excludes.
+
+### Acceptance, revised
+
+- The limit is stated on `intent_node_id_instruction` in store terms, readable without this item.
+- The six store-tier pins are green.
+- The pipeline pin on the mixed shape is green and asserts no message prose.
+- Full `mvn install` green.
+- The Done-gate changelog entry records both that audit Finding 1 is closed and that the finding's
+  own premise was overtaken by the fan-out, so a later sweep does not re-derive the exclusion.
+
+### One thing this amendment does not settle
+
+Whether an author-side amendment is the right instrument. The workflow's own answer for a spec
+needing substantive redesign is a Ready → Spec reopen and a second review, and the redesign here is
+substantive in its facts even though its decision and its key spelling are untouched. The
+implementation proceeds because the pins record what the tree does either way and the alternative
+delivers nothing, but the In Review gate should read this section first and send the item back to
+Spec if the reviewer wants the flipped premise re-reviewed rather than merely approved.
