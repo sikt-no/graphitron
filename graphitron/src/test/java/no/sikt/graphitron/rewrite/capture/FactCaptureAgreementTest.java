@@ -448,6 +448,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_input_field_filter_role", Arm.DERIVED);
         registrations.put("intent_input_field_carrier_role", Arm.DERIVED);
         registrations.put("intent_mutation_write_payload", Arm.DERIVED);
+        registrations.put("intent_mutation_write_payload_live", Arm.DERIVED);
         registrations.put("intent_mutation_payload_refusal", Arm.DERIVED);
         registrations.put("intent_mutation_payload_refusal_live", Arm.DERIVED);
         registrations.put("intent_mutation_payload_column", Arm.DERIVED);

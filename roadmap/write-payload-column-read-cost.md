@@ -46,12 +46,13 @@ two because it is measured against a real consumer store rather than a scaled fi
 this one. If a third instance of the probe turns up, the shape has earned a written rule of its own
 rather than a third item.
 
-A third registration has since landed in this family and it is deliberately not counted as that third
-instance. `intent_mutation_payload_key_membership` was registered because five namings across two view
-bodies each re-expand it, which is the ordinary breadth case every other row in `meta_materialize`
-argues, not because anything correlates into it: its readers join it as a set. Worth stating because
-the two look alike from the outside, both being a derived relation that had to become a table, and only
-the probe shape is the one whose cost the gate's fixture understates by orders of magnitude.
+A third registration has since landed in this family and the reading first written here about it was
+wrong, so it is corrected rather than removed. `intent_mutation_payload_key_membership` was registered,
+and this file said it was the ordinary breadth case, a cheap rule named too often. It was not. The rule
+had the same defect one join further out: a derived relation on the inner side of a join, which H2
+re-evaluates once per driving row. The registration priced before that was fixed cost 326 seconds of
+refresh per capture, and priced after it costs 36 milliseconds. Both figures are of the same
+registration, which is the whole point of recording it: what changed was the rule, not the lever.
 
 ## What this item is about
 

@@ -2826,23 +2826,50 @@ occurrences comparing at the outermost step where they differ. More SQL, and bet
 only of the occurrences that contend, which is a handful wherever it is asked at all. The gate was right
 and finding that out cost one test run.
 
-**The cost, and the shape it was not.** Written as three plain views these took the read-cost gate from
-about a minute to not finishing inside eleven. The diagnosis took one look rather than three measured
-rewrites: the destination names the membership rule three times and then names the refusal, which names
-it twice more, so one read expands that rule eight times over, and each expansion reaches the matched key
-and through it the whole write-payload family. Registering the substrate answered it in one step. The two
-consumers stay plain views, having no reader yet beyond each other, and no index is declared on the
-target, all five namings reading it whole. The gate now runs in 222 seconds, the rise over the minute
-being the fourth store it captures and the seventeen cells the three new readers add rather than any one
-read.
+**The cost, and the four places one defect was hiding.** Written as three plain views these took the
+read-cost gate from about a minute to not finishing inside eleven, and the first diagnosis was wrong.
+It read as breadth, a cheap rule named too often, and the answer taken from that reading was to
+register the substrate. Registering it cost 326 seconds of refresh on every capture, which is a build
+five and a half times slower to make one relation read faster, and that is what said the reading was
+wrong: a rule whose refresh costs that is not a cheap rule.
 
-This is deliberately not counted as the third instance of the twelfth increment's finding, and the
-distinction is written into both the registry reason and R841. That one was a per-row probe into a
-derived relation, which the gate's fixture understates by orders of magnitude and which turned into a
-build that did not finish. This is breadth, the ordinary registration case every row of
-`meta_materialize` argues, and for it the gate's own runtime was a serviceable instrument. They look
-alike from outside, both being a derived relation that had to become a table, and only one of them is the
-shape worth a written rule.
+What it actually was, found by timing each relation on its own against a store captured from the
+example schema and then bisecting the bodies: in H2 a derived relation on the inner side of a join is
+re-evaluated once per driving row, whatever the join is spelled as. Four relations in this family each
+had one. The matched key joined its own ranked candidate set back to the surface it was derived from,
+so the ranking ran once per write surface. The membership rule joined the matched key per payload
+column. The refusal joined a derived written-column set per matched-key row. The destination
+anti-joined the refusal per membership row. None is a correlated `EXISTS`; three are ordinary `LEFT
+JOIN`s and one is an inner join, which is why the shape was not recognised from the earlier increments
+that had met its correlated cousin.
+
+In milliseconds, with row counts unchanged and every rewrite checked in both directions: the matched
+key 596 to 22, the membership 1488 to 33, the refusal 1364 to 1.3, the destination 5275 to 52, and one
+capture of the example schema 397 seconds to 9.2. The fixes are structural rather than tuned. Fold a
+self-join into one ranked pass. Drive from the smaller derived side instead of joining it in. Replace a
+derived-to-derived join with a window over one pass. Replace an anti-join with a union of the two sides
+and a window over the mutation. Look a value up in a table rather than in a view.
+
+**The order between a rewrite and a registration, which this chain had not had a case for.** The
+substrate registration was the right lever and the wrong first move. Priced before the rewrites it cost
+326 seconds a capture; priced after them, the identical registration costs 36 milliseconds and takes
+the destination from 1410 to 52. A registration prices the rule as it stands, so a rule with a
+re-evaluation inside it is rewritten before it is priced, and a refresh figure taken before that
+measures the defect rather than the registration. That sentence is in the registration's own `reason`,
+where the next person to price one will meet it.
+
+Two other things were measured and refused. Pre-narrowing the matched key's key columns into their own
+common table expression, which reads like an optimisation, is 2512 milliseconds against the 1488 it
+replaces. And an index declared on the write payload turned out to serve a seek that the matched key
+stopped performing once its ranking became one pass; it is dropped, and the registry gate's roster says
+why rather than leaving the next reader to rediscover it.
+
+Worth recording about method, because it is the difference between this increment and the last one. The
+first two attempts at this were a bespoke timing probe and a twenty-minute Maven loop. Taking the store
+a real capture had already written, letting H2's own query statistics do the timing over interleaved
+sweeps with result reuse off, and bisecting each body a common table expression at a time turned that
+into a loop measured in seconds, which is what made four separate diagnoses affordable rather than one
+guess defended.
 
 **What this increment leaves owing**: the agreement obligations as their own reduction over the
 destination, and then the fold.

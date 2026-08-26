@@ -124,7 +124,7 @@ class DerivedReadCostTest {
      * So a drop here is not the matrix quietly seeing less; it is cost moving off a reader and onto
      * a refresh, and the refresh is a view in this domain and priced like any other.
      */
-    private static final int CELLS = 184;
+    private static final int CELLS = 174;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -285,6 +285,30 @@ class DerivedReadCostTest {
      * twelve clusters wide understates it by as much as it takes to turn four seconds into no
      * termination at all.
      *
+     * <p>The write-partition relations that landed next found the general form of that shape, and it
+     * is worth stating separately because it is not about probes and not about this fixture. In H2 a
+     * derived relation on the inner side of a join is re-evaluated once per driving row, whatever the
+     * join is spelled as. Four relations in that family each had one and each cost between twenty and
+     * fifty times its own children because of it: the matched key joined its ranked candidate set back
+     * to the surface it was derived from, the key membership joined the matched key per payload column,
+     * the write refusal joined a derived written-column set per matched-key row, and the write
+     * destination anti-joined the refusal per membership row. None of them is a correlated {@code
+     * EXISTS}; three are ordinary {@code LEFT JOIN}s and one is an inner join. Measured on a store
+     * captured from the example schema, in milliseconds: 596 to 22, 1488 to 33, 1364 to 1.3, and 5275
+     * to 52. The fixes are structural rather than tuned. Fold a self-join into one ranked pass, drive
+     * from the smaller derived side instead of joining it in, replace a derived-to-derived join with a
+     * window over one pass, replace an anti-join with a union of the two sides and a window, and look
+     * a value up in a table rather than in a view.
+     *
+     * <p>That family also settled the order between a rewrite and a registration, which this file had
+     * not previously had a case for. The key-membership registration was proposed first, before any of
+     * those rewrites, and priced then at 326 seconds of refresh per capture: the rule being registered
+     * was itself re-evaluating the matched key per payload column, so the registration would have
+     * bought one relation's read by making every capture five times slower. The same registration
+     * after the rewrites costs 36 milliseconds. A registration prices the rule as it stands, so a rule
+     * with a re-evaluation inside it is rewritten before it is priced, and a refresh figure taken
+     * before that is a measurement of the defect rather than of the registration.
+     *
      * <p>The three relations that partition a matched key landed next and met the same wall from the
      * other direction, which is why they get a paragraph beside that one rather than inside it.
      * {@code intent_mutation_write_destination} names
@@ -356,14 +380,18 @@ class DerivedReadCostTest {
         // measured above.
         "intent_carrier_data_field|intent_field_scope_table",
         "intent_carrier_data_field|intent_argument_scope_table_live",
-        "intent_carrier_data_field|intent_mutation_write_payload",
-        "intent_carrier_data_field|intent_mutation_payload_refusal_live",
-        "intent_carrier_data_field|intent_mutation_payload_column_live",
-        "intent_carrier_data_field|intent_mutation_matched_key",
-        // The same rung again, reached by the two relations that partition a matched key. Their
-        // substrate is registered and does not appear here; these two are views over it.
-        "intent_carrier_data_field|intent_mutation_write_refusal",
-        "intent_carrier_data_field|intent_mutation_write_destination");
+        // The same rung, reached by the one relation in the write family that still expands the
+        // scope family: the write payload's own rule, which is now a registration's source view
+        // and so is reached here rather than by everything above it. Six pairs stood beside this
+        // one and left together when the partition relations were rewritten and the payload was
+        // registered, which is the shape worth reading off this set rather than the count. A pair
+        // leaves here for two different reasons and only one of them is about a registration: a
+        // reader that got cheaper, and a reader that stopped reaching the rung at all. These six
+        // are the second kind. The refusal, the column relation, the matched key, the write
+        // refusal and the write destination each used to expand the scope family on their way to
+        // an answer, and each now reads a table for the same fact, so the rung is no longer on
+        // their path and they hold no cell against it to be non-monotonic in.
+        "intent_carrier_data_field|intent_mutation_write_payload_live");
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather
