@@ -1,0 +1,44 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  filmActor: FilmActor
+}
+
+type FilmActor @table(name: "film_actor") {
+  related: FilmOrActor
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+
+type Actor @table(name: "actor") {
+  firstName: String @field(name: "FIRST_NAME")
+}
+
+union FilmOrActor = Film | Actor
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Actor.firstName`
+| `TABLE_COLUMN`, inferred
+| `fetchers.ActorFetchers#firstName(Object)`
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#title(Object)`
+
+| `FilmActor.related`
+| no claiming directive
+| `fetchers.FilmActorFetchers#related(DataFetchingEnvironment)`
+
+| `Query.filmActor`
+| no claiming directive
+| `fetchers.QueryFetchers#filmActor(DataFetchingEnvironment)`
+
+|===

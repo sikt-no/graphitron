@@ -1,0 +1,49 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  filmActor: FilmActor
+  "Films fetched by a caller-supplied list of ids, one row back per id."
+  filmById(
+  film_id: [ID] @lookupKey): [Film]!
+}
+
+type Film @table(name: "film") {
+  filmId: Int! @field(name: "film_id")
+}
+
+type FilmActor @table(name: "film_actor") {
+  actors(actor_id: [Int!]! @lookupKey): [Actor!]!
+}
+
+type Actor @table(name: "actor") {
+  firstName: String @field(name: "first_name")
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Actor.firstName`
+| `TABLE_COLUMN`, inferred
+| `fetchers.ActorFetchers#firstName(Object)`
+
+| `Film.filmId`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#filmId(Object)`
+
+| `FilmActor.actors`
+| no claiming directive
+| `fetchers.FilmActorFetchers#actors(DataFetchingEnvironment)`
+
+| `Query.filmActor`
+| no claiming directive
+| `fetchers.QueryFetchers#filmActor(DataFetchingEnvironment)`
+
+| `Query.filmById`
+| `LOOKUP_KEY`, authored
+| `fetchers.QueryFetchers#filmById(DataFetchingEnvironment)`
+
+|===

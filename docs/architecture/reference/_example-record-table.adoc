@@ -1,0 +1,47 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  film: Film
+}
+
+type Film @table(name: "film") {
+  language: Language @reference(path: [{key : "film_language_id_fkey"}])
+  details: FilmDetails
+}
+
+type Language @table(name: "language") {
+  name: String
+}
+
+type FilmDetails {
+  language: Language @reference(path: [{key : "film_language_id_fkey"}])
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.details`
+| no claiming directive
+| `fetchers.FilmFetchers#details(Object)`
+
+| `Film.language`
+| no claiming directive
+| `fetchers.FilmFetchers#language(DataFetchingEnvironment)`
+
+| `FilmDetails.language`
+| no claiming directive
+| `fetchers.FilmDetailsFetchers#language(DataFetchingEnvironment)`
+
+| `Language.name`
+| `TABLE_COLUMN`, inferred
+| `fetchers.LanguageFetchers#name(Object)`
+
+| `Query.film`
+| no claiming directive
+| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
+
+|===

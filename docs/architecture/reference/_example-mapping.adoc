@@ -1,0 +1,47 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  film: Film
+}
+
+type Film @table(name: "film") {
+  title: String
+  details: FilmDetails
+}
+
+type FilmDetails {
+  stats: FilmStats
+}
+
+type FilmStats {
+  count: Int
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1"]
+|===
+| Coordinate | Verdict
+
+| `Film.details`
+| no claiming directive
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+
+| `FilmDetails.stats`
+| no claiming directive
+
+| `FilmStats.count`
+| no claiming directive
+
+| `Query.film`
+| no claiming directive
+
+|===
+
+NOTE: This pattern classifies but does not generate: the build rejects it, so there
+are no emitted names to show. The verdicts above are what the store derives either
+way. See xref:../explanation/typed-rejection.adoc[Typed rejection] for what a
+rejection carries.

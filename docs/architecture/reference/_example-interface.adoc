@@ -1,0 +1,34 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  customer: Customer
+}
+
+type Customer @table(name: "customer") {
+  address: Named
+}
+
+interface Named {
+  name: String
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Customer.address`
+| no claiming directive
+| `fetchers.CustomerFetchers#address(DataFetchingEnvironment)`
+
+| `Named.name`
+| no claiming directive
+| no method of its own
+
+| `Query.customer`
+| no claiming directive
+| `fetchers.QueryFetchers#customer(DataFetchingEnvironment)`
+
+|===

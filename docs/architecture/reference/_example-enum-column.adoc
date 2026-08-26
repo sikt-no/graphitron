@@ -1,0 +1,35 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  film: Film
+}
+
+type Film @table(name: "film") {
+  "A GraphQL enum return, still a plain column read."
+  rating: Rating
+}
+
+enum Rating {
+  G
+  PG
+  PG13
+  R
+  NC17
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.rating`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#rating(Object)`
+
+| `Query.film`
+| no claiming directive
+| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
+
+|===

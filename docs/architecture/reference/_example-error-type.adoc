@@ -1,0 +1,55 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  "The @error type reaches the schema through a payload's errors slot."
+  sak: SakPayload @service(service: {className : "no.sikt.graphitron.rewrite.TestServiceStub", method : "runSak"})
+}
+
+type SakPayload {
+  data: String
+  errors: [ExtraFieldError]
+}
+
+type ExtraFieldError @error(handlers: [{handler : GENERIC, className : "java.lang.IllegalArgumentException"}]) {
+  path: [String!]!
+  message: String!
+  severity: Severity!
+}
+
+enum Severity {
+  LOW
+  HIGH
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `ExtraFieldError.message`
+| no claiming directive
+| `fetchers.ExtraFieldErrorFetchers#message(DataFetchingEnvironment)`
+
+| `ExtraFieldError.path`
+| no claiming directive
+| `fetchers.ExtraFieldErrorFetchers#path(DataFetchingEnvironment)`
+
+| `ExtraFieldError.severity`
+| no claiming directive
+| no method of its own
+
+| `Query.sak`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#sak(DataFetchingEnvironment)`
+
+| `SakPayload.data`
+| no claiming directive
+| `fetchers.SakPayloadFetchers#data(Object)`
+
+| `SakPayload.errors`
+| no claiming directive
+| `fetchers.SakPayloadFetchers#errors(Object)`
+
+|===

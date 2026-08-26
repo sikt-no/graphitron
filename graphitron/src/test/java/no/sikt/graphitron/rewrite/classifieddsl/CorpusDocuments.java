@@ -24,7 +24,7 @@ import java.util.stream.Stream;
  * a file.
  *
  * <p><b>Read from the source tree, not the classpath.</b> The folder resolves as a path, the way
- * {@link ClassifiedDocTest} resolves the documentation page, so what the corpus asserts is exactly
+ * {@link CorpusFragmentRenderer} resolves the documentation page, so what the corpus asserts is exactly
  * what an author edits and a stale copy under {@code target/test-classes} cannot answer for a
  * document that is no longer there.
  *

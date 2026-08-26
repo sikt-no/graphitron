@@ -1,0 +1,40 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Mutation {
+  updateFilmPayload(in: FilmUpdateInput!): FilmUpdatePayload @mutation(typeName: UPDATE)
+}
+
+type FilmUpdatePayload {
+  "The data field owns the read-back, a new keyed query off the written record's keys."
+  film: Film
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+
+input FilmUpdateInput {
+  filmId: Int! @field(name: "film_id")
+  title: String
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#title(Object)`
+
+| `FilmUpdatePayload.film`
+| no claiming directive
+| `fetchers.FilmUpdatePayloadFetchers#film(DataFetchingEnvironment)`
+
+| `Mutation.updateFilmPayload`
+| `MUTATION`, authored
+| `fetchers.MutationFetchers#updateFilmPayload(DataFetchingEnvironment)`
+
+|===

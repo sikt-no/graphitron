@@ -1,0 +1,50 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  "Relay's own entry point: one global id at a time."
+  node(
+  id: ID!): Node
+  "The list form of the same signature."
+  nodes(
+  ids: [ID!]!): [Node]
+  "Not named `node`, and classified as one anyway: the signature is the trigger."
+  internalFilmNode(
+  id: ID): Node
+}
+
+interface Node {
+  id: ID!
+}
+
+type Film implements Node @table(name: "film") @node {
+  title: String
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#title(Object)`
+
+| `Node.id`
+| no claiming directive
+| no method of its own
+
+| `Query.internalFilmNode`
+| no claiming directive
+| `fetchers.QueryFetchers#internalFilmNode(DataFetchingEnvironment)`
+
+| `Query.node`
+| no claiming directive
+| `fetchers.QueryFetchers#node(DataFetchingEnvironment)`
+
+| `Query.nodes`
+| no claiming directive
+| `fetchers.QueryFetchers#nodes(DataFetchingEnvironment)`
+
+|===

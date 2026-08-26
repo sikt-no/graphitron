@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.classifieddsl;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.rewrite.ArchitectureDocSymbolScanner;
 import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.JooqCatalog;
@@ -28,10 +27,11 @@ import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
  * Renders the outcome block beside a worked example's SDL: what the pipeline makes of the coordinates
  * that document shows.
  *
- * <p><b>What it is for.</b> {@link ClassifiedDocTest} already holds the SDL half of every worked
- * document against the corpus, so a schema pattern on the page cannot drift. The other half, what
- * graphitron does with that pattern, was ungated prose beside it. This renders that half from a
- * real run so {@link OutcomeBlockDocTest} can hold it the same way.
+ * <p><b>What it is for.</b> The SDL half of a worked example renders from the corpus, so a schema
+ * pattern shown to a reader cannot drift from the fixture the classifier runs on. The other half,
+ * what graphitron does with that pattern, was ungated prose beside it. This renders that half from a
+ * real run, and {@link CorpusFragmentRenderer} joins the two into the fragment
+ * {@link CorpusFragmentTest} holds.
  *
  * <p><b>Two refusals define the content.</b> It renders <em>no command rows</em>: row identity is
  * not a shipped obligation, and a doc-guarded verbatim command-row block would reinstate it over a
@@ -83,12 +83,9 @@ final class OutcomeBlockRenderer {
         Run run = run(document, workDir);
 
         StringBuilder out = new StringBuilder();
-        // The marker is part of the block, so it lands on the page and the doc-symbol scan skips
-        // the region: a rendered coordinate names GraphQL types, not Java ones, and this block is
-        // held to something stronger than name resolution anyway.
-        out.append(ArchitectureDocSymbolScanner.GENERATED_BLOCK_MARKER)
-           .append(" Do not edit; OutcomeBlockDocTest holds it verbatim.\n")
-           .append(".What the pipeline makes of it\n");
+        // No generated-region marker here: the block is one half of a fragment, and
+        // CorpusFragmentRenderer puts the marker at the fragment's head so it covers both halves.
+        out.append(".What the pipeline makes of it\n");
         out.append(run.generated() ? "[cols=\"1,1,2\"]\n" : "[cols=\"1,1\"]\n");
         out.append("|===\n");
         out.append(run.generated() ? "| Coordinate | Verdict | Emitted\n\n" : "| Coordinate | Verdict\n\n");

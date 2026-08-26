@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.test.internal;
 
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -74,6 +75,46 @@ class HowToIndexCoverageTest {
             .isEmpty();
     }
 
+    /**
+     * The fragment exclusion above, held to doing work. Without this, a change that stopped
+     * generating the worked-example fragments would leave the filter matching nothing and the
+     * exclusion would read as a general escape hatch rather than as the narrow one it is.
+     */
+    @Test
+    void theReferenceSectionHoldsFragmentsAndNoneOfThemCountAsPages() throws IOException {
+        Path section = locateSectionDir("docs/architecture/reference");
+        Set<String> fragments;
+        try (Stream<Path> files = Files.list(section)) {
+            fragments = files
+                .filter(Files::isRegularFile)
+                .map(p -> p.getFileName().toString())
+                .filter(n -> n.endsWith(".adoc") && n.startsWith("_"))
+                .collect(toCollection(TreeSet::new));
+        }
+
+        assertThat(fragments)
+            .as("the reference section is where the corpus's worked-example fragments land, so the "
+                + "underscore exclusion has a population; an empty one means the exclusion is "
+                + "guarding nothing and should go")
+            .isNotEmpty();
+        assertThat(pageSlugsOnDisk(section))
+            .as("a fragment is included by a page, never listed in an index as one")
+            .doesNotContainAnyElementsOf(
+                fragments.stream().map(n -> n.substring(0, n.length() - ".adoc".length())).toList());
+    }
+
+    /**
+     * The pages of a section: every {@code .adoc} but the index and the fragments.
+     *
+     * <p>A leading underscore is Asciidoctor's own mark for a file that is included rather than
+     * rendered, and this project uses it for both kinds it has: a fragment generated into staging
+     * ({@code _command-relations.adoc}) and one generated and committed ({@code _example-<id>.adoc},
+     * a worked example rendered from the classification corpus). Neither is a page. A fragment has no
+     * title, is never rendered standalone, and is reached through the {@code include::} on the page
+     * that shows it, so an index entry pointing at one would resolve to no published document. The
+     * corpus's own placement floor is what holds fragments to being included, which is the obligation
+     * this check would otherwise be asked to carry for them.
+     */
     private static Set<String> pageSlugsOnDisk(Path sectionDir) throws IOException {
         try (Stream<Path> files = Files.list(sectionDir)) {
             return files
@@ -81,6 +122,7 @@ class HowToIndexCoverageTest {
                 .map(p -> p.getFileName().toString())
                 .filter(n -> n.endsWith(".adoc"))
                 .filter(n -> !n.equals(INDEX_FILE))
+                .filter(n -> !n.startsWith("_"))
                 .map(n -> n.substring(0, n.length() - ".adoc".length()))
                 .collect(toCollection(TreeSet::new));
         }

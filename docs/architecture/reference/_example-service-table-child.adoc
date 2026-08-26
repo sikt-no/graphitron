@@ -1,0 +1,40 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  language: Language
+}
+
+type Language @table(name: "language") {
+  name: String
+  "Films for this language, produced by a service and re-queried as table rows."
+  filmsViaService: [Film!]! @service(service: {className : "no.sikt.graphitron.rewrite.generators.TestFilmService", method : "getFilmsMapped"})
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#title(Object)`
+
+| `Language.filmsViaService`
+| `SERVICE`, authored
+| `fetchers.LanguageFetchers#filmsViaService(DataFetchingEnvironment)`
+
+| `Language.name`
+| `TABLE_COLUMN`, inferred
+| `fetchers.LanguageFetchers#name(Object)`
+
+| `Query.language`
+| no claiming directive
+| `fetchers.QueryFetchers#language(DataFetchingEnvironment)`
+
+|===

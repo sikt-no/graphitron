@@ -1,0 +1,40 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  "A paginated read whose filter input also yields facet counts."
+  films(
+  filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+
+input FilmFilter {
+  title: [String!] @field(name: "title") @asFacet
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#title(Object)`
+
+| `Query.films`
+| no claiming directive
+| `fetchers.QueryFetchers#films(DataFetchingEnvironment)`
+
+| `QueryFilmsConnection.edges`
+| no claiming directive
+| `fetchers.QueryFilmsConnectionFetchers#edges(DataFetchingEnvironment)`
+
+| `QueryFilmsEdge.node`
+| no claiming directive
+| `fetchers.QueryFilmsEdgeFetchers#node(DataFetchingEnvironment)`
+
+|===

@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Renders are expensive here (each one captures a fixture into a store and runs the generator),
  * so these cases use one document of each kind rather than sweeping the corpus.
- * {@link OutcomeBlockDocTest} is the sweep.
+ * {@link CorpusFragmentTest} is the sweep.
  */
 @PipelineTier
 class OutcomeBlockRendererTest {
@@ -125,20 +125,20 @@ class OutcomeBlockRendererTest {
     }
 
     @Test
-    void anEditedBlockIsNotOnThePage(@TempDir Path dir) throws IOException {
-        // The planted regression, in the direction the guard exists for: the real block is present
-        // (OutcomeBlockDocTest asserts that for all eight), and a block with one verdict changed is
-        // not, so an edit to either side of the pair fails the build instead of passing quietly.
+    void anEditedBlockIsNotInTheApprovedFragment(@TempDir Path dir) throws IOException {
+        // The planted regression, in the direction the approval exists for: the real block is what
+        // the committed fragment carries (CorpusFragmentTest asserts that for every document), and a
+        // block with one verdict changed is not, so an edit to either side fails the build instead
+        // of passing quietly.
         String real = OutcomeBlockRenderer.render(document(GENERATES), dir);
         String tampered = real.replace("`TABLE_COLUMN`, inferred", "`TABLE_COLUMN`, authored");
         assertThat(tampered).isNotEqualTo(real);
 
-        String page = Files.readString(Path.of("..", "docs", "architecture", "reference",
-            "code-generation-triggers.adoc").normalize());
-        assertThat(page).contains(real);
-        assertThat(page)
-            .as("a tampered verdict must not be found on the page, or the guard's containment "
-                + "check would pass on content the pipeline never produced")
+        String fragment = Files.readString(CorpusFragmentRenderer.fragmentFile(GENERATES));
+        assertThat(fragment).contains(real);
+        assertThat(fragment)
+            .as("a tampered verdict must not be found in the approved fragment, or the approval "
+                + "would be holding content the pipeline never produced")
             .doesNotContain(tampered);
     }
 }

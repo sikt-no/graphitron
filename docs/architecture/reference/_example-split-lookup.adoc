@@ -1,0 +1,34 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  store: Store
+}
+
+type Store @table(name: "store") {
+  customers(customer_id: ID! @lookupKey): [Customer!]! @splitQuery
+}
+
+type Customer @table(name: "customer") {
+  firstName: String @field(name: "FIRST_NAME")
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Customer.firstName`
+| `TABLE_COLUMN`, inferred
+| `fetchers.CustomerFetchers#firstName(Object)`
+
+| `Query.store`
+| no claiming directive
+| `fetchers.QueryFetchers#store(DataFetchingEnvironment)`
+
+| `Store.customers`
+| no claiming directive
+| `fetchers.StoreFetchers#customers(DataFetchingEnvironment)`
+
+|===

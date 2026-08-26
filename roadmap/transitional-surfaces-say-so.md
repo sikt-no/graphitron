@@ -41,8 +41,8 @@ once so they are not re-proposed by whoever did not read the item that retired t
 whose rationale is one unlinked page away is one a newcomer argues with rather than joins.
 
 Deleting the taxonomy page was considered first and rejected. It is a rendered view over the live
-`@classified` corpus, not dead prose: `ClassifiedDocTest` asserts every doc example's rendered SDL
-appears in it verbatim, so the file cannot be removed while the corpus publishes through it, and
+`@classified` corpus, not dead prose: it includes a fragment rendered from every corpus document
+carrying a projection, so the file cannot be removed while the corpus publishes through it, and
 its two halves have opposite lifetimes anyway. The legacy taxonomy retires with the walk; the
 corpus view outlives it. Explaining the transition is the change that helps a reader now and costs
 nothing that the eventual split would have to undo.
@@ -119,7 +119,7 @@ them.
 
 ## Non-goals
 
-Retiring the taxonomy page, splitting the corpus view onto its own page, or moving
-`ClassifiedDocTest`'s target. Those follow the walk's own clock and are worth their own item when
+Retiring the taxonomy page, splitting the corpus view onto its own page, or moving where the
+rendered fragments land. Those follow the walk's own clock and are worth their own item when
 the first consumer group finishes re-sourcing. Retiring the classification walk itself is a
 strangler completion of an entirely different size and is not this.

@@ -1,0 +1,32 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  language: Language
+}
+
+type Language @table(name: "language") {
+  name: String
+  "A scalar a service produces; no SQL of its own."
+  rank: Int @service(service: {className : "no.sikt.graphitron.rewrite.generators.TestFilmService", method : "getRankMapped"})
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Language.name`
+| `TABLE_COLUMN`, inferred
+| `fetchers.LanguageFetchers#name(Object)`
+
+| `Language.rank`
+| `SERVICE`, authored
+| `fetchers.LanguageFetchers#rank(DataFetchingEnvironment)`
+
+| `Query.language`
+| no claiming directive
+| `fetchers.QueryFetchers#language(DataFetchingEnvironment)`
+
+|===

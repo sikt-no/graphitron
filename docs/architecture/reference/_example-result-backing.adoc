@@ -1,0 +1,55 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  "A plain Java class: the field resolves against a readable accessor."
+  pojo: PojoBacked @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "makeDummyRecord"})
+  "A Java record: the field resolves against a record component."
+  javaRecord: JavaRecordBacked @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "makeTestRecordDto"})
+  "A jOOQ TableRecord: the field resolves against a column of the record's table."
+  jooqRecord: JooqTableRecordBacked @service(service: {className : "no.sikt.graphitron.rewrite.TestServiceStub", method : "getFilm"})
+}
+
+type PojoBacked {
+  id: ID
+}
+
+type JavaRecordBacked {
+  name: String
+}
+
+type JooqTableRecordBacked {
+  title: String
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `JavaRecordBacked.name`
+| no claiming directive
+| `fetchers.JavaRecordBackedFetchers#name(Object)`
+
+| `JooqTableRecordBacked.title`
+| no claiming directive
+| `fetchers.JooqTableRecordBackedFetchers#title(Object)`
+
+| `PojoBacked.id`
+| no claiming directive
+| `fetchers.PojoBackedFetchers#id(Object)`
+
+| `Query.javaRecord`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#javaRecord(DataFetchingEnvironment)`
+
+| `Query.jooqRecord`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#jooqRecord(DataFetchingEnvironment)`
+
+| `Query.pojo`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#pojo(DataFetchingEnvironment)`
+
+|===

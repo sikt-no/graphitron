@@ -1,0 +1,40 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  film: Film
+}
+
+type Film @table(name: "film") {
+  "One row of translations, pivoted out of a per-language table."
+  titleTexts: TranslatedTexts @reference(path: [{table : "film_translation"}]) @pivot(on: "lang_code", value: "title_txt", vocabulary: "Sprak")
+}
+
+type TranslatedTexts {
+  nn: String
+  nb: String
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.titleTexts`
+| no claiming directive
+| `fetchers.FilmFetchers#titleTexts(DataFetchingEnvironment)`
+
+| `Query.film`
+| no claiming directive
+| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
+
+| `TranslatedTexts.nb`
+| no claiming directive
+| `fetchers.TranslatedTextsFetchers#nb(Object)`
+
+| `TranslatedTexts.nn`
+| no claiming directive
+| `fetchers.TranslatedTextsFetchers#nn(Object)`
+
+|===

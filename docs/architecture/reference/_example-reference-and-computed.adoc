@@ -1,0 +1,33 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  film: Film
+}
+
+type Film @table(name: "film") {
+  "Reached over a named foreign key."
+  languageName: String @field(name: "name") @reference(path: [{key : "film_language_id_fkey"}])
+  "Computed in Java, not read from a column."
+  computedRating: String @externalField(reference: {className : "no.sikt.graphitron.rewrite.TestExternalFieldStub", method : "rating"})
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.computedRating`
+| `EXTERNAL_FIELD`, authored
+| `fetchers.FilmFetchers#computedRating(DataFetchingEnvironment)`
+
+| `Film.languageName`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#languageName(DataFetchingEnvironment)`
+
+| `Query.film`
+| no claiming directive
+| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
+
+|===

@@ -1,0 +1,41 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  aggregated: Aggregated @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "makeLanguageKeyed"})
+}
+
+type Aggregated {
+  "A scalar the service produces off the parent's backing record."
+  rank: Int @service(service: {className : "no.sikt.graphitron.rewrite.generators.TestFilmService", method : "getRankMappedByRecord"})
+  "Table rows the service produces, keyed on the record the parent hands down."
+  filmsViaService: [Film!]! @service(service: {className : "no.sikt.graphitron.rewrite.generators.TestFilmService", method : "getFilmsMappedByRecord"})
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Aggregated.filmsViaService`
+| `SERVICE`, authored
+| `fetchers.AggregatedFetchers#filmsViaService(DataFetchingEnvironment)`
+
+| `Aggregated.rank`
+| `SERVICE`, authored
+| `fetchers.AggregatedFetchers#rank(DataFetchingEnvironment)`
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#title(Object)`
+
+| `Query.aggregated`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#aggregated(DataFetchingEnvironment)`
+
+|===

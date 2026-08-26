@@ -180,13 +180,16 @@ architecture the walk drains into, see
 xref:../explanation/pipeline-overview.adoc[Pipeline overview].
 ====
 
-The worked examples in this section render directly from the classification test corpus
-(`graphitron/src/test/resources/corpus`, one GraphQL document per example): the SDL shown is the live fixture the classifier
-runs against, projected through a documented query by the query-as-view renderer, with the test-only
-`@classified` / `@classifiedType` assertion directives stripped. The `ClassifiedDocTest` build guard
-fails if this page ever drifts from what the corpus renders, so a displayed example is always one the
-classifier actually produces the stated verdict for. The reference table that follows enumerates the
-verdicts not yet migrated to a worked example.
+The worked examples in this section are not written here. Each one is an `include::` of a fragment
+rendered from the classification test corpus (`graphitron/src/test/resources/corpus`, one GraphQL
+document per example): the SDL shown is the live fixture the classifier runs against, projected
+through a documented query by the query-as-view renderer with the test-only assertion directives
+stripped, and the table beside it states what a real capture and a real generation run make of those
+coordinates. `CorpusFragmentTest` compares every fragment against what the corpus renders now, so a
+displayed example is always one the pipeline actually produces the stated outcome for, and this page
+holds no expectation of its own: what it authors is the prose, the teaching order, and which examples
+to show. The reference table that follows enumerates the verdicts not yet migrated to a worked
+example.
 
 [#table-type]
 === `@table` over an object type
@@ -197,42 +200,15 @@ over a table whose jOOQ class publishes `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS`.
 returning a `TableType` enters a new query scope rooted in that table, and a scalar child whose name
 matches a column projects inline.
 
-[source,graphql]
-----
-type Query {
-  "A single film, fetched by primary key."
-  film: Film
-}
-
-type Film @table(name: "film") {
-  "The film's display title."
-  title: String
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Film.title`
-| `TABLE_COLUMN`, inferred
-| `fetchers.FilmFetchers#title(Object)`
-
-| `Query.film`
-| no claiming directive
-| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
-
-|===
+include::_example-catalog.adoc[]
 
 `Film` classifies as `TableType` (full SQL generation: queries, joins, projections); `Query.film`
 enters the scope; `Film.title` projects an inline column. The root type itself classifies as
 `RootType`, which is a fetchers class and nothing more: a root type binds no table, so it opens no
 query scope of its own and only wires the fields hanging off it. Asserted by the `catalog` corpus
 example via `@classifiedType(as: TableType)` on `Film` and `@classifiedType(as: RootType)` on `Query`.
-The field descriptions come from `# ...` comments authored on the example's projection query, rendered
-as SDL descriptions by `QueryViewRenderer`.
+The field descriptions are written on the coordinates themselves, in the corpus document, so the
+sentence teaching a coordinate lives where the coordinate does.
 
 [#node-type]
 === `@node` over a table
@@ -244,33 +220,7 @@ takes precedence. The `@nodeId` field is where it shows: the coordinate carries 
 claim, and the emitted fetcher encodes the key columns into a Relay global id rather than projecting
 a column.
 
-[source,graphql]
-----
-type Query {
-  film: Film
-}
-
-type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
-  "The Relay global id, encoded from the node key columns."
-  id: ID! @nodeId
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Film.id`
-| `NODE_ID`, authored
-| `fetchers.FilmFetchers#id(Object)`
-
-| `Query.film`
-| no claiming directive
-| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
-
-|===
+include::_example-node-type.adoc[]
 
 Note the tier: `NODE_ID` is `authored`, where `Film.title` in the first example was `inferred`. The
 directive is what makes the difference, and it is the anti-join in `intent_resolved_field_claim` that
@@ -284,52 +234,7 @@ column, and the id can be produced from a table other than the one that defines 
 with `typeName:`, `@nodeId` names the type whose key shape to encode, and reads the columns for it
 from wherever the coordinate sits.
 
-[source,graphql]
-----
-type Query {
-  filmActor: FilmActor
-  filmActorNote: FilmActorNote
-}
-
-type FilmActor implements Node @table(name: "film_actor") @node {
-  "A global id over a two-column key."
-  id: ID! @nodeId
-}
-
-type FilmActorNote @table(name: "film_actor_note") {
-  note: String @field(name: "note_txt")
-  "The same key, encoded from another table that names the target type."
-  filmActorId: ID @nodeId(typeName: "FilmActor")
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `FilmActor.id`
-| `NODE_ID`, authored
-| `fetchers.FilmActorFetchers#id(Object)`
-
-| `FilmActorNote.filmActorId`
-| `NODE_ID`, authored
-| `fetchers.FilmActorNoteFetchers#filmActorId(Object)`
-
-| `FilmActorNote.note`
-| `TABLE_COLUMN`, inferred
-| `fetchers.FilmActorNoteFetchers#note(Object)`
-
-| `Query.filmActor`
-| no claiming directive
-| `fetchers.QueryFetchers#filmActor(DataFetchingEnvironment)`
-
-| `Query.filmActorNote`
-| no claiming directive
-| `fetchers.QueryFetchers#filmActorNote(DataFetchingEnvironment)`
-
-|===
+include::_example-composite-node-key.adoc[]
 
 Both `@nodeId` coordinates claim `NODE_ID` and both emit, with or without `typeName:`. The
 difference is which key shape gets encoded, not which verdict is reached. Asserted by the
@@ -342,46 +247,7 @@ An object type carrying no `@table` and reached from no producer is a grouping t
 of its own, and its fields resolve against whatever scope its parent opened. It generates a fetchers
 class, because its fields still need wiring, but it opens no query.
 
-[source,graphql]
-----
-type Query {
-  film: Film
-}
-
-type Film @table(name: "film") {
-  "A grouping type with no table of its own."
-  details: FilmDetails
-}
-
-type FilmDetails {
-  title: String
-  description: String
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Film.details`
-| no claiming directive
-| `fetchers.FilmFetchers#details(Object)`
-
-| `FilmDetails.description`
-| no claiming directive
-| `fetchers.FilmDetailsFetchers#description(Object)`
-
-| `FilmDetails.title`
-| no claiming directive
-| `fetchers.FilmDetailsFetchers#title(Object)`
-
-| `Query.film`
-| no claiming directive
-| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
-
-|===
+include::_example-nesting.adoc[]
 
 `FilmDetails.title` and `FilmDetails.description` read columns of `film`, the table its parent bound,
 which is what "nested under the parent's scope" means concretely. They fold into the parent's SELECT
@@ -398,44 +264,7 @@ Asserted by the `nesting` corpus example via `@classifiedType(as: NestingType)`.
 A `scalar` declaration carrying `@scalarType(scalar:)` names a `public static final GraphQLScalarType`
 constant, and that constant is the whole binding:
 
-[source,graphql]
-----
-type Query {
-  payment: Payment
-  "The same reflection, one use over: the resolved Java type is the service parameter's."
-  price(
-  amount: Money): String @service(service: {className : "no.sikt.graphitron.rewrite.TestServiceStub", method : "wireMoney"})
-}
-
-type Payment @table(name: "payment") {
-  "A library-supplied scalar over a real numeric column."
-  amount: BigDecimal
-}
-
-scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
-
-scalar Money @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY")
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Payment.amount`
-| `TABLE_COLUMN`, inferred
-| `fetchers.PaymentFetchers#amount(Object)`
-
-| `Query.payment`
-| no claiming directive
-| `fetchers.QueryFetchers#payment(DataFetchingEnvironment)`
-
-| `Query.price`
-| `SERVICE`, authored
-| `fetchers.QueryFetchers#price(DataFetchingEnvironment)`
-
-|===
+include::_example-scalar-type.adoc[]
 
 Both scalars classify as `ScalarType`, and neither generates anything of its own. What the verdict
 buys is a registration and a Java type. The constant is registered on the synthesized schema through
@@ -468,61 +297,7 @@ reflection, and which leaf it lands on is simply what kind of Java thing the ref
 Three kinds, and the same three on both sides. Take the result side first: the type is what a producer
 returns.
 
-[source,graphql]
-----
-type Query {
-  "A plain Java class: the field resolves against a readable accessor."
-  pojo: PojoBacked @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "makeDummyRecord"})
-  "A Java record: the field resolves against a record component."
-  javaRecord: JavaRecordBacked @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "makeTestRecordDto"})
-  "A jOOQ TableRecord: the field resolves against a column of the record's table."
-  jooqRecord: JooqTableRecordBacked @service(service: {className : "no.sikt.graphitron.rewrite.TestServiceStub", method : "getFilm"})
-}
-
-type PojoBacked {
-  id: ID
-}
-
-type JavaRecordBacked {
-  name: String
-}
-
-type JooqTableRecordBacked {
-  title: String
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `JavaRecordBacked.name`
-| no claiming directive
-| `fetchers.JavaRecordBackedFetchers#name(Object)`
-
-| `JooqTableRecordBacked.title`
-| no claiming directive
-| `fetchers.JooqTableRecordBackedFetchers#title(Object)`
-
-| `PojoBacked.id`
-| no claiming directive
-| `fetchers.PojoBackedFetchers#id(Object)`
-
-| `Query.javaRecord`
-| `SERVICE`, authored
-| `fetchers.QueryFetchers#javaRecord(DataFetchingEnvironment)`
-
-| `Query.jooqRecord`
-| `SERVICE`, authored
-| `fetchers.QueryFetchers#jooqRecord(DataFetchingEnvironment)`
-
-| `Query.pojo`
-| `SERVICE`, authored
-| `fetchers.QueryFetchers#pojo(DataFetchingEnvironment)`
-
-|===
+include::_example-result-backing.adoc[]
 
 The three result types land on `PojoResultType.Backed`, `JavaRecordType`, and `JooqTableRecordType`,
 and the fourth `ResultType` leaf, `JooqRecordType`, is what a table-less jOOQ `Record` reflects to. All
@@ -538,53 +313,7 @@ class does not expose is a build error at that coordinate, not a runtime null.
 
 The input side is the mirror image: the type is what a consumer takes.
 
-[source,graphql]
-----
-type Query {
-  "A plain Java class: each input field populates a JavaBean setter."
-  pojo(
-  in: PojoBackedInput): String @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "consumeDummyRecord"})
-  "A Java record: every component must bind, so the input declares them all."
-  javaRecord(
-  in: JavaRecordBackedInput): String @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "consumeTestRecordDto"})
-  "A jOOQ TableRecord: each input field binds to a column of the record's table."
-  jooqRecord(
-  in: JooqTableRecordBackedInput): String @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "consumeFilmRecord"})
-}
-
-input PojoBackedInput {
-  id: ID
-}
-
-input JavaRecordBackedInput {
-  name: String
-  value: Int
-}
-
-input JooqTableRecordBackedInput {
-  title: String
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Query.javaRecord`
-| `SERVICE`, authored
-| `fetchers.QueryFetchers#javaRecord(DataFetchingEnvironment)`
-
-| `Query.jooqRecord`
-| `SERVICE`, authored
-| `fetchers.QueryFetchers#jooqRecord(DataFetchingEnvironment)`
-
-| `Query.pojo`
-| `SERVICE`, authored
-| `fetchers.QueryFetchers#pojo(DataFetchingEnvironment)`
-
-|===
+include::_example-input-backing.adoc[]
 
 Only the three roots appear, because an input type has no fields to resolve; it has fields to
 *populate*. The input leaves mirror the result ones (`PojoInputType`, `JavaRecordInputType`,
@@ -619,61 +348,7 @@ payload, and that slot is what wires the try/catch: the carrier's error channel 
 `@error` types this call can produce, so the generated fetcher knows what to map a caught throwable
 into.
 
-[source,graphql]
-----
-type Query {
-  "The @error type reaches the schema through a payload's errors slot."
-  sak: SakPayload @service(service: {className : "no.sikt.graphitron.rewrite.TestServiceStub", method : "runSak"})
-}
-
-type SakPayload {
-  data: String
-  errors: [ExtraFieldError]
-}
-
-type ExtraFieldError @error(handlers: [{handler : GENERIC, className : "java.lang.IllegalArgumentException"}]) {
-  path: [String!]!
-  message: String!
-  severity: Severity!
-}
-
-enum Severity {
-  LOW
-  HIGH
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `ExtraFieldError.message`
-| no claiming directive
-| `fetchers.ExtraFieldErrorFetchers#message(DataFetchingEnvironment)`
-
-| `ExtraFieldError.path`
-| no claiming directive
-| `fetchers.ExtraFieldErrorFetchers#path(DataFetchingEnvironment)`
-
-| `ExtraFieldError.severity`
-| no claiming directive
-| no method of its own
-
-| `Query.sak`
-| `SERVICE`, authored
-| `fetchers.QueryFetchers#sak(DataFetchingEnvironment)`
-
-| `SakPayload.data`
-| no claiming directive
-| `fetchers.SakPayloadFetchers#data(Object)`
-
-| `SakPayload.errors`
-| no claiming directive
-| `fetchers.SakPayloadFetchers#errors(Object)`
-
-|===
+include::_example-error-type.adoc[]
 
 `path` and `message` are required on every `@error` type, and graphitron supplies both values itself.
 That is why each gets a generated method taking the `DataFetchingEnvironment` rather than a source
@@ -787,45 +462,7 @@ subquery folded into the parent's SELECT, while adding `@splitQuery` opens a new
 through a DataLoader. Both classify identically (`source = Child(Table)`, `operation = Fetch`,
 `target = Single(Table)`); only the derived new-query layer differs, forced by the `@splitQuery` slot.
 
-[source,graphql]
-----
-type Query {
-  city: City
-}
-
-type City @table(name: "city") {
-  country: Country
-  countrySplit: Country @splitQuery
-}
-
-type Country @table(name: "country") {
-  name: String @field(name: "country")
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `City.country`
-| no claiming directive
-| `fetchers.CityFetchers#country(DataFetchingEnvironment)`
-
-| `City.countrySplit`
-| no claiming directive
-| `fetchers.CityFetchers#countrySplit(DataFetchingEnvironment)`
-
-| `Country.name`
-| `TABLE_COLUMN`, inferred
-| `fetchers.CountryFetchers#name(Object)`
-
-| `Query.city`
-| no claiming directive
-| `fetchers.QueryFetchers#city(DataFetchingEnvironment)`
-
-|===
+include::_example-child-table.adoc[]
 
 `City.country` and `City.countrySplit` return the same `Country` over the same `city -> country` foreign
 key and carry the same `Child` / `Fetch` / `Table` verdict; `@splitQuery` flips only the derived
@@ -846,53 +483,7 @@ parent, because the record handoff has already opened a new DataLoader-backed sc
 subquery cannot fold back into. The parent's table-ness, not a directive, forces the derived re-query
 here; the asserted verdict is unchanged.
 
-[source,graphql]
-----
-type Query {
-  film: Film
-}
-
-type Film @table(name: "film") {
-  language: Language @reference(path: [{key : "film_language_id_fkey"}])
-  details: FilmDetails
-}
-
-type Language @table(name: "language") {
-  name: String
-}
-
-type FilmDetails {
-  language: Language @reference(path: [{key : "film_language_id_fkey"}])
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Film.details`
-| no claiming directive
-| `fetchers.FilmFetchers#details(Object)`
-
-| `Film.language`
-| no claiming directive
-| `fetchers.FilmFetchers#language(DataFetchingEnvironment)`
-
-| `FilmDetails.language`
-| no claiming directive
-| `fetchers.FilmDetailsFetchers#language(DataFetchingEnvironment)`
-
-| `Language.name`
-| `TABLE_COLUMN`, inferred
-| `fetchers.LanguageFetchers#name(Object)`
-
-| `Query.film`
-| no claiming directive
-| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
-
-|===
+include::_example-record-table.adoc[]
 
 `Film.language` (`TableField`) and `FilmDetails.language` (a record-sourced `BatchedTableField`) return the same `Language`
 over the same `film_language_id_fkey` foreign key and carry the same `Fetch` / `Table` operation and
@@ -914,53 +505,7 @@ read off a record graphitron only reflects). A nested non-table object under a r
 flavor of the same `Field` shape. All three are `Fetch`; the parent's table-ness moves the source shape
 (`Table` vs `Record`) and with it the target shape across the build-vs-consume line.
 
-[source,graphql]
-----
-type Query {
-  film: Film
-}
-
-type Film @table(name: "film") {
-  title: String
-  details: FilmDetails
-}
-
-type FilmDetails {
-  stats: FilmStats
-}
-
-type FilmStats {
-  count: Int
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1"]
-|===
-| Coordinate | Verdict
-
-| `Film.details`
-| no claiming directive
-
-| `Film.title`
-| `TABLE_COLUMN`, inferred
-
-| `FilmDetails.stats`
-| no claiming directive
-
-| `FilmStats.count`
-| no claiming directive
-
-| `Query.film`
-| no claiming directive
-
-|===
-
-NOTE: This pattern classifies but does not generate: the build rejects it, so there
-are no emitted names to show. The verdicts above are what the store derives either
-way. See xref:../explanation/typed-rejection.adoc[Typed rejection] for what a
-rejection carries.
+include::_example-mapping.adoc[]
 
 `Film.title` classifies with target shape `Column` (`title` is a column of the `film` table graphitron
 builds the projection for). `FilmStats.count`, a scalar under the record-backed `FilmStats`, classifies
@@ -992,40 +537,7 @@ non-table implementor of a discriminated interface): list cardinality batches th
 single cardinality fetches per parent. Either way its asserted `Child` / `Fetch` / `Table` verdict is the
 same.
 
-[source,graphql]
-----
-type Query {
-  customer: Customer
-}
-
-type Customer @table(name: "customer") {
-  address: Named
-}
-
-interface Named {
-  name: String
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Customer.address`
-| no claiming directive
-| `fetchers.CustomerFetchers#address(DataFetchingEnvironment)`
-
-| `Named.name`
-| no claiming directive
-| no method of its own
-
-| `Query.customer`
-| no claiming directive
-| `fetchers.QueryFetchers#customer(DataFetchingEnvironment)`
-
-|===
+include::_example-interface.adoc[]
 
 `Customer.address` returns the plain interface `Named` (implemented by the `@table` type `Address`),
 so it classifies with `source = Child`, `operation = Fetch`, target shape `Interface` (`InterfaceField`):
@@ -1038,50 +550,7 @@ A union child follows the same dimensional rule. The selection descends into eac
 inline fragment (`... on Film`, `... on Actor`), and classification resolves the union to its participant
 `@table` rows:
 
-[source,graphql]
-----
-type Query {
-  filmActor: FilmActor
-}
-
-type FilmActor @table(name: "film_actor") {
-  related: FilmOrActor
-}
-
-type Film @table(name: "film") {
-  title: String
-}
-
-type Actor @table(name: "actor") {
-  firstName: String @field(name: "FIRST_NAME")
-}
-
-union FilmOrActor = Film | Actor
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Actor.firstName`
-| `TABLE_COLUMN`, inferred
-| `fetchers.ActorFetchers#firstName(Object)`
-
-| `Film.title`
-| `TABLE_COLUMN`, inferred
-| `fetchers.FilmFetchers#title(Object)`
-
-| `FilmActor.related`
-| no claiming directive
-| `fetchers.FilmActorFetchers#related(DataFetchingEnvironment)`
-
-| `Query.filmActor`
-| no claiming directive
-| `fetchers.QueryFetchers#filmActor(DataFetchingEnvironment)`
-
-|===
+include::_example-union.adoc[]
 
 `FilmActor.related` returns the union `FilmOrActor`, so it classifies with `source = Child`,
 `operation = Fetch`, target shape `Union` (`UnionField`): a derived new keyed query projects whichever
@@ -1120,49 +589,7 @@ the base is projected as a capped correlated subselect, not joined in. `LIMIT` s
 property that makes a page correct is that one row is one entity; both facts above are what establish
 it, and `totalCount` counts the base under the same predicate the page ran under.
 
-[source,graphql]
-----
-type Query {
-  "A page of parties, each routed to its concrete type by the discriminator."
-  parties: [Party!]! @asConnection
-}
-
-interface Party @table(name: "party") @discriminate(on: "party_kind") {
-  displayName: String! @field(name: "display_name")
-}
-
-type Individual implements Party @table(name: "party_individual") @discriminator(value: "INDIVIDUAL") {
-  birthDate: String @field(name: "birth_date")
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Individual.birthDate`
-| `TABLE_COLUMN`, inferred
-| `fetchers.IndividualFetchers#birthDate(Object)`
-
-| `Party.displayName`
-| `TABLE_COLUMN`, inferred
-| no method of its own
-
-| `Query.parties`
-| no claiming directive
-| `fetchers.QueryFetchers#parties(DataFetchingEnvironment)`
-
-| `QueryPartiesConnection.edges`
-| no claiming directive
-| `fetchers.QueryPartiesConnectionFetchers#edges(DataFetchingEnvironment)`
-
-| `QueryPartiesEdge.node`
-| no claiming directive
-| `fetchers.QueryPartiesEdgeFetchers#node(DataFetchingEnvironment)`
-
-|===
+include::_example-paginated-joined-table-interface.adoc[]
 
 Asserted by the `paginated-joined-table-interface` corpus example.
 
@@ -1218,55 +645,7 @@ says which participant each row is. The interface's own fields resolve against t
 participants add nothing but a discriminator value. Both cardinalities are below, because this is the
 one polymorphic child where cardinality decides something.
 
-[source,graphql]
-----
-type Query {
-  inventory: Inventory
-  language: Language
-}
-
-type Language @table(name: "language") {
-  "Discriminated participants, read from one table."
-  mediaList: [MediaItem!]! @reference(path: [{key : "film_language_id_fkey"}])
-}
-
-interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
-  title: String
-}
-
-type Inventory @table(name: "inventory") {
-  "The same interface at single cardinality."
-  media: MediaItem
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Inventory.media`
-| no claiming directive
-| `fetchers.InventoryFetchers#media(DataFetchingEnvironment)`
-
-| `Language.mediaList`
-| no claiming directive
-| `fetchers.LanguageFetchers#mediaList(DataFetchingEnvironment)`
-
-| `MediaItem.title`
-| `TABLE_COLUMN`, inferred
-| no method of its own
-
-| `Query.inventory`
-| no claiming directive
-| `fetchers.QueryFetchers#inventory(DataFetchingEnvironment)`
-
-| `Query.language`
-| no claiming directive
-| `fetchers.QueryFetchers#language(DataFetchingEnvironment)`
-
-|===
+include::_example-table-interface.adoc[]
 
 `MediaItem.title` shows something the emitted column is there to make visible: a coordinate can carry
 a verdict and still emit no method of its own. It is projected by the enclosing fetcher's
@@ -1292,41 +671,7 @@ Participants of a discriminated interface may reach past the shared table. A `@r
 them is read for that participant's rows alone, gated by the discriminator, and it does get a method,
 because it is not part of the shared projection.
 
-[source,graphql]
-----
-type Query {
-  content: Content
-}
-
-interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
-  contentId: Int! @field(name: "CONTENT_ID")
-}
-
-type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
-  "Reached over a foreign key from one participant only."
-  rating: String @reference(path: [{key : "content_film_id_fkey"}]) @field(name: "RATING")
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Content.contentId`
-| `TABLE_COLUMN`, inferred
-| no method of its own
-
-| `FilmContent.rating`
-| `TABLE_COLUMN`, inferred
-| `fetchers.FilmContentFetchers#rating(Object)`
-
-| `Query.content`
-| no claiming directive
-| `fetchers.QueryFetchers#content(DataFetchingEnvironment)`
-
-|===
+include::_example-participant-reference.adoc[]
 
 Both coordinates carry the same verdict at the same tier, and only one of them emits: the shared
 interface field folds into the discriminated read, the participant-local reference does not. Asserted
@@ -1360,55 +705,7 @@ without declaring its path:
 written on an *argument* rather than on the field, and the claim still lands on the field: the
 coordinate reads `LOOKUP_KEY`, authored.
 
-[source,graphql]
-----
-type Query {
-  filmActor: FilmActor
-  "Films fetched by a caller-supplied list of ids, one row back per id."
-  filmById(
-  film_id: [ID] @lookupKey): [Film]!
-}
-
-type Film @table(name: "film") {
-  filmId: Int! @field(name: "film_id")
-}
-
-type FilmActor @table(name: "film_actor") {
-  actors(actor_id: [Int!]! @lookupKey): [Actor!]!
-}
-
-type Actor @table(name: "actor") {
-  firstName: String @field(name: "first_name")
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Actor.firstName`
-| `TABLE_COLUMN`, inferred
-| `fetchers.ActorFetchers#firstName(Object)`
-
-| `Film.filmId`
-| `TABLE_COLUMN`, inferred
-| `fetchers.FilmFetchers#filmId(Object)`
-
-| `FilmActor.actors`
-| no claiming directive
-| `fetchers.FilmActorFetchers#actors(DataFetchingEnvironment)`
-
-| `Query.filmActor`
-| no claiming directive
-| `fetchers.QueryFetchers#filmActor(DataFetchingEnvironment)`
-
-| `Query.filmById`
-| `LOOKUP_KEY`, authored
-| `fetchers.QueryFetchers#filmById(DataFetchingEnvironment)`
-
-|===
+include::_example-lookup.adoc[]
 
 The contract on the root is positional: one output element per key passed, with `null` at the position
 of a key that matched nothing. That is what forces the return type's elements to be nullable, and a
@@ -1435,40 +732,7 @@ argument's values. Asserted by the `lookup` corpus example.
 `@splitQuery` does to a lookup-keyed child what it does to a plain one, and it is worth seeing on this
 shape because two directives are now in play on the same field.
 
-[source,graphql]
-----
-type Query {
-  store: Store
-}
-
-type Store @table(name: "store") {
-  customers(customer_id: ID! @lookupKey): [Customer!]! @splitQuery
-}
-
-type Customer @table(name: "customer") {
-  firstName: String @field(name: "FIRST_NAME")
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Customer.firstName`
-| `TABLE_COLUMN`, inferred
-| `fetchers.CustomerFetchers#firstName(Object)`
-
-| `Query.store`
-| no claiming directive
-| `fetchers.QueryFetchers#store(DataFetchingEnvironment)`
-
-| `Store.customers`
-| no claiming directive
-| `fetchers.StoreFetchers#customers(DataFetchingEnvironment)`
-
-|===
+include::_example-split-lookup.adoc[]
 
 `Store.customers` classifies exactly as `FilmActor.actors` above does: same unclaimed coordinate, same
 `Child` / `Lookup` / `Table` verdict. `@splitQuery` replaces the inline correlated subquery with an
@@ -1485,49 +749,7 @@ Only `@lookupKey` moves an asserted axis. Asserted by the `split-lookup` corpus 
 
 Exactly one of those four spellings can carry `@asConnection`.
 
-[source,graphql]
-----
-type Query {
-  country: Country
-}
-
-type Country @table(name: "country") {
-  "A batched child that also paginates: @splitQuery opened the statement the page needs."
-  cities: [City!]! @splitQuery @asConnection @defaultOrder(primaryKey: true)
-}
-
-type City @table(name: "city") {
-  city: String
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `City.city`
-| `TABLE_COLUMN`, inferred
-| `fetchers.CityFetchers#city(Object)`
-
-| `Country.cities`
-| no claiming directive
-| `fetchers.CountryFetchers#cities(DataFetchingEnvironment)`
-
-| `CountryCitiesConnection.edges`
-| no claiming directive
-| `fetchers.CountryCitiesConnectionFetchers#edges(DataFetchingEnvironment)`
-
-| `CountryCitiesEdge.node`
-| no claiming directive
-| `fetchers.CountryCitiesEdgeFetchers#node(DataFetchingEnvironment)`
-
-| `Query.country`
-| no claiming directive
-| `fetchers.QueryFetchers#country(DataFetchingEnvironment)`
-
-|===
+include::_example-paginated-child.adoc[]
 
 A page needs a statement of its own to put a window on, and `@splitQuery` is what opens one, so it is a
 precondition here rather than a companion directive. The other three spellings are refused, for two
@@ -1581,56 +803,7 @@ NOTE: On that same column axis, several plain input fields may name *one* column
 A root field whose element type is the `Node` interface is a node fetcher. Its *name* has nothing to
 do with it:
 
-[source,graphql]
-----
-type Query {
-  "Relay's own entry point: one global id at a time."
-  node(
-  id: ID!): Node
-  "The list form of the same signature."
-  nodes(
-  ids: [ID!]!): [Node]
-  "Not named `node`, and classified as one anyway: the signature is the trigger."
-  internalFilmNode(
-  id: ID): Node
-}
-
-interface Node {
-  id: ID!
-}
-
-type Film implements Node @table(name: "film") @node {
-  title: String
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Film.title`
-| `TABLE_COLUMN`, inferred
-| `fetchers.FilmFetchers#title(Object)`
-
-| `Node.id`
-| no claiming directive
-| no method of its own
-
-| `Query.internalFilmNode`
-| no claiming directive
-| `fetchers.QueryFetchers#internalFilmNode(DataFetchingEnvironment)`
-
-| `Query.node`
-| no claiming directive
-| `fetchers.QueryFetchers#node(DataFetchingEnvironment)`
-
-| `Query.nodes`
-| no claiming directive
-| `fetchers.QueryFetchers#nodes(DataFetchingEnvironment)`
-
-|===
+include::_example-relay-node.adoc[]
 
 All three roots classify the same way: `source = Query`, `operation = NodeResolve`, target shape
 `Interface`. Recognition is by signature, never by field name, and `internalFilmNode` is in the example
@@ -1660,36 +833,7 @@ through the catalog; that read-back is the *derived re-fetch* (a write producer 
 not a separate asserted axis. The mutation's input object is part of the rendered closure, so the excerpt
 shows the plain input the write consumes; the `@table` return names the write target:
 
-[source,graphql]
-----
-type Mutation {
-  createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
-}
-
-type Film @table(name: "film") {
-  title: String
-}
-
-input FilmInput {
-  title: String
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Film.title`
-| `TABLE_COLUMN`, inferred
-| `fetchers.FilmFetchers#title(Object)`
-
-| `Mutation.createFilm`
-| `MUTATION`, authored
-| `fetchers.MutationFetchers#createFilm(DataFetchingEnvironment)`
-
-|===
+include::_example-dml.adoc[]
 
 `Mutation.createFilm` inserts a `film` row from `FilmInput` and projects the inserted row as the `@table`
 type `Film`: `source = Mutation`, `operation = Insert`, target shape `Table` (`MutationField.DmlTableField` carrying an Insert write arm),
@@ -1698,50 +842,7 @@ the read-back being the derived re-fetch. Asserted by the `dml` corpus example.
 The other two write verbs differ from `INSERT` in what they can hand back, and the pair below is
 that difference alone: same claim, same tier, one returning the written row and one returning an id.
 
-[source,graphql]
-----
-type Mutation {
-  "Writes the row, then projects it back through the catalog."
-  updateFilm(
-  in: FilmUpdateInput!): Film @mutation(typeName: UPDATE)
-  "Cannot project a row that is gone; hands back the deleted row's id."
-  deleteFilm(
-  in: FilmKeyInput!): ID @mutation(typeName: DELETE, table: "film")
-}
-
-type Film implements Node @table(name: "film") @node {
-  title: String
-}
-
-input FilmUpdateInput {
-  filmId: Int! @field(name: "film_id")
-  title: String
-}
-
-input FilmKeyInput {
-  filmId: Int! @field(name: "film_id")
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Film.title`
-| `TABLE_COLUMN`, inferred
-| `fetchers.FilmFetchers#title(Object)`
-
-| `Mutation.deleteFilm`
-| `MUTATION`, authored
-| `fetchers.MutationFetchers#deleteFilm(DataFetchingEnvironment)`
-
-| `Mutation.updateFilm`
-| `MUTATION`, authored
-| `fetchers.MutationFetchers#updateFilm(DataFetchingEnvironment)`
-
-|===
+include::_example-mutation-roots.adoc[]
 
 `UPDATE` behaves like `INSERT`: it writes, then re-projects the affected row, so its target shape is
 `Table` and the return type names the write target. `DELETE` cannot do that, because after the write
@@ -1759,46 +860,7 @@ naming what was written, optionally beside an errors-shaped field. The carrier b
 write's affected rows reach it as a record and the coordinate's target shape is `Record` instead of
 `Table`. The claim and the verb are unchanged; what moves is where the read-back lives.
 
-[source,graphql]
-----
-type Mutation {
-  updateFilmPayload(in: FilmUpdateInput!): FilmUpdatePayload @mutation(typeName: UPDATE)
-}
-
-type FilmUpdatePayload {
-  "The data field owns the read-back, a new keyed query off the written record's keys."
-  film: Film
-}
-
-type Film @table(name: "film") {
-  title: String
-}
-
-input FilmUpdateInput {
-  filmId: Int! @field(name: "film_id")
-  title: String
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Film.title`
-| `TABLE_COLUMN`, inferred
-| `fetchers.FilmFetchers#title(Object)`
-
-| `FilmUpdatePayload.film`
-| no claiming directive
-| `fetchers.FilmUpdatePayloadFetchers#film(DataFetchingEnvironment)`
-
-| `Mutation.updateFilmPayload`
-| `MUTATION`, authored
-| `fetchers.MutationFetchers#updateFilmPayload(DataFetchingEnvironment)`
-
-|===
+include::_example-dml-payloads.adoc[]
 
 On a direct `@table` return the write and the re-projection are one coordinate's business, the derived
 re-fetch above. A carrier splits them into two. The mutation emits a two-step fetcher: the per-kind DML
@@ -1825,47 +887,7 @@ coordinate instead of a DML write, and the claim it lands is `SERVICE`, not `MUT
 write target, nothing for `@mutation(table:)` to name. What the return type still decides is the
 target shape, and the pair below is that difference alone.
 
-[source,graphql]
-----
-type Mutation {
-  "A @table return: the service's rows are re-queried through the catalog."
-  importFilm: Film @service(service: {className : "no.sikt.graphitron.rewrite.TestServiceStub", method : "runFilm"})
-  "A non-table return: what the service produced is the answer."
-  summariseFilm: FilmDetails @service(service: {className : "no.sikt.graphitron.rewrite.TestServiceStub", method : "runDetails"})
-}
-
-type Film @table(name: "film") {
-  title: String
-}
-
-type FilmDetails {
-  title: String
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Film.title`
-| `TABLE_COLUMN`, inferred
-| `fetchers.FilmFetchers#title(Object)`
-
-| `FilmDetails.title`
-| no claiming directive
-| `fetchers.FilmDetailsFetchers#title(Object)`
-
-| `Mutation.importFilm`
-| `SERVICE`, authored
-| `fetchers.MutationFetchers#importFilm(DataFetchingEnvironment)`
-
-| `Mutation.summariseFilm`
-| `SERVICE`, authored
-| `fetchers.MutationFetchers#summariseFilm(DataFetchingEnvironment)`
-
-|===
+include::_example-mutation-service.adoc[]
 
 Both roots are `source = Mutation`, `operation = ServiceCall`. `importFilm` returns `Film`, a `@table`
 type, so the service's values have to become catalog rows again: target shape `Table`, and the
@@ -1904,46 +926,7 @@ land as an `AUTHORED` claim, and the claim name is what the outcome block shows.
 return is a table type or not, and the pair below isolates exactly that: same directive, same
 parent, one returning `@table` rows and one returning a scalar.
 
-[source,graphql]
-----
-type Query {
-  language: Language
-}
-
-type Language @table(name: "language") {
-  name: String
-  "Films for this language, produced by a service and re-queried as table rows."
-  filmsViaService: [Film!]! @service(service: {className : "no.sikt.graphitron.rewrite.generators.TestFilmService", method : "getFilmsMapped"})
-}
-
-type Film @table(name: "film") {
-  title: String
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Film.title`
-| `TABLE_COLUMN`, inferred
-| `fetchers.FilmFetchers#title(Object)`
-
-| `Language.filmsViaService`
-| `SERVICE`, authored
-| `fetchers.LanguageFetchers#filmsViaService(DataFetchingEnvironment)`
-
-| `Language.name`
-| `TABLE_COLUMN`, inferred
-| `fetchers.LanguageFetchers#name(Object)`
-
-| `Query.language`
-| no claiming directive
-| `fetchers.QueryFetchers#language(DataFetchingEnvironment)`
-
-|===
+include::_example-service-table-child.adoc[]
 
 The service returns values, and `Film` is a table type, so the values have to become table rows
 again: the coordinate opens a new keyed query, batched through a DataLoader, and `Film.title` reads
@@ -1951,38 +934,7 @@ a column of `film` inside it. Asserted by the `service-table-child` corpus examp
 
 Change the return to a scalar and the re-query disappears, because there is nothing to look up:
 
-[source,graphql]
-----
-type Query {
-  language: Language
-}
-
-type Language @table(name: "language") {
-  name: String
-  "A scalar a service produces; no SQL of its own."
-  rank: Int @service(service: {className : "no.sikt.graphitron.rewrite.generators.TestFilmService", method : "getRankMapped"})
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Language.name`
-| `TABLE_COLUMN`, inferred
-| `fetchers.LanguageFetchers#name(Object)`
-
-| `Language.rank`
-| `SERVICE`, authored
-| `fetchers.LanguageFetchers#rank(DataFetchingEnvironment)`
-
-| `Query.language`
-| no claiming directive
-| `fetchers.QueryFetchers#language(DataFetchingEnvironment)`
-
-|===
+include::_example-service-scalar-child.adoc[]
 
 Same verdict, same tier, and a fetcher method that hands back what the service returned. Asserted by
 the `service-scalar-child` corpus example.
@@ -1992,47 +944,7 @@ Neither of those two verdicts is a statement about the parent. Move the same pai
 is not a table at all, a plain object whose backing class the generator reflects off its own
 `@service` producer, and the verdicts do not move:
 
-[source,graphql]
-----
-type Query {
-  aggregated: Aggregated @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "makeLanguageKeyed"})
-}
-
-type Aggregated {
-  "A scalar the service produces off the parent's backing record."
-  rank: Int @service(service: {className : "no.sikt.graphitron.rewrite.generators.TestFilmService", method : "getRankMappedByRecord"})
-  "Table rows the service produces, keyed on the record the parent hands down."
-  filmsViaService: [Film!]! @service(service: {className : "no.sikt.graphitron.rewrite.generators.TestFilmService", method : "getFilmsMappedByRecord"})
-}
-
-type Film @table(name: "film") {
-  title: String
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Aggregated.filmsViaService`
-| `SERVICE`, authored
-| `fetchers.AggregatedFetchers#filmsViaService(DataFetchingEnvironment)`
-
-| `Aggregated.rank`
-| `SERVICE`, authored
-| `fetchers.AggregatedFetchers#rank(DataFetchingEnvironment)`
-
-| `Film.title`
-| `TABLE_COLUMN`, inferred
-| `fetchers.FilmFetchers#title(Object)`
-
-| `Query.aggregated`
-| `SERVICE`, authored
-| `fetchers.QueryFetchers#aggregated(DataFetchingEnvironment)`
-
-|===
+include::_example-service-child-class-backed-parent.adoc[]
 
 The parent here is class-backed: no `@table`, no `@record`, its backing class reflected off
 `makeLanguageKeyed`'s return type. Its two children carry the same `SERVICE` claim and the same two
@@ -2049,39 +961,7 @@ The last pair separates two things that both look like "this column is not where
 stays `TABLE_COLUMN` and stays `inferred`: the name still matched, just at the far end of a named
 foreign key. `@externalField` takes the value out of the catalog entirely and claims the coordinate.
 
-[source,graphql]
-----
-type Query {
-  film: Film
-}
-
-type Film @table(name: "film") {
-  "Reached over a named foreign key."
-  languageName: String @field(name: "name") @reference(path: [{key : "film_language_id_fkey"}])
-  "Computed in Java, not read from a column."
-  computedRating: String @externalField(reference: {className : "no.sikt.graphitron.rewrite.TestExternalFieldStub", method : "rating"})
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Film.computedRating`
-| `EXTERNAL_FIELD`, authored
-| `fetchers.FilmFetchers#computedRating(DataFetchingEnvironment)`
-
-| `Film.languageName`
-| `TABLE_COLUMN`, inferred
-| `fetchers.FilmFetchers#languageName(DataFetchingEnvironment)`
-
-| `Query.film`
-| no claiming directive
-| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
-
-|===
+include::_example-reference-and-computed.adoc[]
 
 This is the clearest reading of what the tier column means. `@reference` is written on
 `languageName` and the tier is still `inferred`, because `@reference` is not a claiming directive:
@@ -2095,41 +975,7 @@ it moves the site the name resolves against, and `intent_column_match_claim` the
 a `@table`, because the function's result set has a shape, and its children still resolve as columns
 of it. `argMapping:` binds the field's GraphQL arguments to the function's parameters by name.
 
-[source,graphql]
-----
-type Query {
-  "A table-valued database routine, read like a table."
-  tilganger(
-  env: String!
-  serviceId: String!
-  feideId: String!): [Tilgang!]! @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId") @defaultOrder(fields: [{name : "organisasjonskode"}, {name : "rollekode"}])
-}
-
-type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
-  organisasjonskode: Int
-  rollekode: String
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Query.tilganger`
-| `ROUTINE`, authored
-| `fetchers.QueryFetchers#tilganger(DataFetchingEnvironment)`
-
-| `Tilgang.organisasjonskode`
-| `TABLE_COLUMN`, inferred
-| `fetchers.TilgangFetchers#organisasjonskode(Object)`
-
-| `Tilgang.rollekode`
-| `TABLE_COLUMN`, inferred
-| `fetchers.TilgangFetchers#rollekode(Object)`
-
-|===
+include::_example-routine-table-valued-read.adoc[]
 
 `ROUTINE` is one of the claims `intent_authored_field_claim` carries, so the routine coordinate is
 `authored` while its children stay `inferred` column matches: from the children's point of view
@@ -2143,46 +989,7 @@ nothing is unusual, they are reading a relation that happens to be a function re
 types do not exist in the schema the author wrote; they are synthesised for the coordinate and named
 after it. `@asFacet` on an input field adds facet counts computed over the same filter.
 
-[source,graphql]
-----
-type Query {
-  "A paginated read whose filter input also yields facet counts."
-  films(
-  filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
-}
-
-type Film @table(name: "film") {
-  title: String
-}
-
-input FilmFilter {
-  title: [String!] @field(name: "title") @asFacet
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Film.title`
-| `TABLE_COLUMN`, inferred
-| `fetchers.FilmFetchers#title(Object)`
-
-| `Query.films`
-| no claiming directive
-| `fetchers.QueryFetchers#films(DataFetchingEnvironment)`
-
-| `QueryFilmsConnection.edges`
-| no claiming directive
-| `fetchers.QueryFilmsConnectionFetchers#edges(DataFetchingEnvironment)`
-
-| `QueryFilmsEdge.node`
-| no claiming directive
-| `fetchers.QueryFilmsEdgeFetchers#node(DataFetchingEnvironment)`
-
-|===
+include::_example-faceted-connection.adoc[]
 
 The coordinates named `QueryFilmsConnection` and `QueryFilmsEdge` are the synthesised types, and they
 emit fetchers of their own: that is what makes them visible here at all, since nothing in the authored
@@ -2203,46 +1010,7 @@ outright.
 one field per key. The vocabulary argument names the enum whose values map to the key column, so the
 target type's fields and the pivot's rows line up by name.
 
-[source,graphql]
-----
-type Query {
-  film: Film
-}
-
-type Film @table(name: "film") {
-  "One row of translations, pivoted out of a per-language table."
-  titleTexts: TranslatedTexts @reference(path: [{table : "film_translation"}]) @pivot(on: "lang_code", value: "title_txt", vocabulary: "Sprak")
-}
-
-type TranslatedTexts {
-  nn: String
-  nb: String
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Film.titleTexts`
-| no claiming directive
-| `fetchers.FilmFetchers#titleTexts(DataFetchingEnvironment)`
-
-| `Query.film`
-| no claiming directive
-| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
-
-| `TranslatedTexts.nb`
-| no claiming directive
-| `fetchers.TranslatedTextsFetchers#nb(Object)`
-
-| `TranslatedTexts.nn`
-| no claiming directive
-| `fetchers.TranslatedTextsFetchers#nn(Object)`
-
-|===
+include::_example-pivot.adoc[]
 
 No coordinate here carries a claim: `@pivot` and `@reference` are both shaping directives rather than
 claiming ones, and `TranslatedTexts` is a grouping type whose fields are filled from the pivoted
@@ -2337,41 +1105,7 @@ The return type does not change that. A field whose GraphQL type is an enum is s
 the enum-ness lives in the conversion between the column's value and the GraphQL value, not in the
 classification.
 
-[source,graphql]
-----
-type Query {
-  film: Film
-}
-
-type Film @table(name: "film") {
-  "A GraphQL enum return, still a plain column read."
-  rating: Rating
-}
-
-enum Rating {
-  G
-  PG
-  PG13
-  R
-  NC17
-}
-----
-
-// Generated from the corpus. Do not edit; OutcomeBlockDocTest holds it verbatim.
-.What the pipeline makes of it
-[cols="1,1,2"]
-|===
-| Coordinate | Verdict | Emitted
-
-| `Film.rating`
-| `TABLE_COLUMN`, inferred
-| `fetchers.FilmFetchers#rating(Object)`
-
-| `Query.film`
-| no claiming directive
-| `fetchers.QueryFetchers#film(DataFetchingEnvironment)`
-
-|===
+include::_example-enum-column.adoc[]
 
 `Film.rating` lands on the same verdict as `Film.title`, at the same tier, and emits the same shape of
 fetcher method. `Rating` itself classifies as `EnumType` and generates nothing: its values become the

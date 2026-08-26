@@ -1,0 +1,44 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Mutation {
+  "Writes the row, then projects it back through the catalog."
+  updateFilm(
+  in: FilmUpdateInput!): Film @mutation(typeName: UPDATE)
+  "Cannot project a row that is gone; hands back the deleted row's id."
+  deleteFilm(
+  in: FilmKeyInput!): ID @mutation(typeName: DELETE, table: "film")
+}
+
+type Film implements Node @table(name: "film") @node {
+  title: String
+}
+
+input FilmUpdateInput {
+  filmId: Int! @field(name: "film_id")
+  title: String
+}
+
+input FilmKeyInput {
+  filmId: Int! @field(name: "film_id")
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#title(Object)`
+
+| `Mutation.deleteFilm`
+| `MUTATION`, authored
+| `fetchers.MutationFetchers#deleteFilm(DataFetchingEnvironment)`
+
+| `Mutation.updateFilm`
+| `MUTATION`, authored
+| `fetchers.MutationFetchers#updateFilm(DataFetchingEnvironment)`
+
+|===

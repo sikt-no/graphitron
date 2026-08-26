@@ -1,0 +1,39 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  city: City
+}
+
+type City @table(name: "city") {
+  country: Country
+  countrySplit: Country @splitQuery
+}
+
+type Country @table(name: "country") {
+  name: String @field(name: "country")
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `City.country`
+| no claiming directive
+| `fetchers.CityFetchers#country(DataFetchingEnvironment)`
+
+| `City.countrySplit`
+| no claiming directive
+| `fetchers.CityFetchers#countrySplit(DataFetchingEnvironment)`
+
+| `Country.name`
+| `TABLE_COLUMN`, inferred
+| `fetchers.CountryFetchers#name(Object)`
+
+| `Query.city`
+| no claiming directive
+| `fetchers.QueryFetchers#city(DataFetchingEnvironment)`
+
+|===

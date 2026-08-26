@@ -1,0 +1,43 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  "A page of parties, each routed to its concrete type by the discriminator."
+  parties: [Party!]! @asConnection
+}
+
+interface Party @table(name: "party") @discriminate(on: "party_kind") {
+  displayName: String! @field(name: "display_name")
+}
+
+type Individual implements Party @table(name: "party_individual") @discriminator(value: "INDIVIDUAL") {
+  birthDate: String @field(name: "birth_date")
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Individual.birthDate`
+| `TABLE_COLUMN`, inferred
+| `fetchers.IndividualFetchers#birthDate(Object)`
+
+| `Party.displayName`
+| `TABLE_COLUMN`, inferred
+| no method of its own
+
+| `Query.parties`
+| no claiming directive
+| `fetchers.QueryFetchers#parties(DataFetchingEnvironment)`
+
+| `QueryPartiesConnection.edges`
+| no claiming directive
+| `fetchers.QueryPartiesConnectionFetchers#edges(DataFetchingEnvironment)`
+
+| `QueryPartiesEdge.node`
+| no claiming directive
+| `fetchers.QueryPartiesEdgeFetchers#node(DataFetchingEnvironment)`
+
+|===

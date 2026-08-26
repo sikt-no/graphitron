@@ -1,0 +1,35 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  content: Content
+}
+
+interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+  contentId: Int! @field(name: "CONTENT_ID")
+}
+
+type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+  "Reached over a foreign key from one participant only."
+  rating: String @reference(path: [{key : "content_film_id_fkey"}]) @field(name: "RATING")
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Content.contentId`
+| `TABLE_COLUMN`, inferred
+| no method of its own
+
+| `FilmContent.rating`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmContentFetchers#rating(Object)`
+
+| `Query.content`
+| no claiming directive
+| `fetchers.QueryFetchers#content(DataFetchingEnvironment)`
+
+|===

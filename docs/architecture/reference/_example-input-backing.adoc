@@ -1,0 +1,47 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  "A plain Java class: each input field populates a JavaBean setter."
+  pojo(
+  in: PojoBackedInput): String @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "consumeDummyRecord"})
+  "A Java record: every component must bind, so the input declares them all."
+  javaRecord(
+  in: JavaRecordBackedInput): String @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "consumeTestRecordDto"})
+  "A jOOQ TableRecord: each input field binds to a column of the record's table."
+  jooqRecord(
+  in: JooqTableRecordBackedInput): String @service(service: {className : "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method : "consumeFilmRecord"})
+}
+
+input PojoBackedInput {
+  id: ID
+}
+
+input JavaRecordBackedInput {
+  name: String
+  value: Int
+}
+
+input JooqTableRecordBackedInput {
+  title: String
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Query.javaRecord`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#javaRecord(DataFetchingEnvironment)`
+
+| `Query.jooqRecord`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#jooqRecord(DataFetchingEnvironment)`
+
+| `Query.pojo`
+| `SERVICE`, authored
+| `fetchers.QueryFetchers#pojo(DataFetchingEnvironment)`
+
+|===

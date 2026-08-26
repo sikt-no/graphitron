@@ -1,0 +1,43 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  country: Country
+}
+
+type Country @table(name: "country") {
+  "A batched child that also paginates: @splitQuery opened the statement the page needs."
+  cities: [City!]! @splitQuery @asConnection @defaultOrder(primaryKey: true)
+}
+
+type City @table(name: "city") {
+  city: String
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `City.city`
+| `TABLE_COLUMN`, inferred
+| `fetchers.CityFetchers#city(Object)`
+
+| `Country.cities`
+| no claiming directive
+| `fetchers.CountryFetchers#cities(DataFetchingEnvironment)`
+
+| `CountryCitiesConnection.edges`
+| no claiming directive
+| `fetchers.CountryCitiesConnectionFetchers#edges(DataFetchingEnvironment)`
+
+| `CountryCitiesEdge.node`
+| no claiming directive
+| `fetchers.CountryCitiesEdgeFetchers#node(DataFetchingEnvironment)`
+
+| `Query.country`
+| no claiming directive
+| `fetchers.QueryFetchers#country(DataFetchingEnvironment)`
+
+|===

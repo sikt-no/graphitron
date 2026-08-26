@@ -1,6 +1,6 @@
 ---
 name: classified-corpus
-description: Author one classification verdict into the spec-by-example corpus and the code-generation-triggers documentation, retiring a pure-verdict GraphitronSchemaBuilderTest enum row if the new example subsumes one. Use when the user says "add a corpus example for X", "migrate the X verdict", "document the X classification", "render X from the corpus", or "retire the X enum case". Encodes the per-verdict loop: author fixture, validate dimensions, render the doc block, write the worked example, retire a subsumed enum row, verify coverage + drift + docs render.
+description: Author one classification verdict into the spec-by-example corpus and the code-generation-triggers documentation, retiring a pure-verdict GraphitronSchemaBuilderTest enum row if the new example subsumes one. Use when the user says "add a corpus example for X", "migrate the X verdict", "document the X classification", "render X from the corpus", or "retire the X enum case". Encodes the per-verdict loop: author fixture, validate dimensions, render the documentation fragment, place it on the page, retire a subsumed enum row, verify coverage + approval + docs render.
 ---
 
 # classified-corpus
@@ -20,7 +20,8 @@ All under the repo root:
 - **Corpus** (source of truth): `graphitron/src/test/resources/corpus/`, one GraphQL document per example, named `<id>.graphqls`. A document carries its annotated fixture, its prose as SDL descriptions, and optionally a projection operation as its last definition; a document with a projection is what the page renders. `_prelude.graphqls` beside them holds the test-only directives and their enums, and is excluded from the document glob by its leading underscore.
 - **Loader**: `.../classifieddsl/CorpusDocuments.java`. `documents()` and `withProjection()` are what every reader reads; `Document(id, sdl, projection)` splits the file by truncating at the projection's own line. `CorpusDocumentsTest` holds the floors that keep a folder from passing while empty.
 - **Harness / DSL test**: `.../classifieddsl/ClassifiedHarness.java` (classifies a fixture, reads `@classified`/`@classifiedType` off the AST, records the sealed leaf each coordinate landed on), `ClassifiedDslTest.java` (asserts every annotated coordinate classifies to its declared dimensions, and that every dimension arm is exercised or on a stated known-gap list).
-- **Renderer + drift guard**: `QueryViewRenderer.java` (query-as-view, AST-print, strips the internal directives; expands argument input-type closure and renders unions/interfaces reached by a kept field or a `fragment on Type`), `ClassifiedDocTest.java` (asserts each rendered projection's SDL appears verbatim in the page).
+- **Renderers + fragment approval**: `QueryViewRenderer.java` (query-as-view, AST-print, strips the internal directives; expands argument input-type closure and renders unions/interfaces reached by a kept field or a `fragment on Type`), `OutcomeBlockRenderer.java` (the verdict-and-emitted table, from a real capture and a real generation run), `CorpusFragmentRenderer.java` (joins the two into the fragment the page includes), `CorpusFragmentTest.java` (compares every committed fragment against what the corpus renders now, plus the three placement floors).
+- **Fragments** (generated, committed, never hand-edited): `docs/architecture/reference/_example-<id>.adoc`, one per document carrying a projection. Committed because the outcome table's emitted names are pinned nowhere else, which makes the file an oracle; the same reasoning `roadmap/README.md` stands on.
 - **Dimensional vocabulary**: `_prelude.graphqls` (the `@classified`/`@classifiedType` directives plus the `SourceWrapper` / `Member` / `TargetWrapper` / `TargetShape` / `SourceShape` / `TypeVerdict` enums, declared test-only, ignored by the classifier), `ClassifiedDsl.java` (those directive names, by symbol), `DimensionTuple` (the verdict record, `source` + the `operations` member-arm token multiset + `TargetVerdict`).
 - **The page**: `docs/architecture/reference/code-generation-triggers.adoc`.
 - **Enum truth table**: `graphitron/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java` (the `*Case implements ClassificationCase` enums). It keeps the slot-asserting, rejection, and input-side rows by design; those are not corpus material.
@@ -67,20 +68,28 @@ mvn -pl :graphitron -am test -Plocal-db -P'!docs' \
 classifier produces. Fix the declared dimensions (or the fixture) until green — this step is where you
 *learn* the verdict; do not force the fixture to a hunch.
 
-### 4. Capture the rendered block
+### 4. Render the fragment
 ```bash
 mvn -pl :graphitron -am test -Plocal-db -P'!docs' \
-  -Dtest='ClassifiedDocTest' -Dsurefire.failIfNoSpecifiedTests=false 2>&1 | grep -A 25 "doc example '<id>'"
+  -Dtest='CorpusFragmentTest' -Dsurefire.failIfNoSpecifiedTests=false 2>&1 | grep -A 8 "no approved fragment\|cp "
 ```
-The failure message prints the exact SDL block (AstPrinter form, e.g. `@table(name: "city")`). Copy it.
+The fragment is the whole worked example: the rendered SDL (AstPrinter form, e.g. `@table(name: "city")`)
+and the outcome table stating each coordinate's verdict from the store and the methods the generator
+emitted for it. Nothing is pasted out of the failure message. The run leaves its render under
+`graphitron/target/corpus-fragments/`, and the message gives the `cp` line onto
+`docs/architecture/reference/_example-<id>.adoc`. Run it, read the fragment, and copy it over once the
+output is right. **Never hand-edit a fragment**: it is an approval file, and the next run overwrites
+what you typed while the approval goes on failing.
 
-### 5. Write the worked example in the page
+### 5. Place the worked example in the page
 In `code-generation-triggers.adoc`, add prose stating the rule **in dimensional terms** (the
 `(source, operations, target)` axes for fields, the `GraphitronType` leaf for types; never cross-product
-leaf names on the field side, the axes are what the dimensional model exposes) + a `[source,graphql]`
-block holding the captured SDL **verbatim** +
-a closing "Asserted by the `<id>` corpus example." Condense the superseded leaf-name table rows into the
-worked example as you go (the tables are the transitional reference and shrink as the doc grows).
+leaf names on the field side, the axes are what the dimensional model exposes) + the one line
+`include::_example-<id>.adoc[]` + a closing "Asserted by the `<id>` corpus example." The page carries no
+SDL block and no outcome table of its own: what it authors is the prose, the teaching order, and which
+examples to show. Condense the superseded leaf-name table rows into the worked example as you go (the
+tables are the transitional reference and shrink as the doc grows). A fragment with no include fails
+`CorpusFragmentTest`, so the placement is not optional once the fragment exists.
 
 ### 6. Retire the enum row(s), if step 1 found any
 Only when step 1 identified a **pure-verdict** case that your new example subsumes. This is now rare;
@@ -99,7 +108,7 @@ corpus example that took it over (and where it renders, if it is a doc example).
 ### 7. Verify
 ```bash
 mvn -pl :graphitron -am test -Plocal-db -P'!docs' \
-  -Dtest='ClassifiedDslTest,ClassifiedDocTest,VariantCoverageTest,GraphitronSchemaBuilderTest' \
+  -Dtest='ClassifiedDslTest,CorpusFragmentTest,VariantCoverageTest,GraphitronSchemaBuilderTest' \
   -Dsurefire.failIfNoSpecifiedTests=false
 # docs must render (a .adoc break fails CI):
 mvn -pl :graphitron-docs -am install -DskipTests

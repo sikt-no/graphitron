@@ -1,0 +1,35 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  "A table-valued database routine, read like a table."
+  tilganger(
+  env: String!
+  serviceId: String!
+  feideId: String!): [Tilgang!]! @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId") @defaultOrder(fields: [{name : "organisasjonskode"}, {name : "rollekode"}])
+}
+
+type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
+  organisasjonskode: Int
+  rollekode: String
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Query.tilganger`
+| `ROUTINE`, authored
+| `fetchers.QueryFetchers#tilganger(DataFetchingEnvironment)`
+
+| `Tilgang.organisasjonskode`
+| `TABLE_COLUMN`, inferred
+| `fetchers.TilgangFetchers#organisasjonskode(Object)`
+
+| `Tilgang.rollekode`
+| `TABLE_COLUMN`, inferred
+| `fetchers.TilgangFetchers#rollekode(Object)`
+
+|===

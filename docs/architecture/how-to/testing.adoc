@@ -93,11 +93,17 @@ Each variant family is a `// ===== VariantName =====` section with an enum where
 *The spec-by-example corpus:* `graphitron/src/test/resources/corpus/`, one GraphQL document per example, loaded by `CorpusDocuments`.
 This is the tree's only folder-of-documents fixture set, and the only fixture home a test reads from the source tree rather than the classpath, so what is asserted is exactly what an author edits.
 A document carries its annotated fixture, its prose as SDL descriptions, and optionally a projection operation as its last definition; the loader splits the file at that line, hands the type-system half to classification and the operation to the documentation renderer.
-Every reader of the corpus goes through the loader (`ClassifiedDslTest`, `VariantCoverageTest`, the `derive/*ShadowTest` sweeps, the two documentation drift guards), and nothing else lists the directory.
+Every reader of the corpus goes through the loader (`ClassifiedDslTest`, `VariantCoverageTest`, the `derive/*ShadowTest` sweeps, the documentation fragment approval), and nothing else lists the directory.
 A document states what the fact store holds for it by applying `@expectEquals(relation:, rows:)` to the schema, once per asserted relation, its rows as CSV; `CorpusExpectationTest` captures the whole corpus into one store, one graph per document, and compares each block against its relation by anti-join in both directions, so a failure is a row.
 That is the successor to a coordinate directive naming sealed-arm tokens: a block names a relation and its columns, so it asserts a store fact and reaches relations no coordinate could key.
 `CorpusDocumentsTest` carries the floors that keep a folder from passing while empty: a ratcheted document count, agreement between the loader's admissions and an independent listing, and a document nothing runs failing rather than being skipped.
 Adding an example is one new file; a `.java` edit means the assertion vocabulary changed, which is a prelude edit (`_prelude.graphqls`), not a container one.
+
+*A worked example's documentation fragment:* `docs/architecture/reference/_example-<id>.adoc`, one per document carrying a projection, written by `CorpusFragmentTest`.
+This is the tree's second approval-style fixture home, after the `.approved.json` files the sakila example's approval test compares against, and it is generated-and-committed for the same reason `roadmap/README.md` is: the fragment's outcome table holds the emitted unit and method names, which are not a store fact and are pinned nowhere else, so the file is an oracle and has to be checked in to be one.
+The reference page includes each fragment rather than carrying the blocks, so the page authors prose and teaching order and holds no expectation of its own.
+When a render legitimately changes, the test leaves this run's output under `graphitron/target/corpus-fragments/` and its message gives the `cp` line; never hand-edit a fragment.
+Beside the approval sit three placement floors, each with a planted regression in `CorpusFragmentRendererTest`: a fragment with no document, a document with no fragment, and a fragment no page includes.
 
 *Deeper SDL → TypeSpec / variant-shape tests:* `*PipelineTest` files: `NodeIdPipelineTest`, `BatchedTableFieldPipelineTest`, `TableFieldPipelineTest`, `LookupPipelineTest`, `NestingFieldPipelineTest`, `ServiceRootFetcherPipelineTest`, `TaggedInputsPipelineTest`, `StubbedVariantPipelineTest`; and in `generators/`: `FetcherPipelineTest`, `TablePipelineTest`.
 Build a schema with `TestSchemaHelper.buildSchema(sdl)`, assert structural shape on the resulting variant or generated `TypeSpec`.

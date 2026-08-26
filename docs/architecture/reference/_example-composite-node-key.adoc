@@ -1,0 +1,46 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Query {
+  filmActor: FilmActor
+  filmActorNote: FilmActorNote
+}
+
+type FilmActor implements Node @table(name: "film_actor") @node {
+  "A global id over a two-column key."
+  id: ID! @nodeId
+}
+
+type FilmActorNote @table(name: "film_actor_note") {
+  note: String @field(name: "note_txt")
+  "The same key, encoded from another table that names the target type."
+  filmActorId: ID @nodeId(typeName: "FilmActor")
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `FilmActor.id`
+| `NODE_ID`, authored
+| `fetchers.FilmActorFetchers#id(Object)`
+
+| `FilmActorNote.filmActorId`
+| `NODE_ID`, authored
+| `fetchers.FilmActorNoteFetchers#filmActorId(Object)`
+
+| `FilmActorNote.note`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmActorNoteFetchers#note(Object)`
+
+| `Query.filmActor`
+| no claiming directive
+| `fetchers.QueryFetchers#filmActor(DataFetchingEnvironment)`
+
+| `Query.filmActorNote`
+| no claiming directive
+| `fetchers.QueryFetchers#filmActorNote(DataFetchingEnvironment)`
+
+|===

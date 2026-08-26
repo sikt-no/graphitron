@@ -1,0 +1,30 @@
+// Generated from the corpus. Do not edit; CorpusFragmentTest writes it.
+[source,graphql]
+----
+type Mutation {
+  createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+
+input FilmInput {
+  title: String
+}
+----
+
+.What the pipeline makes of it
+[cols="1,1,2"]
+|===
+| Coordinate | Verdict | Emitted
+
+| `Film.title`
+| `TABLE_COLUMN`, inferred
+| `fetchers.FilmFetchers#title(Object)`
+
+| `Mutation.createFilm`
+| `MUTATION`, authored
+| `fetchers.MutationFetchers#createFilm(DataFetchingEnvironment)`
+
+|===
