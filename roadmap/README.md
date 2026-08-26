@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R834` | A top-level @service returning a @table type reads columns off the returned record instead of refetching by key | Ready | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](root-service-table-return-skips-key-refetch.md) |
-| `R832` | CatalogRefreshTest budgets a real refresh like a no-op trigger | In Progress | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](catalog-refresh-latch-budget-prices-a-real-trigger.md) |
+| `R832` | CatalogRefreshTest budgets a real refresh like a no-op trigger | In Review | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](catalog-refresh-latch-budget-prices-a-real-trigger.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Spec | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
@@ -625,7 +625,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
 - `R768` [**The build boots the fact schema 1051 times, and a reset costs a fraction of a boot**](store-boots-once-per-test-not-once-per-build.md) — Backlog, dx
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
-- `R832` [**CatalogRefreshTest budgets a real refresh like a no-op trigger**](catalog-refresh-latch-budget-prices-a-real-trigger.md) — In Progress, dx
+- `R832` [**CatalogRefreshTest budgets a real refresh like a no-op trigger**](catalog-refresh-latch-budget-prices-a-real-trigger.md) — In Review, dx
 - `R764` [**graphitron-model ships its junit-platform.properties to four consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
 - `R780` [**srp names the reviewer as the disqualified party: the session grep takes the first ID in the body, not the trailer**](srp-disqualified-session-read-from-trailer.md) — Backlog, dx
 - `R779` [**Did findings-not-fixes cut the bounce loop? Measure the plan-body blame fraction over three bounced items**](findings-convention-round-count-measurement.md) — Backlog, dx
