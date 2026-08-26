@@ -6239,6 +6239,60 @@ COMMENT ON COLUMN intent_input_occurrence_path_step.container_type_name IS 'the 
 COMMENT ON COLUMN intent_input_occurrence_path_step.field_name IS 'the input field''s name within its container';
 COMMENT ON COLUMN intent_input_occurrence_path_step.named_type IS 'the step''s named type; the type the traversal is in after taking this step';
 
+CREATE VIEW intent_input_occurrence_descent_order (graph_name, path, ordinal) AS
+WITH
+sibling (graph_name, path, depth, other_path, other_depth) AS (
+  SELECT a.graph_name, a.path, a.depth, b.path, b.depth
+    FROM intent_input_occurrence_path a
+    JOIN intent_input_occurrence_path b
+      ON b.graph_name = a.graph_name
+     AND b.root_type_name = a.root_type_name
+     AND b.root_field_name = a.root_field_name
+     AND b.root_argument_name = a.root_argument_name
+     AND b.path <> a.path
+),
+diverged (graph_name, path, other_path, ordinal) AS (
+  SELECT s.graph_name, s.path, s.other_path, MIN(sa.ordinal)
+    FROM sibling s
+    JOIN intent_input_occurrence_path_step sa
+      ON sa.graph_name = s.graph_name AND sa.path = s.path
+    JOIN intent_input_occurrence_path_step sb
+      ON sb.graph_name = s.graph_name AND sb.path = s.other_path
+     AND sb.ordinal = sa.ordinal
+   WHERE sa.field_name <> sb.field_name
+   GROUP BY s.graph_name, s.path, s.other_path
+),
+earlier (graph_name, path, other_path) AS (
+  SELECT s.graph_name, s.path, s.other_path
+    FROM sibling s
+    LEFT JOIN diverged d
+      ON d.graph_name = s.graph_name AND d.path = s.path AND d.other_path = s.other_path
+   WHERE d.ordinal IS NULL AND s.other_depth < s.depth
+   UNION ALL
+  SELECT d.graph_name, d.path, d.other_path
+    FROM diverged d
+    JOIN intent_input_occurrence_path_step sa
+      ON sa.graph_name = d.graph_name AND sa.path = d.path AND sa.ordinal = d.ordinal
+    JOIN intent_input_occurrence_path_step sb
+      ON sb.graph_name = d.graph_name AND sb.path = d.other_path AND sb.ordinal = d.ordinal
+    JOIN graphql_field fa
+      ON fa.graph_name = sa.graph_name AND fa.type_name = sa.container_type_name
+     AND fa.field_name = sa.field_name
+    JOIN graphql_field fb
+      ON fb.graph_name = sb.graph_name AND fb.type_name = sb.container_type_name
+     AND fb.field_name = sb.field_name
+   WHERE fb.ordinal < fa.ordinal
+)
+SELECT o.graph_name, o.path, COUNT(e.other_path)
+  FROM intent_input_occurrence_path o
+  LEFT JOIN earlier e
+    ON e.graph_name = o.graph_name AND e.path = o.path
+ GROUP BY o.graph_name, o.path;
+COMMENT ON VIEW intent_input_occurrence_descent_order IS 'The order the flattener reaches a payload''s occurrences in, one row per occurrence path: a dense zero-based rank within the argument the path descends from. The walk is a depth-first pre-order over declared input fields, so the argument occurrence itself is always rank zero, a grouping input is reached before any field it groups, and a grouping input''s whole subtree lies between it and its next sibling. Two questions already asked that order pairwise, each in its own view body, and both are the same question: which of several contending straddler claims pins a key column, which intent_mutation_write_destination settles, and which occurrence a runtime agreement check names on its predicate side, which intent_mutation_write_agreement settles. A third is the order an emitter renders one statement''s assignments and predicates in, and it is what fixes the grain: all three are questions about an occurrence''s place in one descent, so the order is stated once at the grain of the occurrence rather than three times inside the relations that consume it. The rank is computed pairwise rather than from a sort key assembled out of the path, a key of that shape being a collection folded into one value and this schema keeping no such column: for each pair of occurrences under one argument, the earlier is the one that is a prefix of the other, or, where neither is, the one whose field is declared first at the outermost step the two differ at. That comparison tests field names only and does not compare containers, and does not need to: two paths agreeing on every field name before their first difference agree on every container too, each step''s container being the previous step''s named type and the first being the argument''s own input type, so the containers follow by induction rather than by a predicate. The order is total within an argument, which is what makes the rank dense: two distinct paths under one argument either stand in the prefix relation or take different fields at some step, and different fields on one container have different declaration ordinals. Between arguments it says nothing. Two paths under different arguments both have a rank and the two ranks are not comparable, which is why the argument is not repeated here: a reader needing it joins intent_input_occurrence_path, whose key this relation shares and whose row carries the argument coordinate. Absence is an occurrence path relation with no rows, so a graph declaring no input object surface at all; every path that exists has a rank, the payload root included.';
+COMMENT ON COLUMN intent_input_occurrence_descent_order.graph_name IS 'the owning graph''s partition, carried from the occurrence path; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN intent_input_occurrence_descent_order.path IS 'the occurrence this rank is about; with graph_name, the key intent_input_occurrence_path is keyed by, which is what a reader joins on';
+COMMENT ON COLUMN intent_input_occurrence_descent_order.ordinal IS 'zero-based position of the occurrence in its argument''s descent, dense within that argument: the argument occurrence itself is zero, a grouping input precedes every field it groups, and siblings follow their declaration order. Comparable only against another rank under the same argument.';
+
 CREATE VIEW intent_input_occurrence_override
   (graph_name, path, override_type_name, override_field_name, override_argument_name) AS
 SELECT graph_name, path, override_type_name, override_field_name, override_argument_name
@@ -8916,49 +8970,15 @@ claim (graph_name, type_name, field_name, path, position, column_name) AS (
    WHERE d.carrier_key_membership = 'STRADDLE' AND d.carrier_role = 'CROSS_TABLE_FK'
      AND d.in_key = TRUE AND d.pinned = 0
 ),
-diverge (graph_name, type_name, field_name, column_name, path, other_path, ordinal) AS (
-  SELECT c.graph_name, c.type_name, c.field_name, c.column_name, c.path, o.path,
-         MIN(sa.ordinal)
-    FROM claim c
-    JOIN claim o
-      ON o.graph_name = c.graph_name AND o.type_name = c.type_name
-     AND o.field_name = c.field_name AND o.column_name = c.column_name
-     AND o.path <> c.path
-    JOIN intent_input_occurrence_path_step sa
-      ON sa.graph_name = c.graph_name AND sa.path = c.path
-    JOIN intent_input_occurrence_path_step sb
-      ON sb.graph_name = o.graph_name AND sb.path = o.path AND sb.ordinal = sa.ordinal
-   WHERE sa.field_name <> sb.field_name
-      OR sa.container_type_name <> sb.container_type_name
-   GROUP BY c.graph_name, c.type_name, c.field_name, c.column_name, c.path, o.path
-),
-preceded (graph_name, type_name, field_name, column_name, path) AS (
-  SELECT DISTINCT d.graph_name, d.type_name, d.field_name, d.column_name, d.path
-    FROM diverge d
-    JOIN intent_input_occurrence_path_step sa
-      ON sa.graph_name = d.graph_name AND sa.path = d.path AND sa.ordinal = d.ordinal
-    JOIN intent_input_occurrence_path_step sb
-      ON sb.graph_name = d.graph_name AND sb.path = d.other_path AND sb.ordinal = d.ordinal
-    JOIN graphql_field fa
-      ON fa.graph_name = sa.graph_name AND fa.type_name = sa.container_type_name
-     AND fa.field_name = sa.field_name
-    JOIN graphql_field fb
-      ON fb.graph_name = sb.graph_name AND fb.type_name = sb.container_type_name
-     AND fb.field_name = sb.field_name
-   WHERE fb.ordinal < fa.ordinal
-),
 winner (graph_name, type_name, field_name, path, position, column_name) AS (
   SELECT graph_name, type_name, field_name, path, position, column_name
     FROM (SELECT c.graph_name, c.type_name, c.field_name, c.path, c.position, c.column_name,
                  ROW_NUMBER() OVER (PARTITION BY c.graph_name, c.type_name, c.field_name,
                                                  c.column_name
-                                    ORDER BY c.position) AS rn
+                                    ORDER BY o.ordinal, c.position) AS rn
             FROM claim c
-            LEFT JOIN preceded p
-              ON p.graph_name = c.graph_name AND p.type_name = c.type_name
-             AND p.field_name = c.field_name AND p.column_name = c.column_name
-             AND p.path = c.path
-           WHERE p.path IS NULL) ranked
+            JOIN intent_input_occurrence_descent_order o
+              ON o.graph_name = c.graph_name AND o.path = c.path) ranked
    WHERE rn = 1
 )
 SELECT c.graph_name, c.type_name, c.field_name, c.operation,
@@ -9008,7 +9028,7 @@ COMMENT ON COLUMN intent_mutation_write_destination_live.write_table IS 'the wri
 COMMENT ON COLUMN intent_mutation_write_destination_live.source_name IS 'the source_name of a row of this rule, materialized into intent_mutation_write_destination.source_name, whose comment carries what the value means';
 COMMENT ON COLUMN intent_mutation_write_destination_live.source_line IS 'the source_line of a row of this rule, materialized into intent_mutation_write_destination.source_line, whose comment carries what the value means';
 COMMENT ON COLUMN intent_mutation_write_destination_live.source_column IS 'the source_column of a row of this rule, materialized into intent_mutation_write_destination.source_column, whose comment carries what the value means';
-COMMENT ON TABLE intent_mutation_write_destination IS 'What each column a write payload contributes is for, one row per contributing occurrence per decode slot: the finished partition, and what an emitter assembles a statement out of. The verb decides how many destinations are reachable at all. A DELETE reaches one. Every admitted column of it is a predicate and the matched key is a cardinality guard beside them rather than a subset of them, so the broadcast arm contributes predicates exactly as the identified one does and a self-referencing foreign key filters there exactly as a plain column does. An UPDATE reaches all three, and which one a column reaches turns on its carrier rather than on the column. A carrier wholly inside the key filters. One wholly outside it writes. A self-referencing foreign key writes however it falls, its columns pointing at a sibling row rather than at this one, so a key column it carries is an ordinary assignment and the foreign key forces it equal to what the predicate matched. A cross-table foreign key is the one carrier that splits, its in-key half being this row''s own identity and its out-of-key half a value, which is why the decode slot is a column here and not an implicit ordering: once a carrier is split, neither half recovers which slot of the decode a column came from. CHECKED is the destination that is easy to miss and the reason the vocabulary is not two values. Where a straddler''s in-key column is already pinned by some other carrier, the straddler neither filters nor writes it: the two decoded values are compared before any DML runs and the column has a contribution and no place in the statement. It is stated rather than left as an absence, an absence at this grain saying that the occurrence contributes nothing to that column, which is not what happens. Which carrier pins a contested key column, where more than one straddler claims it and nothing else does, is the walker''s input-field order, the first claim supplying the predicate and the rest being checked. The choice is observationally irrelevant, the agreement check running either way, but it decides which field''s decode appears in the emitted WHERE clause, so it is transcribed rather than left to whatever order a row arrives in. The order is the flattener''s descent: two occurrences compare at the outermost step where they differ, on the declaration ordinal of the field each takes there. It is written as a pairwise precedence over the contending occurrences rather than as a sort key assembled from the path, both because a key of that shape is a collection folded into one value and because the comparison is only ever asked of occurrences that contend, which is a handful wherever it is asked at all. Neither contender can be a prefix of the other, a prefix of a column-bearing occurrence being a grouping field that carries no column of its own, so the step they first differ at exists on both. A refused payload contributes nothing at all: the walker returns before building either half, so a coordinate with any refusal has no row here whichever of the three refusal relations carries it. The exclusion against the partition-stage refusals is written as a set difference rather than as a test per row, the per-row form re-deriving that whole rule once for every column it filters. Absence is a refused payload, a payload with no column-bearing occurrence in it, and every mutation offering no write surface at all. Which pairs of contributions must agree at runtime is the one thing this relation does not decide and intent_mutation_write_agreement does, as a reduction over these rows rather than a fact beside them: every such pair is a predicate row and a non-predicate row here over one column of one statement. Materialized: this relation is a table refilled from intent_mutation_write_destination_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
+COMMENT ON TABLE intent_mutation_write_destination IS 'What each column a write payload contributes is for, one row per contributing occurrence per decode slot: the finished partition, and what an emitter assembles a statement out of. The verb decides how many destinations are reachable at all. A DELETE reaches one. Every admitted column of it is a predicate and the matched key is a cardinality guard beside them rather than a subset of them, so the broadcast arm contributes predicates exactly as the identified one does and a self-referencing foreign key filters there exactly as a plain column does. An UPDATE reaches all three, and which one a column reaches turns on its carrier rather than on the column. A carrier wholly inside the key filters. One wholly outside it writes. A self-referencing foreign key writes however it falls, its columns pointing at a sibling row rather than at this one, so a key column it carries is an ordinary assignment and the foreign key forces it equal to what the predicate matched. A cross-table foreign key is the one carrier that splits, its in-key half being this row''s own identity and its out-of-key half a value, which is why the decode slot is a column here and not an implicit ordering: once a carrier is split, neither half recovers which slot of the decode a column came from. CHECKED is the destination that is easy to miss and the reason the vocabulary is not two values. Where a straddler''s in-key column is already pinned by some other carrier, the straddler neither filters nor writes it: the two decoded values are compared before any DML runs and the column has a contribution and no place in the statement. It is stated rather than left as an absence, an absence at this grain saying that the occurrence contributes nothing to that column, which is not what happens. Which carrier pins a contested key column, where more than one straddler claims it and nothing else does, is the walker''s input-field order, the first claim supplying the predicate and the rest being checked. The choice is observationally irrelevant, the agreement check running either way, but it decides which field''s decode appears in the emitted WHERE clause, so it is transcribed rather than left to whatever order a row arrives in. The order is the flattener''s descent, which intent_input_occurrence_descent_order ranks every occurrence of a payload by; this relation reads that rank and keeps the earliest claim, rather than comparing the contenders itself. It compared them itself first, and stopped when the second reader wanting the same order arrived: a comparison spelled twice is a rule stated twice, and the grain it is really asked at is the occurrence rather than the contested column. A refused payload contributes nothing at all: the walker returns before building either half, so a coordinate with any refusal has no row here whichever of the three refusal relations carries it. The exclusion against the partition-stage refusals is written as a set difference rather than as a test per row, the per-row form re-deriving that whole rule once for every column it filters. Absence is a refused payload, a payload with no column-bearing occurrence in it, and every mutation offering no write surface at all. Which pairs of contributions must agree at runtime is the one thing this relation does not decide and intent_mutation_write_agreement does, as a reduction over these rows rather than a fact beside them: every such pair is a predicate row and a non-predicate row here over one column of one statement. Materialized: this relation is a table refilled from intent_mutation_write_destination_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
 COMMENT ON COLUMN intent_mutation_write_destination.graph_name IS 'the owning graph''s partition, carried from the write payload';
 COMMENT ON COLUMN intent_mutation_write_destination.type_name IS 'the type declaring the writing mutation field';
 COMMENT ON COLUMN intent_mutation_write_destination.field_name IS 'the mutation field whose statement this column takes part in; with the type, the coordinate intent_mutation_write_payload is keyed by';
@@ -9043,37 +9063,6 @@ predicate (graph_name, type_name, field_name, column_name, path, container_type_
     FROM intent_mutation_write_destination d
    WHERE d.operation = 'UPDATE' AND d.destination = 'PREDICATE'
 ),
-contended (graph_name, type_name, field_name, column_name, path, other_path, ordinal) AS (
-  SELECT p.graph_name, p.type_name, p.field_name, p.column_name, p.path, o.path,
-         MIN(sa.ordinal)
-    FROM predicate p
-    JOIN predicate o
-      ON o.graph_name = p.graph_name AND o.type_name = p.type_name
-     AND o.field_name = p.field_name AND o.column_name = p.column_name
-     AND o.path <> p.path
-    JOIN intent_input_occurrence_path_step sa
-      ON sa.graph_name = p.graph_name AND sa.path = p.path
-    JOIN intent_input_occurrence_path_step sb
-      ON sb.graph_name = o.graph_name AND sb.path = o.path AND sb.ordinal = sa.ordinal
-   WHERE sa.field_name <> sb.field_name
-      OR sa.container_type_name <> sb.container_type_name
-   GROUP BY p.graph_name, p.type_name, p.field_name, p.column_name, p.path, o.path
-),
-outranked (graph_name, type_name, field_name, column_name, path) AS (
-  SELECT DISTINCT c.graph_name, c.type_name, c.field_name, c.column_name, c.path
-    FROM contended c
-    JOIN intent_input_occurrence_path_step sa
-      ON sa.graph_name = c.graph_name AND sa.path = c.path AND sa.ordinal = c.ordinal
-    JOIN intent_input_occurrence_path_step sb
-      ON sb.graph_name = c.graph_name AND sb.path = c.other_path AND sb.ordinal = c.ordinal
-    JOIN graphql_field fa
-      ON fa.graph_name = sa.graph_name AND fa.type_name = sa.container_type_name
-     AND fa.field_name = sa.field_name
-    JOIN graphql_field fb
-      ON fb.graph_name = sb.graph_name AND fb.type_name = sb.container_type_name
-     AND fb.field_name = sb.field_name
-   WHERE fb.ordinal < fa.ordinal
-),
 pinning (graph_name, type_name, field_name, column_name, path, container_type_name,
          input_field_name, position, role) AS (
   SELECT graph_name, type_name, field_name, column_name, path, container_type_name,
@@ -9082,13 +9071,10 @@ pinning (graph_name, type_name, field_name, column_name, path, container_type_na
                  p.container_type_name, p.input_field_name, p.position, p.role,
                  ROW_NUMBER() OVER (PARTITION BY p.graph_name, p.type_name, p.field_name,
                                                  p.column_name
-                                    ORDER BY p.position) AS rn
+                                    ORDER BY o.ordinal, p.position) AS rn
             FROM predicate p
-            LEFT JOIN outranked o
-              ON o.graph_name = p.graph_name AND o.type_name = p.type_name
-             AND o.field_name = p.field_name AND o.column_name = p.column_name
-             AND o.path = p.path
-           WHERE o.path IS NULL) ranked
+            JOIN intent_input_occurrence_descent_order o
+              ON o.graph_name = p.graph_name AND o.path = p.path) ranked
    WHERE rn = 1
 )
 SELECT k.graph_name, k.type_name, k.field_name, k.column_name,
@@ -9105,7 +9091,7 @@ SELECT k.graph_name, k.type_name, k.field_name, k.column_name,
    AND d.input_field_name <> k.input_field_name
 ;
 
-COMMENT ON VIEW intent_mutation_write_agreement IS 'Which two of an UPDATE''s contributions must be checked equal before any DML runs, one row per pair per column. A foreign key forces the two values equal for well-formed input and nothing forces the input to be well formed: both values arrive on the wire independently, so a disagreement is a runtime error and can only be a runtime error, which is why this states an obligation to emit a check rather than a refusal to generate. It is a reduction over intent_mutation_write_destination rather than a fact beside it, and the whole of the rule is a self-join and a tie-break: every pair is a PREDICATE row of that relation and a non-PREDICATE row of it over the same column of the same statement. Two carriers reach the non-PREDICATE side and the destination already tells them apart. A self-referencing foreign key routes every column it carries to the assignment half, so a key column among them is written and checked, and its row here carries VALUE. A straddling cross-table reference whose in-key column something else already pins neither filters nor writes it, so its row here carries CHECKED, which is that destination''s whole reason to exist. The predicate side is one occurrence per column even where several are dispositioned PREDICATE, because the statement filters on a column once: where two whole carriers bind one key column, which of them the check names is the flattener''s descent order, resolved by the same pairwise precedence intent_mutation_write_destination settles a contested straddler claim with, and stated here rather than left to whatever order a row arrives in for the same reason it is stated there. A field paired with itself is excluded in the join rather than filtered after it: the check this lowers to names two input fields, and a field cannot disagree with itself, so an occurrence and a same-named occurrence elsewhere in the payload produce no obligation. Absence is every payload with no reference carrier landing on a key column, which is most of them, and every payload the write partition refuses, a refused payload having no destination rows to reduce over. Source positions are not carried: a row here names two occurrences, both of which intent_mutation_write_destination already carries a position for at a key this relation states in full, and carrying one of the two would invite it to be read as the obligation''s position, which no author error attaches to. Nor is the order the checks are emitted in stated. That order is the reference occurrence''s place in the flattener''s descent and then its decode slot, which is the order the assignment and predicate halves are themselves emitted in, so it is one question at the grain of an occurrence rather than three at the grain of each partition; answering it here would state a third of it in a place the other two do not read.';
+COMMENT ON VIEW intent_mutation_write_agreement IS 'Which two of an UPDATE''s contributions must be checked equal before any DML runs, one row per pair per column. A foreign key forces the two values equal for well-formed input and nothing forces the input to be well formed: both values arrive on the wire independently, so a disagreement is a runtime error and can only be a runtime error, which is why this states an obligation to emit a check rather than a refusal to generate. It is a reduction over intent_mutation_write_destination rather than a fact beside it, and the whole of the rule is a self-join and a tie-break: every pair is a PREDICATE row of that relation and a non-PREDICATE row of it over the same column of the same statement. Two carriers reach the non-PREDICATE side and the destination already tells them apart. A self-referencing foreign key routes every column it carries to the assignment half, so a key column among them is written and checked, and its row here carries VALUE. A straddling cross-table reference whose in-key column something else already pins neither filters nor writes it, so its row here carries CHECKED, which is that destination''s whole reason to exist. The predicate side is one occurrence per column even where several are dispositioned PREDICATE, because the statement filters on a column once: where two whole carriers bind one key column, which of them the check names is the flattener''s descent order, read off intent_input_occurrence_descent_order, which is the same rank intent_mutation_write_destination settles a contested straddler claim with, and asked here rather than left to whatever order a row arrives in for the same reason it is asked there. A field paired with itself is excluded in the join rather than filtered after it: the check this lowers to names two input fields, and a field cannot disagree with itself, so an occurrence and a same-named occurrence elsewhere in the payload produce no obligation. Absence is every payload with no reference carrier landing on a key column, which is most of them, and every payload the write partition refuses, a refused payload having no destination rows to reduce over. Source positions are not carried: a row here names two occurrences, both of which intent_mutation_write_destination already carries a position for at a key this relation states in full, and carrying one of the two would invite it to be read as the obligation''s position, which no author error attaches to. Nor is the order the checks are emitted in carried as a column. That order is the reference occurrence''s place in the flattener''s descent and then its decode slot, which is the order the assignment and predicate halves are themselves emitted in, so it is one question at the grain of an occurrence rather than three at the grain of each partition; the descent half of it is intent_input_occurrence_descent_order, which an emitter joins on the reference path, and the decode slot is reference_position here.';
 COMMENT ON COLUMN intent_mutation_write_agreement.graph_name IS 'the owning graph''s partition, carried from the write destination';
 COMMENT ON COLUMN intent_mutation_write_agreement.type_name IS 'the type declaring the mutation field whose statement the check runs before';
 COMMENT ON COLUMN intent_mutation_write_agreement.field_name IS 'the mutation field; with the type, the coordinate both sides belong to and the statement the check guards';

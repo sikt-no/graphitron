@@ -104,7 +104,7 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 105;
+    private static final int READERS_IN_SCHEMA = 106;
 
     /** Views whose derivation reaches at least one registration's target. */
     private static final int READERS_WITH_CELLS = 66;
@@ -346,6 +346,23 @@ class DerivedReadCostTest {
      * coordinate and column took it to 1.8, against a refresh of 56 milliseconds per graph. Pricing
      * the registration before reversing the join would have measured the defect and called it the
      * cost of a view, which is the mistake the paragraph above records being made once already.
+     *
+     * <p>The next measurement in that family found the inner-side defect's mirror, and it is the
+     * first here to argue against a registration rather than for one.
+     * {@code intent_input_occurrence_descent_order} states the flattener's descent as a rank per
+     * occurrence, and the two relations that had been comparing occurrences pairwise now probe it by
+     * path instead. One evaluation of its rule whole is 8.6 milliseconds, which by the reasoning of
+     * every paragraph above should make it ruinous on the inner side of a join. It is not: H2 pushes
+     * a probe's equality down through the view it inlines, so what each probe evaluates is a slice of
+     * the rule rather than the whole of it, and the destination refresh is 38.7 milliseconds with
+     * this relation a view against 35.8 with it snapshotted into a keyed table. Snapshotted into a
+     * table with no key on the probe coordinate it is 1846. So a table is fifty times worse than the
+     * view it would replace unless it is keyed, because being evaluated restricted is the one thing
+     * a table cannot do and an inlined view can. Read together with the three pairs below, which are
+     * the same caveat met after a registration rather than before one: an unkeyed target is the
+     * hazard either way, and a rule cheap to evaluate restricted is one a registration has least to
+     * offer. On these figures registering it would buy three milliseconds of refresh and eight tenths
+     * of a millisecond of read in exchange for an evaluation of the rule per capture, so it is a view.
      *
      * <p>Three larger pairs stood here until the targets were indexed, and how they left is worth
      * knowing before adding more. They were not the registrations' fault and no reader had to be

@@ -531,6 +531,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_resolved_type_demand", Arm.DERIVED);
         registrations.put("intent_input_occurrence_path", Arm.DERIVED);
         registrations.put("intent_input_occurrence_path_step", Arm.DERIVED);
+        registrations.put("intent_input_occurrence_descent_order", Arm.DERIVED);
         registrations.put("intent_input_occurrence_override", Arm.DERIVED);
         registrations.put("intent_authored_claim_conflict", Arm.DERIVED);
         registrations.put("intent_authored_claim_rejection", Arm.DERIVED);

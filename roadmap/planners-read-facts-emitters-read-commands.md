@@ -2953,6 +2953,72 @@ measurement rather than a plausible sentence.
 **What this increment leaves owing**: the fold itself, unchanged, and the occurrence ordinal the
 paragraph above names, which is a small relation with three readers waiting for it.
 
+### Conditions, fifteenth increment: the descent order, stated once
+
+The fourteenth increment left an ordinal owing, and it was owed because the same comparison had by
+then been written twice. `intent_mutation_write_destination` compares two contending straddler
+claims to decide which pins a key column; `intent_mutation_write_agreement` compares two predicate
+occurrences to decide which the check names. Both comparisons are the flattener's descent, spelled
+as a pairwise precedence over whichever pair happens to be contending, and each was some forty-five
+lines of common table expressions doing the same thing to different rows.
+`intent_input_occurrence_descent_order` states the order once, as a dense zero-based rank per
+occurrence within its argument, and the two relations now read the rank and take the minimum: a
+join and two words in an `ORDER BY`, each.
+
+**Why a rank and not a comparison.** A pairwise precedence answers only the question it is asked:
+of these two, which is earlier. That is enough for a tie-break between contenders and not enough
+for anything that wants the whole payload in order, which is what the third reader wants. An
+emitter rendering one UPDATE writes its assignments and its predicates in the flattener's order,
+and it has to sort a set rather than pick a winner from a pair. Stating the order as a rank answers
+both shapes, and stating it at the grain of the occurrence rather than inside either partition is
+what stops the answer from being a third of itself in a place the other two cannot reach.
+
+**The rule is still pairwise, and that is not a contradiction.** The rank is a count of
+predecessors: for each pair of occurrences under one argument, the earlier is the one that is a
+prefix of the other, or, where neither is, the one whose field is declared first at the outermost
+step the two differ at. What changed is where the pairwise comparison lives, not that it exists. A
+sort key assembled out of the path would fold a sequence of declaration ordinals into one value,
+which is a collection in a column and is what the collection-valued column gate refuses, so the
+comparison stays a relation and the rank is derived from it once rather than asked ad hoc.
+
+**One predicate the rule does not need.** Both retired copies compared the container type as well as
+the field name at each step, defensively. The rank compares field names alone, because two paths
+under one argument that agree on every field name before their first difference agree on every
+container too: the first container is the argument's own input type and each later one is the
+previous step's named type, so equal fields force equal containers by induction. Dropping the
+predicate is not a saving worth the sentence; noticing that it was never load-bearing is, because
+the induction is what makes the order total, and a total order within the argument is what makes
+the rank dense.
+
+**The cost, and the inner-side defect's mirror.** One evaluation of this rule whole is 8.6
+milliseconds against a store captured from the example schema, 338 occurrences over 106 arguments.
+By the reasoning of the last three increments that should make it ruinous on the inner side of a
+join, and both readers put it there. It is not, and why not is the finding. H2 pushes a probe's
+equality down through the view it inlines, so what each probe evaluates is a slice of the rule
+rather than the whole of it: the destination refresh is 38.7 milliseconds with this relation a view
+and 35.8 with it snapshotted into a keyed table, and the agreement read is 1.0 against 0.2.
+Snapshotted into a table with no key on the probe coordinate the same refresh is 1846.
+
+So the doctrine has a mirror. A registration is worth taking when the rule is expensive and cannot
+be evaluated in part; where a probe's key can be pushed into the rule, the inlined view is already
+doing what a registration would sell you, and an unkeyed target is fifty times worse than the view
+it replaced. On these figures a registration buys three milliseconds of refresh and eight tenths of
+a millisecond of read for one evaluation of the rule per capture, so this relation stays a view, and
+that is a measured refusal rather than an omission.
+
+**What was proved and how.** The two rewritten rules were checked equal to their previous selves in
+both directions over the captured store, 66 destination rows and 4 obligations, and their existing
+cases, thirteen and ten, pass unchanged. Those cases are what actually covers the tie-break: the
+example schema contains no contested key column at all, so the set comparison over real data proves
+the uncontested path and nothing else, and it is the shelf fixtures declaring two straddlers in each
+order that hold the ordering steady. The new relation's own seven cases separate the descent from
+the orders it agrees with on a flat payload: declaration order against name order, a grouping's
+subtree lying between it and its next sibling, and two deep occurrences whose leaves are declared
+in the order that would reverse the answer if leaves were what was compared.
+
+**What this increment leaves owing**: the fold itself, still unchanged, and the emitter-side reader
+of this rank, which arrives with the write emitters rather than with the store.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the
