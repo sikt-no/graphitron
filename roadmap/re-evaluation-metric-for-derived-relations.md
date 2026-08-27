@@ -159,3 +159,92 @@ R848 asks which cut set the store should have. This item builds the only instrum
 answer it on evidence, so R848 should not reach Spec before this one has produced a result. Stated
 here rather than as a `depends-on` edge on R848, whose body is being actively worked by another
 session.
+
+## Reviewer findings
+
+### Round 1 (2026-08-27, Spec -> Ready, reviewer session session_014R3TSfjFfZQzoms4otDrVn)
+
+Verdict: withhold, on one finding. The design holds up and the goal is well communicated: nothing
+changes at the consumer surface when this lands, and the plan says so, but what it unblocks does,
+every capture and every language-server or MCP store open paying the register's evaluations, so an
+instrument that can score a *set* rather than a relation is the thing standing between R848 and an
+answer. The three-mechanism diagnosis is the right diagnosis, and the decision to weight a static
+count rather than to reach for `EXPLAIN ANALYZE` scan counts is better founded than the plan claims:
+the store-performance skill records that a scan count stops tracking cost exactly when a change
+moves rows between a view and a table, "which is what every registration in the register does", so
+the shipped scan-count instruments are the wrong primary here for a reason the tree already states.
+
+Everything else checkable checked out. The census is exact: the DDL declares 107 `CREATE VIEW` and
+168 `CREATE TABLE` statements, `meta_materialize` holds 20 rows with `intent_field_scope_table` the
+twentieth, and 48 views are named by no other view. `intent_field_scope_table` was indeed registered
+by an increment whose subject was not materialization (`02ec43c`, the condition membership fold).
+Both cited timings are verbatim in the register: `intent_mutation_write_destination` records 12983
+milliseconds falling to 5.4 and names its per-row re-evaluation, `intent_field_reference_step_hop`
+records `intent_node_id_decode` falling from about fifty seconds to about thirteen and names its
+recursive term, and `intent_argument_column_match` records the fifteen-to-six the plan contrasts
+them against. Every symbol exists as named: `MaterializeDependencies` in `graphitron-model` main
+scope parsing stored definitions with jOOQ's parser and collecting off the query object model,
+`UnregisteredRelation`, `RunawayRelation` and `FactStores` all in `no.sikt.graphitron.model.test`,
+and every relation the plan names as a view or a table in the fact schema.
+
+**1. "The naming metric" has no runnable referent, and the one in the tree is not throwaway.** The
+plan opens by reporting the naming metric as "throwaway code". A metric answering to that
+description is committed and build-bound:
+`no.sikt.graphitron.roadmap.InlineMultiplicityCheck` in `roadmap-tool` main scope, tested by
+`InlineMultiplicityCheckTest`, bound by `roadmap-tool/pom.xml` to the `verify` phase as the
+`report-inline-multiplicity` execution, so it runs in every full build. Its javadoc states the same
+mechanism in nearly the same words, "H2 inlines a view wherever it is named and eliminates no common
+subexpression", it computes relation instantiations per read from the DDL alone with a materialized
+relation exempt by construction, and its report line prints the census this plan quotes: "107 views
+over 168 tables".
+
+Three places in the plan turn on which metric is meant, and each resolves differently.
+
+Slice 2's regression test, "reproduces the naming metric's numbers when every weight is forced to
+one", names nothing an implementer can run. The figures behind 470 and 913,978 came from code that
+is not in the tree, and the shipped tool computes a different quantity: per-view subtree
+instantiations, printed as a top-15 ranking, with no root-reader total and no
+no-materialization counterfactual. Summing its per-view counts over the 48 root readers does not
+land on either figure under any reading I could construct. Per-naming counts give 3219 as evaluated
+today and 5,359,571 with each registered target redirected to its `_live` view; restricting the sum
+to the 28 root readers that are not themselves registered source views gives 2397 and 3,043,899;
+deduplicating references within a body gives 1208 and 350,295, or 766 and 142,629 restricted the
+same way. The shipped tool's own heaviest single view is 899, already above the plan's 470 total, so
+the two are not the same quantity whatever the counterfactual. This is not a claim that the plan's
+figures are wrong. It is that slice 2 has to say which naming metric the extension must agree with,
+and under what definition of the two totals, or the implementer picks one and the regression test
+means whatever they picked.
+
+The mechanism for why the two bases can legitimately disagree is worth stating, because it lands
+inside slice 1. `InlineMultiplicityCheck` counts textual references in the authored DDL;
+`MaterializeDependencies.relationsReadBy` collects off H2's normalized stored definition and returns
+a `Set`, so it discards multiplicity as well as position. Slice 1 must recover both, and the
+multiplicities it recovers are H2's after normalization rather than the ones an author typed.
+
+The acceptance gate's negative branch, "the naming metric is deleted rather than kept as a
+nearly-right one", reads as discarding a scratch file. If it means the `report-inline-multiplicity`
+step, that deletion removes a build-bound reporting surface and its test, which is a different
+decision with a different blast radius and one the plan should take deliberately rather than by
+implication.
+
+And the home. The plan puts the new metric in `graphitron-model` test scope beside the existing
+instruments and argues that placement against runtime scope and an MCP surface, but not against the
+module that already holds a static metric over this same DDL. The case for `graphitron-model` looks
+strong to me, since the store is where cardinality lives and `MaterializeDependencies` is the
+established walk, and neither is available in `roadmap-tool`. But two static metrics over one DDL on
+two parsing bases is the shape worth arguing on the record rather than arriving at silently, along
+with what becomes of the shipped one once the weighted metric exists.
+
+What would satisfy this: name the referent. Say whether the naming metric under discussion is
+`InlineMultiplicityCheck`, the uncommitted probe, or both; say what slice 2's regression test
+compares against and how, given that the shipped tool's basis and totals differ; say what the
+negative branch deletes; and say why the new instrument sits in `graphitron-model` rather than
+extending the tool that is already there.
+
+#### Non-blocking
+
+The plan's `Slices` heading numbers three slices and the closing line says 1 and 2 are worth nothing
+without 3, which is clear as written. Worth deciding at the same time as the finding above whether
+slice 3's negative outcome is recorded in this item's body, in `roadmap/changelog.md`, or in the
+register's own prose, since a negative result that lands only in a roadmap item disappears when the
+item does.
