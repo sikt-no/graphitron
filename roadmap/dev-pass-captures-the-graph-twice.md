@@ -1,7 +1,7 @@
 ---
 id: R859
 title: "A dev pass captures the same graph twice, so every save evaluates the register twice"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 2
 theme: dev-loop
