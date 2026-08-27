@@ -1225,10 +1225,7 @@ public final class LauncherCommands {
 
     private static java.util.Optional<ConditionCommand> conditionRowOf(
             String parentTypeName, String fieldName, ConditionRelation conditions) {
-        var coordinate = FieldCoordinates.coordinates(parentTypeName, fieldName);
-        return conditions.rows().stream()
-            .filter(r -> r.coordinate().equals(coordinate))
-            .findFirst();
+        return conditions.soleRowFor(parentTypeName, fieldName);
     }
 
     /**

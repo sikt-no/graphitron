@@ -16,6 +16,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Pipeline-tier assertions on the condition command relation over classified fixture schemas:
@@ -158,6 +159,60 @@ class ConditionCommandsPipelineTest {
         assertThat(relation.rows()).extracting(r -> r.glue().methodName())
             .containsExactlyInAnyOrder(
                 "occupantsParticipant_CustomerCondition", "occupantsParticipant_StaffCondition");
+    }
+
+    /**
+     * The two per-coordinate reads on the participant-expanded shape, which is the one that tells
+     * them apart. {@code rowsFor} is the whole group, in producer order, and is what a consumer
+     * folding every participant's glue target wants. {@code soleRowFor} refuses the group rather
+     * than returning its first row: a consumer emitting one glue call has no way to serve two
+     * participants, and returning either one would emit a call against whichever table the
+     * producer happened to mint first.
+     */
+    @Test
+    void participantExpandedCoordinate_readsAsAGroupAndRefusesTheSingleRowRead() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+            type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
+            union Occupant = Customer | Staff
+            type Query {
+                occupants(firstName: [String!] @field(name: "first_name")): [Occupant!]!
+            }
+            """);
+
+        var relation = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+
+        assertThat(relation.rowsFor("Query", "occupants"))
+            .containsExactlyElementsOf(relation.rows());
+        assertThatThrownBy(() -> relation.soleRowFor("Query", "occupants"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Query.occupants")
+            .hasMessageContaining("2 condition rows");
+    }
+
+    /**
+     * The same two reads where the coordinate has one row, and at a coordinate with none. A
+     * coordinate the relation does not cover reads as empty on both, which is the absence every
+     * WHERE consumer composes the neutral condition from; it is not a rejection.
+     */
+    @Test
+    void singleRowCoordinateReadsAsOneOnBothSurfacesAndAnUncoveredOneReadsAsEmpty() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Language @table(name: "language") { name: String }
+            type Query {
+                languages(cityNames: String @field(name: "name")
+                    @condition(condition: {className: "%s", method: "argCondition"})): [Language!]!
+                unfiltered: [Language!]!
+            }
+            """.formatted(STUB));
+
+        var relation = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+
+        assertThat(relation.rowsFor("Query", "languages")).hasSize(1);
+        assertThat(relation.soleRowFor("Query", "languages"))
+            .contains(relation.rows().getFirst());
+        assertThat(relation.rowsFor("Query", "unfiltered")).isEmpty();
+        assertThat(relation.soleRowFor("Query", "unfiltered")).isEmpty();
     }
 
     @Test

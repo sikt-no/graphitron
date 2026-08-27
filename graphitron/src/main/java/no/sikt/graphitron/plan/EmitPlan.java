@@ -191,9 +191,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                 || launchers.rowFor(type, field)
                     .filter(row -> row.source() instanceof LaunchSource.RoutineChain)
                     .isPresent()
-                || conditions.rows().stream().anyMatch(row ->
-                    row.coordinate().getTypeName().equals(type)
-                        && row.coordinate().getFieldName().equals(field));
+                || !conditions.rowsFor(type, field).isEmpty();
             if (!reached) {
                 throw new IllegalStateException(
                     "the argMapping entry '" + projection.argumentPath() + "' at '" + type + "."

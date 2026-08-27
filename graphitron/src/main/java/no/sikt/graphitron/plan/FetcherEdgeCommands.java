@@ -270,11 +270,8 @@ public final class FetcherEdgeCommands {
     /** The distinct glue classes the condition relation's rows for the coordinate land on. */
     private static void addConditionGlueTargets(LinkedHashSet<UnitRef> targets,
             String parentTypeName, String fieldName, ConditionRelation conditions) {
-        var coordinate = FieldCoordinates.coordinates(parentTypeName, fieldName);
-        for (var row : conditions.rows()) {
-            if (row.coordinate().equals(coordinate)) {
-                targets.add(row.glue().owner());
-            }
+        for (var row : conditions.rowsFor(parentTypeName, fieldName)) {
+            targets.add(row.glue().owner());
         }
     }
 }

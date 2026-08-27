@@ -3187,6 +3187,55 @@ refusal 8 against 9. The relation that did move is the one not in that set, the 
 table at 47 milliseconds becoming 63. The pinned set carries all of it, which is what that set is
 for; nothing here proposes changing what the gate asserts.
 
+### Conditions, eighteenth increment: the coordinate group, and the arity nobody had stated
+
+The gate this family was blocked on is closed. The membership fold's last two missing coordinates
+were the reference-path-ending-in-a-condition-hop silence, which shipped separately, and that
+change also replaced the hand-run producer diff with a standing one: `ConditionMembershipShadowTest`
+compares the fold's `(coordinate, table)` keys against what `ConditionCommands.produce` emits glue
+for, by equality in both directions, and is written to retire with the walk. So the conversion is
+unblocked, and this increment takes the piece the `CoordinateIndex` section parked for it.
+
+**Three consumers were scanning the whole relation once per coordinate**, not the two that section
+recorded. `LauncherCommands.conditionRowOf` and `FetcherEdgeCommands.addConditionGlueTargets` were
+the known pair; the third is `EmitPlan.requireEveryProjectionIsReachable`, whose scan sits inside a
+loop over the key-projection rows, so it is the one that multiplies. The index is built where the
+duplicate-key rejection already walks the rows, which is why this costs nothing to add: the walk
+was happening anyway and only the map it can build was missing.
+
+**The relation holds its own index rather than joining `CoordinateIndex`.** That carrier's contract
+is that a coordinate maps to at most one row, and this key is `(coordinate, table)`, so a coordinate
+maps to a list. A shared multimap carrier would have one user, and the argument that justified
+`CoordinateIndex` was three relations restating one key; the same argument declines a carrier here.
+`ConditionRelation` stops being a record to hold the map, the way `CoordinateIndex` is a class for
+the same reason, with equality on the rows alone.
+
+**The finding is the arity, not the scan.** The launcher's read was `findFirst()` over a key that
+maps to several rows. That is safe today only because polymorphic coordinates never reach it: the
+launcher's `whereOf` call sites are table fields, batched table fields and the two single-table
+interface arms, and a union or polymorphic root is not among them. Nothing stated that, and nothing
+would have caught it changing. So the two reads are now different methods and the difference is the
+point. `rowsFor` returns the whole group, which is what a consumer folding every participant's glue
+target wants. `soleRowFor` returns the group asserted to hold at most one row and **fails** when it
+holds more, because a consumer emitting one glue call cannot serve a participant-expanded
+coordinate, and taking the first would emit a call against whichever table the producer happened to
+mint first. The refusal was written as a hard failure deliberately rather than as a documented
+first-row read: if the reasoning about the call sites was wrong, the generator suite says so. It
+did not; 4015 generator tests pass with the assertion live.
+
+**What this increment leaves owing** is the producer conversion itself, and one design fork it now
+runs into that the availability check did not surface. The three relations that check named are all
+present, so membership and the generated arm's payload are store-stated. The authored arm is not
+finished: `Predicate.Authored` carries a `MethodRef`, which is reflection material (a javapoet
+`returnType`, `params` each with a `javaType`), and the store's classfile side states the pieces
+(`jvm_method`, `jvm_method_parameter`, `jvm_method_parameter_type_ref`) without stating the
+assembled reference. The condition-hop work added `intent_condition_method_route`, which routes a
+method between tables but does not carry its signature. So the conversion's first question is
+whether `Predicate.Authored` narrows off `MethodRef` onto the fields the emitters actually read, the
+way `RoutineWriteCommand` was narrowed off `RoutineChain`, or whether the store grows the assembled
+reference. The narrowing is the cheaper answer and the one this item's shape suggests; it is not yet
+established, and it is where the next increment starts.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the
