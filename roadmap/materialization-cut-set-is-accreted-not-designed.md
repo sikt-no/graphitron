@@ -360,32 +360,46 @@ recover the other axis is exactly the leave-one-out flattening R849 named as one
 because a registration whose `_live` view reads a target the candidate removed gets *dearer*, not
 cheaper.
 
-The candidate has to be realised where the register states it, and in three steps whose **order is
+The candidate has to be realised where the register states it, and in four steps whose **order is
 the mechanism** rather than an implementation detail:
 
-1. delete the excluded registrations' rows from `meta_materialize`, and from that relation only;
-2. `UnregisteredRelation.install` each excluded registration, so its canonical name resolves to the
+1. empty `meta_materialize_dependency` wholesale;
+2. delete the excluded registrations' rows from `meta_materialize`;
+3. `UnregisteredRelation.install` each excluded registration, so its canonical name resolves to the
    rule instead of to a table nothing will fill;
-3. call `MaterializeDependencies.populate(dsl)`, and only then refresh.
+4. call `MaterializeDependencies.populate(dsl)`, and only then refresh.
 
-`Materializations.registrations` reads `meta_materialize`, so step 1 is what makes the pass run the
+`Materializations.registrations` reads `meta_materialize`, so step 2 is what makes the pass run the
 candidate set and `RefreshProgress` price it directly.
 
-**Step 3 is not optional and the harness may not hand-write the edges instead.**
+**Step 1 exists because the schema forces it, and it is a clear rather than an authoring.**
+`meta_materialize_dependency` declares a foreign key into `meta_materialize (source_view_name)` on
+both of its columns, with no `ON DELETE` action, and H2 checks immediately with no deferral available.
+Any excluded registration named by an edge on either side, which in a twelve-layer register is
+practically every candidate, therefore makes step 2 throw on its own if the edges are still there.
+The one statement the keys force is the wholesale delete, which is where `MaterializeDependencies`'
+own transaction opens, so step 1 is that writer's first move run early rather than a second writer's
+edit: it clears a derived cache that step 4 rewrites from the current census, and authors nothing.
+Between the two the relation is empty and `refreshOrder` would degrade to the register's own key
+order, which is why nothing may refresh inside the window; the harness's own setup is all that runs
+there.
+
+**Step 4 is not optional and the harness may not author the edges instead.**
 `meta_materialize_dependency` is the family's one machine-written resident, its own comment saying a
 hand edit is a bug the next boot undoes, and `MaterializeDependencies` opens by naming itself its one
-writer. A harness deleting rows there would be a second writer beside the one the tree has. It would
-also derive the wrong edges for exactly the candidates this slice needs. The rows that bite are a
-*retained* registration depending on an excluded one: leave them and `refreshOrder` dies on a null
-map entry inside its cycle namer, because it indexes the dependency rows by census key; delete them
-and the transitive constraint is silently lost, since the retained view now evaluates the excluded
-rule live and so reaches the deeper retained targets it must still refresh after. Candidate C cannot
-avoid that shape and most of 2a's stores meet it too, and nothing would fail: the candidate's price
-would simply be wrong on both axes. `populate` rewrites the relation wholesale from the current
-census and recurses into unregistered views, which is what an excluded canonical name becomes at step
-2, so it derives those transitive edges rather than losing them.
+writer. A harness deciding *which* rows survive there would be a second writer beside the one the tree
+has, which the wholesale clear at step 1 is not. It would also settle on the wrong edges for exactly
+the candidates this slice needs, and that is the deeper reason the choice may not be the harness's to
+make. The rows that bite are a *retained* registration depending on an excluded one, and neither
+answer is available: keep them and step 2 throws on the foreign key above, drop them alone and the
+transitive constraint is silently lost, since the retained view now evaluates the excluded rule live
+and so reaches the deeper retained targets it must still refresh after. Candidate C cannot avoid that
+shape and most of 2a's stores meet it too, and in the dropping case nothing fails: the candidate's
+price would simply be wrong on both axes. `populate` rewrites the relation from the current census
+and recurses into unregistered views, which is what an excluded canonical name becomes at step 3, so
+it derives those transitive edges rather than losing them.
 
-**Which is why step 2 precedes step 3.** Before the swap the excluded canonical name is still a base
+**Which is why step 3 precedes step 4.** Before the swap the excluded canonical name is still a base
 table, and the walk ends at a base table, so populating first derives no onward edge and reproduces
 the silent-loss failure by a different route.
 
@@ -516,7 +530,7 @@ correcting the historical reason text is R831's shape of work.
 
 ## Risks
 
-**The candidate-realisation mechanism may not work, and slice 2 rests on it.** Delete-swap-populate
+**The candidate-realisation mechanism may not work, and slice 2 rests on it.** Clear-delete-swap-populate
 before a refresh is the mechanism slice 2 needs, and while every step of it is an existing routine
 called in an order the tree already supports, nothing in the tree composes them this way today.
 Establish it first, on one candidate, before building the comparison on top of it, and take the stated
@@ -656,3 +670,29 @@ edges, so the one-writer doctrine holds; `populate`'s own transaction opens with
 delete, so the clear is the existing writer's own first move rather than a new mechanism. Any
 equivalent the author prefers also satisfies it, provided step 1 can actually execute against the DDL
 and the no-hand-writing sentence is reconciled with whatever the FKs force.
+
+#### Author response (round 2)
+
+Verified against the DDL before revising rather than taken on the round's word: both foreign keys are
+declared as stated, neither carries an `ON DELETE` action, and no other relation references
+`meta_materialize`, so the wholesale clear is sufficient as well as necessary. `populate`'s
+transaction does open with the same unqualified delete of the relation, computing its edges before the
+transaction opens, so running that delete early is the existing writer's own first statement rather
+than a new one.
+
+Taken as offered. The mechanism is now four steps, the new first one emptying
+`meta_materialize_dependency` wholesale, with its own paragraph naming the keys as the reason it
+exists and distinguishing a clear of a derived cache from an authoring of edges. The old
+no-hand-writing sentence is reconciled by narrowing what it forbids: a harness deciding *which* rows
+survive is the second writer, which a wholesale clear is not. The dilemma beneath it reads truer for
+the correction, since the retained-depends-on-excluded row now has no available answer at all rather
+than one loud and one silent: keeping it throws on the foreign key, dropping it alone loses the
+transitive constraint silently, and only `populate` re-derives it. One consequence the round did not
+name is stated too: between the clear and `populate` the relation is empty and `refreshOrder` would
+degrade to the register's key order, so nothing may refresh inside that window.
+
+Renumbering follows from the inserted step, so the two order rationales now read as step 3 before step
+4, and the risk section's mechanism name becomes clear-delete-swap-populate. The establishing check is
+unchanged and still targets the silent failure, which the correction leaves in place as the dropping
+case. Nothing else in the plan body moved, and the round 1 response note above is left at its original
+numbering as the record of that round.
