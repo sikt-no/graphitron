@@ -425,3 +425,63 @@ owned-graph and owned-sources contract; `store_graph.last_captured`, `store_sour
 with the statuses and shapes the spec attributes to them, R855 at priority 1.
 
 Verdict: stays in Spec.
+
+### Round 3: Spec -> Ready, revisions requested
+
+The plan body is unchanged since round 1, so both prior rounds' blocking finding is still open on the
+same words. This round re-derived it from the source rather than reading the rounds above, and reached
+the same place, so the short version is that nothing here is new and the finding is not going to go
+away by being reviewed again. What is new is a boundary on the search for a fix, below.
+
+Question 1 passes. Stated without the phase list: today a `graphitron:dev` start pays a full derivation
+of the materialization register that nobody asked for, on top of the ones its own captures already
+paid, and after this lands a start over a store that already holds its graphs pays none of it, so the
+language server and MCP ports bind sooner and `-Dgraphitron.dev.skipInitial` over a warm store becomes
+cheap in fact and not only in name. That is a clear consumer-visible outcome and it is reachable here.
+
+**Blocking, question 2: unchanged.** `intent_spelled_table_live` joins `store_graph_source` to
+`sql_table`, `CatalogFactCapture.clearSchemaSources` deletes the whole `sql_table` partition of a
+source and re-walks it on any capture naming that source, `FactCapture.writeGraph` moves
+`last_captured` for `graph.name()` alone, and `StoreRefresh`'s own contract says a run owns its graph
+and its crawled sources and that a directory root is never stamped. So a graph whose partition was
+resolved against catalog rows another graph's capture has since replaced still matches its own stamp,
+and the reader-side equality skips it. The spec's soundness argument, "The rule covers graph-keyed
+targets only", tests the target's key and therefore cannot see this, and "What changes for a consumer"
+still promises that no reader may observe a stale row.
+
+**New this round: the store holds no other material for a content-keyed answer, so the option set is
+closed.** Round 2 established that `store_source.stamp` is NULL for `JOOQ_SCHEMA` and for directory
+roots and that `last_seen` moves every run. Reading the rest of the store's currency vocabulary rather
+than only that column: `store_source` has exactly four columns, `source_name`, `source_kind`, `stamp`
+and `last_seen`, and the only other stamping relation in the schema is `store_stamp`, whose singleton
+row carries the DDL hash and generator version and is the identity of the store file itself, not of
+anything inside it. There is no third relation to reach for. So a revision has three answers available
+and no fourth: record membership overlap and fall back to unconditional where a source is shared
+(round 2's `store_graph_source` disjointness shape); introduce a new stamp that covers the source-keyed
+partitions, which is a DDL and capture-path change the spec would have to own; or accept the staleness
+and argue it in "What the rule gives up" beside the hand-emptied-target trade, with "What changes for a
+consumer" amended to match. Choosing among those is the author's call, and continuing to look for an
+existing column that closes it is not going to pay.
+
+The premise gate still needs to become an instrument that could fail on this class of registration.
+`sql_` and `jvm_` are capture-written families, so the family-prefix disjointness assertion passes
+while the rule is unsound, and the gate is the spec's only stated defence against a future
+registration breaking it.
+
+**Non-blocking, still open.** The 200-second figure attributed to sixteen registrations. Third round of
+saying so; still not corrected here, because restating it accurately is a change to the motivation's
+prose rather than a numeral swap.
+
+**Verified independently this round**, so a revision still need not re-argue any of it: the twenty
+`meta_materialize` registrations; `DevMojo.execute` as `refreshAll`'s only production caller, with
+`SeededStore` and `MaterializationOrderTest` the only other namings anywhere; `Materializations.refresh` / `refreshAll`
+/ `analyse`, the `graphKeyed` arm the spec's whole-target paragraph describes, and `analyse`'s
+count-returning precedent including the `MaterializeRegistryGateTest` assertion the spec cites for it;
+`ViewReferences.relationsReadBy`, `MaterializeDependencies`, `FactCapture.ownsGraph`,
+`DEMOTED_TO_MEMORY`, `GraphQLRewriteGenerator.captureAndRead`, `generateIncremental`, `buildOutput`,
+`runGeneratorPass`, `buildOutputQuietly`, `GraphitronModelStore`, `CompileFacts`, `JavaSourceFacts`,
+`RejectionFacts`, `BuildWarningFacts`, `CapturedStore`, `SeededStore.derive`, `WarmStartRefreshTest`
+and `MaterializeRegistryGateTest`; and `meta_materialize_fill` absent from the schema, as a new
+relation should be.
+
+Verdict: stays in Spec.
