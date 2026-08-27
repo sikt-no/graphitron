@@ -1,11 +1,10 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.derive.ViewReferences;
 import no.sikt.graphitron.model.derive.ViewReferences.Enclosure;
 import no.sikt.graphitron.model.derive.ViewReferences.Position;
 import no.sikt.graphitron.model.derive.ViewReferences.Reference;
-import no.sikt.graphitron.model.test.FactStores;
+import no.sikt.graphitron.model.test.ScratchSchema;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -40,21 +39,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DisplayName("ViewReferences reads a reference's position out of a stored definition")
 class ViewReferencesTest {
 
-    private static GraphitronModelStore store;
+    private static ScratchSchema schema;
     private static DSLContext dsl;
 
     @BeforeAll
     static void openStore() {
-        store = FactStores.inMemory();
-        dsl = store.dsl();
-        dsl.execute("CREATE TABLE probe_base (a INT, b INT)");
-        dsl.execute("CREATE TABLE probe_other (a INT, c INT)");
-        dsl.execute("CREATE VIEW probe_leaf AS SELECT a, b FROM probe_base");
+        schema = ScratchSchema.open();
+        dsl = schema.dsl();
+        schema.define("CREATE TABLE probe_base (a INT, b INT)");
+        schema.define("CREATE TABLE probe_other (a INT, c INT)");
+        schema.define("CREATE VIEW probe_leaf AS SELECT a, b FROM probe_base");
     }
 
     @AfterAll
     static void closeStore() {
-        store.close();
+        schema.close();
     }
 
     @Test
@@ -271,7 +270,7 @@ class ViewReferencesTest {
     }
 
     private static void view(String name, String body) {
-        dsl.execute("CREATE VIEW " + name + " AS " + body);
+        schema.define("CREATE VIEW " + name + " AS " + body);
     }
 
     private static List<Reference> referencesTo(String view, String relation) {

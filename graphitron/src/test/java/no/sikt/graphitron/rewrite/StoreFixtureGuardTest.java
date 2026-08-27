@@ -69,6 +69,9 @@ class StoreFixtureGuardTest {
     private static final List<Home> HOMES = List.of(
         new Home("graphitron-model/src/test/java/no/sikt/graphitron/model/test/FactStores.java",
             "the store's lifetime, in-memory and file-backed, under names rather than a flag"),
+        new Home("graphitron-model/src/test/java/no/sikt/graphitron/model/test/ScratchSchema.java",
+            "a private store whose schema the case adds its own relations to, for tests about what "
+                + "the engine does with a definition rather than what a relation answers given rows"),
         new Home("graphitron-model/src/test/java/no/sikt/graphitron/model/test/ThreadConfinedStore.java",
             "one store per test thread to the seeded cases above it, cleared rather than rebooted "
                 + "between bodies, and never handed out as a lifetime the caller owns"),
@@ -197,6 +200,11 @@ class StoreFixtureGuardTest {
               A relation's algebra, what a view or a constraint returns given rows?
                 Seed it. SeededStore in graphitron-model's test-jar states the inputs as rows, \
             reaches states no crawler can produce, and cannot accidentally assert crawler behaviour.
+
+              What the engine does with a definition, rather than what a relation answers?
+                ScratchSchema in the same test-jar hands you a private store you may add your own \
+            relations to, so the body under test is three readable lines instead of a real \
+            derivation twenty relations deep.
 
               A facts writer putting rows in a table at its own cadence?
                 Take the writer from FactWriters, over a store from FactStores. Capture cadence and \
