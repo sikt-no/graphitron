@@ -17,11 +17,38 @@ against the tree as it stood. There is no instrument that says what the register
 there is no way to propose a different set and no way to tell whether a registration still earns its
 place. R848 states that problem. This item builds the instrument it needs.
 
-A first cut of such an instrument already exists as throwaway code and it is reported here because
-what it got right and what it got wrong together specify the real one. It counts **namings**: how many
-times H2 instantiates a rule when a reader is evaluated, H2 inlining a view wherever it is named and
-eliminating no common subexpression. That is one of the three mechanisms the register's own reasons
-cite, and the metric is blind to the other two.
+Two instruments already count **namings**: how many times H2 instantiates a rule when a reader is
+evaluated, H2 inlining a view wherever it is named and eliminating no common subexpression. That is
+one of the three mechanisms the register's own reasons cite, and both instruments are blind to the
+other two. Naming them apart is the first thing this plan owes an implementer, because they are not
+the same quantity and only one of them is in the tree.
+
+## The two naming metrics, and which one this item is about
+
+**The shipped one** is `no.sikt.graphitron.roadmap.InlineMultiplicityCheck` in `roadmap-tool` main
+scope, tested by `InlineMultiplicityCheckTest` and bound by `roadmap-tool/pom.xml` to `verify` as the
+`report-inline-multiplicity` execution, so it runs in every full build. It scans the authored DDL
+textually, counts each relation's references per `CREATE VIEW` body, multiplies down the tree, and
+prints the fifteen heaviest relations. A materialized relation drops out by construction, its
+canonical name being a table. It reports and does not gate, deliberately, because it
+over-approximates: it counts textual references without knowing which arms a predicate prunes.
+
+**The uncommitted one** is a probe written while filing R848 and never committed. It reads H2's
+*normalized stored definitions* out of a booted store rather than the authored text, sums over the 48
+root readers rather than reporting per view, and can redirect each registered target to its `_live`
+view to produce a no-materialization counterfactual, which is where 470 and 913,978 below come from.
+
+They disagree, and the mechanism matters because it lands inside slice 1.
+`InlineMultiplicityCheck` counts what an author typed;
+`MaterializeDependencies.relationsReadBy` collects off the normalized definition and returns a
+`Set`, discarding multiplicity along with position. So the multiplicities available to the new
+instrument are H2's after normalization, not the authored ones, and **slice 1 has to recover
+multiplicity as well as position**. Neither basis is wrong. They answer different questions, and no
+arithmetic reconciles their totals.
+
+This item is about **neither of them**. It is about the weighted instrument that replaces the
+uncommitted probe. `InlineMultiplicityCheck` is not touched by this item at any outcome, which the
+acceptance section below states explicitly.
 
 ## Vocabulary
 
@@ -34,8 +61,11 @@ many times an author wrote its name.
 
 ## What the naming metric says
 
-Computed against the current DDL, over 107 views, 168 base tables, 20 registrations and 48 root
-readers. Both figures are total rule instantiations summed across every root reader.
+Computed by the uncommitted probe against the current DDL, over 107 views, 168 base tables, 20
+registrations and 48 root readers. Both figures are total rule instantiations summed across every
+root reader, counting H2's normalized references with multiplicity. They are not comparable with
+`InlineMultiplicityCheck`'s per-view ranking, whose heaviest single view already exceeds the first
+figure here.
 
 | | Rule instantiations |
 |---|---|
@@ -68,9 +98,11 @@ This also shows why the marginal column is the wrong summary to act on. `intent_
 scores +9 marginally and is the largest lever in the register. Registrations are substitutes, so
 dropping-one-at-a-time systematically understates every relation that has a near-twin.
 
-## Where the naming metric is blind, and why that disqualifies it
+## Where a naming metric is blind, and why that disqualifies both of them
 
-Three mechanisms put registrations in the register. The naming metric models one.
+Three mechanisms put registrations in the register. A naming metric, on either parsing basis, models
+one. Nothing below turns on the difference between the two, which is why they are separated once
+above and treated together here.
 
 | Mechanism | What re-evaluates the rule | Naming metric |
 |---|---|---|
@@ -84,9 +116,12 @@ scores +36 and its reason records `intent_node_id_decode` falling from about fif
 thirteen. Those are the two registrations bought for per-row and recursive re-evaluation, and the
 metric ranks them near the bottom.
 
-So the naming metric is a map of one mechanism, useful for locating where breadth concentrates and
-unusable for choosing a cut set. Shipping it as-is would repeat the error the store-performance skill
-already records twice: a count that is real, and a reading of it as cost that is wrong.
+So a naming metric is a map of one mechanism, useful for locating where breadth concentrates and
+unusable for choosing a cut set. Committing the probe as-is, or reading a cut-set decision off the
+shipped report, would repeat the error the store-performance skill already records twice: a count
+that is real, and a reading of it as cost that is wrong. `InlineMultiplicityCheck` does not make that
+error itself, its javadoc saying outright that it reports rather than gates because the metric
+over-approximates; the error would be a reader's.
 
 ## What to build
 
@@ -111,6 +146,21 @@ Home: `graphitron-model`, test scope, beside the instruments that already live i
 research instrument and nothing at runtime needs it. Promoting it to main scope, or to an MCP
 surface, is a separate question and should not be settled here.
 
+**Why not extend `InlineMultiplicityCheck` instead**, which is the module that already holds a static
+metric over this DDL. Two inputs decide it, and neither is available there. Position has to be read
+off parsed SQL, which needs jOOQ's parser; weighting needs the driving side's cardinality, which
+needs a populated store. `roadmap-tool` reads markdown and has neither dependency, and its own
+premise is a metric "needing no database and no profiler". Adding jOOQ and H2 to it to host a
+store-dependent instrument would destroy the property that makes it cheap enough to run at `verify`
+on every build.
+
+So the two coexist on purpose, with different jobs and different cadences: a DDL-only report that
+runs every build and catches an authored-multiplicity regression, and a store-dependent instrument
+run on demand when a cut set is in question. What would make the shipped one redundant is a weighted
+metric that runs without a store, which this plan does not propose and does not believe in, the
+population being the reason the register's own reasons record a fixture understating a per-row probe
+by orders of magnitude.
+
 ## Acceptance: the metric must reproduce a known ranking
 
 This is the gate, and the item fails honestly rather than shipping a plausible number that nobody can
@@ -124,20 +174,40 @@ against that ordering.
 
 The metric ships only if it puts the registrations whose reasons record order-of-magnitude wins above
 the ones whose reasons record small wins. Concretely it must rank `intent_mutation_write_destination`
-and `intent_field_reference_step_hop` well above `intent_argument_column_match`, which the naming
-metric gets backwards. If it cannot, the item ends by recording that as a negative result and the
-naming metric is deleted rather than kept as a nearly-right one.
+and `intent_field_reference_step_hop` well above `intent_argument_column_match`, which both naming
+metrics get backwards.
+
+**What the negative branch deletes**, stated exactly because the first draft of this plan left it to
+implication. If the gate fails, the new weighted instrument and its tests are deleted, and the
+uncommitted probe stays uncommitted. `InlineMultiplicityCheck`, its test, and the
+`report-inline-multiplicity` build step are untouched: they are a build-bound reporting surface whose
+retirement is a separate decision with a separate blast radius, and nothing this item measures bears
+on whether that report is worth printing.
+
+**Where a negative result is recorded.** Not in this file, which is deleted at Done. It goes in
+`roadmap/changelog.md`, one of the three permanent roadmap artifacts, naming the item and what the
+gate refused and why. A finding that a static count cannot rank these registrations is worth as much
+to the next author as a working metric would have been, and it is the kind of result this tree loses
+by default.
 
 ## Slices
 
-1. **Position-aware parse.** Extend the definition walk to retain each reference's position. Pin it
-   with cases over hand-written view bodies of each shape, so the classifier is tested against known
-   answers before it is pointed at the schema.
+1. **Position-and-multiplicity parse.** Extend the definition walk to retain each reference's
+   position *and* its multiplicity, `MaterializeDependencies.relationsReadBy` returning a `Set` today
+   and so discarding both. Pin it with cases over hand-written view bodies of each shape, so the
+   classifier is tested against known answers before it is pointed at the schema.
 2. **Weighting and the whole-register score.** Cardinality from the store, a total per root reader,
-   and a cut-set score for an arbitrary candidate set. Reproduces the naming metric's numbers when
-   every weight is forced to one, which is the regression test for the extension.
+   and a cut-set score for an arbitrary candidate set.
+
+   The regression test is **self-contained, not cross-tool**. On the same hand-written fixtures slice
+   1 pins, with every weight forced to one, the instrument must produce the instantiation counts
+   derivable by hand from those bodies. This deliberately replaces the first draft's "reproduces the
+   naming metric's numbers", which named nothing runnable: the shipped tool computes per-view subtree
+   counts off authored text, the uncommitted probe computes root-reader totals off normalized
+   definitions, and no arithmetic takes either to the other. Agreement with a second implementation
+   on a different basis is not a property worth asserting; agreement with a hand-derived answer is.
 3. **The validation gate.** Rank the twenty registrations, compare against the reasons' recorded
-   magnitudes, and record the outcome either way.
+   magnitudes, and record the outcome either way, in `roadmap/changelog.md` when it is negative.
 
 Slices 1 and 2 are worth nothing without 3 and should not land separately from it.
 
