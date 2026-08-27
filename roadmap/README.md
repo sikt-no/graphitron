@@ -15,6 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R847` | A reference path ending in a condition hop resolves no column scope | Spec | 2026-08-27 <sub>created 2026-08-26</sub> | [plan](reference-path-condition-terminal-column-scope.md) |
+| `R853` | A roadmap-only diff owes the two gates that read roadmap/, not the whole reactor | Spec | 2026-08-27 | [plan](roadmap-only-verification-scope.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R849` | Measure re-evaluation rather than naming, so a materialization cut set can be chosen on evidence | Spec | 2026-08-27 | [plan](re-evaluation-metric-for-derived-relations.md) |
 | `R839` | The carrier refresh costs 41 seconds per capture, and it is the producer CTE inlined per driving row | Spec | 2026-08-26 | [plan](carrier-refresh-inlined-producer-cte.md) |
@@ -644,6 +645,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
 - `R768` [**The build boots the fact schema 1051 times, and a reset costs a fraction of a boot**](store-boots-once-per-test-not-once-per-build.md) — Backlog, dx
+- `R853` [**A roadmap-only diff owes the two gates that read roadmap/, not the whole reactor**](roadmap-only-verification-scope.md) — Spec, workflow
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
 - `R764` [**graphitron-model ships its junit-platform.properties to four consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
 - `R780` [**srp names the reviewer as the disqualified party: the session grep takes the first ID in the body, not the trailer**](srp-disqualified-session-read-from-trailer.md) — Backlog, dx
