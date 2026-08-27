@@ -631,3 +631,28 @@ explicitly rather than leaving to a general "establish it first".
 
 Nothing else in the plan body moved. The fallback, the `Set<Registration>` typing, the reader-domain
 sourcing and the 2a/2b structure are as the round found them.
+
+### Round 2 (2026-08-27, Spec -> Ready, reviewer session 01WajEgSkL8dc4owJXtVbyui)
+
+Verdict: withhold. The revision does everything round 1 asked, states the corrected mechanism for the
+right reasons, and adds the one establishing check worth having. Checking the corrected steps against
+the DDL surfaced one new defect, narrow but in the same load-bearing paragraph, so it is a finding
+rather than a note.
+
+**Step 1 as written throws on the schema's own foreign keys.** `meta_materialize_dependency` declares
+`FOREIGN KEY (source_view_name) REFERENCES meta_materialize (source_view_name)` and the same on
+`depends_on`, with no `ON DELETE` action, and H2 checks immediately with no deferral. So "delete the
+excluded registrations' rows from `meta_materialize`, and from that relation only" is refused by the
+engine for any excluded registration that an edge names on either side, which in a twelve-layer
+register is essentially every candidate. The failure is loud rather than silent, but the paragraph as
+written leaves the implementer wedged: the FKs force a statement against `meta_materialize_dependency`
+before the census delete, and the paragraph's own "step 3 is not optional and the harness may not
+hand-write the edges instead" reads as forbidding exactly that statement.
+
+What would satisfy the finding: the mechanism acknowledging the two foreign keys and gaining the one
+statement they force, emptying `meta_materialize_dependency` wholesale before the census delete, with
+the note that this is clearing a machine-written cache `populate` rewrites at step 3, not authoring
+edges, so the one-writer doctrine holds; `populate`'s own transaction opens with the same wholesale
+delete, so the clear is the existing writer's own first move rather than a new mechanism. Any
+equivalent the author prefers also satisfies it, provided step 1 can actually execute against the DDL
+and the no-hand-writing sentence is reconciled with whatever the FKs force.
