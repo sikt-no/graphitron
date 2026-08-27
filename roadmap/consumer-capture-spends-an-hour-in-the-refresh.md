@@ -1,7 +1,7 @@
 ---
 id: R856
 title: "A consumer-schema capture spends over an hour inside the materialization refresh"
-status: Spec
+status: Ready
 bucket: bug
 priority: 1
 theme: model-cleanup
