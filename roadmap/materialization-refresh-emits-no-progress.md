@@ -1,7 +1,7 @@
 ---
 id: R855
 title: "The materialization refresh emits nothing, so a hang inside it is anonymous"
-status: Spec
+status: Ready
 bucket: dx
 priority: 1
 theme: tooling
