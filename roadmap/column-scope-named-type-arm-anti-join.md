@@ -213,3 +213,116 @@ it.
 - The two relation comments carry no measurement arithmetic and no fifth-site narrative; the
   claim-view row-set pin is green; if C shipped, its enforcer is green.
 - The verification build is green.
+
+## Reviewer findings
+
+### Round 1 (2026-08-27, Spec -> Ready, reviewer session 01ArucGYVJs2dFCVP1JdaQAc)
+
+Verdict: withhold. Two findings, both on question 2. Question 1 passes, and the diagnosis behind
+the plan is the strongest part of it: the item is not really about a connection type at all, it is
+about an arm that is fast by accident, and saying so is what makes the ranking of candidates
+legible.
+
+The goal reads off the plan without reconstructing it. Today an author who writes a connection type
+by hand in the SDL and puts it on a non-root field gets no column scope at that site: names written
+there resolve against nothing, so the structural column-match reading is silent and the language
+server offers no column completions or definitions at that coordinate, while the same field over a
+generator-synthesised connection resolves fine. After this lands the field's names resolve against
+the element type's table, which is what every sibling site already does. The second outcome is the
+one the title is about and matters more to a contributor than to a consumer: the arm stops
+depending on the plan H2 happens to pick, so the next person to touch its driving side does not
+rediscover a fifty-fold slowdown.
+
+Everything checkable against the tree checked out. The arm is as described, an inline
+`LEFT JOIN graphitron_field_synthesis` plus `COALESCE` under three anti-joins, with the root guard
+written as literal names and the claim anti-join the one correlating the recursive view.
+`intent_field_navigated_type` carries the three rungs and the `AUTHORED_EXPRESSION` /
+`CONNECTION_ELEMENT` / `NAMED_TYPE` basis vocabulary, and its comment carries both the fifth-site
+paragraph and the "count to hold this relation to is four" sentence the deliverables name. The four
+sites that read it are `intent_routine_return_binding`, `intent_field_participant_scope_table`,
+`intent_field_scope_table_live` and `intent_mutation_routine_seat`. The reader rule candidate A
+appeals to is at the head of `graphitron-model.sql`, "a derivation this store cannot afford to
+re-evaluate gets read whole and paired on its key, never correlated per row", and A's exact shape,
+a `LEFT JOIN` on a `SELECT DISTINCT` key projection read for its `IS NULL`, is already written in
+`intent_node_id_encode`; the keys are `NOT NULL` on both sides and the projection is distinct over
+the whole join key, so the plan's "no equivalence argument" holds and neither fan-out nor the
+`NOT IN` null trap applies. C's structural observation holds arm by arm: the `LOOKUP_KEY` arm masks
+to `Query` and is the only reader of `lookup_bearing`, the `MUTATION` arms mask to `Mutation`, and
+the other four arm-pairs read `graphitron_service`, `graphitron_external_field`,
+`graphitron_field_node_id`, `graphitron_routine` and `graphql_field_directive` only. The
+registration exists, so framing the gate as refresh cost is right. `FieldColumnTableTest` holds
+`aConnectionFieldResolvesItsElementsTable`, and its row helper asserts at most one row per
+coordinate, which is the disjointness guard the repoint leans on without naming.
+`AuthoredClaimTest` already covers all six claim kinds. `ColumnMatchShadowTest` and the LSP's
+`FieldColumnTable` are the live consumers as claimed: `intent_field_column_table` and
+`intent_field_reference_discovery` have no SQL reader at all, which is what makes the plan's "not
+the emit path" true rather than assumed.
+
+**1. Candidate B's grain sentence names the wrong site, and the plan makes that sentence the
+contract.** B says the name is settled at implementation but "that grain sentence is what it must
+state", so the sentence is what the promoted relation's comment will say. It says "one input object
+type from which a `@lookupKey`-marked argument is reachable". The closure's seed is
+`graphitron_field_lookup_key`, whose own comment reads "@lookupKey on an input field: the retired
+site", and the recursive term walks `input_object_field_edge` from that seed up to the types that
+contain it. A row therefore means: this input object type transitively contains an input field
+carrying the retired `@lookupKey`. A marked *argument* is the arm's other trigger entirely, read
+through the `direct` join over `graphitron_argument_lookup_key` and never through the closure.
+`intent_authored_field_claim`'s comment states the two as a disjunction; B's sentence collapses them
+into the one the closure does not answer.
+
+What satisfies this: restate B's grain from the seed relation it actually walks, and name which of
+the two lookup-key tables the promoted relation reads. Either reading of the sentence as written
+costs something. A comment stating the argument site over rows about the input-field site is
+relation prose the fact model treats as load-bearing, and an implementer who takes the sentence at
+its word reseeds the closure from `graphitron_argument_lookup_key`, which changes what
+`intent_authored_field_claim` answers rather than restating it. The row-set pin the plan already
+asks for would catch that, but as a red build rather than as a decision the plan made.
+
+The revision is also where a fact B's case has to reckon with belongs. `intent_authored_field_claim`
+says the closure is "seeded from the retired input-field site, so on accepted schemas the recursion
+never expands". A relation whose population is empty on every schema the build accepts is a weaker
+candidate for a name than B presents, and that bears directly on two of B's three arguments: why it
+outranks C, and what R848 is being handed as an earned registrable candidate. Whether it still
+earns the promotion is the author's call; it should be made on the page rather than left for the
+sweep to imply.
+
+**2. The plan does not name `DerivedReadCostTest`, which is the one automated gate over this
+relation's cost and is pinned by equality.** The test tiers named in the deliverables are the
+seeded intent anchor, the shadow differential, the LSP surface and the claim-view row-set pin. The
+gate that will actually decide whether the verification build goes green is
+`graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/DerivedReadCostTest.java`, a pipeline-
+tier test whose `KNOWN_NON_MONOTONIC` set is asserted with
+`containsExactlyInAnyOrderElementsOf`. Its own javadoc states what that buys: "adding a pair fails
+the build, and so does removing one, so the day a lever lands the assertion fails until the row goes
+rather than the row surviving as a stale exemption nobody is forced to revisit."
+
+That set already holds `intent_field_reference_step_hop|intent_field_column_scope_live`, and its
+justification comment records this relation at 2854 scans registered against 2666 unregistered, 15
+milliseconds against 29. Those figures are a property of the plan H2 picks for the body this item
+rewrites, and the item's whole premise is that the plan for that body changes. So the pinned set can
+move in either direction: the pair can go monotonic and have to be deleted, or the rewrite can push
+a neighbouring cell over. Whichever happens, an implementer working from this plan meets it as a
+failing assertion with no brief for what it means, and has to decide unbriefed whether a set change
+is the expected consequence of the item or the regression the gate exists to catch. That is the
+redesign-as-you-go this gate asks about.
+
+What satisfies this: name the gate in the deliverables, say that a change to its pinned set is an
+expected consequence rather than a licence to widen an allowlist, and require that a row which stays
+has its justification prose rewritten to the new figures rather than left carrying the old ones. The
+plan is already firm that the measurement figures live in the commit message and not in relation
+comments; this gate is the one place in the tree where such figures are checked in on purpose, and
+it needs the same instruction the two relation comments got.
+
+#### Non-blocking
+
+- The repoint section lists "The `DISTINCT`, the root guard, the reference-step guard and the
+  `@pivot` guard" as unchanged. The named-type arm carries no `DISTINCT`; it is on the
+  `PATH_TERMINAL` arm above. Nothing follows from it, since A's distinct key projection cannot fan
+  the arm out either way, but it reads as one of this arm's own guards.
+- The acceptance criterion "All five sites named by `intent_field_navigated_type`'s comment" is
+  checkable against today's comment and stops being so once the deliverable rewrites that comment to
+  drop the count. Harmless, the five sites being settled, but a criterion that outlives its own
+  source reads oddly.
+- `graphitron_field_lookup_key`'s comment says "the sole consumer is the located migration
+  rejection", and three relations read it today, one of them as its own precedence arm. Not this
+  item's, except that B would make it four.
