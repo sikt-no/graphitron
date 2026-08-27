@@ -1,7 +1,7 @@
 ---
 id: R675
 title: "@condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: interface-union
