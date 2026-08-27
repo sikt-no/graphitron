@@ -1,7 +1,7 @@
 ---
 id: R851
 title: "Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves"
-status: Backlog
+status: Spec
 bucket: testing
 priority: 3
 theme: classification-model
