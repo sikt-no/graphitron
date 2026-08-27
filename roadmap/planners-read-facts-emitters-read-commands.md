@@ -3410,6 +3410,48 @@ declaration: a reflected signature where two strings were read, recursion where 
 it, and now a vocabulary whose size was right for the file and wrong for the arm. The refinement to
 the method is to name the population before counting it, not just to count instead of guessing.
 
+### Conditions, twenty-second increment: the enum the census could not see
+
+**The blocker named last increment is captured, in one relation.** `sql_enum_binding` holds every
+Java enum class a column of a generated model binds to, keyed on the source and the class, with the
+database schema and enum type name beside it. That closes the gap the previous increment measured:
+the authored condition arm's whole extraction vocabulary turns on whether a parameter's declared
+type is an enum, the classfile census answers that for an author's own enum and cannot answer it for
+a generated one, and now the catalog side does.
+
+**Three decisions in it are worth stating, because each was a fork with a wrong-looking cheaper
+answer.** The population is every enum a column binds to, not every database enum type. A Java enum
+reached through a configured converter satisfies the generator's predicate exactly as a generated
+one does while naming no catalog type at all, so capturing only the database-typed half would have
+answered no for it, silently, in the direction that changes emitted code. The grain is the class and
+not the column, because the fact is about the class: the fixture binds one enum from three tables,
+and a column-keyed relation would answer the predicate three times and leave a reader to check that
+the three agreed. And the database coordinate is nullable rather than a foreign key into the schema
+relation, because its absence is not a resolution that failed; for the converter-bound half no
+schema is the right answer.
+
+**What it cannot see is stated rather than left to be discovered.** A generated schema class
+publishes its tables and not its enum types, so the column walk is the only route the catalog
+offers, and an enum type no column binds to has no row here at all. A reader therefore takes absence
+as not-known-to-be-an-enum, which is the posture the classpath census already declares for the
+classes it filters out. An array-typed column is absent for the same kind of reason: its bound type
+is the array and not the element.
+
+**Coverage is four cases and one of them is about the grain.** The generated enum lands with its
+schema and type name read off the class rather than off the column; an enum three columns bind is
+one row, asserted against the column relation's own count so the case fails if the fixture stops
+being multi-bound; the population contains the three declared enums and nothing else, which is what
+makes the absence reading safe; and a second capture over the same source restates rather than
+collides, which is the arm that would have caught the clear round missing this relation.
+
+**The next increment is the derivation this unblocks.** Join the authored condition method's
+declared parameter type against the two censuses, scoped through the graph's own sources as the
+condition-method route relation already scopes them, and the extraction kind falls out: an enum
+class either census names gives `EnumValueOf`, anything else gives `Direct`, and the nesting wrapper
+rides on whether the bound path is dotted, which the argMapping family's segment relations already
+state. That is the whole authored-arm vocabulary, and after it `ConditionCommands` can produce the
+authored predicate from store rows.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the

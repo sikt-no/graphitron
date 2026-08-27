@@ -31,6 +31,7 @@ import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
 import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.JVM_SCALAR_TYPE_FIELD;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX;
@@ -90,7 +91,8 @@ final class StoreRefresh {
         JVM_METHOD_PARAMETER, JVM_METHOD_PARAMETER_TYPE_REF,
         JVM_RECORD_COMPONENT, JVM_RECORD_COMPONENT_TYPE_REF,
         JVM_SCALAR_TYPE_FIELD,
-        SQL_SCHEMA, SQL_TABLE, SQL_COLUMN, SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN, SQL_PRIMARY_KEY,
+        SQL_SCHEMA, SQL_TABLE, SQL_COLUMN, SQL_ENUM_BINDING, SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN,
+        SQL_PRIMARY_KEY,
         SQL_REFERENTIAL_CONSTRAINT, SQL_INDEX, SQL_INDEX_COLUMN,
         JAVA_FILE, JAVA_CLASS_DECLARATION, JAVA_METHOD_DECLARATION, JAVA_FIELD_DECLARATION);
 

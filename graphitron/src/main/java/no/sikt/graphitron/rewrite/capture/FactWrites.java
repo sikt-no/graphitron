@@ -22,6 +22,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 
@@ -93,6 +94,7 @@ final class FactWrites {
         writers.put(SQL_TABLE, FactWrites::sqlTable);
         writers.put(SQL_CONSTRAINT, FactWrites::sqlConstraint);
         writers.put(SQL_COLUMN, FactWrites::sqlColumn);
+        writers.put(SQL_ENUM_BINDING, FactWrites::sqlEnumBinding);
         writers.put(GRAPHITRON_ARGUMENT_PATH_SEGMENT, FactWrites::graphitronArgumentPathSegment);
         return writers;
     }
@@ -547,6 +549,24 @@ final class FactWrites {
                                row.get(t.BINDING_TYPE),
                                row.get(t.NULLABLE),
                                row.get(t.DESCRIPTION));
+        }
+        batch.execute();
+    }
+
+    private static void sqlEnumBinding(DSLContext dsl, List<TableRecord<?>> rows) {
+        var t = SQL_ENUM_BINDING;
+        var batch = dsl.batch((dsl.insertInto(t)
+                .columns(t.SOURCE_NAME,
+                         t.CLASS_FQN,
+                         t.TABLE_SCHEMA,
+                         t.TYPE_NAME)
+                .values(markers(4)))
+                .onDuplicateKeyIgnore());
+        for (TableRecord<?> row : rows) {
+            batch = batch.bind(row.get(t.SOURCE_NAME),
+                               row.get(t.CLASS_FQN),
+                               row.get(t.TABLE_SCHEMA),
+                               row.get(t.TYPE_NAME));
         }
         batch.execute();
     }

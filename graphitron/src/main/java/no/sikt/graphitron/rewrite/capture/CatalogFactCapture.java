@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
@@ -192,6 +193,8 @@ final class CatalogFactCapture {
                 .where(SQL_NODE_KEY_COLUMN.SOURCE_NAME.eq(source)).execute();
             dsl.deleteFrom(SQL_NODE_METADATA)
                 .where(SQL_NODE_METADATA.SOURCE_NAME.eq(source)).execute();
+            dsl.deleteFrom(SQL_ENUM_BINDING)
+                .where(SQL_ENUM_BINDING.SOURCE_NAME.eq(source)).execute();
             dsl.deleteFrom(SQL_COLUMN).where(SQL_COLUMN.SOURCE_NAME.eq(source)).execute();
             dsl.deleteFrom(SQL_TABLE).where(SQL_TABLE.SOURCE_NAME.eq(source)).execute();
             // After sql_table, which references it.
@@ -256,9 +259,11 @@ final class CatalogFactCapture {
     private static void captureColumns(FactSink sink, JooqCatalog jooq, Table<?> table,
                                        String source, String schema, String name) {
         var positions = new HashMap<String, Integer>();
+        var fields = new HashMap<String, Field<?>>();
         Field<?>[] declared = table.fields();
         for (int i = 0; i < declared.length; i++) {
             positions.put(declared[i].getName(), i);
+            fields.put(declared[i].getName(), declared[i]);
         }
         for (JooqCatalog.ColumnFacts column : jooq.columnFactsOf(table)) {
             Integer ordinal = positions.get(column.sqlName());
@@ -283,7 +288,49 @@ final class CatalogFactCapture {
             row.setNullable(column.nullable());
             row.setDescription(nullIfBlank(column.comment()));
             sink.add(row);
+
+            captureEnumBinding(sink, source, fields.get(column.sqlName()));
         }
+    }
+
+    /**
+     * One row per enum class a column of this source binds to, written from the live {@link Field}
+     * rather than from the column facts beside it: the facts carry the bound type as a name, and
+     * the question this relation answers is whether that name is an enum, which only the class
+     * itself states.
+     *
+     * <p>Reached through the column walk because the catalog offers no other route. A generated
+     * schema exposes its tables and not its enum types, so an enum no column binds to is not
+     * reachable here at all; the relation's own comment says so and says how a reader takes the
+     * absence.
+     *
+     * <p>The database coordinate is read off the class only where the class carries one. A jOOQ
+     * enum implements {@link org.jooq.EnumType} and names its schema and type; a Java enum reached
+     * through a configured converter satisfies the same {@code isEnum} predicate and names neither,
+     * which is the nullable half of the row rather than a resolution that failed.
+     */
+    private static void captureEnumBinding(FactSink sink, String source, Field<?> field) {
+        if (field == null || !field.getType().isEnum()) {
+            return;
+        }
+        String classFqn = field.getType().getName();
+        if (!sink.claim(SQL_ENUM_BINDING, source, classFqn)) {
+            return;
+        }
+        var row = sink.dsl().newRecord(SQL_ENUM_BINDING);
+        row.setSourceName(source);
+        row.setClassFqn(classFqn);
+        Object[] constants = field.getType().getEnumConstants();
+        // An enum with no constants declares nothing to read the coordinate off, which no generated
+        // enum is; guarded because getEnumConstants is empty-array-capable, not because a catalog
+        // reaches it.
+        if (constants != null && constants.length > 0
+                && constants[0] instanceof org.jooq.EnumType enumType) {
+            Schema schema = enumType.getSchema();
+            row.setTableSchema(schema == null ? null : schema.getName());
+            row.setTypeName(enumType.getName());
+        }
+        sink.add(row);
     }
 
     /**
