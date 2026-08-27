@@ -22,7 +22,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R839` | The carrier states one condition twice, and the duplicate re-derives the producer once per driving row | Spec | 2026-08-27 <sub>created 2026-08-26</sub> | [plan](carrier-refresh-inlined-producer-cte.md) |
 | `R859` | A dev pass captures the same graph twice, so every save evaluates the register twice | Ready | 2026-08-27 | [plan](dev-pass-captures-the-graph-twice.md) |
 | `R850` | The column scope named-type arm cannot be repointed while its authored-claim anti-join stands | Ready | 2026-08-27 | [plan](column-scope-named-type-arm-anti-join.md) |
-| `R853` | A roadmap-only diff owes the two gates that read roadmap/, not the whole reactor | In Review | 2026-08-27 | [plan](roadmap-only-verification-scope.md) |
 | `R834` | A top-level @service returning a @table type reads columns off the returned record instead of refetching by key | In Review | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](root-service-table-return-skips-key-refetch.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-27 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
@@ -658,7 +657,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R768` [**The build boots the fact schema 1051 times, and a reset costs a fraction of a boot**](store-boots-once-per-test-not-once-per-build.md) — Backlog, dx
 - `R855` [**The materialization refresh emits nothing, so a hang inside it is anonymous**](materialization-refresh-emits-no-progress.md) — Ready, dx
 - `R857` [**A dev start evaluates the whole materialization register twice, the second pass producing identical rows**](dev-start-refreshes-the-register-twice.md) — Spec, dx
-- `R853` [**A roadmap-only diff owes the two gates that read roadmap/, not the whole reactor**](roadmap-only-verification-scope.md) — In Review, workflow
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
 - `R764` [**graphitron-model ships its junit-platform.properties to four consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
 - `R780` [**srp names the reviewer as the disqualified party: the session grep takes the first ID in the body, not the trailer**](srp-disqualified-session-read-from-trailer.md) — Backlog, dx
