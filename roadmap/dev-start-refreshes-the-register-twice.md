@@ -342,3 +342,86 @@ motivation weakens. Left to the author rather than corrected here because restat
 more than swapping a numeral.
 
 Verdict: stays in Spec.
+
+### Round 2: Spec -> Ready, revisions requested
+
+The plan body is unchanged since round 1: the most recent commit on this file is round 1 itself, so its
+blocking finding is still open. Question 1 passes on its own terms. Without reading the phase list, what
+a consumer gets is this: a `graphitron:dev` start over a store that already holds the graphs it opens
+stops re-deriving the materialization register, so the language server and MCP ports bind a full
+register pass sooner, and `-Dgraphitron.dev.skipInitial` over a warm store becomes genuinely cheap
+rather than nominally so. That reads clearly and the outcome is reachable. Question 2 still fails on the
+currency rule. This round re-verified the finding from the source rather than inheriting it, and what
+that turned up narrows the space of fixes enough to be worth stating.
+
+**Blocking, question 2: the soundness argument is made over the target's keying, but currency is a
+property of what the source view reads.** The section "The rule covers graph-keyed targets only" tests
+for `graph_name` in the *target's* shape. All twenty targets carry it (checked, every target table of
+every row in `meta_materialize` has a `graph_name` column), so the whole-target arm has no production
+resident and the spec reads that as complete coverage. It is not, because a graph-keyed target can be
+computed from relations that carry no graph at all. `intent_spelled_table_live` joins
+`store_graph_source` to `sql_table`, whose key is `(source_name, table_schema, table_name)`;
+`jvm_class` is `(source_name, class_name)`. Both are anchored to `store_source`, which its own comment
+calls store-global rather than graph-keyed: "it can say what a file hashed to, never which graph read
+it." `store_graph.last_captured` cannot speak for either, so the equality rule can hold while the rows
+underneath a partition have changed.
+
+The trigger is ordinary rather than contrived, and every step of it is in the tree.
+`GraphitronModelStore` describes the file-backed store as "a per-user cache directory shared by one
+workspace's modules", and a reactor build's modules share it in the Maven JVM, so two graphs naming one
+generated jOOQ package is the normal multi-module layout. `CatalogFactCapture` deletes that package's
+`sql_table` partition and re-walks it on every capture of any graph that names it, and
+`FactCapture.writeGraph` stamps `graph.name()` and nothing else. So: the database schema changes, jOOQ
+regenerates, module A rebuilds and captures, module B is up to date and is never re-captured. A's
+transaction rewrote the very `sql_table` rows B's `intent_spelled_table` partition was resolved
+against, B's `last_captured` never moved, B's fill row still matches it, the reader-side pass skips B,
+and the dev session answers from resolutions against a catalog that no longer exists. Today's
+unconditional pass is the only thing that repairs that, and under `skipInitial` nothing else does. It is
+a real property being traded away, and "What changes for a consumer" currently promises the opposite:
+that no reader may observe a stale row.
+
+**What round 1's suggested material does not cover.** Round 1 pointed at `store_source.stamp` together
+with `store_graph_source`. The membership half is right, the stamp half does not carry:
+`store_source.stamp` is NULL by design for exactly the two source kinds that hold these rows.
+`ClasspathSources.upsert` writes it explicitly NULL for the `JOOQ_SCHEMA` kind, and `commitStamps` sets
+it only where the entry hashes, which a directory root does not (`SourceStamp.ofFile` returns null when
+the path will not open as a stream), just as the column's comment states as intent. Only `JAR` sources
+carry a stamp. So a currency key that reads source stamps proves nothing about the shared jOOQ package
+or a sibling module's `target/classes`, which is the whole of the case, and `last_seen` is worse than
+useless here: it moves on every run that names the source, so an equality over it marks every sibling
+graph permanently stale and returns the win to zero in precisely the multi-module store that "What it
+costs" leans on.
+
+**A cheaper shape that does close it, offered rather than chosen.** `store_graph_source` alone answers
+a narrower question: whether any other graph in the store names any source this graph names. Where none
+does, only this graph's own captures rewrite its source-keyed rows, and each of those moves its
+`last_captured` in the same transaction, so the equality rule is sound exactly as the spec writes it.
+That keeps the single-graph win and the `skipInitial` win intact and falls back to an unconditional
+refresh for a graph with a shared source. Whether that, or a content stamp on the catalog partition so
+an unchanged re-walk leaves the stamp still, or an argued acceptance of the staleness, is the answer is
+the author's call.
+
+What a revision needs, whichever way that goes: "What makes a target current" states currency over what
+a partition reads rather than over the target's keying; "What changes for a consumer" stops promising
+that no reader may observe a stale row unless the rule earns it, or states the trade in "What the rule
+gives up" on the same terms as the hand-emptied target; and the premise gate becomes an instrument that
+could fail on this class of registration. The family-prefix roster cannot, and this is the second round
+saying so: `sql_` and `jvm_` are capture-written families, so the disjointness assertion passes while
+the rule is unsound. The gate is the spec's only defence against a future registration breaking the
+rule, so it has to be able to see the failure it is guarding.
+
+**Non-blocking, still open from round 1.** The 200-second figure and its attribution to sixteen
+registrations. R856 prices positions 1 to 14 at 199 seconds, marks 15 and 16 unmeasured, and fences the
+total explicitly. Left to the author again rather than corrected here, for round 1's reason.
+
+**Verified clean this round,** so a revision need not re-argue any of it: `Materializations.refresh`,
+`refreshAll` and `analyse` with `DevMojo` as `refreshAll`'s only production caller;
+`ViewReferences.relationsReadBy` as a public primitive with `MaterializeDependencies` recursing over
+it; `FactCapture.writeGraph`, `ownsGraph`, `DEMOTED_TO_MEMORY` and `detect`; `StoreRefresh`'s
+owned-graph and owned-sources contract; `store_graph.last_captured`, `store_source`,
+`store_graph_source`, `meta_materialize` with twenty rows, and `meta_materialize_dependency`;
+`GraphitronModelStore`; `MaterializationOrderTest`, `MaterializeRegistryGateTest`,
+`WarmStartRefreshTest`, `CapturedStore` and `SeededStore.derive`; and R848, R855, R856, R858 and R859
+with the statuses and shapes the spec attributes to them, R855 at priority 1.
+
+Verdict: stays in Spec.
