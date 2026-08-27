@@ -147,12 +147,36 @@ research instrument and nothing at runtime needs it. Promoting it to main scope,
 surface, is a separate question and should not be settled here.
 
 **Why not extend `InlineMultiplicityCheck` instead**, which is the module that already holds a static
-metric over this DDL. Two inputs decide it, and neither is available there. Position has to be read
-off parsed SQL, which needs jOOQ's parser; weighting needs the driving side's cardinality, which
-needs a populated store. `roadmap-tool` reads markdown and has neither dependency, and its own
-premise is a metric "needing no database and no profiler". Adding jOOQ and H2 to it to host a
-store-dependent instrument would destroy the property that makes it cheap enough to run at `verify`
-on every build.
+metric over this DDL.
+
+Not for want of dependencies, which is what an earlier draft of this plan claimed and got wrong.
+`roadmap-tool` depends on `graphitron-model` at compile scope, so jOOQ is on its classpath; it
+carries `org.duckdb:duckdb_jdbc`; and it already opens a populated store on every full build,
+`SchemaIdentifierDriftCheck` and `SchemaReferencePages` both calling `GraphitronModelStore.open()`
+with `check-schema-identifiers` bound to `verify` beside `report-inline-multiplicity`. Both inputs
+this instrument needs are present there today. The "needing no database and no profiler" premise
+belongs to `InlineMultiplicityCheck` and describes that check, not the module around it.
+
+The grounds are the instrument's collaborators and its cadence.
+
+**The walk being extended is `MaterializeDependencies.relationsReadBy`**, `graphitron-model` main
+scope. Extending it from another module means duplicating the walk or widening its API for a single
+caller, and the H2 normalization rules it encodes are exactly the part that must not be re-derived
+independently, the two existing metrics already disagreeing because their bases differ.
+
+**The counterfactual's collaborators are test scope in that module.** Scoring a candidate cut set
+means evaluating the registered and unregistered shapes of a relation, which is what
+`UnregisteredRelation` does, over a store from `FactStores`; both are `no.sikt.graphitron.model.test`,
+republished as a test-jar so downstream modules build on that floor rather than opening a store of
+their own. `report-inline-multiplicity` runs from `roadmap-tool` **main** scope through `exec:java`,
+and main cannot reach test-scope instruments. Hosting the weighted metric beside it therefore means
+reimplementing the swap in main scope, or putting it in `roadmap-tool` test scope where it is neither
+a build step nor near anything it collaborates with.
+
+**Cadence decides what is left.** Every `roadmap-tool` execution is bound to `verify`, so the module's
+shape is build steps. This instrument answers a question somebody is asking at the time they ask it,
+and its store boot and cardinality counts are not costs to add to every build. A class can sit
+unbound in that module, which is why this is the third ground rather than the first.
 
 So the two coexist on purpose, with different jobs and different cadences: a DDL-only report that
 runs every build and catches an authored-multiplicity regression, and a store-dependent instrument
@@ -174,8 +198,15 @@ against that ordering.
 
 The metric ships only if it puts the registrations whose reasons record order-of-magnitude wins above
 the ones whose reasons record small wins. Concretely it must rank `intent_mutation_write_destination`
-and `intent_field_reference_step_hop` well above `intent_argument_column_match`, which both naming
-metrics get backwards.
+and `intent_field_reference_step_hop` well above `intent_argument_column_match`, which the probe's
+marginals get backwards at +10 and +36 against +4.
+
+Not both metrics: `InlineMultiplicityCheck` produces no per-registration ranking at all, and on the
+obvious way to derive one, each registration's source-view subtree count, it happens to put the three
+in the demanded order (28, 20, 6). That is worth stating rather than eliding, and it changes nothing
+about the gate. A metric blind to per-row and recursive re-evaluation can still order three
+particular relations correctly, and an ordering that survives by luck on the one triple anybody
+checked is not evidence the mechanism is modelled.
 
 **What the negative branch deletes**, stated exactly because the first draft of this plan left it to
 implication. If the gate fails, the new weighted instrument and its tests are deleted, and the
