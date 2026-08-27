@@ -401,3 +401,66 @@ prevented. Nothing unsafe follows if it is not (the same-JVM probe refuses one o
 the deletion races are all caught), but the reported count and byte total can be wrong, and the
 report is the feature's whole user surface on an ordinary build. Implementation detail, not for this
 gate.
+
+### Round 3 (2026-08-27, Spec -> Ready, reviewer session 019Ne8e6nm9EEAQ2TpLb6H6A)
+
+Verdict: withhold. The plan body is byte-identical to the Spec transition (`git diff 2f8cc30 HEAD`
+on this file is 141 added lines, all of them rounds 1 and 2), so the three earlier findings are open
+on their own terms and I am not restating them. I re-checked each against the tree and all three
+hold; what I verified is in this commit's message. One new finding on question 1, and a smaller one
+on the same question.
+
+**Question 1. The documented sentence tells a consumer that their GraphQL schema is what multiplies
+these directories, and nothing about their schema reaches the path.** The `storeDirectory` draft
+closes "so a schema you have stopped working on does not keep its cache forever". The stamped path
+is a function of two things, neither of them the consumer's schema: `stampSegment()` is
+`ddlHash().substring(0, 16) + "-" + generatorVersion()`, where `ddlHash()` digests `DDL_RESOURCE`,
+which is *graphitron's own* fact schema shipped inside `graphitron-model`; the home above it is
+`userCacheRoot()` plus `graphitron/model/` plus `workspaceSegment(workspace)`, keyed on the checkout
+path. Graph identity is a partition *inside* the file, which
+`AbstractRewriteMojo.resolveStoreDirectory`'s own javadoc states: "one file per workspace, holding
+every graph that workspace's modules capture". So a consumer with three schemas in one checkout has
+one stamped directory rather than three, and abandoning a schema frees nothing at all.
+
+What does multiply a consumer's directories is upgrading graphitron: the version segment moves on
+every release and the fact-schema hash moves with most of them, so a checkout accumulates one
+directory per version it has ever built with. That is the sentence the row wants, and it is a better
+one than the draft, because it names a population the reader can recognise.
+
+This is not a wording nit, for two reasons. It is the only place the item speaks to consumers at
+all: the body's own account is honestly contributor-facing ("on this repository it changes
+constantly: the fact schema is where the work happens"), so the manual draft is where the audience
+switches, and it switches onto a false cause. And it blocks the fix rounds 1 and 2 already asked
+for: the sentence of setup that has to correct "one store per project checkout" cannot be written
+until this is settled, because the population being retained is "one per graphitron version this
+checkout has built with", not one per schema. Settling it may also be worth a line in "What lands",
+which today reads as though the beneficiary set were larger than the contributor doing model work.
+
+**Question 1, smaller. "Cannot make a run cold that would have been warm" is not true of any finite
+retention, and the plan concedes as much two sections later.** "What lands" offers it as one of
+three things that do not move, beside "cannot fail a build", which is a guarantee that does hold.
+But "The policy" already draws the boundary: "anything in active alternation stays, *up to the
+retention count*". Past three, alternation reaps, and the next build on the fourth stamp runs cold.
+That is eviction working rather than a defect, which is exactly why the overstatement is worth a
+round: an implementer reading that line as the invariant has been handed a promise they cannot keep,
+and the shape of that mistake is a test asserting it or a freshness floor added to protect it. What
+would satisfy this: state what the sweep does guarantee (no build fails, no directory another
+process holds is touched, nothing outside a positively recognised store directory is read or
+removed) and price the cold run at the retention boundary the way the residual race is already
+priced.
+
+Non-blocking, in descending order of how much I would care.
+
+* The Implementation list names one javadoc sentence that becomes false, the class-level "A shared
+  store is never deleted by this class". `openAt`'s own javadoc carries "It never fails, and it never
+  deletes", and, more softly, "The stamped path is what makes never discarding safe". Naming one
+  sentence and not the others reads as a claim that the others survive, and `openAt` is the method
+  that will be calling the sweep.
+* A pinned `<storeDirectory>` gets no workspace segment, `resolveStoreDirectory` returning a pinned
+  home verbatim, so retention 3 is applied across however many checkouts share one pinned home. The
+  documented uses are per-workspace and ephemeral CI, so this is unlikely rather than impossible, and
+  the cost is warmth. Worth a clause only if the retention argument is being touched anyway.
+* Confirming round 1's non-blocking note from a different angle: only `FactCapture.runInternal` and
+  `DevMojo` call `openAt` in main sources across the whole tree, so the report's two-caller argument
+  is not merely plausible, it is exhaustive today. Worth knowing that it is a closed set the
+  implementer can rely on rather than a sample.
