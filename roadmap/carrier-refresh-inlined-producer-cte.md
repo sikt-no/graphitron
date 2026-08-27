@@ -27,12 +27,18 @@ A capture of a consumer schema stops spending 41 seconds on the carrier relation
 back on every build. Nothing about what the store answers changes: the same rows, in the same
 columns, under the same names every reader already spells.
 
-The change is one materialization registration, plus corrections to three stored `reason` figures
-the measurements below falsified. A registration is a row in `meta_materialize`
-saying "refill this table from that view, once per capture, per graph": the view keeps the rule's
-text under a `_live` name, the table takes the canonical name every reader spells, and so no reader
-is edited and the rule is still written exactly once. Which relation to register is the question the
-measurements below answer, and the answer is `intent_field_payload_producer`.
+How the minute is collected is an open choice among three arms, settled by one round of timings that
+has not been taken yet: delete the redundant predicate, respell it as a join, or register the relation
+it re-derives. "The filter is redundant, so the lever is a choice among three arms" below states them
+and the doctrine that orders them. Whichever wins, the change also edits three stored `reason` figures
+the measurements below moved.
+
+If the registration arm wins, it is one row in `meta_materialize` saying "refill this table from that
+view, once per capture, per graph": the view keeps the rule's text under a `_live` name, the table
+takes the canonical name every reader spells, and so no reader is edited and the rule is still written
+exactly once. The relation to register at that point is `intent_field_payload_producer`, and the two
+candidate depths are already priced. If either rewrite arm wins, the change is an edit to one view
+body and the register gains no row.
 
 ## What a capture pays today
 
@@ -97,18 +103,64 @@ The last row is the one worth keeping. The CTE also probes those two views insid
 EXISTS`, which is where a reader following the plan's shape would look first, and substituting tables
 for both changes nothing. Reading the body without pricing it would have named the wrong term.
 
-## The lever, and which registration to land
+## The filter is redundant, so the lever is a choice among three arms
 
-Both candidate depths were measured on the same store:
+The predicate this item is about removes no row. The view's outer query is `FROM producer p JOIN
+data_channel d ON d.graph_name = p.graph_name AND d.type_name = p.payload_type_name`, and
+`d.graph_name` and `d.type_name` are `f.graph_name` and `f.type_name` projected, so the join's
+surviving condition is the filter's condition verbatim. It cannot change `data_fields` either: the
+window is `COUNT(*) OVER (PARTITION BY f.graph_name, f.type_name)` and the filter is a function of
+those two columns alone, so it is constant across each partition and drops whole partitions without
+thinning one. The per-field `NOT EXISTS` against `intent_errors_field` beside it is the one that
+thins a partition, and it is not in question. `data_channel` is named once, by that join, so there is
+no second reader for which the difference could matter. Confirmed by execution as well as by reading;
+see `roadmap/audits/2026-08-27-carrier-filter-redundancy-probe.md`.
 
-* registering `intent_field_payload_producer`, which is already a named relation, leaving the CTE
-  spelled as it is: 327 ms and 261 ms;
-* promoting the `producer` CTE itself to a first-class relation and registering that: 253 ms and
-  206 ms.
+That makes the diagnosed cost term removable three ways, not one, and `producer` is named exactly
+twice: the outer `FROM producer p`, which is one inlining, and this correlated `EXISTS`, which is the
+per-driving-row one and the redundant one.
 
-The deeper option buys about 60 ms more and costs a new relation with a name and comments, so the
-shallower one is the registration to land and the difference belongs in the `reason` as measured
-follow-up rather than in this change.
+* **A. Delete the filter.** Three lines out. Leaves `producer` named once in a plain `FROM`, which is
+  the same one-evaluation shape a registration buys, and needs no registration at all. What it costs
+  is that the two `CASE WHEN EXISTS` probes and the window then face every field of every OBJECT type
+  rather than the carrier candidates.
+* **B. Respell the filter as a join** into `data_channel` on a projection of the producer. One
+  inlining rather than one per driving row, and it keeps the narrow population A widens. It needs its
+  own narrower projection: the `producer` CTE is `SELECT DISTINCT graph_name, payload_type_name,
+  family` and so is not unique on the two columns the filter tests, and joining it as it stands
+  duplicates each field row per family and doubles `data_fields`, which is reproduced in the audit.
+* **C. Register `intent_field_payload_producer`**, leaving the filter spelled as it is: the change
+  the rest of this plan specifies. Measured at 327 ms and 261 ms against the promoted-CTE depth's
+  253 ms and 206 ms, so the deeper registration buys about 60 ms more for a new relation with a name
+  and comments of its own and is declined either way.
+
+**The order these are tried in is not this item's preference.** `meta_materialize`'s own reasons
+carry it: `intent_mutation_payload_key_membership_live` states that "a registration prices the rule
+as it stands, so a rule with a re-evaluation inside it should be rewritten before it is priced", and
+the two rows after it each cite that and record the reader-side rewrite they tried first, one that
+worked and one that did not. Both were join orders in a reading view, which is what A and B are here.
+The fact model page says the same thing from the other side: the relation to register is the one every
+expensive reader has in common, "and not the relation that looked slow from where the reader happened
+to stand". A cost that exists only because one reader states a condition twice is that case exactly.
+
+**What decides it is one round of timings, and it is outstanding.** Time A, B and C on the consumer
+store the two registration depths were priced on, `OPTIMIZE_REUSE_RESULTS` off, two sweeps. For A the
+deciding figure is not the carrier's total but what the two `CASE WHEN EXISTS` probes cost once the
+filter no longer narrows their population, which is a driving-row ratio the same store answers. This
+cannot be taken in the reactor: the largest store a build here writes carries 63 fields and no
+carrier rows, and a synthetic fixture at that scale does not reproduce the re-derivation at all, both
+recorded in the audit. So the figures come from the consumer store or they do not come.
+
+Whichever arm ships, the argument is recorded where the change lands. For C that is the registration's
+own `reason`, which must say the motivating probe is redundant with the outer join and was kept
+deliberately, on the terms the two rows above it in the register use. For A or B there is still a
+`reason` to edit, because `intent_carrier_data_field` is itself a registration and this change edits
+its row already; that row also already prices a rewrite beside a registration, recording the carrier
+falling "from about 49 seconds to that 170 milliseconds by restructure alone". The asymmetry worth
+stating once is that a rewrite arm's argument lands in the store's ungated prose while a
+registration's earns a gated row and cells in the read-cost gate.
+
+## What the registration arm is, if it wins
 
 The trade the middle rung has to win is a refresh against the re-evaluations it avoids, and here it
 is not close. One evaluation of `intent_field_payload_producer` is 4 to 31 ms. It has two readers in
@@ -141,6 +193,7 @@ CREATE TABLE intent_field_payload_producer (
   family            VARCHAR,
   payload_type_name VARCHAR,
   root_operation    VARCHAR,
+  PRIMARY KEY (graph_name, type_name, field_name, family),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
 ```
@@ -148,9 +201,20 @@ CREATE TABLE intent_field_payload_producer (
 Same column names in the same order as the view, which is what
 `MaterializeRegistryGateTest.targetsAreShapedLikeTheViewsThatFillThem` closes: the refresh is
 `INSERT INTO target SELECT * FROM source`, so a shape mismatch writes the wrong columns rather than
-failing. No primary key, because `root_operation` is meaningfully nullable and H2 refuses a key over
-a nullable column; that is why the index question below is a question at all rather than answered by
-the key.
+failing.
+
+The key is the relation's own grain and not a convenience. The view comment says it: "The grain is
+the coordinate", and the family column's comment says "A field carrying two is a row per family
+rather than a pick". Uniqueness holds on the inputs rather than by assumption: `graphitron_service`
+and `graphitron_mutation` are each keyed on `(graph_name, type_name, field_name)` so their arms
+produce one row per coordinate, the ROUTINE arm carries `SELECT DISTINCT` because
+`graphitron_routine` is keyed per hop, and `root_operation` is a function of `(graph_name,
+type_name)` through a grouped subquery so it adds no multiplicity. `root_operation` being nullable is
+therefore not an obstacle: it is not in the key. Declaring it matters beyond tidiness, because the
+fact model page is explicit that a registered target with no key is a heap and every join a
+derivation performs against it scans all of it, with the cost landing inside the reading derivations
+rather than on the reader's own predicate. That is most of what the index question below was trying
+to settle by measurement, and the key reduces that question to the probe coordinate alone.
 
 **Move the comments rather than write new ones.** The relation's existing view comment and its six
 column comments belong on the table, verbatim, with the standard materialization sentence appended
@@ -232,43 +296,66 @@ tie-break still places the producer before the carrier, the carrier fills from c
 not a confirmed edge, and the property is one rename or one retired registration away from silently
 inverting.
 
-So this item adds one structural assertion instead of trusting the coincidence: a new
-`MaterializeRegistryGateTest` test asserting `META_MATERIALIZE_DEPENDENCY` holds the row
-`('intent_carrier_data_field_live', 'intent_field_payload_producer_live')` on the booted store.
-That class's charter already covers it, asserting over the DDL's own registry and the dependency
-edges the bootstrap derived from it, and the pin is argued in the test's javadoc on these terms:
-the register's safety argument is that a registration changes no answer, the one way this
-registration could change one is the carrier refreshing before its producer, and the ordering that
-prevents that has to rest on a derived edge rather than on how the relation names happen to sort.
+So this arm adds two assertions instead of trusting the coincidence, and the general one comes first.
+`MaterializationOrderTest`'s class javadoc says its fixtures drive the population routine "through
+every shape the design claims" and names them; a relation reference inside a non-recursive `WITH`
+body, which is the shape this edge depends on being collected, is not among them, its fixtures being
+plain `SELECT v FROM scratch_p` reads. That is a hole in the shape roster rather than a fact about
+this relation, so it is closed where shapes are closed: one more synthetic case in that class, a
+registered source view reading its prerequisite from inside a `WITH` body, asserting the same one
+dependency row its sibling direct-read case asserts. It covers this arm and every registration after
+it and names no production relation.
 
-## Three reason rows are wrong, and this change corrects them where they live
+The production pin lands beside it, with the smaller claim that is the honest one. A new
+`MaterializeRegistryGateTest` test asserts `META_MATERIALIZE_DEPENDENCY` holds the row
+`('intent_carrier_data_field_live', 'intent_field_payload_producer_live')` on the booted store, as a
+regression guard rather than as the thing that establishes the mechanism works: today's walk already
+recurses through `intent_field_payload_producer` to its five base tables and only reaches that view
+through the same CTE-body reference, so collection of the shape is already demonstrated on the
+shipped store and the edge arriving is close to certain. What the pin is worth keeping for is that
+the alphabetical tie-break which currently orders these two relations correctly is one rename or one
+retired registration away from inverting, and that is a regression the shape test cannot see.
+
+## Two reason rows are completed and one is corrected, where they live
+
+The three rows differ in what a next reader can trust them for, and the difference is worth keeping
+because it teaches opposite lessons to whoever writes the next one.
 
 `intent_carrier_data_field_live`'s registration prices its refresh at about 170 ms for 15 rows on the
-sakila example and about 12 ms on a carrier-free schema. The relation this item is about is the
-reason that figure does not transfer: on a consumer schema the same refresh is 41 s. The
-`store-performance` skill is explicit that a recorded measurement is evidence about the schema it was
-measured on and that a stored reason a later measurement disagrees with needs correcting where it
-lives rather than explaining away, so the row is corrected in the same change that moves the number,
-with both figures and the schema each was taken on.
+sakila example and about 12 ms for no rows on a carrier-free one. It names both schemas and both row
+counts and claims no transfer, so this item's 41 s on a consumer schema does not contradict it; it
+completes it with a third schema's figure. The relation this item is about is the reason the original
+figure does not transfer. The `store-performance` skill is explicit that a recorded measurement is
+evidence about the schema it was measured on and that a stored reason a later measurement disagrees
+with needs correcting where it lives rather than explaining away, so the row gains the new figure in
+the same change that moves the number, with the schema each was taken on. A row that names its schema
+is doing what the register asks, and saying it was wrong would teach the opposite.
 
-Two sibling rows are wrong the same way, the same rule reaches them, and this item's own first table
-already holds the measurements, so they are corrected here too: `intent_errors_field_live` records
-about ten milliseconds against a measured 4.2 s, and `intent_field_column_scope_live` records about
-170 ms "on a real schema" against a measured 6.4 s, both taken on the consumer schema named above in
-the same run as the carrier's figure. An earlier draft deferred them to R831, and the deferral landed
-nowhere: R831's subject is measured claims in ordinary relation comments, and it scopes the register
-out by name, so nothing there accepts these rows. Nor does any gate re-price a refresh duration, the
-read-cost gate holding scan counts and asserting no duration, per "Not in scope" below, so a
-correction by hand, made where the figures are already in hand, is the only mechanism available.
-Each correction is a prose edit inside the row's `reason` string, stating the new figure and its
-schema beside the old figure and its schema; no rows, no readers and no tests move with them.
+Two sibling rows are reached by the same rule and this item's own first table already holds the
+measurements, so they are edited here too, but only one of the two is wrong.
+`intent_errors_field_live` records about ten milliseconds for 15 rows against a measured 4.2 s: it
+discloses its scale through the row count, so like the carrier's row it is completed rather than
+corrected. `intent_field_column_scope_live` records about 170 ms "on a real schema" against a
+measured 6.4 s, and that one reads as a general claim and is falsified. Both new figures were taken on
+the consumer schema named above, in the same run as the carrier's.
 
-## The index question is this registration's own, and it is answered by measurement
+An earlier draft deferred these two to R831, and the deferral landed nowhere: R831's subject is
+measured claims in ordinary relation comments, and it scopes the register out by name, so nothing
+there accepts these rows. Nor does any gate re-price a refresh duration, the read-cost gate holding
+scan counts and asserting no duration, per "Not in scope" below, so a hand edit where the figures are
+already in hand is the only mechanism available. Each edit is a prose change inside the row's `reason`
+string, stating the new figure and its schema beside the old figure and its schema; no rows, no
+readers and no tests move with them.
 
-Every registered target either carries a declared index whose `COMMENT ON INDEX` names the reader it
-serves, or has a row in `MaterializeRegistryGateTest.NO_INDEX` arguing why not, asserted by equality
-in both directions. So this registration cannot land without answering the question, and the answer
-has to be a figure.
+## The index question is the registration arm's own, and it is answered by measurement
+
+This section applies only if arm C ships; a rewrite arm declares no target and inherits no index
+question. Every registered target either carries a declared index whose `COMMENT ON INDEX` names the
+reader it serves, or has a row in `MaterializeRegistryGateTest.NO_INDEX` arguing why not, asserted by
+equality in both directions. So the registration cannot land without answering the question, and the
+answer has to be a figure. What the declared primary key above changes is the scope of it: the target
+is no longer a heap, so every join that reads it whole or drives from it is served by the key, and
+what is left to measure is the probe coordinate alone.
 
 Do not assume the roster row. This is the first registration here whose motivating reader genuinely
 probes in from a population larger than the target: the carrier CTE's `EXISTS` seeks
@@ -320,19 +407,28 @@ these two relations correctly.
   `('intent_carrier_data_field_live', 'intent_field_payload_producer_live')` is present on the
   booted store, per the section above. If the index question lands on the roster, also one
   `NO_INDEX` entry plus its argument in the set's javadoc, naming the shapes timed and what the
-  `DISTINCT` baseline showed. Its five structural tests (kinds, column shape, acyclicity, order,
-  and nothing materializing outside the mechanism) check the pair and need nothing from the author.
-* `DerivedReadCostTest`: three pinned counts move and one pinned set may.
-  `READERS_IN_SCHEMA` rises by one, the new `_live` view being a view in the schema; the constant has
-  moved twice in the days since this item was drafted, so re-pin it from the tree rather than from any
-  figure this file states.
-  `READERS_WITH_CELLS` and `CELLS` move in both directions at once, which the constant's own javadoc
-  explains: the reachability walk stops at a registered target, so every reader that reached a
-  registration only through this relation loses those cells, while this registration and its `_live`
-  view add cells of their own. Re-pin all three from the failure message rather than predicting them.
-  `KNOWN_NON_MONOTONIC` may gain a row, a reader that got dearer for joining a keyless table; a new
-  row there is a finding to argue in that set's javadoc after measuring the index shape, never a
-  tolerance to add quietly.
+  `DISTINCT` baseline showed. Its nine existing tests check the pair and need nothing from the author.
+* `MaterializationOrderTest`: one new synthetic case covering a source view that reads its
+  prerequisite from inside a `WITH` body, per the section above. It needs no production relation
+  names and covers every registration after this one.
+* `DerivedReadCostTest`: one pinned count moves, in one direction, and one pinned set may.
+  `CELLS` rises, by the number of views that reach the producer through unregistered paths, and
+  nothing falls: `registrationsReachedByView` stops the walk at a registered target, but this
+  relation's five inputs are all captured base tables, so its subtree contains no registration and no
+  reader loses a cell for the walk stopping earlier.
+  `READERS_IN_SCHEMA` does not move at all. There is no new view: the change renames one view and
+  adds one table, and the census keys on relations whose `INFORMATION_SCHEMA` kind is `VIEW`, so it
+  loses `intent_field_payload_producer` and gains `intent_field_payload_producer_live` at unchanged
+  cardinality. `READERS_WITH_CELLS` does not move either: both readers of this relation already reach
+  `intent_errors_field` and so already have cells, and the new `_live` view reaches no registration,
+  so no view gains its first cell or loses its last.
+  Re-pin `CELLS` from the failure message rather than from any figure this file states. The
+  instruction is safe whichever way the counts move, and the point of predicting only the one is that
+  a `READERS_IN_SCHEMA` that did rise would mean this change added a view it did not intend to, which
+  is a signal to keep rather than a movement to absorb.
+  `KNOWN_NON_MONOTONIC` may gain a row; with the target keyed as declared above the keyless-heap
+  reason for one is gone, so a new row there is a finding to argue in that set's javadoc after
+  measuring the index shape, never a tolerance to add quietly.
 * The inline-multiplicity report (`roadmap-tool report-inline-multiplicity`) reports rather than
   gates, and a registered relation leaves its ranking by construction, so nothing there needs
   re-pinning.
@@ -353,6 +449,10 @@ grown since, and the register growing is exactly what moves them.
 
 ## What would falsify this plan
 
+* A rewrite arm measuring as cheap as the registration. That does not falsify the diagnosis, it
+  falsifies the registration: a lever that removes the same cost for one edit to one view body and no
+  refresh wins on the ladder's own arithmetic, and the register gains no row. This is the fork, and it
+  is the one thing that has to be measured before anything here is built.
 * The refresh costing materially more than the 4 to 31 ms measured. The whole trade is one refresh
   against the re-evaluations it avoids, and a dearer refresh is a different trade. Re-price before
   landing rather than after.
@@ -575,6 +675,14 @@ small and unmeasured. The row should say the probe is redundant with the outer j
 was priced and what it measured, and that it was kept. A reason that omits this reads as settled to
 exactly the author most likely to falsify it.
 
+*Author's note (round 5 revision).* Correctness half taken and closed: the redundancy is stated in the
+plan body's new "The filter is redundant" section, and confirmed by execution as well as by reading in
+`roadmap/audits/2026-08-27-carrier-filter-redundancy-probe.md`. Cost half not taken and now explicitly
+outstanding: the body names the three arms, the doctrine that orders them, and the one round of timings
+that decides, and states that those timings cannot be taken in the reactor. The audit records why,
+including a synthetic instrument that failed to reproduce the re-derivation and must not be retried.
+The `reason` requirement stands and is written into the lever section for whichever arm ships.
+
 **7. The edge assertion pins one production pair in the class of universal properties, and the shape
 it is worried about is missing from the class whose charter is shapes.**
 `MaterializationOrderTest`'s class javadoc says it drives `MaterializeDependencies.populate` and
@@ -601,6 +709,11 @@ demonstrated on the shipped store, and the edge arriving is close to certain rat
 question "what confirms the edge arrived needs care" implies. The pin's real value is as a regression
 guard, which is a smaller claim and the one it should make.
 
+*Author's note (round 5 revision).* Taken as stated. The synthetic CTE-body case lands in
+`MaterializationOrderTest` where shapes are covered, and the production pin stays beside it with the
+regression-guard claim rather than the mechanism-establishing one. Both are written into "Nothing
+orders the refresh by hand" and the tests list.
+
 **8. "Three reason rows are wrong" overstates two of the three, and the rule invoked is cited to a
 page that does not carry it.** `intent_carrier_data_field_live`'s row reads "about 170 milliseconds
 for 15 rows on a carrier-bearing schema (the sakila example ...) and about 12 milliseconds for no rows
@@ -621,6 +734,10 @@ skill ("if your measurement disagrees with a stored reason, the stored reason ne
 than explaining away. Say so where it lives"), not on the fact model page, which carries no sentence
 about correcting stored reasons. Repointed in passing, below.
 
+*Author's note (round 5 revision).* Taken. The section is now "Two reason rows are completed and one
+is corrected", and it says which is which and why the distinction is worth keeping. The edits
+themselves are unchanged, both figures with both schemas in each row.
+
 **9. `CELLS` and `READERS_WITH_CELLS` cannot move in both directions here.** The Tests and gates
 section says both "move in both directions at once", on the reachability walk stopping at a registered
 target so that readers reaching a registration only through this relation lose those cells. Round 2
@@ -632,6 +749,9 @@ The instruction under it, re-pin from the failure message rather than predicting
 whatever happens, so this changes no step. It matters because predicting a possible decrease licenses
 accepting one, and a decrease here would be the walk doing something the plan does not expect, which
 is a signal worth keeping.
+
+*Author's note (round 5 revision).* Taken, together with finding 10. The tests list now predicts one
+moving count, `CELLS`, upward only, and says why nothing falls.
 
 Noticed, not a finding, and outside this item's scope: R831's body still carries the sentence that
 scopes the register out of it, "`meta_materialize`'s registrations are priced against their readers on
@@ -732,6 +852,10 @@ that did rise would mean this change added a view it did not intend to, which is
 extra reason: rounds 1 and 2 each edited this very sentence, for the figure it named, and neither
 looked at the direction claim underneath. A count corrected twice reads as checked.
 
+*Author's note (round 5 revision).* Taken. `READERS_IN_SCHEMA` and `READERS_WITH_CELLS` are now
+stated as not moving, with the mechanism for each, and the reason for predicting only `CELLS` is
+kept as you and finding 9 give it.
+
 **What would satisfy this round.** Question 2 is what fails, and finding 6 is the whole of it. As the
 plan stands an implementer lands a table, a view rename, seven relocated comments, a registration
 `reason`, a structural test and three re-pinned constants, in service of a probe that a three-line
@@ -823,6 +947,15 @@ is silent where the two rows above it are explicit is not a stylistic gap in a c
 is where this project keeps the argument that a registration was the right rung, and this one would
 be the first row that skipped the rung below it without saying so.
 
+*Author's note (round 5 revision).* Taken. The lever section now carries the doctrine and both of its
+discharges, and states the order as the register's rather than as this item's preference. One
+correction to the finding's framing, from the architecture read: the fact-model lever ladder and this
+doctrine are not in tension, because the ladder ranks expected payoff per lever class while the
+doctrine is a precondition on whether the middle rung's trade has been measured on the right shape at
+all. The ladder also has no rung for removing or de-correlating a naming, so calling arm A "a rewrite"
+inherits a demotion the page's own argument does not support for this shape; that sentence is in the
+body.
+
 **12. The fork has a third arm, and it is the arm that survives whichever way the deletion's
 population question goes.** Round 4 states the fork as a registration or a deletion, and prices the
 deletion's risk correctly: without the filter, the two `CASE WHEN EXISTS` probes and the window face
@@ -846,6 +979,13 @@ this item's own standard is measured rather than reasoned about. Naming it is no
 the third timing the same store and the same program can take in the same sitting as the deletion's,
 and leaving it unpriced would repeat the shape of finding 6, a lever the plan did not look at because
 it was not the lever the plan started from.
+
+*Author's note (round 5 revision).* Taken. Arm B is named as an arm with its projection hazard stated,
+and the hazard is reproduced rather than reasoned about: joining the three-column producer CTE
+directly returned exactly twice the correlated spelling's rows on the fixture in
+`roadmap/audits/2026-08-27-carrier-filter-redundancy-probe.md`. It is in the priced set, not
+recommended. The audit also records that arm B's payoff, unlike its correctness, is not measurable on
+a synthetic fixture.
 
 **What would satisfy this round.** Round 4's requirement, widened by one arm. Price, on the store the
 two registration depths were priced on: the deletion; the filter respelled as a join on a two-column
