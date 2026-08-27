@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-26
+last-updated: 2026-08-27
 ---
 
 # Planners read facts, emitters read commands: dissolve the walk and the leaf zoo
@@ -3067,10 +3067,10 @@ is not. A fifth fix closed two of the five: reading `graphitron_field_condition`
 field's own coordinate rather than trusting `intent_input_field_filter_role.authored_condition`,
 which is false on a nesting field that carries a condition.
 
-The final three misses are not the fold's, and locating them is the diff's real yield. Two are
+The final three misses are not the fold's, and locating them is the diff's real yield. One is
 `intent_field_scope_table` having no row for a field returning an author-declared connection type,
 because the rule navigates a connection through `graphitron_field_synthesis` and only a
-generator-synthesised connection has one. One is an argument whose `@reference` path ends in a
+generator-synthesised connection has one. Two are arguments whose `@reference` path ends in a
 condition hop resolving no column scope, that hop naming no foreign key for the step-target
 relation to carry. Both are filed with their coordinates. Six coordinates of that schema contribute
 nothing here that the generator does contribute, and the relation says so.
@@ -3102,10 +3102,90 @@ result.
 
 **What this increment leaves owing**: the producer conversion, which is now a matter of
 `ConditionCommands.produce` reading these rows instead of walking the classified fields, and the
-read-side refusal relation. The store has none: a coordinate whose argument classification fails is
+read-side refusal relation. The conversion is gated on the diff closing: while the fold misses a
+coordinate the producer emits, driving production from these rows would drop that coordinate's glue
+and leave a call to a method nobody generates. The next increment closes one of the three misses. The store has none: a coordinate whose argument classification fails is
 refused whole and has no filter surface, where the write partition states its refusals in two
 relations of its own. On a schema that builds that population is empty, every refusal being a build
 failure, so it is the fold's one structural gap rather than a wrong answer anyone can observe.
+
+### Conditions, seventeenth increment: the type a field navigates as, stated once
+
+The fold's diff left three coordinates the producer emits and the store could not see. One of the
+three was a rule that claims to navigate connections and navigated only half of them, and closing it
+turned out not to be a fix to that rule but the minting of a fact five rules had each been spelling
+for themselves.
+
+**The silence, and why it read as a working rule.** A field returning a connection has its generated
+SQL rooted in the connection's element table, not in the wrapper, which binds nothing. The rule that
+did that read `graphitron_field_synthesis`, the record the generator writes when the `@asConnection`
+macro rewrites a field's type expression, and took the author's pre-expansion spelling. A connection
+type the author writes out in the SDL has no such record, so the rule fell through to the field's
+own named type, that type bound no table, and the coordinate had no scope at all. Six coordinates of
+the example schema are in that population; their generator-synthesised siblings all resolved
+correctly, which is what hid it. It reads as "connections work" until you look for the ones the
+author named.
+
+**Five spellings, not one rule.** The same `COALESCE` over the synthesis record was written out at
+`intent_routine_return_binding`, `intent_field_column_scope`, `intent_field_participant_scope_table`,
+`intent_field_scope_table` and `intent_mutation_routine_seat`. All five read the same way and all
+five carried the same silence, so fixing the one the diff found would have left four spellings of a
+rule that had just been shown to be wrong. This is the two-spellings-of-one-resolution defect the
+fact model names, at five, and finding it is what turned a bug fix into a relation.
+
+**What the two relations state.** `intent_connection_element_type` answers what a connection type is
+a connection over, at the type's own grain, by the classifier's own structural test transcribed
+rather than reinvented: a field named `edges` whose element object declares a field named `node`.
+`intent_field_navigated_type` answers which type a field's own SQL navigates as, in three ranked
+rungs over it: the authored expression where a macro rewrote the field's type, else the structural
+connection's element, else the field's own named type. It is total over `graphql_field`, so a
+consumer joins it rather than left-joining it, and a `basis` column says which rung answered so a
+test can pin the rule and not only the answer.
+
+**The refusal that had to widen with it.** `intent_mutation_routine_seat` refuses a `@routine` whose
+field returns a connection, and it named the macro to do so. Now that the seat's own
+`return_type_name` navigates through both kinds of connection, that refusal reads the structural
+shape instead, so a routine returning an author-declared connection is refused for the reason it
+should be rather than admitted and then failing to bind. Verdict counts on the example schema are
+unchanged, that shape being unexercised.
+
+**What moved, measured on a store captured from the example schema at 928 fields.** The fold covers
+89 coordinates where it covered 88, and its misses against the producer's 91 fall from three to two.
+Both remaining are the `@reference`-path-ending-in-a-condition-hop silence, which is a different
+item. `intent_field_scope_table` gains six rows, exactly the six `CONNECTION_ELEMENT` coordinates,
+and `intent_argument_scope_table` gains their arguments. `intent_field_column_scope`,
+`intent_field_participant_scope_table`, `intent_routine_return_binding` and the seat relation's
+verdicts are row-identical, so the navigation relation changed one relation's content and four
+relations' spelling.
+
+**Four sites read it and the fifth could not, which is the finding worth keeping.** Repointing
+`intent_field_column_scope`'s named-type arm makes that arm fifty times slower: 89 milliseconds
+becomes 4308. The cause is not the navigation relation. That arm carries a correlated anti-join
+against `intent_authored_field_claim`, a recursive view, and it is cheap only under the plan H2 picks
+when the navigated type is a literal expression over base tables. Every other form was measured and
+every one flipped the plan: reaching the navigation by scalar subquery, reaching the connection
+relation by scalar subquery, and spelling the `edges`/`node` shape inline as a base-table subquery
+each failed to finish inside 200 seconds, and materialising the navigation into an indexed table and
+joining that measured 3952. So the arm is fast by luck of a plan rather than by construction, the
+repointing exposed a defect it did not create, and the rewrite is filed as its own item rather than
+taken in passing.
+
+**The registration that shipped without an index, found the same way the last one was.** The
+projection is the shape two earlier essays on this family measured and refused, on the ground that
+it makes `DerivedReadCostTest` fail: with the navigated type a column rather than an expression, H2
+stops probing `intent_resolved_type_binding` and starts scanning it. That registration had no index.
+Adding one on the key its readers actually hold closed the regression for both scope relations and
+removed three pairs the pinned set had carried since before this increment. It is the previous
+increment's finding on a third relation, and it is now three for three: an unkeyed materialized
+table is not a faster shape, it is a differently shaped one, and which of the two wins depends on
+what the reader has in hand.
+
+**Where the counter and the clock disagree, recorded rather than resolved.** Three readers in the
+write family are still counted non-monotonic through that binding. Their wall clocks did not move:
+the carrier role 14 milliseconds before and after, the payload column 157 against 154, the payload
+refusal 8 against 9. The relation that did move is the one not in that set, the participant scope
+table at 47 milliseconds becoming 63. The pinned set carries all of it, which is what that set is
+for; nothing here proposes changing what the gate asserts.
 
 ### Emitter half: family by family
 

@@ -65,17 +65,23 @@ class MaterializeRegistryGateTest {
      * than by probing a coordinate. A row of that kind is falsified by a new reader rather than by
      * a new figure, so it is the reader roster that wants re-reading when one is added, not the
      * scan counts. Named rather than counted, because the roster gains rows from concurrent work
-     * and a count in this paragraph is stale the moment one lands:
+     * and a count in this paragraph is stale the moment one lands.
+     *
+     * <p>A row can also be falsified by the readers changing under it, and one has been.
+     * {@code intent_resolved_type_binding} sat here on a measurement that every index shape made
+     * some reader dearer, taken while every reader spelled its type expression inline; H2 pushes
+     * such an expression down into the probe, so the index had nothing to add and something to
+     * cost. Once {@code intent_field_navigated_type} stated that expression as a relation, the
+     * readers joined a column instead and the planner began scanning this target where it had
+     * probed. The index on the coordinate they actually hold is what closed that, and it removed
+     * three pairs {@code DerivedReadCostTest} had carried rather than adding any, so the row went.
+     * The argument it was resting on was sound and is simply about a tree that no longer exists,
+     * which is the failure mode a roster of measured declines has: the readers, not the figures,
+     * are what a row is really pinned to.
+     *
+     * <p>The rows that remain:
      *
      * <ul>
-     *   <li>{@code intent_resolved_type_binding}: every shape tried buys more than it costs in
-     *   total and none is free of a reader it makes dearer. On the coordinate its thirteen readers
-     *   join, with or without the {@code candidates} column, {@code intent_argument_scope_table}'s
-     *   own source view goes from 559 scans to 952; on the full grain, which is the one target
-     *   here whose columns would also admit a unique index, that reader is spared and
-     *   {@code intent_node_id_decode_defect} instead goes from 1901 to 2381 with two more beside
-     *   it. Declining it leaves the largest single total gain on the table, which is the honest
-     *   cost of the rule that a shared investment may not make another reader worse.</li>
      *   <li>{@code intent_field_column_scope}: on the field coordinate its three readers join,
      *   with or without {@code basis}, it takes {@code intent_field_reference_discovery} from 148
      *   scans to 246 and returns 59 elsewhere. Nothing to weigh.</li>
@@ -143,7 +149,6 @@ class MaterializeRegistryGateTest {
      * </ul>
      */
     private static final Set<String> NO_INDEX = Set.of(
-        "intent_resolved_type_binding",
         "intent_field_column_scope",
         "intent_argument_column_scope",
         "intent_argument_column_match",

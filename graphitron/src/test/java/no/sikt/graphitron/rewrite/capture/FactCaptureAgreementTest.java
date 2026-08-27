@@ -432,6 +432,8 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_chain_node", Arm.DERIVED);
         registrations.put("intent_field_chain_terminus", Arm.DERIVED);
         registrations.put("intent_field_reference_discovery", Arm.DERIVED);
+        registrations.put("intent_connection_element_type", Arm.DERIVED);
+        registrations.put("intent_field_navigated_type", Arm.DERIVED);
         registrations.put("intent_routine_return_binding", Arm.DERIVED);
         registrations.put("intent_resolved_type_binding", Arm.DERIVED);
         registrations.put("intent_resolved_node_key_column", Arm.DERIVED);

@@ -104,7 +104,7 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 107;
+    private static final int READERS_IN_SCHEMA = 109;
 
     /** Views whose derivation reaches at least one registration's target. */
     private static final int READERS_WITH_CELLS = 67;
@@ -394,8 +394,9 @@ class DerivedReadCostTest {
         "intent_argmapping_pair|intent_argmapping_bound_parameter_type",
         "intent_errors_field|intent_errors_field_member",
         // The unindexed named-type join; the lever is filed on the roadmap, measured above.
-        "intent_carrier_data_field|intent_carrier_routine_hop",
-        "intent_carrier_data_field|intent_mutation_routine_seat",
+        // Two of these four left when the type binding gained an index on the key its readers
+        // hold, along with the scope table's own cell below: the carrier's two readers stopped
+        // being non-monotonic outright, so the pairs go rather than being kept as history.
         "intent_spelled_table|intent_carrier_routine_hop",
         "intent_spelled_table|intent_mutation_routine_seat",
         // The instrument's own floor, four scans apiece; measured above.
@@ -413,12 +414,21 @@ class DerivedReadCostTest {
         // hundred thousand on the two above it; measured above.
         "intent_field_reference_step_hop|intent_mutation_payload_refusal_live",
         "intent_field_reference_step_hop|intent_mutation_payload_column_live",
-        // The scope family's payload rung, where the counter and the clock disagree outright;
-        // measured above. One pair, where three stood before the field-grain scope table was
-        // registered: registering it moved this rung's reach onto the source view, and the two
-        // fan-outs that reached the rung only through the field grain stopped reaching it, the
-        // walk now stopping at the target they read.
-        "intent_carrier_data_field|intent_field_scope_table_live",
+        // Three readers reached through the navigation relation, where the counter and the clock
+        // disagree outright. Stating the navigated type as a relation rather than as an inline
+        // expression is what put them here: H2 pushes an expression down into the type binding's
+        // probe and cannot push a projected column, so under the new plan the registered binding
+        // is scanned where the view it replaced was evaluated restricted. An index on the binding
+        // closed that for the two scope relations directly above these readers and did not close
+        // it here. What says these three are the counter's artefact and not a cost is the clock,
+        // measured on a store captured from the sakila example schema, before against after: the
+        // carrier role 14 ms against 14, the payload column 157 against 154, the payload refusal
+        // 8 against 9. Nothing moved. The relation the readers actually pay for did: the
+        // participant scope table went 52 ms to 63, and it is not in this set, which is the
+        // ordering worth noticing.
+        "intent_resolved_type_binding|intent_input_field_carrier_role",
+        "intent_resolved_type_binding|intent_mutation_payload_column_live",
+        "intent_resolved_type_binding|intent_mutation_payload_refusal_live",
         // The same rung, reached by the one relation in the write family that still expands the
         // scope family: the write payload's own rule, which is now a registration's source view
         // and so is reached here rather than by everything above it. Six pairs stood beside this
@@ -444,7 +454,14 @@ class DerivedReadCostTest {
      * a relation made non-terminating by construction rather than by being slow, because a cell that
      * is merely slow could stop being so on a faster machine.
      */
-    private static final Set<String> KNOWN_EXHAUSTED = Set.of();
+    private static final Set<String> KNOWN_EXHAUSTED = Set.of(
+        // The membership fold read with the type binding unregistered. The fold reaches that
+        // binding through the field-grain scope table, which now reads intent_field_navigated_type
+        // rather than spelling the type expression itself, and with the binding a view the whole
+        // chain is re-evaluated per contributing coordinate. Exhaustion here is evidence for the
+        // registration rather than against it: the cheap side is the registered one, and this
+        // gate only fails when the registered side is the expensive one.
+        "intent_resolved_type_binding|intent_condition_membership");
 
     @TempDir
     static Path tmp;
