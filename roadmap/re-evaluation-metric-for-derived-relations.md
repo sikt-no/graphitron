@@ -1,7 +1,7 @@
 ---
 id: R849
 title: "Measure re-evaluation rather than naming, so a materialization cut set can be chosen on evidence"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 2
 theme: model-cleanup
@@ -639,6 +639,159 @@ moving a row into U can shift them. The example now states the eight-outranks-it
 recorded marginals give, and derives the violation from the class populations: at most three of the
 eight can be A and at most three U, so at least two are B or C. Slice 3 restates the buckets from its
 own run.
+
+### Round 5 (2026-08-27, In Review -> Done, reviewer session session_014R3TSfjFfZQzoms4otDrVn)
+
+Verdict: rework. Three findings. None of them is about the quality of the code, which is the strongest
+part of this item; two are about the disposition of a negative result and one is about a figure the
+disposition rests on.
+
+What I verified first, because the findings only make sense against it. The instrument is real and
+well built. `ViewReferences` reads position off H2's normalized stored definitions through jOOQ's
+query object model, and the risk this plan said to settle before building anything on top of it is
+settled positively: a join's operands are distinguishable by identity against the visit path, a
+self-naming common table expression is visible as one, and correlation is read by comparing the
+qualifiers a query level uses against the names its own `FROM` binds. Twenty cases pin it, and the ones
+that earn their place are the negative controls, `uncorrelatedSubqueryIsNotPerRow`,
+`plainCommonTableExpressionIsNotRecursive` and `aliasIsNotARead`, without which the classifier could
+reach the right answer on every positive case by calling every subquery correlated and every `WITH`
+recursive. `MaterializeDependencies` now reads through that one walk rather than carrying its own,
+which is the consolidation the home argument was made on and leaves one set of H2 normalization rules
+in the tree instead of two. `ReEvaluationMetric` weights each position, charges refresh separately
+from reads, and scores an arbitrary cut set; its eleven cases force the weights to one so every
+expectation is derivable by hand from a three-line body, and the two that exercise weighting assert a
+ratio rather than a value, which is the only assertion available without a second implementation to
+agree with. `refreshSourcesDoNotDemoteWhatTheyName` pins the sharper of the two defects the real store
+exposed.
+
+The classification table audits clean on the rows I checked against `meta_materialize`, which holds
+twenty registrations as the table says. `intent_mutation_write_destination`'s reason records "it names
+this rule four times and correlates into it" and 12983 milliseconds falling to 5.4, and separately
+records the join reversal, which is what makes slice 3's account of that row's disagreement correct
+rather than convenient. `intent_node_id_decode_hop_column`'s reason records the walk not finishing
+inside a two-minute timeout. `intent_carrier_data_field`'s figures do price the refresh (about 170 ms
+for 15 rows, about 12 ms carrier-free) and a restructure its own words credit with the
+49-seconds-to-170-milliseconds move, so the class-U redefinition earns its place rather than rescuing a
+row. `StoreFixtureGuardTest` caught both new test classes booting stores of their own, and the answer
+was a fifth harness declared beside the other four with the routing message extended, rather than an
+exemption. Full reactor green on this tree under `mvnd install -Plocal-db`, all 14 modules.
+
+**1. The gate failed, and the negative branch was not executed.** (Question 3: the implementation is
+correct *and* the change the spec approved.)
+
+The outcome is negative, and I reproduced it: eight inversions across the seventeen scored
+registrations where the gate demanded zero. The plan states one disposition for that outcome, and it is
+the most-reviewed clause in the item, written because Round 2 found the branch stated only by
+implication: "If the gate fails, the new weighted instrument and its tests are deleted, and the
+uncommitted probe stays uncommitted." What is submitted for Done is the other disposition.
+`ViewReferences`, `ReEvaluationMetric` and both test classes are in the tree, and the item asks for its
+file to be deleted.
+
+The slice-3 section argues for keeping them, and the argument is not a bad one: the instrument does
+things nothing in the tree did before, at least two of the eight inversions are the comparison rather
+than the instrument, and the gate set a present-day set-relative score against historical
+per-relation measurements, which is a defect in the gate. I am not disputing any of it. What I cannot
+do at this gate is ratify it. It reverses the clause a review round produced, on the implementer's own
+judgment, which is the case the reviewer rule exists for; and the section making the argument says "the
+bar should not be quietly lowered now that the number is known" directly above a disposition that is
+materially what a passing gate would have produced. The prose and the disposition disagree, and which
+one holds is the item's central question rather than a matter of phrasing.
+
+One complication argues for settling this in the plan rather than either way at the gate, and the plan
+could not have known it when it wrote the branch. Slice 1 made `ViewReferences` the tree's single
+definition walk, `MaterializeDependencies` reading through it. So "the new weighted instrument and its
+tests" no longer names one thing. Read widely it takes the walk with it, which means either stranding
+that consolidation or reverting main scope to a duplicate walk, leaving a worse tree than before the
+item started. Read narrowly it takes `ReEvaluationMetric` and its test, and leaves main scope carrying
+`Position`, `Enclosure` and the driver resolution for a consumer that no longer exists. The branch was
+written against an instrument sitting entirely in test scope beside `UnregisteredRelation`, and neither
+reading is the shape of what shipped.
+
+What would satisfy this: either arm, and the choice is the author's rather than mine. Execute the
+branch as written, saying which reading of it applies and what becomes of the consolidated walk. Or keep
+the instrument and revise the plan so that keeping it is a decision somebody reviewed, replacing the
+negative branch with what the run established: that the gate as specified compared two quantities, and
+that the instrument is worth keeping on grounds independent of the ranking test it failed. That is a
+plan-body change, so it wants a `Ready -> Spec` reopen, which is unguarded, and a fresh sign-off from a
+session other than whoever lands the revision, rather than a Done approval that ratifies the reversal
+silently.
+
+**2. The figures that soften the failure do not reproduce, and the one about the band that matters
+most inverts.** (Question 3, and question 4: the completeness evidence is a number.)
+
+I ran the instrument against the capture a full build leaves at
+`graphitron-maven-plugin/target/it-store`, with the seventeen classified as this item's table
+classifies them, counting an inversion exactly as slice 3 defines it: one registration outranking one
+in a strictly higher class, the three class-U rows excluded, ties not counted. Two of the three
+reported figures reproduce exactly. The weighted marginal reading gives **eight** inversions, and solo
+value gives **eighteen**. Both match, which is the evidence that I am counting the way slice 3 counted
+and reading the same store.
+
+The third does not. "Scoring the same seventeen with every weight forced to one, which is the naming
+count both shipped metrics compute, gives twelve" comes out at **ten** on the same store under the same
+reading that reproduces the other two. I could not reach twelve under any variant I tried: marginals
+over reads alone rather than total cost give five uniform and six weighted, and counting ties as
+inversions adds one, not two.
+
+The claim that rests on it moves further than the two counts do. "The band that matters most is
+untouched: five B-over-A inversions before weighting and five after" reproduces as **three before and
+five after**. Weighting does not leave that band alone. It adds two inversions to it, both against
+`intent_node_id_decode_hop_column`, the recursive class-A row, which cardinality weighting pushes below
+`intent_errors_field` (568325 against 53466) and `intent_field_reference_step_hop` (67320) where the
+unweighted reading has all three A rows on top. So the shape of the result is not "weighting helps in
+the small band and does nothing in the large one" but "weighting helps in the small band and hurts in
+the large one", and the cause is the one this section already names third: the recursive weight is a
+proxy for iterations the walk cannot see, so the one registration bought for recursion is
+systematically under-scored while cardinality-driven rows inflate past it. That connection is a real
+finding the section is one step away from and states the opposite of.
+
+Two honest caveats, neither of which I think accounts for the gap. My run reports 38 root readers where
+this section reports 37, so I may not be on precisely the store slice 3 read, though the DDL, the
+example schema and the generator are all unchanged since that commit and the two figures that do
+reproduce reproduce exactly. And I may be counting the uniform reading differently than slice 3 did,
+which is itself the point: if the twelve was taken under a different reading than the eight, then
+"twelve falling to eight" compares two quantities and the improvement claim needs restating either way.
+
+What would satisfy this: recheck the uniform figure and the B-over-A sentence against the tree, and
+state whichever numbers hold. If the corrected figures stand, they change what the section concludes
+about what weighting buys, which bears directly on finding 1.
+
+**3. At Done the gate's answer has no home, and the instrument carries no statement of its standing.**
+(Question 4: what demonstrates the item is complete.)
+
+Everything the run established lives in this file, and this file is deleted at Done: the inversion
+counts, the three separated causes, and the two things a follow-up would need. Nothing committed
+reproduces any of it. The figures came from a run that is not in the tree, and neither test class scores
+the register or asserts anything about the twenty. That is not a complaint about a missing harness,
+which the plan never asked for; finding 2 is what it costs. The item's only deliverable is the gate's
+answer, and the answer is about to be deleted.
+
+The plan named the durable home, `roadmap/changelog.md`, "one of the three permanent roadmap
+artifacts". By this repo's convention the Done reviewer writes that entry in the approving commit, so
+its absence now is not the implementer's omission and I would have written it had I approved. It does
+not close the gap by itself. `ReEvaluationMetric` stays in the tree reading as an instrument in good
+standing: its javadoc says what it measures and why cardinality is read once, and says nothing about
+having been pointed at the register and disagreeing with it in eight places. The next reader to score a
+cut set with it, which is what it is for and what R848 will want, meets a number that is real with
+nothing to say how far it can be read as cost. That is the error this plan warns about twice, once
+against the shipped report and once against the probe.
+
+What would satisfy this: a durable statement of what the instrument was shown to do, wherever the
+author judges it belongs and short enough not to rot. `ReEvaluationMetric`'s own javadoc is the obvious
+place, saying it was run against the register, did not reproduce the ranking the reasons record, and
+why the two sides of that comparison are not the same quantity. With the changelog entry, and a Backlog
+item carrying the two follow-up needs, re-measuring the twenty against today's bodies and a ranking
+that prices sets rather than members, so those outlive the file as well.
+
+#### Non-blocking
+
+`ViewReferences.Visit.namesARelation` is written at both construction sites and never read, and
+`Visit.relation()` returns `name` unchanged beside the accessor `Visit.name()`. Bears on neither gate
+question.
+
+`## Slice 3` sits below `## Reviewer findings`, where the item-file convention puts the findings
+section below every plan section. I appended this round inside the findings section rather than at the
+end of the file, so it stays with the other rounds.
 
 ## Slice 3: the gate was run, and it fails
 
