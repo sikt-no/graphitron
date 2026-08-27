@@ -514,3 +514,115 @@ Two broken pointers corrected in this commit, no design prose touched: R676 has 
 item file is gone from `roadmap/`, so both references to it now say so.
 
 Status stays Spec.
+
+### Round 6, Spec → Ready, revisions requested (session `01N57zenZX5hF4QAcGRk6pzx`, 2026-08-27)
+
+Rounds 2 through 5 stay closed and I re-derived rather than trusting the previous rounds. The
+load-bearing emission claim holds in both paths: `ConditionGlueRenderer.buildGlueMethod` types the
+glue's `table` parameter from the coordinate (`row.table().tableClass()` reaching it as
+`jooqTableClass`), `PathFragments.emitTwoArgMethodCall` passes bare aliases, `ParamSource.Table` is
+an empty record, and `resolveConditionJoinTarget` performs exactly the `typeName()` decode the
+admission deliverable proposes to replace, with `validateConditionParamTables` citing it
+("Same predicate as `resolveConditionJoinTarget`"). `reflectTableMethod` has the four callers the
+plan names. Every documentation coordinate reads as described: the three `Table<?>`-invariant
+statements in `add-custom-conditions.adoc`, the four concretely-typed prose signatures that already
+contradict them, `condition.adoc`'s "one method cannot mean both tables" rung and its
+`iRegelverksamling(Regelverksamling rs, …)` example, `global-id.adoc`'s
+`[#multitable-filter-inputs]` shape claim, and `polymorphic-types.adoc` carrying no filter material.
+Every test home, fixture and census relation exists as named, and `jvm_method` carries exactly
+`return_type`, `declared_return_type` and `returns_condition`, with no static flag and no exception
+list, so the out-of-scope reason for the shape half is real (see F9 for its limit). Question 1
+passes: I could state the consumer-facing outcome from the body alone.
+
+Three findings, all inside the census-side deliverable the round-5 revision added. The decision, the
+admission deliverable, the `AmbiguousMethod` deliverable, the documentation deliverable and the
+pipeline, compilation and execution tests are unaffected and need no rework.
+
+**F7. The mixed wildcard-and-concrete set does not read as the wildcard case on the census side, and
+the arrival guard as written cannot make it.** The path-step deliverable rules that a slot mixing a
+wildcard declaration with concrete ones is the wildcard arm, so the build rejects such a set at a
+filter site. The census deliverable claims the store agrees, and the acceptance criterion and the
+model-tier test bullet both pin it ("a mixed wildcard-and-concrete set reads as the wildcard case on
+both sides"). It does not, and the mechanism the bullet cites (verdict ordering) is not the one that
+decides the case.
+
+`intent_condition_method_route`'s `arrival` CTE joins `sql_table t ON t.class_fqn =
+tr.referenced_class` at `position = 1, type_path = ''`. A `Table<?>` slot's `referenced_class` is
+`org.jooq.Table` (the same string the defect view's `WILDCARD_TARGET_PARAMETER` arm matches on, and
+what `SeededStore.seedConditionMethod`'s javadoc records as the class the census keeps at the root of
+it), which no generated table is, so a wildcard declaration contributes no arrival row at all. Take
+`cond(Customer, Table<?>)` beside `cond(Customer, Address)`: one arrival row, one distinct
+`sql_table`, so the new guard ("arrival rows naming more than one distinct `sql_table`") does not
+fire, the pair routes `customer->address`, and it therefore never enters the defect view, whose
+population is `named` minus the pairs a route row exists for. No verdict is reached for it, so no
+ordering decides anything. The build rejects; the store routes. On the one case the test bullet
+identifies as "the case where the two rules could most easily be spelled differently in the two
+modules", they are.
+
+The ordering argument does hold for a different population: a three-declaration set that both
+carries a wildcard and disagrees on arrival is suppressed by the guard, does reach the defect view,
+and the wildcard arm (an `EXISTS` over any position-1 naming `org.jooq.Table`) fires ahead of the new
+verdict. So the bullet is right about precedence and wrong about which sets reach it.
+
+What would satisfy: either widen the suppression so a pair any of whose position-1 slots names
+`org.jooq.Table` routes nothing, which is one more `NOT EXISTS` on the same CTE and makes the
+wildcard verdict genuinely what both sides say; or drop the both-sides claim and record the
+divergence as the store's own reading (the census answers what a signature declares, so it routes
+the concrete arm where the build refuses to choose). Either is a clause, and acceptance plus the test
+bullet follow whichever.
+
+**F8. Two shipped pins invert, and the deliverable's blast radius does not name them.** The
+deliverable says "Only the disagreeing set moves" and "nothing else in the view moves", and the test
+bullet reads as additive: `ConditionMethodRouteTest` "gains the disagreeing set … asserting no route,
+beside its existing agreeing-set case". Both halves are the wrong way round against the tree.
+
+- `ConditionMethodRouteTest.twoOverloadsLandingOnTwoTablesAreTwoRoutes` already seeds exactly the
+  disagreeing set and asserts `containsExactly("bridge customer->address", "bridge
+  film_actor->actor")`, under the section heading "Overloads and the guard that is deliberately
+  absent" and a javadoc stating the pre-admission rule. So the disagreeing case is a shipped pin to
+  invert, prose and heading included, not a case to add. And there is no existing agreeing-set case:
+  no case in that class seeds two declarations landing on one table. The agreeing set is the one that
+  needs writing, and it is what would pin the outer-`UNION` collapse the deliverable rests on.
+- `ArgumentReferenceStepTargetTest.twoOverloadsOfOneConditionAreTwoTargetsAtOnePosition` seeds the
+  same disagreeing set through the argument-site hop view and asserts `film->actor` and
+  `film->language` with `targets = 2` and `candidates = 2`, under a javadoc reading "Overload
+  multiplicity lands in the arities and nowhere else". Suppression empties that chain, so a second
+  model-tier class and a downstream relation's stated rationale move too. The test bullet names only
+  the two `ConditionMethodRoute*` classes.
+- `ConditionMethodRouteTest.aMethodTheCensusSaysReturnsNoConditionRoutesAnyway`'s javadoc repeats the
+  DDL's no-return-type-guard rationale in the same words the stale-rationale bullet retires ("a chain
+  the generator refuses as ambiguous"). That bullet scopes the rewrite to the two views' comments.
+
+What would satisfy: name the two inverting pins and the third test's prose, and state the direction,
+so the implementer reads this as flipping a shipped assertion about a shipped relation plus adding
+the agreeing case, rather than as three new cases beside cases that already say the opposite. This is
+the roster failure mode round 5 flagged at this coordinate, one module over.
+
+**F9. Arity and positional type identity *are* expressible over the census; only static-ness and
+`throws` are not.** The out-of-scope bullet and the deliverable's closing paragraph both attribute
+the whole in-scope/out-of-scope split to capture. `jvm_method_parameter` carries `position`,
+`parameter_name`, `parameter_type` and `declared_parameter_type`, and
+`jvm_method_parameter_type_ref` carries `referenced_class` per position, so arity agreement and
+per-position type and name identity are all expressible as the store stands. The conjunction is
+indeed not, which is what the sentence literally claims, but the gap the bullet goes on to describe
+("a set disagreeing on shape rather than on arrival still routing in the store while the build
+rejects it") is in practice the arity case, expressible with one `NOT EXISTS` over
+`jvm_method_parameter`, and arity is the disagreement the admission deliverable itself calls "the
+common overload case `AmbiguousMethod` exists for". So the boundary is partly a judgement call. Not a
+redesign, and the scope may stay exactly where it is; the reason should say which part is capture and
+which part is choice, since the revision leans on capture to justify the line.
+
+Non-blocking, no revision required:
+
+- "The guard sits on the existing `arrival` CTE, whose key is already the pair" understates the CTE:
+  its key is the pair plus `descriptor` plus the three arrival-table columns, which is precisely why
+  an overload set is several rows there. The guard is a grouping over `arrival` by the pair; an
+  implementer correlating a `NOT EXISTS` on the CTE's own key would write a no-op.
+- "an agreeing set needs nothing: it resolves to one route today and keeps doing so" is true of
+  arrival agreement but not of the item's headline shape. The reporter's per-participant set differs
+  on the *departure* slot, so it is several route rows, one per departing table, which is the
+  `from_table` column's documented reading (a candidacy the chain narrows) and needs no change.
+  Worth a word, because the sentence invites a reader to expect one row for the case the item is
+  about.
+
+Gate: question 2, and confined to one deliverable. Status stays Spec.
