@@ -1,7 +1,7 @@
 ---
 id: R847
 title: "A reference path ending in a condition hop resolves no column scope"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: classification-model
