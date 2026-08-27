@@ -2,12 +2,13 @@ package no.sikt.graphitron.model;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.derive.ViewReferences;
+import no.sikt.graphitron.model.derive.ViewReferences.Enclosure;
 import no.sikt.graphitron.model.derive.ViewReferences.Position;
 import no.sikt.graphitron.model.derive.ViewReferences.Reference;
 import no.sikt.graphitron.model.test.FactStores;
 import org.jooq.DSLContext;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -31,15 +32,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * the classifier actually meets is H2's normalization of what an author wrote, not the authored
  * spelling. Round-tripping through the catalog is what makes these cases evidence about the walk
  * that runs in production rather than about a string.
+ *
+ * <p>One store for the class rather than one per case. A schema boot is the most expensive thing a
+ * fact-store test can do and this module counts them against a budget; nothing here needs isolating
+ * anyway, every case naming its own views and none of them writing a row.
  */
 @DisplayName("ViewReferences reads a reference's position out of a stored definition")
 class ViewReferencesTest {
 
-    private GraphitronModelStore store;
-    private DSLContext dsl;
+    private static GraphitronModelStore store;
+    private static DSLContext dsl;
 
-    @BeforeEach
-    void openStore() {
+    @BeforeAll
+    static void openStore() {
         store = FactStores.inMemory();
         dsl = store.dsl();
         dsl.execute("CREATE TABLE probe_base (a INT, b INT)");
@@ -47,8 +52,8 @@ class ViewReferencesTest {
         dsl.execute("CREATE VIEW probe_leaf AS SELECT a, b FROM probe_base");
     }
 
-    @AfterEach
-    void closeStore() {
+    @AfterAll
+    static void closeStore() {
         store.close();
     }
 
@@ -60,7 +65,7 @@ class ViewReferencesTest {
         assertThat(referencesTo("probe_plain", "probe_leaf"))
             .singleElement()
             .satisfies(reference -> {
-                assertThat(reference.enclosing()).isEmpty();
+                assertThat(reference.positions()).isEmpty();
                 assertThat(reference.position()).isEmpty();
                 assertThat(reference.reEvaluated()).isFalse();
             });
@@ -165,6 +170,81 @@ class ViewReferencesTest {
     }
 
     @Test
+    @DisplayName("a join names its driving side, which is what a weight is read against")
+    void joinNamesItsDrivingSide() {
+        view("probe_driven", "SELECT o.a FROM probe_other o LEFT JOIN probe_leaf l ON o.a = l.a");
+
+        assertThat(driversIn("probe_driven", "probe_leaf", Position.INNER_SIDE))
+            .containsExactly("probe_other");
+    }
+
+    @Test
+    @DisplayName("a correlated subquery names the level it borrows from, not its own relations")
+    void correlationNamesTheLevelItBorrowsFrom() {
+        view("probe_borrows", "SELECT o.a FROM probe_other o "
+            + "WHERE EXISTS (SELECT 1 FROM probe_leaf l WHERE l.a = o.a)");
+
+        assertThat(driversIn("probe_borrows", "probe_leaf", Position.CORRELATED))
+            .containsExactly("probe_other");
+    }
+
+    @Test
+    @DisplayName("a recursive expression names the terms its walk accumulates over")
+    void recursionNamesItsTerms() {
+        view("probe_walk", "WITH RECURSIVE walk (a, b) AS ("
+            + "  SELECT a, b FROM probe_leaf "
+            + "  UNION ALL "
+            + "  SELECT l.a, l.c FROM walk w JOIN probe_other l ON l.a = w.b"
+            + ") SELECT a FROM walk");
+
+        assertThat(driversIn("probe_walk", "probe_leaf", Position.RECURSIVE))
+            .containsExactlyInAnyOrder("probe_leaf", "probe_other");
+    }
+
+    @Test
+    @DisplayName("a driving side spelled as a fold over a common table expression names the "
+        + "relations that expression's body reads, not nothing")
+    void aFoldNamesWhatItFolds() {
+        view("probe_folded", "WITH fold (a) AS (SELECT a FROM probe_other) "
+            + "SELECT f.a FROM fold f LEFT JOIN probe_leaf l ON l.a = f.a");
+
+        assertThat(driversIn("probe_folded", "probe_leaf", Position.INNER_SIDE))
+            .containsExactly("probe_other");
+    }
+
+    @Test
+    @DisplayName("a correlated subquery whose outer level is a fold names what the fold reads")
+    void correlationThroughAFoldNamesWhatItFolds() {
+        view("probe_folded_probe", "WITH fold (a) AS (SELECT a FROM probe_other) "
+            + "SELECT f.a FROM fold f "
+            + "WHERE EXISTS (SELECT 1 FROM probe_leaf l WHERE l.a = f.a)");
+
+        assertThat(driversIn("probe_folded_probe", "probe_leaf", Position.CORRELATED))
+            .containsExactly("probe_other");
+    }
+
+    @Test
+    @DisplayName("a driving side that names a relation directly is not resolved through anything, "
+        + "so the fold rule cannot widen an answer that was already right")
+    void adirectDrivingSideIsLeftAlone() {
+        view("probe_direct", "WITH fold (a) AS (SELECT a FROM probe_other) "
+            + "SELECT b.a FROM probe_base b LEFT JOIN probe_leaf l ON l.a = b.a");
+
+        assertThat(driversIn("probe_direct", "probe_leaf", Position.INNER_SIDE))
+            .containsExactly("probe_base");
+    }
+
+    @Test
+    @DisplayName("a driving side the walk cannot name is empty rather than absent, so a caller "
+        + "weighting by cardinality can tell unknown from one")
+    void unnameableDrivingSideIsEmpty() {
+        view("probe_values", "SELECT o.a FROM probe_other o "
+            + "WHERE EXISTS (SELECT 1 FROM (VALUES (1)) v (x) WHERE v.x = o.a)");
+
+        assertThat(positionsIn("probe_values", "probe_other")).containsExactly(List.of());
+    }
+
+    @Test
     @DisplayName("an alias sharing a relation's name is not a read of it")
     void aliasIsNotARead() {
         view("probe_alias", "SELECT probe_leaf.a FROM probe_base probe_leaf");
@@ -190,17 +270,26 @@ class ViewReferencesTest {
             .hasMessageContaining("probe_absent");
     }
 
-    private void view(String name, String body) {
+    private static void view(String name, String body) {
         dsl.execute("CREATE VIEW " + name + " AS " + body);
     }
 
-    private List<Reference> referencesTo(String view, String relation) {
+    private static List<Reference> referencesTo(String view, String relation) {
         return ViewReferences.readBy(dsl, view).stream()
             .filter(reference -> reference.relation().equals(relation))
             .toList();
     }
 
-    private List<List<Position>> positionsIn(String view, String relation) {
-        return referencesTo(view, relation).stream().map(Reference::enclosing).toList();
+    private static List<String> driversIn(String view, String relation, Position position) {
+        return referencesTo(view, relation).stream()
+            .flatMap(reference -> reference.enclosing().stream())
+            .filter(enclosure -> enclosure.position() == position)
+            .flatMap(enclosure -> enclosure.drivers().stream())
+            .distinct()
+            .toList();
+    }
+
+    private static List<List<Position>> positionsIn(String view, String relation) {
+        return referencesTo(view, relation).stream().map(Reference::positions).toList();
     }
 }

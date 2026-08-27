@@ -89,25 +89,51 @@ public final class ViewReferences {
     }
 
     /**
-     * One reference to one relation, with the chain of re-evaluating positions enclosing it,
+     * One structure that re-evaluates what it encloses, and the relations it re-evaluates them
+     * against: the driving side of a join, the query level a subquery borrows a name from, or the
+     * terms a recursive walk accumulates over.
+     *
+     * <p>The drivers are here because a position on its own says a rule runs repeatedly and not how
+     * repeatedly, and the difference between a probe against six rows and one against nine hundred
+     * is the whole question. They name relations rather than carrying a count: what a relation
+     * holds is a property of the store, which a caller reads when it wants to weight, and what
+     * drives what is a property of the definition, which is this walk's to state.
+     *
+     * <p>Empty drivers mean the walk could not name the driving side, not that there is none. A
+     * caller weighting by cardinality should treat that as unknown rather than as one.
+     */
+    public record Enclosure(Position position, Set<String> drivers) {
+
+        public Enclosure {
+            drivers = Set.copyOf(drivers);
+        }
+    }
+
+    /**
+     * One reference to one relation, with the chain of re-evaluating structures enclosing it,
      * outermost first. An unenclosed reference carries an empty chain and is evaluated once per
      * naming.
      *
-     * <p>The chain rather than a single label because the positions nest and their multipliers
+     * <p>The chain rather than a single label because the structures nest and their multipliers
      * multiply: a view on the inner side of a join inside a recursive term is evaluated once per
      * iteration <em>times</em> once per driving row, and a caller that kept only the strongest
      * would have to re-derive the rest. {@link #position()} is the single-label reading for a
      * caller that wants one.
      */
-    public record Reference(String relation, List<Position> enclosing) {
+    public record Reference(String relation, List<Enclosure> enclosing) {
 
         public Reference {
             enclosing = List.copyOf(enclosing);
         }
 
+        /** The positions enclosing this reference, outermost first. */
+        public List<Position> positions() {
+            return enclosing.stream().map(Enclosure::position).toList();
+        }
+
         /** The strongest position enclosing this reference, or empty when nothing re-evaluates it. */
         public Optional<Position> position() {
-            return enclosing.stream().max(Comparator.naturalOrder());
+            return positions().stream().max(Comparator.naturalOrder());
         }
 
         /** Whether anything re-evaluates this reference beyond the once its naming already costs. */
@@ -116,9 +142,36 @@ public final class ViewReferences {
         }
     }
 
-    /** A visited relation reference, with everything about its surroundings the walk needs later. */
-    private record Visit(String relation, boolean innerSide, List<QueryPart> levels,
-                         List<String> ctes) {}
+    /**
+     * A visited relation reference with its whole path kept, because what drives it is read off the
+     * paths of the <em>other</em> references: the driving side of a join is whichever relations sit
+     * under the join's first operand, which is a question about visits this one knows nothing about.
+     */
+    private record Visit(String name, boolean namesARelation, List<QueryPart> path) {
+
+        /** The relation this visit names, for a visit that names one. */
+        String relation() {
+            return name;
+        }
+
+        List<QueryPart> levels() {
+            return path.stream().filter(part -> part instanceof Select<?>).toList();
+        }
+
+        List<String> ctes() {
+            return ctesOf(path);
+        }
+
+        /** Whether {@code ancestor} is on this visit's path, followed there by {@code child}. */
+        boolean descendsThrough(QueryPart ancestor, QueryPart child) {
+            for (int i = 0; i < path.size() - 1; i++) {
+                if (path.get(i) == ancestor && path.get(i + 1) == child) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
 
     private ViewReferences() {}
 
@@ -134,6 +187,7 @@ public final class ViewReferences {
         Query query = parse(dsl, viewName, definitionOf(dsl, viewName));
 
         List<Visit> visits = new ArrayList<>();
+        List<Visit> terms = new ArrayList<>();
         Map<QueryPart, Set<String>> boundAt = new IdentityHashMap<>();
         Map<QueryPart, Set<String>> qualifiersAt = new IdentityHashMap<>();
         Set<String> recursiveCtes = new HashSet<>();
@@ -142,7 +196,7 @@ public final class ViewReferences {
             QueryPart part = context.queryPart();
             List<QueryPart> ancestors = ancestorsOf(context.queryParts());
             if (part instanceof Table<?> visited && !qualifiesAField(ancestors)) {
-                visitTable(visited, ancestors, visits, boundAt, recursiveCtes);
+                visitTable(visited, ancestors, visits, terms, boundAt, recursiveCtes);
             } else if (part instanceof TableField<?, ?> visited) {
                 Table<?> qualifier = visited.getTable();
                 if (qualifier != null) {
@@ -158,7 +212,8 @@ public final class ViewReferences {
         Set<QueryPart> correlated = correlatedLevels(boundAt, qualifiersAt);
         List<Reference> references = new ArrayList<>();
         for (Visit visit : visits) {
-            references.add(new Reference(visit.relation(), positionsOf(visit, correlated, recursiveCtes)));
+            references.add(new Reference(visit.relation(),
+                enclosuresOf(visit, visits, terms, correlated, recursiveCtes)));
         }
         return List.copyOf(references);
     }
@@ -202,7 +257,8 @@ public final class ViewReferences {
      * binds into its query level and can mark an enclosing expression recursive by naming it.
      */
     private static void visitTable(Table<?> visited, List<QueryPart> ancestors,
-            List<Visit> visits, Map<QueryPart, Set<String>> boundAt, Set<String> recursiveCtes) {
+            List<Visit> visits, List<Visit> terms,
+            Map<QueryPart, Set<String>> boundAt, Set<String> recursiveCtes) {
         if (visited instanceof QOM.JoinTable<?, ?>) {
             return;
         }
@@ -212,46 +268,124 @@ public final class ViewReferences {
             boundAt.computeIfAbsent(level, l -> new TreeSet<>()).add(unqualified));
 
         if (qualified.parts().length == 2 && "PUBLIC".equals(qualified.first())) {
-            visits.add(new Visit(qualified.last().toLowerCase(Locale.ROOT),
-                joinsFromTheInnerSide(ancestors), levelsOf(ancestors), ctesOf(ancestors)));
+            visits.add(new Visit(qualified.last().toLowerCase(Locale.ROOT), true, ancestors));
             return;
         }
-        if (qualified.parts().length == 1 && ctesOf(ancestors).contains(unqualified)) {
-            recursiveCtes.add(unqualified);
+        if (qualified.parts().length == 1) {
+            terms.add(new Visit(unqualified, false, ancestors));
+            if (ctesOf(ancestors).contains(unqualified)) {
+                recursiveCtes.add(unqualified);
+            }
         }
     }
 
-    /** The positions enclosing one visited reference, outermost first. */
-    private static List<Position> positionsOf(Visit visit, Set<QueryPart> correlated,
-            Set<String> recursiveCtes) {
-        List<Position> enclosing = new ArrayList<>();
-        if (visit.ctes().stream().anyMatch(recursiveCtes::contains)) {
-            enclosing.add(Position.RECURSIVE);
+    /**
+     * The structures enclosing one visited reference, outermost first, each with the relations it
+     * re-evaluates that reference against.
+     */
+    private static List<Enclosure> enclosuresOf(Visit visit, List<Visit> visits, List<Visit> terms,
+            Set<QueryPart> correlated, Set<String> recursiveCtes) {
+        List<Enclosure> enclosing = new ArrayList<>();
+        for (String cte : visit.ctes()) {
+            if (recursiveCtes.contains(cte)) {
+                enclosing.add(new Enclosure(Position.RECURSIVE, accumulatedOver(cte, visits)));
+            }
         }
-        if (visit.levels().stream().anyMatch(correlated::contains)) {
-            enclosing.add(Position.CORRELATED);
+        List<QueryPart> levels = visit.levels();
+        for (int i = 0; i < levels.size(); i++) {
+            if (correlated.contains(levels.get(i))) {
+                enclosing.add(new Enclosure(Position.CORRELATED, i == 0
+                    ? Set.of()
+                    : resolved(boundDirectlyAt(levels.get(i - 1), visits),
+                        boundDirectlyAt(levels.get(i - 1), terms), visits)));
+            }
         }
-        if (visit.innerSide()) {
-            enclosing.add(Position.INNER_SIDE);
+        for (QOM.JoinTable<?, ?> join : innerSideJoins(visit)) {
+            enclosing.add(new Enclosure(Position.INNER_SIDE,
+                resolved(drivingSideOf(join, visits), drivingSideOf(join, terms), visits)));
         }
         return enclosing;
     }
 
     /**
-     * Whether any join enclosing a reference holds it on the non-driving side. A join in the model
-     * carries its two operands as {@code $table1} and {@code $table2}, so the question is answered
-     * by identity against the operand the ancestor chain descended into, rather than by reading the
-     * rendered shape: a reference under {@code $table2} is re-evaluated against the rows
-     * {@code $table1} produces, however deeply the derived tables between them nest.
+     * The joins that hold a reference on their non-driving side. A join in the model carries its two
+     * operands as {@code $table1} and {@code $table2}, so the question is answered by identity
+     * against the operand the path descended into, rather than by reading the rendered shape: a
+     * reference under {@code $table2} is re-evaluated against the rows {@code $table1} produces,
+     * however deeply the derived tables between them nest.
      */
-    private static boolean joinsFromTheInnerSide(List<QueryPart> ancestors) {
-        for (int i = 0; i < ancestors.size() - 1; i++) {
-            if (ancestors.get(i) instanceof QOM.JoinTable<?, ?> join
-                    && join.$table2() == ancestors.get(i + 1)) {
-                return true;
+    private static List<QOM.JoinTable<?, ?>> innerSideJoins(Visit visit) {
+        List<QOM.JoinTable<?, ?>> joins = new ArrayList<>();
+        List<QueryPart> path = visit.path();
+        for (int i = 0; i < path.size() - 1; i++) {
+            if (path.get(i) instanceof QOM.JoinTable<?, ?> join
+                    && join.$table2() == path.get(i + 1)) {
+                joins.add(join);
             }
         }
-        return false;
+        return joins;
+    }
+
+    /**
+     * A driving side named in terms of the schema's relations. A driving side that names a relation
+     * directly needs nothing doing; one that names a common table expression names no relation at
+     * all, and the rows it drives with are the ones that expression's own body produces, so the
+     * name is followed through to that body.
+     *
+     * <p>Without this a driving side spelled as a fold over a common table expression reports no
+     * drivers, which reads as an unknown cardinality and weights at one. That is the wrong answer
+     * in the worst place: a fold that assembles a set and then probes a relation for each member of
+     * it is exactly the shape a registration is bought for, and the register's largest recorded
+     * wins are all spelled that way.
+     *
+     * @param direct relations named directly on the driving side
+     * @param aliases the aliases and expression names on it, which may resolve to relations
+     * @param visits every relation-naming visit in the definition, to read an expression's body off
+     */
+    private static Set<String> resolved(Set<String> direct, Set<String> aliases,
+            List<Visit> visits) {
+        if (!direct.isEmpty()) {
+            return direct;
+        }
+        Set<String> through = new TreeSet<>();
+        for (String alias : aliases) {
+            through.addAll(accumulatedOver(alias, visits));
+        }
+        return through;
+    }
+
+    /** The relations under a join's first operand, which are the rows its second is probed for. */
+    private static Set<String> drivingSideOf(QOM.JoinTable<?, ?> join, List<Visit> visits) {
+        Set<String> driving = new TreeSet<>();
+        for (Visit visit : visits) {
+            if (visit.descendsThrough(join, join.$table1())) {
+                driving.add(visit.name());
+            }
+        }
+        return driving;
+    }
+
+    /** The relations a query level's own {@code FROM} introduces, which its rows are drawn from. */
+    private static Set<String> boundDirectlyAt(QueryPart level, List<Visit> visits) {
+        Set<String> bound = new TreeSet<>();
+        for (Visit visit : visits) {
+            List<QueryPart> levels = visit.levels();
+            if (!levels.isEmpty() && levels.getLast() == level) {
+                bound.add(visit.name());
+            }
+        }
+        return bound;
+    }
+
+    /** The relations a recursive expression's terms name, which its walk accumulates over. */
+    private static Set<String> accumulatedOver(String expression, List<Visit> visits) {
+        Set<String> named = new TreeSet<>();
+        for (Visit visit : visits) {
+            if (visit.ctes().contains(expression)) {
+                named.add(visit.name());
+            }
+        }
+        return named;
     }
 
     /**
