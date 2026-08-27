@@ -224,3 +224,80 @@ runtime fallback behaviour. The acceptance criteria should carry the same distin
 None of the three touches the decision or the test plan; F1 and F2 are inside the admission
 deliverable and F3 is a sentence in two deliverables. Status stays Spec; the next pass may be this
 session or another.
+
+### Round 3, Spec → Ready, revisions requested (session `817ceb7b-5f71-46fc-b079-eba974782179`, 2026-08-27)
+
+The spec body has not changed since round 2, so F1, F2 and F3 above are still open and this round
+does not restate them. I did not take them on trust either. `inferBindingsByType`'s reflective form
+builds `paramNames` from every named parameter with no `Table` filter (the `eligible` list drops
+`Table` parameters one loop later, and only there), and `ArgBindingMap.of` populates an identity
+entry for every unclaimed slot, so F1's worked example reaches the structural "not a GraphQL
+argument and not a context key" rejection exactly as written. `reflectTableMethod` closes with
+`new MethodRef.StaticOnly(..., declaredExceptionFqns(javaMethod))`, so F2's `throws` carriage is
+the representative's. F3 needs no code reading: `Customer` is a `Table<?>` subtype, so javac's
+most-specific rule does what F3 says it does. The decision and the emission claim under it hold;
+`buildGlueMethod` types `table` from `row.table().tableClass()` and `authoredCall` emits the bare
+local name, so no author-declared table type reaches generated source.
+
+One finding is new, and it corrects round 2's own remedy at two of the three sites round 2 found.
+
+**F4. Two of F1's three sites need table-slot names *excluded*, not unioned, and one of them is a
+live single-method defect today.** Round 2 prescribed one rule for all three readers: collect the
+table-slot names from every admitted declaration, and have each reader read that union instead of
+the representative's. That is right for `checkConditionOverrideTargets`, where "reserved" genuinely
+is a set-wide property: every table slot any admitted declaration declares must be unbindable. It
+is wrong for the other two.
+
+`inferBindingsByType` does not read table-slot names in order to reserve them. It reads them to
+decide which GraphQL slots are already *claimed by a binding*, and a table parameter never claims a
+slot: that is why the `eligible` filter drops `Table`-assignable parameters outright, and why the
+loop's own comment says a slot counts as claimed only "when some Java parameter actually targets
+it". Under the union rule, slot `film` counts as claimed whenever *any* admitted declaration
+happens to name a table slot `film`, so inference is suppressed for a slot that no parameter binds.
+Deterministic instead of `getDeclaredMethods()`-ordered, and still wrong. The rule this site needs
+is that a `Table`-assignable parameter contributes no name to `paramNames` at all.
+
+That rule also closes a defect that is live today with no overloads in sight, which is why it is
+worth deciding here rather than leaving to the implementer's judgement. A single `@condition` method
+`cond(Film film, FilmFilter kriterier)` on a field whose only argument is `film: FilmFilter` has
+slot `film` marked claimed by its own *table* parameter's name, so `unclaimedSlotNames` comes out
+empty, inference returns early, and `kriterier` falls through to the structural "parameter
+'kriterier' in method 'cond' is not a GraphQL argument and not a context key". A table parameter
+named after a field argument silently disables type-based inference. The item should say whether
+that repair rides along (it is the same line at the same site) or is filed separately; either is
+fine, but the admission deliverable is the only thing looking at this code.
+
+The third site, `checkOverrideTargets`' fall-through message, wants exclusion for the same reason.
+On the `@condition` path a `javaTarget` equal to any table-slot name has already been rejected by
+`checkConditionOverrideTargets` before the fall-through runs, so table-slot names affect nothing
+but the rendered `formatNameSet(paramNames)`. Under exclusion the message names the parameters an
+`argMapping` entry may actually target, which is what the author needs to read; under the union it
+names a parameter list that no single declaration has. The reflection-free form of
+`checkOverrideTargets` is the `@service` path's and must not change.
+
+So the positive invariant round 2 asked for has two halves, not one: a table slot's *name* is
+reserved set-wide where admission checks bindability, and is invisible everywhere else a parameter
+name is read as a binding target or printed as one. Both halves belong in the admission
+deliverable, and the second half is what makes the invariant scale rather than accumulating a
+fourth exception.
+
+Gate: question 2. F1 through F4 are all claims the plan makes about code the implementer has to
+touch, and the plan is wrong about it at three sites, so the implementer would be redesigning the
+admission deliverable rather than executing it. The decision, the `AmbiguousMethod` deliverable,
+the documentation deliverable and the test plan are unaffected and need no rework.
+
+Non-blocking, no revision required:
+
+- The admission deliverable says the admitted set's table-slot types are "carried" for the two
+  path-step consumers, but `resolveConditionJoinTarget` and `validateConditionParamTables` read
+  those types off the `MethodRef` in `BuildContext`, downstream of admission. So set-wide *types*
+  need a carrier on the model while set-wide *names* stay local to `ServiceCatalog`. One sentence
+  naming the carrier would help, because `MethodRef` is shared with the `@service` and
+  `@externalField` paths.
+- The shape-disagreement rejection is specified to render "which positions disagree", which cannot
+  express a disagreement on static-ness, return type, or (per F2) parameter count. Same deliverable,
+  one clause.
+- "R647's item body carries a pointer to this section (added with this spec)" is already true in the
+  tree: `roadmap/condition-table-parameter-anchor-assignability.md` carries it. Nothing to do.
+
+Status stays Spec.
