@@ -1,7 +1,7 @@
 ---
 id: R858
 title: "Stamped store directories accumulate one per DDL hash and nothing ever removes them"
-status: In Progress
+status: In Review
 bucket: dx
 priority: 3
 theme: tooling
@@ -387,7 +387,35 @@ problem and starts being true; it needs no edit.
 
 ## Roadmap entries
 
-* File a Backlog item for the dead-workspace tier described above when this reaches Done.
+* File a Backlog item for the dead-workspace tier described above when this reaches Done. Filed
+  during implementation rather than held to the gate, as `sweep-dead-workspace-store-homes`, so the
+  reasoning that produced it did not have to be reconstructed later.
+
+## Implementation notes
+
+Two things the implementation settled that the plan left to it, both worth the reviewer's attention
+because they are visible in the diff and not in the plan.
+
+**The sweep runs before the open rather than after it.** Every arm of `openAt` needs the same report,
+and computing it first is what lets one call site serve all five rather than each arm asking for its
+own. Nothing depends on the ordering: the live segment is spared by name in every arm, so a sweep that
+runs before the live directory even exists reaches the same answer, and the cost is a handful of
+unlinks ahead of a database open.
+
+**The report's wording lives on `Reaped`, not at the two callers.** `Reaped.report(home)` returns the
+sentence or empty, so `FactCapture` and `DevMojo` each log one line and neither owns the wording. The
+plan named both callers and the log line without saying where the line is built; two copies of it in
+two modules would have been the drift the plan avoids everywhere else.
+
+One test the plan prescribes does not run in a container-based agent session. The part-way-deletion
+case rests on a directory permission, and a superuser bypasses it, so the test now asks whether an
+unwritable directory actually refuses this process a deletion and skips itself when it does not.
+GitHub's hosted runners execute as an unprivileged user, so it does run in CI. Everything else in the
+Tests section runs everywhere, the cross-process holder included.
+
+`StoreFixtureGuardTest` gained an entry for the new `GraphitronModelStoreTest` under its existing
+`LIFETIME` reason, alongside `PersistentStoreTest`'s: a test whose subject is what opening the store
+does cannot take a store from a harness that opens it.
 
 ## Related
 
