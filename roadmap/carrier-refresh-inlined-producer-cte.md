@@ -7,7 +7,7 @@ priority: 2
 theme: model-cleanup
 depends-on: []
 created: 2026-08-26
-last-updated: 2026-08-26
+last-updated: 2026-08-27
 ---
 
 # The carrier refresh costs 41 seconds per capture, and it is the producer CTE inlined per driving row
@@ -27,7 +27,8 @@ A capture of a consumer schema stops spending 41 seconds on the carrier relation
 back on every build. Nothing about what the store answers changes: the same rows, in the same
 columns, under the same names every reader already spells.
 
-The change is one materialization registration. A registration is a row in `meta_materialize`
+The change is one materialization registration, plus corrections to three stored `reason` figures
+the measurements below falsified. A registration is a row in `meta_materialize`
 saying "refill this table from that view, once per capture, per graph": the view keeps the rule's
 text under a `_live` name, the table takes the canonical name every reader spells, and so no reader
 is edited and the rule is still written exactly once. Which relation to register is the question the
@@ -112,14 +113,16 @@ follow-up rather than in this change.
 The trade the middle rung has to win is a refresh against the re-evaluations it avoids, and here it
 is not close. One evaluation of `intent_field_payload_producer` is 4 to 31 ms. It has two readers in
 SQL: this correlated probe, and `intent_field_error_channel`, which drives from it in a plain `FROM`
-and therefore already pays exactly one evaluation and is indifferent to the registration.
+and therefore already pays exactly one evaluation; the registration does not change how many times it
+reads the rule, only what one read costs, an unmeasured small gain in the same direction as the
+carrier's large one.
 
 ## Implementation
 
 All of it lands in
 `graphitron-model/src/main/resources/no/sikt/graphitron/model/graphitron-model.sql`, except one line
-of a test list and the re-pinned figures under "Tests and gates" below. It is the established cheap
-registration shape, so nothing here is a new mechanism.
+of a test list, one new gate-test method, and the re-pinned figures under "Tests and gates" below.
+It is the established cheap registration shape, so nothing here is a new mechanism.
 
 **Rename the rule's view.** `CREATE VIEW intent_field_payload_producer` becomes
 `CREATE VIEW intent_field_payload_producer_live`, column list and body unchanged, declared exactly
@@ -181,8 +184,10 @@ column is required and is where the argument lives, so this one has to state:
 
 * The readers. Two in SQL. `intent_carrier_data_field_live`'s `data_channel` CTE names it in a
   correlated `EXISTS` keyed on the graph and the payload type, which is the reader the registration
-  is bought for; `intent_field_error_channel` drives from it in a plain `FROM`, therefore already
-  pays exactly one evaluation, and is indifferent to the registration.
+  is bought for; `intent_field_error_channel` drives from it in a plain `FROM`, so it already paid
+  exactly one evaluation before the registration and reads stored rows after it: the registration
+  does not change how many times it reads the rule, and the gain in what one read costs is small
+  and unmeasured, in the same direction as the carrier's large one.
 * The trade. One evaluation of the rule is 4 to 31 ms, which is what a refresh costs, against the
   roughly eight thousand re-evaluations one carrier refresh was paying.
 * The measured move, with the schema named: the carrier refresh from 41 s to about 0.3 s on the
@@ -202,26 +207,60 @@ State facts and figures in that reason and do not cite a roadmap item id in it. 
 read by consumers through the generated schema reference, where an item id is stale the day the item
 ships.
 
-**Nothing orders the refresh by hand.** `meta_materialize_dependency` is machine-written at boot by
-`MaterializeDependencies.populate`, which parses the stored view definitions, so the edge from
-`intent_carrier_data_field_live` to this registration appears on its own and the materializer
-refreshes the producer first. There is no authored row to add, and `MaterializeRegistryGateTest`'s
-acyclicity and order-respecting tests are what confirm the edge arrived.
+**Nothing orders the refresh by hand, and one assertion confirms the edge.**
+`meta_materialize_dependency` is machine-written at boot by `MaterializeDependencies.populate`,
+which parses the stored view definitions: `relationsReadBy` renders each parsed query under a
+`VisitListener` and keeps every `Table<?>` whose qualified name is `PUBLIC` plus one segment, a
+shape the reference inside `intent_carrier_data_field_live`'s `producer` CTE satisfies. So the edge
+from the carrier to this registration appears on its own, and there is no authored row to add.
 
-## The carrier's own reason row is wrong, and this change should say so
+What confirms the edge arrived needs care, because everything downstream passes on the exact store
+where it is missing. `MaterializeRegistryGateTest`'s two order tests cannot fail on it:
+`theDerivedDependenciesAdmitARefreshOrder` asserts set equality between the refresh order and the
+census, true whatever edges exist, and `theRefreshOrderRespectsEveryDependencyRow` collects
+offenders per dependency row, so a missing edge contributes no row and no offender. Nor would the
+capture agreement or the carrier's behavioural tests fail, and the reason is an alphabetical
+accident worth spelling out. `Materializations.refreshOrder` is Kahn's algorithm with an
+alphabetical tie-break on the source view name. The producer view reads only captured base tables,
+so it is eligible from the first step; the carrier already carries three edges on today's booted
+store (to `intent_errors_field_live`, `intent_resolved_type_binding_live` and
+`intent_spelled_table_live`, read straight off `meta_materialize_dependency` after boot), and the
+last two sort after `intent_field_payload_producer_live`. So with the new edge missing, the
+tie-break still places the producer before the carrier, the carrier fills from current rows, and
+`FactCaptureAgreementTest` and `CarrierDataFieldTest` pass. A correct order by name coincidence is
+not a confirmed edge, and the property is one rename or one retired registration away from silently
+inverting.
+
+So this item adds one structural assertion instead of trusting the coincidence: a new
+`MaterializeRegistryGateTest` test asserting `META_MATERIALIZE_DEPENDENCY` holds the row
+`('intent_carrier_data_field_live', 'intent_field_payload_producer_live')` on the booted store.
+That class's charter already covers it, asserting over the DDL's own registry and the dependency
+edges the bootstrap derived from it, and the pin is argued in the test's javadoc on these terms:
+the register's safety argument is that a registration changes no answer, the one way this
+registration could change one is the carrier refreshing before its producer, and the ordering that
+prevents that has to rest on a derived edge rather than on how the relation names happen to sort.
+
+## Three reason rows are wrong, and this change corrects them where they live
 
 `intent_carrier_data_field_live`'s registration prices its refresh at about 170 ms for 15 rows on the
 sakila example and about 12 ms on a carrier-free schema. The relation this item is about is the
 reason that figure does not transfer: on a consumer schema the same refresh is 41 s. The fact model
 page is explicit that a recorded measurement is evidence about the schema it was measured on and that
-a stored reason contradicted by a later measurement needs correcting where it lives, so the row
-should be corrected in the same change that moves the number, with both figures and the schema each
-was taken on.
+a stored reason contradicted by a later measurement needs correcting where it lives, so the row is
+corrected in the same change that moves the number, with both figures and the schema each was taken
+on.
 
-Two sibling rows are wrong the same way and are deliberately out of scope here, because re-pricing
-the register's recorded claims is R831's subject rather than this item's: `intent_errors_field_live`
-records about ten milliseconds against a measured 4.2 s, and `intent_field_column_scope_live` records
-about 170 ms "on a real schema" against a measured 6.4 s.
+Two sibling rows are wrong the same way, the same rule reaches them, and this item's own first table
+already holds the measurements, so they are corrected here too: `intent_errors_field_live` records
+about ten milliseconds against a measured 4.2 s, and `intent_field_column_scope_live` records about
+170 ms "on a real schema" against a measured 6.4 s, both taken on the consumer schema named above in
+the same run as the carrier's figure. An earlier draft deferred them to R831, and the deferral landed
+nowhere: R831's subject is measured claims in ordinary relation comments, and it scopes the register
+out by name, so nothing there accepts these rows. Nor does any gate re-price a refresh duration, the
+read-cost gate holding scan counts and asserting no duration, per "Not in scope" below, so a
+correction by hand, made where the figures are already in hand, is the only mechanism available.
+Each correction is a prose edit inside the row's `reason` string, stating the new figure and its
+schema beside the old figure and its schema; no rows, no readers and no tests move with them.
 
 ## The index question is this registration's own, and it is answered by measurement
 
@@ -236,29 +275,52 @@ probes in from a population larger than the target: the carrier CTE's `EXISTS` s
 which is thousands of driving rows against a producer table of a few hundred. That is exactly the
 shape `intent_argument_column_match`'s roster row names as the one that would change its own answer.
 
-So declare and time `ix_field_payload_producer_payload ON intent_field_payload_producer
-(graph_name, payload_type_name)`, on both the consumer store and the twelve-unit fixture
-`DerivedReadCostTest` runs, against no index at all. If it moves a reader, it ships with a comment
-naming that reader, on `ix_spelled_table_spelling`'s model. If it moves nothing, the relation joins
-`NO_INDEX` with the figures that say so. The 327 ms and 261 ms refresh figures in this item were
-taken with no index declared, so they are the floor a roster row would stand on, and an index would
-have to earn its cost on every refresh on top of them.
+Two things about the probe constrain what an honest measurement is. First, it carries a constant the
+two-column coordinate omits: the `producer` CTE is `SELECT DISTINCT graph_name, payload_type_name,
+family FROM intent_field_payload_producer WHERE root_operation = 'MUTATION'`, and most of the
+target's rows are not mutation-rooted (`root_operation` is null for every producing field on a
+non-root type and 'QUERY' for most of the rest), so a seek on `(graph_name, payload_type_name)`
+alone still filters the bulk of its matches afterwards, and a roster row timed on that shape only
+would be read as settled while the shape the probe actually wants went unmeasured. Second, the
+correlated equality sits outside that `SELECT DISTINCT`, so whether any index on the target is
+reachable at all depends on H2 pushing the predicate through the `DISTINCT` into the inlined CTE
+body; if it does not, every shape times identically and a roster row reading "measured, nothing
+moved" would record the wrong cause.
+
+So the measurement is three timings beside the no-index floor, on both the consumer store and the
+twelve-unit fixture `DerivedReadCostTest` runs: `ix_field_payload_producer_payload ON
+intent_field_payload_producer (graph_name, payload_type_name)`; a `root_operation`-carrying shape,
+`(root_operation, graph_name, payload_type_name)`, which lets the seek bind the constant too; and,
+as the baseline that separates an unhelpful coordinate from an unreached index, the same probe timed
+with the `DISTINCT` removed from the CTE text. That last one is a measurement variant only, never a
+shipped edit; whether the view needs the `DISTINCT` for its rows is not this item's question. If a
+shape moves a reader, it ships with a comment naming that reader, on `ix_spelled_table_spelling`'s
+model, and saying which shapes were timed. If nothing moves, the relation joins `NO_INDEX` with the
+figures, the shapes timed, and what the `DISTINCT` baseline showed, so the next reader can tell an
+unhelpful coordinate from an index the plan never reached. The 327 ms and 261 ms refresh figures in
+this item were taken with no index declared, so they are the floor a roster row would stand on, and
+an index would have to earn its cost on every refresh on top of them.
 
 ## Tests and gates
 
-No new behavioural test, and that is the mechanism working rather than a gap. A registration changes
-no answer, and the claim that the target holds its view's rows is what the capture agreement
-machinery already asserts once the `_live` view is registered with it.
+No new behavioural test: a registration changes no answer, and the claim that the target holds its
+view's rows is what the capture agreement machinery already asserts once the `_live` view is
+registered with it. One new structural test does land, the edge-presence assertion argued in the
+"Nothing orders the refresh by hand" paragraph above, because the ordering that keeps the agreement
+true has to rest on a derived edge rather than on the alphabetical accident that currently orders
+these two relations correctly.
 
 * `FactCaptureAgreementTest`: one line,
   `registrations.put("intent_field_payload_producer_live", Arm.DERIVED);`, beside the existing row
   for the canonical name. A registered materialization is two relations under one rule and both are
   derived, which is what that list encodes. This test fails a full build and not a scoped one, so
   this item needs a verification build rather than a `-pl` run.
-* `MaterializeRegistryGateTest`: no edit unless the index question lands on the roster, in which case
-  one `NO_INDEX` entry plus its argument in the set's javadoc. Its five structural tests (kinds,
-  column shape, acyclicity, order, and nothing materializing outside the mechanism) are what check
-  the pair, and they need nothing from the author.
+* `MaterializeRegistryGateTest`: one new test asserting the dependency row
+  `('intent_carrier_data_field_live', 'intent_field_payload_producer_live')` is present on the
+  booted store, per the section above. If the index question lands on the roster, also one
+  `NO_INDEX` entry plus its argument in the set's javadoc, naming the shapes timed and what the
+  `DISTINCT` baseline showed. Its five structural tests (kinds, column shape, acyclicity, order,
+  and nothing materializing outside the mechanism) check the pair and need nothing from the author.
 * `DerivedReadCostTest`: three pinned counts move and one pinned set may.
   `READERS_IN_SCHEMA` rises by one, the new `_live` view being a view in the schema; the constant has
   moved twice in the days since this item was drafted, so re-pin it from the tree rather than from any
@@ -280,7 +342,9 @@ machinery already asserts once the `_live` view is registered with it.
 and the read-cost gate both need the full pipeline, so a scoped `-pl` run is not verification for
 this item.
 
-Separately from the build, re-take the two figures the `reason` will state, by the procedure in the
+Separately from the build, re-take the figures the edited `reason` rows will state (the producer's
+refresh cost and the carrier's move for the new row, and the two sibling refresh durations for the
+corrected ones), by the procedure in the
 `store-performance` skill: a store a real build already wrote rather than a fixture, single-file JDBC
 programs over the pinned H2 version, `OPTIMIZE_REUSE_RESULTS` off, the real refresh statements. Do
 not transcribe this item's numbers into the DDL. They were measured on a tree whose register has
@@ -296,6 +360,9 @@ grown since, and the register growing is exactly what moves them.
   second registration on top of a wrong diagnosis.
 * `KNOWN_NON_MONOTONIC` gaining more than a row or two. At that point the answer is the index on the
   target, not a set of roster rows, and the index has to be measured rather than reasoned about.
+* The edge-presence assertion failing on the built store. That means the dependency walk does not
+  see the reference shape this plan says it sees, and the fix goes into the walk; the registration
+  must not land on a hand-authored ordering workaround.
 
 ## Not in scope
 

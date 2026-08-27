@@ -17,7 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R847` | A reference path ending in a condition hop resolves no column scope | Spec | 2026-08-27 <sub>created 2026-08-26</sub> | [plan](reference-path-condition-terminal-column-scope.md) |
 | `R853` | A roadmap-only diff owes the two gates that read roadmap/, not the whole reactor | Spec | 2026-08-27 | [plan](roadmap-only-verification-scope.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
-| `R839` | The carrier refresh costs 41 seconds per capture, and it is the producer CTE inlined per driving row | Spec | 2026-08-26 | [plan](carrier-refresh-inlined-producer-cte.md) |
+| `R839` | The carrier refresh costs 41 seconds per capture, and it is the producer CTE inlined per driving row | Spec | 2026-08-27 <sub>created 2026-08-26</sub> | [plan](carrier-refresh-inlined-producer-cte.md) |
 | `R849` | Measure re-evaluation rather than naming, so a materialization cut set can be chosen on evidence | Ready | 2026-08-27 | [plan](re-evaluation-metric-for-derived-relations.md) |
 | `R834` | A top-level @service returning a @table type reads columns off the returned record instead of refetching by key | In Review | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](root-service-table-return-skips-key-refetch.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
