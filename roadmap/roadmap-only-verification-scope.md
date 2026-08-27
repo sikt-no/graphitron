@@ -1,7 +1,7 @@
 ---
 id: R853
 title: "A roadmap-only diff owes the two gates that read roadmap/, not the whole reactor"
-status: Spec
+status: Ready
 bucket: workflow
 priority: 2
 theme: tooling
@@ -307,3 +307,56 @@ explicitly in its own javadoc, and `DocsIndexBuilder` says the same for the MCP 
 both of the plausible-looking third consumers really are non-consumers by declared intent. That is
 worth a clause in the scope section: it is the strongest evidence the plan has that the boundary is
 deliberate in this tree rather than accidental, and it costs one sentence.
+
+### Round 2 (2026-08-27, Spec -> Ready, reviewer session 0169pRZRYLidSbfcif3xovzW)
+
+Verdict: sign off. Both round-1 findings are answered at the level they were raised, and both gate
+questions now come out clean.
+
+Finding 1 is settled by narrowing rather than by argument-padding, which is the right move: the
+"Nothing else" paragraph is gone, "What reads `roadmap/` at build time" scopes its own claim to build
+steps, the by-construction subsection carries the `verify-roadmap-readme` plus `ConceptIndex` argument,
+and the claim the item rests on is stated as the narrow one. The author also found a mechanical cause
+I had not: the original grep searched `/roadmap/` and `../roadmap`, neither of which can match a
+quote-preceded `p.resolve("roadmap/...")`. That is a better answer than the finding asked for, because
+it explains why the census missed rather than just replacing it.
+
+Finding 2 is settled by deciding. The section no longer asks the reviewer to pick, `InertSpans` is
+out, and each half is sited where its machinery lives. Everything the new section names checks out
+against the tree. `JavaSourceRegions.strings(String)` exists at line 30 of the shared lexer, beside
+the `code` and `comments` projections its neighbours use. `GuardScope.IN_SCOPE_MODULES` holds exactly
+eleven entries, which is the root pom's thirteen `<module>` declarations minus `roadmap-tool` and
+`docs`, and `docs` does carry no Java. `RoadmapReferenceScanner.ALLOWED_SLUGS` is exactly the three
+permanent artifacts. `CoverageAgentWiringCheck` does strip `<!-- ... -->` through an `XML_COMMENT`
+pattern and does walk the root pom plus `ModuleEnumerationCheck.declaredModules`. The path-shaped rule
+does drop `CommandRelationFragmentTest`'s assertion prose.
+
+The census reproduces exactly. An FQN-blind grep for a quote-anchored roadmap literal across the
+eleven modules returns eight matched lines in seven files, and the whole-literal rule sorts them the
+way the section says: the three `roadmap/workflow.adoc` sentinels are permanent-allowed, the
+`SLUG_REF` pattern text and the `roadmap-tool` prose do not match, `RejectionRenderingTest`'s bare
+`roadmap/` has no following segment so it does not match, and `ReadmeLinkIntegrityTest`'s bare
+`roadmap` is the single seeded entry. So "the real reactor passes with the one seeded entry" holds
+under the rule as written.
+
+What earns the sign-off on question 2 is not just that the arm is now pickable but that the section
+states what it cannot pin, including that it would not have caught round 1's own finding. A guard that
+advertises its blind spot is worth more than one that implies it has none.
+
+Non-blocking, both for the implementer rather than the plan.
+
+First, one trap sits directly in the reuse path. `RoadmapReferenceScanner.SLUG_REF` is applied with
+`while (slug.find())`, so the neighbouring precedent matches a roadmap path *anywhere in* a line,
+while this guard's one-entry seed depends on the whole-literal rule the section states. Reusing
+`SLUG_REF`'s find semantics by reflex changes the answer: `RoadmapReferenceScannerTest` carries
+`roadmap/some-transient-slug.md` inside string literals at two places, as fixture text for the scanner
+it tests, and those are test-source literals that today's guard exempts by scanning string literals in
+main sources only. Find semantics would flag them and make the seed two file entries instead of one.
+Worth a case in the guard's own test pinning that a literal merely containing a roadmap path is not a
+match, so the distinction is enforced rather than remembered.
+
+Second, the whole-literal rule is narrower than "make a new named consumer loud". A named consumer
+spelled `"../roadmap"`, `"roadmap/" + slug`, or `root + "/roadmap"` escapes it, and none of those is
+the generic-walker class the "What this does not pin" section already takes knowingly. Either widen
+the rule and re-census, or add that class to the same paragraph. This does not change the design and
+it does not need to be settled before implementation starts.
