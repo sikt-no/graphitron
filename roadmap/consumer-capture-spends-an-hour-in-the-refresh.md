@@ -970,9 +970,18 @@ is what let the measurement land here and pick a branch without a second filing.
 reopen, which is the mechanism the plan named for exactly this case, so the trade came out roughly
 even rather than badly.
 
-One new Backlog item is now expected, from the measurement rather than from the fix, and not blocking.
-A second candidate turned out to be already covered, and the finding it rests on belongs to that item
-instead:
+Two new Backlog items are now expected, both from the measurement rather than from the fix, and
+neither blocking. A third candidate turned out to be already covered, and the finding it rests on
+belongs to that item instead:
+
+- **R867 carries the first arm's measurement past this file's deletion**, and it is filed rather than
+  left here for one reason: what "The first arm measured over all twenty registrations" establishes is
+  a cost that grows with the schema, and this item's body dies at Done. The test and the fact model
+  page keep the finding, and R867 keeps the prospective work: the cheap half refuted, the expensive
+  half priced at exactly the settled store's plans, and the three invariants a transaction split
+  touches. It opens by saying it should not be picked up unless the registrations have landed and a
+  consumer-scale capture still costs materially more than the same refresh warm, so it cannot compete
+  with the branch this item chose.
 
 - **`report-inline-multiplicity` cannot see the two things that made this expensive**, and R849 is
   where that lands rather than a new filing. It counts references to relations the DDL declares, so a
