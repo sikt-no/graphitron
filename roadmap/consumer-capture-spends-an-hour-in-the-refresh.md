@@ -5,7 +5,7 @@ status: Spec
 bucket: bug
 priority: 1
 theme: model-cleanup
-depends-on: [materialization-refresh-emits-no-progress]
+depends-on: []
 created: 2026-08-27
 last-updated: 2026-08-27
 ---
@@ -851,8 +851,10 @@ instead:
   Small, and worth filing rather than folding into this item's diff, since it is a correction to a
   neighbouring mechanism's prose rather than part of this fix.
 
-The sibling logging item is the dependency for step 1, is named in `depends-on`, and should land
-first. R848 is where a twenty-first registration is argued, and this item now proposes a
+The sibling logging item R855 was the dependency for step 1 and has shipped, so `depends-on` is
+empty and step 1's instrument is in the tree: the refresh prints its pass boundary by default and
+names each registration before it runs it under `mvn -X`. R848 is where a twenty-first registration
+is argued, and this item now proposes a
 twenty-first *and* a twenty-second, so the obligation is stronger than when this paragraph was
 written: both registrations have to be defensible against that item rather than in spite of it, and
 the pair arriving from one bug is itself evidence for whatever that item concludes about the

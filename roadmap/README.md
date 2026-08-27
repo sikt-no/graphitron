@@ -15,8 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R865` | A capture cannot be run without the materialization refresh, so a schema whose refresh never returns leaves no store to debug | Spec | 2026-08-27 | [plan](capture-without-the-materialization-refresh.md) |
-| `R856` | A consumer-schema capture spends over an hour inside the materialization refresh <sub>blocked by: [materialization-refresh-emits-no-progress](materialization-refresh-emits-no-progress.md)</sub> | Spec | 2026-08-27 | [plan](consumer-capture-spends-an-hour-in-the-refresh.md) |
-| `R855` | The materialization refresh emits nothing, so a hang inside it is anonymous | In Review | 2026-08-27 | [plan](materialization-refresh-emits-no-progress.md) |
+| `R856` | A consumer-schema capture spends over an hour inside the materialization refresh | Spec | 2026-08-27 | [plan](consumer-capture-spends-an-hour-in-the-refresh.md) |
 | `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows | Spec | 2026-08-27 | [plan](dev-start-refreshes-the-register-twice.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R859` | A dev pass captures the same graph twice, so every save evaluates the register twice | Ready | 2026-08-27 | [plan](dev-pass-captures-the-graph-twice.md) |
@@ -602,7 +601,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### model-cleanup
 
-- `R856` [**A consumer-schema capture spends over an hour inside the materialization refresh**](consumer-capture-spends-an-hour-in-the-refresh.md) — Spec, bug, blocked by [materialization-refresh-emits-no-progress](materialization-refresh-emits-no-progress.md)
+- `R856` [**A consumer-schema capture spends over an hour inside the materialization refresh**](consumer-capture-spends-an-hour-in-the-refresh.md) — Spec, bug
 - `R848` [**Design the materialization cut set as a whole instead of accreting it one registration at a time**](materialization-cut-set-is-accreted-not-designed.md) — Ready, architecture
 - `R839` [**The carrier states one condition twice, and the duplicate re-derives the producer once per driving row**](carrier-refresh-inlined-producer-cte.md) — Ready, model
 - `R864` [**The generator hosts the capture window instead of taking a store**](generator-hosts-the-capture-window.md) — Backlog, architecture
@@ -659,7 +658,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R865` [**A capture cannot be run without the materialization refresh, so a schema whose refresh never returns leaves no store to debug**](capture-without-the-materialization-refresh.md) — Spec, dx
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
 - `R768` [**The build boots the fact schema 1051 times, and a reset costs a fraction of a boot**](store-boots-once-per-test-not-once-per-build.md) — Backlog, dx
-- `R855` [**The materialization refresh emits nothing, so a hang inside it is anonymous**](materialization-refresh-emits-no-progress.md) — In Review, dx
 - `R857` [**A dev start evaluates the whole materialization register twice, the second pass producing identical rows**](dev-start-refreshes-the-register-twice.md) — Spec, dx
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
 - `R764` [**graphitron-model ships its junit-platform.properties to four consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
