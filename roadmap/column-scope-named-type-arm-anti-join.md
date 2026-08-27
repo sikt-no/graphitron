@@ -388,3 +388,67 @@ citing a comment the same item rewrites. The third is left where it is. Correcti
 inside this item would mean editing a relation the plan does not otherwise touch, and B's own
 deliverable already re-reads that table, so the honest place for it is B's implementation if B
 ships and a Backlog item if it does not.
+
+### Round 2 (2026-08-27, Spec -> Ready, reviewer session 01FjkK8JvUYCQt6qUk35j4Y3)
+
+Verdict: sign off. Both round-1 findings are answered at the level they were raised, and the second
+answer is the better one: naming `DerivedReadCostTest` did not just add a bullet, it gave the item
+its hard gate, where the sweep only ever had a soft one.
+
+Question 1 passes on its own reading. A graphitron author who writes a Relay connection type out by
+hand in the SDL, rather than letting `@asConnection` synthesise one, and puts it on a non-root
+object field gets nothing back today when they name a column at that field: the scope relation has
+no row there, so the language server offers no column completion, definition or hover at that
+coordinate and the structural column-match reading is silent, while the identical field over a
+synthesised connection resolves fine. After this lands those names resolve against the element
+type's table, the same answer every sibling site already gives. The second outcome is the title's
+and is contributor-facing: the arm stops resting on the plan H2 happens to pick, so the next change
+to its driving side does not rediscover the fifty-fold cliff. The plan is honest about how far the
+first outcome reaches, which is the part a weaker spec would have overclaimed: `FieldColumnTable`
+in `graphitron-lsp` is the only main-source Java reader of this relation, the emit path reads it
+through nothing, and the tests section says so rather than reaching for a pipeline fixture that
+would pin nothing.
+
+Question 2 passes. A is the file header's own rule applied to the reader that violates it, with the
+shape already written in `intent_node_id_encode`; B moves a term out of a view body into a named
+relation, which is what the rest of this schema looks like; and C, the one candidate that would
+stand a parallel mechanism, is ranked last with its costs stated rather than argued away. The
+repoint is a fifth caller collapsing onto one relation. Nothing here is a new mechanism.
+
+Everything checkable checked out on this tree, including what round 1 had to take on trust.
+`lookup_bearing` is seeded from `graphitron_field_lookup_key` and its recursive term joins
+`input_object_field_edge` on the named type projecting the declaring type, so B's revised grain
+sentence is the closure's actual grain, and the marked-argument trigger really does sit in the
+`direct` join over `graphitron_argument_lookup_key`, untouched by B. The population argument holds
+end to end and not only at the comment: `GraphitronFactCapture` writes the marker on directive
+presence with no classification consulted, and `BuildContext.classifyInputFieldInternal` rejects
+`DIR_LOOKUP_KEY` outright, so the rows exist exactly on the schemas the plan says they do.
+`DerivedReadCostTest` is as described: `KNOWN_NON_MONOTONIC` asserted with
+`containsExactlyInAnyOrderElementsOf`, the pair `intent_field_reference_step_hop|intent_field_column_scope_live`
+present, its justification recording 2854 scans against 2666 and 15 milliseconds against 29, and
+line 52 of that file stating the scans-and-clocks separation the plan attributes to it. The arm is
+the shape the plan describes, under three anti-joins with the claim one correlated; the registration
+row for `intent_field_column_scope` exists, so framing the gate as refresh cost is right; the four
+sites reading `intent_field_navigated_type` are `intent_routine_return_binding`,
+`intent_field_participant_scope_table`, `intent_field_scope_table_live` and
+`intent_mutation_routine_seat`; that relation's comment carries both sentences the deliverables
+delete; `AuthoredClaimTest` covers all six claim kinds and exercises the closure through nesting and
+a cycle, so the row-set pin has something to pin; and `FieldColumnTableTest.scopeRow` asserts at
+most one row per coordinate, which is the disjointness the repoint leans on. C's structural claim
+holds arm by arm.
+
+#### Non-blocking
+
+- B's shipping condition points two ways. The deliverable is "whichever of A, B, A-plus-B or C the
+  sweep selects", which selects on cost, while B's own paragraph argues it is "worth having on its
+  own" for a reason cost does not measure. If A alone clears the gate the implementer has to pick a
+  reading. Either answer is small and defensible, so this is not worth a round; noting it so the
+  choice is made rather than defaulted.
+- No stop rule if all three candidates miss the gate. The fourth option the Backlog raised, registering
+  the claim view, is deliberately out of scope here. The risk looks low, A removing the correlation
+  the diagnosis blames outright, and an implementer who ran out of candidates would come back through
+  the ordinary In Progress fork; but the plan does not say that is what should happen.
+- Acceptance names `intent_field_scope_table` among the five sites where the reader is
+  `intent_field_scope_table_live`. That is the store's own convention of spelling the canonical
+  registered name, and the relation comment does the same, so it is right as written; flagged only
+  because the four-site list a grep produces will not match it literally.
