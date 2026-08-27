@@ -1,7 +1,7 @@
 ---
 id: R839
 title: "The carrier states one condition twice, and the duplicate re-derives the producer once per driving row"
-status: Ready
+status: In Progress
 bucket: model
 priority: 2
 theme: model-cleanup
@@ -709,6 +709,33 @@ statement timings under `OPTIMIZE_REUSE_RESULTS FALSE`; the totals are the real 
 The one figure taken at a single execution is the per-registration table in the first section, which
 ranks and is provisional in its tail; the 41 s subject was measured six times across four programs
 and ranged 39.7 s to 49.1 s, the high end taken while a second probe shared the machine.
+
+## Implementation notes (2026-08-27)
+
+What landed, and what the tree can and cannot say about it.
+
+* **Arm B, as specified.** `intent_carrier_data_field_live` gains the `producer_type` term projecting
+  `producer` down to `(graph_name, payload_type_name)`, `data_channel` joins it, and the correlated
+  `EXISTS` against `producer` is gone from its `WHERE`. The per-field `NOT EXISTS` against
+  `intent_errors_field`, the column list, the window and the three disqualification arms are
+  untouched. No target is declared and the register gains no row.
+* **The seeded anchor** is `CarrierDataFieldPopulationTest` in `graphitron-model`'s intent habitat,
+  four cases over one fixture holding the three seedings this item names.
+* **The falsifier was checked rather than assumed, by running it.** Two probes against the anchor on
+  the seeded store, both reverted: joining `producer` un-projected fails two cases on the doubled
+  `data_fields`, which is arm B's own hazard caught where the item said it must be; and the
+  pre-rewrite correlated `EXISTS` passes all four cases identically, which is the row-identity claim
+  confirmed by execution.
+* **One thing the anchor cannot see, and it is the redundancy rather than a gap.** Removing the
+  population test outright also passes all four cases, because the outer join tests the same
+  condition. So a statement of the condition that drops or multiplies rows fails the anchor and one
+  that merely admits more does not: that direction of drift costs work and changes no answer, which
+  is what "the predicate removes no row" means. The anchor's class comment says this at that
+  strength rather than claiming every divergence fails.
+* **No post-rewrite figure.** No consumer-scale captured store is reachable here, so the carrier's
+  `reason` row records the 41 s as measured before this rewrite, on the schema and dates it was taken
+  on, and records that no post-rewrite consumer-scale figure accompanies it. That absence is R861's
+  trigger.
 
 ## Reviewer findings
 

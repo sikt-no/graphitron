@@ -21,7 +21,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R864` | Capture moves below the generator: the fact tier becomes a module boundary | Spec | 2026-08-27 | [plan](capture-moves-below-the-generator.md) |
 | `R859` | A dev pass captures the same graph twice, so every save evaluates the register twice | Ready | 2026-08-27 | [plan](dev-pass-captures-the-graph-twice.md) |
 | `R848` | Design the materialization cut set as a whole instead of accreting it one registration at a time | Ready | 2026-08-27 <sub>created 2026-08-26</sub> | [plan](materialization-cut-set-is-accreted-not-designed.md) |
-| `R839` | The carrier states one condition twice, and the duplicate re-derives the producer once per driving row | Ready | 2026-08-27 <sub>created 2026-08-26</sub> | [plan](carrier-refresh-inlined-producer-cte.md) |
+| `R839` | The carrier states one condition twice, and the duplicate re-derives the producer once per driving row | In Progress | 2026-08-27 <sub>created 2026-08-26</sub> | [plan](carrier-refresh-inlined-producer-cte.md) |
 | `R834` | A top-level @service returning a @table type reads columns off the returned record instead of refetching by key | In Review | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](root-service-table-return-skips-key-refetch.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
@@ -606,7 +606,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R856` [**A consumer-schema capture spends over an hour inside the materialization refresh**](consumer-capture-spends-an-hour-in-the-refresh.md) — Spec, bug
 - `R864` [**Capture moves below the generator: the fact tier becomes a module boundary**](capture-moves-below-the-generator.md) — Spec, architecture
 - `R848` [**Design the materialization cut set as a whole instead of accreting it one registration at a time**](materialization-cut-set-is-accreted-not-designed.md) — Ready, architecture
-- `R839` [**The carrier states one condition twice, and the duplicate re-derives the producer once per driving row**](carrier-refresh-inlined-producer-cte.md) — Ready, model
+- `R839` [**The carrier states one condition twice, and the duplicate re-derives the producer once per driving row**](carrier-refresh-inlined-producer-cte.md) — In Progress, model
 - `R781` [**intent_field_column_table costs 151 seconds for 116 rows, and it is the inlining**](field-column-table-inlining-cost.md) — Backlog, model
 - `R765` [**Capture a field's authored named type as a fact, so a wrapper-stripping expression stops being a join key**](expression-keyed-joins-into-derived-relations.md) — Backlog, cleanup
 - `R861` [**Does the carrier producer still want a registration once the duplicated condition is gone**](producer-registration-after-duplication-removal.md) — Backlog, model
