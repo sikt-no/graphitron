@@ -120,7 +120,8 @@ Check the blindness against the register's own timings. `intent_mutation_write_d
 +10 and its reason records 12983 milliseconds falling to 5.4. `intent_field_reference_step_hop`
 scores +36 and its reason records `intent_node_id_decode` falling from about fifty seconds to about
 thirteen. Those are the two registrations bought for per-row and recursive re-evaluation, and the
-metric ranks them near the bottom.
+metric ranks them tenth and fifteenth of twenty by marginal, mid-table and below, against reasons
+recording two of the largest measured wins in the register.
 
 So a naming metric is a map of one mechanism, useful for locating where breadth concentrates and
 unusable for choosing a cut set. Committing the probe as-is, or reading a cut-set decision off the
@@ -205,8 +206,9 @@ taken on different trees and different schemas, so they are not comparable as fi
 that incomparability is a **coarse class**, because the classes below sit orders of magnitude apart
 and no cross-tree noise flips one into another.
 
-**Classify all twenty first, then score.** The classes are fixed and written into this item before
-the metric is run, so the gate cannot be tuned to the answer it produces. Class on the **absolute
+**Classify all twenty first, then score.** Both the class boundaries and the twenty assignments are
+fixed and written into this item below, before the metric is run, so the gate cannot be tuned to the
+answer it produces. Class on the **absolute
 saving** a reason records rather than on the ratio: a cut set is chosen to reduce total time, and a
 large ratio on a small base is not evidence of value.
 
@@ -215,11 +217,55 @@ large ratio on a small base is not evidence of value.
 | **A** | a read or capture that did not terminate, or timed out |
 | **B** | a saving of a second or more |
 | **C** | a saving under a second |
-| **U** | no timing at all, the reason arguing breadth only |
+| **U** | no saving stated: the reason argues breadth with no figure at all, or its figures price the refresh rather than the win |
+
+Here are the twenty, classified from the reason text in `meta_materialize` as it stands today. The
+assignments are in this item rather than promised to slice 3, so the gate is a written-down
+prediction and not a thing scored after the fact. The evidence column quotes what the reason records,
+so a Done reviewer can audit every row against the DDL without re-taking a measurement.
+
+| Registration | Class | What the reason records |
+|---|---|---|
+| `intent_resolved_type_binding` | A | the census-driven join over it did not finish inside a five-minute timeout |
+| `intent_node_id_decode_hop_column` | A | the walk does not finish inside a two-minute timeout |
+| `intent_node_id_instruction` | A | the decode slot went from not answering in 400 s to 278 ms |
+| `intent_mutation_payload_refusal` | A | the capture did not finish, twenty-three minutes of CPU with no output |
+| `intent_mutation_write_destination` | B | 12983 ms to 5.4 |
+| `intent_field_scope_table` | B | 6167 ms to 342 |
+| `intent_input_field_filter_role` | B | 4.9 s to 56 ms |
+| `intent_errors_field` | B | the carrier read about 49 s to under 7 |
+| `intent_field_reference_step_hop` | B | `intent_node_id_decode` about 50 s to about 13 |
+| `intent_mutation_payload_key_membership` | B | 1527 ms to 100 |
+| `intent_argument_scope_table` | B | the reader's five seconds, one evaluation being 70 ms against 69 driving rows |
+| `intent_field_column_scope` | B | `intent_field_column_table`'s ten seconds, one evaluation being about 170 ms |
+| `intent_mutation_payload_column` | B | one read about 4 s, the matched key over it inheriting that and adding half a second |
+| `intent_mutation_write_payload` | C | 266 ms to 37 |
+| `intent_input_field_resolving_table` | C | the bare walk 39 ms to 1 |
+| `intent_argument_column_scope` | C | 27 ms to 5 |
+| `intent_argument_column_match` | C | 15 ms to 6 |
+| `intent_argmapping_pair` | U | sixteen readers, fifty-five instantiations in one read, no figure |
+| `intent_spelled_table` | U | six readers, thirty-nine instantiations, no figure |
+| `intent_carrier_data_field` | U | timings price the refresh and a restructure, not the registration's own win |
+
+**Three rows are worth stating precisely, because classifying all twenty is what exposed them.** The
+last five B rows do not record a before-and-after the way the first eight do. `intent_argument_scope_table`,
+`intent_field_column_scope` and `intent_mutation_payload_column` record the cost the registration
+removes without an after figure; the after is a read of a filled table, which the register elsewhere
+measures at under a millisecond, so the class is determined and not guessed. `intent_carrier_data_field`
+is the one row the classes as first written did not cover, and it is why class U is defined above on
+a missing *saving* rather than a missing timing. Its reason is dense with figures, and every one of
+them prices either the refresh (about 170 ms for 15 rows, about 12 ms on a carrier-free schema) or a
+restructure that landed in the same change (the carrier read falling from about 49 s to that 170 ms
+by restructure alone). What the registration itself buys, the seat's five namings and the error
+channel's per-producing-field probe reading rows instead of re-evaluating the rule, has no figure.
+It is derivable at roughly five evaluations of a 170-millisecond rule, which would put it in B, and
+deriving a class is exactly what this gate exists to stop. So it goes in U, and it is the first
+relation the metric should be pointed at once it works.
 
 **The ship condition is over all twenty, not over a triple: no registration may outrank one in a
 higher class.** Class U is excluded from the comparison, having no evidence to compare against, and
-must be listed rather than quietly dropped.
+must be listed rather than quietly dropped. Three of the twenty are in U, so the comparison runs over
+seventeen: four A, nine B, four C.
 
 **This discriminates, and the earlier version did not.** The probe fails it, on the same marginals
 this plan already reports:
@@ -228,8 +274,13 @@ this plan already reports:
   milliseconds to 1) outranks `intent_mutation_write_destination` (+10, class B, 12983 milliseconds
   to 5.4). A 38-millisecond saving placed above a thirteen-second one.
 - `intent_mutation_payload_refusal` (+39, class A, its reason recording a capture that did not finish
-  at all, twenty-three minutes of CPU with no output) ranks ninth of twenty, below three class-B
-  registrations and below two class-U ones.
+  at all, twenty-three minutes of CPU with no output) ranks ninth of twenty. Eight registrations
+  outrank the one row in the register whose absence stops a build. Which classes those eight fall in
+  is a count off a probe run this item does not carry the output of, so slice 3 restates it from its
+  own run rather than this plan asserting it. The violation does not turn on that count: no class-A
+  registration can sit ninth here without something in a lower class above it. Eight rows outrank it,
+  at most three of them can be the register's other A rows and at most three the excluded U rows, so
+  at least two are B or C.
 
 **What the triple was, and what it now is.** An earlier draft made the ship condition an ordering
 over `intent_mutation_write_destination`, `intent_field_reference_step_hop` and
@@ -553,3 +604,38 @@ metric first runs. Cheap either way, the population being 18 timed rows and 2 br
 metric ranks the two order-of-magnitude registrations near the bottom; the gate section gives the
 precise positions, and tenth of twenty is mid-table. The precise statement is the one the gate rests
 on.
+
+### Round 4's notes taken (2026-08-27, author session session_01SNGgGUkFsdpJQVYF9d8SV8)
+
+Both non-blocking notes are taken, and the first one changed the gate rather than just adding a
+table.
+
+**The twenty assignments are in the item now**, with an evidence quote per row, so the safeguard the
+sentence claims is written down rather than promised to slice 3. The sentence itself now says
+"boundaries and assignments" so it states what it does.
+
+**Classifying all twenty found a row the classes did not cover, which is the point of landing them
+before scoring.** The round-4 record beside this says 18 of the 20 reasons carry an explicit timing
+and the two that do not are exactly class U, and that is accurate about timings. It is a different
+question from the one the classes ask, which is what saving a reason records. `intent_carrier_data_field`
+carries timings in quantity and none of them price what the registration buys: they price the refresh
+and a restructure that shipped in the same change, the 49 seconds to 170 milliseconds being credited
+to the restructure by the reason's own words. Its win is derivable at about five namings of a
+170-millisecond rule, which would land it in B, and a gate whose classes are settled by the reader's
+arithmetic is not a gate. So class U is redefined from "no timing at all" to "no saving stated", it
+holds three rows rather than two, and the comparison runs over seventeen.
+
+Three further B rows record the cost removed without an after figure. They are called out rather than
+smoothed over, the after being a read of a filled table that this same register measures at under a
+millisecond elsewhere, so the class follows from the recorded figure instead of from an estimate.
+
+**"Near the bottom" is now "tenth and fifteenth of twenty, mid-table and below"**, matching the gate
+section.
+
+One claim was withdrawn rather than restated. The second worked example said
+`intent_mutation_payload_refusal` ranks ninth "below three class-B registrations and below two
+class-U ones"; those bucket counts came off a probe run whose output this item does not carry, and
+moving a row into U can shift them. The example now states the eight-outranks-it fact, which the
+recorded marginals give, and derives the violation from the class populations: at most three of the
+eight can be A and at most three U, so at least two are B or C. Slice 3 restates the buckets from its
+own run.
