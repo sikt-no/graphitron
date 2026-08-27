@@ -99,7 +99,8 @@ Both slow processes ran a 16-registration DDL. That is measured for the first, w
 descriptors named its store, and inferred for the second, which started 76 minutes before the
 installed model jar changed. The order was reproduced from that store's own
 `meta_materialize_dependency` rows, and every registration ahead of the last two was timed in
-isolation against a populated store of the same schema:
+isolation against a populated store of the same schema. The `#` column numbers that store's
+16-registration order:
 
 | # | registration | one evaluation |
 |---|---|---|
@@ -233,7 +234,9 @@ suggestive one. Against a table it is flat, and flat all the way out.
 **Both suspects reach that view through a CTE that is inlined twice**, and in the refusal view one of
 the two namings sits inside the correlated `NOT EXISTS`. So the multiplier on the expensive relation
 is a driving-row count in one suspect and a constant in the other, which is why the two are not the
-same size:
+same size. Positions here number the shipped 20-registration order where the price list above numbers
+the slow store's 16, so a position is comparable between the two tables only through the relation it
+names:
 
 | # | refresh statement | one evaluation | rows |
 |---|---|---|---|
@@ -544,25 +547,54 @@ twenty-first registration in a register that took four in two days, which R848 i
 is a reason to prefer the deepest candidate and to price the refresh it adds, not a reason to prefer
 an unmeasured rewrite.
 
+Registering `intent_node_id_decode_column` would also be the first registration whose source view
+carries a recursive term; none of the twenty has one. Recorded because it is a first and not because
+it is a risk: the dependency walk parses this view today, reaching it from
+`intent_mutation_payload_column_live`, and `ViewReferences` handles recursive CTEs explicitly, so
+nothing in the register's machinery meets a new shape here.
+
 ## Implementation
 
 Numbered because each step's result decides the next and the intermediate states are observable.
 
-**Steps 1 and 2 have run and their outcome is recorded above. Step 2 came back with an agreement, so
-the branch is 3b and 3a is set down.** The step list is kept in its original order because it is the
-record of what was decided when, and because step 1 is still owed on the consumer schema; the amended
-sequence for the work that remains is:
+**Step 2 has run and its outcome is recorded above. Step 1 has not.** Step 2 came back with an
+agreement, so the branch is 3b and 3a is set down. Step 1 is a consumer-schema capture, it is still
+owed, and the sequence below pays it where an earlier draft of this preamble claimed the debt and then
+skipped it. The step list further down is kept in its original order because it is the record of what
+was decided when; the sequence for the work that remains is:
 
 1. Land the sibling logging item, so the next real capture reports which registration it entered.
-2. Register `intent_node_id_decode_column`, the deeper candidate, and re-price both suspects. This is
+2. **Step 1 on the consumer schema, against the DDL the tree ships, before either registration is
+   written.** Step 1's own text stands as written, "Nothing below is chosen before this step reports"
+   included, and the paragraph added under that step says what "reports" means on a run that does not
+   complete.
+3. Register `intent_node_id_decode_column`, the deeper candidate, and re-price both suspects. This is
    step 3b with the localisation already done.
-3. Register `intent_input_field_carrier_role` if the first registration leaves either suspect
+4. Register `intent_input_field_carrier_role` if the first registration leaves either suspect
    expensive. Take these one at a time rather than together, so each `reason` row carries the
    arithmetic of what its own registration bought, and so the second is landed on evidence rather
    than on the pair having been proposed together.
-4. Step 1 on the consumer schema against the fix, which is step 4 below and is still the proof of this
-   item.
-5. Step 5 below, unchanged.
+5. Step 1 again against the fix, which is step 4 below and is still the proof of this item.
+6. Step 5 below, unchanged.
+
+**Why the capture keeps its place ahead of the registrations, rather than the fixture prices standing
+in for it.** The prices establish that those two refresh statements are expensive and that the
+mechanism is a per-driving-row re-evaluation. What no fixture figure can say is whether a capture of
+the consumer schema still fails on the DDL the tree currently ships, and two facts recorded above make
+that a live question rather than a formality: `intent_mutation_write_payload`, the driving relation of
+both suspects, was an inlined view on the slow store and is a table now, so the multiplier's own input
+has moved in the direction of cheaper by an unmeasured amount; and R848 is open on whether the
+register should grow at all, so a twenty-first and twenty-second registration have to be worth their
+place rather than merely be an improvement on something. Landing two registrations without knowing
+whether the failure still reproduces is the one thing the evidence here does not support.
+
+So step 1 is a decision rule and not a formality, and it has two outcomes:
+
+- **The capture completes.** Then this item's remaining work is step 5 alone, its priority drops, and
+  neither registration lands under it. The fixture prices become evidence for whatever item argues the
+  register's shape, R848 or R849, rather than a fix here.
+- **The capture does not complete.** Then the logging names the registration it went into, that name
+  is consumer-scale confirmation of the fixture identification, and steps 3 onward are the fix.
 
 Do not read the ordering as licence to skip the re-pricing between the two registrations. The measured
 81× is the pair's, the 15× is the carrier view's alone, and no figure yet isolates what the deeper
@@ -590,6 +622,18 @@ record either a completion with a duration or a named statement.
 Nothing below is chosen before this step reports, and the outcome to prepare for is that it completes:
 the driving relation of both suspects is a table now and was an inlined view then. If it completes,
 this item's remaining work is step 5 alone and its priority drops.
+
+**What "reports" means, since this step now sits ahead of the fix and must not become an unbounded
+wait on a priority-1 bug.** It does not mean a completion. The sibling logging item emits a
+registration's name *before* its `DELETE` is issued, which is the ordering that item argues for
+precisely so that the registration which never returns is the one that gets named; the fact model page
+states the same property as the instrument's whole point. So a console stopped after a registration
+line has already reported, and this step is discharged the moment the run either finishes with a
+duration or has sat in one named registration past every earlier registration's own line put together.
+Neither outcome needs the run watched to the end, and a run stopped after it has reported costs what
+every kill on this schema costs and nothing more, which the section on killing it prices. What this
+step does need is the machine that holds the consumer schema; nobody can take it anywhere else, and
+that is the reason it is a step rather than a test.
 
 **2. The plan pair, in the form that varies statistics alone.** As the boundary section above
 describes: capture, plan, drop selectivity, plan again. In `graphitron`'s test tier over
@@ -679,19 +723,52 @@ section is a fixture measurement and a `reason` is read as a statement about the
   makes the registration the right lever rather than a rewrite of the view. A future reader who reads
   only "expensive view" will reach for the rewrite rung, which this investigation has already measured
   as the rung that pays least often.
-- The rung below, and why it was not taken. A captured fact is the cheaper lever by the hierarchy, and
-  the reason it is unavailable here should be stated rather than left as an omission: what these
-  relations compute is a fold over the decode walk rather than anything the capture reads off a schema
-  document or a catalog.
+- The rung below, and why it was not taken. A captured fact is the cheaper lever by the hierarchy, so
+  the row states the reason the rung is unavailable rather than leaving it as an omission, and the
+  reason is the seam and not the shape of the computation: the rows the fold walks are written by the
+  refresh, and every hand-written producer has already run by then. The section below establishes
+  that, and the row should say it in one clause rather than restate the argument.
 
-The first rung of the hierarchy deserves one explicit check before either registration is written,
-because nothing above has run it. `intent_node_id_decode_column`'s recursive `lifted` CTE walks
-`intent_node_id_decode_hop_column`, which is already a registered target and already a table. So the
-question is not whether the walk can be captured but whether the *fold* can: whether the per-position
-lift a reader needs is derivable at capture time from rows the capture already writes. If it is, that
-is a captured fact and it beats both registrations. Answering it costs a read of the hop relation's
-own comment and no measurement, so answer it rather than skipping to the rung this item happens to
-have priced.
+**The first rung, checked.** Nothing above had run this check and the plan asked for it, so here it is
+and here is what it returned. The question was not whether the decode walk can be captured, the hop
+relation being a registered target and already a table, but whether the *fold* over it can: whether
+the per-position lift `intent_node_id_decode_column` computes is derivable at capture time from rows
+the capture already writes.
+
+**It is not, and the obstruction is the seam rather than the computation.** `lifted`'s only input
+relation is `intent_node_id_decode_hop_column`, and that is a registered target, which is to say a
+table the *refresh* fills. `FactCapture.capture` states the order and states that it is load-bearing
+in one direction: the hand-written producers run after `sink.flush` and before
+`Materializations.refresh`. So at the only seam a captured fact has, the rows the fold would walk do
+not exist yet. Nor does moving a producer after the refresh help, because the readers that cost the
+hour are themselves refresh statements: both suspects read `intent_node_id_decode_column`, so a
+producer that ran after the refresh would write its rows after everything that needed them. A captured
+fact here would have to be interleaved *between* two registrations of the refresh order, which is a
+hand-written body inside the register rather than a captured fact, and the register has no shape for
+one.
+
+`InputOccurrencePaths.derive` is genuine precedent for a capture-time walk and it is precedent for the
+shape only, which the seam is what distinguishes: its inputs are `graphql_argument`, `graphql_field`
+and `graphql_type`, transcription tables the flush wrote, so it reads base facts and this fold would
+read a refresh target. That difference is the whole of the answer, and it took a read of the two
+sources and no measurement, as the plan predicted it would.
+
+Two consequences worth recording, because they close the fork rather than leaving it narrowed. What
+*would* make the fold a captured fact is reimplementing the hop rule in Java as well, so the
+derivation reaches base facts; that is not the top rung but the bottom one, moving a rule out of the
+view it is stated in, which the hierarchy reserves for a rule no view can express, and the hop rule is
+a working view carrying its own registration and its own measured reason. And it would not displace
+both registrations even then: the carrier view's cost is its `landing` aggregate re-evaluated once per
+driving row, which a cheaper `intent_node_id_decode_column` reduces without removing, and the 15× the
+carrier substitution bought was measured with `decode_column` still a view. So the carrier
+registration is needed on the measurement whatever happens above it.
+
+One narrower middle-rung candidate exists and is not preferred: registering the fold itself, which
+would first need `lifted` promoted from a local CTE to a named relation. That is the same move
+`meta_materialize`'s hop-column reason already describes wanting for its own inner alias, it is
+unpriced where the two registrations here are priced, and it does not remove the carrier's
+per-driving-row aggregate either. It belongs to whatever item argues the register's shape rather than
+to this fix.
 
 **4. Re-run step 1 against whatever the fix is.** The proof of this item is a capture of that schema
 that completes. No fixture-scale figure substitutes for it, and the ratchet in step 5 is not that
@@ -749,19 +826,24 @@ is what let the measurement land here and pick a branch without a second filing.
 reopen, which is the mechanism the plan named for exactly this case, so the trade came out roughly
 even rather than badly.
 
-Two new Backlog items are now expected, both from the measurement rather than from the fix, and
-neither blocking:
+One new Backlog item is now expected, from the measurement rather than from the fix, and not blocking.
+A second candidate turned out to be already covered, and the finding it rests on belongs to that item
+instead:
 
-- **`report-inline-multiplicity` cannot see the two things that made this expensive.** It counts
-  references to relations the DDL declares, so a local CTE name is invisible to it, and H2 inlines a
-  non-recursive CTE exactly like a view; it under-reported the carrier view's expansion by half in each
-  suspect for that reason. And it cannot see correlation at all, which is the factor that turns a
-  constant into a driving-row count. Counting CTE namings and flagging a naming inside a correlated
-  subquery are both mechanical over the DDL the tool already parses. The metric's own documentation is
-  careful that it ranks breadth and not cost, so this is not a broken tool; it is a tool that missed
-  the two relations that stopped captures from finishing, in a way its next author can close. This
-  sits closer to R848's question than to this item's and should be filed against the frame rather
-  than here.
+- **`report-inline-multiplicity` cannot see the two things that made this expensive**, and R849 is
+  where that lands rather than a new filing. It counts references to relations the DDL declares, so a
+  local CTE name is invisible to it, and H2 inlines a non-recursive CTE exactly like a view; it
+  under-reported the carrier view's expansion by half in each suspect for that reason. And it cannot
+  see correlation at all, which is the factor that turns a constant into a driving-row count. The
+  metric's own documentation is careful that it ranks breadth and not cost, so this is not a broken
+  tool; it is a tool that missed the two relations that stopped captures from finishing. What has
+  changed since this bullet was written is that the capability exists: `ViewReferences` is in the tree
+  reading multiplicity, correlated positions and recursive CTEs off the stored view definitions, and
+  R849 is Ready to build the weighted metric over it. R849 disclaims touching this reporter at any
+  outcome except through its acceptance gate's negative branch, which asks whether the shipped step is
+  deleted rather than kept as a nearly-right one. So this is evidence for that branch and not an item:
+  the two relations the reporter missed are a worked case of what keeping it nearly-right costs, and
+  it should be carried into R849 rather than filed beside it.
 - **`Materializations.analyse`'s javadoc prices statistics with a scan count.** 8880 scans against
   523, offered as "most of the gain the indexes exist for". Scan counts are row counts and not costs,
   and the tree already records an index that removed 96% of a relation's visits and moved the clock not
@@ -785,7 +867,9 @@ an hour of silence into a progress report. It should still land first, and step 
 argument for it.
 R850 describes this failure mode at a different relation and assumes the trigger is someone editing
 that arm; this is a second trigger, on store size alone with no code change. R839 is position 6.
-R848 is the frame, asking whether the register's shape is right at all. R857 has a dev start
+R848 is the frame, asking whether the register's shape is right at all, and R849 builds the
+instrument that frame needs; the reporter finding in the Roadmap entries section is evidence for
+R849's acceptance gate rather than an item of its own. R857 has a dev start
 evaluating the register twice, which doubles whatever a refresh costs on the surface a person waits
 on, and its second pass runs on a settled store with statistics, so it is not the pass this item is
 about.
@@ -829,6 +913,18 @@ sequence, or say plainly that the fixture prices justify both registrations what
 would now report, and carry the argument for why that survives R848. Either is fine; what a reviewer
 cannot approve is the plan holding both.
 
+**Author note.** Took the first branch: the pre-fix capture is now item 2 of the amended sequence,
+ahead of both registrations, and the registrations moved to 3 and 4. The preamble no longer says step 1
+has run; it says step 2 has and step 1 has not, and names the earlier draft's claim-then-skip as the
+thing it is correcting. Two additions came with it. A paragraph after the sequence says why the
+capture keeps its place rather than the fixture prices standing in for it, on the two facts the
+finding named, the driving relation having become a table and R848 being live, and states step 1's two
+outcomes as a decision rule: a completion drops this to step 5 alone with neither registration landing
+under it, a non-completion names the registration and licenses steps 3 onward. And a paragraph under
+step 1 itself says what "reports" means, since a step ahead of the fix must not become an unbounded
+wait: the sibling item emits a registration's name before its `DELETE`, so a run stopped inside one has
+already reported and no completion is required to discharge the step.
+
 **Finding 2: the plan tells the implementer to write into a permanent `reason` row that the top rung
 is unavailable, and the paragraph below it says nobody has checked and that if it is available it
 beats both registrations.** Step 3b's third `reason`-row obligation is "The rung below, and why it
@@ -850,6 +946,32 @@ the fix rather than a fork, and the `reason`-row obligation states something tha
 rather than assumed. This is the item's own standard: the reopen paragraph withholds approval from an
 arm whose decision rule had returned a verdict, and this is a decision rule that has not been run.
 
+**Author note.** Ran the check and recorded the answer in step 3b, which now opens "The first rung,
+checked" instead of asking for it. The answer is no, and the obstruction is the seam rather than the
+computation, which is a different reason from the one the `reason`-row bullet was asserting:
+`lifted`'s only input is `intent_node_id_decode_hop_column`, a registered target the *refresh* fills,
+and `FactCapture.capture` runs every hand-written producer before `Materializations.refresh` and says
+that order is load-bearing. So at the only seam a captured fact has, the rows the fold walks do not
+exist yet, and a producer moved after the refresh is too late because the readers that cost the hour
+are themselves refresh statements. A captured fact here would have to sit between two registrations of
+the refresh order, which is a hand-written body inside the register and not the top rung.
+
+That also disposes of the two pointers the finding supplied. `intent_node_id_decode_hop_column` being
+a registered target is exactly what makes the fold unreachable rather than reachable, the target being
+the refresh's output and not the capture's. And `InputOccurrencePaths.derive` is precedent for the
+shape and not for the seam: its inputs are `graphql_argument`, `graphql_field` and `graphql_type`,
+transcription tables the flush wrote. The section says both in those terms.
+
+Two things were added rather than only the answer, so the fork closes instead of narrowing. What would
+make the fold a captured fact is reimplementing the hop rule in Java too, which is the bottom rung and
+not the top one, and the section says why. And even a "yes" would not have displaced both
+registrations: the carrier view's cost is its `landing` aggregate re-evaluated once per driving row,
+which a cheaper `intent_node_id_decode_column` reduces without removing, and the 15× the carrier
+substitution bought was measured with `decode_column` still a view. One narrower middle-rung candidate
+is named and declined in the same place, registering the fold itself, which would need `lifted`
+promoted from a local CTE to a named relation first. The third `reason`-row bullet now states the seam
+in a clause and points at that section rather than asserting a settled reason of its own.
+
 Non-blocking, no response needed:
 
 - The two refresh-position tables number from different bases, the price list from the
@@ -867,3 +989,13 @@ Non-blocking, no response needed:
   none: the dependency walk already parses this view today, reaching it from
   `intent_mutation_payload_column_live`, and `ViewReferences` handles recursive CTEs explicitly. Noted
   only because it is a first.
+
+**Author note on the three.** All acted on. Each table now says which order it numbers in, and the
+sentence says a position is comparable between them only through the relation it names. The
+`report-inline-multiplicity` bullet is no longer a filing: R849 read as suggested, and it disclaims
+touching that reporter at any outcome *except* through its acceptance gate's negative branch, which
+asks whether the shipped step is deleted or kept as a nearly-right one, so the bullet now carries the
+two missed relations into that branch as a worked case rather than proposing an item beside it. The
+Roadmap entries section opens on one expected item instead of two, and Related says where the finding
+went. The recursive-source-view note is recorded as a first in the structural-candidate section, in the
+terms it was given, viability included.
