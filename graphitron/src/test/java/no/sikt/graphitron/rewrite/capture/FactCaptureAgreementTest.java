@@ -175,6 +175,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       the arms are textually parallel, so one case seeds one path shape at both sites and asserts
  *       the shared columns come back equal, which is what keeps a change to one from silently
  *       leaving the other behind;
+ *       {@code no.sikt.graphitron.model.intent.ConditionMethodRouteTest} binds
+ *       {@code intent_condition_method_route}, the rung both hop views join for an element that
+ *       names a condition and neither a key nor a table, against a seeded census and catalog: the
+ *       shapes are the ones a signature can take rather than ones a real classpath offers side by
+ *       side, and the asymmetry between the two parameters is asserted from both sides, an
+ *       unresolvable arrival being no route where an unresolvable departure is every table in the
+ *       graph's sources;
+ *       {@code no.sikt.graphitron.model.intent.ConditionMethodRouteDefectTest} binds
+ *       {@code intent_condition_method_route_defect} on the same terms, one case per verdict plus
+ *       the case that makes the pairing complete: a pair that routes draws no row, so the two
+ *       relations partition the authored population rather than overlapping on it;
  *       {@code no.sikt.graphitron.model.intent.ArgumentScopeTableTest} binds
  *       {@code intent_argument_scope_table}, which table an argument's column-shaped content binds
  *       against, one case per rung plus the cases where the rungs compete, the precedence being the
@@ -419,6 +430,8 @@ class FactCaptureAgreementTest {
         registrations.put("intent_spelled_table", Arm.DERIVED);
         registrations.put("intent_field_reference_step_hop", Arm.DERIVED);
         registrations.put("intent_name_matched_key_pair", Arm.DERIVED);
+        registrations.put("intent_condition_method_route", Arm.DERIVED);
+        registrations.put("intent_condition_method_route_defect", Arm.DERIVED);
         registrations.put("intent_table_key_candidate", Arm.DERIVED);
         registrations.put("intent_node_metadata_defect", Arm.DERIVED);
         registrations.put("intent_inferred_node_type", Arm.DERIVED);

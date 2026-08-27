@@ -217,6 +217,30 @@ class MutationRoutineSeatTest {
     }
 
     /**
+     * The same verdict at the shape that used to read as {@code CHAIN_UNRESOLVED}: a first hop that
+     * joins by an authored condition alone. Such a hop names no key and no table, so it resolved to
+     * no hop row and the chain reached no node, which conflated a refusal with a shape the
+     * classification walk calls owed an emitter. It now routes off the condition method's signature,
+     * the chain reaches seq 1, and the verdict is the one this relation's own CASE already assigns
+     * the shape. The sibling case above writes {@code {table:, condition:}}, which is the table arm's
+     * row and reached this verdict all along, so this case is the population that moved.
+     */
+    @Test
+    void aBareConditionFirstHopReachesTheChainAndReadsAsUnanchored() {
+        withCapturedStore(RENTAL + """
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+                @reference(path: [{condition: {
+                  className: "no.sikt.graphitron.rewrite.TestConditionRoutes",
+                  method: "routineResultToRental"
+                }}])
+            }
+            """, dsl -> assertThat(seats(dsl)).containsExactly(
+                "Mutation.rentFilm CHAIN UNANCHORED_FIRST_HOP Rental"));
+    }
+
+    /**
      * The terminus rule, and it is the author's {@code @table} that is compared: the chain lands on
      * {@code rental} and the return type's own binding names {@code actor}.
      */

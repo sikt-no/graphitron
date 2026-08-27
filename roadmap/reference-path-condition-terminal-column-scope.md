@@ -182,6 +182,66 @@ its population.
   departure fan-out lands as realized rows and refresh fill cost, priced on the same fixture. The
   rung is the registerable unit if either measurement asks for one.
 
+## What landed, and the read cost measured
+
+The three pieces landed as specified, with two decisions the plan left to implementation and one
+finding about the census that is worth carrying to the Done gate.
+
+**The defect view picks its verdict with a CASE rather than an arm per verdict**, which departs from
+`intent_argmapping_projection_defect`'s shape while keeping its doctrine. The reason is overloads:
+arms would be disjoint per signature and not per authored pair, so a method name carrying a
+one-parameter overload beside a wildcard-target one would draw two rows where a reader wants the one
+reason its route came up empty. That is `intent_mutation_routine_seat`'s own argument for the same
+shape, and the precedence is stated on the verdict column. The vocabulary came out at five:
+`CLASS_NOT_IN_CENSUS`, `METHOD_NOT_ON_CLASS`, `FEWER_THAN_TWO_PARAMETERS`,
+`WILDCARD_TARGET_PARAMETER`, `TARGET_NOT_A_TABLE_CLASS`. It did not grow past a screenful, so it
+stays inside this item rather than splitting out.
+
+**The census admits public classes only, and that is a silence the store owns and the generator does
+not.** A condition method on a package-private or nested class has no census row, so the route
+resolves nothing where the parser resolves the same signature through its codegen loader and emits
+the hop. This is not new behaviour and not a shortfall of the arm; it is the classpath scan's own
+disclosed rule meeting a new reader. It is stated on the route relation and named as a verdict rather
+than folded into the author's errors, and it has one practical consequence: `TestConditionStub`, the
+tree's shared condition fixture, is package-private, so a test about what the store resolves needs a
+public carrier. `TestConditionRoutes` is that carrier, and its own comment says why it exists.
+
+**Read cost, both arms, on a censused capture of twelve units with twelve field-site and twelve
+argument-site bare-condition coordinates, against the same schema with none.** Scan counts are
+identical across runs; the clocks at this size are noise-dominated and are given as a range over two
+runs.
+
+The argument hop view is unregistered and inlined into both terms of the recursion above it, so its
+route join is plan cost and shows up multiplied. The hop view reads 5 scans with no such coordinate
+and 484 with twelve; the walk over it, `intent_argument_reference_step_target`, 33 against 791. The
+clocks do not follow: 13 to 14 milliseconds against 8 on the hop, and 27 to 29 against 18 to 30 on
+the walk, so at this size the arm costs rows visited and no measurable time. `intent_condition_membership`,
+the fold at the top of the chain this item was filed to close, goes 659 scans and 50 milliseconds to
+1115 and 49, and it now admits the coordinates it was silent at.
+
+The field-site hop is a materialized table, so the arm's rows are realized and paid for at refresh.
+Twelve coordinates produce twelve rows, taking the relation from 24 to 36: one row per coordinate,
+because every condition fixture in the tree types parameter 0 concretely. The whole materializer
+refresh is 260 to 345 milliseconds without the coordinates and 225 to 286 with them, which is to say
+the fill is inside the noise. The walk above it reads 137 scans against 233.
+
+The wildcard parameter 0 fan-out the plan flagged is therefore unexercised rather than cheap. Its
+size is one row per table in the graph's sources per routed coordinate, and no fixture in the tree
+reaches it: the two wildcard-typed condition methods in the reactor type both parameters as
+`Table<?>`, which yields no route at all because the arrival does not resolve. A schema that writes
+`(Table<?>, ConcreteTable)` would realize that fan-out into the materialized hop, and the rung is the
+registerable unit if it ever needs one. Nothing here asks for a registration: the rung's own read is
+397 scans and 5 to 6 milliseconds, and it has no reader that probes it per row.
+
+**Five new cells in the read-cost gate**, all pinned with their figures in `DerivedReadCostTest`'s own
+comment. Two are the field-site walk and the field column scope rule against the hop registration,
+188 scans dearer registered and decisively faster on the clock, which is the counter's floor this gate
+already records for that relation's other readers. Three are the argument-site walk and the two decode
+hop relations against the argument scope registration, where the clock agrees with the counter at
+differences of milliseconds. Worth reading with the fixture in hand: that gate's store is captured
+with no classpath census, so no condition method resolves in it and the arm holds no rows at any unit
+count, which means those five cells price a plan and not a population.
+
 ## Reviewer findings
 
 ### Round 1 (2026-08-27, Spec -> Ready, reviewer session 013khiqfW8iWtQnU391kRN8B)

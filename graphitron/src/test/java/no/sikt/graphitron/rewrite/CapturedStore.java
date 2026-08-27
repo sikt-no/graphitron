@@ -288,7 +288,13 @@ public final class CapturedStore implements AutoCloseable {
 
     /** {@link #andGraph(String, String)} against a generated jOOQ catalog. */
     public CapturedStore andCatalogGraph(String otherGraph, String sdl, JooqCatalog jooq) {
-        captureAnother(otherGraph, sdl, Objects.requireNonNull(jooq, "jooq"), List.of(), false);
+        return andCatalogGraph(otherGraph, sdl, jooq, List.of());
+    }
+
+    /** The same with a classpath census, for a sweep whose relations span the catalog and the census. */
+    public CapturedStore andCatalogGraph(String otherGraph, String sdl, JooqCatalog jooq,
+                                         List<CompletionData.ExternalReference> census) {
+        captureAnother(otherGraph, sdl, Objects.requireNonNull(jooq, "jooq"), census, false);
         return this;
     }
 

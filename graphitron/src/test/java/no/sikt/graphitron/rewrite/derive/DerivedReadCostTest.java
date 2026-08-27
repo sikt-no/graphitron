@@ -104,7 +104,7 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 109;
+    private static final int READERS_IN_SCHEMA = 111;
 
     /** Views whose derivation reaches at least one registration's target. */
     private static final int READERS_WITH_CELLS = 67;
@@ -440,7 +440,38 @@ class DerivedReadCostTest {
         // refusal and the write destination each used to expand the scope family on their way to
         // an answer, and each now reads a table for the same fact, so the rung is no longer on
         // their path and they hold no cell against it to be non-monotonic in.
-        "intent_mutation_write_payload|intent_mutation_payload_column_live");
+        "intent_mutation_write_payload|intent_mutation_payload_column_live",
+        // The two reference-step walks over the field-site hop, which joined this set when that
+        // hop gained its condition arm, and the clearest case in it for reading the counter as a
+        // row count. Both are 188 scans dearer registered (795 against 607 on the walk, 2854
+        // against 2666 on the scope rule) and both are decisively faster: 2 milliseconds against
+        // 17, and 15 against 29. The rows are the unregistered side's to lose rather than the
+        // registered side's to gain, which is what the new arm changed: inlined, its route join
+        // short-circuits to nothing on this fixture and H2 charges it no scans, where the same
+        // arm against a table is charged a visit per naming and the walk names the relation twice.
+        // No index question, the target carrying one already.
+        "intent_field_reference_step_hop|intent_field_reference_step_target",
+        "intent_field_reference_step_hop|intent_field_column_scope_live",
+        // The same arm reaching the argument-site walk, where it is the argument scope table's
+        // registration that pays. Three cells, and here the clock agrees with the counter rather
+        // than contradicting it: the walk 187 scans and 29 milliseconds registered against 9 and
+        // 16, the decode hop 1294 and 34 against 1122 and 26, its column child 1387 and 35
+        // against 1215 and 25. Absolute differences of milliseconds on a twelve-unit fixture, and
+        // the registration they are charged to is the one its own registry reason prices at
+        // seventy milliseconds per naming across five namings, so the trade stands; what moved is
+        // the plan the argument hop's fourth arm produces, not what any relation computes.
+        //
+        // Worth reading with the fixture in hand before treating any of these five as work. This
+        // gate's store is captured with no classpath census, so no condition method's signature
+        // resolves in it and the arm these five cells appeared with holds no rows at any unit
+        // count. What they price is therefore a plan and not a population, which is the state the
+        // input-surface note above records answering the other way: there the fixture could hold
+        // the rows and grew to, and three cells went monotonic. Populating this arm needs the
+        // census on this fixture's capture, which changes what every jvm-reading relation in the
+        // domain measures, so it is a question about this gate rather than about this arm.
+        "intent_argument_scope_table|intent_argument_reference_step_target",
+        "intent_argument_scope_table|intent_node_id_decode_hop",
+        "intent_argument_scope_table|intent_node_id_decode_hop_column_live");
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather
