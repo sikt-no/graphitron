@@ -1,7 +1,7 @@
 ---
 id: R849
 title: "Measure re-evaluation rather than naming, so a materialization cut set can be chosen on evidence"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 2
 theme: model-cleanup
@@ -510,3 +510,46 @@ in the DDL rather than measured per run. Two views in one day is also the item's
 happening again while it waits.
 
 The two prior rounds' non-blocking notes were both taken.
+
+### Round 4 (2026-08-27, Spec -> Ready, reviewer session session_014R3TSfjFfZQzoms4otDrVn)
+
+Verdict: sign off. Both gate questions answered, and the acceptance section is now a gate rather than
+a formality.
+
+What changes when this lands: nothing at the consumer surface, and the plan says so. What it unblocks
+does. Every capture, and every language-server or MCP store open, pays the register's twenty view
+evaluations in twelve sequential stages, and nobody can propose a different set because no instrument
+scores a set. This builds that instrument, and R848 is the item that would spend it.
+
+The gate discriminates now, and I checked that it can actually be run. Coarse classes on the absolute
+saving a reason records, fixed before scoring, with the ship condition over all twenty and no
+registration permitted to outrank one in a higher class. Both worked examples verify verbatim against
+the register: `intent_input_field_resolving_table`'s reason says "the bare walk goes from 39 to 1",
+and `intent_mutation_payload_refusal`'s says "on the sakila example schema the capture did not finish,
+twenty-three minutes of CPU with no output". The classification is derivable across the whole
+register: 18 of the 20 reasons carry an explicit timing, and the two that do not,
+`intent_argmapping_pair` (sixteen readers, fifty-five instantiations in one read) and
+`intent_spelled_table` (six readers, thirty-nine), argue breadth with no figure at all, which is
+exactly class U and exactly the two the second worked example counts on. The plan also states plainly
+that its earlier triple claim was wrong rather than quietly dropping it, which is the right way to
+retire a claim a reviewer refuted.
+
+The home argument settled in revision 2 still holds and I re-verified nothing else in the plan body
+moved with this revision: the diff is confined to the gate, the census pinning and one clarifying
+aside.
+
+#### Non-blocking
+
+**The twenty assignments are not in the item, though the sentence says they are.** "The classes are
+fixed and written into this item before the metric is run, so the gate cannot be tuned to the answer
+it produces" is true of the class *definitions* and not of the per-registration assignment, which
+appears only for the two worked examples. The instruction wrapping it, classify all twenty first then
+score, is executable and the boundaries are objective enough that a Done reviewer can audit every
+assignment against the DDL, so the safeguard is sound in practice. It would be real rather than
+promised if the twenty-row classification landed in this item, or if slice 3 committed it before the
+metric first runs. Cheap either way, the population being 18 timed rows and 2 breadth-only ones.
+
+**"Near the bottom" against "tenth and fifteenth of twenty".** The blindness section still says the
+metric ranks the two order-of-magnitude registrations near the bottom; the gate section gives the
+precise positions, and tenth of twenty is mid-table. The precise statement is the one the gate rests
+on.
