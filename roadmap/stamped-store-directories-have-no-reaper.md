@@ -44,17 +44,31 @@ hang investigation was 124 MB and held 67 rows.
 
 ## What lands
 
-Every process that opens the fact store also releases the stamped directories under the same
-workspace that nothing is using any more, keeping the three most recently used. A contributor doing
-model work stops accumulating a several-hundred-megabyte directory per DDL edit, and gives up no
-warmth they would otherwise have had: a directory another process is holding is never touched, and a
-stamp still in rotation is kept because it is recently used, not because anything reasoned about
-which stamps are still producible. The workspace in the report that holds 13 stamped directories
-settles at 3 on its next build.
+Every process that opens the fact store also releases the stamped directories under the same home
+that nothing is using any more, keeping the three most recently used. A contributor doing model work
+stops accumulating a several-hundred-megabyte directory per DDL edit, and within the retention count
+gives up no warmth at all: a directory another process is holding is never touched, and a stamp still
+in rotation is kept for being recently used rather than because anything reasoned about which stamps
+are still producible. The workspace in the report that holds 13 stamped directories settles at 3 on
+its next build.
 
-Nothing about correctness moves. The sweep cannot fail a build, cannot make a run cold that would
-have been warm, and touches nothing outside a directory it has positively recognised as a store's
-own.
+That contributor is the beneficiary, and this is deliberately a much smaller feature for a consumer.
+A consumer's stamped directories do not multiply with their own schema work: the stamp names
+graphitron's fact schema and graphitron's version, so what accumulates in a consumer's home is one
+directory per graphitron version that checkout has ever built with. The sweep bounds that too, at the
+rate they upgrade rather than the rate they edit. The first-client check below is where the item
+speaks to them, and it says that and not more.
+
+What the sweep guarantees, in the terms it can actually keep: it cannot fail a build, whatever it
+meets and however it fails; it never touches a directory another process holds; and it reads and
+removes nothing outside a directory it has positively recognised as a store's own. What it cannot
+guarantee is that no run ever goes cold, and no finite retention could. Past three stamps a genuine
+alternation reaps its fourth and the next build on that stamp mints afresh, which is eviction working
+rather than a defect: the cost is one cold build of several hundred megabytes, paid by whoever keeps
+four stamps in rotation, in the same currency as the residual race priced under "What the lock probe
+proves" below. A freshness floor to protect against it would be a second policy over the same
+directories, which "What this deliberately does not do" declines for the same reason it declines a
+size ceiling.
 
 ## The policy: keep the three most recently used, release what nothing holds
 
@@ -83,7 +97,15 @@ wants, the stamp a long-running dev session in the same checkout is holding, and
 of history. It is a constant in the store, not a mojo parameter; see "What this deliberately does
 not do".
 
-## The lock probe is a proof, not a heuristic
+The three are counted per home, which is per checkout under the default cache convention and
+whatever the consumer meant it to be under a pinned one. `AbstractRewriteMojo.resolveStoreDirectory`
+returns a pinned `<storeDirectory>` verbatim, with no workspace segment, so several checkouts sharing
+one pinned home share the three between them and alternate more deeply than three. The documented
+uses of pinning are per-workspace and ephemeral CI, so this costs warmth in a configuration nothing
+recommends, and the alternative, the store inferring a workspace under a home a consumer chose, is
+the guessing the dead-workspace note below refuses for the same reason.
+
+## What the lock probe proves, and the order that keeps it portable
 
 `GraphitronModelStore.fileUrl` already refuses `AUTO_SERVER`, which means H2 writes no lock file and
 takes the MVStore's own operating-system lock on `store.mv.db` instead. That lock is exactly the
@@ -98,15 +120,34 @@ our shape opens:
 * after the holder is `kill -9`'d: `tryLock` acquires immediately, because the lock is the operating
   system's and dies with the process. A dead holder cannot wedge the sweep the way a stale
   `AUTO_SERVER` lock file wedges an open;
-* holding the lock and deleting the file in the same breath is permitted.
+* holding the lock and deleting the file in the same breath is permitted. That last result is a
+  POSIX property rather than a portable one, which is what decides the deletion order below.
 
-So a candidate is released only while the reaper holds an exclusive lock on its database, and any
-answer other than "acquired" leaves it alone. That is a proof about the present instant rather than
-an inference from age, and it is the mechanism the item asked to see argued rather than assumed.
+So the probe answers "does anybody hold this database at this instant", and any answer other than
+"acquired" leaves the candidate alone. That is a proof about the instant it ran rather than an
+inference from age, and it is the mechanism the item asked to see argued rather than assumed.
 
-There is a residual race: a process may open a candidate between the reaper releasing the lock and
-deleting the file. Its cost is that the opener runs cold, which is the cache's ordinary failure mode
-and the one every other arm of `openAt` already takes.
+**The reaper probes, closes the channel, and only then unlinks.** It does not hold the lock across
+the deletion, even though the fourth measurement says a POSIX kernel would let it. Unlinking a file
+the process holds an open channel on is a POSIX guarantee; on Windows the JDK does not open channels
+with `FILE_SHARE_DELETE`, so `Files.delete` on a path this process holds a channel on fails with
+`AccessDeniedException`. Windows is a platform we resolve a cache home on
+(`%LOCALAPPDATA%\graphitron\model\`, resolved by `AbstractRewriteMojo.resolveStoreDirectory` and
+documented in the `storeDirectory` row), no CI job of ours runs there, and the reaper swallows its own
+exceptions, so a hold-and-unlink order would have freed nothing on that platform, forever, silently,
+with no diagnostic pointing at it, on the platform whose contributors have the same disk growth this
+item is about. One order that works everywhere beats a platform-conditional one for a mechanism whose
+failures are invisible by construction, and a POSIX-only sweep declared in the manual would be
+answering the disk problem for some of the audience and documenting it for the rest.
+
+What that order gives up is the strength of the proof, and the price is already in this plan. Between
+the probe releasing the lock and the unlink landing, another process may open the candidate. Then
+either the unlink wins, and the opener finds its store gone (on POSIX it keeps writing to an unlinked
+inode and the next run boots cold; on Windows the unlink loses instead, throws
+`AccessDeniedException`, is caught, and the candidate survives to the next sweep), or the opener wins
+and nothing is lost. Every outcome costs warmth, which is the cache's ordinary failure mode and the
+one every arm of `openAt` already takes. The window is two syscalls wide, against a candidate nobody
+has opened in at least three sessions, so this is a priced risk and not a mitigated one.
 
 ## A candidate has to look like a store directory
 
@@ -114,24 +155,65 @@ The home is not always ours. A consumer that pins `<storeDirectory>` may point i
 holding other things, so "every sibling directory of the one I opened" is not a safe candidate rule.
 
 A candidate is a direct child directory of the home, other than the one this run opened, that holds
-`store.mv.db` or the recency marker below, and holds nothing else beyond files whose names begin with
-`store` (which is every file H2 derives from the database name: the store, its trace log, its
-temporary files). Anything else under the home is not this mechanism's business, including an empty
-directory, which is also what a store being minted by another process looks like for the instant
-between `createDirectories` and the first write. The recognition rule makes that race structurally
-impossible rather than narrow.
+`store.mv.db`, and holds nothing else beyond files whose names begin with `store`. That prefix covers
+every file H2 derives from the database name (the store, its trace log, its temporary files) plus the
+recency marker, which is named under the prefix for exactly this reason; see the next section.
+Anything else under the home is not this mechanism's business.
+
+`store.mv.db` is *required* rather than accepted as one of two alternatives, and that requirement is
+what makes two otherwise undefined states inert:
+
+* **A directory holding only the marker** is not a candidate. That is a reachable state and not a
+  corner: `GraphitronModelStore.DATABASE`'s javadoc tells a person that a hand cleanup means removing
+  everything in the directory that starts with the database name, and doing exactly that to a swept
+  cache leaves the marker behind. A rule admitting it would then have to take an exclusive lock on a
+  database that is not there, and opening a channel on `store.mv.db` to find out would have the
+  reaper create the file it was about to delete. Requiring the database instead leaves a stray marker
+  as a few bytes nobody reads.
+* **An empty directory** is not a candidate either, which is also what a store being minted by
+  another process looks like for the instant between `createDirectories` and H2's first write.
+
+Two ordering rules keep the mint race no wider than that, and the plan states them rather than leaving
+the implementer to infer them from the claim. The marker is written strictly *after* a successful
+open, never before, so a directory carrying a marker always carries a database H2 has opened. And
+`store.mv.db` is the *last* file the reaper unlinks, so a deletion that fails part way leaves a
+directory the next sweep still recognises and retries, rather than the marker-only residue it has just
+declared inert; a deletion that gets the database and then fails to remove the directory itself leaves
+an empty one, which is the harmless end of the same trade.
+
+What is left is a window the width of H2's own open, where `store.mv.db` exists and the MVStore lock on
+it is not yet taken, so the earlier claim that "the recognition rule makes that race structurally
+impossible" is retired rather than restated: recognition narrows the race to that window, and the cost
+inside it is the priced one from the section above, a store unlinked under its minting process and a
+cold run. Recency narrows it again without being asked to: a directory being minted right now is the
+most recently used one in the home under either recency source, so it sorts at the top of the retention
+and never reaches the probe. That is a consequence of the ordering rather than a rule the reaper
+enforces, which is why recognition is stated as the guard and this only as the reason the window is
+hard to reach in practice.
 
 ## Recency is a fact the store records
 
-Each store directory carries a `last-used` marker file, rewritten by every successful file-backed
-open with the current timestamp as its text; its modification time is what the sweep reads, and the
-text is for a person looking at the cache directory to answer "when did I last build this".
+Each store directory carries a `store.last-used` marker file, rewritten by every successful
+file-backed open (strictly after the connection is open and its stamp checked, per the ordering above)
+with the current timestamp as its text; its modification time is what the sweep reads, and the text is
+for a person looking at the cache directory to answer "when did I last build this".
+
+The name sits under the `store` prefix deliberately, rather than being `last-used` with the
+recognition rule widened to admit it. Under the prefix, the marker is inside the set
+`GraphitronModelStore.DATABASE`'s javadoc already tells a person to remove by hand, so the documented
+cleanup and the recognition rule agree about the same set of files; and the "nothing else" clause stays
+one prefix rather than a prefix plus an allowlist every future file has to be added to. A marker
+*outside* the prefix is precisely what survives the documented cleanup, which is how it produced the
+undefined case above. The cost is that the marker is not visually distinct from H2's own files in a
+directory listing, which its own contents answer.
 
 Recording it beats inferring it. H2's own file times answer "when was this store last written",
 which is not the same question: a dev session that only reads keeps a store alive without writing
 it. For a directory with no marker, which is every store predating this change, recency falls back to
-`store.mv.db`'s modification time and then to the directory's own, so an existing cache sorts
-sensibly on the first run after the upgrade rather than being uniformly ancient.
+`store.mv.db`'s modification time, so an existing cache sorts sensibly on the first run after the
+upgrade rather than being uniformly ancient. There is no third fallback, and none is reachable: a
+candidate holds `store.mv.db` by the recognition rule, so a directory whose recency cannot be read at
+all is not a candidate in the first place.
 
 ## Where the sweep lives
 
@@ -165,23 +247,38 @@ non-zero one: `FactCapture` at info, beside the demotion warning it already carr
 through the mojo log. Neither is redundant, because the once-per-JVM guard makes the reporter
 whichever opener ran first, and that is not the same one on both paths: an ordinary build reaches the
 store through the capture, while a `graphitron:dev` session whose initial run is skipped reaches it
-through the session's own open.
+through the session's own open. Those two are the whole set rather than a sample: they are the only
+callers of `openAt` in main sources across the tree, so a third reporter is a thing a later caller
+would have to add rather than one this plan might have missed.
 
 ## Implementation
 
 * `graphitron-model/src/main/java/no/sikt/graphitron/model/boot/StoreReaper.java` (new). One static
   entry point taking the home, the live segment to spare, and the retention count, returning
-  `Reaped`. Holds the candidate recognition, the recency ordering, the lock probe, and the deletion.
-  Catches everything it can throw and returns what it managed, so no failure of its own can reach a
-  caller. The retention count is a parameter rather than a constant read here, so the test tier can
-  exercise the ordering with small numbers.
-* `GraphitronModelStore`: a `RETAINED_STAMPS` constant, a `MARKER` name, the marker write on every
-  successful file-backed open, the once-per-home guard (a set of normalised homes), the sweep call in
-  `openAt`, and a `reaped()` accessor. The private constructor takes the report; the fallback arms
-  need a private `open(Reaped)` so the public `open()` keeps its current meaning and the field stays
-  final. The class javadoc's "A shared store is never deleted by this class" sentence is now false as
-  written and states the new rule instead: this class deletes only directories it has proved nobody
-  holds, and never the one it opened.
+  `Reaped`, which is nested here rather than declared beside the store: the reaper is what produces
+  it. Holds the candidate recognition, the recency ordering, the lock probe, and the deletion, whose
+  order is fixed by the two rules above (probe, close the channel, unlink the marker and H2's other
+  `store*` files, unlink `store.mv.db` last, remove the directory). Catches everything it can throw
+  and returns what it managed, so no failure of its own can reach a caller. The retention count is a
+  parameter rather than a constant read here, so the test tier can exercise the ordering with small
+  numbers.
+* `GraphitronModelStore`: a `RETAINED_STAMPS` constant, a `MARKER` name of `store.last-used`, the
+  marker write after every successful file-backed open, the once-per-home guard, the sweep call in
+  `openAt`, and a `reaped()` accessor. The guard is a set of normalised homes whose check-and-set is
+  atomic (`ConcurrentHashMap.newKeySet()` and the boolean its `add` returns), because CI builds the
+  reactor with `-T 1C` and two modules in one Maven JVM can reach `openAt` concurrently. Nothing
+  unsafe follows from a double sweep, every deletion race being caught, but the count and byte total
+  would be split across two reports, and the report is the feature's whole user surface on an
+  ordinary build. The private constructor takes the report; the fallback arms need a private
+  `open(Reaped)` so the public `open()` keeps its current meaning and the field stays final.
+* `GraphitronModelStore`'s javadoc, which carries three sentences this change falsifies rather than
+  the one an earlier draft of this plan named. The class-level "A shared store is never deleted by
+  this class" states the new rule instead: this class deletes only directories it has proved nobody
+  held at the instant it asked, and never the one it opened. `openAt`'s own "It never fails, and it
+  never deletes" keeps the half that stays true and drops the half that does not, `openAt` being the
+  method that calls the sweep. And `openAt`'s "The stamped path is what makes never discarding safe"
+  is now backwards: the stamped path is what makes discarding safe, which is this item's own opening
+  claim.
 * `FactCapture.runInternal`: log the report when non-zero.
 * `DevMojo`: the same at the session's own open.
 
@@ -197,15 +294,27 @@ the segment names are arbitrary to the reaper:
   directly at the candidate's `store` base name), and releases it once that connection closes. This
   is the dev-session case in miniature;
 * leaves alone: a directory holding a subdirectory, a directory holding an unrelated file, an empty
-  directory, and a regular file among the candidates;
+  directory, a directory holding the marker and no `store.mv.db`, and a regular file among the
+  candidates;
 * reports zero and throws nothing for a home that does not exist, and for a home that is a regular
-  file.
+  file;
+* leaves a candidate it cannot empty recognisable for the next sweep and reports it as not released,
+  which is the total form of the property the unlink order protects: the reaper never leaves a residue
+  its own recognition rule would reject. POSIX-only (mode 500 on the candidate directory), skipped
+  elsewhere by assumption, since the shape being asserted is a deletion that fails part way and there
+  is no portable way to arrange one.
 
-Unit tier in `graphitron-model` (extending the store's own coverage):
+Unit tier in `graphitron-model`, in a new `GraphitronModelStoreTest` in the `boot` package. There is
+none today, `openAt`'s coverage living in `graphitron`'s `PersistentStoreTest` and the `FactStores`
+helper, and these belong beside the class rather than in a module that consumes it, being assertions
+about the sweep call site rather than about capture:
 
 * a second `openAt` of the same home in one JVM reaps nothing, the guard being what stops a reactor
   build sweeping once per module;
-* an `openAt` that falls back to memory still reaps, and still spares the live segment.
+* an `openAt` that falls back to memory still reaps, and still spares the live segment;
+* a successful file-backed open leaves a `store.last-used` marker, and an open that falls back leaves
+  none in the directory it abandoned, which is the marker-after-open ordering the candidacy rule rests
+  on.
 
 Unit tier in `graphitron` (`PersistentStoreTest`, reusing the forked-holder shape already there): a
 candidate held by *another process* survives a sweep that recency alone would have released, and is
@@ -216,17 +325,38 @@ rather than only within one JVM.
 
 ## User documentation (first-client check)
 
-The `storeDirectory` row in `docs/manual/reference/mojo-configuration.adoc` gains a sentence, and the
-existing promise that deleting the store is always safe is what it leans on:
+The `storeDirectory` row in `docs/manual/reference/mojo-configuration.adoc` today asserts "one store
+per project checkout, shared by that checkout's modules", which is the claim the retention policy has
+to be told against rather than after: a reader who meets a retention sentence one clause later reads a
+policy over a population the same paragraph has just called a single object. So the row is corrected
+and then extended, and the existing promise in it that deleting the store is always safe is what the
+extension leans on:
 
-> Graphitron keeps the three most recently used of these per checkout and releases the older ones the
-> next time it opens the store, so a schema you have stopped working on does not keep its cache
-> forever. It only releases a directory no process is holding, so a `graphitron:dev` session in
-> another window keeps its own cache for as long as it runs.
+> ... with one store home per project checkout, shared by that checkout's modules. Inside that home
+> the store keeps a separate directory per graphitron version, so upgrading the plugin starts a fresh
+> cache instead of reusing one the new version cannot read. Graphitron keeps the three most recently
+> used of those directories and releases the older ones the next time it opens the store, so a
+> checkout does not accumulate one cache per version it has ever built with. It only releases a
+> directory no process is holding, so a `graphitron:dev` session in another window keeps its own cache
+> for as long as it runs.
+
+What the row deliberately does not say is that your own schema multiplies these directories, because
+it does not. The stamp is a digest of graphitron's own fact schema plus graphitron's version, the home
+above it is keyed on the checkout path, and every graph a checkout captures shares one file as a
+partition inside it, which is `AbstractRewriteMojo.resolveStoreDirectory`'s own "one file per
+workspace, holding every graph that workspace's modules capture". So a consumer with three schemas in
+one checkout has one stamped directory rather than three, and abandoning a schema frees nothing at
+all. Upgrading graphitron is what leaves a directory behind, the version segment moving on every
+release and the fact-schema hash with most of them, and that is a population a reader can recognise in
+their own cache listing.
 
 The log line, which is the whole of the feature's user surface on an ordinary build:
 
-> graphitron: released 4 unused fact-store caches for this workspace (3.1 GB).
+> graphitron: released 4 unused fact-store caches (3.1 GB) under
+> ~/.cache/graphitron/model/graphitron-a1b2c3d4e5f67890
+
+It names the home rather than calling it "this workspace", because a pinned `<storeDirectory>` has no
+workspace segment, and a person who has just lost gigabytes is owed the directory they came out of.
 
 `docs/manual/how-to/dev-loop.adoc` already tells the reader there is "nothing to clean up" about the
 warm-start cache. That sentence stops being a promise about the store's size being someone else's
@@ -242,7 +372,10 @@ problem and starts being true; it needs no edit.
   sweep releases only what it has proved nobody holds, in a directory tree whose contents are a cache
   by construction, so the case a knob would protect does not exist.
 * **No size or age ceiling.** Both are second policies over the same directories, and a count is the
-  bound that matches what accumulates: one directory per DDL edit, each roughly the same size.
+  bound that matches what accumulates: one directory per DDL edit for a contributor, one per
+  graphitron version for a consumer, each roughly the same size either way. This is also what declines
+  a freshness floor to protect the cold run "What lands" prices, a floor being an age policy wearing
+  the other sign.
 * **Dead workspaces stay dead.** A checkout that is never built again keeps its whole home, because
   nothing opens a store there to sweep it, and this is a real part of the reported 49 GB: 87
   directories spread over many workspace segments. Reaping across workspaces needs two facts the
@@ -313,6 +446,21 @@ it; the plan should say which, since "the recognition rule makes that race struc
 rather than narrow" is a claim the implementer will otherwise inherit without the ordering that makes
 it true.
 
+*Author response.* Taken, on round 2's arm for the naming fork and on both of the two offered closures
+for the marker-only case rather than one. The marker is `store.last-used`, and "Recency is a fact the
+store records" now argues the name where the reader meets it: under the prefix it is inside the set the
+documented hand cleanup removes, so cleanup and recognition agree about one set of files, and the
+"nothing else" clause stays a prefix rather than a prefix plus a growing allowlist. Candidacy now
+*requires* `store.mv.db`, so a marker-only directory is not a candidate and there is never a database
+to lock that is not there; the two states the old rule admitted (marker-only, empty) are called out as
+inert, with the reason each is reachable. Both orderings are stated: the marker is written strictly after
+a successful open, and `store.mv.db` is the last file unlinked, which is round 2's clause about a
+partially failed deletion leaving something the next sweep still recognises. On the claim itself: it is
+retired rather than restated. Requiring the database narrows the mint race to the width of H2's own
+open, and finding 2's arm (probe, close, unlink) reintroduces a deletion window by design, so
+"structurally impossible" is not available to this plan on either count. What replaces it is the window
+named and the cost inside it priced, in the same currency as the residual race.
+
 **Question 1, smaller.** The `storeDirectory` sentence in the first-client check opens "Graphitron
 keeps the three most recently used of these per checkout", and `these` has no antecedent on the page:
 the row tells a consumer there is "one store per project checkout" and never mentions that a
@@ -321,11 +469,23 @@ a retention policy over an object the documentation has not introduced, so they 
 being kept or why there would be more than one. Introducing the per-schema directory in the same
 breath satisfies this; it is a sentence of setup, not a rewrite.
 
+*Author response.* Done, and it turned out to be more than a sentence of setup once round 3 established
+that the population is not per-schema. The row now corrects "one store per project checkout" to "one
+store home per project checkout" and introduces the per-version directory before any retention is
+mentioned, so "those directories" has an antecedent the reader has just met. The section also states
+what the row deliberately does not claim and why, since the population the draft implied is one a
+consumer can check against their own cache listing and find absent.
+
 Non-blocking, and genuinely not for this gate to settle: the second unit-tier test group is
 "extending the store's own coverage" without naming a class, and `graphitron-model` has no
 `GraphitronModelStoreTest` today (`openAt`'s coverage lives in `graphitron`'s `PersistentStoreTest`
 and in the `FactStores` helper), so the implementer picks both the class and whether it is new. The
 declaring type of `Reaped` is likewise unstated; nested in `StoreReaper` reads as the intent.
+
+*Author response.* Both folded in rather than left to the implementer, since neither cost anything to
+settle here. The second group is a new `GraphitronModelStoreTest` in `graphitron-model`'s `boot`
+package, with the reason it belongs beside the class rather than in the module that consumes it, and
+`Reaped` is nested in `StoreReaper`.
 
 ### Round 2 (2026-08-27, Spec -> Ready, reviewer session 01Sf8Rk5tvnvn7FMoV1Jai7k)
 
@@ -375,6 +535,20 @@ cannot stand is the current text, which presents one measured platform's behavio
 prescribes the ordering as if it were universal, because the implementer will write the ordering as
 written and never see it fail.
 
+*Author response.* Taken, on the first of the three arms. The section is retitled "What the lock probe
+proves, and the order that keeps it portable", the fourth measurement is labelled a POSIX property at
+the point it is stated, and the order is now probe, close the channel, unlink, spelled out both there
+and in the Implementation bullet so it cannot be re-derived as hold-and-unlink. The reasoning for
+choosing that arm over the other two is stated rather than left implicit: one order everywhere beats a
+platform-conditional one for a mechanism whose failures are invisible by construction, which is the
+finding's own argument turned around, and declaring the sweep POSIX-only would answer the disk problem
+for part of the audience and document it for the rest. Windows is named as a platform we resolve a home
+on and do not test on. The cost is now stated as a widened race rather than a strict proof: what
+happens on each side of it (POSIX unlinks under the opener and the next run boots cold; Windows throws
+`AccessDeniedException`, is caught, and the candidate survives to the next sweep), how wide it is, and
+that it is priced rather than mitigated. "A candidate is released only while the reaper holds an
+exclusive lock on its database" is gone from the plan.
+
 **Round 1's question-2 finding, sharpened.** The marker-only directory is not a corner the
 implementer can reason away, because the tree already documents the operation that produces one:
 `GraphitronModelStore.DATABASE`'s javadoc says "a hand cleanup means removing everything in the
@@ -388,11 +562,22 @@ prefix is exactly what survives the cleanup and produces the undefined case. Req
 route, saying that a partially failed deletion leaves a directory the next sweep must still
 recognise (so the marker is not the last file unlinked) is worth one clause.
 
+*Author response.* Taken whole, including the naming fork being decided by the cleanup alignment rather
+than by preference; the marker's own section now carries that argument, so a later reader meets it where
+the name is introduced rather than in a review round that dies at Done. `store.mv.db` is required for
+candidacy, and the clause about partial deletion is there as an explicit rule (`store.mv.db` unlinked
+last) with the residue each failure mode leaves, plus a unit-tier test for the total form of it: a
+candidate the reaper cannot empty is reported as not released and is left recognisable.
+
 **Round 1's question-1 finding, confirmed and slightly worse than stated.** The `storeDirectory` row
 does not merely lack an antecedent for "these": it asserts "one store per project checkout, shared
 by that checkout's modules". A reader meeting the new sentence immediately after that reads a
 retention policy over a population the same paragraph has just told them is a single object. The
 sentence of setup round 1 asked for has to correct that claim, not just precede it.
+
+*Author response.* Corrected rather than preceded: the row's "one store per project checkout" becomes
+"one store home per project checkout", and the per-version directory is introduced in the next clause,
+before retention is mentioned at all. Round 3's finding is what decided what that clause says.
 
 Non-blocking. The once-per-home guard is a set of normalised homes consulted from `openAt`, and CI
 builds the reactor with `-T 1C`, so two modules in one Maven JVM can reach it concurrently: the
@@ -401,6 +586,10 @@ prevented. Nothing unsafe follows if it is not (the same-JVM probe refuses one o
 the deletion races are all caught), but the reported count and byte total can be wrong, and the
 report is the feature's whole user surface on an ordinary build. Implementation detail, not for this
 gate.
+
+*Author response.* Folded in, since the reason is worth carrying and the fix is one type choice: the
+Implementation bullet now says the guard's check-and-set is atomic, names the shape that answers it, and
+gives the `-T 1C` reason and the consequence (a split report, not an unsafe sweep).
 
 ### Round 3 (2026-08-27, Spec -> Ready, reviewer session 019Ne8e6nm9EEAQ2TpLb6H6A)
 
@@ -436,6 +625,18 @@ until this is settled, because the population being retained is "one per graphit
 checkout has built with", not one per schema. Settling it may also be worth a line in "What lands",
 which today reads as though the beneficiary set were larger than the contributor doing model work.
 
+*Author response.* Taken, and the sentence is rewritten onto the upgrade cause rather than patched. The
+"schema you have stopped working on" clause is gone; the row now says the store keeps a directory per
+graphitron version and that the retention stops a checkout accumulating one per version it has built
+with. The section under the quote states positively what the row does not claim and why the path cannot
+carry the consumer's schema, citing the three facts this finding assembled (the DDL digest is
+graphitron's own, the home is keyed on the checkout path, graph identity is a partition inside the file
+per `resolveStoreDirectory`'s javadoc), so a later reader cannot reintroduce the false cause by
+reasoning from the row alone. "What lands" gains the paragraph you suggested: the contributor doing
+model work is the beneficiary, a consumer gets a smaller version of the same feature bounded by their
+upgrade rate rather than their edit rate, and the first-client check is named as where the item speaks
+to them.
+
 **Question 1, smaller. "Cannot make a run cold that would have been warm" is not true of any finite
 retention, and the plan concedes as much two sections later.** "What lands" offers it as one of
 three things that do not move, beside "cannot fail a build", which is a guarantee that does hold.
@@ -448,6 +649,14 @@ would satisfy this: state what the sweep does guarantee (no build fails, no dire
 process holds is touched, nothing outside a positively recognised store directory is read or
 removed) and price the cold run at the retention boundary the way the residual race is already
 priced.
+
+*Author response.* Taken as prescribed. "Nothing about correctness moves" is replaced by a paragraph
+that states the three guarantees in your terms, says outright that no finite retention could promise
+more, and prices the cold run at the boundary: one cold build of several hundred megabytes, paid by
+whoever keeps four stamps in rotation, in the same currency as the residual race. The paragraph also
+names the mistake it is guarding against, a freshness floor, and points at the section that already
+declines a second policy over the same directories, so the shape you were worried about has an argument
+against it in the plan rather than only an absence.
 
 Non-blocking, in descending order of how much I would care.
 
@@ -464,3 +673,14 @@ Non-blocking, in descending order of how much I would care.
   `DevMojo` call `openAt` in main sources across the whole tree, so the report's two-caller argument
   is not merely plausible, it is exhaustive today. Worth knowing that it is a closed set the
   implementer can rely on rather than a sample.
+
+*Author response to all three.* All folded in. The Implementation section now has a bullet of its own
+for the javadoc, naming all three sentences and what each becomes; the third one, "The stamped path is
+what makes never discarding safe", is not merely softened but reversed, which is worth the reader's
+attention because it is this item's own opening claim read the other way round. The pinned-home clause
+is in "The policy", since the retention argument was being touched anyway, and it lands next to the
+reason the store must not infer a workspace under a home a consumer chose, which is the same reason the
+dead-workspace note gives. And "What it reports" now says the two callers are the whole set rather than
+a sample, so an implementer reading it knows a third reporter would be something a later caller adds.
+The log line changed while I was there, for a reason that came out of your pinned-home note: it names
+the home rather than saying "for this workspace", which a pinned home does not have.
