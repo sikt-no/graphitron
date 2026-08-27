@@ -92,14 +92,28 @@ new relation, no equivalence argument, no naming decision. The Backlog measured 
 `WITH` common table expression; the joined `DISTINCT` key projection was not among the failures,
 and it is the shape the fact model prescribes for exactly this reader.
 
-**B. Name the recursive closure.** The claim view's recursion is the `lookup_bearing` CTE, and it
-has a genuine grain: one input object type from which a `@lookupKey`-marked argument is reachable.
-Promoted to a named relation (the name is settled at implementation; that grain sentence is what
-it must state), the `@lookupKey` arm takes one join instead of an inline closure. This is the
-restatement the Backlog's second candidate names, it follows the precedent of splitting a
-derivation where only part of it needs recursion, and it hands R848 a registrable candidate whose
-name is already earned should the whole-register question later want one. Whether it flips this
-arm's plan on its own is a measurement; it composes with A.
+**B. Name the recursive closure.** The claim view's recursion is the `lookup_bearing` CTE. Its seed
+is `graphitron_field_lookup_key`, which is `@lookupKey` on an *input field*, the retired site, and
+its recursive term walks `input_object_field_edge` upward from there. So a row means: this input
+object type transitively contains an input field carrying the retired `@lookupKey`. That is the
+grain sentence the promoted relation must state (the name itself is settled at implementation), and
+the relation reads that table and not `graphitron_argument_lookup_key`: a directly marked argument
+is the arm's other trigger and stays in the `direct` join, untouched. Promoted, the recursion leaves
+the claim view's body and becomes a relation of its own, so the view stops carrying a recursive term
+and the arm's inner `EXISTS` probes something with a name.
+
+Two things follow from that seed being the retired site, and both narrow B's case from the way the
+Backlog framed it. On a schema the build accepts the relation is empty, because classification
+rejects `@lookupKey` on an input field outright; capture writes the row whenever the directive is
+present, so the population is exactly the schemas mid-migration, which is what a rejected build's
+own store holds and what the language server reads while an author is half way through the move. So
+B does not hand R848 a registrable candidate after all, and that argument for it is withdrawn:
+registering a relation that is empty wherever the build succeeds buys no refresh cost back. And
+because H2 inlines a view the way it inlines a non-recursive `WITH`, promoting the closure may leave
+the reader's plan exactly where it is. What survives is the argument this family's own rule makes:
+the recursion becomes a relation with a grain, a comment and somewhere to be pinned, instead of a
+term buried in one arm of the claim view's union. That is worth having on its own, it composes with
+A, and whether it moves this arm's plan is a measurement like everything else here.
 
 **C. Restrict the probe to the arms whose masks admit this arm's population.** The structural
 observation is real: the arm drives only non-root parents (`f.type_name NOT IN ('Query',
@@ -130,6 +144,11 @@ plan-flip is the failure the gate exists to catch. The winning form and the losi
 recorded in the implementation commit message, and no relation comment carries the arithmetic
 forward.
 
+This sweep is not the only thing that measures this arm. `DerivedReadCostTest` is the build's own
+cost gate over the same relation, and it holds a claim the sweep does not: what the rewrite costs
+every *other* reader of the registrations this arm reaches. The sweep picks the form; that gate says
+whether the form is affordable elsewhere, and what it owes is stated with the other tests below.
+
 ### The repoint
 
 With the anti-join defused, the arm repoints: the inline `LEFT JOIN graphitron_field_synthesis`
@@ -138,8 +157,8 @@ sibling sites take. That closes the silence: a non-root field returning an autho
 connection type gets a `NAMED_TYPE_TABLE` row at the element type's binding, because the
 navigation relation's `CONNECTION_ELEMENT` rung answers where the synthesis record is silent. The
 `basis` vocabulary does not change; the rule is still "the named type's own binding", now with the
-named type read from the relation that states it once. The `DISTINCT`, the root guard, the
-reference-step guard and the `@pivot` guard are all unchanged, and the `@pivot` guard's
+named type read from the relation that states it once. The arm's three guards, the root guard, the
+reference-step guard and the `@pivot` guard, are all unchanged, and the `@pivot` guard's
 fold-into-the-anti-join note stays; that day is still not this item's.
 
 ## Deliverables
@@ -182,14 +201,27 @@ measurement section above.
   cannot observe the change pins nothing.
 - `AuthoredClaimTest` extended with a row-set pin over a store seeded with all six claim kinds:
   the full claim view's rows are identical across whatever restatement ships.
+- `DerivedReadCostTest`'s pinned set is expected to move, and the implementation states which way
+  and why. That gate holds, for every registration and every relation whose derivation reaches its
+  target, that reading the registered shape visits no more rows than reading the unregistered one,
+  with the known exceptions pinned by equality rather than as an allowlist, so a pair appearing and
+  a pair leaving both fail the build until the set is corrected. It already holds
+  `intent_field_reference_step_hop|intent_field_column_scope_live`, whose justification records this
+  relation at 2854 scans registered against 2666, and 15 milliseconds against 29: figures of the
+  plan this item rewrites. A set change is therefore an expected consequence of the rewrite rather
+  than a licence to widen an exemption. A pair that goes monotonic is deleted; a pair that survives
+  has its justification prose rewritten to the figures it now records, because a stale reason there
+  is worse than no row; a pair that appears is answered as an index-or-cost question the way that
+  gate's existing rows are, before it is pinned. Scan counts and the sweep's milliseconds are
+  different claims and neither figure transfers into the other, which that test states about itself.
 - If C ships: the both-directions `EXCEPT` enforcer over a populated store.
 
 ### One sentence owed to R848
 
 The implementation states, in this file before Done, what the chosen rewrite did to the register's
-as-composed depth (B adds one relation to it) and whether the result is a rung R848's
-whole-register pass would want to fold, so the next reader of the register is not left to discover
-it.
+as-composed depth (B adds one relation to the composition, and not a registrable one) and whether
+the result is a rung R848's whole-register pass would want to fold, so the next reader of the
+register is not left to discover it.
 
 ## Out of scope
 
@@ -206,12 +238,16 @@ it.
 - The named seeded anchor showing a non-root author-declared connection field with a
   `NAMED_TYPE_TABLE` scope row at its element's table: the silence this item exists to close,
   demonstrated at the tier that observes the relation directly.
-- All five sites named by `intent_field_navigated_type`'s comment read the navigation relation;
-  the synthesis `COALESCE` spelling appears nowhere in `intent_field_column_scope_live`.
+- All five sites that spelled the synthesis `COALESCE` read the navigation relation:
+  `intent_field_scope_table`, `intent_field_participant_scope_table`,
+  `intent_routine_return_binding`, `intent_mutation_routine_seat` and this arm. The spelling appears
+  nowhere in `intent_field_column_scope_live`.
 - The measurement sweep's figures are recorded in the implementation commit message and the
   rewritten arm is inside the gate as the protocol section frames it.
 - The two relation comments carry no measurement arithmetic and no fifth-site narrative; the
   claim-view row-set pin is green; if C shipped, its enforcer is green.
+- `DerivedReadCostTest`'s pinned set is correct for the shipped form, every surviving row's reason
+  matches the figures it records, and this file says what moved there.
 - The verification build is green.
 
 ## Reviewer findings
@@ -286,6 +322,18 @@ outranks C, and what R848 is being handed as an earned registrable candidate. Wh
 earns the promotion is the author's call; it should be made on the page rather than left for the
 sweep to imply.
 
+*Author response (2026-08-27).* Correct on both counts, and the second one changes B's case rather
+than only its wording. B's grain now reads off `graphitron_field_lookup_key` and says so, and states
+that the promoted relation reads that table while the marked-argument trigger stays in the `direct`
+join. On the population: capture writes the row whenever the directive is present and classification
+rejects it, so the rows exist exactly on schemas mid-migration, which a rejected build's store and
+the language server's store of a half-edited schema both hold. That is enough for the relation to
+mean something and not enough to register, so B keeps its rung on the family's restatement rule
+alone and the R848-registrable-candidate argument is withdrawn from it. The sentence owed to R848
+now says B adds a relation to the composition and not a registrable one. Also noted on the page:
+because H2 inlines a view like a non-recursive `WITH`, B may move no plan at all, which was implicit
+in "whether it flips this arm's plan is a measurement" and is now said outright.
+
 **2. The plan does not name `DerivedReadCostTest`, which is the one automated gate over this
 relation's cost and is pinned by equality.** The test tiers named in the deliverables are the
 seeded intent anchor, the shadow differential, the LSP surface and the claim-view row-set pin. The
@@ -313,6 +361,13 @@ plan is already firm that the measurement figures live in the commit message and
 comments; this gate is the one place in the tree where such figures are checked in on purpose, and
 it needs the same instruction the two relation comments got.
 
+*Author response (2026-08-27).* Accepted as stated. The gate is now a bullet of its own in the tests
+section, carrying the equality property, the pinned pair and its recorded figures, and the three
+dispositions a moved cell gets: deleted where it goes monotonic, its reason rewritten where it
+survives, answered as an index-or-cost question before being pinned where it is new. The gate
+section says why the sweep does not subsume it, and acceptance now demands that no surviving row's
+reason contradicts the figures it records.
+
 #### Non-blocking
 
 - The repoint section lists "The `DISTINCT`, the root guard, the reference-step guard and the
@@ -326,3 +381,10 @@ it needs the same instruction the two relation comments got.
 - `graphitron_field_lookup_key`'s comment says "the sole consumer is the located migration
   rejection", and three relations read it today, one of them as its own precedence arm. Not this
   item's, except that B would make it four.
+
+*Author response (2026-08-27).* First two taken: the repoint section names the arm's three guards
+without the `DISTINCT`, and the acceptance criterion now lists the five sites itself instead of
+citing a comment the same item rewrites. The third is left where it is. Correcting that comment
+inside this item would mean editing a relation the plan does not otherwise touch, and B's own
+deliverable already re-reads that table, so the honest place for it is B's implementation if B
+ships and a Backlog item if it does not.
