@@ -206,7 +206,9 @@ Confirmed against `BuildContext.argBoolean` (which defaults `ARG_OVERRIDE` to
 === Emission: no new emitters
 
 `projectFilters` output is `List<WhereFilter>`; each `ConditionFilter` is
-already a callable reference carrying `Table<?>` + arg-value parameters. The
+already a callable reference carrying a table slot + arg-value parameters (the
+slot's declared type is the author's, `Table<?>` or the coordinate's own
+generated class; the emitter substitutes a coordinate-typed expression). The
 downstream emitters (the lookup rows core `LookupRows`,
 `SplitRowsMethodEmitter`) already AND-in each `ConditionFilter` without
 knowing its provenance. Input-field conditions land alongside field-level
