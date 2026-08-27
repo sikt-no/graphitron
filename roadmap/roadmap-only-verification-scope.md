@@ -61,10 +61,39 @@ Two modules, five steps:
   AsciiDoc, then `check-adoc-xrefs` walks the staged tree, then the `docs` profile renders the site
   at `compile`.
 
-Nothing else. Established by grep rather than assumed: no pom outside those two names the directory
-as a build-time path, and no main or test source outside them resolves it. The other `check-*` steps
-bound to roadmap-tool's `verify` phase read other trees (`CLAUDE.md`, the poms, `docs/architecture`,
-the DDL); they come along for free in the scoped build and cost it nothing to include.
+No third module runs a build step over it. Outside those two, the only pom naming the directory is
+the root, in XML comments and in its `<module>roadmap-tool</module>` element. The other `check-*`
+steps bound to roadmap-tool's `verify` phase read other trees (`CLAUDE.md`, the poms,
+`docs/architecture`, the DDL); they come along for free in the scoped build and cost it nothing to
+include.
+
+The boundary is deliberate rather than accidental, and two guards say so in their own javadoc.
+`RetiredVocabularyGuardTest` puts `roadmap/` out of scope because items are transient and
+`roadmap/changelog.md` is the permanent home for retirement lineage; `DocsIndexBuilder` keeps the
+roadmap, the audits and the changelog out of the MCP retrieval index. Those are the two
+plausible-looking third consumers, and both are non-consumers by declared intent.
+
+### One test outside the pair does reach roadmap content, and it is covered by construction
+
+The claim above is about build steps. The wider claim, that no source outside the two modules
+resolves a roadmap path, is false, and an implementer who greps will find that out. An FQN-blind
+grep for `"roadmap` across the eleven Java modules finds eight literals in seven files. Seven of
+them are repo-root sentinels, the roadmap guard scanner's own pattern text, or prose inside an
+assertion description. The eighth is a sentinel too, but the test it anchors reads roadmap content:
+`ReadmeLinkIntegrityTest` in `graphitron-sakila-example` locates the reactor root by probing for the
+`roadmap` directory, then walks every `README.md` beneath it, `roadmap/README.md` among them, and
+asserts that each relative link target exists. That test does not run in the scoped build.
+
+It does not need to. `verify-roadmap-readme` compares `roadmap/README.md` byte-for-byte against a
+fresh render of the item files, and `ConceptIndex` resolves item liveness in exactly one place, so a
+README the scoped build passes has item links that resolve by construction: a link to a deleted item
+cannot survive a render driven by the surviving item files. The residual link surface, the header's
+`../docs/...` and `workflow.adoc` links, comes from the renderer's own template in `roadmap-tool`
+main source, and editing that template is not a roadmap-only diff.
+
+So the claim this item rests on, and the one the `CLAUDE.md` wording has to be worth, is narrower
+than "only two modules read `roadmap/`": **no build step and no test outside those two modules reads
+roadmap content that a roadmap-only diff can change.**
 
 ## The change
 
@@ -96,22 +125,52 @@ the DDL); they come along for free in the scoped build and cost it nothing to in
    verification build still covers the tree. Give it the roadmap-only case, so the scoped build is
    recognised as coverage instead of looking like a skipped step.
 
-## The fork for Spec review: does the scope claim get an enforcer
+## The enforcer, and what it can and cannot pin
 
-"Only these two modules read `roadmap/`" is true today and is exactly the shape of claim that rots.
-A third consumer would silently make the scoped build under-verify, and nothing would say so. Two
-answers, and the reviewer should pick one:
+The scoped-build rule rests on a claim about the tree, and a claim about the tree with no enforcer is
+a shape this repo has been burned by: the module list in `CLAUDE.md` drifted until
+`check-module-enumeration` existed. So the rule gets an enforcer, in two halves, each sited where the
+machinery it needs already lives. What the enforcer pins is narrower than the claim it guards, and
+that gap is stated below rather than papered over.
 
-* **Prose only.** Cheapest, ships in three file edits, and drifts the way the module list in
-  `CLAUDE.md` drifted before `check-module-enumeration` existed.
-* **A `check-roadmap-consumers` step in roadmap-tool** (recommended), fitting the habitat the
-  existing `check-*` family already occupies: fail the build when a module outside
-  `{graphitron-roadmap-tool, graphitron-docs}` names the roadmap directory as a build-time path, in
-  a pom configuration or in a main or test source, outside comment regions (`InertSpans` already
-  does that span work for the other checks). It pins the *spelling* of consumption rather than
-  consumption itself, which is the same bargain `check-module-enumeration` and
-  `check-coverage-agent-wiring` already make, and it is the only reason the documented command can
-  be trusted a year from now.
+**The rule is path-shaped, not word-shaped.** A literal matches when it is `roadmap/` followed by a
+path segment, or is exactly `roadmap`. Spelled as "names the roadmap directory" it would take
+`roadmap-tool` as a substring hit, and the tree has one of those today in an assertion description
+(`CommandRelationFragmentTest`).
+
+**Pom half, in roadmap-tool**, as a `check-roadmap-consumers` step bound to `verify` beside the other
+`check-*` executions. The precedent is `CoverageAgentWiringCheck`, not `InertSpans`: it already
+strips `<!-- ... -->` through an `XML_COMMENT` pattern before matching, and already walks the root
+pom plus every module `ModuleEnumerationCheck.declaredModules` returns. The step fails when a pom
+outside `{roadmap-tool, docs}` names a roadmap path in configuration. Today the only candidate is the
+root pom's `<module>roadmap-tool</module>`, which the path-shaped rule does not match, so this half
+starts green with no allowlist at all.
+
+**Java half, in graphitron's test tier**, as a guard test beside `RoadmapReferenceGuardTest` and
+`RetiredVocabularyGuardTest`. That is where the machinery is. `JavaSourceRegions.strings` gives the
+string-literal projection per line, which is the right projection because a named path lands in a
+literal; "outside comment regions" was the wrong framing, and `InertSpans` masks AsciiDoc spans and
+has no notion of a Java comment. `GuardScope.IN_SCOPE_MODULES` already enumerates exactly the eleven
+Java modules outside the scoped pair, with `roadmap-tool` excluded by design and `docs` carrying no
+Java. Reusing that list rather than authoring a second one is also what keeps the two scopes from
+drifting apart, which is why `GuardScope` exists at all.
+
+**The probe-versus-reader distinction is drawn by allowlist, because no lexical rule can draw it.**
+A sentinel and a read are spelled identically: `p.resolve("roadmap/workflow.adoc")` is the same
+literal whether an existence check or a read follows it. So the guard allows the three permanent
+roadmap artifacts by literal, which is exactly the rule `RoadmapReferenceScanner.ALLOWED_SLUGS`
+already applies (`roadmap/workflow.adoc`, `roadmap/changelog.md`, `roadmap/README.md`), and requires
+a file-scoped allowlist entry carrying a stated reason for anything else. Seeded against the tree as
+it stands, that is exactly one entry, `ReadmeLinkIntegrityTest`'s bare `roadmap` directory probe. So
+the guard's first run is green, and every later addition is a decision somebody had to write down.
+
+**What this does not pin.** The guard sees a *named* roadmap path. It would not have caught the
+reviewer's round-1 finding, because `ReadmeLinkIntegrityTest` reaches roadmap content by walking the
+repository root generically and never names a roadmap path while doing it. Nothing lexical catches
+that class. The tree has one such walker today and its roadmap slice is covered by construction, per
+the subsection above; a second one would pass both halves of the enforcer unnoticed. That is the
+residual risk, taken knowingly: the enforcer's job is to make a new *named* consumer loud, not to
+prove the absence of readers.
 
 ## Boundary
 
@@ -130,9 +189,13 @@ answers, and the reviewer should pick one:
 
 ## Tests
 
-* The enforcer's own test in roadmap-tool, if the reviewer takes that arm: a fixture pom outside the
-  allowed module set naming the roadmap directory fails; the same reference inside a comment does
-  not; the real reactor passes.
+* Pom half: a fixture pom outside the allowed module set naming a roadmap path fails; the same
+  reference inside an XML comment does not; `<module>roadmap-tool</module>` does not; the real
+  reactor passes with no allowlist.
+* Java half: a fixture source naming `roadmap/<slug>.md` in a string literal fails; the same text in
+  a javadoc comment does not; a permanent-artifact literal does not; `roadmap-tool` in assertion
+  prose does not; the real reactor passes with the one seeded entry, and fails when that entry is
+  removed, which is what keeps the seed from silently outliving its reason.
 * A negative probe re-run at implementation, confirming both numbers above still hold: stale README
   fails the scoped build, and a dangling anchor in an item body fails it in the docs module.
 
@@ -191,6 +254,14 @@ roadmap-only diff. Say that, and restate the claim as what was actually establis
 and no test outside those two modules reads content a roadmap-only diff can change. As written, an
 implementer who re-runs the grep the plan says was run finds four hits and no guidance.
 
+*Author response (2026-08-27).* Correct, and the grep had a mechanical bug worth recording: it
+searched for `/roadmap/` and `../roadmap`, neither of which can match `p.resolve("roadmap/...")`,
+where the path is preceded by a quote rather than a slash. All four sites confirmed against the tree.
+The "Nothing else" paragraph is gone. "What reads `roadmap/` at build time" now scopes its own claim
+to build steps and carries a subsection that makes the by-construction argument for
+`ReadmeLinkIntegrityTest`, and the claim the item rests on is restated as the narrower one you
+proposed. The deliberate-boundary clause from your non-blocking note sits in the same section.
+
 **2. The recommended enforcer, as specified, fails the reactor as it stands, and names a reuse target
 that does not do the work (question 2).** The plan asks the reviewer to pick an arm, so the arm has to
 be pickable. "Fail the build when a module outside `{graphitron-roadmap-tool, graphitron-docs}` names
@@ -216,6 +287,20 @@ the precedents the arm actually reuses, and say which module the Java half lives
 Worth noting because it cuts toward the enforcer rather than against it: if the check is spelled as
 "names the roadmap directory", `roadmap-tool` as a bare module name is a substring hit, so the rule
 needs to be path-shaped rather than word-shaped.
+
+*Author response (2026-08-27).* Both defects real. The fork is gone: the enforcer section now decides
+rather than asks, and `InertSpans` is out of it. The pom half stays in roadmap-tool on the
+`CoverageAgentWiringCheck` precedent; the Java half moves to graphitron's test tier beside the two
+prose guards, where `JavaSourceRegions.strings` gives the right projection (a named path lands in a
+string literal, not in a comment) and `GuardScope.IN_SCOPE_MODULES` already enumerates the eleven
+modules the scan needs. The probe-versus-reader distinction is settled by allowlist, on the ground
+that the two are lexically identical, with the permanent-artifact literals allowed exactly as
+`RoadmapReferenceScanner.ALLOWED_SLUGS` allows them; seeded against the tree that is one entry, so
+"the real reactor passes" and the rule no longer contradict each other. The rule is path-shaped per
+your closing note, which is what drops `CommandRelationFragmentTest` out. One thing your finding
+implies that the section now says out loud: this enforcer would not have caught your finding 1,
+because that reader never names a roadmap path, so the section states the residual class rather than
+overclaiming.
 
 Non-blocking, noticed along the way. `RetiredVocabularyGuardTest` puts `roadmap/` out of scope
 explicitly in its own javadoc, and `DocsIndexBuilder` says the same for the MCP retrieval index, so
