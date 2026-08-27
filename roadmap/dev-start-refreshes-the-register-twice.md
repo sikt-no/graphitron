@@ -159,9 +159,11 @@ capture transaction, the transaction that stamps the graph and records the fill.
 today and nothing enforces it.
 
 It is checkable from the store, with the walk that already exists.
-`MaterializeDependencies` parses each registered source view's stored definition and collects the
-relations it reads, recursing through unregistered views; asked for the base tables rather than for
-the registrations reached, it yields the read set the premise is about. Today every registered source
+`ViewReferences.relationsReadBy` answers what one stored view definition reads, parsed out of the
+definition rather than scanned for textually, and `MaterializeDependencies` already recurses over it
+to reach the registrations a view depends on. The premise wants the same recursion stopped at base
+tables instead: the closure of a registered source view's reads, which is a handful of lines over
+that primitive and needs no new production API. Today every registered source
 view bottoms out in the `store_`, `graphql_`, `graphitron_`, `sql_`, `jvm_` and `intent_` families,
 all of them written by capture. None reaches `java_`, `javac_`, `walk_`, `rejection_`, `lint_` or
 `build_warning_`, which are the families written outside a capture transaction: the dev session's
@@ -207,8 +209,10 @@ set by returning a count rather than logging. Its javadoc states the premise it 
 a warm store whose capture was skipped would otherwise serve stale rows; that stays true and becomes
 precise, so it gains a sentence naming what the call now costs on the ordinary path.
 
-**`MaterializeDependencies`.** Expose the base relations each registration's view reaches, from the
-private walk that already computes the reach, for the gate to read.
+**No production change for the gate.** The reach it needs is `ViewReferences.relationsReadBy` closed
+over the views it returns, computed in the test. Worth stating because the first draft of this spec
+proposed exposing a base-relation reach from `MaterializeDependencies`, and the public primitive that
+landed with the re-evaluation metric makes that unnecessary.
 
 **`SeededStore.derive`.** Clears `meta_materialize_fill` before refreshing. The fixture seeds rows
 directly, without a capture and without touching a graph's stamp, so it is precisely the writer the
@@ -232,13 +236,28 @@ helper refreshes unconditionally.
   captures for its sibling-partition cases: two graphs captured, and a refresh after both refills
   nothing for either.
 - **The premise gate, in `MaterializeRegistryGateTest`**: the base relations reached by the
-  registered source views are disjoint from the families written off the capture cadence. The
+  registered source views, closed over `ViewReferences.relationsReadBy`, are disjoint from the
+  families written off the capture cadence. The
   off-cadence prefixes are a roster in the test with the reason stated, which is the shape that gate
   already uses for its index exemptions; lifting the cadence into a `meta_family` column is a bigger
   question and is out of scope here.
 - `MaterializationOrderTest`'s existing `refreshAll` case and the seeded-store fixture's callers are
   the regression surface for the two arms deliberately left unconditional; they pass unchanged, which
   is the point, so no new case is owed there beyond the graph-keyed ones above.
+
+## Sequencing against R855
+
+R855 is `Spec` at priority 1 and rewrites the same two methods: `refresh` and `refreshAll` gain a
+`RefreshProgress` observer, and the position is threaded through the private helpers this item also
+edits. Land R855 first and build on its shape rather than the shape in the tree today; taking them in
+the other order means one of the two rewrites the other's edit.
+
+Its shape also decides something this item would otherwise get wrong. A pass that skips every
+partition and says nothing is the anonymity R855 exists to remove, arriving by a new route: a person
+watching a warm dev start would see the same silence as a person watching a stuck one. So a skipped
+partition is an observation the observer reports, not an absence, and the reader-side pass owes a
+statement of what it skipped and why on the same terms as what it filled. Whether that is per
+registration or one summary line is R855's vocabulary to decide, not this item's.
 
 ## Out of scope
 
@@ -255,5 +274,10 @@ helper refreshes unconditionally.
 ## Related
 
 The sibling logging item R855 would have made this visible without reading the source, which is how
-both sessions that found it found it instead. R848 asks whether the register needs to be this large
-at all. R859 is the double capture this item's fix leaves in place.
+both sessions that found it found it instead; it is now specced, and the sequencing section above says
+what this item owes it. R848 asks whether the register needs to be this large at all. R859 is the
+double capture this item's fix leaves in place.
+
+`depends-on` is left empty deliberately. The dependency on R855 is a sequencing preference between two
+items that touch one pair of methods, not a blocker: this item is implementable against the tree as it
+stands and would only have to be re-fitted afterwards.
