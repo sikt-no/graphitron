@@ -2,9 +2,9 @@ type Customer @table(name: "customer") { firstName: String @field(name: "FIRST_N
 type Store @table(name: "store") {
   customers(customer_id: ID! @lookupKey): [Customer!]! @splitQuery
     @classified(source: OnlyChild, operations: [Join, Lookup, OrderBy, Select], target: List, targetShape: Table)
-    @commits(source: CorrelatedLookupChain, result: RecordList)
+
 }
-extend type Query { store: Store @commits(source: AnchorTable, result: SingleRecord) }
+extend type Query { store: Store }
 
 extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
   type_name,    field_name, classifier,   tier
@@ -17,6 +17,13 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   CorpusAnchor, category
   Customer,     customer
   Store,        store
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,                result
+  Query,     corpusAnchor, AnchorTable,           SingleRecord
+  Query,     store,        AnchorTable,           SingleRecord
+  Store,     customers,    CorrelatedLookupChain, RecordList
   """)
 
 { store { customers(customer_id: "1") { firstName } } }

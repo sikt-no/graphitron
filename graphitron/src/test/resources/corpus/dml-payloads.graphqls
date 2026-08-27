@@ -1,12 +1,12 @@
 type Film @table(name: "film") { title: String }
-type FilmInsertBulkPayload { films: [Film!] @commits(source: CorrelatedChain, result: SingleRecord) }
+type FilmInsertBulkPayload { films: [Film!] }
 type FilmUpdatePayload {
   "The data field owns the read-back, a new keyed query off the written record's keys."
   film: Film
     @classified(source: OnlyChild, operations: [Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
-    @commits(source: CorrelatedChain, result: SingleRecord)
+
 }
-type FilmUpdateBulkPayload { films: [Film!] @commits(source: CorrelatedChain, result: SingleRecord) }
+type FilmUpdateBulkPayload { films: [Film!] }
 input FilmCreateInput { title: String }
 input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
 type Mutation {
@@ -43,6 +43,14 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   type_name,    table_name
   CorpusAnchor, category
   Film,         film
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name,             field_name,   source,          result
+  FilmInsertBulkPayload, films,        CorrelatedChain, SingleRecord
+  FilmUpdateBulkPayload, films,        CorrelatedChain, SingleRecord
+  FilmUpdatePayload,     film,         CorrelatedChain, SingleRecord
+  Query,                 corpusAnchor, AnchorTable,     SingleRecord
   """)
 
 mutation {

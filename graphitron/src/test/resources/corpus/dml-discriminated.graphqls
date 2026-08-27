@@ -14,13 +14,13 @@ input ContentInput {
   title: String! @field(name: "TITLE")
   contentType: String! @field(name: "CONTENT_TYPE")
 }
-extend type Query { content: Content @commits(source: DiscriminatedTable, result: SingleRecord) }
+extend type Query { content: Content }
 type Mutation {
   "An INSERT returning a single-table discriminated interface: the write lands the shared base table, then the follow-up read is the participant-driven discriminated composition restricted to the keys RETURNING captured. The verdict is the plain projected INSERT's; only the launcher row differs, because the return expression is what decides the source arm."
   createContent(in: ContentInput!): Content
     @mutation(typeName: INSERT, table: "content")
     @classified(source: Mutation, operations: [Insert, Reentry], target: Single, targetShape: Table)
-    @commits(source: DiscriminatedReentry, result: SingleRecord)
+
 }
 
 extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
@@ -46,4 +46,11 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   CorpusAnchor, category
   FilmContent,  content
   ShortContent, content
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,    source,               result
+  Mutation,  createContent, DiscriminatedReentry, SingleRecord
+  Query,     content,       DiscriminatedTable,   SingleRecord
+  Query,     corpusAnchor,  AnchorTable,          SingleRecord
   """)

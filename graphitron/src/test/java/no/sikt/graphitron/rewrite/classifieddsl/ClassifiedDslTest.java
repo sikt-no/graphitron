@@ -93,25 +93,6 @@ class ClassifiedDslTest {
                     + "connection-synthesis relation's produced row)", sc.parentType(), sc.fieldName())
                 .isEqualTo(sc.declared());
         }
-        // @commits agreement: declared arm tokens equal the produced launcher row's arm simple
-        // names per coordinate. A declaration on a coordinate with no produced row fails (the
-        // null produced side mismatches); a produced row with no declaration is fine, since the
-        // directive makes no membership claim.
-        var production = ClassifiedHarness.launcherProductions().get(document.id());
-        for (var cc : ClassifiedHarness.commitCases(result, production)) {
-            assertThat(cc.producedSource())
-                .as("%s.%s declares @commits but the canonical run produced no launcher row at "
-                    + "the coordinate", cc.parentType(), cc.fieldName())
-                .isNotNull();
-            assertThat(cc.producedSource())
-                .as("%s.%s: declared launcher source arm vs the produced row's",
-                    cc.parentType(), cc.fieldName())
-                .isEqualTo(cc.declaredSource());
-            assertThat(cc.producedResult())
-                .as("%s.%s: declared launcher result arm vs the produced row's",
-                    cc.parentType(), cc.fieldName())
-                .isEqualTo(cc.declaredResult());
-        }
     }
 
     /**
@@ -568,22 +549,6 @@ class ClassifiedDslTest {
                 no.sikt.graphitron.rewrite.model.ConnectionSynthesis.MINTED_ARM_VOCABULARY.stream()
                     .map(Class::getSimpleName)
                     .collect(Collectors.toSet()));
-    }
-
-    @Test
-    void launcherSourceMirrorsTheLaunchSourceArms() {
-        assertThat(ClassifiedHarness.launcherSourceEnumConstants())
-            .as("the SDL LauncherSource enum must mirror the concrete sealed LaunchSource arms; "
-                + "adding an arm to one side without the other fails here")
-            .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.launchSourceArmSimpleNames());
-    }
-
-    @Test
-    void launcherResultMirrorsTheResultShapeArms() {
-        assertThat(ClassifiedHarness.launcherResultEnumConstants())
-            .as("the SDL LauncherResult enum must mirror the sealed ResultShape arms; "
-                + "adding an arm to one side without the other fails here")
-            .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.resultShapeArmSimpleNames());
     }
 
     @Test

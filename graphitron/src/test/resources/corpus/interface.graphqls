@@ -8,8 +8,8 @@ type City @table(name: "city") {
   namedPlaces: [Named!]! @classified(source: OnlyChild, operations: [Select], target: List, targetShape: Interface)
 }
 extend type Query {
-  customer: Customer @commits(source: AnchorTable, result: SingleRecord)
-  city: City @commits(source: AnchorTable, result: SingleRecord)
+  customer: Customer
+  city: City
   "The polymorphic root, same verdict as the child: the projection lands on the participants' own table rows."
   anyNamed: Named @classified(source: Query, operations: [Select], target: Single, targetShape: Interface)
 }
@@ -26,6 +26,13 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   City,         city
   CorpusAnchor, category
   Customer,     customer
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,      result
+  Query,     city,         AnchorTable, SingleRecord
+  Query,     corpusAnchor, AnchorTable, SingleRecord
+  Query,     customer,     AnchorTable, SingleRecord
   """)
 
 { customer { address { name } } }

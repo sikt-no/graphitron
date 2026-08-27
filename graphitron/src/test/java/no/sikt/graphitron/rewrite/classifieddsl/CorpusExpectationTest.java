@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.classifieddsl.CorpusExpectations.Block;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -21,6 +22,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,6 +38,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * same mechanism. What the assertion is worth rests on the capture being real: rows reach this store
  * only through the capture pipeline, so a document cannot state a shape capture never produces.
  *
+ * <p>One population is deliberately not captured, and says so in its name. The launcher command
+ * relation is plan-tier: a planner derives it and no store relation for it is scheduled to arrive, so
+ * to assert it at all this class produces it and lands it ({@link #landTheLauncherCommands}) before
+ * the expectation pass. That buys the same declared-equals-produced strength per document that a
+ * coordinate directive used to carry, and it costs the capture argument above, which is why these
+ * rows live under their own {@code plan_} prefix and their own admitted case rather than merged into
+ * the captured population.
+ *
  * <p>All 57 documents are captured into one store, one graph per document, which is the shape
  * {@code derive/ColumnMatchShadowTest} already uses; the whole corpus's expectations are then one
  * query per relation and column list.
@@ -48,9 +58,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li><b>Blocks are well formed.</b> No ragged row, no duplicate header cell, no {@code graph_name}
  *       column, and an empty block only where the relation's own comment says what its silence
  *       means.</li>
- *   <li><b>The assertable population is positive.</b> Blocks range over {@code intent_} and
- *       {@code graphitron_} relations only, never over the {@code graphql_*_directive} families the
- *       assertion mechanism itself is transcribed into.</li>
+ *   <li><b>The assertable population is positive.</b> Blocks range over the captured
+ *       {@code intent_} and {@code graphitron_} relations and the {@code plan_} apparatus, never
+ *       over the {@code graphql_*_directive} families the assertion mechanism itself is transcribed
+ *       into, and the captured and apparatus buckets stay tellable apart by name.</li>
  *   <li><b>Values are checked as far as the store closes the set.</b> For a base-table column with a
  *       {@code CHECK (x IN (...))} clause, membership is checked against the DDL. A view column has no
  *       CHECK, and the vocabulary lives in the reading side's decode, so what recovers the diagnosis
@@ -61,8 +72,26 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class CorpusExpectationTest {
 
+    /**
+     * The captured population: relations whose rows reached the store through the capture
+     * pipeline. A block over one of these is worth what it is worth because a document cannot
+     * state a shape capture never produces.
+     */
+    private static final List<String> CAPTURED_PREFIXES = List.of("intent_", "graphitron_");
+
+    /**
+     * The apparatus population, admitted as its own case rather than folded into the captured
+     * one. Its rows are a planner's output, landed by {@link #landTheLauncherCommands} a few
+     * lines before the expectation pass reads them, so the "only capture writes here" argument
+     * does not cover them and must not be allowed to look as though it does. Keeping the two
+     * buckets apart is what lets a reader of any block tell "this asserts a captured fact" from
+     * "this asserts a planner's output" without leaving the block.
+     */
+    private static final List<String> APPARATUS_PREFIXES = List.of(CorpusExpectations.APPARATUS_PREFIX);
+
     /** The prefixes a block may name. The assertion vocabulary stays outside the population it measures. */
-    private static final List<String> ASSERTABLE_PREFIXES = List.of("intent_", "graphitron_");
+    private static final List<String> ASSERTABLE_PREFIXES =
+        Stream.concat(CAPTURED_PREFIXES.stream(), APPARATUS_PREFIXES.stream()).toList();
 
     /**
      * A relation whose comment says what its silence means may be asserted empty. Detected in the
@@ -94,8 +123,61 @@ class CorpusExpectationTest {
             captured.andCatalogGraph(document.id(), full(document), jooq);
         }
         dsl = captured.dsl();
+        landTheLauncherCommands(dsl);
         blocks = CorpusExpectations.blocks(dsl);
         catalog = StoreCatalog.read(dsl);
+    }
+
+    /**
+     * Lands each document's produced launcher command rows so a block can assert them.
+     *
+     * <p>A {@code LOCAL TEMPORARY} table rather than a declared relation, and the choice is the
+     * fact model's rather than a shortcut. These rows are a function of the schema and a
+     * planner, not of captured facts, so as a declared relation they would be scaffolding and
+     * owe the scaffolding charter: a roster row naming the writer, the cadence, the single
+     * reader and the clock it drains on. There is no such clock. The launcher command relation
+     * is plan-tier by design and no store relation for it is scheduled to arrive, so the charter
+     * would have to state a removal criterion that can never fire, and the store's reference
+     * pages would carry an entry for what is one test's apparatus. One reader, one connection,
+     * one lifetime is exactly the case the per-reader shape is for.
+     *
+     * <p>{@code LOCAL} is load-bearing and not decoration: a bare {@code CREATE TEMPORARY TABLE}
+     * defaults to {@code GLOBAL}, and H2's global temporary tables share their rows across every
+     * attached session, so this reader's apparatus would become every reader's.
+     *
+     * <p>It lands in {@code PUBLIC} because that is where the store's own catalog reader looks;
+     * a table anywhere else would not resolve and every block naming it would fail the
+     * name-resolution floor instead of being compared. The cost is that this session's relation
+     * census counts a relation no family covers, which is true only inside this class's own
+     * connection and for as long as it is open.
+     */
+    private static void landTheLauncherCommands(DSLContext dsl) {
+        dsl.execute("""
+            CREATE LOCAL TEMPORARY TABLE %s (
+              graph_name VARCHAR NOT NULL,
+              type_name  VARCHAR NOT NULL,
+              field_name VARCHAR NOT NULL,
+              source     VARCHAR NOT NULL,
+              result     VARCHAR NOT NULL,
+              PRIMARY KEY (graph_name, type_name, field_name))
+            """.formatted(CorpusExpectations.LAUNCHER_COMMAND_RELATION));
+
+        var productions = ClassifiedHarness.launcherProductions();
+        for (var document : CorpusDocuments.documents()) {
+            if (!(productions.get(document.id())
+                    instanceof ClassifiedHarness.LauncherProduction.Produced produced)) {
+                continue;
+            }
+            for (var row : produced.relation().rows()) {
+                dsl.insertInto(DSL.table(DSL.name(
+                        CorpusExpectations.LAUNCHER_COMMAND_RELATION.toUpperCase(Locale.ROOT))))
+                    .values(document.id(), row.coordinate().getTypeName(),
+                        row.coordinate().getFieldName(),
+                        row.source().getClass().getSimpleName(),
+                        row.result().getClass().getSimpleName())
+                    .execute();
+            }
+        }
     }
 
     @AfterAll
@@ -158,9 +240,27 @@ class CorpusExpectationTest {
                 .noneMatch(prefix -> relation.toLowerCase(Locale.ROOT).startsWith(prefix)))
             .toList();
         assertThat(outside)
-            .as("a block asserts an intent_ or graphitron_ relation: the corpus does not assert over "
-                + "the graphql_*_directive families, which is where the assertion mechanism itself is "
-                + "transcribed, so the vocabulary stays outside the population it measures")
+            .as("a block asserts an intent_ or graphitron_ captured relation, or a plan_ apparatus "
+                + "relation this run landed: the corpus does not assert over the graphql_*_directive "
+                + "families, which is where the assertion mechanism itself is transcribed, so the "
+                + "vocabulary stays outside the population it measures")
+            .isEmpty();
+    }
+
+    @Test
+    void theApparatusPopulationStaysDistinguishable() {
+        var confused = CorpusExpectations.relations(blocks).stream()
+            .filter(relation -> {
+                String name = relation.toLowerCase(Locale.ROOT);
+                return CAPTURED_PREFIXES.stream().anyMatch(name::startsWith)
+                    && APPARATUS_PREFIXES.stream().anyMatch(name::startsWith);
+            })
+            .toList();
+        assertThat(confused)
+            .as("no relation name reads as both a captured fact and a planner's output. The two "
+                + "populations answer different questions: a captured row is one a document cannot "
+                + "state without capture producing it, an apparatus row is one this run landed from "
+                + "a planner, and a reader who cannot tell them apart cannot tell what a block claims")
             .isEmpty();
     }
 

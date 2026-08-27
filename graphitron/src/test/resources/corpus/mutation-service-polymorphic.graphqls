@@ -1,7 +1,7 @@
 interface Searchable @classifiedType(as: InterfaceType) { name: String }
 type Film implements Searchable @table(name: "film") { name: String @field(name: "TITLE") }
 type Actor implements Searchable @table(name: "actor") { name: String @field(name: "FIRST_NAME") }
-extend type Query { film: Film @commits(source: AnchorTable, result: SingleRecord) }
+extend type Query { film: Film }
 type Mutation {
   "The mutation analogue of the multi-table interface @service root, at list cardinality: the same runtime-class dispatch over the records the method returns."
   doSearch: [Searchable]
@@ -27,4 +27,10 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   Actor,        actor
   CorpusAnchor, category
   Film,         film
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,      result
+  Query,     corpusAnchor, AnchorTable, SingleRecord
+  Query,     film,         AnchorTable, SingleRecord
   """)

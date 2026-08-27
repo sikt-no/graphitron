@@ -15,7 +15,7 @@ type Company implements Party @table(name: "party_company") @discriminator(value
 extend type Query {
   "A discriminated interface root over participants in tables of their own: each participant reaches the shared display_name over its own foreign key back to party."
   allParties: [Party!]! @classified(source: Query, operations: [OrderBy, Select], target: List, targetShape: Table)
-    @commits(source: DiscriminatedTable, result: RecordList)
+
 }
 
 extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
@@ -37,4 +37,10 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   CorpusAnchor, category
   Individual,   party_individual
   Party,        party
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,             result
+  Query,     allParties,   DiscriminatedTable, RecordList
+  Query,     corpusAnchor, AnchorTable,        SingleRecord
   """)

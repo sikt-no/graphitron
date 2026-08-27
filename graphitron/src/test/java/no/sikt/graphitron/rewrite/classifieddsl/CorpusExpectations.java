@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.classifieddsl;
 
 import graphql.language.StringValue;
 import graphql.parser.Parser;
+import graphql.schema.idl.SchemaParser;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
@@ -59,6 +60,23 @@ public final class CorpusExpectations {
 
     /** The column every expectation carries and no document spells: the document's own identity. */
     public static final String GRAPH_COLUMN = "graph_name";
+
+    /**
+     * The prefix marking a relation as apparatus: rows a planner produced and the corpus run
+     * landed, rather than rows capture wrote. Blocks over these are held apart from the captured
+     * population by {@code CorpusExpectationTest}, so a reader of any block can tell which kind
+     * of claim it is making from the relation's name alone.
+     */
+    public static final String APPARATUS_PREFIX = "plan_";
+
+    /**
+     * The apparatus relation holding each document's produced launcher command rows, one row per
+     * migrated root SELECT coordinate. Landed per reader rather than declared in the fact
+     * schema: the rows are a function of the schema and a planner, not of captured facts, and
+     * the launcher command relation is plan-tier by design with no store relation scheduled to
+     * arrive, so there is no lifetime for a declared scaffolding relation's charter to state.
+     */
+    public static final String LAUNCHER_COMMAND_RELATION = APPARATUS_PREFIX + "launcher_command";
 
     /**
      * The store's identifiers are unquoted DDL, so the engine folds them upward and a quoted
@@ -138,6 +156,46 @@ public final class CorpusExpectations {
             blocks.add(decode(dsl, entry.getKey().graph(), relation.strip(), csv));
         }
         return List.copyOf(blocks);
+    }
+
+    /**
+     * The blocks one document declares, read off its own SDL instead of out of a capture.
+     *
+     * <p>The sibling of {@link #blocks(DSLContext)}, for the one reader that needs a document's
+     * declarations without standing up a store: the launcher-commitment coverage obligation in
+     * {@code ExemptionRegistry}, which asks which command arms the corpus demonstrates and has no
+     * store to ask. Both entry points end in {@link #decode}, so the CSV half is one
+     * implementation and cannot answer two ways; what differs is only how the application is
+     * located, a graphql-java parse here against the transcribed directive rows there.
+     *
+     * <p>What a declaration read this way is worth is not this method's claim to make. A block
+     * says a relation holds these rows, and only {@code CorpusExpectationTest} checks that, in
+     * both directions, against a real capture. A reader deriving coverage from these rows is
+     * leaning on that check having run, which it has: the two are gates in the same build.
+     *
+     * @param csvReader any {@link DSLContext}, used only for {@link DSLContext#fetchFromCSV}; a
+     *                  connectionless {@code DSL.using(SQLDialect.H2)} is enough
+     */
+    public static List<Block> declaredBlocks(DSLContext csvReader, String graph, String sdl) {
+        var blocks = new ArrayList<Block>();
+        for (var extension : new SchemaParser().parse(sdl).getSchemaExtensionDefinitions()) {
+            for (var directive : extension.getDirectives(DIRECTIVE)) {
+                blocks.add(decode(csvReader, graph,
+                    stringArgument(directive, "relation").strip(),
+                    stringArgument(directive, "rows")));
+            }
+        }
+        return List.copyOf(blocks);
+    }
+
+    /** One string-valued argument of a parsed directive application. */
+    private static String stringArgument(graphql.language.Directive directive, String name) {
+        var argument = directive.getArgument(name);
+        if (argument == null || !(argument.getValue() instanceof StringValue value)) {
+            throw new AssertionError("@" + DIRECTIVE + " applied without a string " + name
+                + " argument, which the directive's own signature makes impossible");
+        }
+        return value.getValue();
     }
 
     /**

@@ -6,7 +6,7 @@ extend type Query {
     "A paginated read whose filter input also yields facet counts."
     films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
         @classified(source: Query, operations: [OnReturnTable, OrderBy, Paginate, Select], target: Single, targetShape: Connection)
-        @commits(source: AnchorTable, result: Connection)
+
         @synthesises(mints: [
             {name: "QueryFilmsConnection", as: ConnectionType},
             {name: "QueryFilmsEdge", as: EdgeType},
@@ -25,6 +25,12 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   type_name,    table_name
   CorpusAnchor, category
   Film,         film
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,      result
+  Query,     corpusAnchor, AnchorTable, SingleRecord
+  Query,     films,        AnchorTable, Connection
   """)
 
 {

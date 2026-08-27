@@ -81,7 +81,7 @@ Every concept gets SDL. An explanation with no schema in it is a definition, not
   - `graphitron-sakila-example/src/main/resources/graphql/*.graphqls`, schemas that actually build;
   - the directive's own reference page.
 - **Sakila tables, real columns.** `film`, `actor`, `customer`, `city`, `country`, `rental`, not
-  `Foo` and `Bar`. Strip the internal `@classified` / `@commits` annotations when lifting from the
+  `Foo` and `Bar`. Strip the internal `@classified` / `@classifiedType` annotations when lifting from the
   corpus; they are test vocabulary and will confuse an author.
 - **Avoid `film -> language`.** Two foreign keys, so the reference is ambiguous and the example is
   subtly wrong. `city -> country` is the clean single-FK case.

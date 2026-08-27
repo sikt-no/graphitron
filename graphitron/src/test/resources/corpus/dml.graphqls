@@ -4,7 +4,7 @@ type Mutation {
   createFilm(in: FilmInput!): Film
     @mutation(typeName: INSERT)
     @classified(source: Mutation, operations: [Insert, Reentry], target: Single, targetShape: Table)
-    @commits(source: ProjectedReentry, result: SingleRecord)
+
 }
 
 extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
@@ -23,6 +23,12 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   type_name,    table_name
   CorpusAnchor, category
   Film,         film
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,           result
+  Mutation,  createFilm,   ProjectedReentry, SingleRecord
+  Query,     corpusAnchor, AnchorTable,      SingleRecord
   """)
 
 mutation { createFilm { title } }

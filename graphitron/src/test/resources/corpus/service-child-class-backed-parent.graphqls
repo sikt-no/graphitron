@@ -4,12 +4,12 @@ type Aggregated {
   rank: Int
     @service(service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRankMappedByRecord"})
     @classified(source: OnlyChild, operations: [ServiceCall], target: Single, targetShape: Record, sourceShape: Record)
-    @commits(source: ServiceCall, result: LoaderDelegated)
+
   "Table rows the service produces, keyed on the record the parent hands down."
   filmsViaService: [Film!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsMappedByRecord"})
     @classified(source: OnlyChild, operations: [Reentry, ServiceCall], target: List, targetShape: Table, sourceShape: Record)
-    @commits(source: ServiceTableLift, result: LoaderDelegated)
+
 }
 extend type Query {
   aggregated: Aggregated
@@ -37,6 +37,13 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   type_name,    table_name
   CorpusAnchor, category
   Film,         film
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name,  field_name,      source,           result
+  Aggregated, filmsViaService, ServiceTableLift, LoaderDelegated
+  Aggregated, rank,            ServiceCall,      LoaderDelegated
+  Query,      corpusAnchor,    AnchorTable,      SingleRecord
   """)
 
 {

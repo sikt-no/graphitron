@@ -7,7 +7,7 @@ type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"])
 }
 extend type Query {
   film: Film @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
-    @commits(source: AnchorTable, result: SingleRecord)
+
 }
 
 extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
@@ -26,4 +26,10 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   type_name,    table_name
   CorpusAnchor, category
   Film,         film
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,      result
+  Query,     corpusAnchor, AnchorTable, SingleRecord
+  Query,     film,         AnchorTable, SingleRecord
   """)

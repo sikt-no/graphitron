@@ -11,12 +11,12 @@ type Film @table(name: "film") {
   rating: String
     @service(service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRatingMapped"})
     @classified(source: Child, operations: [ServiceCall], target: Single, targetShape: Record)
-    @commits(source: ServiceCall, result: LoaderDelegated)
+
   "A service re-query into a @table: what the method hands back becomes catalog rows again, which is the Reentry member beside the call."
   language: Language
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguageByKey"})
     @classified(source: Child, operations: [Reentry, ServiceCall], target: Single, targetShape: Table)
-    @commits(source: ServiceTableLift, result: LoaderDelegated)
+
 }
 
 extend type Query {
@@ -27,7 +27,7 @@ extend type Query {
   externalFilm: Film
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
     @classified(source: Query, operations: [Reentry, ServiceCall], target: Single, targetShape: Table)
-    @commits(source: ProjectedReentry, result: SingleRecord)
+
 }
 
 extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
@@ -53,4 +53,13 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   CorpusAnchor, category
   Film,         film
   Language,     language
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,           result
+  Film,      language,     ServiceTableLift, LoaderDelegated
+  Film,      rating,       ServiceCall,      LoaderDelegated
+  Query,     corpusAnchor, AnchorTable,      SingleRecord
+  Query,     externalFilm, ProjectedReentry, SingleRecord
+  Query,     film,         AnchorTable,      SingleRecord
   """)

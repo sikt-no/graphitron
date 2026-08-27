@@ -6,12 +6,12 @@ type Country @table(name: "country") @classifiedType(as: TableType) {
   "A batched child that also paginates: @splitQuery opened the statement the page needs."
   cities: [City!]! @splitQuery @asConnection @defaultOrder(primaryKey: true)
     @classified(source: OnlyChild, operations: [Join, OrderBy, Paginate, Select], target: Single, targetShape: Connection)
-    @commits(source: CorrelatedChain, result: Connection)
+
 }
 
 extend type Query {
   country: Country @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
-    @commits(source: AnchorTable, result: SingleRecord)
+
 }
 
 extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
@@ -25,6 +25,13 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   City,         city
   CorpusAnchor, category
   Country,      country
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,          result
+  Country,   cities,       CorrelatedChain, Connection
+  Query,     corpusAnchor, AnchorTable,     SingleRecord
+  Query,     country,      AnchorTable,     SingleRecord
   """)
 
 {

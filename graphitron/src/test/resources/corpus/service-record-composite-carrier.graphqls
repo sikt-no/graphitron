@@ -13,10 +13,10 @@ type CreateFilmsResult @classifiedType(as: JavaRecordType) {
   "A @field-mapped @table child read off the composite through the record-backed accessor path."
   film: Film! @field(name: "filmRecord")
     @classified(source: Child, operations: [Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
-    @commits(source: CorrelatedChain, result: SingleRecord)
+
   actors: [Actor] @field(name: "actorRecords")
     @classified(source: Child, operations: [OrderBy, Reentry, Select], target: List, targetShape: Table, sourceShape: Record)
-    @commits(source: CorrelatedChain, result: SingleRecord)
+
 }
 type CreateFilmsPayload @classifiedType(as: JavaRecordType) {
   "A source-passthrough projection of the producer's in-memory composite list: no re-fetch and no DataLoader. The payload names the per-element composite class, with the arrival cardinality carried here."
@@ -49,4 +49,11 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   Actor,        actor
   CorpusAnchor, category
   Film,         film
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name,         field_name,   source,          result
+  CreateFilmsResult, actors,       CorrelatedChain, SingleRecord
+  CreateFilmsResult, film,         CorrelatedChain, SingleRecord
+  Query,             corpusAnchor, AnchorTable,     SingleRecord
   """)

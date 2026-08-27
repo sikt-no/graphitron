@@ -1,6 +1,6 @@
 interface MediaItem @table(name: "film") @discriminate(on: "text_rating") @classifiedType(as: TableInterfaceType) { title: String }
 type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
-extend type Query { film: FilmItem @commits(source: AnchorTable, result: SingleRecord) }
+extend type Query { film: FilmItem }
 type Mutation {
   "The mutation analogue of the single-table discriminated @service root, at list cardinality: the same by-key re-fetch off the shared table."
   mediaSearch: [MediaItem]
@@ -26,4 +26,10 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   CorpusAnchor, category
   FilmItem,     film
   MediaItem,    film
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,      result
+  Query,     corpusAnchor, AnchorTable, SingleRecord
+  Query,     film,         AnchorTable, SingleRecord
   """)

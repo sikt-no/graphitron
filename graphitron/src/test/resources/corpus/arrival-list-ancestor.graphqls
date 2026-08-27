@@ -10,7 +10,7 @@ type Film @table(name: "film") {
 extend type Query {
   "One list wrapper anywhere above a type absorbs its whole subtree to Many. This is the fold's list-ancestor arm."
   films: [Film!]! @classified(source: Query, operations: [OrderBy, Select], target: List, targetShape: Table)
-    @commits(source: AnchorTable, result: RecordList)
+
 }
 
 extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
@@ -24,4 +24,10 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   CorpusAnchor, category
   Film,         film
   Language,     language
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,      result
+  Query,     corpusAnchor, AnchorTable, SingleRecord
+  Query,     films,        AnchorTable, RecordList
   """)

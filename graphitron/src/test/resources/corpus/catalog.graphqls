@@ -1,10 +1,10 @@
 extend type Query @classifiedType(as: RootType) {
   "A single film, fetched by primary key."
   film: Film @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
-    @commits(source: AnchorTable, result: SingleRecord)
+
   "The same table as a Relay connection: the window and the order it needs are operations of their own."
   films: [Film!]! @asConnection @classified(source: Query, operations: [OrderBy, Paginate, Select], target: Single, targetShape: Connection)
-    @commits(source: AnchorTable, result: Connection)
+
 }
 
 type Film @table(name: "film") @classifiedType(as: TableType) {
@@ -22,6 +22,13 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   type_name,    table_name
   CorpusAnchor, category
   Film,         film
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,      result
+  Query,     corpusAnchor, AnchorTable, SingleRecord
+  Query,     film,         AnchorTable, SingleRecord
+  Query,     films,        AnchorTable, Connection
   """)
 
 {

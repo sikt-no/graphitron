@@ -3,7 +3,7 @@ type Language @table(name: "language") { name: String }
 type FilmDetails {
   language: Language @reference(path: [{key: "film_language_id_fkey"}])
     @classified(source: Child, operations: [Join, Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
-    @commits(source: CorrelatedChain, result: SingleRecord)
+
 }
 
 type Film @table(name: "film") {
@@ -13,7 +13,7 @@ type Film @table(name: "film") {
 }
 
 extend type Query {
-  film: Film @commits(source: AnchorTable, result: SingleRecord)
+  film: Film
   "What binds FilmDetails to a record. The explicit @reference above disambiguates film's two foreign keys to language."
   prodFilmDetails: FilmDetails
     @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
@@ -36,6 +36,13 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   CorpusAnchor, category
   Film,         film
   Language,     language
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name,   field_name,   source,          result
+  FilmDetails, language,     CorrelatedChain, SingleRecord
+  Query,       corpusAnchor, AnchorTable,     SingleRecord
+  Query,       film,         AnchorTable,     SingleRecord
   """)
 
 { film { language { name } details { language { name } } } }

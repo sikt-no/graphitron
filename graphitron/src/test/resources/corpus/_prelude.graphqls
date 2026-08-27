@@ -52,15 +52,6 @@ enum TypeVerdict {
 
 enum SynthesisedType { ConnectionType EdgeType PageInfoType FacetsType FacetValueType }
 
-enum LauncherSource {
-  AnchorTable RoutineChain CorrelatedChain CorrelatedLookupChain
-  DiscriminatedCorrelatedChain
-  ServiceCall ServiceTableLift PivotAggregate KeyedLookup
-  ProjectedReentry DiscriminatedReentry DiscriminatedTable
-}
-
-enum LauncherResult { SingleRecord LoaderDelegated RecordList Connection }
-
 input Mint { name: String!, as: SynthesisedType! }
 
 # Asserts the dimensional tuple a field classifies to: each endpoint is a wrapper plus a shape, and
@@ -89,13 +80,13 @@ directive @synthesises(mints: [Mint!]!) on FIELD_DEFINITION
 # relation, and the union of a document's blocks for one relation is what has to equal that relation's
 # rows. The name is the semantics: an unlisted row fails. A containment sibling is deliberately absent
 # until some relation's per-document table proves unworkably large.
+#
+# The relation's prefix says what kind of claim a block is making, and a reader should never have to
+# guess. An intent_ or graphitron_ relation is a captured fact: rows reach the store only through the
+# capture pipeline, so a document cannot state a shape capture never produces. A plan_ relation is a
+# planner's output, landed by the reader that asserts it rather than captured, and it stays a
+# separate population for exactly that reason. CorpusExpectationTest holds the three apart.
 directive @expectEquals(relation: String!, rows: String!) repeatable on SCHEMA
-
-# Asserts the arm tokens of the coordinate's launcher command row, checked against the relation the
-# harness produces under its one canonical run configuration on declared-equals-produced agreement. It
-# makes no membership claim; the invocation axis is not an argument because the source arm determines
-# it, and tenancy is a run-configuration fact outside the coordinate's reach.
-directive @commits(source: LauncherSource!, result: LauncherResult!) on FIELD_DEFINITION
 
 interface Node { id: ID! }
 

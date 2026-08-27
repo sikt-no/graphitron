@@ -84,28 +84,9 @@ public final class ClassifiedHarness {
     public record SynthesisCase(String parentType, String fieldName,
                                 Set<Mint> declared, Set<Mint> produced) {}
 
-    /**
-     * One {@code @commits} declaration as authored: the coordinate and its declared launcher
-     * arm tokens. The produced side joins in through {@link #commitCases}, which reads the
-     * example's launcher production outcome.
-     */
-    public record CommitDeclaration(String parentType, String fieldName,
-                                    String source, String result) {}
-
-    /**
-     * One {@code @commits} coordinate joined against the produced launcher relation: the
-     * declared {@code LaunchSource} / {@code ResultShape} arm tokens vs. the produced row's arm
-     * simple names at the same coordinate ({@code null} produced side when the relation has no
-     * row there, or when the example's production failed).
-     */
-    public record CommitCase(String parentType, String fieldName,
-                             String declaredSource, String declaredResult,
-                             String producedSource, String producedResult) {}
-
     /** The full outcome of classifying one fixture: every annotated coordinate, plus the schema. */
     public record Result(List<FieldCase> fields, List<TypeCase> types,
-                         List<SynthesisCase> synthesises, List<CommitDeclaration> commits,
-                         GraphitronSchema schema) {}
+                         List<SynthesisCase> synthesises, GraphitronSchema schema) {}
 
     /**
      * Classifies {@code fixtureSdl} (the {@link CorpusDocuments#prelude()} prepended automatically) and
@@ -119,7 +100,6 @@ public final class ClassifiedHarness {
         var fields = new ArrayList<FieldCase>();
         var types = new ArrayList<TypeCase>();
         var synthesises = new ArrayList<SynthesisCase>();
-        var commits = new ArrayList<CommitDeclaration>();
 
         // Definitions and their `extend` blocks alike. A fixture contributes its roots with
         // `extend type Query`, because the base schema in the prelude declares the root once, and
@@ -146,11 +126,6 @@ public final class ClassifiedHarness {
                 if (ds != null) {
                     synthesises.add(synthesisCase(schema, def.getName(), fd.getName(), ds));
                 }
-                Directive dc = directive(fd.getDirectives(), ClassifiedDsl.COMMITS);
-                if (dc != null) {
-                    commits.add(new CommitDeclaration(def.getName(), fd.getName(),
-                        enumArg(dc, "source"), enumArg(dc, "result")));
-                }
             }
             Directive dt = directive(def.getDirectives(), ClassifiedDsl.CLASSIFIED_TYPE);
             if (dt != null) {
@@ -165,10 +140,10 @@ public final class ClassifiedHarness {
                 types.add(typeCase(schema, scalarDef.getName(), dt));
             }
         }
-        return new Result(fields, types, synthesises, commits, schema);
+        return new Result(fields, types, synthesises, schema);
     }
 
-    // ----- launcher production: the corpus's canonical run, and the @commits join -----
+    // ----- launcher production: the corpus's canonical run -----
 
     /**
      * The outcome of producing the launcher relation for one corpus example under the canonical
@@ -219,27 +194,6 @@ public final class ClassifiedHarness {
             launcherProductions = Collections.unmodifiableMap(map);
         }
         return launcherProductions;
-    }
-
-    /**
-     * Joins one example's {@code @commits} declarations against its launcher production
-     * outcome: the produced side is the relation row's arm simple names at the declared
-     * coordinate, or {@code null} when no row exists there (including the whole-example
-     * {@link LauncherProduction.Failed} case, where no relation exists at all).
-     */
-    public static List<CommitCase> commitCases(Result result, LauncherProduction production) {
-        var relation = production instanceof LauncherProduction.Produced p ? p.relation() : null;
-        var cases = new ArrayList<CommitCase>();
-        for (var declaration : result.commits()) {
-            var row = relation == null
-                ? java.util.Optional.<no.sikt.graphitron.command.LauncherCommand>empty()
-                : relation.rowFor(declaration.parentType(), declaration.fieldName());
-            cases.add(new CommitCase(declaration.parentType(), declaration.fieldName(),
-                declaration.source(), declaration.result(),
-                row.map(r -> r.source().getClass().getSimpleName()).orElse(null),
-                row.map(r -> r.result().getClass().getSimpleName()).orElse(null)));
-        }
-        return cases;
     }
 
     /**
@@ -515,29 +469,26 @@ public final class ClassifiedHarness {
         return preludeEnumConstants("SynthesisedType");
     }
 
-    /** The {@code LauncherSource} enum constants as declared in {@link CorpusDocuments#prelude()}. */
-    public static Set<String> launcherSourceEnumConstants() {
-        return preludeEnumConstants("LauncherSource");
-    }
-
     /**
      * The simple names of the concrete sealed {@link no.sikt.graphitron.command.LaunchSource}
-     * arms (the live launcher-source set the {@code LauncherSource} SDL enum must mirror). The
-     * recursive walker flattens the {@code Correlated} / {@code Reentry} capability seals to
-     * their concrete arms.
+     * arms, the vocabulary a corpus block spells in its {@code source} column. The recursive
+     * walker flattens the {@code Correlated} / {@code Reentry} capability seals to their
+     * concrete arms.
+     *
+     * <p>No SDL enum mirrors this set any more. The seal is the vocabulary's only owner, and
+     * the store's own convention rejects a CHECK that hand-copies a compiler-enforced taxonomy,
+     * so what binds a block's spelling to the arms is the launcher-commitment coverage
+     * obligation in {@code ExemptionRegistry}: an arm no block reaches fails it, and a token no
+     * arm answers to is a row the corpus expectation cannot produce.
      */
     public static List<String> launchSourceArmSimpleNames() {
         return sealedLeafSimpleNames(no.sikt.graphitron.command.LaunchSource.class);
     }
 
-    /** The {@code LauncherResult} enum constants as declared in {@link CorpusDocuments#prelude()}. */
-    public static Set<String> launcherResultEnumConstants() {
-        return preludeEnumConstants("LauncherResult");
-    }
-
     /**
-     * The simple names of the sealed {@link no.sikt.graphitron.command.ResultShape} arms (the
-     * live result-shape set the {@code LauncherResult} SDL enum must mirror).
+     * The simple names of the sealed {@link no.sikt.graphitron.command.ResultShape} arms, the
+     * vocabulary a corpus block spells in its {@code result} column. Bound to the blocks the
+     * same way {@link #launchSourceArmSimpleNames()} is.
      */
     public static List<String> resultShapeArmSimpleNames() {
         return sealedLeafSimpleNames(no.sikt.graphitron.command.ResultShape.class);

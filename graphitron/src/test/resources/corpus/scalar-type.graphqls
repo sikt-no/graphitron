@@ -8,7 +8,7 @@ type Payment @table(name: "payment") @classifiedType(as: TableType) {
     @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
 }
 extend type Query {
-  payment: Payment @commits(source: AnchorTable, result: SingleRecord)
+  payment: Payment
   "The same reflection, one use over: the resolved Java type is the service parameter's."
   price(amount: Money): String
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "wireMoney"})
@@ -31,6 +31,12 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   type_name,    table_name
   CorpusAnchor, category
   Payment,      payment
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,      result
+  Query,     corpusAnchor, AnchorTable, SingleRecord
+  Query,     payment,      AnchorTable, SingleRecord
   """)
 
 {

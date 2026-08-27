@@ -33,6 +33,11 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   CorpusAnchor, category
   """)
 
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,      result
+  Query,     corpusAnchor, AnchorTable, SingleRecord
+  """)
+
 {
   pojo(in: {id: "1"})
   javaRecord(in: {name: "A", value: 1})

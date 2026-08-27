@@ -19,8 +19,7 @@ package no.sikt.graphitron.rewrite.classifieddsl;
  *       {@code GraphitronSchema.operationMembersOf} / {@code OutputField.target()}). The
  *       {@code operations:} list asserts the coordinate's operation-member rows as a multiset of
  *       sealed-arm tokens ({@code Member} mirrors the {@code OperationMember} leaves): arm
- *       identity and row count, never payloads or the condition rows' table keys (the
- *       {@code @commits} grammar applied to the member relation).</li>
+ *       identity and row count, never payloads or the condition rows' table keys.</li>
  *   <li>{@code @classifiedType(as:)} asserts the {@code GraphitronType} sealed leaf a type
  *       classifies to; {@code TypeVerdict} enumerates those leaves minus the failure leaf
  *       {@code UnclassifiedType}, and {@link ClassifiedHarness} mirrors the enum against the live
@@ -32,15 +31,15 @@ package no.sikt.graphitron.rewrite.classifieddsl;
  *       the declaration with the connection-synthesis relation's produced rows, never from the
  *       producer's output alone. {@code SynthesisedType} mirrors the relation's declared
  *       minted-arm vocabulary.</li>
- *   <li>{@code @commits(source:, result:)} on an output field asserts the arm tokens of the
- *       coordinate's launcher command row (the {@code LaunchSource} and {@code ResultShape}
- *       arms), checked against the relation the harness produces under its one canonical run
- *       configuration on declared-equals-produced agreement. It makes no membership claim
- *       (membership is producer-declared leaf-grain data, census-bound beside the dispatch);
- *       the invocation axis is not an argument because the source arm determines it (declared
- *       as producer data), and tenancy is a run-configuration fact outside the coordinate's
- *       reach. {@code LauncherSource} / {@code LauncherResult} mirror the sealed arm sets.</li>
  * </ul>
+ *
+ * <p>A fourth coordinate directive used to sit here, asserting the arm tokens of a coordinate's
+ * launcher command row against the relation a canonical run produces. It is retired: the same fact
+ * is now an ordinary {@code @expectEquals} block over
+ * {@link CorpusExpectations#LAUNCHER_COMMAND_RELATION}, which asserts every launcher row of a
+ * document rather than the coordinates an author remembered to annotate, and needs no SDL enum
+ * mirroring a sealed arm set to type it. What its enums bought, a build failure when a seal grows an
+ * arm nobody exercises, is now the launcher-commitment obligation's to state.
  */
 public final class ClassifiedDsl {
 
@@ -52,6 +51,4 @@ public final class ClassifiedDsl {
     public static final String CLASSIFIED_TYPE = "classifiedType";
     /** The {@code @synthesises} directive name (read off the field-definition AST by the harness). */
     public static final String SYNTHESISES = "synthesises";
-    /** The {@code @commits} directive name (read off the field-definition AST by the harness). */
-    public static final String COMMITS = "commits";
 }

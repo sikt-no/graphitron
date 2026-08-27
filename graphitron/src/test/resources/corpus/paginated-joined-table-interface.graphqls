@@ -16,7 +16,7 @@ extend type Query {
   "A page of parties, each routed to its concrete type by the discriminator."
   parties: [Party!]! @asConnection
     @classified(source: Query, operations: [OrderBy, Paginate, Select], target: Single, targetShape: Connection)
-    @commits(source: DiscriminatedTable, result: Connection)
+
 }
 
 extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
@@ -38,6 +38,12 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   CorpusAnchor, category
   Individual,   party_individual
   Party,        party
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,             result
+  Query,     corpusAnchor, AnchorTable,        SingleRecord
+  Query,     parties,      DiscriminatedTable, Connection
   """)
 
 {

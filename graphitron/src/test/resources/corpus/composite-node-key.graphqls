@@ -8,8 +8,8 @@ type FilmActorNote @table(name: "film_actor_note") @classifiedType(as: TableType
   filmActorId: ID @nodeId(typeName: "FilmActor") @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Column)
 }
 extend type Query {
-  filmActor: FilmActor @commits(source: AnchorTable, result: SingleRecord)
-  filmActorNote: FilmActorNote @commits(source: AnchorTable, result: SingleRecord)
+  filmActor: FilmActor
+  filmActorNote: FilmActorNote
 }
 
 extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
@@ -31,6 +31,13 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   CorpusAnchor,  category
   FilmActor,     film_actor
   FilmActorNote, film_actor_note
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,    source,      result
+  Query,     corpusAnchor,  AnchorTable, SingleRecord
+  Query,     filmActor,     AnchorTable, SingleRecord
+  Query,     filmActorNote, AnchorTable, SingleRecord
   """)
 
 {

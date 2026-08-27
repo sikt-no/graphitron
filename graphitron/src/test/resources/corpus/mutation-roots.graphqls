@@ -1,6 +1,6 @@
 type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
 type FilmPayload { film: Film @classified(source: OnlyChild, operations: [Reentry, Select], target: Single, targetShape: Table, sourceShape: Record)
-    @commits(source: CorrelatedChain, result: SingleRecord) }
+ }
 input FilmKeyInput { filmId: Int! @field(name: "film_id") }
 input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
 input FilmTitleInput { title: String @field(name: "title") }
@@ -10,7 +10,7 @@ type Mutation {
   updateFilm(in: FilmUpdateInput!): Film
     @mutation(typeName: UPDATE)
     @classified(source: Mutation, operations: [Reentry, Update], target: Single, targetShape: Table)
-    @commits(source: ProjectedReentry, result: SingleRecord)
+
   "Cannot project a row that is gone; hands back the deleted row's id."
   deleteFilm(in: FilmKeyInput!): ID
     @mutation(typeName: DELETE, table: "film")
@@ -49,6 +49,13 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   type_name,    table_name
   CorpusAnchor, category
   Film,         film
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name,   field_name,   source,           result
+  FilmPayload, film,         CorrelatedChain,  SingleRecord
+  Mutation,    updateFilm,   ProjectedReentry, SingleRecord
+  Query,       corpusAnchor, AnchorTable,      SingleRecord
   """)
 
 mutation {

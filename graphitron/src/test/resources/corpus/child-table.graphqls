@@ -5,12 +5,12 @@ type Country @table(name: "country") @classifiedType(as: TableType) {
 type City @table(name: "city") @classifiedType(as: TableType) {
   country: Country @classified(source: OnlyChild, operations: [Join, Select], target: Single, targetShape: Table)
   countrySplit: Country @splitQuery @classified(source: OnlyChild, operations: [Join, Select], target: Single, targetShape: Table)
-    @commits(source: CorrelatedChain, result: SingleRecord)
+
 }
 
 extend type Query {
   city: City @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
-    @commits(source: AnchorTable, result: SingleRecord)
+
 }
 
 extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
@@ -24,6 +24,13 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   City,         city
   CorpusAnchor, category
   Country,      country
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,          result
+  City,      countrySplit, CorrelatedChain, SingleRecord
+  Query,     city,         AnchorTable,     SingleRecord
+  Query,     corpusAnchor, AnchorTable,     SingleRecord
   """)
 
 { city { country { name } countrySplit { name } } }

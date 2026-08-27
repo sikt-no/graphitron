@@ -5,7 +5,7 @@ type Mutation {
   importFilm: Film
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
     @classified(source: Mutation, operations: [Reentry, ServiceCall], target: Single, targetShape: Table)
-    @commits(source: ProjectedReentry, result: SingleRecord)
+
   "A non-table return: what the service produced is the answer."
   summariseFilm: FilmDetails
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runDetails"})
@@ -30,6 +30,12 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   type_name,    table_name
   CorpusAnchor, category
   Film,         film
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,           result
+  Mutation,  importFilm,   ProjectedReentry, SingleRecord
+  Query,     corpusAnchor, AnchorTable,      SingleRecord
   """)
 
 mutation {

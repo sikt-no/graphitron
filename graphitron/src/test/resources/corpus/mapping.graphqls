@@ -12,7 +12,7 @@ type Film @table(name: "film") {
 }
 
 extend type Query {
-  film: Film @commits(source: AnchorTable, result: SingleRecord)
+  film: Film
   "What binds FilmDetails to a record: a type acquires its backing class by reflection on the @service producer's return type, never from a directive."
   prodFilmDetails: FilmDetails
     @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRecord"})
@@ -39,6 +39,12 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   type_name,    table_name
   CorpusAnchor, category
   Film,         film
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,      result
+  Query,     corpusAnchor, AnchorTable, SingleRecord
+  Query,     film,         AnchorTable, SingleRecord
   """)
 
 { film { title details { stats { count } } } }

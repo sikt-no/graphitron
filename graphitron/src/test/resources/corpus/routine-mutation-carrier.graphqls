@@ -3,9 +3,9 @@ type Rental @table(name: "rental") {
 }
 type RentFilmPayload {
   "The data field's path is the implicit single name-matched hop: the routine's result exposes rental's primary key by name."
-  rental: Rental @commits(source: CorrelatedChain, result: SingleRecord)
+  rental: Rental
 }
-extend type Query { rental: Rental @commits(source: AnchorTable, result: SingleRecord) }
+extend type Query { rental: Rental }
 type Mutation {
   "The hop-less form of the same write, returning a payload carrier: the routine call is the whole write transaction, and the payload's data field owns the post-commit re-read exactly as a DML carrier's does."
   rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
@@ -23,4 +23,11 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   type_name,    table_name
   CorpusAnchor, category
   Rental,       rental
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name,       field_name,   source,          result
+  Query,           corpusAnchor, AnchorTable,     SingleRecord
+  Query,           rental,       AnchorTable,     SingleRecord
+  RentFilmPayload, rental,       CorrelatedChain, SingleRecord
   """)

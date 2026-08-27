@@ -7,7 +7,7 @@ type FilmActor @table(name: "film_actor") {
   relatedList: [FilmOrActor!]! @classified(source: OnlyChild, operations: [Select], target: List, targetShape: Union)
 }
 extend type Query {
-  filmActor: FilmActor @commits(source: AnchorTable, result: SingleRecord)
+  filmActor: FilmActor
   "The union root, same Select verdict as the child."
   search: FilmOrActor @classified(source: Query, operations: [Select], target: Single, targetShape: Union)
 }
@@ -25,6 +25,12 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   CorpusAnchor, category
   Film,         film
   FilmActor,    film_actor
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,      result
+  Query,     corpusAnchor, AnchorTable, SingleRecord
+  Query,     filmActor,    AnchorTable, SingleRecord
   """)
 
 { filmActor { related { ... on Film { title } ... on Actor { firstName } } } }

@@ -1,7 +1,7 @@
 type Rental @table(name: "rental") {
   rentalId: Int! @field(name: "rental_id")
 }
-extend type Query { rental: Rental @commits(source: AnchorTable, result: SingleRecord) }
+extend type Query { rental: Rental }
 type Mutation {
   "A @routine call that is itself the write, in its chain form: the volatile set-returning function runs inside the per-field transaction and its keys are captured, then the committed rows are re-read from the hop's table, so the response always observes committed state."
   rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
@@ -20,4 +20,10 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   type_name,    table_name
   CorpusAnchor, category
   Rental,       rental
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,      result
+  Query,     corpusAnchor, AnchorTable, SingleRecord
+  Query,     rental,       AnchorTable, SingleRecord
   """)

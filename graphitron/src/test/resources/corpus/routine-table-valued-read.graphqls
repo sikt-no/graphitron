@@ -8,7 +8,7 @@ extend type Query {
     @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
     @defaultOrder(fields: [{name: "organisasjonskode"}, {name: "rollekode"}])
     @classified(source: Query, operations: [OrderBy, Select], target: List, targetShape: Table)
-    @commits(source: RoutineChain, result: RecordList)
+
 }
 
 extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
@@ -28,6 +28,12 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   type_name,    table_name
   CorpusAnchor, category
   Tilgang,      tilganger_for_feidebruker_med_fs_fiktivt_fnr
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,   source,       result
+  Query,     corpusAnchor, AnchorTable,  SingleRecord
+  Query,     tilganger,    RoutineChain, RecordList
   """)
 
 {
