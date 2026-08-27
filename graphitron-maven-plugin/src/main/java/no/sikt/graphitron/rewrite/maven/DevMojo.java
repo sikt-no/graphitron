@@ -297,6 +297,12 @@ public class DevMojo extends AbstractRewriteMojo {
         this.sessionStore = initialCtx.storeDirectory() != null
             ? GraphitronModelStore.openAt(initialCtx.storeDirectory())
             : GraphitronModelStore.open();
+        // What the open released from the cache home. The store's sweep runs once per home per JVM,
+        // so on a session whose initial run was skipped this open is the first one and this log is
+        // the only place the report surfaces.
+        if (initialCtx.storeDirectory() != null) {
+            sessionStore.reaped().report(initialCtx.storeDirectory()).ifPresent(getLog()::info);
+        }
         // The session reads this store without capturing into it, and the editor-facing readers
         // below are read-only, so the materialized targets are refreshed here rather than assumed
         // current: a warm store whose capture was skipped because nothing changed would otherwise

@@ -112,6 +112,10 @@ class StoreFixtureGuardTest {
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/"
             + "BrokenSourceStillCapturesPipelineTest.java",
             Why.LIFETIME, "holds the store across a run that fails, the failure being the subject"),
+        new Exempt("graphitron-model/src/test/java/no/sikt/graphitron/model/boot/"
+            + "GraphitronModelStoreTest.java",
+            Why.LIFETIME, "the open itself is the subject: it opens one home twice to pin the "
+                + "once-per-JVM sweep guard, and builds homes the store must refuse"),
 
         // Permanent: capture oracles, which drive capture themselves per arm.
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/FactCaptureAgreementTest.java",

@@ -2,9 +2,11 @@ package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
+import no.sikt.graphitron.model.boot.StoreReaper;
 import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import org.h2.jdbcx.JdbcDataSource;
 import org.jooq.exception.DataAccessException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,10 +39,12 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
  * share one file.
  *
  * <p>Every negative case here has the same answer, and that is the point. The store is shared by
- * a workspace's modules and never deleted by code: a hand-damaged file, a stamp naming another
- * DDL, a file that is not a database at all, and a file another process holds each cost this run
- * its warmth (the open falls back to a private in-memory store) and cost the file nothing, because
- * one file is every module's warmth and no local failure earns the right to destroy it. The
+ * a workspace's modules and no failure to open one deletes it: a hand-damaged file, a stamp naming
+ * another DDL, a file that is not a database at all, and a file another process holds each cost this
+ * run its warmth (the open falls back to a private in-memory store) and cost the file nothing, because
+ * one file is every module's warmth and no local failure earns the right to destroy it. What the
+ * store does release is a different population and answers to a different rule, which the sweep case
+ * at the end of this class pins across a process boundary. The
  * compatibility stamp in the store's own directory name is what makes that safe: an ordinary
  * upgrade opens a different file instead of meeting one it cannot read, so the fallback is
  * reserved for damage.
@@ -102,7 +106,8 @@ class PersistentStoreTest {
             assertThat(fallback.dsl().fetchCount(GRAPHQL_TYPE)).isZero();
         }
         assertThat(Files.isRegularFile(location.resolve("store.mv.db")))
-            .as("the never-discard rule's observable consequence: the damaged file is still on disk")
+            .as("the observable consequence of a failed open deleting nothing: the damaged file is "
+                + "still on disk, and the sweep spares the live stamp by name whatever state it is in")
             .isTrue();
     }
 
@@ -431,6 +436,91 @@ class PersistentStoreTest {
 
     private static FactCapture.GraphIdentity graph(Path baseDir) {
         return new FactCapture.GraphIdentity(GRAPH_NAME, baseDir);
+    }
+
+    /**
+     * The one constraint the reaper rests on, pinned across a process boundary rather than only
+     * within one JVM: a stamped directory recency would release survives while <em>another
+     * process</em> holds its database, and goes once that process exits.
+     *
+     * <p>This is the {@code graphitron:dev} case as a user meets it. A session opened days ago holds
+     * its stamp and has not written it since, so its directory is the oldest in the home while being
+     * the one directory in the home that is genuinely in use. A same-JVM case cannot substitute:
+     * H2 refusing this process's own lock is a different mechanism ({@code
+     * OverlappingFileLockException}) from the operating system reporting another process's, and only
+     * the second one is what a dev session actually presents.
+     *
+     * <p>Both sweeps go through {@code StoreReaper} directly rather than through {@code openAt},
+     * because the once-per-home-per-JVM guard is exactly what would stop the second one. The
+     * retention is one, so recency keeps nothing and every candidate reaches the probe: what survives
+     * survived on the probe's answer alone.
+     */
+    @Test
+    @Timeout(90)
+    @DisplayName("a stamped directory another process holds survives the sweep, and goes once it exits")
+    void aStampedDirectoryAnotherProcessHoldsSurvivesTheSweep(@TempDir Path tmp) throws Exception {
+        Path home = Files.createDirectories(tmp.resolve("home"));
+        Path held = Files.createDirectories(home.resolve("held-stamp"));
+        Path unheld = Files.createDirectories(home.resolve("unheld-stamp"));
+        Files.write(unheld.resolve("store.mv.db"), new byte[0]);
+
+        Process holder = new ProcessBuilder(
+            Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+            "-cp", System.getProperty("java.class.path"),
+            HoldingDatabase.class.getName(), held.resolve("store").toString())
+            .redirectErrorStream(true)
+            .start();
+        try (var out = new BufferedReader(new InputStreamReader(holder.getInputStream()))) {
+            var preamble = new StringBuilder();
+            String line;
+            while ((line = out.readLine()) != null && !line.equals("HELD")) {
+                preamble.append(line).append('\n');
+            }
+            assertThat(line).as("the child holds the database; it said:\n" + preamble).isEqualTo("HELD");
+
+            var whileHeld = StoreReaper.sweep(home, "live-stamp", 1);
+
+            assertThat(held.resolve("store.mv.db"))
+                .as("a directory another process holds is never touched, whatever recency says")
+                .exists();
+            assertThat(unheld)
+                .as("the unheld sibling went, so the sweep did run over this home")
+                .doesNotExist();
+            assertThat(whileHeld.directories()).isEqualTo(1);
+
+            holder.getOutputStream().write('\n');
+            holder.getOutputStream().flush();
+            assertThat(holder.waitFor(60, TimeUnit.SECONDS)).as("the holder exited").isTrue();
+            assertThat(holder.exitValue()).as(out.lines().reduce("", (a, b) -> a + "\n" + b)).isZero();
+        }
+
+        var afterExit = StoreReaper.sweep(home, "live-stamp", 1);
+
+        assertThat(held).as("the operating system's lock died with the holder").doesNotExist();
+        assertThat(afterExit.directories()).isEqualTo(1);
+    }
+
+    /**
+     * The forked holder for the sweep case: an H2 file database at the path it is handed, opened the
+     * way the store opens one (no {@code AUTO_SERVER}, so H2 takes the MVStore's own
+     * operating-system lock rather than writing a lock file), held until stdin closes.
+     *
+     * <p>A sibling of {@link HoldingWriter} rather than a reuse of it, because that one opens through
+     * {@code openAt} and therefore holds the <em>live</em> stamp, which the sweep spares by name. The
+     * subject here is a stamp the sweep would otherwise release.
+     */
+    public static final class HoldingDatabase {
+        public static void main(String[] args) throws IOException, SQLException {
+            var source = new JdbcDataSource();
+            source.setURL("jdbc:h2:file:" + args[0]);
+            try (var connection = source.getConnection();
+                 var statement = connection.createStatement()) {
+                statement.execute("CREATE TABLE IF NOT EXISTS held (x INT)");
+                System.out.println("HELD");
+                System.out.flush();
+                int ignored = System.in.read();
+            }
+        }
     }
 
     /**

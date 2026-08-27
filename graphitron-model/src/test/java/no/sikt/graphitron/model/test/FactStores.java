@@ -60,8 +60,9 @@ public final class FactStores {
      * of the same home meets the first one's rows, that the handle reports the directory it landed
      * in, and that a reader mints onto the file rather than onto a guessed one.
      *
-     * <p>Hand it a fresh temporary directory per case. The store never deletes what it finds, so a
-     * shared home carries a previous case's rows into the next one's assertions.
+     * <p>Hand it a fresh temporary directory per case. The store spares the live stamp it opens and
+     * releases only older stamped directories nothing holds, so a shared home carries a previous
+     * case's rows into the next one's assertions.
      */
     public static GraphitronModelStore fileBacked(Path home) {
         BOOTS.incrementAndGet();

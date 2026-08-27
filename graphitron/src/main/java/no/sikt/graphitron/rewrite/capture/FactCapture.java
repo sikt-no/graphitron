@@ -341,6 +341,11 @@ public final class FactCapture {
                                                      AfterCapture<T> after) {
         if (storeDirectory != null) {
             try (GraphitronModelStore store = GraphitronModelStore.openAt(storeDirectory)) {
+                // Whatever the open released from the cache home, said once. A run that quietly
+                // deletes gigabytes out of a person's cache home should say so, and this is where an
+                // ordinary build hears it: the store's once-per-JVM sweep guard makes the reporter
+                // whichever opener ran first, which on a build is this one.
+                store.reaped().report(storeDirectory).ifPresent(LOG::info);
                 if (store.location().isEmpty()) {
                     // openAt already fell back to an in-memory store; use it as-is. This is the
                     // one demotion no other layer reports: the store declines to say why an open

@@ -83,7 +83,13 @@ The following parameters apply to every goal:
   instead of re-reading every jar on the classpath. The default is your platform's cache location
   for per-user tool state (`$XDG_CACHE_HOME/graphitron/model/` or `~/.cache/graphitron/model/` on
   Linux, `~/Library/Caches/graphitron/model/` on macOS, `%LOCALAPPDATA%\graphitron\model\` on
-  Windows), with one store per project checkout, shared by that checkout's modules. Set this
+  Windows), with one store home per project checkout, shared by that checkout's modules. Inside that
+  home the store keeps a separate directory per graphitron version, so upgrading the plugin starts a
+  fresh cache instead of reusing one the new version cannot read. Graphitron keeps the three most
+  recently used of those directories and releases the older ones the next time it opens the store, so
+  a checkout does not accumulate one cache per version it has ever built with. It only releases a
+  directory no process is holding, so a `graphitron:dev` session in another window keeps its own cache
+  for as long as it runs. Set this
   parameter, or pass `-Dgraphitron.store.directory=...`, to keep the store inside the build
   instead: a hermetic CI job that wants nothing written outside the workspace, or a container
   that discards `$HOME`. The store holds no state of record and is rebuilt from your sources

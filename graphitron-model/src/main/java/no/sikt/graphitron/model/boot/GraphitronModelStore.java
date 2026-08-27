@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.boot;
 
+import no.sikt.graphitron.model.boot.StoreReaper.Reaped;
 import no.sikt.graphitron.model.derive.MaterializeDependencies;
 import org.h2.jdbcx.JdbcDataSource;
 import org.jooq.DSLContext;
@@ -19,9 +20,12 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The fact store's run-time bootstrap: opens an H2 database, executes the fact schema DDL into it,
@@ -37,10 +41,15 @@ import java.util.UUID;
  * which is what keeps migrations out: the DDL hash and generator version name the store's own
  * subdirectory under the home, so a generator upgrade or a DDL edit opens a different file
  * rather than meeting one it cannot read, and {@code store_stamp} re-records both inside the
- * file as the integrity check for a hand-moved or hand-damaged one. A shared store is never
- * deleted by this class: any failure to open falls back to {@link #open()} and leaves
- * the file alone, so cache trouble costs warmth, never correctness, and never fails a build.
- * Deleting the store's cache directory by hand is always safe and never loses anything.
+ * file as the integrity check for a hand-moved or hand-damaged one. Any failure to open falls back
+ * to {@link #open()} and leaves the file alone, so cache trouble costs warmth, never correctness,
+ * and never fails a build. Deleting the store's cache directory by hand is always safe and never
+ * loses anything.
+ *
+ * <p>This class deletes only what {@link StoreReaper} has proved nobody held at the instant it
+ * asked, and never the directory it opened: the stamped path accumulates one directory per stamp a
+ * home has ever seen, so {@link #openAt} sweeps the home it opened in and keeps the
+ * {@link #RETAINED_STAMPS} most recently used. {@link #reaped()} is what it released.
  *
  * <p>A file-backed store is held by one process at a time. Every connection inside that process
  * shares it, which covers a reactor build's modules (they run in the Maven JVM) and a session's
@@ -73,8 +82,45 @@ public final class GraphitronModelStore implements AutoCloseable {
      * Base name of the persisted database inside the stamped directory {@link #openAt} resolves.
      * H2 derives every file it keeps from this (the store itself, a trace log, temporary files),
      * so a hand cleanup means removing everything in the directory that starts with it.
+     *
+     * <p>{@link StoreReaper} reads it too: the prefix is what its candidate recognition admits, so
+     * the documented hand cleanup and the automatic sweep agree about one set of files rather than
+     * two that can drift.
      */
-    private static final String DATABASE = "store";
+    static final String DATABASE = "store";
+
+    /**
+     * The recency marker a successful file-backed open rewrites in its own stamped directory: the
+     * fact {@link StoreReaper} orders the retention by, rather than an inference from H2's file
+     * times, which answer "when was this store last written" and so miss a session that only reads.
+     *
+     * <p>Named under {@link #DATABASE}'s prefix deliberately. Under the prefix it is inside the set
+     * the hand cleanup above removes, so cleanup and recognition stay aligned, and the reaper's
+     * "nothing else" clause stays one prefix rather than a prefix plus an allowlist every future
+     * file has to be added to. A marker outside the prefix is precisely what survives the documented
+     * cleanup, leaving a directory the reaper would have to reason about with no database to lock.
+     */
+    static final String MARKER = DATABASE + ".last-used";
+
+    /**
+     * How many stamped directories a home keeps, the one the current run opened included. Three is
+     * the deepest alternation that shows up: the stamp this build wants, the stamp a long-running
+     * {@code graphitron:dev} session in the same checkout is holding, and one branch's worth of
+     * history. A constant rather than a parameter a consumer sets, for the reason a knob whose only
+     * effect is unbounded disk growth is not a knob.
+     */
+    static final int RETAINED_STAMPS = 3;
+
+    /**
+     * The homes this JVM has already swept, normalised. A reactor build opens the store once per
+     * module and the second sweep of a home has nothing left to find, so the sweep runs once per
+     * home per JVM. The set's check-and-set has to be atomic because CI builds the reactor with
+     * {@code -T 1C} and two modules in one Maven JVM can reach {@link #openAt} concurrently: nothing
+     * unsafe follows from a double sweep, every deletion race being caught, but the count and byte
+     * total would be split across two reports, and the report is the feature's whole user surface on
+     * an ordinary build.
+     */
+    private static final Set<Path> SWEPT_HOMES = ConcurrentHashMap.newKeySet();
 
     /** Stands in for {@code store_stamp.generator_version} when no manifest declares one. */
     private static final String UNVERSIONED = "dev";
@@ -93,15 +139,17 @@ public final class GraphitronModelStore implements AutoCloseable {
     private final Path location;
     private final boolean dropOnClose;
     private final String url;
+    private final Reaped reaped;
 
     private GraphitronModelStore(Connection connection, boolean warm, Path location,
-                                 boolean dropOnClose, String url) {
+                                 boolean dropOnClose, String url, Reaped reaped) {
         this.connection = connection;
         this.dsl = DSL.using(connection, SQLDialect.H2);
         this.warm = warm;
         this.location = location;
         this.dropOnClose = dropOnClose;
         this.url = url;
+        this.reaped = reaped;
     }
 
     /**
@@ -111,12 +159,22 @@ public final class GraphitronModelStore implements AutoCloseable {
      *         which are build-time defects in this module rather than anything an author caused
      */
     public static GraphitronModelStore open() {
+        return open(Reaped.none());
+    }
+
+    /**
+     * {@link #open()} carrying a sweep report, for {@link #openAt}'s fallback arms: a run whose
+     * cache home was unusable still swept that home, and the report is the caller's to log whichever
+     * store it ended up with. Separate from {@link #open()} so the public entry point keeps its
+     * current meaning and the field stays final.
+     */
+    private static GraphitronModelStore open(Reaped reaped) {
         String url = "jdbc:h2:mem:graphitron-model-" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";
         Connection connection = connect(url);
         create(connection);
         stamp(connection);
         deriveDependencies(connection);
-        return new GraphitronModelStore(connection, false, null, true, url);
+        return new GraphitronModelStore(connection, false, null, true, url, reaped);
     }
 
     /**
@@ -132,8 +190,10 @@ public final class GraphitronModelStore implements AutoCloseable {
      * would look in the wrong directory, find nothing, and silently boot cold beside a warm
      * store. The hash is also this class's own ({@link #ddlHash()} reads the DDL this class
      * boots from), so the path is an enforced invariant rather than a published one. The stamped
-     * path is what makes never discarding safe: a generator upgrade or a DDL edit opens a
-     * different file instead of meeting a shared store other modules' builds are still warm on.
+     * path is what makes discarding safe: a generator upgrade or a DDL edit opens a
+     * different file instead of meeting a shared store other modules' builds are still warm on,
+     * which is also why a directory nobody holds any more can be released without reasoning about
+     * what might still open it.
      *
      * <p>Concurrent module builds of one workspace share the file because they share a JVM: H2
      * gives one process one database per file and hands every further connection off it, so a
@@ -147,37 +207,55 @@ public final class GraphitronModelStore implements AutoCloseable {
      * whether previous rows were found, and it is the caller's cue that the store already holds
      * rows a refresh has to reconcile.
      *
-     * <p>It never fails, and it never deletes. Persistence is an optimisation over an in-memory
+     * <p>It never fails. Persistence is an optimisation over an in-memory
      * store that was always correct on its own, and one file is now every module's warmth, so
      * any failure at all (no resolvable home, a read-only location, a file another process holds,
      * a file H2 refuses for reasons it will not name) falls back to {@link #open()} and leaves the file
      * for the run that can read it. Cache trouble costs warmth, never correctness, and never
      * fails a build.
+     *
+     * <p>It also sweeps: every arm hands the home to {@link StoreReaper}, once per home per JVM,
+     * which releases the stamped directories under it that nothing holds and recency does not keep.
+     * The sweep lives behind this method rather than at its callers because the stamp segment is
+     * this class's private knowledge, which is the same reason the segment is appended here, and
+     * because a caller-driven sweep would be a rule every opener has to remember. The fallback arms
+     * sweep too: a home whose live stamp is held by a dev session is precisely a home whose older
+     * stamps nobody is looking at, and the live segment is spared by name there rather than by the
+     * lock probe, since this run holds nothing. {@link #reaped()} reports what was released.
      */
     public static GraphitronModelStore openAt(Path storeDirectory) {
-        Path directory = storeDirectory.resolve(stampSegment());
+        String segment = stampSegment();
+        // Before the open rather than after it, so every arm below carries the same report without
+        // each one asking for it. Releasing a directory is a handful of unlinks whatever the file's
+        // size, and the live segment is spared by name, so nothing here depends on the open having
+        // happened first.
+        Reaped reaped = sweepOnce(storeDirectory, segment);
+        Path directory = storeDirectory.resolve(segment);
         try {
             Files.createDirectories(directory);
         } catch (IOException e) {
-            return open();
+            return open(reaped);
         }
         boolean existing = Files.isRegularFile(directory.resolve(DATABASE + ".mv.db"));
         String url = fileUrl(directory);
         try {
             Connection connection = connect(url);
             if (stampMatches(connection)) {
-                return new GraphitronModelStore(connection, true, directory, false, url);
+                markUsed(directory);
+                return new GraphitronModelStore(connection, true, directory, false, url, reaped);
             }
             if (existing) {
                 // A file at the stamped path whose stamp still mismatches was moved or damaged
-                // by hand. Not this run's to repair, and never its to delete.
+                // by hand. Not this run's to repair, and never its to delete: the sweep above
+                // spares the live segment by name, so this directory is not a candidate either.
                 closeQuietly(connection);
-                return open();
+                return open(reaped);
             }
             create(connection);
             stamp(connection);
             deriveDependencies(connection);
-            return new GraphitronModelStore(connection, false, directory, false, url);
+            markUsed(directory);
+            return new GraphitronModelStore(connection, false, directory, false, url, reaped);
         } catch (RuntimeException e) {
             // Whatever went wrong is about the file, not the schema: a DDL this module cannot
             // execute fails identically on the in-memory store below, carrying the same message.
@@ -186,7 +264,47 @@ public final class GraphitronModelStore implements AutoCloseable {
             // store at once: whichever executes the DDL first completes and stamps it, the other
             // fails fast on the first CREATE and takes the fallback, losing warmth for one build
             // and nothing else.
-            return open();
+            return open(reaped);
+        }
+    }
+
+    /**
+     * Sweeps {@code home} unless this JVM already has, per {@link #SWEPT_HOMES}.
+     *
+     * <p>Swallows its own trouble for the same reason the reaper does: a home whose path cannot even
+     * be normalised is a home with nothing to sweep, and {@link #openAt} promises never to fail.
+     */
+    private static Reaped sweepOnce(Path home, String liveSegment) {
+        Path normalised;
+        try {
+            normalised = home.toAbsolutePath().normalize();
+        } catch (RuntimeException e) {
+            return Reaped.none();
+        }
+        if (!SWEPT_HOMES.add(normalised)) {
+            return Reaped.none();
+        }
+        return StoreReaper.sweep(normalised, liveSegment, RETAINED_STAMPS);
+    }
+
+    /**
+     * Records this open as the stamped directory's most recent use, which is what the retention
+     * orders by. Written strictly after a successful open, never before, so a directory carrying a
+     * marker always carries a database H2 has opened; a directory this run abandoned keeps whatever
+     * marker it already had.
+     *
+     * <p>Swallows everything, including the unchecked failures {@link Files#writeString} can raise.
+     * Letting one escape would land in {@link #openAt}'s own {@code catch (RuntimeException)} and
+     * demote a perfectly good warm store to memory, and the one state where that is reachable, a
+     * full disk, is exactly this mechanism's audience. A marker that could not be written costs the
+     * sweep its recorded recency for this directory, which falls back to the database's own
+     * modification time.
+     */
+    private static void markUsed(Path directory) {
+        try {
+            Files.writeString(directory.resolve(MARKER), Instant.now().toString());
+        } catch (IOException | RuntimeException e) {
+            // Nothing a caller could do, and nothing correctness depends on.
         }
     }
 
@@ -293,6 +411,18 @@ public final class GraphitronModelStore implements AutoCloseable {
      */
     public Optional<Path> location() {
         return Optional.ofNullable(location);
+    }
+
+    /**
+     * What this open released from its home, zero for an in-memory store and for every open of a
+     * home this JVM has already swept. The store carries it rather than logging it itself because
+     * the once-per-JVM guard makes the reporter whichever opener ran first, and that is not the same
+     * caller on every path: an ordinary build reaches the store through fact capture, while a
+     * {@code graphitron:dev} session whose initial run is skipped reaches it through the session's
+     * own open. {@link Reaped#report} is the sentence both of them log.
+     */
+    public Reaped reaped() {
+        return reaped;
     }
 
     /**
