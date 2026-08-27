@@ -3337,7 +3337,8 @@ type, an extraction kind and that kind's one payload, with the nesting arm's pat
 ordered child relation. The kind column's domain is the six reachable arms, and the three the
 renderer rejects are exactly the ones that must not appear in it, which gives the relation a
 non-vacuity check with teeth: a captured `@service` parameter concept reaching this relation is the
-defect it should refuse.
+defect it should refuse. (The six-value domain is corrected in the next increment: it is the count
+over the whole condition family, and a binding-grain relation needs the count per predicate arm.)
 
 **The method itself is the durable finding.** Two increments in a row asked how far a command carrier
 sits from the store, and both times the type's declaration overstated the distance: `MethodRef`
@@ -3346,6 +3347,68 @@ recursion where a construction-time invariant forbids it. Counting the readers t
 cases and the guess was wrong in both. The remaining families in this item's order (fetcher edges,
 type units, projections and launchers) should be scoped that way before their conversions are
 planned, not after.
+
+### Conditions, twenty-first increment: the count was taken at the wrong grain, and the one predicate the store cannot answer
+
+**The previous increment counted correctly and counted the wrong population.** Six of nine
+extraction arms are reachable in the condition family, which is true and is what the renderer's own
+throws establish. But the relation that increment set out to plan is a relation over *bindings*, and
+a condition row has two kinds of binding on two arms that were split apart three increments ago.
+Counting the renderer's arms without splitting by arm answers "what can appear in this method body",
+when the question the relation needs answered is "what can appear on this predicate". Those are
+different populations, and the difference is most of the vocabulary.
+
+**Split by arm, the authored side carries three kinds and the generated side carries the rest.**
+Every `ConditionFilter` in the tree is built from one block: the reflect pass over a `@condition`
+method's parameters. Three call sites reach it, the argument-site resolver, the field-site resolver
+and the input-field arm, and all three hand its `params()` straight to the carrier. That block mints
+exactly three parameter sources. A `Table<?>` parameter, which the call-param projection filters out
+because it is the receiver rather than a bound value. A context parameter, which becomes
+`ContextArg`. And an argument-bound parameter, whose extraction comes from one helper that returns
+`EnumValueOf` when the declared Java type is an enum class and `Direct` otherwise. A dotted path
+wraps whichever of those two in the nesting arm, and the input-field rewrap wraps it again. Nothing
+else can reach an authored predicate's binding.
+
+**The rich arms belong to the generated predicate, and they are live there.** `JooqConvert` and the
+node-id decode arms are produced where implicit column predicates are built for `@table` input
+fields, and those become the generated arm's column terms. That arm's terms each carry their own
+binding, by the same reasoning the carrier states: a comparison without the value it compares
+against is unrepresentable. So the six-arm vocabulary is real, it is simply the generated arm's, and
+a single relation covering both arms is a relation whose kind column is mostly not applicable to
+half its rows.
+
+**One predicate decides the authored arm's whole vocabulary, and the store cannot answer it for the
+population it was written for.** The predicate is "is this parameter's declared type an enum class".
+The classfile census states class kind directly and its domain includes `ENUM`, so an author's own
+enum resolves. A jOOQ-generated enum does not: the census excludes the generated jOOQ package by
+design, which the schema says in as many words at the one column that reaches a generated class at
+all. And the generated enum is precisely the case the predicate exists for, the helper that
+implements it being documented as jOOQ enum detection. There is no catalog-side enum relation to
+join instead; the catalog census carries schemas, tables, columns, constraints, indexes and
+routines, and no enum type.
+
+**So the next increment has a smaller, sharper job than the last one described.** For the authored
+arm the relation is a kind in a closed three-value vocabulary, an optional enum class name, and the
+nesting wrapper's outer argument plus its ordered path, all of which the argMapping family's
+existing resolution already reaches. What it is blocked on is one captured fact: the generated enum
+classes, on the terms `sql_table.class_fqn` already established for generated table classes, the
+catalog walk being the only census that sees that package. Capture that and the authored arm's
+extraction is derivable end to end. The generated arm's binding is a separate relation over a
+separate population and should be planned separately rather than folded in for symmetry.
+
+**The count also found a live defect, filed rather than fixed here.** The input-field rewrap
+replaces a parameter's extraction with a nesting arm built through the convenience constructor,
+whose documented behaviour is to default the leaf to `Direct`. An `EnumValueOf` is therefore
+discarded on exactly the shape this increment was measuring, and the failure is a cast at request
+time rather than a build error. It has its own Backlog item; it is not this item's to repair, and
+the reason it is worth naming here is that the counting pass is what surfaced it. Reading a producer
+to find out what a carrier can hold is the same act as reading it to find out what it drops.
+
+**What the method is now three for three on.** Each of the last three increments asked how far a
+command carrier sits from the store and got a different kind of wrong answer from the type's
+declaration: a reflected signature where two strings were read, recursion where an invariant forbids
+it, and now a vocabulary whose size was right for the file and wrong for the arm. The refinement to
+the method is to name the population before counting it, not just to count instead of guessing.
 
 ### Emitter half: family by family
 
