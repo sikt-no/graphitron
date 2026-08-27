@@ -360,15 +360,34 @@ recover the other axis is exactly the leave-one-out flattening R849 named as one
 because a registration whose `_live` view reads a target the candidate removed gets *dearer*, not
 cheaper.
 
-The candidate has to be realised where the register states it. `Materializations.registrations` reads
-`meta_materialize` and `refreshOrder` runs Kahn's algorithm over `meta_materialize_dependency`, so
-deleting the excluded registrations' rows from **both** tables before the refresh makes the pass run
-the candidate set and `RefreshProgress` price it directly. Both tables is not a detail:
-`refreshOrder` does `unmet.get(row.value1()).add(...)` over the dependency rows, so a dependency row
-whose registration was deleted from the census is a null map entry rather than a diagnostic. The two
-mechanisms then pair rather than compete, the deletion stopping the refill and
-`UnregisteredRelation.install` making the canonical name resolve to the rule instead of to a table
-nothing fills.
+The candidate has to be realised where the register states it, and in three steps whose **order is
+the mechanism** rather than an implementation detail:
+
+1. delete the excluded registrations' rows from `meta_materialize`, and from that relation only;
+2. `UnregisteredRelation.install` each excluded registration, so its canonical name resolves to the
+   rule instead of to a table nothing will fill;
+3. call `MaterializeDependencies.populate(dsl)`, and only then refresh.
+
+`Materializations.registrations` reads `meta_materialize`, so step 1 is what makes the pass run the
+candidate set and `RefreshProgress` price it directly.
+
+**Step 3 is not optional and the harness may not hand-write the edges instead.**
+`meta_materialize_dependency` is the family's one machine-written resident, its own comment saying a
+hand edit is a bug the next boot undoes, and `MaterializeDependencies` opens by naming itself its one
+writer. A harness deleting rows there would be a second writer beside the one the tree has. It would
+also derive the wrong edges for exactly the candidates this slice needs. The rows that bite are a
+*retained* registration depending on an excluded one: leave them and `refreshOrder` dies on a null
+map entry inside its cycle namer, because it indexes the dependency rows by census key; delete them
+and the transitive constraint is silently lost, since the retained view now evaluates the excluded
+rule live and so reaches the deeper retained targets it must still refresh after. Candidate C cannot
+avoid that shape and most of 2a's stores meet it too, and nothing would fail: the candidate's price
+would simply be wrong on both axes. `populate` rewrites the relation wholesale from the current
+census and recurses into unregistered views, which is what an excluded canonical name becomes at step
+2, so it derives those transitive edges rather than losing them.
+
+**Which is why step 2 precedes step 3.** Before the swap the excluded canonical name is still a base
+table, and the walk ends at a base table, so populating first derives no onward edge and reproduces
+the silent-loss failure by a different route.
 
 **Establish that this works before slice 2 plans around it, and state the fallback now:** if a
 candidate cannot be realised in the harness ladder, slice 2 reduces to the read axis alone, with the
@@ -497,11 +516,18 @@ correcting the historical reason text is R831's shape of work.
 
 ## Risks
 
-**The candidate-realisation mechanism may not work, and slice 2 rests on it.** Deleting registry and
-dependency rows before a refresh is the mechanism slice 2 needs and nothing in the tree does it today.
+**The candidate-realisation mechanism may not work, and slice 2 rests on it.** Delete-swap-populate
+before a refresh is the mechanism slice 2 needs, and while every step of it is an existing routine
+called in an order the tree already supports, nothing in the tree composes them this way today.
 Establish it first, on one candidate, before building the comparison on top of it, and take the stated
 fallback to a read-only axis if it does not hold. This is R849's own risk-handling shape and it is
 here for the same reason: the plan's most load-bearing assumption is a mechanism nobody has run.
+
+The check that establishes it is cheap and specific rather than a general "does it work": realise one
+candidate that removes a mid-chain registration, and assert that `Materializations.refreshOrder` still
+places every retained registration after the retained prerequisites it now reaches through the
+excluded rule. That is the failure the hand-deletion would have produced silently, so it is the one
+worth an explicit check before any figure is taken.
 
 **The populations may not agree, and the consumer-scale one may be unreachable.** A cut set is chosen
 against a population, and sakila is the one every build has while the hour-long capture is the one
@@ -583,3 +609,25 @@ the walk ends at it, deriving no onward edge. The rest of slice 2 stands: the fa
 `Set<Registration>` typing, the reader-domain sourcing and the 2a/2b structure are untouched by
 this, and the "establish the mechanism first" risk posture applies to the corrected mechanism as
 written.
+
+**Author response (2026-08-27, session 01Kid6RaCqPnzC2ZgeGQKy55).** Taken as stated, and both halves
+of the finding were verified against the tree before the revision rather than accepted on the round's
+word. `MaterializeDependencies`' javadoc opens "The one writer of `meta_materialize_dependency`" and
+`meta_materialize_dependency`'s table comment carries "a hand edit is a bug the next boot undoes"
+verbatim, so the hand deletion was a second writer beside an existing one. And `populate`'s own
+javadoc settles the behavioral half in the round's favour twice over: it rewrites the relation
+wholesale from the current census, and its walk "recurses into that view's definition" for an
+unregistered view while "base tables end the walk", which is both why it derives the transitive edges
+the hand deletion loses and why the swap has to precede it.
+
+The mechanism paragraph is now the three ordered steps the round names, with the order stated as the
+mechanism rather than as an implementation detail, the second-writer and silent-loss arguments given
+as the reason step 3 is not optional, and a separate note on why step 2 precedes step 3. The risk
+section's mechanism sentence is corrected to match, and it gains the specific check that would
+establish the mechanism: one candidate removing a mid-chain registration, asserting `refreshOrder`
+still places each retained registration after the prerequisites it now reaches through the excluded
+rule. That is the failure the hand deletion would have produced silently, so it is worth checking
+explicitly rather than leaving to a general "establish it first".
+
+Nothing else in the plan body moved. The fallback, the `Set<Registration>` typing, the reader-domain
+sourcing and the 2a/2b structure are as the round found them.
