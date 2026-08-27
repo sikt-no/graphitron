@@ -260,3 +260,69 @@ problem and starts being true; it needs no edit.
 
 The sibling hang item is where the empty-store case came from, and its transaction-boundary finding
 explains why a failing consumer accumulates full-size stores holding nothing.
+
+## Reviewer findings
+
+### Round 1 (2026-08-27, Spec -> Ready, reviewer session 01HCCE9xRXVR2J6x3ar7rmDN)
+
+Verdict: withhold. One finding on question 2 and one smaller one on question 1. Everything else in
+this plan is in unusually good shape, and the strongest part is that the lock probe is argued from
+measurement rather than asserted: I reproduced all four results against H2 2.4.240 while reviewing
+(no lock file is written without `AUTO_SERVER`, a database this JVM holds through H2 refuses
+`tryLock` with `OverlappingFileLockException`, the lock is released with the connection, and
+deleting the file while holding the lock is permitted), so the mechanism's premise holds. So does
+the reasoning for recency over compatibility: the alternating-stamp case is real and the
+compatibility rule would indeed reap the other side of every alternation.
+
+The goal reads off the plan without reconstructing it. Today a contributor editing the fact schema
+DDL mints a fresh several-hundred-megabyte store directory per edit under their cache home and
+nothing ever removes one, so the home grows without bound for as long as they do model work. After
+this lands, every process that opens the store deletes the older stamped directories under the same
+workspace home, keeping the three most recently used and skipping any directory a process is
+holding, and says once how much it freed. A `graphitron:dev` session in another window keeps its own
+cache. That is reachable in this codebase and it extends a shape already here rather than standing a
+new one beside it: `openAt` already owns the stamp segment as private knowledge for exactly the
+reason the sweep has to live there, `boot` already carries the `Store*` unit tier the reaper's tests
+join, and the plan names the class javadoc's now-false "A shared store is never deleted by this
+class" sentence rather than leaving it to rot.
+
+**Question 2. The candidate recognition rule and the recency marker contradict each other, and
+reconciling them is a safety decision, not a wording one.** Recognition says a candidate "holds
+`store.mv.db` or the recency marker below, and holds nothing else beyond files whose names begin with
+`store`". The marker is named `last-used`, which does not begin with `store`. So every directory this
+mechanism itself produces, `store.mv.db` plus `last-used`, fails the second clause and is not a
+candidate: read literally the sweep reaps the pre-upgrade cache once and then quietly stops working,
+which is the failure mode that shows up as "it worked when I shipped it".
+
+The reconciliation is a fork with consequences, which is why it is yours rather than mine to pick.
+Naming the marker `store.last-used` folds it under the existing prefix and needs no second
+allowlist, but it also puts the marker inside the set a hand cleanup is told to remove. Widening the
+allowlist to the marker name keeps the marker legible as a separate thing but makes the "nothing
+else" clause a two-entry list that a future file has to be added to.
+
+Whichever way it goes, the same edit has to settle a second case the rule currently admits and the
+probe has no answer for: a directory holding *only* the marker. Recognition accepts it, and the
+release rule is "released only while the reaper holds an exclusive lock on its database", which is
+undefined when there is no database file to lock, and answering it by opening a channel on
+`store.mv.db` would have the reaper create the file it is about to delete. That case is not
+hypothetical, and it reopens the race the plan says it closed structurally: if the marker write lands
+before the connect in `openAt`, another process's directory holds the marker and no locked database
+for the same instant that the empty-directory exclusion was written to cover. Requiring
+`store.mv.db` for candidacy, or ordering the marker write strictly after a successful open, closes
+it; the plan should say which, since "the recognition rule makes that race structurally impossible
+rather than narrow" is a claim the implementer will otherwise inherit without the ordering that makes
+it true.
+
+**Question 1, smaller.** The `storeDirectory` sentence in the first-client check opens "Graphitron
+keeps the three most recently used of these per checkout", and `these` has no antecedent on the page:
+the row tells a consumer there is "one store per project checkout" and never mentions that a
+checkout's home holds one directory per DDL hash. A consumer reading the row as it will stand learns
+a retention policy over an object the documentation has not introduced, so they cannot tell what is
+being kept or why there would be more than one. Introducing the per-schema directory in the same
+breath satisfies this; it is a sentence of setup, not a rewrite.
+
+Non-blocking, and genuinely not for this gate to settle: the second unit-tier test group is
+"extending the store's own coverage" without naming a class, and `graphitron-model` has no
+`GraphitronModelStoreTest` today (`openAt`'s coverage lives in `graphitron`'s `PersistentStoreTest`
+and in the `FactStores` helper), so the implementer picks both the class and whether it is new. The
+declaring type of `Reaped` is likewise unstated; nested in `StoreReaper` reads as the intent.
