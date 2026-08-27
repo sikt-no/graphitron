@@ -43,6 +43,12 @@ public class CountTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("TotalCount for nested paginated query reached through a condition without a key")
+    void conditionReference() {
+        assertGeneratedContentMatches("conditionReference");
+    }
+
+    @Test
     @DisplayName("Connection with an extra field")
     void withOtherField() {
         assertGeneratedContentContains("withOtherField", ", String _mi_email)", ".where(_a_customer.EMAIL.eq(_mi_email)");

@@ -72,11 +72,13 @@ public abstract class GeneratorTest {
     }
 
     protected Map<String, List<String>> generateFiles(String schemaParentFolder, Set<SchemaComponent> extraComponents) {
-        return GraphQLGenerator.generateAsStrings(makeGenerators(getProcessedSchema(schemaParentFolder, extraComponents)));
+        return AliasBindingCheck.assertAliasesAreBound(
+                GraphQLGenerator.generateAsStrings(makeGenerators(getProcessedSchema(schemaParentFolder, extraComponents))));
     }
 
     protected Map<String, List<String>> generateFiles(Set<SchemaComponent> components) {
-        return GraphQLGenerator.generateAsStrings(makeGenerators(getProcessedSchema(components)));
+        return AliasBindingCheck.assertAliasesAreBound(
+                GraphQLGenerator.generateAsStrings(makeGenerators(getProcessedSchema(components))));
     }
 
     public static void assertGeneratedContentMatches(String expectedOutputFolder, Map<String, List<String>> generatedFiles) {

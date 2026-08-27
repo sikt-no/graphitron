@@ -220,6 +220,26 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
     /**
+     * Counts the rows the corresponding list query would page over, as a subquery correlated to the layer above.
+     * Shares its source alias, joins and conditions with {@link #generateCorrelatedSubquery}, so the two queries for a
+     * field always agree on which table the reference path starts from.
+     *
+     * @param context The context of the referenced layer, as produced by {@link FetchContext#nextContext}.
+     */
+    protected CodeBlock generateCorrelatedCountSubquery(FetchContext context) {
+        var where = formatWhereContents(context, false);
+        return wrapInField(
+                CodeBlock.builder()
+                        .add("$1T.select($1T.count())", DSL.className)
+                        .add("\n.from($L)\n", context.getSourceAlias())
+                        .add(createSelectJoins(context.getJoinSet()))
+                        .add(where)
+                        .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
+                        .build()
+        );
+    }
+
+    /**
      * Generates a helper method call for nested record type fields.
      * This base implementation generates the root-level helper method call.
      *

@@ -126,6 +126,9 @@ type City implements Node @table @node(typeId: "CityType"){
     addressExample: Address @splitQuery @notGenerated
     addresses: [Address!]! @splitQuery # Non-nullable for loadNonNullable approval test
     addressesPaginated: [Address] @splitQuery @asConnection
+    # Condition with no key in the path, so the reference starts by aliasing CITY itself. Paginated so that totalCount
+    # exercises the count query too, which is where an unbound alias for that starting point would surface.
+    addressesViaConditionPaginated: [Address] @splitQuery @asConnection @reference(path: [{condition: {className: "no.sikt.graphitron.example.service.conditions.CityConditions", method: "addressesForCity"}}])
     customers: [Customer] @splitQuery @reference(path: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY", condition: {className: "no.sikt.graphitron.example.service.conditions.CityConditions", method: "customersForCityViaAddresses"}}])
     customersPaginated: [Customer] @splitQuery @asConnection @reference(path: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY", condition: {className: "no.sikt.graphitron.example.service.conditions.CityConditions", method: "customersForCityViaAddresses"}}])
     payments: [Payment] @reference(path: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "PAYMENT"}]) # Subquery

@@ -1,0 +1,25 @@
+type Query {
+    customers: [Customer] @notGenerated
+}
+
+type Customer @table {
+    paymentsPaginated(first: Int = 100, after: String): CustomerPaymentsPaginatedConnection
+        @splitQuery
+        @reference(path: [{condition: {className: "no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition", method: "payments"}}])
+}
+
+type CustomerPaymentsPaginatedConnection {
+    edges: [CustomerPaymentsPaginatedConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Payment]
+    totalCount: Int
+}
+
+type CustomerPaymentsPaginatedConnectionEdge {
+    cursor: String
+    node: Payment
+}
+
+type Payment @table {
+    id: ID!
+}

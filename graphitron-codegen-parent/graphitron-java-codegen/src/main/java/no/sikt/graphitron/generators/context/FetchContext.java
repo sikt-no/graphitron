@@ -42,7 +42,15 @@ public class FetchContext {
     private final boolean hasApplicableTable;
     private final ProcessedSchema processedSchema;
 
-    /* Midlertidig hack på count for paginerte kanter, som ikke bruker subspørringer enda */
+    /**
+     * Whether to collect a join even when it starts the sequence rather than extending one.
+     * <p>
+     * A sequence-starting join is normally left out of the join set on purpose: its target alias becomes the head of
+     * the join sequence, and the query that consumes this layer binds it by selecting {@code FROM} it. That only works
+     * where such a query exists, so generators that flatten a layer into an enclosing statement, instead of nesting it
+     * as a correlated subquery, must set this and render every join themselves. Leaving it unset in a generator that
+     * flattens drops the join; setting it in a generator that nests emits an alias nothing binds.
+     */
     private final boolean addAllJoinsToJoinSet;
 
     private final boolean useTableWithoutAliasInFirstStep; // Necessary for mutation queries

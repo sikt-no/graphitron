@@ -53,6 +53,15 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                     .addCode(getCodeForMultitableCountMethod(target))
                     .build();
         }
+        return isRoot() ? generateForRoot(target, parser) : generateForResolver(target, parser);
+    }
+
+    /**
+     * Root counts have no parent row to count per, so the whole statement is the counting query and every join can be
+     * flattened into it. This is the one shape where the join sequence has no correlated subquery to anchor it, hence
+     * the {@code addAllJoinsToJoinSet} flag.
+     */
+    private MethodSpec generateForRoot(ObjectField target, InputParser parser) {
         var context = new FetchContext(processedSchema, target, getLocalObject(), true);
         var targetSource = context.renderQuerySource(getLocalTable());
         var where = formatWhereContents(context, target.createsDataFetcher());
@@ -63,16 +72,44 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .addCode("return $N\n", VAR_CONTEXT)
                 .indent()
                 .indent()
-                .addCode(".select(")
-                .addCodeIf(!isRoot(),() -> CodeBlock.of("$L, ", resolverKeyAsTableRecord(context)))
-                .addCode("$T.count())\n", DSL.className)
+                .addCode(".select($T.count())\n", DSL.className)
                 .addCode(".from($L)\n", targetSource)
                 .addCode(createSelectJoins(nextContext.getJoinSet()))
                 .addCode(where)
                 .addCode(createSelectConditions(nextContext.getConditionList(), !where.isEmpty()))
-                .addCodeIf(!isRoot(),() -> CodeBlock.of(".groupBy($L)\n", commaSeparatedResolverKeyFields(context)))
-                .addStatementIf(isRoot(), ".fetchOne(0, $T.class)", INTEGER.className)
-                .addStatementIf(!isRoot(), ".fetchMap($1T::value1, $1T::value2)", RECORD2.className)
+                .addStatement(".fetchOne(0, $T.class)", INTEGER.className)
+                .unindent()
+                .unindent()
+                .build();
+    }
+
+    /**
+     * Counts one value per parent row, so the count itself must be a correlated subquery over the referenced table,
+     * exactly as the corresponding list query nests its {@code multiset}. Anchoring the subquery on the referenced
+     * layer's own source alias is what binds a reference path that starts by aliasing the parent table, which a
+     * {@link GenerationDirective#REFERENCE reference} through a condition method with no key does.
+     */
+    private MethodSpec generateForResolver(ObjectField target, InputParser parser) {
+        var context = new FetchContext(processedSchema, target, getLocalObject(), false);
+        var nextContext = target.createsDataFetcher() ? context.nextContext(target) : context;
+
+        // Note that these must happen before alias declaration, as filter arguments can bring aliases of their own.
+        var countSubquery = generateCorrelatedCountSubquery(nextContext);
+        var where = formatWhereContents(context, target.createsDataFetcher());
+        var querySource = context.renderQuerySource(getLocalTable());
+
+        return getSpecBuilder(target, parser)
+                .addCode(declareAllServiceClassesInAliasSet(context.getAliasSet()))
+                .addCode(createAliasDeclarations(context.getAliasSet()))
+                .addCode("return $N\n", VAR_CONTEXT)
+                .indent()
+                .indent()
+                .addCode(".select($L, $L)\n", resolverKeyAsTableRecord(context), countSubquery)
+                .addCode(".from($L)\n", querySource)
+                .addCode(createSelectJoins(context.getJoinSet()))
+                .addCode(where)
+                .addCode(createSelectConditions(context.getConditionList(), !where.isEmpty()))
+                .addStatement(".fetchMap($1T::value1, $1T::value2)", RECORD2.className)
                 .unindent()
                 .unindent()
                 .build();
