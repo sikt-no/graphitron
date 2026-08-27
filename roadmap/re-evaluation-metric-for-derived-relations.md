@@ -1,7 +1,7 @@
 ---
 id: R849
 title: "Measure re-evaluation rather than naming, so a materialization cut set can be chosen on evidence"
-status: Ready
+status: Spec
 bucket: architecture
 priority: 2
 theme: model-cleanup
@@ -804,23 +804,42 @@ reasons record. Counting an inversion as one registration outranking one in a st
 with the three class-U rows excluded and ties not counted, the seventeen scored registrations carry
 **eight inversions**. The gate demanded zero.
 
-The metric is nonetheless a real improvement on the thing it replaces, and the improvement is
-lopsided in a way worth stating. Scoring the same seventeen with every weight forced to one, which
-is the naming count both shipped metrics compute, gives **twelve**. So weighting removes four
-inversions, and all four come out of the band separating small savings from large ones. The band
-that matters most is untouched: **five B-over-A inversions before weighting and five after**.
-Registrations whose reasons record that a build does not finish without them still rank below
-registrations that save seconds, and the weighting does not move them at all.
+**Weighting does not improve the reading the item cares about; it trades one band for another, and
+the band it makes worse is the one this plan calls decisive.** The totals are computed rather than
+counted by hand, which is how the first version of this section got them wrong; the counting rule is
+one strict inversion per pair where a lower class outranks a higher one, class U excluded, ties not
+counted.
 
-| Reading | Inversions |
-|---|---|
-| Marginal, weights forced to one (the naming count) | 12 |
-| Marginal, weighted by driving cardinality | 8 |
-| Solo value, weighted (what each is worth alone) | 18 |
+| Reading | Inversions | B over A | C over B |
+|---|---|---|---|
+| Marginal, weights forced to one (the naming count) | 10 | 3 | 7 |
+| Marginal, weighted by driving cardinality | 8 | **5** | 3 |
+| Reads only, weights forced to one | 5 | 3 | 2 |
+| Reads only, weighted | 6 | 4 | 2 |
+| Solo value, weighted | 18 | 14 | 4 |
 
-Solo value is reported because it is the obvious alternative and it is worse, not better. Scoring
-each registration against a store with nothing else materialized ranks two class-B rows above every
-class-A row and puts a class-B registration last of seventeen.
+Ten falling to eight is a net that hides two opposite movements. Weighting halves the band separating
+small savings from large ones, 7 to 3, and it *adds two* to the band separating a registration whose
+absence stops a build from one that saves seconds, 3 to 5.
+
+The two it adds are both against `intent_node_id_decode_hop_column`, whose reason records a walk that
+does not finish inside a two-minute timeout. Unweighted it ranks third of seventeen, behind only the
+two other terminating-failure rows, which is the answer the register's reasons would give. Weighted it
+falls to fifth, below `intent_errors_field` and `intent_field_reference_step_hop`. **So on the top of
+the register the naming count this item exists to replace is the more accurate of the two, and
+cardinality weighting is what breaks it.**
+
+The mechanism is this section's own third cause, connected to the band it governs. A recursive term
+runs once per iteration; the walk cannot see iterations and weights by the largest relation the term
+names; for a walk over its own rows that relation is itself. So the one position the register's
+reasons describe as unbounded is the one the weighting cannot size, and giving it a finite number
+demotes it beneath positions the weighting *can* size.
+
+Two further readings are reported because they are the obvious alternatives and neither rescues it.
+Solo value, scoring each registration against a store with nothing else materialized, is far worse at
+eighteen. Charging no refresh at all is better in the aggregate, five and six, and still carries three
+and four B-over-A inversions, so it does not clear the gate either and it makes weighting look worse
+rather than better on the decisive band.
 
 ### Three causes, separated by measurement rather than by argument
 
@@ -850,22 +869,104 @@ Where the walk is over the relation's own rows the answer is itself: the referen
 `RECURSIVE, drivers=[intent_node_id_decode_hop_column]`. That is defensible, a self-walk really does
 iterate over those rows, and it is not a measurement of the depth the reason describes.
 
-### What this says about the item
+### The disposition: the negative branch runs, and it runs on the weighted metric
 
-The instrument works and is worth having. It reads position off the stored definitions, weights it,
-scores an arbitrary cut set, and prices the refresh separately, none of which existed before. Two of
-its defects were found only by running it against a real store rather than a fixture, and both had
-it reporting zero for whole families.
+The gate failed, so the branch this plan wrote for that outcome executes. The first version of this
+section did not execute it, kept the instrument, and argued for keeping it in a paragraph. That
+reversed a clause a review round put here, on the implementer's judgment, at the moment the clause
+was about to cost something, which is exactly when a pre-committed branch is worth having and exactly
+when it is most tempting to reread. The argument it made was also weaker than it looked, because it
+rested on a figure that was wrong: with the corrected counts, weighting is not an improvement on the
+decisive band, it is a regression on it.
 
-What it does not do is clear the bar this plan set for it, and the bar should not be quietly lowered
-now that the number is known. The honest reading is that the acceptance gate as specified was not
-purely a test of the metric: it compared a set of historical per-relation measurements against a
-present-day set-relative score, and at least two of the eight inversions are the comparison rather
-than the instrument. That is a defect in the gate this plan wrote, exposed by running it, and the
-same class of defect the third review round caught in its previous form.
+**Deleted: `ReEvaluationMetric` and `ReEvaluationMetricTest`.** That is the weighted instrument the
+gate tested and the thing that failed. It does not merely fall short of the bar; on the top of the
+register it ranks worse than the naming count it was built to replace, and it does so through a
+weighting the walk cannot compute for the one position that matters most. Shipping it would leave the
+tree holding a number that looks like cost, is not, and is most wrong precisely where a reader would
+most want to trust it. That is the error the store-performance skill already records twice, and this
+item exists downstream of the last time the tree made it.
+
+**Kept: `ViewReferences`, positions and drivers included.** This is the arm of the branch that needs
+arguing rather than asserting, because a literal reading of "the new weighted instrument and its
+tests are deleted" leaves the parse in place and a narrow reading of *that* leaves `Position`,
+`Enclosure` and the driver resolution in main scope with no consumer, which is dead API.
+
+The parse is not what the gate tested. The gate tested a ranking built on top of it, and what failed
+is the step from *where a reference sits* to *what that position is worth as a number*. The first is
+established: the plan's stated slice-1 risk is settled positively, twenty cases pin it against
+hand-derived answers with negative controls, and `MaterializeDependencies` reads through it, so the
+tree has one set of H2 normalization rules where it had two. Deleting it would revert that
+consolidation to buy nothing.
+
+The positions stay because two open items are already the question they answer, so this is a named
+consumer rather than a hope. R839 diagnoses a 41-second refresh as "one correlated `EXISTS`
+re-deriving a 172-row rule once per driving row", and R856 has a consumer capture that has never been
+observed to finish, with the recursive terms named as the suspects. Both are asking, of one relation,
+which of its references re-evaluate and against what. That is what this walk answers and what no
+other instrument in the tree answers. The ranking is what it cannot do.
+
+**The condition on keeping them, stated so it can be checked rather than assumed.** If neither of
+those two items, nor a successor, reads `Position` or `Enclosure` by the time both are closed, then
+the positions have no consumer and should go the way the metric went. This is a debt with a stated
+due date, not a permanent exemption, and it is written here so the next author meets it as a claim
+that can be falsified.
+
+**Recording the result so it survives Done.** The plan already sends a negative outcome to
+`roadmap/changelog.md`, which is right and is not enough on its own: every figure this run produced
+lives in this file, and this file is deleted at Done. Two things carry it instead. The changelog entry
+names what the gate refused and the corrected counts, including that the naming count ranks the top of
+the register better than the weighted one. And `ViewReferences`' own javadoc records that a weighted
+ranking over these positions was built, run against the register and refused, so a reader who finds
+the positions and reaches for the obvious next step meets the result of the last attempt at the symbol
+itself rather than in a deleted plan.
 
 **What a follow-up would need**, and what this item deliberately does not do under its own steam:
 re-measure the twenty against today's bodies so both sides of the comparison describe one tree, and
-replace the leave-one-out ranking with one that prices sets rather than members. R848 is where a
-different cut set gets proposed, and this instrument can now score one; what it cannot yet do is
-rank the current twenty against measurements taken on trees that no longer exist.
+find a weight for a recursive term that is not a proxy for iterations the walk cannot see. R848 is
+where a different cut set gets proposed; what this item establishes is that a static reading of the
+definitions cannot rank the current twenty, and that the obstacle is not the parse.
+
+## Round 5's findings taken (2026-08-27, author session session_01SNGgGUkFsdpJQVYF9d8SV8)
+
+All three land, and the first two are connected: the figure was wrong in a way that made the wrong
+disposition look defensible.
+
+**Finding 2 first, because the others rest on it.** Reproduced with the counting rule computed rather
+than applied by hand, against the it-store capture. The reviewer's numbers are right and mine were
+wrong. Weights forced to one gives **ten**, not twelve, and the band claim inverts: **three B-over-A
+inversions before weighting and five after**, where this file said five and five and called the band
+untouched. Weighting does not leave the decisive band alone, it makes it worse, and both added
+inversions are against `intent_node_id_decode_hop_column` exactly as the round reported. The gate
+section is rewritten around the computed table, and it now says what the numbers say: on the top of
+the register the naming count is the more accurate of the two readings.
+
+Where the twelve came from: a hand count over a stale ranking, taken before the fold-resolution fix
+and never redone after it. Two figures survived that staleness because they happened not to move,
+which is what let the third sit unchallenged beside them. The lesson is narrower than "check the
+arithmetic": a figure derived by hand from an intermediate run needs re-deriving after every change to
+the thing it summarises, and the cheap way to make that automatic is to compute it. The reviewer's
+caveat about 37 root readers against 38 was the visible edge of this, and was correct.
+
+**Finding 1.** Taken, and the branch executes. The plan states one disposition for a failed gate and
+this file reversed it on my own judgment while quoting "the bar should not be quietly lowered", which
+is the same move it was warning against. `ReEvaluationMetric` and its test go. The corrected figures
+make that easier rather than harder to write: the instrument does not fall just short, it ranks the
+top of the register worse than the count it replaces.
+
+The keep-arm is now argued in the plan rather than left to a literal reading, because the round was
+right that the branch as written does not name one thing once slice 1 became the tree's only
+definition walk. `ViewReferences` stays with its positions, on two named open items that are already
+asking its question, and with a stated condition under which it too should go. That is the author's
+arm to take and it is taken here, in the plan, for a fresh sign-off rather than after one.
+
+**Finding 3.** Taken. The changelog entry carries the corrected counts rather than only the verdict,
+and `ViewReferences`' javadoc records that a weighted ranking over these positions was built, run and
+refused, so the result meets a reader at the symbol instead of dying with this file. The half of the
+finding about `ReEvaluationMetric`'s javadoc reading as an instrument in good standing dissolves with
+the class.
+
+**Status.** Reopened Ready to Spec rather than revised in place. Finding 1 asks for a fresh sign-off
+on a disposition this plan did not previously state, and finding 2 replaced the gate section's central
+claim with its opposite, so the plan changed substantively and the reviewer who signs it off should be
+reading the arm and the corrected numbers together.
