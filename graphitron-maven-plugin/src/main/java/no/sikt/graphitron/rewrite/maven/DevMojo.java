@@ -9,6 +9,7 @@ import no.sikt.graphitron.rewrite.SchemaParseException;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.derive.Materializations;
+import no.sikt.graphitron.model.derive.RefreshProgress;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreConsole;
 import no.sikt.graphitron.model.boot.StoreReader;
@@ -301,7 +302,10 @@ public class DevMojo extends AbstractRewriteMojo {
         // current: a warm store whose capture was skipped because nothing changed would otherwise
         // serve the language server and MCP stale rows. Idempotent, and a no-op with no
         // registrations.
-        Materializations.refreshAll(sessionStore.dsl());
+        // The pass boundary at info, so a start that stalls here is attributed rather than looking
+        // like a slow boot, and the per-registration tier at debug for a re-run with -X.
+        Materializations.refreshAll(sessionStore.dsl(),
+            RefreshProgress.lines(getLog()::info, getLog()::debug));
         // After the refresh, so the linked relations include the refreshed materializations, and
         // before the watchers, so the console is up before the first round lands.
         this.storeConsoleHandle = startStoreConsole();

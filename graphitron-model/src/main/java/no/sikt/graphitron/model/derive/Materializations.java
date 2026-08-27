@@ -9,7 +9,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeSet;
+import java.util.function.IntSupplier;
 
 import static org.jooq.impl.DSL.asterisk;
 import static org.jooq.impl.DSL.field;
@@ -68,6 +70,18 @@ import static org.jooq.impl.DSL.table;
  * <p>Both cadences owe the planner statistics on what they just wrote, which is {@link #analyse},
  * and the two reach it differently for a reason stated there rather than here: a refresh may run
  * inside a transaction and an analysis may not.
+ *
+ * <p>A refresh says what it is doing, to a {@link RefreshProgress} the caller supplies: two events
+ * bounding the pass and two bounding each registration. <b>A registration's name goes out before
+ * its statements are issued and its durations after they return, and that order is the instrument
+ * rather than a detail of it.</b> A pass that timed each registration and reported afterwards would
+ * emit nothing at all for the registration that never returns, which is the only case anybody turns
+ * this on for; a stuck refresh under the order kept here has already printed the relation it is
+ * stuck in. Concretely the started event precedes the {@code DELETE} rather than sitting between
+ * the two statements, so either statement hanging is attributed. The one query ahead of it is the
+ * catalog read deciding which refresh shape applies, which is a metadata read and not a candidate
+ * for the failure this instruments. {@code MaterializationProgressTest} holds the order, so
+ * collapsing the two events into one after-line fails the build.
  */
 public final class Materializations {
 
@@ -98,9 +112,30 @@ public final class Materializations {
      * own transaction: no reader ever observes an emptied target.
      */
     public static void refresh(DSLContext dsl, String graphName) {
-        for (Registration registration : refreshOrder(dsl).registrations()) {
-            refresh(dsl, registration, graphName);
+        refresh(dsl, graphName, RefreshProgress.none());
+    }
+
+    /**
+     * {@link #refresh(DSLContext, String)}, reporting to {@code progress} as it goes. What the pass
+     * says and why the names precede the statements is on this class.
+     */
+    public static void refresh(DSLContext dsl, String graphName, RefreshProgress progress) {
+        List<Registration> registrations = refreshOrder(dsl).registrations();
+        if (registrations.isEmpty()) {
+            return;
         }
+        progress.observe(new RefreshProgress.Event.PassStarted(registrations.size(),
+            List.of(graphName)));
+        long startedAt = System.nanoTime();
+        for (int position = 0; position < registrations.size(); position++) {
+            Registration registration = registrations.get(position);
+            refreshOne(dsl, registration, position + 1, registrations.size(),
+                graphKeyed(dsl, registration.targetTableName())
+                    ? Optional.of(graphName)
+                    : Optional.empty(),
+                progress);
+        }
+        progress.observe(new RefreshProgress.Event.PassFinished(System.nanoTime() - startedAt));
     }
 
     /**
@@ -114,6 +149,16 @@ public final class Materializations {
      * waits on, so the statistics {@link #analyse} supplies are worth more here than anywhere.
      */
     public static void refreshAll(DSLContext dsl) {
+        refreshAll(dsl, RefreshProgress.none());
+    }
+
+    /**
+     * {@link #refreshAll(DSLContext)}, reporting to {@code progress} as it goes. A graph-keyed
+     * registration reports one pair of registration events per graph, a graph-free one a single
+     * pair; the pass boundary bounds the refresh alone, the analysis that follows it being a
+     * cadence property of this entry point rather than part of the pass.
+     */
+    public static void refreshAll(DSLContext dsl, RefreshProgress progress) {
         List<Registration> registrations = refreshOrder(dsl).registrations();
         if (registrations.isEmpty()) {
             return;
@@ -122,15 +167,21 @@ public final class Materializations {
             .from(table(name("STORE_GRAPH")))
             .orderBy(field(name("GRAPH_NAME")))
             .fetch(0, String.class);
-        for (Registration registration : registrations) {
+        progress.observe(new RefreshProgress.Event.PassStarted(registrations.size(), graphs));
+        long startedAt = System.nanoTime();
+        for (int position = 0; position < registrations.size(); position++) {
+            Registration registration = registrations.get(position);
             if (graphKeyed(dsl, registration.targetTableName())) {
                 for (String graph : graphs) {
-                    refreshPartition(dsl, registration, graph);
+                    refreshOne(dsl, registration, position + 1, registrations.size(),
+                        Optional.of(graph), progress);
                 }
             } else {
-                refreshWhole(dsl, registration);
+                refreshOne(dsl, registration, position + 1, registrations.size(),
+                    Optional.empty(), progress);
             }
         }
+        progress.observe(new RefreshProgress.Event.PassFinished(System.nanoTime() - startedAt));
         analyse(dsl);
     }
 
@@ -272,31 +323,64 @@ public final class Materializations {
                 + " registrations themselves must change.");
     }
 
-    private static void refresh(DSLContext dsl, Registration registration, String graphName) {
-        if (graphKeyed(dsl, registration.targetTableName())) {
-            refreshPartition(dsl, registration, graphName);
-        } else {
-            refreshWhole(dsl, registration);
-        }
+    /**
+     * One registration's refresh, in the shape {@code graph} names: a partition where a graph is
+     * present, the whole relation where it is absent. The one place the registration events are
+     * emitted, so the rule this class states about their order holds for both cadences at once and
+     * for both shapes.
+     */
+    private static void refreshOne(DSLContext dsl, Registration registration, int position,
+                                   int total, Optional<String> graph, RefreshProgress progress) {
+        progress.observe(new RefreshProgress.Event.RegistrationStarted(registration, position,
+            total, graph));
+        Costs costs = graph
+            .map(graphName -> refreshPartition(dsl, registration, graphName))
+            .orElseGet(() -> refreshWhole(dsl, registration));
+        progress.observe(new RefreshProgress.Event.RegistrationFinished(registration,
+            costs.deleteNanos(), costs.insertNanos(), costs.rowsDeleted(), costs.rowsInserted()));
     }
 
-    private static void refreshPartition(DSLContext dsl, Registration registration, String graphName) {
+    /**
+     * What one registration's two statements took and touched. Returned rather than reported from
+     * inside the statement methods, so that those stay two statements and the emission order this
+     * class states lives at the single site that observes it.
+     */
+    private record Costs(long deleteNanos, long insertNanos, int rowsDeleted, int rowsInserted) {}
+
+    private static Costs refreshPartition(DSLContext dsl, Registration registration, String graphName) {
         var graph = field(name("GRAPH_NAME"), String.class);
-        dsl.deleteFrom(table(relation(registration.targetTableName())))
-            .where(graph.eq(graphName))
-            .execute();
-        dsl.insertInto(table(relation(registration.targetTableName())))
-            .select(select(asterisk())
-                .from(table(relation(registration.sourceViewName())))
-                .where(graph.eq(graphName)))
-            .execute();
+        return timed(
+            () -> dsl.deleteFrom(table(relation(registration.targetTableName())))
+                .where(graph.eq(graphName))
+                .execute(),
+            () -> dsl.insertInto(table(relation(registration.targetTableName())))
+                .select(select(asterisk())
+                    .from(table(relation(registration.sourceViewName())))
+                    .where(graph.eq(graphName)))
+                .execute());
     }
 
-    private static void refreshWhole(DSLContext dsl, Registration registration) {
-        dsl.deleteFrom(table(relation(registration.targetTableName()))).execute();
-        dsl.insertInto(table(relation(registration.targetTableName())))
-            .select(select(asterisk()).from(table(relation(registration.sourceViewName()))))
-            .execute();
+    private static Costs refreshWhole(DSLContext dsl, Registration registration) {
+        return timed(
+            () -> dsl.deleteFrom(table(relation(registration.targetTableName()))).execute(),
+            () -> dsl.insertInto(table(relation(registration.targetTableName())))
+                .select(select(asterisk()).from(table(relation(registration.sourceViewName()))))
+                .execute());
+    }
+
+    /**
+     * Issues a refresh's two statements in the one order they may go in and clocks each. Both shapes
+     * hand their statements here rather than keeping a clock of their own, so a shape cannot end up
+     * timing the pair as one and neither can drift from the other.
+     */
+    private static Costs timed(IntSupplier delete, IntSupplier insert) {
+        long deleteStartedAt = System.nanoTime();
+        int rowsDeleted = delete.getAsInt();
+        long deleteNanos = System.nanoTime() - deleteStartedAt;
+        long insertStartedAt = System.nanoTime();
+        int rowsInserted = insert.getAsInt();
+        return new Costs(deleteNanos, System.nanoTime() - insertStartedAt, rowsDeleted,
+            rowsInserted);
     }
 
     /** Whether the relation carries a {@code graph_name} column, which decides the refresh shape. */

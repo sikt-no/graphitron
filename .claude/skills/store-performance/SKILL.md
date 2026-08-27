@@ -51,8 +51,18 @@ So, in order of what counts as evidence:
   view expansion and an untruncated stack is as deep as the derivation that produced it. It also
   samples its own collector thread without excluding it, which was half of all samples and the top
   entry on the run that put this here, so ask for more entries than you mean to read.
-- **A statement that never returns names itself, for free.** This is the cheapest evidence in the
-  whole procedure and it arrives before any measurement: interrupt the build and the failure carries
+- **A materialization refresh that never returns has already named itself, on the console you are
+  looking at.** The cheapest evidence in the whole procedure, cheaper than the entry below it,
+  because it needs no interrupt and no re-run: the refresh prints one line before its first statement and one
+  when the pass returns, so a build showing `graphitron: refreshing N materializations for graph
+  '...'` and never `materialization refresh done in ...` is stuck inside the refresh, and one that
+  never printed the first line is stuck somewhere else. Getting from there to the relation is one
+  re-run with `-X`, which turns on a line per registration printed *before* its statements: the last
+  `n/N` line with no `done in` line under it is the relation. So this class of hang is a name in the
+  first seconds and needs no thread dump at all. The recipe is in
+  `docs/architecture/how-to/dev-loop-internals.adoc`.
+- **A statement that never returns names itself, for free.** For a statement outside the refresh,
+  and still cheap: interrupt the build and the failure carries
   the SQL it was executing, or read the last `Executing query` line in jOOQ's DEBUG log. A hang is
   one statement, not a slow succession of them, and knowing which statement collapses the search
   before it starts. Any "database is open in exclusive mode" message trailing such a failure is the

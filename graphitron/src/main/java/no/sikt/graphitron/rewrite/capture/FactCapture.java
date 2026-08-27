@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.capture;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.derive.Materializations;
+import no.sikt.graphitron.model.derive.RefreshProgress;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
@@ -579,7 +580,11 @@ public final class FactCapture {
             InputOccurrencePaths.derive(txDsl, graph.name());
             TypeBackingRows.derive(txDsl, graph.name());
             AuthoredClaimRejectionRows.derive(txDsl, graph.name());
-            Materializations.refresh(txDsl, graph.name());
+            // Two lines per capture at info, naming the pass, and the per-registration tier at
+            // debug, which mvn -X turns on: a capture that stops after the pass line is stuck
+            // inside the refresh, and a re-run with -X names the registration it is stuck in.
+            Materializations.refresh(txDsl, graph.name(),
+                RefreshProgress.lines(LOG::info, LOG::debug));
             sources.commitStamps(txDsl);
         });
         // Statistics on what the refresh above just rewrote, so the planner uses the indexes

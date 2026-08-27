@@ -240,4 +240,45 @@ To get at the per-site cost, subtract `diagnostics.validatorReport` from its
 enclosing `diagnostics.compute` and divide by the `directives=` count on the same
 line.
 
+== A build or a dev start that goes quiet in the materialization refresh
+
+The refresh that refills the materialized fact-store targets prints its own pass
+boundary, so a run stuck inside it says so without any instrument being turned on.
+Two lines per pass, on a capture and on a `graphitron:dev` start alike:
+
+[source,text]
+----
+[INFO] graphitron: refreshing 20 materializations for graph 'orders'
+[INFO] graphitron: materialization refresh done in 3.4 s
+----
+
+A console showing the first line and not the second is inside the refresh. That
+alone is worth having, because a refresh runs inside the capture transaction and
+the phases either side of it print nothing that would distinguish it.
+
+To name the registration, re-run with `-X` and grep for the per-registration
+lines, which the same pass prints at debug:
+
+[source,bash]
+----
+mvn generate-sources -X | grep 'graphitron: *[0-9]*/'
+----
+
+[source,text]
+----
+[DEBUG] graphitron:  4/20 intent_field_reference_step_hop_live -> intent_field_reference_step_hop, graph 'orders'
+[DEBUG] graphitron:  4/20 done in 3.1 s, deleted 812 rows in 4 ms, inserted 812 rows in 3.1 s
+----
+
+The name is printed before the statements are issued and the durations after they
+return, so the last `n/20` line with no `done in` line under it is the relation the
+run is stuck in. That is the whole recipe: no thread dump, no profiler, and no
+reconstruction of the refresh order. Two lines per registration per graph is why
+this tier is not on by default and not a reason to raise it.
+
+From there the question is why that relation is expensive, which is a database
+question and has its own procedure: see the `store-performance` skill, and
+xref:../explanation/fact-model.adoc[the fact model] for what a registration is and
+what it costs.
+
 xref:index.adoc[← How-to index]
