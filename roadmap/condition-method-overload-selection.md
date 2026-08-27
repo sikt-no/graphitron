@@ -38,7 +38,7 @@ So the item owns a decision, not a repair:
 - The report claims per-type overloads work for `@condition` on a query field and fail only on an input field. That should not be true in the rewrite: all three directive reflect helpers route through the same name-keyed `pickMethod` with a null filter, so a query-field `@condition` with three same-named declarations should hit the same rejection. Most likely the claim is carried over from the legacy generator. The parity test below confirms it and stays as the regression pin.
 - Whichever option ships, the multitable filter documentation is in scope: the reporter called the `Table<?>` form "undocumented". `add-custom-conditions.adoc` shows the form, and `global-id.adoc`'s `[#multitable-filter-inputs]` section even states it as load-bearing for the `@nodeId` `override: true` leaf, but no general multitable-filter documentation tells an author what to write at the reporter's coordinate.
 
-Reported at https://github.com/sikt-no/graphitron/issues/525 (first half; the `@nodeId` half is R676, `nodeid-filter-per-participant-paths`).
+Reported at https://github.com/sikt-no/graphitron/issues/525 (first half; the `@nodeId` half was R676, `nodeid-filter-per-participant-paths`, since shipped and recorded in `roadmap/changelog.md`).
 
 ---
 
@@ -117,7 +117,7 @@ R647 (`condition-table-parameter-anchor-assignability`) needs "the anchor table"
 - R647's actual assignability check (this item defines the anchor; that item builds the check).
 - A structural enforcer for the single-resolution-point invariant (named in the Tests deliverable).
 - Path-step rejection fidelity: `resolveConditionRef` discarding typed reflection rejections predates this item and stays; the set-aware target resolution renders through the existing unresolved-target message path.
-- The `@nodeId` half of issue 525 (R676, its own item, further along in the pipeline).
+- The `@nodeId` half of issue 525 (R676, its own item, since shipped).
 - Relaying the outcome to the reporter on issue 525 happens when this ships, but the issue reply itself is not a gate for Done.
 
 ## Acceptance
@@ -386,3 +386,116 @@ Non-blocking, no revision required:
   explicitly rather than by luck.
 
 Gate: question 2, unchanged from round 3. Status stays Spec.
+
+### Round 5, Spec → Ready, revisions requested (session `01R3bwxzhVfG7DSZCQPLmtrr`, 2026-08-27)
+
+Rounds 2 through 4 are all closed by the round-4 revision, and I checked each rather than
+taking the revision's word for it. F1 and F4 are answered structurally by the disjoint
+`bindableParamNames` / `reservedTableSlotNames` components: reservation set-wide where admission
+checks bindability, exclusion everywhere a name is read or printed as a binding target, carried by
+which component a consumer receives rather than by a roster. F2 is answered by the shape rule now
+naming parameter count, static-ness, return type and the `throws` clause, with a reason for
+demanding `throws` agreement while it is inert. F3 is answered by the mixed set's trade-off landing
+in the how-to section and in acceptance. F5 is answered by the R854 out-of-scope bullet, and R854
+exists in Backlog carrying the modelling decision. Round 3's and round 4's non-blocking notes are
+all taken up: the carrier for set-wide slot types is now a sealed per-slot outcome on
+`ParamSource.Table` with an argument for the grain, the shape-disagreement discriminant can express
+static-ness and arity rather than positions only, the `findUniqueMethod` / `LifterMethodResolver`
+false-positive argument and the stale `pickMethod` citation are in the Tests honesty note,
+`validateWhereFilterParamTables` is named as the second anchor provenance, and the admission test's
+determinism is stated as a consequence of the agreed-shape value.
+
+The decision holds and I re-derived the load-bearing claim independently in both emission paths.
+`ConditionGlueRenderer.buildGlueMethod` types the glue's `table` parameter from
+`row.table().tableClass()`; `authoredCall` emits `$T.$L($L)` over the bare alias local and the
+binding locals, with no reference to any declared parameter type; `PathFragments.emitTwoArgMethodCall`
+passes two bare aliases; `ArgCallEmitter`'s `ParamSource.Table` arm throws on a null
+`tableExpression` rather than emitting. I also checked the model side of the inertness claim, which
+the deliverable states for `typeName`/`javaType` but not for `name`: every remaining reader of
+`MethodRef#params()` discriminates on `ParamSource` before reading a component
+(`GraphitronSchemaValidator` on `SessionHandle`, `ConditionResolver.rewrapForNested` passing
+non-`Arg` params through untouched, `ServiceMethodCallWalker` skipping), so a table slot's `name`
+is inert too and the claim is sound as written. Bullet 5's per-participant reachability checks out
+precisely: `classifyArgument` resolves an argument `@reference(path:)` through
+`ctx.parsePath(arg, name, rt.tableName(), null)` under `lowerParticipantFilters`' loop, with the
+null declared target the plan predicts for a filter-path site.
+
+One finding, and it is terrain no previous round could have seen: it landed on trunk eight minutes
+after the round-4 revision was committed.
+
+**F6. A third producer of the path-step routing fact is now on trunk, and its design rationale
+rests on the behaviour this item removes.** R847
+(`reference-path-condition-terminal-column-scope`, In Review as of `c108a7b`) added
+`intent_condition_method_route` and `intent_condition_method_route_defect` to `graphitron-model`'s
+store. They answer over the census the same question `BuildContext.resolveConditionJoinTarget`
+answers over live reflection, at the same coordinate and over the same population: R847's arm is
+scoped to captured elements where `class_name IS NOT NULL AND key_ref IS NULL AND table_ref IS NULL`,
+which is exactly the filter-path site where no declared target answers the question and resolution
+falls to the method signature. The route view's own comment states the agreement as load-bearing:
+"the generator's resolver reads it exactly this way at a filter site: parameter 0 denotes the
+departure and parameter 1 the arrival". Its wildcard refusal is described the same way, as "the
+resolver's own refusal on a filter path".
+
+The collision is specifically about overloads, which is this item's whole subject. R847's item
+states why the relation carries no return-type guard: "`pickMethod` rejects by name-ambiguity alone,
+so filtering overloads by return type here would make the store *route* a chain the generator
+refuses as ambiguous; overload multiplicity surfaces where extra hop rows always surface, in the hop
+and target views' `targets` and `candidates`". That justification is a statement about the
+generator's behaviour at this coordinate, and this item removes it. After admission the generator
+does not refuse by name ambiguity here; it admits the set and then, per the path-step deliverable,
+either resolves the agreed target or rejects through the unresolved-target path when the admitted
+slots disagree. An agreeing set is fine on both sides (R847 already handles it: "two overloads
+landing on one table still resolve, the scope arm demanding `targets = 1`"). A disagreeing set is
+where the two part company: the store reports two candidate routes and leaves the chain to narrow
+them, while the generator now rejects the pair as an author error. Neither side is wrong for its own
+purpose, but nothing records that they have diverged, and the defect view is documented as a closed
+five-verdict vocabulary that is "total over the unrouted population", so whether a rejected-because-
+disagreeing pair belongs in that population at all is a question this item creates and does not
+answer.
+
+This is not a build break. The route relations are pinned by seeded tests
+(`ConditionMethodRouteTest`, `ConditionMethodRouteDefectTest`) that assert what the SQL returns
+given rows, and `ConditionMembershipShadowTest` gates the condition *fold* against
+`ConditionCommands`, not the route against the resolver. So nothing fails; the two modules simply
+end up asserting different things about the same coordinate, with the store's prose claiming an
+agreement it no longer has.
+
+What would satisfy it is a clause, decided the way F5 was decided for the LSP: either the store
+relations are in scope here and the path-step deliverable says which, or they belong to an item
+that owns reconciling the census-side route with post-admission resolver semantics, named in Out of
+scope with the same same-producer / different-producer discriminator the item already uses for R854.
+The path-step deliverable currently enumerates its consumers as exactly two,
+`resolveConditionJoinTarget` and `validateConditionParamTables`; whichever way the clause goes, that
+enumeration wants the third one visible, because an incomplete consumer roster at this coordinate is
+the failure mode rounds 2 through 4 spent three passes replacing with structure. Worth noting that
+R847 is In Review right now rather than Done, which is the cheap moment to settle it from both
+sides; once it lands, whichever item ships second inherits the contradiction silently.
+
+Gate: question 2. Question 1 passes without qualification, and I could state the consumer-facing
+outcome from the body alone. The decision, the admission deliverable, the `AmbiguousMethod`
+deliverable, the documentation deliverable and the test plan are all unaffected and need no rework;
+F6 is one clause in the path-step deliverable and its matching Out-of-scope line.
+
+Non-blocking, no revision required:
+
+- `ConditionFilter`'s javadoc states "The first parameter always has `ParamSource.Table` as its
+  source", and `CallParam`'s and `WhereFilter`'s say the same in their own words, but
+  `reflectTableMethod` accepts a `Table`-assignable parameter at any position (`foundTable` is set
+  anywhere in the loop) while `authoredCall` unconditionally emits the table alias first and the
+  bindings after. So `cond(String name, Table<?> table)` classifies and emits a transposed call
+  today. Entirely pre-existing and independent of admission, but the agreed-shape value records
+  table-slot positions and its constructor is the natural place such an invariant would become
+  unconstructable, so it is worth knowing about while this code is open. Backlog material rather
+  than scope for this item.
+- Acceptance covers the rejecting half of the path-step set-awareness (a set disagreeing on the
+  target rejects) but not the passing half (an agreeing set classifies as the single method does).
+  The Tests deliverable carries both. Cosmetic asymmetry only.
+- The `condition.adoc` deliverable defers "whether the route-split rejection itself lifts under
+  per-participant overloads" to R676, which has since shipped, so that question now has no owner.
+  The instruction to the implementer is unaffected: reconcile the "one method cannot mean both
+  tables" wording, leave the rejection alone.
+
+Two broken pointers corrected in this commit, no design prose touched: R676 has shipped and its
+item file is gone from `roadmap/`, so both references to it now say so.
+
+Status stays Spec.
