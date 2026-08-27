@@ -644,3 +644,113 @@ item measured would close it, and any session may land it.
 Corrected in passing, in the same commit as these findings: the two places attributing the
 stored-reason correction rule to the fact model page now name the `store-performance` skill, which is
 where the sentence is. Same rule, same edits it licenses; only the citation moves.
+
+### Round 4 (2026-08-27, Spec -> Ready, reviewer session 01CNbmyNbsjJG6UmVKz9CJZo)
+
+Verdict: withhold, on question 2. The plan body is unchanged since `0a7980b`, which was the revision
+answering rounds 1 and 2, so round 3's findings 6 to 9 have had no revision and all four stand. This
+round does not restate them. It re-derives each one from the tree, because a finding nobody has acted
+on is worth exactly as much as its evidence, and adds one the three earlier rounds walked past.
+
+What the goal is, in my own words and not from the phase list: a consumer whose GraphQL schema
+reaches the carrier family stops paying most of a minute per build for one derived relation, and gets
+back the same rows under the same names. That part is well communicated and the outcome is reachable.
+Every symbol the plan names exists as named, checked by FQN-aware grep:
+`MaterializeRegistryGateTest.targetsAreShapedLikeTheViewsThatFillThem`,
+`theDerivedDependenciesAdmitARefreshOrder`, `theRefreshOrderRespectsEveryDependencyRow`, `NO_INDEX`,
+`MaterializeDependencies.populate`, `relationsReadBy`, `registrationsReachedByView`,
+`Materializations.refreshOrder`, `Materializations.analyse`, `SchemaIdentifierDriftCheck`,
+`FactCaptureAgreementTest` with `Arm.DERIVED`, `CarrierDataFieldTest`, `MaterializationOrderTest`,
+`DerivedReadCostTest`'s four constants, `ix_spelled_table_spelling`, and the three `reason` strings
+quoted in "Three reason rows are wrong", each of which reads on the tree exactly as the plan quotes
+it. `intent_field_payload_producer` really is declared as a view with the six columns in the order
+the proposed table gives them; `FactCaptureAgreementTest` already carries the canonical name at line
+505 beside the `intent_errors_field` / `intent_errors_field_live` pair, so the one-line addition is
+the right shape. The register now carries twenty registrations against the twelve the measured store
+had, which is what the plan's "the total is a floor" sentence already says.
+
+**Finding 6 confirmed at the source, and its consequence is larger than round 3 stated.** The
+`data_channel` population filter and the outer join test the same condition, so the filter removes no
+row the join keeps; the window partitions by `(f.graph_name, f.type_name)` and the filter is a
+function of those two columns alone, so it drops whole partitions and never thins one; `data_channel`
+is named once. All three hold on the tree.
+
+What round 3 did not say is that `producer` is named exactly twice, and only one of the two namings
+is expensive. The outer `FROM producer p` is one inlined evaluation. The correlated
+`EXISTS (SELECT 1 FROM producer p ...)` inside `data_channel` is the per-driving-row one, and it is
+the redundant one. So deleting three lines does not merely offer a cheaper lever than the
+registration: it removes the entire diagnosed cost term by construction, leaving `producer` named
+once in a plain `FROM`, which is the same one-evaluation shape the registration buys. The registration
+is then bought for a reader that no longer exists, and what remains to price is not the carrier's 41 s
+but what the two `CASE WHEN EXISTS` probes cost at the unfiltered population. This item's own control
+table bounds those two at about 9 ms across the filtered population (224 ms against 233 ms, rows two
+and three), and the driving-row ratio is a count the same store can answer, so the timing round 3 asks
+for is cheap and is the one that decides whether this item ships a registration or a deletion.
+
+Worth one more sentence because it is the same class of miss: the four-line comment directly above
+this predicate already documents the hazard it pays. It explains that the three disqualification arms
+deliberately stand on `graphql_field` rather than on the CTE, because "H2 inlines a CTE afresh at
+every naming". The author of that comment reasoned about every correlated naming into the CTE except
+the one four lines below it.
+
+**Findings 7, 8 and 9 confirmed independently.** `MaterializationOrderTest`'s fixtures are
+`SELECT v FROM scratch_p`, `SELECT v FROM scratch_mid`, `SELECT v FROM scratch_src` and
+`SELECT v FROM scratch_y`; no fixture reads a relation from inside a `WITH` body, so the shape this
+item's edge depends on is absent from the class whose javadoc claims every shape the design claims.
+The carrier's `reason` row does name both schemas and both row counts and
+`intent_errors_field_live`'s names its row count, so finding 8's framing point holds, and only
+`intent_field_column_scope_live`'s "170 ms on a real schema" reads as a general claim. And
+`registrationsReachedByView` walks from every view, stops at a registered target, and the producer's
+five inputs are all captured base tables, so no reader loses a cell.
+
+**10. `READERS_IN_SCHEMA` does not move at all, and the reason generalizes to the sentence above it.**
+"Tests and gates" says "`READERS_IN_SCHEMA` rises by one, the new `_live` view being a view in the
+schema". There is no new view. The plan renames one view and adds one table, and
+`registrationsReachedByView` keys its answer on relations whose `INFORMATION_SCHEMA` kind is `VIEW`,
+so the census loses `intent_field_payload_producer` and gains
+`intent_field_payload_producer_live` and its cardinality is unchanged.
+
+The tree confirms it twice. `CELLS`' own javadoc says of the write-destination registration that "the
+relation was already a view in this domain with cells of its own; registering it renamed those cells
+onto the `_live` view rather than removing them", which is the same rename read on the cell axis. And
+`02ec43c`, the commit that registered `intent_field_scope_table`, moved `READERS_IN_SCHEMA` from 106
+to 107 while its DDL diff shows the registration was a rename plus a table and one genuinely new view,
+`intent_condition_membership`. The new view is the whole of the +1; the registration contributed
+nothing.
+
+The same reasoning takes `READERS_WITH_CELLS`. Both readers of this relation,
+`intent_carrier_data_field_live` and `intent_field_error_channel`, already reach `intent_errors_field`
+and so already have cells; the new `_live` view reaches no registration, its five inputs being base
+tables. So no view gains its first cell and none loses its last, and only `CELLS` moves, upward, by
+the number of views that reach the producer. The section predicts three moving counts where the
+mechanism supports one.
+
+The instruction under it, re-pin from the failure message rather than predicting, is safe whatever
+happens, so like finding 9 this changes no step. It is worth a round for the reason finding 9 gives
+and one more. Finding 9's reason: predicting a move licenses accepting one, and a `READERS_IN_SCHEMA`
+that did rise would mean this change added a view it did not intend to, which is a signal to keep. The
+extra reason: rounds 1 and 2 each edited this very sentence, for the figure it named, and neither
+looked at the direction claim underneath. A count corrected twice reads as checked.
+
+**What would satisfy this round.** Question 2 is what fails, and finding 6 is the whole of it. As the
+plan stands an implementer lands a table, a view rename, seven relocated comments, a registration
+`reason`, a structural test and three re-pinned constants, in service of a probe that a three-line
+deletion removes. Price the deletion on the same store the other two depths were priced on, state the
+figure, and say which of the two ships. If the registration still wins, the `reason` row has to record
+that its motivating reader is redundant with the outer join and was kept deliberately, per round 3.
+If the deletion wins, this item is a different and much smaller change, and that is a better outcome
+than a registration nobody can later remove. Findings 7 to 10 are cheap once that fork is settled:
+7 wants a sentence saying why the CTE-body shape is not covered where shapes are covered, 8 wants
+"completed" rather than "wrong" for two of the three rows, and 9 and 10 want the three predicted
+constant moves reduced to the one the mechanism supports.
+
+Non-blocking, noticed while checking. `MaterializeRegistryGateTest` carries nine tests, not the five
+the plan enumerates; the four it does not name are the two index tests the plan handles in its own
+section, the hand-written-boundary test and the analyse test, and none of the four needs anything from
+the author, so the count is the only thing stale. And round 1's note that grep finds no Java reader of
+the relation is no longer true: `ErrorChannelRelationTest` reads `Tables.INTENT_FIELD_PAYLOAD_PRODUCER`
+and asserts the whole graph's rows over it. That is not a defect, the test already reads the
+registered `INTENT_ERRORS_FIELD` the same way and so its fixture refreshes before it asserts, and
+"two readers in SQL" is still literally right. It is worth knowing that a behavioural test does read
+this relation directly, because it is the test that would fail first if the capture-order argument
+round 2 closed ever stopped holding.
