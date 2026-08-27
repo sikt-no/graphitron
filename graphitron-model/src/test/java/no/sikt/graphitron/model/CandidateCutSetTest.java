@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.META_MATERIALIZE;
 import static no.sikt.graphitron.model.Tables.META_MATERIALIZE_DEPENDENCY;
+import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.jooq.impl.DSL.field;
@@ -172,6 +173,14 @@ class CandidateCutSetTest {
         });
     }
 
+    /**
+     * The three cases that refuse before touching anything, which is why they are the only ones in
+     * this class that run on the funnel. A refusal is raised by the argument check at the top of
+     * each entry point, so no register row, no relation kind and no edge has moved by the time the
+     * exception leaves; the store is in its booted state and the next case may have it. Every case
+     * above instead realises a candidate, which rewrites the register one way, and
+     * {@link CandidateCutSet} says outright to expect one store per candidate.
+     */
     @Nested
     @DisplayName("a candidate that is not a subset of this store's register")
     class RefusedCandidates {
@@ -179,7 +188,7 @@ class CandidateCutSetTest {
         @Test
         @DisplayName("is refused rather than silently realised as something else")
         void aRegistrationThisStoreDoesNotHoldIsRefused() {
-            withStore(dsl -> assertThatThrownBy(() -> CandidateCutSet.realise(dsl,
+            withSeededStore(dsl -> assertThatThrownBy(() -> CandidateCutSet.realise(dsl,
                     Set.of(new Materializations.Registration("scratch_absent_live",
                         "scratch_absent"))))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -189,7 +198,7 @@ class CandidateCutSetTest {
         @Test
         @DisplayName("cannot be built by excluding a name nothing registers")
         void excludingAnUnregisteredNameIsRefused() {
-            withStore(dsl -> assertThatThrownBy(
+            withSeededStore(dsl -> assertThatThrownBy(
                     () -> CandidateCutSet.excluding(dsl, "scratch_absent_live"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("scratch_absent_live"));
@@ -198,7 +207,7 @@ class CandidateCutSetTest {
         @Test
         @DisplayName("cannot be built by keeping a name nothing registers")
         void keepingAnUnregisteredNameIsRefused() {
-            withStore(dsl -> assertThatThrownBy(
+            withSeededStore(dsl -> assertThatThrownBy(
                     () -> CandidateCutSet.keepingOnly(dsl, Set.of("scratch_absent_live")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("scratch_absent_live"));
