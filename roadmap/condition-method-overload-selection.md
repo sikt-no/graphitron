@@ -122,3 +122,105 @@ R647 (`condition-table-parameter-anchor-assignability`) needs "the anchor table"
 - Non-`@condition` overload rejections keep their arm and code; their message may improve (signatures instead of arities) but their admission behaviour is unchanged.
 - The four documentation coordinates are reconciled with the admission rule, and the how-to presents both forms, including the null-probe failure mode and the `DSL.noCondition()` escape.
 - Full `mvn install -Plocal-db` green.
+
+---
+
+## Reviewer findings
+
+### Round 2, Spec → Ready, revisions requested (session `aea644f4-5bb1-4c42-b837-90b42c4dcd6d`, 2026-08-27)
+
+The decision holds. I re-verified the load-bearing claim independently and it stands in
+emission: `ConditionGlueRenderer.buildGlueMethod` types the glue's `table` parameter from
+`row.table().tableClass()`, `authoredExpr` passes the literal `table` local for a reach-free
+predicate and the terminal hop alias for a reach-bearing one, `PathFragments.emitTwoArgMethodCall`
+passes two bare aliases, and `ArgCallEmitter`'s `ParamSource.Table` arm throws on a null
+`tableExpression` rather than emitting anything. `FieldBuilder.lowerParticipantFilters` reflects
+per participant against `tb.table()` and rows group by `row.glue().owner()`, so each participant's
+glue really is typed to that participant's generated table class and javac dispatches there. Every
+symbol, test home, and documentation coordinate the last revision named checks out against the tree,
+including the four concretely-typed prose signatures, the three `Table<?>`-invariant statements,
+`condition.adoc`'s "one method cannot mean both tables" rung, `global-id.adoc`'s
+`[#multitable-filter-inputs]` shape claim, and `polymorphic-types.adoc` having no filter material
+at all. Three findings, all inside the admission deliverable.
+
+**F1. `inferBindingsByType` is not representative-invariant either, and the set-wide fix as written
+does not reach it.** The admission deliverable states that `inferBindingsByType`, the `-parameters`
+warning, and `ParamSource` classification "are representative-invariant by construction", and
+carves out `checkConditionOverrideTargets` as the one exception. That carve-out is too narrow.
+`inferBindingsByType`'s reflective form builds `paramNames` from *every* named parameter, table
+slots included, and the shared form uses it to decide which GraphQL slots count as claimed:
+
+```
+for (var entry : existing.entrySet()) {
+    if (paramNames.contains(entry.getKey())) claimedSlots.add(entry.getValue().headName());
+}
+```
+
+`ArgBindingMap.of` populates an identity entry for every unclaimed slot, and
+`checkConditionOverrideTargets` explicitly skips identity entries, so an identity entry whose key
+equals a table parameter's name reaches this loop unguarded. A slot is then claimed or unclaimed
+depending on which declaration is the representative, and the shape rule deliberately lets table
+slots differ in name.
+
+Concretely: a field with arguments `film: FilmFilter, navn: String` and the overload set
+`navn(Film film, FilmFilter kriterier)` / `navn(Forestilling forestilling, FilmFilter kriterier)`.
+With the `Film` declaration as representative, slot `film` counts as claimed, inference finds no
+unclaimed slot, and `kriterier` falls through to the structural rejection "parameter 'kriterier'
+in method 'navn' is not a GraphQL argument and not a context key". With the `Forestilling`
+declaration as representative, slot `film` is unclaimed, the arity-unique branch fires
+(`FilmFilter` is a named input, the parameter is not a canonical scalar), `kriterier` binds, and
+the build is green. Build passes or fails on `getDeclaredMethods()` order, which the JVM does not
+specify. That is the same defect the last round found, one site over.
+
+A third site reads table-slot names as prose: `checkOverrideTargets`' fall-through message renders
+`formatNameSet(paramNames)`, which includes the representative's table-slot name. Once the reserved-
+slot branch is set-wide, a genuine non-table typo still renders "has parameters [forestilling,
+navn]" or "[film, navn]" nondeterministically. Lower severity than the above, same cause.
+
+So table-slot *names* leak out of the table positions in three places, not one. The deliverable
+should stop enumerating exceptions and state the invariant positively, because the current shape
+does not scale: the set's table-slot names are collected once at admission, and every consumer that
+reads a table-slot name reads that union rather than the representative's. Name the three current
+readers under it. Alternatively, reconsider requiring name identity on table positions, which the
+plan currently dismisses as costing the reporter's natural naming "for no gain": with three readers
+found across two review rounds and no structural enforcer planned (the plan declines one, correctly),
+the gain is now visible and worth re-weighing. Either resolution is fine; the claim as written is not.
+
+**F2. The shape rule does not cover the whole carried signature.** `reflectTableMethod` builds
+`MethodRef.StaticOnly(..., declaredExceptionFqns(javaMethod))`, so the model carries the
+representative's `throws` clause. The shape rule requires agreement on static-ness and return type
+but says nothing about declared exceptions, and the inert-carriage pointer at the end of the
+deliverable names only the table-slot declared type. Two admitted declarations may differ in
+`throws`, and which set the model carries is `getDeclaredMethods()` order again. It is inert today
+(`checkDeclaredCheckedExceptions`' two callers are `buildWithChannel` and `buildServiceField`, both
+on the `@service` path; the glue renderer emits no exception handling), so this is not a live
+defect, which is exactly why it needs deciding now rather than being discovered by whoever wires
+`@condition` into the `@error` channel. Cheapest resolution: add `throws`-clause agreement to the
+shape rule, since return type is already there and `throws` is the other half of what the model
+carries. Otherwise name `declaredExceptions` alongside the table-slot type in the inert-carriage
+pointer. While there: the rule should say explicitly that declarations must agree on parameter
+count. "Agree position-by-position" implies it, but `AmbiguousMethod` exists today precisely because
+differing arity is the common overload case, so the implementer should not have to infer it.
+
+**F3. Mixed sets disable the guard the plan advertises for partial coverage, and the documentation
+deliverable does not say so.** The Decision section blesses a mixed set ("a `Table<?>` declaration
+beside concrete ones acts as the fallback branch") and the compilation-tier test proves one
+compiles. Separately, the plan rests partial coverage on the consumer's javac: "a participant with
+no applicable declaration fails the consumer's compile, which is the intended guard". Those two
+statements interact and the plan never puts them together. `Customer` is a subtype of
+`Table<?>`, so javac's most-specific rule picks the concrete declaration where one applies and the
+fallback everywhere else. A set covering two of three participants *plus* a `Table<?>` fallback
+therefore compiles clean and silently serves the third branch from the fallback, which is precisely
+the case where an author who mistyped one participant's table class most needs to hear about it.
+R647's per-anchor applicability check will not catch it either: the fallback is applicable.
+
+This is not a reason to refuse mixed sets, and the author opted into the fallback by writing it.
+But the how-to deliverable currently presents two pure forms and asserts the javac guard
+unconditionally, so it would ship prose the plan's own test contradicts. The new section needs the
+third case in one sentence: a `Table<?>` declaration in an otherwise concrete set serves every
+branch no concrete declaration covers, so it trades the compile-time partial-coverage guard for
+runtime fallback behaviour. The acceptance criteria should carry the same distinction.
+
+None of the three touches the decision or the test plan; F1 and F2 are inside the admission
+deliverable and F3 is a sentence in two deliverables. Status stays Spec; the next pass may be this
+session or another.
