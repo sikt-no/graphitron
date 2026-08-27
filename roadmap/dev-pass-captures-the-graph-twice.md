@@ -363,6 +363,35 @@ apart from the removed duplicate messages, is unchanged.
 - "The second pass", as a description of how a dev round works, in any comment or doc sentence that
   survives the change. `DevMojo.regenerate`'s and `execute`'s comments are the ones to read.
 
+## Implementation notes
+
+**The console observation this item asked for is not available yet, and what replaces it.** The
+plan's measurement paragraph deferred the before / after count to R855's per-pass refresh lines.
+That item is still Ready at the time this landed, so the refresh announces nothing and there is no
+console to read a count off. Two things stand in for it, and the second is the one worth putting in
+`changelog.md` at Done.
+
+- The capture count per pass is now structural rather than measured: `GraphQLRewriteGenerator` has
+  one capture call site, and every public entry point is a projection of the one body that reaches
+  it. A dev round calls exactly one entry point, so it captures once, so the register is refreshed
+  once. Before this change a round called two, and the second wrote the rows the first had just
+  written.
+- The agreement test is the executable half of the argument: on one fixture context the pass's
+  reporting half equals `buildOutput()`'s component by component and its emitted half names the
+  units `generate()` emits, which is the plan's claim that the second pass computed nothing the
+  first did not, turned into an assertion.
+
+**One guard added beyond the plan.** `regeneratePass` (the extracted body of `regenerate`) now
+null-checks `schemaWatcher` before registering new watch roots. The plan did not name it, and it is
+not test scaffolding: the LSP save listener is wired at `bindServer`, several statements before
+`startSchemaWatcher`, so an editor save arriving in that window reached a null watcher and threw.
+The window is narrow and the throw was never reported, which is presumably why it went unnoticed.
+
+**Console ordering moved for the one-shot build goals.** With `logWarnings` at the entry points
+rather than inside the body, `generate()` prints its warning lines after the emission rather than
+before it. Same lines, same content; a `generate` run that crashes inside the renderers no longer
+prints the round's warnings on its way down.
+
 ## Sequencing against R855 and R857
 
 Independent of both in the tree: this item's edits are in `GraphQLRewriteGenerator`,

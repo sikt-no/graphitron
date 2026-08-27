@@ -33,7 +33,7 @@ import java.util.Set;
  * </ul>
  *
  * <p>The graph is supplied per call (rebuilt from the freshly classified model by
- * {@code GraphQLRewriteGenerator.generateIncremental}) rather than mutated in place: rebuilding is
+ * {@link no.sikt.graphitron.rewrite.GraphQLRewriteGenerator#runPass()}) rather than mutated in place: rebuilding is
  * always consistent with the sources just written and the build is cheap relative to generation.
  * Holding and updating the graph across saves would be an optimisation this driver forgoes for
  * correctness-by-construction.

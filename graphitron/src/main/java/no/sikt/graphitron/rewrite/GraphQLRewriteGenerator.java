@@ -81,6 +81,19 @@ import java.util.stream.Stream;
  *
  * <p>Parses the GraphQL schema with {@link GraphitronSchemaBuilder}, runs its list of
  * generators, and writes output to the configured output directory.
+ *
+ * <p><b>One body, four projections.</b> {@link #runPipeline} is the whole pipeline and the only
+ * place its stages are named: read and attribute the schema inputs, assemble and record the stage
+ * verdicts, classify, load the jOOQ catalog, scan the classpath census, capture the graph's
+ * partition, validate, lint, and (conditionally) project the completion catalog, emit the sources
+ * and project the compile graph. Each public entry point is a {@link Projection} of that one call:
+ * {@link #generate()}, {@link #validate()}, {@link #buildOutput()} and {@link #runPass()}. A pass
+ * calls exactly one of them, which is what keeps a round to one capture of the graph.
+ *
+ * <p>A fifth entry point that grows a front half of its own is the regression this shape exists to
+ * prevent: two bodies duplicating the stages above is what let one dev round capture the same
+ * graph twice, and what let a stage added to one body go silently missing from the other. Add a
+ * projection, not a pipeline.
  */
 public class GraphQLRewriteGenerator {
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLRewriteGenerator.class);
@@ -110,23 +123,47 @@ public class GraphQLRewriteGenerator {
      * effect may ignore the return value.
      */
     public GenerationResult generate() {
-        return runPipeline(loadAttributedRegistry(), false).result();
+        var pass = runPipeline(Projection.GENERATE);
+        logWarnings(pass.warnings());
+        logErrors(pass.errors());
+        if (!pass.errors().isEmpty()) {
+            throw new ValidationFailedException(pass.errors());
+        }
+        return pass.generation().result();
     }
 
     /**
-     * The dev-loop variant of {@link #generate()}: emits every source and additionally builds the
-     * {@link CompileDependencyGraph} the incremental compile driver needs to compute the per-save
-     * recompile set. Production one-shot generation ({@code GenerateMojo}) stays on {@link #generate()}
-     * and never pays the graph-build cost; only {@code graphitron:dev} (with compilation enabled) reaches
-     * for this. The graph is projected from the same {@link EmitPlan} this run rendered from, so it is
-     * always consistent with the sources just written.
+     * The dev loop's pass: the only projection that unions the emitting and the reporting halves,
+     * so one round of {@code graphitron:dev} is one generator run and one capture of the graph.
+     * Emits every source, projects the {@link CompileDependencyGraph} the incremental compile
+     * driver needs to compute the per-save recompile set, and produces the editor-facing
+     * {@link BuildOutput} beside them. The graph is projected from the same {@link EmitPlan} this
+     * run rendered from, so it is always consistent with the sources just written.
+     *
+     * <p>Never throws on a validator verdict: a rejected round returns its errors on
+     * {@code output().report()} and an absent generation, which is what lets the same round both
+     * refuse to emit and tell the editor why. Warnings are logged here (the dev console wants
+     * them); the errors are not, the dev loop rendering {@code WatchErrorFormatter}'s grouped tree
+     * from the returned report instead of a line per error.
      */
-    public IncrementalGeneration generateIncremental() {
-        return runPipeline(loadAttributedRegistry(), true);
+    public Pass runPass() {
+        var pass = runPipeline(Projection.PASS);
+        logWarnings(pass.warnings());
+        return new Pass(pass.output(), Optional.ofNullable(pass.generation()));
     }
 
     /**
-     * A {@link #generateIncremental()} run's products: the {@link GenerationResult} (emitted set + writer
+     * One dev pass's two halves: the editor-facing {@link BuildOutput} (completion catalog plus the
+     * diagnostics the store's stratum is written from) and the {@link IncrementalGeneration} the
+     * compile driver reads.
+     *
+     * <p>The generation is present exactly when {@code output().report().errors()} is empty: a
+     * rejected schema emits nothing and reports everything.
+     */
+    public record Pass(BuildOutput output, Optional<IncrementalGeneration> generation) {}
+
+    /**
+     * A {@link #runPass()} run's emitted half: the {@link GenerationResult} (emitted set + writer
      * delta + emitted {@link TypeSpec}s) paired with the {@link CompileDependencyGraph} projected from
      * the same plan. Together these are the raw material the dev-loop compile driver
      * reads: the graph and the ABI hashes derived from {@code result.emittedUnits()} decide which units a
@@ -197,13 +234,18 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
-     * What a successful regenerate produces beside the emitted code: the
-     * {@link CompletionData} catalog (jOOQ + classpath references + scalars) that capture takes its
-     * classpath census from, and the {@link ValidationReport} carrying every
-     * {@link ValidationError} and {@link BuildWarning} the validator produces on the
-     * same {@code bundle.model()}. Same parse throughout; the dev goal writes the report's two
-     * pre-fuse lists to the store's diagnostics stratum, which is where the language server reads
-     * them.
+     * The editor-facing products with nothing emitted: the {@link CompletionData} catalog (jOOQ +
+     * classpath references + scalars) over the same census the capture wrote its classpath families
+     * from, and the {@link ValidationReport} carrying every {@link ValidationError} and
+     * {@link BuildWarning} the validator produces on the classified model. Same parse throughout;
+     * the dev goal writes the report's two pre-fuse lists to the store's diagnostics stratum, which
+     * is where the language server reads them.
+     *
+     * <p>Two callers, both of which want the report without a tree: a consumer {@code .class}
+     * change (a catalog question, not a generation one) and a dev startup that was told to emit
+     * nothing. A round that does emit takes {@link #runPass()} instead, which returns this same
+     * output beside the generation; asking for both by calling both is what captured the graph
+     * twice.
      *
      * <p>The validator runs but never throws on its output: a half-edited
      * buffer with validation errors should still expose tables and scalars
@@ -213,25 +255,15 @@ public class GraphQLRewriteGenerator {
      * for the LSP instead.
      */
     public BuildOutput buildOutput() {
-        var attributed = loadAttributedRegistry();
-        var read = assembleAndCaptureVerdicts(attributed);
-        var bundle = GraphitronSchemaBuilder.buildBundle(attributed, read.assembled(), ctx);
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
-        var detection = captureFactsAndDetect(attributed, read, bundle.model(), jooq,
-            catalog.externalReferences());
-        var walkErrors = List.copyOf(new GraphitronSchemaValidator().validate(bundle.model()));
-        var errors = new ArrayList<>(walkErrors);
-        errors.addAll(detection.violations());
-        var warnings = withLintFindings(bundle.model(), attributed);
-        var report = ValidationReport.from(errors, warnings);
-        return new BuildOutput(catalog, report, walkErrors, warnings);
+        return runPipeline(Projection.BUILD_OUTPUT).output();
     }
 
     /**
-     * Splits the build output along the two lifecycle steps {@link #buildOutput()} spans:
-     * classification produces the {@link CompletionData} catalog capture takes its classpath census
-     * from; the validator pass over the same classified model produces {@link ValidationReport}.
+     * Splits a pass's reporting half along the two lifecycle steps it spans: classification
+     * produces the {@link CompletionData} catalog over the census the capture also wrote from; the
+     * validator pass over the same classified model produces {@link ValidationReport}. Returned by
+     * {@link #buildOutput()} on its own and by {@link #runPass()} beside the generation, both from
+     * the one body, so the two cannot disagree about a round.
      *
      * <p>The two pre-fuse lists ride alongside the fused report for the diagnostics-stratum
      * loaders, each carrying a partition the report cannot express once fused:
@@ -248,15 +280,11 @@ public class GraphQLRewriteGenerator {
      * Throws {@link ValidationFailedException} if validation errors are found.
      */
     public void validate() {
-        var attributed = loadAttributedRegistry();
-        var read = assembleAndCaptureVerdicts(attributed);
-        var bundle = GraphitronSchemaBuilder.buildBundle(attributed, read.assembled(), ctx);
-        var schema = bundle.model();
-        logWarnings(withLintFindings(schema, attributed));
-        var errors = validateAndLogErrors(schema,
-            captureFactsAndDetect(attributed, read, schema).violations());
-        if (!errors.isEmpty()) {
-            throw new ValidationFailedException(errors);
+        var pass = runPipeline(Projection.VALIDATE);
+        logWarnings(pass.warnings());
+        logErrors(pass.errors());
+        if (!pass.errors().isEmpty()) {
+            throw new ValidationFailedException(pass.errors());
         }
     }
 
@@ -272,6 +300,16 @@ public class GraphQLRewriteGenerator {
      * downstream stages read both without re-walking the registry.
      */
     AttributedRegistry loadAttributedRegistry() {
+        return loadAttributedRegistry(new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
+    }
+
+    /**
+     * {@link #loadAttributedRegistry()} over a jOOQ catalog the pass already loaded. The catalog is
+     * only reached when the federation {@code @link} injector produced names, {@code @key}
+     * synthesis resolving its node declarations against it; taking it as a parameter is what keeps
+     * a pass to one load of the generated classes rather than one per stage that wants them.
+     */
+    private AttributedRegistry loadAttributedRegistry(JooqCatalog jooq) {
         var bySource = SchemaInputAttribution.build(ctx.schemaInputs());
         // Read every source, refusing none of them on another's behalf, and carry the refusals
         // rather than throwing on them. A source that will not parse costs its own declarations and
@@ -293,8 +331,7 @@ public class GraphQLRewriteGenerator {
         // accident of ordering, what a capture cut here would see.
         var preSynthesis = registry.readOnly();
         if (!injectedNames.isEmpty()) {
-            KeyNodeSynthesiser.apply(registry,
-                new NodeDeclaration(new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader())));
+            KeyNodeSynthesiser.apply(registry, new NodeDeclaration(jooq));
         }
         return new AttributedRegistry(registry, preSynthesis, injectedNames, read);
     }
@@ -316,7 +353,8 @@ public class GraphQLRewriteGenerator {
      * are unchanged. The verdicts ride along so the pass that goes on to classify records the same
      * emptiness this method would have recorded, derived from the stages rather than assumed.
      */
-    private ReadSchema assembleAndCaptureVerdicts(AttributedRegistry attributed) {
+    private ReadSchema assembleAndCaptureVerdicts(AttributedRegistry attributed, JooqCatalog jooq,
+                                                  List<CompletionData.ExternalReference> census) {
         // The assembly that judges the document is the one over the registry the store transcribes,
         // before the synthesis rewrites. Judging the post-synthesis registry instead let a verdict
         // blame the author for a declaration graphitron's own rewrite injected; a verdict is a fact
@@ -324,7 +362,7 @@ public class GraphQLRewriteGenerator {
         var assembly = SchemaAssembly.of(attributed.preSynthesisRegistry());
         var verdicts = SdlVerdicts.of(attributed.read());
         if (verdicts.anyRefusal() || !assembly.errors().isEmpty()) {
-            captureFacts(attributed, assembly, verdicts);
+            captureFacts(attributed, assembly, verdicts, jooq, census);
             RewriteSchemaLoader.throwIfRejected(attributed.read());
             // Nothing above threw, so the refusal was assembly's own: rethrow it as the stage
             // raised it, which is the exception this path has always failed with.
@@ -338,7 +376,7 @@ public class GraphQLRewriteGenerator {
             // is the "one broken thing blanks every fact beside it" failure this file argues
             // against, here caused by our own defect rather than by anything they wrote. The
             // verdicts written are still the pre-synthesis ones, so no ASSEMBLY row blames them.
-            captureFacts(attributed, assembly, verdicts);
+            captureFacts(attributed, assembly, verdicts, jooq, census);
         }
         return new ReadSchema(GraphitronSchemaBuilder.assembleOrFail(pipeline), verdicts, assembly);
     }
@@ -389,10 +427,11 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
-     * Runs the capture loads into a fact store for this pass, runs the store-backed detections
-     * over it, and returns the {@link StoreDetections} product they share: the
-     * violations for the caller's error stream, and the field-conflict claims the LSP/MCP
-     * snapshot's {@code Conflicted} projection overlay consumes. Three families read the store here.
+     * Runs the capture loads into a fact store for this pass, runs the store-backed detections over
+     * it, and hands the caller's continuation the open store plus the {@link StoreDetections}
+     * product the detections share: the violations for the pass's error stream, and the
+     * field-conflict claims the LSP/MCP snapshot's {@code Conflicted} projection overlay consumes.
+     * Three families read the store here.
      * The authored-claim conflict rule reports from the claim views over the classification
      * domain, a captured-fact population rather than anything the walk reached; what the walked
      * model still contributes is the {@link ClassifiedRun} discriminator and the backing classes
@@ -405,40 +444,14 @@ public class GraphQLRewriteGenerator {
      *
      * <p>Both loads read exactly what the pipeline beside them reads: the parsed registry (before
      * the synthesis rewrites, which is what {@link AttributedRegistry#preSynthesisRegistry()}
-     * hands back), the jOOQ catalog projection, and the classpath scan.
-     */
-    private StoreDetections captureFactsAndDetect(
-            AttributedRegistry attributed, ReadSchema read, GraphitronSchema schema) {
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        return captureFactsAndDetect(attributed, read, schema, jooq,
-            CatalogBuilder.buildExternalReferences(ctx));
-    }
-
-    /**
-     * The shared capture-and-detect step behind all three generator paths; the LSP path passes
-     * its already-built catalog and external references so the classpath is scanned once per
-     * pass, the build paths use the convenience overload above.
-     */
-    private StoreDetections captureFactsAndDetect(
-            AttributedRegistry attributed, ReadSchema read, GraphitronSchema schema,
-            JooqCatalog jooq, List<CompletionData.ExternalReference> extensions) {
-        return captureAndRead(attributed, read, schema, jooq, extensions,
-            (store, detections) -> detections);
-    }
-
-    /** {@link #captureAndRead} for a build path that builds its own catalog and classpath scan. */
-    private <T> T captureAndRead(AttributedRegistry attributed, ReadSchema read,
-            GraphitronSchema schema, FactCapture.AfterCapture<T> after) {
-        return captureAndRead(attributed, read, schema,
-            new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()),
-            CatalogBuilder.buildExternalReferences(ctx), after);
-    }
-
-    /**
-     * {@link #captureFactsAndDetect} with the caller's own reads running inside the capture's
-     * window, which is what the build pipeline takes: the store stays open past the detections so
-     * the plan can question the same facts the capture just wrote, instead of a producer reopening
-     * the store or being handed a value someone else read for it.
+     * hands back), the jOOQ catalog projection, and the classpath scan. Both arrive as parameters
+     * from the top of {@link #runPipeline}, so the census the store's classpath families are
+     * written from is the same scan the completion catalog projects and the same one, per pass.
+     *
+     * <p>The caller's own reads run inside the capture's window: the store stays open past the
+     * detections so the plan can question the same facts the capture just wrote, instead of a
+     * producer reopening the store or being handed a value someone else read for it. This is the
+     * class's one capture seam; nothing else opens a store for a classified run.
      */
     private <T> T captureAndRead(
             AttributedRegistry attributed, ReadSchema read, GraphitronSchema schema,
@@ -464,8 +477,8 @@ public class GraphQLRewriteGenerator {
      * whole point of running it here rather than giving up.
      */
     private void captureFacts(AttributedRegistry attributed, SchemaAssembly assembly,
-                              SdlVerdicts verdicts) {
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+                              SdlVerdicts verdicts, JooqCatalog jooq,
+                              List<CompletionData.ExternalReference> census) {
         FactCapture.run(ctx.storeDirectory(),
             graphIdentity(),
             subjectConfig(),
@@ -474,7 +487,7 @@ public class GraphQLRewriteGenerator {
             verdicts,
             SchemaInputAttribution.build(ctx.schemaInputs()),
             jooq,
-            CatalogBuilder.buildExternalReferences(ctx));
+            census);
     }
 
     /** The coordinate this run writes under, assembled from the context's identity fields. */
@@ -496,14 +509,86 @@ public class GraphQLRewriteGenerator {
             ctx.sessionStateConfig());
     }
 
-    private IncrementalGeneration runPipeline(AttributedRegistry attributed, boolean buildCompileGraph) {
-        var read = assembleAndCaptureVerdicts(attributed);
+    /**
+     * Which of the body's three optional halves one entry point wants. The four constants are the
+     * four public entry points, stated here rather than spelled at each call so the difference
+     * between the projections is one table a reader can hold at once. Everything not switched on
+     * here runs on every pass, because every pass needs it: one read, one assembly, one
+     * classification, one jOOQ load, one census, one capture, one validator run, one lint run.
+     *
+     * @param emit        run the plan, the renderers, the writer, the orphan sweep and the SDL resource
+     * @param compileGraph project the {@link CompileDependencyGraph} the dev compile driver reads
+     * @param catalog     project the {@link CompletionData} completion catalog
+     */
+    private record Projection(boolean emit, boolean compileGraph, boolean catalog) {
+        /** {@code GenerateMojo}: the emitted tree and nothing the dev loop or the editor wants. */
+        static final Projection GENERATE = new Projection(true, false, false);
+
+        /** {@code ValidateMojo}: the verdict alone, no output of any kind. */
+        static final Projection VALIDATE = new Projection(false, false, false);
+
+        /** The editor-facing products with no emission: catalog and diagnostics. */
+        static final Projection BUILD_OUTPUT = new Projection(false, false, true);
+
+        /** The dev loop's pass: both halves at once, which is the whole point of it. */
+        static final Projection PASS = new Projection(true, true, true);
+    }
+
+    /**
+     * What one pass computed, before an entry point decides what to do with it. The generation is
+     * null exactly when this pass did not emit: either the projection asked for no emission, or the
+     * validator rejected the schema and there was nothing to emit. The catalog is null when the
+     * projection asked for no catalog, so only the two projections that asked for one may call
+     * {@link #output()}.
+     */
+    private record PassProducts(CompletionData catalog, List<ValidationError> walkErrors,
+                                List<ValidationError> errors, List<BuildWarning> warnings,
+                                IncrementalGeneration generation) {
+
+        /** The editor-facing projection of these products, fusing the report the LSP reads. */
+        BuildOutput output() {
+            return new BuildOutput(catalog, ValidationReport.from(errors, warnings),
+                walkErrors, warnings);
+        }
+    }
+
+    /**
+     * What the capture window produced: the walk's own error stream, that stream fused with the
+     * store-backed detections' violations, and the plan, or null where the errors stopped it (or
+     * the projection wanted no emission). A value rather than a throw, because the products the
+     * caller wants beside the verdict are computed by the time it is pronounced, and a validated
+     * schema and a rejected one differ only in whether a plan came back.
+     */
+    private record Captured(List<ValidationError> walkErrors, List<ValidationError> errors,
+                            EmitPlan plan) {}
+
+    /**
+     * The pipeline. Every public entry point runs this body and projects what it wants out of the
+     * result; see the class javadoc for why there is one body rather than one per entry point.
+     */
+    private PassProducts runPipeline(Projection projection) {
+        // The two whole-classpath reads, hoisted above every stage that wants them so a pass pays
+        // for each exactly once: the generated jOOQ classes (loaded by reflection, and holding the
+        // per-table caches every later lookup reads) and the classpath census (a scan and parse of
+        // every consumer class). Both feed @key synthesis, the capture, the completion catalog and
+        // the detections, which used to load one apiece.
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        var census = CatalogBuilder.buildExternalReferences(ctx);
+
+        var attributed = loadAttributedRegistry(jooq);
+        var read = assembleAndCaptureVerdicts(attributed, jooq, census);
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, read.assembled(), ctx);
         var schema = bundle.model();
         var assembled = bundle.assembled();
         boolean federationLink = bundle.federationLink();
 
-        logWarnings(withLintFindings(schema, attributed));
+        var catalog = projection.catalog()
+            ? CatalogBuilder.build(jooq, assembled, ctx, census)
+            : null;
+        // Computed here, logged by the entry point that wants them: the one-shot build goals emit a
+        // line per warning, the dev loop emits the same lines, and buildOutput() is silent because
+        // its consumer reads them off the store rather than the console.
+        var warnings = withLintFindings(schema, attributed);
 
         String outputPackage = ctx.outputPackage();
 
@@ -515,19 +600,28 @@ public class GraphQLRewriteGenerator {
         // generators run: the launcher relation's rows are read by the fetcher generator (a root
         // coordinate with a row gets the launcher emission, one without falls through to its
         // legacy builder), and those generators need no store, so the window closes here.
-        var plan = captureAndRead(attributed, read, schema,
+        var captured = captureAndRead(attributed, read, schema, jooq, census,
             (store, storeFacts) -> {
                 // The handle is what the window exists to hand over, and the plan tier holds it:
                 // the producers convert onto the store one family at a time, and each conversion
                 // is a parameter change inside the plan rather than a lifecycle one here. The
                 // routine-write relation is the first that reads it.
-                var errors = validateAndLogErrors(schema, storeFacts.violations());
-                if (!errors.isEmpty()) {
-                    throw new ValidationFailedException(errors);
+                var walkErrors = List.copyOf(new GraphitronSchemaValidator().validate(schema));
+                var fused = new ArrayList<>(walkErrors);
+                fused.addAll(storeFacts.violations());
+                var errors = List.copyOf(fused);
+                if (!errors.isEmpty() || !projection.emit()) {
+                    return new Captured(walkErrors, errors, null);
                 }
-                return EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), outputPackage,
-                    storeFacts.keyProjections(), store);
+                return new Captured(walkErrors, errors,
+                    EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), outputPackage,
+                        storeFacts.keyProjections(), store));
             });
+
+        if (captured.plan() == null) {
+            return new PassProducts(catalog, captured.walkErrors(), captured.errors(), warnings, null);
+        }
+        var plan = captured.plan();
 
         var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage,
             plan.launchers(), plan.typeUnits().fetchers(), plan.typeUnits().errorFetchers(),
@@ -621,10 +715,11 @@ public class GraphQLRewriteGenerator {
         // generate() skips the build. See the sourcing seam in CompileDependencyGraph: the graph
         // is projected from the same plan this run rendered from, so it is always consistent
         // with the sources just written.
-        CompileDependencyGraph graph = buildCompileGraph
+        CompileDependencyGraph graph = projection.compileGraph()
             ? PlanCompileGraph.fromPlan(plan, schema)
             : null;
-        return new IncrementalGeneration(result, graph);
+        return new PassProducts(catalog, captured.walkErrors(), captured.errors(), warnings,
+            new IncrementalGeneration(result, graph));
     }
 
     /**
@@ -776,10 +871,13 @@ public class GraphQLRewriteGenerator {
         });
     }
 
-    private static List<ValidationError> validateAndLogErrors(GraphitronSchema schema,
-                                                              List<ValidationError> detections) {
-        var errors = new ArrayList<>(new GraphitronSchemaValidator().validate(schema));
-        errors.addAll(detections);
+    /**
+     * The clang-style {@code file:line:col} emission the one-shot build goals keep. Called by the
+     * entry points that want it rather than from inside the pipeline: the dev loop renders
+     * {@code WatchErrorFormatter}'s grouped tree from the same list instead, and printing both is
+     * what made a dev save with errors report itself twice.
+     */
+    private static void logErrors(List<ValidationError> errors) {
         errors.forEach(e -> {
             var loc = e.location();
             String label = e.kind().messageLabel();
@@ -789,7 +887,6 @@ public class GraphQLRewriteGenerator {
                 LOGGER.error("{}: {}", label, e.message());
             }
         });
-        return errors;
     }
 
     /**

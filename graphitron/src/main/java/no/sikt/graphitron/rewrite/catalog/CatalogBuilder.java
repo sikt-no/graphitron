@@ -138,7 +138,24 @@ public final class CatalogBuilder {
             : new TypeBackingShape.JooqRecordBacking.WithTable(fqClassName, tableName);
     }
 
+    /**
+     * The catalog over a classpath census this builder scans for itself. Kept for the test sites
+     * that have no census in hand and no reason to scan one deliberately; production goes through
+     * the overload below, which is what makes "one census per pass" structural rather than
+     * incidental.
+     */
     public static CompletionData build(JooqCatalog jooq, GraphQLSchema assembled, RewriteContext ctx) {
+        return build(jooq, assembled, ctx, buildExternalReferences(ctx));
+    }
+
+    /**
+     * The catalog over a census the caller already scanned. The census arm is the load-bearing one:
+     * the fact store's classpath families are written from the same scan, so a pass that let this
+     * builder scan its own would parse every consumer class twice and could disagree with the store
+     * about what is on the classpath.
+     */
+    public static CompletionData build(JooqCatalog jooq, GraphQLSchema assembled, RewriteContext ctx,
+                                       List<CompletionData.ExternalReference> census) {
         // FQN of the generated jOOQ Keys class (jOOQ emits it at the package
         // root). Both the table classFqn and this Keys FQN are the join keys the
         // LSP resolves against its source index at request time; the catalog
@@ -152,7 +169,7 @@ public final class CatalogBuilder {
         return new CompletionData(
             buildTables(jooq, keysClassFqn),
             buildScalars(assembled),
-            buildExternalReferences(ctx),
+            census,
             buildNodeMetadata(assembled, new NodeDeclaration(jooq))
         );
     }

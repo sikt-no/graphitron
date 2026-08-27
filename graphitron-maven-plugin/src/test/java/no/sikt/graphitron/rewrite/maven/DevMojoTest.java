@@ -185,9 +185,12 @@ class DevMojoTest {
         var mojo = new DevMojo();
         mojo.setLog(log);
 
-        boolean ok = mojo.runGeneratorPass(contextFor(basedir, broken), "regen");
+        var round = mojo.runGeneratorPass(contextFor(basedir, broken), "regen");
 
-        assertThat(ok).isFalse();
+        assertThat(round.generated()).isFalse();
+        assertThat(round.output())
+            .as("a read that refused produces no report, so the store keeps the last good round's rows")
+            .isNull();
         assertThat(log.errorThrowables)
             .as("parse failure rides the clean surface: no stack trace logged")
             .isEmpty();
@@ -210,14 +213,67 @@ class DevMojoTest {
         var mojo = new DevMojo();
         mojo.setLog(log);
 
-        boolean ok = mojo.runGeneratorPass(contextFor(basedir, missing), "regen");
+        var round = mojo.runGeneratorPass(contextFor(basedir, missing), "regen");
 
-        assertThat(ok).isFalse();
+        assertThat(round.generated()).isFalse();
         assertThat(log.errorThrowables)
             .as("genuine infrastructure failure keeps its diagnostic stack trace")
             .isNotEmpty();
         assertThat(log.errors)
             .anySatisfy(line -> assertThat(line).contains("failed (infrastructure)"));
+    }
+
+    /**
+     * One save's whole round, through the merged pass: the generator runs once and its reporting
+     * half is published to the store's diagnostics stratum and replayed to every open file. Before
+     * the merge these were two generator calls, the second existing only to produce the facts this
+     * asserts; a round that stopped publishing them would have gone unnoticed here.
+     *
+     * <p>The fixture is validation-rejected on purpose, because that is the interesting round: the
+     * pass declines to emit and still owes the editor a report, so both writers have something to
+     * write. The unresolvable {@code @reference} key is the rejection; the snake_case SDL field name
+     * is a lint finding beside it.
+     */
+    @Test
+    void regeneratePass_publishesTheRoundsFactsAndReplaysThemToEveryOpenFile(@TempDir Path basedir)
+            throws Exception {
+        Path schema = basedir.resolve("schema.graphqls");
+        Files.writeString(schema, """
+            type Film @table(name: "film") {
+              languageName: String @reference(path: [{key: "no_such_fk"}])
+              original_language_id: Int
+            }
+            type Query { film: Film }
+            """);
+        String uri = schema.toUri().toString();
+
+        try (var store = FactStores.inMemory()) {
+            var mojo = new DevMojo();
+            var log = new CapturingLog();
+            mojo.setLog(log);
+            mojo.sessionStore = store;
+            mojo.rejectionFacts = FactWriters.rejectionFacts(store.dsl(), "DevMojoTest", basedir);
+            mojo.warningFacts = FactWriters.buildWarningFacts(store.dsl(), "DevMojoTest", basedir);
+
+            var workspace = new Workspace();
+            workspace.didOpen(uri, 1, Files.readString(schema));
+            workspace.drainRecalculate();
+
+            mojo.regeneratePass(jooqContextFor(basedir, schema), workspace);
+
+            assertThat(store.dsl().fetchCount(no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR))
+                .as("the round's rejection residue reaches the stratum the language server reads")
+                .isPositive();
+            assertThat(store.dsl().fetchCount(no.sikt.graphitron.model.Tables.LINT_FINDING))
+                .as("and so does its post-suppression warning list")
+                .isPositive();
+            assertThat(workspace.drainRecalculate())
+                .as("every open file is re-asked, so the squiggles come from this round")
+                .contains(uri);
+            assertThat(log.errors)
+                .as("one message for the round, the grouped tree rather than a line per error")
+                .anySatisfy(line -> assertThat(line).contains("regenerate failed validation"));
+        }
     }
 
     @Test
@@ -590,6 +646,20 @@ class DevMojoTest {
         binding.claims = claims;
         binding.allowClaimsOverride = allowClaimsOverride;
         return binding;
+    }
+
+    /**
+     * A context for a round that has to classify: unlike {@link #contextFor} it names the generated
+     * jOOQ model the graphitron test-jar carries, so {@code @table} resolves and the round reaches
+     * the validator rather than dying at the catalog.
+     */
+    private static RewriteContext jooqContextFor(Path basedir, Path schemaFile) {
+        return new RewriteContext(
+            List.of(SchemaInput.file(schemaFile)),
+            basedir, "DevMojoTest",
+            basedir.resolve("target/generated"),
+            "com.example.generated",
+            "no.sikt.graphitron.rewrite.test.jooq");
     }
 
     private static RewriteContext contextFor(Path basedir, Path schemaFile) {

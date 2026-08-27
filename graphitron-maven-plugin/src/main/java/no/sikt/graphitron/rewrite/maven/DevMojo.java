@@ -6,7 +6,6 @@ import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.SchemaParseException;
-import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.derive.RefreshProgress;
@@ -282,11 +281,14 @@ public class DevMojo extends AbstractRewriteMojo {
         var initialHolder = new AtomicReference<InitialOutput>();
         withCodegenScope(ctx -> {
             initialCtxHolder.set(ctx);
-            if (!skipInitial) {
+            if (skipInitial) {
+                // Nothing is emitted this startup by design, so the editor's products come from the
+                // reporting-only entry point rather than from a pass.
+                initialHolder.set(buildOutputQuietly(ctx));
+            } else {
                 getLog().info(banner("initial run"));
-                runGeneratorPass(ctx, "initial run");
+                initialHolder.set(InitialOutput.of(runGeneratorPass(ctx, "initial run")));
             }
-            initialHolder.set(buildOutputQuietly(ctx));
         });
         var initialCtx = initialCtxHolder.get();
         var initial = initialHolder.get();
@@ -775,45 +777,56 @@ public class DevMojo extends AbstractRewriteMojo {
 
     private void regenerate(Workspace workspace) {
         try {
-            withCodegenScope(ctx -> {
-                getLog().info(banner("regenerate"));
-                boolean generated = runGeneratorPass(ctx, "regenerate");
-                // A clean regen produces the writer's delta + this schema's compile graph; recompile
-                // just the affected sub-closure into the exclusive dir. A failed regen leaves the last
-                // good .class in place (nothing to recompile from), matching the generate-only path.
-                if (generated && incrementalCompiler != null && lastGeneration != null) {
-                    var gen = lastGeneration;
-                    var outcome = incrementalCompiler.recompile(
-                        gen.result().emittedUnits(), gen.result().changedUnits(), gen.graph());
-                    reportCompile(outcome, "recompile");
-                }
-                for (Path root : resolveSchemaRoots(ctx)) {
-                    try {
-                        schemaWatcher.addRoot(root);
-                    } catch (IOException e) {
-                        getLog().warn("graphitron:dev: failed to register new watch root "
-                            + root + ": " + e.getMessage());
-                    }
-                }
-                // The schema may have changed which scalars are declared or which directives the
-                // user has authored, so refresh the projection from the freshly parsed bundle. A
-                // failed parse leaves it as the last good pass left it and republishes diagnostics:
-                // the read that refused wrote its own verdict to the store on the way through, and
-                // that verdict is what the author needs to see.
-                try {
-                    var output = new GraphQLRewriteGenerator(ctx).buildOutput();
-                    writeReportFacts(output.walkErrors(), output.warnings());
-                    workspace.markAllForRecalculation();
-                } catch (RuntimeException e) {
-                    getLog().warn("graphitron:dev: catalog refresh after save failed; "
-                        + "keeping previous: " + e.getMessage());
-                    workspace.markAllForRecalculation();
-                }
-            });
+            withCodegenScope(ctx -> regeneratePass(ctx, workspace));
         } catch (MojoExecutionException e) {
             getLog().error("graphitron:dev: failed to rebuild context", e);
             workspace.markAllForRecalculation();
         }
+    }
+
+    /**
+     * One save's round, inside a live codegen scope: one generator pass, whose emitted half feeds
+     * the incremental recompile and whose reporting half is published to the store's diagnostics
+     * stratum and replayed to every open file. One pass rather than two, so the graph's partition
+     * is written once and the round's tree and its facts describe the same read of the schema.
+     *
+     * <p>Package-private so {@code DevMojoTest} can drive a whole round against a context it builds
+     * itself: the scope around this is the mojo's classloader plumbing, not anything the round
+     * decides.
+     */
+    void regeneratePass(RewriteContext ctx, Workspace workspace) {
+        getLog().info(banner("regenerate"));
+        var round = runGeneratorPass(ctx, "regenerate");
+        // A clean regen produces the writer's delta + this schema's compile graph; recompile
+        // just the affected sub-closure into the exclusive dir. A failed regen leaves the last
+        // good .class in place (nothing to recompile from), matching the generate-only path.
+        if (round.generated() && incrementalCompiler != null && lastGeneration != null) {
+            var gen = lastGeneration;
+            var outcome = incrementalCompiler.recompile(
+                gen.result().emittedUnits(), gen.result().changedUnits(), gen.graph());
+            reportCompile(outcome, "recompile");
+        }
+        // Null before startSchemaWatcher has run, which an editor save arriving over the LSP can
+        // beat: the save listener is wired at bindServer, a few lines earlier. Nothing to register
+        // a new root with yet, and the watcher resolves its own roots when it starts.
+        if (schemaWatcher != null) {
+            for (Path root : resolveSchemaRoots(ctx)) {
+                try {
+                    schemaWatcher.addRoot(root);
+                } catch (IOException e) {
+                    getLog().warn("graphitron:dev: failed to register new watch root "
+                        + root + ": " + e.getMessage());
+                }
+            }
+        }
+        // The round's own diagnostics, from the pass that produced them, whether or not it emitted:
+        // a validation-rejected round has a report and publishes it. A read that refused has none,
+        // having written its own verdict to the store on the way through, so the stratum keeps the
+        // last good round's rows and the recalculation below replays that verdict either way.
+        if (round.output() != null) {
+            writeReportFacts(round.output().walkErrors(), round.output().warnings());
+        }
+        workspace.markAllForRecalculation();
     }
 
     private void rebuildCatalog(Workspace workspace) {
@@ -850,9 +863,13 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     /**
-     * Initial catalog at dev-goal startup. A schema parse or classification failure is surfaced as a
-     * warning and an empty catalog that did not classify: the LSP must still come up so the developer
-     * can fix the schema, and the schema watcher will re-build on the next save.
+     * Initial catalog for a startup that emits nothing: the {@code -Dgraphitron.dev.skipInitial}
+     * arm, where there is no pass to read the editor's products off. A generating startup takes
+     * {@link InitialOutput#of} over its own pass instead.
+     *
+     * <p>A schema parse or classification failure is surfaced as a warning and an empty catalog that
+     * did not classify: the LSP must still come up so the developer can fix the schema, and the
+     * schema watcher will re-build on the next save.
      */
     private InitialOutput buildOutputQuietly(RewriteContext ctx) {
         try {
@@ -876,7 +893,22 @@ public class DevMojo extends AbstractRewriteMojo {
      */
     private record InitialOutput(CompletionData catalog, boolean classified,
                                  List<no.sikt.graphitron.rewrite.ValidationError> walkErrors,
-                                 List<no.sikt.graphitron.rewrite.BuildWarning> warnings) {}
+                                 List<no.sikt.graphitron.rewrite.BuildWarning> warnings) {
+
+        /**
+         * The same carrier read off a generating startup's own pass, so the initial run's products
+         * come from the round that emitted rather than from a second read of the same files. A
+         * round with no output failed before classifying and starts the session with an empty
+         * catalog, exactly as {@link DevMojo#buildOutputQuietly} does on the {@code skipInitial}
+         * path.
+         */
+        static InitialOutput of(PassRound round) {
+            return round.output() == null
+                ? new InitialOutput(CompletionData.empty(), false, List.of(), List.of())
+                : new InitialOutput(round.output().catalog(), true,
+                    round.output().walkErrors(), round.output().warnings());
+        }
+    }
 
     /**
      * Publishes one build's schema-side diagnostics into the fact store beside the workspace
@@ -892,29 +924,41 @@ public class DevMojo extends AbstractRewriteMojo {
         warningFacts.write(warnings);
     }
 
+    /**
+     * One generator pass's outcome as the dev loop reads it: the round's editor-facing output, or
+     * {@code null} where the pass failed before it could classify and so has nothing to publish;
+     * and whether sources were emitted, which is what decides a recompile.
+     *
+     * <p>A validation-rejected round is a third case rather than a failure with no products: it
+     * carries an output (catalog and diagnostics, so the editor can autocomplete its way out of the
+     * error) and did not emit.
+     */
+    record PassRound(GraphQLRewriteGenerator.BuildOutput output, boolean generated) {}
+
     // Package-private so DevMojoTest can drive the catch-arm discrimination directly
     // (a malformed schema vs a missing file) without standing up the full watch loop.
-    boolean runGeneratorPass(RewriteContext ctx, String label) {
+    PassRound runGeneratorPass(RewriteContext ctx, String label) {
         // Cleared up front so a failed pass never leaves a stale generation for the compile driver to
-        // act on; reassigned only on a clean generate below.
+        // act on; reassigned from the pass below, which returns one only when it emitted.
         this.lastGeneration = null;
         try {
-            var generator = new GraphQLRewriteGenerator(ctx);
-            // When compiling, capture the emitted TypeSpecs + compile graph the incremental driver reads;
-            // otherwise stay on the cheaper generate().
-            if (compile) {
-                this.lastGeneration = generator.generateIncremental();
-            } else {
-                generator.generate();
+            // One pass: the emitted tree, the compile graph the incremental driver reads, and the
+            // editor-facing catalog and diagnostics, from a single read of the schema and a single
+            // capture of the graph's partition.
+            var pass = new GraphQLRewriteGenerator(ctx).runPass();
+            this.lastGeneration = pass.generation().orElse(null);
+            var errors = pass.output().report().errors();
+            if (!errors.isEmpty()) {
+                // A branch rather than a catch arm: the pass that refused to emit is the same pass
+                // that produced the output above, so there is nothing to unwind.
+                String tree = WatchErrorFormatter.format(errors, previousErrorKeys);
+                previousErrorKeys = WatchErrorFormatter.keysOf(errors);
+                getLog().error("graphitron:dev: " + label + " failed validation\n" + tree);
+                return new PassRound(pass.output(), false);
             }
             previousErrorKeys = Set.of();
             getLog().info("graphitron:dev: " + label + " ok");
-            return true;
-        } catch (ValidationFailedException e) {
-            String tree = WatchErrorFormatter.format(e.errors(), previousErrorKeys);
-            previousErrorKeys = WatchErrorFormatter.keysOf(e.errors());
-            getLog().error("graphitron:dev: " + label + " failed validation\n" + tree);
-            return false;
+            return new PassRound(pass.output(), true);
         } catch (SchemaParseException e) {
             // An invalid intermediate schema mid-edit is expected and author-correctable;
             // surface the attributed file:line:col one-liner without the throwable, so the
@@ -923,11 +967,11 @@ public class DevMojo extends AbstractRewriteMojo {
             // tracker: reset so the next successful validation reports its full error set.
             previousErrorKeys = null;
             getLog().error("graphitron:dev: " + label + " failed: " + e.getMessage());
-            return false;
+            return new PassRound(null, false);
         } catch (RuntimeException e) {
             previousErrorKeys = null;
             getLog().error("graphitron:dev: " + label + " failed (infrastructure)", e);
-            return false;
+            return new PassRound(null, false);
         }
     }
 

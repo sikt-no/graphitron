@@ -8,10 +8,12 @@ import java.util.List;
  * errors so callers (notably {@code DevMojo}) can render them themselves instead of falling back
  * to the wrapper message and stack trace.
  *
- * <p>The generator additionally logs every error to SLF4J in clang-style {@code file:line:col}
- * form before throwing, so one-shot {@code generate} / {@code validate} mojos keep their existing
- * line-by-line output. The dev-loop formatter intercepts this exception and replaces that
- * emission with grouped output; see {@code WatchErrorFormatter}.
+ * <p>Those two entry points also log every error to SLF4J in clang-style {@code file:line:col} form
+ * before throwing, so one-shot {@code generate} / {@code validate} mojos keep their existing
+ * line-by-line output. The dev loop does not raise this at all:
+ * {@link GraphQLRewriteGenerator#runPass()} returns the same errors on its report and logs none of
+ * them, so the grouped tree {@code WatchErrorFormatter} renders is the only error output a dev save
+ * produces. Which entry point logs is therefore the whole difference; nothing intercepts anything.
  */
 @SuppressWarnings("serial") // thrown and caught in-process; ValidationError is not Serializable
 public class ValidationFailedException extends RuntimeException {
