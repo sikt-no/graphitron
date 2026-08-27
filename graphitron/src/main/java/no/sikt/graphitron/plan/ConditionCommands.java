@@ -2,6 +2,7 @@ package no.sikt.graphitron.plan;
 
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.ArgBinding;
+import no.sikt.graphitron.command.AuthoredMethodRef;
 import no.sikt.graphitron.command.ColumnTerm;
 import no.sikt.graphitron.command.ConditionCommand;
 import no.sikt.graphitron.command.FacetFragment;
@@ -21,6 +22,7 @@ import no.sikt.graphitron.rewrite.model.FkTargetConditionFilter;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OperationMembers;
 import no.sikt.graphitron.rewrite.model.OutputField;
@@ -165,14 +167,23 @@ public final class ConditionCommands {
         return switch (filter) {
             case GeneratedConditionFilter gcf -> new Predicate.Generated(termsOf(gcf, localNames, fieldName));
             case ConditionFilter cf ->
-                new Predicate.Authored(cf, bindingsFor(cf.callParams(), localNames), ReachPath.none());
+                new Predicate.Authored(authoredRef(cf), bindingsFor(cf.callParams(), localNames), ReachPath.none());
             // The FK-target @nodeId + @condition reach keeps its FK-only guarantee upstream, at
             // the validator's deferral of a non-FK path for that carrier, not through this type.
             case FkTargetConditionFilter fk ->
-                new Predicate.Authored(fk.delegate(), bindingsFor(fk.callParams(), localNames),
+                new Predicate.Authored(authoredRef(fk.delegate()), bindingsFor(fk.callParams(), localNames),
                     ReachPath.narrow(fk.joinPath(),
                         fieldName + "'s FK-target @condition '" + fk.methodName() + "'"));
         };
+    }
+
+    /**
+     * The two components an authored call site emits, taken off the model's reflected reference
+     * here so the row carries the address and not the signature. The class name rides as the
+     * author wrote it, which is what {@code ClassName.bestGuess} resolves at the call site.
+     */
+    private static AuthoredMethodRef authoredRef(MethodRef method) {
+        return new AuthoredMethodRef(method.className(), method.methodName());
     }
 
     /**

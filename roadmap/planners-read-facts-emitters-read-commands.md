@@ -3236,6 +3236,51 @@ way `RoutineWriteCommand` was narrowed off `RoutineChain`, or whether the store 
 reference. The narrowing is the cheaper answer and the one this item's shape suggests; it is not yet
 established, and it is where the next increment starts.
 
+### Conditions, nineteenth increment: the authored call is two strings, and the extraction chain is the real gate
+
+**The fork the eighteenth increment left open is closed by counting the readers.** `Predicate.Authored`
+carried a `MethodRef`, and the question was whether to narrow it or to grow the store an assembled
+method reference. Exactly one consumer downstream of the producer reads that component:
+`ConditionGlueRenderer.authoredExpr`, through `authoredCall`, which emits
+`Class.method(table, locals...)`. It reads the class name and the method name. Nothing downstream of
+a condition row reads the return type, the parameter list, or the declared exceptions; those are
+classification-time facts, read by the validator and the argument classifier, both of which sit
+upstream of the plan. So the narrowing is not merely the cheaper answer, it is a two-component
+answer, and the store already carries both components verbatim as the author wrote them
+(`graphitron_argument_condition.class_name` and `.method`).
+
+**The carrier is new rather than reused, because the two method references name different things.**
+`UnitMethodRef` addresses a method on a unit *we* emit: it splits the class into package and simple
+name because the write step needs a landing address, and it is minted from the plan's naming
+vocabulary and never parsed back out of a string. An authored class is nobody's to mint and nobody's
+to place. Its name rides as the one string the author supplied, and the call site resolves it, which
+is what `ClassName.bestGuess` was already doing with the model reference's `className()`. So
+`AuthoredMethodRef` is the authored counterpart and states that difference in its own javadoc rather
+than leaving `UnitMethodRef` to carry a second meaning.
+
+**The borrow dial does not lose a line, and that is the dial working as documented.**
+`PackageImportDirectionTest`'s `BORROWED_MODEL_REFS` keeps `MethodRef`, because `SelectTerm.HelperCall`
+still borrows it for the projection family's helper calls. The dial's own note says entries survive
+on their other families' accounts, which is what it is for: it names what is still borrowed, so a
+family's conversion is visible rather than claimed. What is visible here is `Predicate.java` dropping
+its model import outright, leaving `command/` with one fewer file that reaches into the legacy tree.
+
+**What this increment leaves owing is the gate the method question was hiding.** The producer still
+builds its `ArgBinding`s from `cf.callParams()`, and `ArgBinding` borrows `CallParam` whole, by an
+explicit decision its javadoc records: it is "not a cut `Binding` type that would copy the extraction
+vocabulary". The glue renderer then reads that borrowed reference in full, not in part. It walks the
+`CallSiteExtraction` chain to build the extraction expression, reads the Java type and the list axis
+to declare the body local, and forks on the extraction arm to decide whether the local's declaration
+carries an unchecked cast. So the authored arm's remaining distance from the store is the argument
+extraction chain, and it is a different size of problem than the method address was: that was two
+strings, this is a recursive shape with a javapoet type at its leaves. The store states where an
+argument's content binds (`intent_argument_scope_table`) and which column a name reaches
+(`intent_argument_column_match`) and which rule answers for an input field
+(`intent_input_field_filter_role`), but nothing states an extraction chain in the shape the renderer
+walks. Whether that narrows the same way the method address did, or whether the extraction chain is
+the one thing this family genuinely needs the store to grow, is the next increment's question, and
+it should be answered by counting the renderer's reads the same way this one was.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the

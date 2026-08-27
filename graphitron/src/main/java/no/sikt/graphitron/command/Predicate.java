@@ -1,7 +1,5 @@
 package no.sikt.graphitron.command;
 
-import no.sikt.graphitron.rewrite.model.MethodRef;
-
 import java.util.List;
 
 /**
@@ -35,8 +33,13 @@ public sealed interface Predicate {
      * correlated {@code EXISTS} over the {@link ReachPath}'s hops and the method receives the
      * terminal hop's alias (the FK-target form). Reach sits per-predicate here because the wrap
      * covers the whole call, unlike the generated arm's per-term grain.
+     *
+     * <p>The method is named by the two components a call site emits, not by the model's
+     * reflected reference: an authored predicate's whole render is
+     * {@code Class.method(table, locals...)}, and the signature facts the reflected reference
+     * also carries are read at classification time and by nothing downstream of this row.
      */
-    record Authored(MethodRef method, List<ArgBinding> bindings, ReachPath reach) implements Predicate {
+    record Authored(AuthoredMethodRef method, List<ArgBinding> bindings, ReachPath reach) implements Predicate {
         public Authored {
             if (method == null) {
                 throw new IllegalArgumentException("an authored predicate names the developer method it calls");

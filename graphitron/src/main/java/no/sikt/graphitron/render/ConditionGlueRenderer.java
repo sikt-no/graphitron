@@ -1,6 +1,7 @@
 package no.sikt.graphitron.render;
 
 import no.sikt.graphitron.command.ArgBinding;
+import no.sikt.graphitron.command.AuthoredMethodRef;
 import no.sikt.graphitron.command.ColumnTerm;
 import no.sikt.graphitron.command.ConditionCommand;
 import no.sikt.graphitron.command.MatchKind;
@@ -18,7 +19,6 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.command.KeyProjectionRelation;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
-import no.sikt.graphitron.rewrite.model.MethodRef;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -388,7 +388,7 @@ public final class ConditionGlueRenderer {
             authoredCall(authored.method(), hopAliases.get(hopAliases.size() - 1), authored.bindings()));
     }
 
-    private static CodeBlock authoredCall(MethodRef method, String tableAlias, List<ArgBinding> bindings) {
+    private static CodeBlock authoredCall(AuthoredMethodRef method, String tableAlias, List<ArgBinding> bindings) {
         var args = CodeBlock.builder();
         args.add("$L", tableAlias);
         for (var binding : bindings) {
