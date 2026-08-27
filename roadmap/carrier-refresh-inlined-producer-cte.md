@@ -192,8 +192,9 @@ column is required and is where the argument lives, so this one has to state:
   roughly eight thousand re-evaluations one carrier refresh was paying.
 * The measured move, with the schema named: the carrier refresh from 41 s to about 0.3 s on the
   consumer schema this item describes (8408 fields, 2345 types, 5619 catalog columns, 39 classpath
-  sources), because a recorded measurement is evidence about the schema it was taken on and a reason
-  that omits the schema invites the mistake the carrier's own row already made.
+  sources), because a recorded measurement is evidence about the schema it was taken on, per the
+  `store-performance` skill, and a reason that omits the schema invites the mistake the carrier's own
+  row already made.
 * The control that refuted the obvious reading: substituting tables for `intent_bound_table` and
   `intent_type_backing`, the two relations the same CTE probes inside a `CASE WHEN EXISTS`, leaves
   the cost unchanged at about 40 s. Worth a sentence because that is where a reader following the
@@ -244,11 +245,11 @@ prevents that has to rest on a derived edge rather than on how the relation name
 
 `intent_carrier_data_field_live`'s registration prices its refresh at about 170 ms for 15 rows on the
 sakila example and about 12 ms on a carrier-free schema. The relation this item is about is the
-reason that figure does not transfer: on a consumer schema the same refresh is 41 s. The fact model
-page is explicit that a recorded measurement is evidence about the schema it was measured on and that
-a stored reason contradicted by a later measurement needs correcting where it lives, so the row is
-corrected in the same change that moves the number, with both figures and the schema each was taken
-on.
+reason that figure does not transfer: on a consumer schema the same refresh is 41 s. The
+`store-performance` skill is explicit that a recorded measurement is evidence about the schema it was
+measured on and that a stored reason a later measurement disagrees with needs correcting where it
+lives rather than explaining away, so the row is corrected in the same change that moves the number,
+with both figures and the schema each was taken on.
 
 Two sibling rows are wrong the same way, the same rule reaches them, and this item's own first table
 already holds the measurements, so they are corrected here too: `intent_errors_field_live` records
@@ -520,3 +521,126 @@ Corrected in passing, in the same commit as these findings: the `READERS_IN_SCHE
 and gates named 101 as the value on trunk, and trunk is at 109. The line now says the constant has
 moved twice since drafting and points at the tree, which is what the sentence was already trying to
 say; naming a third figure would be stale on the same schedule as the first two.
+
+### Round 3 (2026-08-27, Spec -> Ready, reviewer session 01UWc2xPX433phnCi5RGgoyW)
+
+Verdict: withhold. Every finding from rounds 1 and 2 is addressed in the plan body, checked against
+the tree rather than against the revision commit's account of itself: the edge confirmation is now a
+structural assertion with a falsifier row of its own, the index measurement is three timings beside
+the no-index floor including the `DISTINCT` baseline, "indifferent to the registration" is gone from
+both places it stood, and the two sibling `reason` rows are in scope with the deferral removed. The
+revision recorded what it did in its commit message rather than in a note beneath each finding, which
+is what the workflow's item-file conventions ask for and what lets a returning reviewer audit a delta
+instead of re-reading the spec; worth restoring on the next pass.
+
+The finding below that matters is one neither earlier round could reach, because both checked the
+plan's evidence and this one is about the SQL the evidence is taken on.
+
+**6. The predicate the whole item is about is redundant with the outer join, and nothing prices
+deleting it.** `intent_carrier_data_field_live`'s `data_channel` CTE filters its population with
+`EXISTS (SELECT 1 FROM producer p WHERE p.graph_name = f.graph_name AND p.payload_type_name =
+f.type_name)`, and the view's own outer query is `FROM producer p JOIN data_channel d ON d.graph_name
+= p.graph_name AND d.type_name = p.payload_type_name`. A `data_channel` row survives that join on
+exactly the condition the `EXISTS` tests, so the filter removes no row the join would have kept.
+
+It cannot change `data_fields` either, which is the one place a population filter under a window
+usually does change an answer. The window is `COUNT(*) OVER (PARTITION BY f.graph_name, f.type_name)`
+and the `EXISTS` is a function of `(f.graph_name, f.type_name)` alone, so it is uniform across every
+partition: it drops whole partitions and never thins one. The per-field `NOT EXISTS` against
+`intent_errors_field` beside it is the one that does thin a partition, and it is not in question. So
+the two spellings, with the filter and without it, return the same rows with the same counts, and
+`data_channel` is named exactly once, by that join, so there is no second reader for which the
+difference could matter.
+
+This is a finding about the diagnosis and not a predicted defect in the change. The bisect is what
+hid it: measuring the CTE in isolation prices a predicate that is load-bearing there, because nothing
+outside is left to subsume it, and the redundancy exists only in the assembled view. That is worth
+saying because the same bisect is this repo's recommended instrument and this is a failure mode it
+has.
+
+Two things follow, and only the second is likely to change what lands. First, the item's own control
+discipline asks for the timing: it prices two registration depths against each other but never prices
+the third option, deleting the filter and letting the join do the work. My reading is that the
+registration still wins, because without the filter the two `CASE WHEN EXISTS` probes into
+`intent_bound_table` and `intent_type_backing` face every object-type field in the graph rather than
+the carrier candidates, and the control table already shows those two are only cheap today at the
+population the filter leaves them. But that is a prediction from reading a plan's shape, which is the
+thing this item is elsewhere careful not to accept, and it costs one timing to settle.
+
+Second, and durably: whatever the timing says, the `reason` row must not describe that probe as the
+reader the registration is bought for without recording that it is redundant. As the plan stands, an
+author who later notices the redundancy and deletes three lines removes the registration's motivating
+reader entirely, leaving `intent_field_error_channel`, which the plan itself says gains something
+small and unmeasured. The row should say the probe is redundant with the outer join, that deleting it
+was priced and what it measured, and that it was kept. A reason that omits this reads as settled to
+exactly the author most likely to falsify it.
+
+**7. The edge assertion pins one production pair in the class of universal properties, and the shape
+it is worried about is missing from the class whose charter is shapes.**
+`MaterializationOrderTest`'s class javadoc says it drives `MaterializeDependencies.populate` and
+`Materializations.refreshOrder` "through every shape the design claims", and names them: the direct
+read, the walk through an unregistered intermediate view, the cycle, the row-free relation, the
+refresh that respects the order. Its fixtures are `SELECT v FROM scratch_p` and `SELECT v FROM
+scratch_mid`. A relation reference inside a non-recursive `WITH` body, which is the one shape this
+item's edge depends on being collected, is not among them. So the general hole is a missing shape in
+the shape roster, and the plan patches one instance of it with a pinned production pair in
+`MaterializeRegistryGateTest`, whose other seven tests are all quantified over the whole registry.
+
+A synthetic case in `MaterializationOrderTest` covering a read from inside a CTE body would cover
+this item and every registration after it, needs no production relation names in a test, and is
+"extending a shape already in the tree" in the sense the Spec gate asks about. The production pin may
+still be worth keeping beside it, and the plan's argument for it, that the alphabetical tie-break is
+one rename away from inverting, is a good one that the shape test does not answer. What the plan
+should not do is land the pin without saying why the class built for this question is not where the
+mechanism gets covered.
+
+Related, and it weakens the pin's stated urgency rather than the pin: round 2 established that today's
+walk already recurses through `intent_field_payload_producer` to its five base tables. It only reaches
+that view through the same CTE-body reference, so the collection of that shape is already
+demonstrated on the shipped store, and the edge arriving is close to certain rather than the open
+question "what confirms the edge arrived needs care" implies. The pin's real value is as a regression
+guard, which is a smaller claim and the one it should make.
+
+**8. "Three reason rows are wrong" overstates two of the three, and the rule invoked is cited to a
+page that does not carry it.** `intent_carrier_data_field_live`'s row reads "about 170 milliseconds
+for 15 rows on a carrier-bearing schema (the sakila example ...) and about 12 milliseconds for no rows
+on a carrier-free one". It names both schemas and both row counts and claims no transfer, so a 41 s
+measurement on a consumer schema does not contradict it; it extends it. `intent_errors_field_live`'s
+"about ten milliseconds for 15 rows" discloses its scale the same way. Only
+`intent_field_column_scope_live`'s "about 170 ms on a real schema" reads as a general claim, and that
+one this item's 6.4 s does falsify.
+
+The edits the plan specifies are right either way, both figures with both schemas in each row. It is
+the framing that should match: two rows are being completed with a second schema's figure and one is
+being corrected, and the difference is worth keeping because the rows differ in what a next reader can
+trust them for. A row that names its schema is doing what the register asks; saying it was wrong
+teaches the opposite lesson to whoever writes the next one.
+
+The governing rule is real and the plan applies it correctly, but it lives in the `store-performance`
+skill ("if your measurement disagrees with a stored reason, the stored reason needs correcting rather
+than explaining away. Say so where it lives"), not on the fact model page, which carries no sentence
+about correcting stored reasons. Repointed in passing, below.
+
+**9. `CELLS` and `READERS_WITH_CELLS` cannot move in both directions here.** The Tests and gates
+section says both "move in both directions at once", on the reachability walk stopping at a registered
+target so that readers reaching a registration only through this relation lose those cells. Round 2
+established the fact that rules this out: `intent_field_payload_producer`'s five inputs are all
+captured base tables, so its subtree contains no registration and no reader reaches one through it.
+Registering it adds cells and removes none, which is the same thing round 2 said about the edge count.
+
+The instruction under it, re-pin from the failure message rather than predicting the values, is safe
+whatever happens, so this changes no step. It matters because predicting a possible decrease licenses
+accepting one, and a decrease here would be the walk doing something the plan does not expect, which
+is a signal worth keeping.
+
+Noticed, not a finding, and outside this item's scope: R831's body still carries the sentence that
+scopes the register out of it, "`meta_materialize`'s registrations are priced against their readers on
+every build". This item's "Not in scope" section is the evidence that it is false, the read-cost gate
+holding scan counts over a twelve-unit fixture and asserting no duration. Round 2 raised this as one
+of two branches and the plan took the other, correctly, so nothing here is owed. But R831 is Backlog
+and the next session to pick it up reads that sentence first. One line in R831 recording what this
+item measured would close it, and any session may land it.
+
+Corrected in passing, in the same commit as these findings: the two places attributing the
+stored-reason correction rule to the fact model page now name the `store-performance` skill, which is
+where the sentence is. Same rule, same edits it licenses; only the citation moves.
