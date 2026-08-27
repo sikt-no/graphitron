@@ -201,3 +201,51 @@ over: it held a `graphitron-maven-plugin` test whose latch budget this concurren
 held the channel. R741 owns the stale "this module and only this module" claim in `graphitron`'s
 properties file, which is the same misreading of the reactor's execution model that
 `SetTrace.resetSeam`'s comment carries one module over.
+
+## Reviewer findings
+
+### Round 1 (2026-08-27, In Review -> Done, reviewer session 01C7m6N4LDvR1EW6VWsPqnTj)
+
+Verdict: withhold, on question 2, and question 1 is unanswerable for the same reason. No
+implementation reached the repository. The gate has nothing to review.
+
+What the reviewer was handed: an implementation commit `76883ea` "R860 In Progress -> In Review".
+That SHA resolves to nothing. It is absent from `claude/graphitron-rewrite`, from every one of the
+remote's branch heads after a full `refs/heads/*` fetch, and from GitHub's own commit lookup, which
+returns "No commit found for SHA". The two commits reachable for this item are `060266a`
+(Backlog -> Spec) and `4627c67` (Spec -> Ready). There is no Ready -> In Progress commit either.
+
+The delivered tree is the pre-implementation tree, at every one of the four sites the item names:
+
+- `LspTraceTest` carries no `@Isolated`. The annotation appears nowhere under
+  `graphitron-lsp/src/test/java/`.
+- `doubleCloseIsIgnored` still opens `LspTrace.span("phase")`, not `"double-close"`.
+- Its assertion is still the JVM-global count this item exists to remove:
+  `assertThat(emitted().stream().filter(l -> l.contains("lsp-trace <")).count()).isEqualTo(1)`
+  at `LspTraceTest.java:142`, the exact line and shape the item's opening paragraph quotes.
+- `SetTrace.resetSeam`'s comment still reads "would fail LspTraceTest's off-by-default assertion
+  depending on class ordering", the sentence the item promised to correct.
+- The class holds fourteen `@DisplayName` cases, so the foreign-emitter case, the one piece of
+  evidence the spec nominated as proof of delivery, does not exist.
+
+The item's own completeness criterion is therefore unmet on its face: "the foreign-emitter case
+fails against today's filter and passes against the scoped one" requires that case to exist, and
+"`LspTraceTest` carries the annotation" requires the annotation. Neither is in the tree.
+
+No verification build was run and none would inform this verdict: the tree under review is trunk
+unchanged, which each of its own commits already covered. Status stays at `Ready` rather than being
+flipped, because trunk never left `Ready`; the In Review state existed only in the unpushed session.
+
+The next pass is one of two things. If the implementing session's branch still exists, push it and
+re-request this gate against a reachable tree. Otherwise the implementation is simply unstarted and
+the item runs Ready -> In Progress from here. Nothing in the spec needs revising for that: every
+claim it makes about the tree was checked at this gate and holds. `ClassificationTraceTest:30` and
+`SingleWalkClassificationOrderTest:44` both carry `@Isolated("rebinds ClassificationTrace's
+process-global writer")`, so the precedent the decision extends is exactly as described; the
+`SetTrace.resetSeam` comment is as quoted; and `LspTraceTest`'s other cases do scope through
+`lineContaining(marker, name)` as claimed.
+
+One precision for the implementer, not a finding: that helper returns a single `String` through
+`findFirst().orElseThrow(...)`, so the specified "`hasSize(1)` over the list" needs a
+list-returning sibling beside it rather than a call to `lineContaining` itself. The spec's intent is
+unambiguous and the shape of the helper is the implementer's call.
