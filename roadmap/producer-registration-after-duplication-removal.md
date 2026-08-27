@@ -47,8 +47,10 @@ Two constraints any eventual registration inherits. The target's grain is
 tables being keyed on the coordinate and the ROUTINE arm carrying `DISTINCT`; that key does not serve
 the one known probe, which seeks `(graph_name, payload_type_name)`, so the index question is open on its
 own terms. And `MaterializationOrderTest` covers no shape where a source view reads a relation from
-inside a `WITH` body, which is how the carrier reaches this relation; the sibling item adds that
-synthetic case, so this one inherits it rather than needing it.
+inside a `WITH` body, which is how the carrier reaches this relation; that hole is open on the tree
+today and this item is the one that closes it, the shape mattering only where a registration's refresh
+edge has to be derived through it, which no rewrite does. The sibling item specifies the synthetic case
+and leaves it here rather than adding it.
 
 Measurement provenance and one failed instrument are recorded in
 `roadmap/audits/2026-08-27-carrier-filter-redundancy-probe.md`. Read it before re-taking anything: a

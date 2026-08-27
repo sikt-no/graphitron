@@ -86,7 +86,14 @@ population, which is a driving-row ratio the same store can answer.
 
 The correctness half of the fork is closed, so the arms are interchangeable in what they return and
 the choice is purely a cost choice. The cost half is open and needs a store this repository does not
-contain. R839's plan body now names the three arms and the doctrine that orders them
+contain. R839's plan body names the three arms and the doctrine that orders them
 (`meta_materialize`'s own registration reasons require the reader-side rewrite to be tried and
-priced before a registration is), and states the measurement as the outstanding precondition rather
-than predicting its outcome.
+priced before a registration is).
+
+What R839 does with the unavailable ranking, as of its round 7 revision, is decide arm B on a bound
+rather than on a ranking: arm B changes no population inside the view body, so its worst case is one
+further inlining of a 4-to-31 ms rule and it cannot be dearer than the shape it replaces, while arm A's
+population widening is exactly the quantity no store here can price. The consumer-store timing is
+demoted to confirmation, recorded where such a store is reachable and recorded as absent where it is
+not. So nothing in this document is a precondition on that item any more; it is the record of why the
+ranking was not available and of the instrument that must not be retried.
