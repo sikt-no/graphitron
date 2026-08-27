@@ -30,11 +30,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
-| `R858` | Stamped store directories accumulate one per DDL hash and nothing ever removes them | Ready | 2026-08-27 | [plan](stamped-store-directories-have-no-reaper.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R860` | The LSP trace test rebinds JVM-global state while the module's other classes run beside it | Ready | 2026-08-27 | [plan](lsp-trace-double-close-count-unscoped.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-27 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
+| `R858` | Stamped store directories accumulate one per DDL hash and nothing ever removes them | In Progress | 2026-08-27 | [plan](stamped-store-directories-have-no-reaper.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -666,7 +666,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R298` [**Leverage Rover and GraphOS: composition checks in CI, contract verification, rover lsp in the dev loop**](rover-graphos-integration.md) — Backlog, feature, blocked by [oneof-augment-defeated-by-descriptions](oneof-augment-defeated-by-descriptions.md)
 - `R790` [**Nothing enforces that the sakila-example suite stays green when another class writes the tables it reads**](sakila-example-suite-green-against-foreign-rows.md) — Backlog, cleanup
 - `R594` [**Snapshot axis keys are consistent across the snapshot-reporting MCP tools**](mcp-snapshot-axis-key-naming.md) — Backlog, cleanup
-- `R858` [**Stamped store directories accumulate one per DDL hash and nothing ever removes them**](stamped-store-directories-have-no-reaper.md) — Ready, dx
+- `R858` [**Stamped store directories accumulate one per DDL hash and nothing ever removes them**](stamped-store-directories-have-no-reaper.md) — In Progress, dx
 - `R643` [**Supergraph peer surface for the dev loop**](supergraph-peer-surface.md) — Backlog, feature
 - `R716` [**The MCP boundary guard names one generator package of five**](mcp-boundary-guard-generator-package-coverage.md) — Backlog, architecture
 - `R767` [**graphitron-maven-plugin writes its descriptor twice and runs its three ITs one at a time**](maven-plugin-descriptor-runs-twice.md) — Backlog, dx

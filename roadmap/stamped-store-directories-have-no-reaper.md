@@ -1,7 +1,7 @@
 ---
 id: R858
 title: "Stamped store directories accumulate one per DDL hash and nothing ever removes them"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 3
 theme: tooling
