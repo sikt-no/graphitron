@@ -436,6 +436,8 @@ class FactCaptureAgreementTest {
         registrations.put("intent_condition_method_route_defect", Arm.DERIVED);
         registrations.put("intent_java_enum_class", Arm.DERIVED);
         registrations.put("intent_condition_param_extraction", Arm.DERIVED);
+        registrations.put("intent_jvm_ancestor", Arm.DERIVED);
+        registrations.put("intent_condition_table_parameter", Arm.DERIVED);
         registrations.put("intent_table_key_candidate", Arm.DERIVED);
         registrations.put("intent_node_metadata_defect", Arm.DERIVED);
         registrations.put("intent_inferred_node_type", Arm.DERIVED);

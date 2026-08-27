@@ -3529,6 +3529,89 @@ which is the part with no relation behind it yet. That inference is the piece to
 before planning it, since it is also the one place the role rule reads a GraphQL type against a Java
 one.
 
+### Conditions, twenty-fourth increment: the role's first arm, and the relation it turned out to be waiting on
+
+**Counting readers for the piece the last increment flagged found a different blocker underneath
+it.** The plan was to count readers for the generator's type-unique parameter inference, on the
+grounds that it is the one place the role rule reads a GraphQL type against a Java one. That count
+came out at two, both in the same class. The count that mattered was one the plan had not thought to
+take: the role's *table* arm asks whether a declared type is assignable to the jOOQ table interface,
+and that question, asked of a closed set of interfaces, has around sixty sites across the generator.
+The store already held the fact base for it, `jvm_class_supertype`, captured and read by nothing. Its
+own comment predicted the derivation that would read it and set two constraints on whatever did,
+both measured rather than reasoned, against a closure that had been written, cost seconds on a real
+census, and been taken out again. So the increment became that closure, plus the role arm that reads
+it.
+
+**A stated prediction was wrong and the population is what corrected it.** The last increment wrote
+that all three role rules are site-keyed. Two are. The table rule is not: the generator decides it
+from the parameter's declared type and never consults the site, so the same signature written at a
+field, an argument and a path element gives the same answer three times. That makes it method-keyed,
+the same grain as the extraction relation beside it, and it is the one of the three that can be
+stated before the site key shape is settled. Naming the population before counting it is what caught
+this; the earlier sentence had generalised from the two rules that do read the site.
+
+**`intent_jvm_ancestor` is the reflexive transitive closure of the declared supertype edges, and it
+honours both constraints.** The first is to recurse over the pairs the rows denote rather than over
+the rows: two classpath entries declaring one class are duplicate rows that would double the frontier
+at every hop, so the edge arm is distinct over the graph and the two names and drops the entry. The
+second is to seed from the names a consumer asks about rather than to close every pair. A consumer
+only ever asks about a class some captured signature named, so that is the seed: every class named at
+any position of a parameter type, a return type or a record component type. Uniform across the three
+relations and across every position within a type, deliberately, because an element type is asked
+about as often as a root one and a rule that admitted only some positions would be a cost guess
+written into the vocabulary. Reflexive because assignability is, and because it is what lets a reader
+spell one existence test where two would otherwise be needed.
+
+**What the closure cannot answer is the half a reader has to know first.** Names on both ends and not
+census rows, so a chain stops at the first name the scan never opened, and a missing pair reads as
+not-known-to-be-assignable rather than as not-assignable. Two consequences will be met immediately. A
+generated jOOQ table class is outside the census entirely, so it has no edges at all and reaches the
+table interface through nothing. And `java.lang.Object` is absent by the capture's own choice, so
+nothing here is an ancestor of everything. Beyond that, what the relation covers is reference
+supertypes and only those: boxing, primitive widening, array covariance and the generic argument
+rules are all outside what an extends and an implements clause say, and a consumer whose question is
+really Java assignability adds the rest itself.
+
+**`intent_condition_table_parameter` is the role arm, and its type test needs two arms for the reason
+the enum relation needed two.** A generated table class is in the catalog and nowhere else; anything
+else an author writes is a census class and is in the closure and nowhere else. Neither census
+subsumes the other, so the reader unions them. The closure arm carries the bare jOOQ interface for
+free, being reflexive, and it is the arm that admits an author's own table supertype and jOOQ's own
+`TableImpl`, which is the whole of what the live rule admits beyond a generated class. The test is
+not lifted into a relation of its own even though the external-field arm will ask the same question,
+because the relation it would be is the closure unioned with one join: what is worth stating once is
+the closure, and it is.
+
+**Membership is the whole fact and there are no columns beyond the key.** What the parameter is named
+and what its declared type is are already stated at this exact key by the extraction relation, which
+is total over a method's positions, so repeating either would be one fact in two places. Two table
+parameters are two rows, the generator passing the alias to each rather than picking one. And the
+refusal, a method declaring no table parameter at all, is absence rather than a verdict column: it is
+a fact about a method the schema named, and a defect vocabulary for a population of one would say
+nothing the absence does not.
+
+**Coverage is twenty-one seeded cases and one over a real capture, and the capture case pins the
+shape rather than the answer.** The seeded tier carries the closure's own properties, the seed
+discipline in both directions, and each arm of the type test separately. The capture case exists
+because the seeded tier cannot say whether the two real captures meet: the census has to spell the
+parameter's declared class exactly as the catalog spells the class it generated, and a mismatch would
+look exactly like a parameter that is honestly not a table. It asserts the whole shape rather than
+only the answer, since the answer alone would pass for the wrong reason if the closure had somehow
+reached the generated class, so it pins that the census does not hold that class, that the closure
+therefore carries no path from it to the table interface, and that the catalog names it anyway.
+
+**The next increment is the role's second and third arms, and the site key they force.** The context
+arm is one join to the directive's own context-argument child and is trivial in itself; what is not
+trivial is that both remaining arms are site-keyed, and the sites are four shapes with four different
+key widths, a field, an input field, an argument and a path element. That key shape is the thing to
+settle first, because both arms and the eventual producer all hang off it. The argument arm follows,
+and it is where the four-branch inference finally has to be stated: identity by name, the `argMapping`
+overrides the pair family already decodes, the arity-unique and type-unique pairings, and the depth-1
+name-based descent, with a reachability search behind two of them that reads input-object structure
+against the scalar fixed point. That is a larger population than anything the condition arm has
+needed so far and it should be scoped on its own terms rather than folded in for symmetry.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the

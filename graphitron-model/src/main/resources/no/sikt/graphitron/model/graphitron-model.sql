@@ -3832,6 +3832,41 @@ COMMENT ON COLUMN intent_condition_method_route_defect.class_name IS 'the condit
 COMMENT ON COLUMN intent_condition_method_route_defect.method IS 'the condition method name as the author wrote it';
 COMMENT ON COLUMN intent_condition_method_route_defect.verdict IS 'which refusal, in a closed vocabulary of five. CLASS_NOT_IN_CENSUS: no class of that name in the graph''s classpath sources, which is a misspelling or a class the scan drops, nested and non-public classes and the generated jOOQ package all being outside it. METHOD_NOT_ON_CLASS: the class is there and declares no method of that name, so a misspelling or a method that is not public, the census being public-only. FEWER_THAN_TWO_PARAMETERS: no overload of the name declares a parameter at position 1, and a condition method the generator can call positionally needs a source and a target. WILDCARD_TARGET_PARAMETER: a second parameter typed as the bare jOOQ table interface, which names no table and so resolves no arrival; the same signature is enough at a projection site, where the carrier field''s return-type binding supplies the target, which is why this is a verdict about the site''s demand rather than about the method being ill-formed. The test is an EXISTS over any position-1 slot of the name, so it is set-wide already: one wildcard declaration beside concrete ones is this verdict, which is also the arm the resolver takes on such a set. TARGET_DISAGREEMENT_ACROSS_OVERLOADS: two or more declarations of the name whose second parameters each resolve, to different tables. Admitted as one @condition target by the build, which then has one joined table to emit and no consumer call site to defer the choice to, so it rejects the set; the census sees the same disagreement and routes nothing. TARGET_NOT_A_TABLE_CLASS: a second parameter that names something else, or that names no class at all as a primitive one does, and no table in the graph''s sources is generated as it. For a single declaration that is the resolver''s own routing refusal; for a set it is the build''s admission refusal instead, a slot Table-assignable in one declaration and not in another disagreeing on shape before routing is ever asked. Both are no route, which is the whole of what this rung claims, and the verdict names the fact the census can see rather than the arm the build took. Decided in that order over five tests, each a positive statement about a captured population; this column is a discriminator a consumer switches on and never a precedence to re-test';
 
+CREATE VIEW intent_jvm_ancestor (graph_name, class_name, ancestor_name) AS
+WITH RECURSIVE
+edge (graph_name, class_name, supertype_name) AS (
+  SELECT DISTINCT g.graph_name, s.class_name, s.supertype_name
+    FROM store_graph_source g
+    JOIN jvm_class_supertype s ON s.source_name = g.source_name
+),
+asked (graph_name, class_name) AS (
+  SELECT DISTINCT g.graph_name, r.referenced_class
+    FROM store_graph_source g
+    JOIN jvm_method_parameter_type_ref r ON r.source_name = g.source_name
+   UNION
+  SELECT DISTINCT g.graph_name, r.referenced_class
+    FROM store_graph_source g
+    JOIN jvm_method_return_type_ref r ON r.source_name = g.source_name
+   UNION
+  SELECT DISTINCT g.graph_name, r.referenced_class
+    FROM store_graph_source g
+    JOIN jvm_record_component_type_ref r ON r.source_name = g.source_name
+),
+climb (graph_name, class_name, ancestor_name, trail) AS (
+  SELECT graph_name, class_name, class_name, '/' || class_name || '/'
+    FROM asked
+   UNION ALL
+  SELECT c.graph_name, c.class_name, e.supertype_name, c.trail || e.supertype_name || '/'
+    FROM climb c
+    JOIN edge e ON e.graph_name = c.graph_name AND e.class_name = c.ancestor_name
+   WHERE POSITION('/' || e.supertype_name || '/' IN c.trail) = 0
+)
+SELECT DISTINCT graph_name, class_name, ancestor_name FROM climb;
+COMMENT ON VIEW intent_jvm_ancestor IS 'Every type a class is known to be, itself included: the reflexive transitive closure of the supertype edges the classfiles declared. The store''s answer to the question a live Class.isAssignableFrom answers, asked of one reference type against another, and the first derivation to read jvm_class_supertype at all, whose own comment predicted this relation and set two constraints on it that are honoured below. The first is to recurse over the pairs the rows denote rather than over the rows: two classpath entries declaring one class name are duplicate rows that would double the frontier at every hop under UNION ALL, so the edge arm is DISTINCT over the graph and the two names and drops the entry the row came from. The second is to seed from the names a consumer asks about rather than to close every pair in the census, which is what the closure that was here before did, and what cost seconds: the census grows sideways in classes nothing ever asks about, and closing all of them is work no reader collects. A consumer only ever asks about a class some captured signature named, so the seed is exactly that, every class named at any position of a parameter type, a return type or a record component type. Uniform across the three and across every position within a type, deliberately: an element type is asked about as often as a root one, and a rule that admitted some positions would be a performance guess written into the vocabulary. Reflexive, because assignability is, and because it is what lets a reader spell one existence test where two would otherwise be needed: a parameter typed as the bare jOOQ table interface answers the same test a parameter typed as a subtype of it answers. So absence of a self-row means only that no captured signature names the class, which is the one thing this relation cannot be asked about. Names and not census rows on both ends, on jvm_class_supertype.supertype_name''s terms: the scan drops nested classes and the generated jOOQ package and nothing ships the JDK, so a chain terminates at the first name with no census row of its own, and every ancestor above that name is unreachable rather than absent. A reader therefore reads a missing pair as not-known-to-be-assignable and never as not-assignable, and the shortfall falls in one direction only. Two consequences of that are worth naming because a reader will meet them. A generated jOOQ table class is outside the census entirely, so it has no edges here and reaches org.jooq.Table through nothing: sql_table.class_fqn is what answers for those, and a consumer asking whether a declared type is a table unions the two. And java.lang.Object is absent by the capture''s own choice, so nothing is an ancestor of everything here. What this closure covers is reference supertypes and only those; a consumer whose question is really Java assignability adds the rest itself, boxing, primitive widening, array covariance and the generic argument rules all being outside what a classfile''s extends and implements clauses say. Cycles cannot arise from valid classfiles and the trail guard is there regardless, on the schema''s standing terms for a recursive walk over captured names: a malformed census should yield a short answer rather than a build that does not terminate.';
+COMMENT ON COLUMN intent_jvm_ancestor.graph_name IS 'the owning graph''s partition, carried from store_graph_source; the leading key dimension that keeps one workspace''s graphs apart, so a sibling graph''s classpath entries contribute no edges here';
+COMMENT ON COLUMN intent_jvm_ancestor.class_name IS 'the fully-qualified binary name of the class the question is asked about, a nested one spelled with the $ the JVM uses. Always a name some captured signature named, that being the seed';
+COMMENT ON COLUMN intent_jvm_ancestor.ancestor_name IS 'the fully-qualified binary name of a type the class above is known to be. Equal to it on the reflexive row, which every seeded class has; every other row is one the declared extends and implements clauses reached. With the two columns beside it the whole key, one row per pair however many inheritance paths connect them, a diamond being one fact about one pair';
+
 CREATE VIEW intent_java_enum_class (graph_name, class_fqn) AS
 SELECT g.graph_name, c.class_name
   FROM store_graph_source g
@@ -3904,6 +3939,57 @@ COMMENT ON COLUMN intent_condition_param_extraction.param_name IS 'the parameter
 COMMENT ON COLUMN intent_condition_param_extraction.java_type IS 'the fully-qualified binary name at the root of the parameter''s declared type, on intent_argmapping_bound_parameter_type.java_type''s terms; NULL where the type names no class, a primitive, an array, or a type variable. The payload the ENUM_VALUE_OF arm carries into emitted code, and never NULL on that arm by construction';
 COMMENT ON COLUMN intent_condition_param_extraction.extraction_kind IS 'which extraction, in a closed vocabulary of two: ENUM_VALUE_OF where intent_condition_param_extraction.java_type is an enum either census names, DIRECT everywhere else including where the type names no class. Two and not more because the @condition path has exactly two outcomes; the richer extractions in the generator''s vocabulary belong to the generated predicate arm''s column terms and to the @service path, neither of which this relation is about';
 COMMENT ON COLUMN intent_condition_param_extraction.candidates IS 'how many rows resolved for this key, this row''s being one of them; 1 on an unambiguous parameter. Above one means the class is declared by two of the graph''s classpath sources whose parameters at this position genuinely differ, identical answers having collapsed already, and is a resolution nothing here picks between, on intent_argmapping_bound_parameter_type.candidates'' terms';
+
+CREATE VIEW intent_condition_table_parameter
+  (graph_name, class_name, method_name, descriptor, position) AS
+WITH
+named (graph_name, class_name, method) AS (
+  SELECT graph_name, class_name, method
+    FROM graphitron_field_condition
+   WHERE class_name IS NOT NULL AND method IS NOT NULL
+   UNION
+  SELECT graph_name, class_name, method
+    FROM graphitron_argument_condition
+   WHERE class_name IS NOT NULL AND method IS NOT NULL
+   UNION
+  SELECT graph_name, class_name, method
+    FROM graphitron_field_reference_step
+   WHERE class_name IS NOT NULL AND method IS NOT NULL
+   UNION
+  SELECT graph_name, class_name, method
+    FROM graphitron_argument_reference_step
+   WHERE class_name IS NOT NULL AND method IS NOT NULL
+   UNION
+  SELECT graph_name, class_name, method
+    FROM graphitron_reference_for_step
+   WHERE class_name IS NOT NULL AND method IS NOT NULL
+),
+declared (graph_name, class_name, method_name, descriptor, position, java_type) AS (
+  SELECT DISTINCT n.graph_name, n.class_name, n.method, tr.descriptor, tr.position,
+         tr.referenced_class
+    FROM named n
+    JOIN store_graph_source g ON g.graph_name = n.graph_name
+    JOIN jvm_method_parameter_type_ref tr
+      ON tr.source_name = g.source_name AND tr.class_name = n.class_name
+     AND tr.method_name = n.method AND tr.type_path = ''
+)
+SELECT d.graph_name, d.class_name, d.method_name, d.descriptor, d.position
+  FROM declared d
+ WHERE EXISTS (SELECT 1
+                 FROM intent_jvm_ancestor a
+                WHERE a.graph_name = d.graph_name AND a.class_name = d.java_type
+                  AND a.ancestor_name = 'org.jooq.Table')
+    OR EXISTS (SELECT 1
+                 FROM store_graph_source g
+                 JOIN sql_table t
+                   ON t.source_name = g.source_name AND t.class_fqn = d.java_type
+                WHERE g.graph_name = d.graph_name);
+COMMENT ON VIEW intent_condition_table_parameter IS 'Which of a condition method''s parameters receive the source table. The first of the three roles a condition parameter can play, and the one that is a fact about the method alone: the generator decides it by the parameter''s declared type and never consults the site, where the other two, an argument and a context value, are decided from the slots and the context keys in scope at each directive application. So this relation is method-keyed like intent_condition_param_extraction beside it, and the two site-keyed roles land with their own consumers rather than being forced into this grain. Membership is the whole fact and there are no columns beyond the key. What the parameter is named and what its declared type is are already stated at this exact key by intent_condition_param_extraction, which is total over a method''s positions, so repeating either here would be one fact in two places; a reader wanting them joins. Absence within a signature means the parameter takes something other than the table, and absence of every position of a signature means the method declares no table parameter at all, which the generator refuses outright. That refusal is the consumer''s to state, not this relation''s: it is a fact about a method the schema named, and phrasing it here would need a defect vocabulary for a population of one. The type test is two arms because a jOOQ table reaches the store two ways and neither census subsumes the other, which is intent_java_enum_class''s shape for the same reason. A generated table class is in the catalog and nowhere else, the classpath scan excluding that package, so sql_table.class_fqn answers for it and the closure cannot; anything else an author writes is a census class, so intent_jvm_ancestor answers for it and the catalog cannot. The closure arm carries the bare jOOQ table interface for free, that relation being reflexive, and it is the arm that admits an author''s own table supertype and jOOQ''s own TableImpl, which is the whole of what the live rule''s Table.class.isAssignableFrom admits beyond a generated class. The test is not lifted to a relation of its own even though @externalField asks the same question of its own parameter, because the relation it would be is intent_jvm_ancestor unioned with one join, and that union is the reader''s sentence rather than a rule: what is worth stating once is the closure, and it is. Read at the empty type path, so a parameterised Table<FilmRecord> is admitted at its raw head exactly as the live rule reads it, and a parameter naming no class at all draws no row here rather than a false one. The silence is the classpath census''s own and it falls in one direction: a table supertype an author declared on a nested or package-private class has no census row, so a parameter typed as one is absent here where the generator, resolving through its codegen loader, passes it the alias. That is the same silence intent_condition_method_route_defect names CLASS_NOT_IN_CENSUS.';
+COMMENT ON COLUMN intent_condition_table_parameter.graph_name IS 'the owning graph''s partition, carried from whichever directive named the pair; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN intent_condition_table_parameter.class_name IS 'the condition class as the author wrote it, fully qualified; the same spelling intent_condition_param_extraction.class_name carries';
+COMMENT ON COLUMN intent_condition_table_parameter.method_name IS 'the condition method name as the author wrote it, which is also the census column it matched';
+COMMENT ON COLUMN intent_condition_table_parameter.descriptor IS 'the owning method''s raw JVM descriptor, the census''s own overload discriminator; part of the key, so two overloads are kept apart here exactly as they are on intent_condition_param_extraction';
+COMMENT ON COLUMN intent_condition_table_parameter.position IS 'the parameter''s 0-based position, completing the key. A signature declaring two table parameters draws two rows, the generator passing the alias to each rather than picking one, so this is never a single answer per signature and a reader must not read it as one';
 
 CREATE VIEW intent_field_reference_step_hop_live
   (graph_name, type_name, field_name, ordinal, position, via, key_matched_by,
