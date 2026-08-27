@@ -31,9 +31,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R860` | The LSP trace test rebinds JVM-global state while the module's other classes run beside it | Ready | 2026-08-27 | [plan](lsp-trace-double-close-count-unscoped.md) |
-| `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | In Progress | 2026-08-27 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-27 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
+| `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | In Review | 2026-08-27 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R858` | Stamped store directories accumulate one per DDL hash and nothing ever removes them | In Review | 2026-08-27 | [plan](stamped-store-directories-have-no-reaper.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
@@ -468,7 +468,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### interface-union
 
-- `R675` [**@condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible**](condition-method-overload-selection.md) — In Progress, architecture
+- `R675` [**@condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible**](condition-method-overload-selection.md) — In Review, architecture
 - `R869` [**An argument-level @condition that fails to resolve is dropped silently on a multitable field**](multitable-arg-condition-rejection-dropped.md) — Backlog, architecture
 - `R487` [**Batched multi-table polymorphic child fields: support parent-holds-FK correlation**](batched-polymorphic-parent-holds-fk-correlation.md) — Backlog, architecture
 - `R854` [**LSP argMapping completions and diagnostics answer the bindable-target question from the census with no per-directive reservation**](lsp-argmapping-bindable-target-projection.md) — Backlog, architecture
