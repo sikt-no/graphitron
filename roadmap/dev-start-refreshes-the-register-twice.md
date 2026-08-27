@@ -281,3 +281,64 @@ double capture this item's fix leaves in place.
 `depends-on` is left empty deliberately. The dependency on R855 is a sequencing preference between two
 items that touch one pair of methods, not a blocker: this item is implementable against the tree as it
 stands and would only have to be re-fitted afterwards.
+
+## Reviewer findings
+
+### Round 1: Spec -> Ready, revisions requested
+
+The report half is sound and the goal reads clearly: a warm dev start stops re-deriving a register it
+already holds, and the language server binds a full pass sooner. The pass-count arithmetic, the twenty
+registrations, and the graph-keying of all twenty targets check out against the tree, as does every
+symbol and test class the spec names. One finding blocks.
+
+**Blocking, question 2: `store_graph.last_captured` does not stamp every change a registered source
+view reads, so the equality rule skips partitions that are genuinely stale.** Not every relation a
+registered view reads is graph-keyed. `intent_spelled_table_live`, a registered view, joins
+`store_graph_source` to `sql_table`, and `sql_table` is keyed on `source_name` with no graph column at
+all; `jvm_class` and its family are the same shape. Registered views read the `sql_` family in eighty
+odd places and the `jvm_` family in two dozen, always scoped to a graph through `store_graph_source`
+rather than by a graph column of their own.
+
+Those source-keyed rows are shared between the graphs that name the source, and `StoreRefresh` says so
+outright: a run rewrites the stale partitions of the sources in *its own* input set, and a directory
+root is never stamped, so it is re-walked on every run. `FactCapture.writeGraph` stamps only
+`graph.name()`. So a capture of graph A can rewrite rows that graph B's registered partitions derive
+from, inside A's transaction, leaving B's `last_captured` untouched. B's fill row still equals B's
+stamp, the reader-side pass skips B, and B's targets serve rows derived from the previous walk of a
+source that has since changed. That is a shared jOOQ package or a sibling module's `target/classes`
+under two graphs in one store, which is the same multi-module workspace the cost argument in "What it
+costs" leans on, and it lands hardest on the case "What changes for a consumer" advertises as the new
+win: under `-Dgraphitron.dev.skipInitial` no capture stamps B at all, so nothing else repairs it. It
+also falsifies that section's claim that no reader may observe a stale row.
+
+The premise gate as specified does not catch this, because the gate reasons from family prefixes and
+cadence is a property of the writer rather than of the prefix. `sql_` and `jvm_` are on the roster of
+capture-written families, so the disjointness assertion passes while the rule is unsound. The same
+prefix-versus-writer gap shows up a second time in the roster: `store_` is listed as written by
+capture, and `CompileFacts` and `OwnedGraphPartition` both insert a `store_graph` anchor row outside
+any capture transaction. That second one happens to be harmless, since both are insert-if-absent and
+never rewrite an existing stamp and a minted graph has no fill row, but it is the same reasoning error
+with a benign outcome, and it is worth stating because the gate is the only thing the spec offers
+against this class of defect.
+
+What would satisfy the finding is a currency key that covers what a partition actually reads, not a
+scope reduction. The material is in the tree: `store_source` already carries `stamp` and `last_seen`
+per source, and `store_graph_source` already names which sources a graph reads, so "current" can be
+stated over the graph's stamp together with the stamps of the sources it names. Deciding that shape
+is the author's, as is whether the premise gate then becomes a statement about which relations a
+registered view may read rather than about family prefixes. Accepting the staleness instead is also a
+defensible answer if it is argued and stated in the "What the rule gives up" paragraph on the same
+terms as the hand-emptied-target trade, but it cannot stay implicit while the spec promises no reader
+observes a stale row.
+
+**Non-blocking, precision on the cost figure.** "One pass over sixteen registrations is about 200
+seconds" attributes to sixteen registrations a total R856 measures over fourteen. R856's table prices
+positions 1 to 14 at 199 seconds and marks positions 15 and 16 unmeasured, notes that those fourteen
+are exactly the registrations its populated store holds, and fences the figure explicitly: measured
+post-commit against a settled store, to be read as a price list rather than as a statement about where
+an hour goes, with no figure to be invented for the tail. The error is conservative, since the true
+per-pass cost on that schema is at least 199 seconds and plausibly much more, so nothing in the
+motivation weakens. Left to the author rather than corrected here because restating it accurately is
+more than swapping a numeral.
+
+Verdict: stays in Spec.
