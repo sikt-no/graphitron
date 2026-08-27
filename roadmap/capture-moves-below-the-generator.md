@@ -110,32 +110,47 @@ That leaves exactly three things that do not move, and each is a split rather th
 * `rewrite/lint` splits. `LintConfig` is a value in `SubjectConfig` and goes down; the rule engine
   is analysis over a read schema and stays above.
 * `ClassifiedRun`, `TypeBackingClasses` and `TypeBackingClassRows` neither move nor split. They are
-  the walk-side write, and they are inverted: see below.
+  the walk-side write, and they are deleted: see below.
 
-## The one edge that must be inverted first
+## The one edge that must go first
 
 `FactCapture.detect` does two unrelated things in one arm: it writes `walk_type_backing_class` from
 the run's `ClassifiedRun`, and it runs the store-backed detections. That write is the only edge from
 the generator into capture, and it cannot survive the move, because capture in a module below the
 generator cannot import the walk that produces it.
 
-**Inverted, not deleted, and the distinction matters.** The relation is a declared-transitional
-shadow: it exists so the store-native backing derivation has something inside the store to diff
-against, and it earns its keep until that derivation is trusted. Deleting it here would discard a
-live instrument to make a module boundary hold. Inverting it costs nothing and holds the boundary
-just as well: the walk keeps writing its own shadow rows, calling a writer that lives below the line,
-which is a dependency in the legal direction. Capture stops knowing the walk exists. The relation
-retires later on its own criterion, which is R682's business and not this item's.
+**It is deleted, and the reason is that the comparison it serves does not need it.**
 
-The lift is in two steps and only the first is a prerequisite here. Separating
-`TypeBackingClassRows.write` from the detections inside `detect` is what R865 also needs, since a
-capture-only run wants neither the detections nor a walk it did not run; whichever item lands first
-pays for it. Moving the call site up to the walk is this item's, and it is what makes the edge point
-downward.
+The relation has no production reader: no view selects from it, and nothing in main sources reads it.
+Its only consumers are two tests, and the one that matters is `TypeBackingShadowTest`, which R740
+keeps rather than retires. What that test pins is not an untrusted derivation.
+`intent_type_backing_class` has its own specification anchor in `TypeBackingClassTest`, seeded
+against intended semantics rather than against the walk, and the emitted side has execution-tier
+coverage against a real database. What is unpinned is *agreement between two surfaces that both
+ship*: the editor reads the derivation while `RecordBindingResolver` still binds record types for
+the leaf model, so a disagreement is a user seeing an editor name one class while the generated code
+uses another.
 
-That sequencing is the argument for doing this before the shadow retires rather than after. The
-boundary is what stops the *next* walk-side write from being added, and a boundary that arrives after
-the last one is removed has prevented nothing.
+That comparison survives this item untouched in what it asserts. It just stops needing a store-side
+copy of the walk's answer. Both sides are already computed in the test's own JVM: the walk's is
+`TypeBackingClasses.of(schema)` in memory, the derivation's is a query. Comparing a map against a
+result set pins exactly the property comparing two relations pins, and it removes the only reason
+capture ever read the walk. R740 reaches the same place from the other direction and states the
+consequence: if that comparison stops needing a store-side copy, the relation, `TypeBackingClasses`
+and `TypeBackingClassRows` go with it, and since R743 left it as the `walk_` family's last resident,
+the family's DDL header goes too.
+
+So this item deletes the relation and its two feeder classes, and rewrites the comparison to read
+the walk in memory. R740 owns the rest of that test's cleanup, the rename away from "shadow" and the
+symmetric assertion; this item owns only what the module boundary forces, and does not wait on R740
+to do it.
+
+One consequence for R865: its second seam was to separate `TypeBackingClassRows.write` from the
+detections inside `detect`, so a capture-only run could have the write without the detections. If
+this item lands first there is no write left to separate and `detect` becomes detections-only, which
+is what that seam was reaching for. If R865 lands first, the separation it makes is what this item
+deletes. Either order works and neither is wasted; they must not both be planned as though the other
+will not happen.
 
 ## The corpus
 
@@ -192,8 +207,9 @@ shape this boundary.
   points that read facts. Grep is the check, and it is the item's central claim.
 * `DevMojo` opens one store, and the `refreshAll` at session start is either removed or carries a
   reason that is not "we cannot know whether the pass captured".
-* `ClassifiedRun` is gone from capture's signatures and `walk_type_backing_class` still holds the
-  same rows, written from the walk's own side. The shadow surviving the move intact is what says the
-  edge was inverted rather than the instrument discarded.
+* `walk_type_backing_class`, `TypeBackingClasses`, `TypeBackingClassRows` and `ClassifiedRun` are
+  gone, and the `walk_` family is empty. The comparison that relation served still fails when the
+  walk and the derivation disagree: reintroduce a known departure and watch the rewritten test go
+  red. That is what says the instrument survived rather than being deleted along with its storage.
 * The full verification build is green with no generated-output diff in `graphitron-sakila-example`.
   A move that changes an emitted file is a move that did something else too.

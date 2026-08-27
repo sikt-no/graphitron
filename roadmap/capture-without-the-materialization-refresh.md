@@ -129,6 +129,11 @@ A capture-only run therefore still walks and still writes those rows. That is de
 artifact this goal exists to produce is *the store a real capture writes*, minus the refresh, and a
 store missing a relation would not answer the question anyone opens it for.
 
+If R864 lands first this seam disappears rather than changing: it deletes `walk_type_backing_class`
+outright, having established that the comparison the relation served reads the walk in memory and
+needs no store-side copy, and `detect` becomes detections-only with nothing left to separate. Plan
+this seam as work, but check whether it is already done before starting it.
+
 **3. `packagesRequired()` returns `false`, as it does for `validate`.** The sentinel only substitutes
 when the parameter is absent, so a consumer with `<jooqPackage>` configured gets a full catalog
 crawl. A capture run that fell back on the sentinel writes no `sql_` rows at all, which makes the
