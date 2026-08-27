@@ -1,13 +1,7 @@
 package no.sikt.graphitron.model.derive;
 
-import org.jooq.Configuration;
 import org.jooq.DSLContext;
-import org.jooq.Name;
-import org.jooq.Query;
-import org.jooq.Table;
-import org.jooq.VisitListener;
 import org.jooq.impl.DSL;
-import org.jooq.impl.DefaultConfiguration;
 
 import java.util.ArrayDeque;
 import java.util.HashMap;
@@ -47,13 +41,13 @@ import static org.jooq.impl.DSL.table;
  * a registration being able to change only what its own readers evaluate, and it is the same walk
  * rather than a second one so the two answers cannot come to disagree about what reads what.
  *
- * <p>Collection leans on a property of H2's stored definitions: every real relation reference is
- * normalized to its schema-qualified spelling ({@code "PUBLIC"."NAME"}), while aliases, common
- * table expression names and other transient table-like parts stay unqualified. Filtering on the
- * qualified shape is what keeps an alias that happens to share a relation's name from minting an
- * edge. Plain-name jOOQ throughout, for {@link Materializations}' own reasons: the relation names
- * are data read out of the registry and the catalog, and this module's hand-written half does not
- * reference its own generated half.
+ * <p>The parse, and the normalization rules it leans on, belong to {@link ViewReferences}, which
+ * this walk reads through rather than re-deriving. What an edge needs is the set of relations a
+ * definition reads; that walk keeps each reference's multiplicity and position as well, which a
+ * refresh order has no use for, a relation read twice ordering exactly as one read once. Plain-name
+ * jOOQ throughout, for {@link Materializations}' own reasons: the relation names are data read out
+ * of the registry and the catalog, and this module's hand-written half does not reference its own
+ * generated half.
  */
 public final class MaterializeDependencies {
 
@@ -161,7 +155,8 @@ public final class MaterializeDependencies {
      * walk that read it, which is what lets a caller say where a reach came from. Reads of
      * unregistered views recurse; reads of registered targets and of base tables end that branch.
      *
-     * <p>{@code reads} memoizes {@link #relationsReadBy} across calls. A view's stored definition is
+     * <p>{@code reads} memoizes {@link ViewReferences#relationsReadBy} across calls. A view's
+     * stored definition is
      * a function of the catalog alone, so one parse per view serves every walk that reaches it, and
      * a caller walking from many starts pays one parse per view rather than one per visit.
      */
@@ -177,7 +172,7 @@ public final class MaterializeDependencies {
             if (!walked.add(view)) {
                 continue;
             }
-            for (String read : reads.computeIfAbsent(view, v -> relationsReadBy(dsl, v))) {
+            for (String read : reads.computeIfAbsent(view, v -> ViewReferences.relationsReadBy(dsl, v))) {
                 String registration = registrationOfTarget.get(read);
                 if (registration != null) {
                     reached.putIfAbsent(registration, view);
@@ -187,44 +182,6 @@ public final class MaterializeDependencies {
             }
         }
         return reached;
-    }
-
-    /**
-     * The relations the named view's stored definition reads directly, lowercased: parsed, then
-     * collected by rendering the parsed query under a listener and keeping every table part whose
-     * qualified name is exactly {@code PUBLIC} plus one segment, the shape H2's normalization
-     * gives real relation references and nothing else.
-     */
-    private static Set<String> relationsReadBy(DSLContext dsl, String viewName) {
-        String definition = dsl.select(field(name("VIEW_DEFINITION"), String.class))
-            .from(table(name("INFORMATION_SCHEMA", "VIEWS")))
-            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
-            .and(field(name("TABLE_NAME"), String.class).eq(viewName.toUpperCase(Locale.ROOT)))
-            .fetchOne(0, String.class);
-        if (definition == null) {
-            throw new IllegalStateException("the catalog holds no stored definition for view "
-                + viewName + ", which the dependency walk reached from a registered source view");
-        }
-        Query query;
-        try {
-            query = dsl.parser().parseQuery(definition);
-        } catch (RuntimeException e) {
-            throw new IllegalStateException("the stored definition of view " + viewName
-                + " did not parse, and the materialization refresh order is derived from it: "
-                + e.getMessage(), e);
-        }
-        Set<String> read = new TreeSet<>();
-        VisitListener collector = VisitListener.onVisitStart(context -> {
-            if (context.queryPart() instanceof Table<?> part) {
-                Name qualified = part.getQualifiedName();
-                if (qualified.parts().length == 2 && "PUBLIC".equals(qualified.first())) {
-                    read.add(qualified.last().toLowerCase(Locale.ROOT));
-                }
-            }
-        });
-        Configuration rendering = new DefaultConfiguration().set(dsl.dialect()).set(collector);
-        DSL.using(rendering).render(query);
-        return read;
     }
 
     /** Every relation in the store's schema, lowercased, mapped to the engine's kind for it. */

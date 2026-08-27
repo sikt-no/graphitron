@@ -1,7 +1,7 @@
 ---
 id: R849
 title: "Measure re-evaluation rather than naming, so a materialization cut set can be chosen on evidence"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 2
 theme: model-cleanup
