@@ -21,12 +21,14 @@ If any apply, push the feature branch only and tell the user trunk was deliberat
 
 Caller expectation: you rebased onto trunk *before* running your verification build (see CLAUDE.md "Building and testing"), so the build covered the exact tree you are about to push. Arriving here diverged from trunk should be the rare mid-build race, not the routine case.
 
+Which build counts as that verification depends on what your own commits touch. When they are entirely under `roadmap/`, the scoped `mvn verify -pl roadmap-tool,docs` is the verification build for this push, not a step you skipped; one file outside `roadmap/` and the full `mvn install -Plocal-db` is owed. Check with `git diff --name-only origin/claude/graphitron-rewrite...HEAD` rather than by memory of what you edited, since a rebase can add commits to the range. Either way the rule below is unchanged: do not push a tree no verification covers.
+
 1. **Inspect state.** Run `git status --porcelain` and `git branch --show-current`.
    - If the working tree is dirty, stop and ask the user whether to commit, stash, or abort.
    - If the current branch is `claude/graphitron-rewrite`, stop. This skill never pushes from trunk directly; the user is on the wrong branch.
    - Read the most recent commit subject (`git log -1 --pretty=%s`). If it starts with one of the skip prefixes above, follow the "When to skip" rules.
 
-2. **Sync trunk first.** `git fetch origin claude/graphitron-rewrite`. If `origin/claude/graphitron-rewrite` has commits not reachable from `HEAD`, trunk moved after your rebase, so your verification build no longer covers the tree you would push and the fast-forward would fail anyway. Tell the user, then recover: `git rebase origin/claude/graphitron-rewrite`, re-establish verification coverage (see CLAUDE.md "Building and testing": full rebuild by default; a rebase that brought in only plainly non-interacting changes carries your green build forward), re-invoke this skill. Stop here; do not push a tree no verification covers.
+2. **Sync trunk first.** `git fetch origin claude/graphitron-rewrite`. If `origin/claude/graphitron-rewrite` has commits not reachable from `HEAD`, trunk moved after your rebase, so your verification build no longer covers the tree you would push and the fast-forward would fail anyway. Tell the user, then recover: `git rebase origin/claude/graphitron-rewrite`, re-establish verification coverage (see CLAUDE.md "Building and testing": full rebuild by default; a rebase that brought in only plainly non-interacting changes carries your green build forward; a roadmap-only diff re-establishes coverage with the scoped `mvn verify -pl roadmap-tool,docs`), re-invoke this skill. Stop here; do not push a tree no verification covers.
 
 3. **Push the feature branch.** `git push -u origin <branch>`. On network failure (not on rejection), retry up to 4 times with 2s, 4s, 8s, 16s back-off. On non-network failure (rejection, hook failure), stop and report.
 

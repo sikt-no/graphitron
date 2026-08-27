@@ -134,6 +134,11 @@ public final class Main {
             if (rc != 0) System.exit(rc);
             return;
         }
+        if ("check-roadmap-consumers".equals(mode)) {
+            int rc = RoadmapConsumerPomCheck.run(sliceArgs(args, 1));
+            if (rc != 0) System.exit(rc);
+            return;
+        }
         if ("render-schema-reference".equals(mode)) {
             int rc = SchemaReferencePages.run(sliceArgs(args, 1));
             if (rc != 0) System.exit(rc);
@@ -185,6 +190,7 @@ public final class Main {
         System.err.println("  check-native-load-isolation <repo-root>");
         System.err.println("  check-transient-citations <repo-root>");
         System.err.println("  check-module-enumeration <repo-root>");
+        System.err.println("  check-roadmap-consumers <repo-root>");
         System.err.println("  render-schema-reference <output-dir>");
         System.err.println("  check-schema-identifiers <repo-root>");
         System.exit(64);

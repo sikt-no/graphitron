@@ -184,6 +184,21 @@
                         </configuration>
                     </execution>
                     <execution>
+                        <!-- Fail the build if a pom outside this module and docs configures a build
+                             step over roadmap/. The scoped verification build for a roadmap-only
+                             diff (CLAUDE.md, "Building and testing") runs only those two modules,
+                             which holds only while they are the only ones reading the directory;
+                             a third joining changes nothing any build step reads, so the drift is
+                             silent. Rules and rationale: RoadmapConsumerPomCheck. The Java-source
+                             half is guarded in graphitron's test tier. -->
+                        <id>check-roadmap-consumers</id>
+                        <phase>verify</phase>
+                        <goals><goal>java</goal></goals>
+                        <configuration>
+                            <commandlineArgs>check-roadmap-consumers ${project.basedir}/..</commandlineArgs>
+                        </configuration>
+                    </execution>
+                    <execution>
                         <!-- Fail the build if an authored architecture page cites a store
                              relation, column or family the schema no longer declares. The
                              universe comes from the booted store through StoreCatalog, the same

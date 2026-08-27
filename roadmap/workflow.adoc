@@ -108,6 +108,8 @@ The per-item front-matter is the source of truth. The roll-up README is derived.
 
 This matters most at the reviewer-rule gates: a stale local view of an item can miss a sign-off, a reopen, or a competing edit that another session already landed on trunk. Syncing before means the reviewer rule is evaluated against the true latest history; syncing after means the next party sees your transition without a gap. If trunk moved while you were working, rebase and repeat both ends.
 
+*A transition commit owes the scoped verification build, not the full reactor.* Every bracketed transition above is a diff entirely under `roadmap/`, and `CLAUDE.md` ("Building and testing") verifies such a tree with `mvn verify -pl roadmap-tool,docs`: every build step that reads `roadmap/`, and nothing else. That is the whole bill for a state change, a filed Backlog item, an appended reviewer round or a deletion at Done. It is not a waiver, and the two faults it catches are the two that actually happen here: forgetting to regenerate the README after hand-editing front-matter, and an item body whose prose breaks the docs render. The moment your own commits touch one file outside `roadmap/`, the full build is back.
+
 == Adding to the roadmap
 
 Any session can add items at any time: drop a new `<slug>.md` under `roadmap/` with `status: Backlog` and the appropriate `bucket:`, then regenerate the README. Opportunities spotted during review, implementation, or unrelated work all land that way. The expectation is that they're substantive enough to justify eventual planning, not every passing thought.

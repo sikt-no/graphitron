@@ -1,7 +1,7 @@
 ---
 id: R853
 title: "A roadmap-only diff owes the two gates that read roadmap/, not the whole reactor"
-status: Ready
+status: In Review
 bucket: workflow
 priority: 2
 theme: tooling
@@ -168,9 +168,55 @@ the guard's first run is green, and every later addition is a decision somebody 
 reviewer's round-1 finding, because `ReadmeLinkIntegrityTest` reaches roadmap content by walking the
 repository root generically and never names a roadmap path while doing it. Nothing lexical catches
 that class. The tree has one such walker today and its roadmap slice is covered by construction, per
-the subsection above; a second one would pass both halves of the enforcer unnoticed. That is the
-residual risk, taken knowingly: the enforcer's job is to make a new *named* consumer loud, not to
-prove the absence of readers.
+the subsection above; a second one would pass both halves of the enforcer unnoticed.
+
+Two narrower escapes belong in the same paragraph, because they are the same kind of gap rather than
+a different one. A path assembled at runtime, `"roadmap/" + slug` or `root + "/roadmap"`, is never a
+whole literal, and a path whose segments carry characters outside ordinary filename shape does not
+match the pattern. Both are lexically invisible for the same reason the generic walker is: the guard
+reads what the source *says*, not what it resolves. So the honest statement of the enforcer's job is
+to make a new *named* consumer loud, not to prove the absence of readers.
+
+## What shipped
+
+All three prose targets and both enforcer halves, as specified. Two things the spec did not anticipate
+came up at the keyboard and are recorded here rather than left for the next reader to rediscover.
+
+**The whole-literal rule needed a projection that did not exist.** `JavaSourceRegions.strings` renders
+a line's literals as one concatenated run, because the lexer drops quotes and appends into a single
+per-line buffer. That is right for the neighbouring scanner, which matches *within* a literal, and
+unusable for a rule about an *entire* literal: `Set.of("roadmap/changelog.md", "roadmap/workflow.adoc")`
+arrives as `roadmap/changelog.mdroadmap/workflow.adoc`, in which neither permitted value is
+recognisable and a third one appears that no literal has. So the shared lexer gained
+`literalsByLine`, which keeps each literal its own element. The concatenated view is unchanged and its
+callers are untouched; the boundary sentinel never leaves the class. The granularity difference is
+pinned in the lexer's own test, since it is the kind of distinction that reads like an implementation
+detail right up to the point it silently inverts a rule.
+
+**The seed is two allowlist entries, not one.** The census was right about the tree as it stood, but
+this item adds a file to that tree: the scanner's own unit test has to name a roadmap path as an
+expected value, and an expected value is spelled exactly like a path some code is about to resolve.
+That is the probe-versus-reader indistinguishability the section below already takes as given, now
+arriving from the guard's own machinery. The alternative was to spell the expectation as a
+concatenation, which is routing around the rule in the file that defines it, so it is an exemption
+with a stated reason instead.
+
+**One of the two residual classes is closed.** The rule accepts a leading `./` or `../` prefix chain,
+so `"../roadmap"` is a match rather than an escape. Nothing in the tree spells it that way today, so
+the widening cost nothing and the census is unchanged.
+
+**The negative probes were re-run against the shipped scope, and both halves still fail on the fault
+they exist for.** A stale `roadmap/README.md` fails `verify-roadmap-readme` at 19.9 seconds; an item
+body carrying a cross-file `xref:` whose path resolves but whose anchor no target page publishes fails
+`check-adoc-xrefs` in `graphitron-docs` at 34.1 seconds. Note the second probe's shape, because the
+first attempt at it proved nothing: an `xref:` whose *path* does not resolve lands in the check's
+report-only bucket by design, so the anchor is never checked and the build stays green. Only a
+resolvable path with an unpublished anchor exercises the gate.
+
+Green, the scoped build is now 54 seconds rather than the 42.1 measured at spec time, because the
+scope gained a check and the roadmap gained items. Against a full reactor build of the same order as
+before, the ratio is roughly thirteen to one rather than sixteen. The argument does not turn on which
+number it is.
 
 ## Boundary
 
@@ -194,8 +240,12 @@ prove the absence of readers.
   reactor passes with no allowlist.
 * Java half: a fixture source naming `roadmap/<slug>.md` in a string literal fails; the same text in
   a javadoc comment does not; a permanent-artifact literal does not; `roadmap-tool` in assertion
-  prose does not; the real reactor passes with the one seeded entry, and fails when that entry is
-  removed, which is what keeps the seed from silently outliving its reason.
+  prose does not; a bare `roadmap/` with no segment does not; a regex character class does not; a
+  literal merely containing a path in a larger sentence does not; a relative-prefixed path does. The
+  real reactor passes with the seeded entries and fails with the set emptied, and every entry must
+  match a file the emptied scan actually reports, which is what keeps a seed from outliving its
+  reason. The lexer's per-literal projection carries its own cases, including the concatenation the
+  whole-literal rule would otherwise misread.
 * A negative probe re-run at implementation, confirming both numbers above still hold: stale README
   fails the scoped build, and a dangling anchor in an item body fails it in the docs module.
 
@@ -355,8 +405,27 @@ main sources only. Find semantics would flag them and make the seed two file ent
 Worth a case in the guard's own test pinning that a literal merely containing a roadmap path is not a
 match, so the distinction is enforced rather than remembered.
 
+*Author response (2026-08-27).* The trap was real and the case you asked for is in, twice over: one
+pinning that a literal containing a roadmap path in a larger sentence is not a match, using the
+neighbouring fixtures' own shape, and one pinning that the two literals of an allowed pair on one line
+stay two values. The second turned out to be load-bearing rather than decorative, because the reuse
+path had a defect neither of us had seen: `JavaSourceRegions.strings` concatenates a line's literals,
+so the whole-literal rule could not be expressed over it at all. The lexer gained a per-literal
+projection; details under "What shipped". Your prediction about the seed was also right in the end,
+though by a different route: whole-literal matching does keep `RoadmapReferenceScannerTest` out, but
+the new scanner's own test needs a bare path as an expected value, so the seed is two entries.
+
 Second, the whole-literal rule is narrower than "make a new named consumer loud". A named consumer
 spelled `"../roadmap"`, `"roadmap/" + slug`, or `root + "/roadmap"` escapes it, and none of those is
 the generic-walker class the "What this does not pin" section already takes knowingly. Either widen
 the rule and re-census, or add that class to the same paragraph. This does not change the design and
 it does not need to be settled before implementation starts.
+
+*Author response (2026-08-27).* Both, split by which was worth closing. `"../roadmap"` is closed: the
+rule now accepts a leading `./` or `../` prefix chain. I re-censused for that spelling and for the
+concatenation forms across the eleven modules and found none, so the widening changed no verdict and
+the seed is unaffected. Concatenation cannot be closed lexically, so it joins the residual paragraph
+alongside a third escape the narrowed segment charset introduces, a path segment carrying characters
+outside filename shape. That charset is deliberate: it is what keeps the neighbouring scanner's own
+pattern text from reading as a path, since `roadmap/[A-Za-z0-9_-]+...` would otherwise match under an
+any-non-slash segment rule and cost a third exemption.
