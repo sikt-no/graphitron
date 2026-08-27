@@ -1,7 +1,7 @@
 ---
 id: R839
 title: "The carrier states one condition twice, and the duplicate re-derives the producer once per driving row"
-status: Spec
+status: Ready
 bucket: model
 priority: 2
 theme: model-cleanup
@@ -1542,3 +1542,82 @@ Non-blocking. The "`MaterializeRegistryGateTest` carries nine tests, not the fiv
 note carried by rounds 4, 5 and 6 is itself stale: the tests list already reads "Its nine existing tests
 check the pair", so there is nothing left to correct there. Nothing else in the body went stale this
 round, and no in-passing corrections were needed.
+
+### Round 8 (2026-08-27, Spec -> Ready, reviewer session 011Lf6DbDLCjXYwxMYCRjoEu)
+
+Verdict: **sign off**. Findings 13 to 18 are all answered in the body, and both gate questions are
+answered by the file as it stands. No new finding.
+
+Question 1, in my own words and not from the phase list. Capturing a consumer's schema today rebuilds
+a 172-row rule once for every candidate field row, because the carrier view tests its producer with a
+correlated `EXISTS` into a non-recursive `WITH` and H2 re-inlines such a term at every naming. After
+this lands the carrier tests the same condition by joining a duplicate-free two-column projection of
+that rule, so the rule is evaluated a fixed number of times per refresh rather than once per driving
+row, and the relation answers with the same rows in the same columns under the same names. A consumer
+whose schema reaches the carrier family should expect the dominant term of a per-capture cost to go;
+the item promises no figure, which is the right strength given no post-rewrite figure can be taken
+here. Two more things ship beside the view-body edit: three register `reason` rows gain or correct a
+figure with the schema and date it was taken on, and a seeded anchor makes the row-identity claim fail
+a build rather than rest on a proof by reading. All three are producible in this reactor, which is what
+finding 17 was about and what the revision fixed.
+
+Question 2. Arm B is a view-body rewrite in the module whose DDL declares the relation, which is the
+smallest lever this project has rather than a new mechanism; the register gains no row, and the
+argument for that is the register's own doctrine rather than this item's preference. The anchor extends
+an existing habitat. The registration material is inherited by R861 rather than conditional, and R861's
+mirror sentence now agrees. The A/B fork terminates on this tree. I would hand this to an implementer
+as-is.
+
+What I checked against the tree this round, beyond re-reading the earlier rounds' checks. The carrier
+view body reads exactly as the body describes, filter, outer join, window, single naming of
+`data_channel` and the four-line inlining comment included, and that comment stays true after arm B's
+edit, being about `data_channel`'s own single naming. Arm B's specified edit is semantically sound as
+written: `SELECT DISTINCT graph_name, payload_type_name FROM producer` is unique on exactly the two
+columns the condition tests, so the join admits the rows the `EXISTS` admits and multiplies none; it
+sits in the `FROM` clause and so applies before the window, leaving `data_fields` alone; and taking the
+projection over `producer` rather than over `intent_field_payload_producer` inherits the
+`root_operation = 'MUTATION'` constant, which is what the body gives as the reason. `NULL`
+`payload_type_name` behaves identically under both spellings. The count is right too:
+`intent_field_payload_producer` is named three times in the whole DDL, its own `CREATE VIEW`, the
+carrier's CTE and `intent_field_error_channel`'s plain `FROM`.
+
+`meta_materialize.reason`'s column comment carries the "a row that cannot say which is not a
+registration" sentence verbatim, so the inadmissibility argument is the schema's and not the item's.
+`intent_node_id_instruction_live`'s reason carries "they are stated as provenance because no reader of
+this file can re-take them" verbatim, so the precedent finding 17's remedy leans on is real. All three
+edited rows read as quoted, and only `intent_field_column_scope_live`'s is a general claim.
+`fact-model.adoc` carries the windowed-derivation pruning rule, the "not the relation that looked slow"
+sentence and the "a filter one caller applies" line; the `store-performance` skill carries the
+stored-reason correction sentence. "arm C" appears nowhere in the body, only inside rounds 6 and 7
+quoting the retired text. Every symbol exists as named, by FQN-aware grep:
+`MaterializeRegistryGateTest.targetsAreShapedLikeTheViewsThatFillThem` and `NO_INDEX`,
+`MaterializeDependencies.populate` / `relationsReadBy` / `registrationsReachedByView`,
+`Materializations.refreshOrder` / `analyse`, `SchemaIdentifierDriftCheck`, `FactCaptureAgreementTest`,
+`CarrierDataFieldTest` at the path given, `MaterializationOrderTest`, `DerivedReadCostTest`,
+`ix_spelled_table_spelling`, `report-inline-multiplicity`, and the anchor habitat holding
+`ProducerCardinalityTest`, `MutationPayloadColumnTest` and `SeededStore.withSeededStore` with no
+carrier anchor yet. R861 and the audit exist at the paths given. Checked after a rebase that brought in
+a change touching `Materializations`, `fact-model.adoc` and the `store-performance` skill: every
+citation this item makes into those three survives it.
+
+Non-blocking, and none of it is owed.
+
+* `DerivedReadCostTest`'s equality-pinned sets sit on the *unregistered* side of every cell whose
+  registration is `intent_carrier_data_field`, and `UnregisteredRelation.install` produces that side by
+  swapping the target for `intent_carrier_data_field_live`, which is the view arm B edits. So arm B can
+  in principle move `KNOWN_NON_MONOTONIC` in the direction that adds a row, a cheaper unregistered side
+  making more cells read as "the registration costs more". The tests list assigns every read-cost-gate
+  movement to R861's inherited material and says nothing about arm B. I am not asking for a round on
+  it, for two reasons that both point the same way: the audit's own synthetic finding is that H2
+  flattened this correlated reference rather than re-deriving it at small scale, which is the scale that
+  fixture runs at, so a movement is unlikely; and the set is asserted by equality in both directions, so
+  a movement cannot pass quietly, and the verification build the item already mandates is where it would
+  surface. Worth knowing before the build runs rather than after.
+* The bound in "Which arm ships" reads "cannot be dearer than today by more than that one evaluation".
+  Under the failure mode the second falsifier names, an engine nesting the uncorrelated term inside the
+  join, the added work is one `DISTINCT` over the producer's few hundred rows per driving row rather
+  than one evaluation. Negligible against a 4-to-31 ms rule and it does not touch which arm ships, so
+  the bound's conclusion holds even where its arithmetic is loose.
+* In the retained registration section, "So this arm adds two assertions instead of trusting the
+  coincidence" keeps the word "arm" for material the section head has already declared unconditional.
+  The head sentence is unambiguous, so nothing gates on it.
