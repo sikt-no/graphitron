@@ -1,7 +1,7 @@
 ---
 id: R839
 title: "The carrier states one condition twice, and the duplicate re-derives the producer once per driving row"
-status: In Progress
+status: In Review
 bucket: model
 priority: 2
 theme: model-cleanup
