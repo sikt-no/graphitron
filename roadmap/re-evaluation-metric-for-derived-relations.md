@@ -61,11 +61,17 @@ many times an author wrote its name.
 
 ## What the naming metric says
 
-Computed by the uncommitted probe against the current DDL, over 107 views, 168 base tables, 20
-registrations and 48 root readers. Both figures are total rule instantiations summed across every
-root reader, counting H2's normalized references with multiplicity. They are not comparable with
-`InlineMultiplicityCheck`'s per-view ranking, whose heaviest single view already exceeds the first
-figure here.
+Computed by the uncommitted probe over 107 views, 168 base tables, 20 registrations and 48 root
+readers. Both figures are total rule instantiations summed across every root reader, counting H2's
+normalized references with multiplicity. They are not comparable with `InlineMultiplicityCheck`'s
+per-view ranking, whose heaviest single view already exceeds the first figure here.
+
+**These figures are pinned to the tree they were taken on and are not restated per run.** That tree
+declared 107 views; trunk declared 109 within a day, two having landed while this item sat in review.
+Swapping the census while leaving the totals would misattribute them, and re-taking the totals on
+every census move is work with no reader. Nothing downstream depends on their being current: the
+acceptance gate compares against magnitudes recorded in the DDL rather than against anything measured
+per run. The drift is also the item's own thesis happening again while the item waits for it.
 
 | | Rule instantiations |
 |---|---|
@@ -151,7 +157,11 @@ metric over this DDL.
 
 Not for want of dependencies, which is what an earlier draft of this plan claimed and got wrong.
 `roadmap-tool` depends on `graphitron-model` at compile scope, so jOOQ is on its classpath; it
-carries `org.duckdb:duckdb_jdbc`; and it already opens a populated store on every full build,
+carries `org.duckdb:duckdb_jdbc` (named as evidence about that module's dependencies and nothing
+more: this instrument runs on H2 through jOOQ like everything else in `graphitron-model`, and nothing
+in this item uses DuckDB or proposes a change of engine, the fact store's own being out of scope
+however much the register's reasons blame its inlining); and it already opens a populated store on
+every full build,
 `SchemaIdentifierDriftCheck` and `SchemaReferencePages` both calling `GraphitronModelStore.open()`
 with `check-schema-identifiers` bound to `verify` beside `report-inline-multiplicity`. Both inputs
 this instrument needs are present there today. The "needing no database and no profiler" premise
@@ -191,22 +201,49 @@ This is the gate, and the item fails honestly rather than shipping a plausible n
 check.
 
 Most rows of `meta_materialize` carry a measured before-and-after in wall clock. Those timings were
-taken on different trees and different schemas, so they are not comparable as figures, but their
-**ordering by magnitude is** evidence: seconds-to-milliseconds is a different class from
-fifteen-milliseconds-to-six. Score every registration with the new metric and check the ranking
-against that ordering.
+taken on different trees and different schemas, so they are not comparable as figures. What survives
+that incomparability is a **coarse class**, because the classes below sit orders of magnitude apart
+and no cross-tree noise flips one into another.
 
-The metric ships only if it puts the registrations whose reasons record order-of-magnitude wins above
-the ones whose reasons record small wins. Concretely it must rank `intent_mutation_write_destination`
-and `intent_field_reference_step_hop` well above `intent_argument_column_match`, which the probe's
-marginals get backwards at +10 and +36 against +4.
+**Classify all twenty first, then score.** The classes are fixed and written into this item before
+the metric is run, so the gate cannot be tuned to the answer it produces. Class on the **absolute
+saving** a reason records rather than on the ratio: a cut set is chosen to reduce total time, and a
+large ratio on a small base is not evidence of value.
 
-Not both metrics: `InlineMultiplicityCheck` produces no per-registration ranking at all, and on the
-obvious way to derive one, each registration's source-view subtree count, it happens to put the three
-in the demanded order (28, 20, 6). That is worth stating rather than eliding, and it changes nothing
-about the gate. A metric blind to per-row and recursive re-evaluation can still order three
-particular relations correctly, and an ordering that survives by luck on the one triple anybody
-checked is not evidence the mechanism is modelled.
+| Class | What the reason records |
+|---|---|
+| **A** | a read or capture that did not terminate, or timed out |
+| **B** | a saving of a second or more |
+| **C** | a saving under a second |
+| **U** | no timing at all, the reason arguing breadth only |
+
+**The ship condition is over all twenty, not over a triple: no registration may outrank one in a
+higher class.** Class U is excluded from the comparison, having no evidence to compare against, and
+must be listed rather than quietly dropped.
+
+**This discriminates, and the earlier version did not.** The probe fails it, on the same marginals
+this plan already reports:
+
+- `intent_input_field_resolving_table` (+18, class C, its reason recording a walk from 39
+  milliseconds to 1) outranks `intent_mutation_write_destination` (+10, class B, 12983 milliseconds
+  to 5.4). A 38-millisecond saving placed above a thirteen-second one.
+- `intent_mutation_payload_refusal` (+39, class A, its reason recording a capture that did not finish
+  at all, twenty-three minutes of CPU with no output) ranks ninth of twenty, below three class-B
+  registrations and below two class-U ones.
+
+**What the triple was, and what it now is.** An earlier draft made the ship condition an ordering
+over `intent_mutation_write_destination`, `intent_field_reference_step_hop` and
+`intent_argument_column_match`, and claimed the probe got it backwards at +10 and +36 against +4.
+That claim was simply wrong: those three marginals are in the demanded relative order, and the probe
+passes that test. So does `InlineMultiplicityCheck` on the obvious per-registration derivation, its
+source-view subtree counts putting them at 28, 20 and 6. A ship condition passed by both metrics this
+item exists to replace is not a gate. The triple survives below as an illustration of what the
+blindness looks like, which is the job it can actually do: `intent_field_reference_step_hop` and
+`intent_mutation_write_destination`, the two bought for recursive and per-row re-evaluation, rank
+tenth and fifteenth of twenty by marginal (+36 and +10) despite their reasons recording among the
+largest measured wins in the register. That is a statement about where they sit in the whole ranking,
+which is the claim the gate now tests, rather than about their order among themselves, which was
+never wrong.
 
 **What the negative branch deletes**, stated exactly because the first draft of this plan left it to
 implication. If the gate fails, the new weighted instrument and its tests are deleted, and the
