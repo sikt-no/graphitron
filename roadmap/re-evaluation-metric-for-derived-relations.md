@@ -639,3 +639,80 @@ moving a row into U can shift them. The example now states the eight-outranks-it
 recorded marginals give, and derives the violation from the class populations: at most three of the
 eight can be A and at most three U, so at least two are B or C. Slice 3 restates the buckets from its
 own run.
+
+## Slice 3: the gate was run, and it fails
+
+Run against the sakila capture a full build leaves at
+`graphitron-maven-plugin/target/it-store`, on the tree this section was written on: 20 registrations,
+37 root readers, positions with no named driving side down to 3.
+
+**The verdict is negative.** The weighted metric does not reproduce the ranking the register's own
+reasons record. Counting an inversion as one registration outranking one in a strictly higher class,
+with the three class-U rows excluded and ties not counted, the seventeen scored registrations carry
+**eight inversions**. The gate demanded zero.
+
+The metric is nonetheless a real improvement on the thing it replaces, and the improvement is
+lopsided in a way worth stating. Scoring the same seventeen with every weight forced to one, which
+is the naming count both shipped metrics compute, gives **twelve**. So weighting removes four
+inversions, and all four come out of the band separating small savings from large ones. The band
+that matters most is untouched: **five B-over-A inversions before weighting and five after**.
+Registrations whose reasons record that a build does not finish without them still rank below
+registrations that save seconds, and the weighting does not move them at all.
+
+| Reading | Inversions |
+|---|---|
+| Marginal, weights forced to one (the naming count) | 12 |
+| Marginal, weighted by driving cardinality | 8 |
+| Solo value, weighted (what each is worth alone) | 18 |
+
+Solo value is reported because it is the obvious alternative and it is worse, not better. Scoring
+each registration against a store with nothing else materialized ranks two class-B rows above every
+class-A row and puts a class-B registration last of seventeen.
+
+### Three causes, separated by measurement rather than by argument
+
+**The two sides of the gate are not always the same quantity.** A reason records what its relation
+was worth against the tree as it stood when it was written; a marginal records what it is worth
+against the tree as it stands now. Those differ whenever anything changed in between, and the
+sharpest case is measurable. `intent_mutation_write_destination` carries class B on a reason
+recording 12983 milliseconds falling to 5.4, and it ranks sixteenth of seventeen. Its reason says
+the reader "names this rule four times and correlates into it". The walk reads today's
+`intent_mutation_write_agreement` and finds **two** namings, one plain and one on the inner side of
+a join, and no correlated position at all. Both statements are accurate about their own tree: the
+same increment that registered the relation also reversed the join, and the reason describes the
+body it priced rather than the body that shipped. No weighting can reconcile those.
+
+**Registrations absorb each other, so any leave-one-out reading flattens a family.** Measured on
+this store: `intent_argument_scope_table` is worth **+8** against the whole register and **+3096**
+against the register with `intent_field_scope_table` removed, a factor of nearly four hundred. That
+is the plan's own two-relation finding above, arriving again on a different instrument.
+`intent_mutation_payload_key_membership` is +3 against the whole register and +15 without
+`intent_mutation_write_destination`. A marginal is the right shape for the question a single reason
+asks and the wrong shape for a set whose members substitute for one another.
+
+**The recursive weight is a proxy, and in one case a circular one.** A recursive term runs once per
+iteration, and the walk cannot see iterations, so it weights by the largest relation the term names.
+Where the walk is over the relation's own rows the answer is itself: the reference from
+`intent_node_id_decode_column` to `intent_node_id_decode_hop_column` reports
+`RECURSIVE, drivers=[intent_node_id_decode_hop_column]`. That is defensible, a self-walk really does
+iterate over those rows, and it is not a measurement of the depth the reason describes.
+
+### What this says about the item
+
+The instrument works and is worth having. It reads position off the stored definitions, weights it,
+scores an arbitrary cut set, and prices the refresh separately, none of which existed before. Two of
+its defects were found only by running it against a real store rather than a fixture, and both had
+it reporting zero for whole families.
+
+What it does not do is clear the bar this plan set for it, and the bar should not be quietly lowered
+now that the number is known. The honest reading is that the acceptance gate as specified was not
+purely a test of the metric: it compared a set of historical per-relation measurements against a
+present-day set-relative score, and at least two of the eight inversions are the comparison rather
+than the instrument. That is a defect in the gate this plan wrote, exposed by running it, and the
+same class of defect the third review round caught in its previous form.
+
+**What a follow-up would need**, and what this item deliberately does not do under its own steam:
+re-measure the twenty against today's bodies so both sides of the comparison describe one tree, and
+replace the leave-one-out ranking with one that prices sets rather than members. R848 is where a
+different cut set gets proposed, and this instrument can now score one; what it cannot yet do is
+rank the current twenty against measurements taken on trees that no longer exist.
