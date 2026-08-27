@@ -3,6 +3,7 @@ package no.sikt.graphitron.model;
 import no.sikt.graphitron.model.derive.MaterializeDependencies;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.test.FactStores;
+import no.sikt.graphitron.model.test.RefreshStages;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -47,6 +48,37 @@ class MaterializeRegistryGateTest {
         "intent_authored_claim_rejection",
         "intent_input_occurrence_path",
         "intent_input_occurrence_path_step");
+
+    /**
+     * How many registrations the register holds, and how many stages its refresh takes: the
+     * register's shape, pinned by equality so it cannot change while nobody is looking.
+     *
+     * <p>The read side of a registration is already ratcheted. A new one necessarily moves
+     * {@code DerivedReadCostTest}'s equality-pinned reader and cell figures, so it cannot land
+     * without somebody editing a number and confronting what it costs every relation that reaches
+     * it. Nothing held the refresh side, and the gap is not hypothetical: a registration added for a
+     * reason that had nothing to do with materialization went in at what is now stage five, moved
+     * twelve registrations across four families down a stage each, and was noticed by nobody,
+     * because no file anybody edited and no assertion anywhere mentions the register's shape.
+     *
+     * <p><b>Neither figure is a budget and the depth least of all.</b> Timing the pass with
+     * {@link no.sikt.graphitron.model.derive.RefreshProgress} against the stage partition
+     * {@link RefreshStages} computes says the ordering costs about four percent: on a schema of real
+     * size the serial pass lands within that of what a perfectly parallel refresh of the same
+     * refills could reach, because the dear registrations sit in stages holding nothing else. So a
+     * deeper register is not by itself a dearer one, and a registration that raises either figure may
+     * raise it in the commit that argues for it. What the pin prevents is the shape moving in a
+     * commit that argues for something else, which is exactly how it last moved. {@link #NO_INDEX}
+     * is the model: a figure that has to be edited deliberately, not a ceiling nobody may exceed.
+     */
+    private static final int REGISTRATIONS = 20;
+
+    /**
+     * Stages the refresh takes, the register's depth.
+     *
+     * @see #REGISTRATIONS
+     */
+    private static final int REFRESH_STAGES = 12;
 
     /**
      * The registered targets carrying no index, each with the argument that says why. A roster
@@ -214,6 +246,23 @@ class MaterializeRegistryGateTest {
         withStore(dsl -> assertThat(Materializations.refreshOrder(dsl).registrations())
             .as("every registration placed exactly once in the refresh order")
             .containsExactlyInAnyOrderElementsOf(Materializations.registrations(dsl)));
+    }
+
+    @Test
+    @DisplayName("the register holds the registrations and the refresh stages this test states")
+    void theRegisterIsTheShapeThisTestStates() {
+        withStore(dsl -> {
+            assertThat(Materializations.registrations(dsl))
+                .as("registrations in meta_materialize. Equality both ways: a new one is a refresh"
+                    + " every capture and every store open pays, and this is the only place that"
+                    + " has to be edited for it")
+                .hasSize(REGISTRATIONS);
+            assertThat(RefreshStages.depth(dsl))
+                .as("stages the refresh takes, the longest chain of registrations each waiting on"
+                    + " the last. A registration can restage families it never names, so the depth"
+                    + " moves without any edited file mentioning it")
+                .isEqualTo(REFRESH_STAGES);
+        });
     }
 
     @Test

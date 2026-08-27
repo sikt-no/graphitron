@@ -1,7 +1,7 @@
 ---
 id: R848
 title: "Design the materialization cut set as a whole instead of accreting it one registration at a time"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 2
 theme: model-cleanup
