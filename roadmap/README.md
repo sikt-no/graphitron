@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R856` | A consumer-schema capture spends over an hour inside the materialization refresh <sub>blocked by: [materialization-refresh-emits-no-progress](materialization-refresh-emits-no-progress.md)</sub> | Ready | 2026-08-27 | [plan](consumer-capture-spends-an-hour-in-the-refresh.md) |
+| `R856` | A consumer-schema capture spends over an hour inside the materialization refresh <sub>blocked by: [materialization-refresh-emits-no-progress](materialization-refresh-emits-no-progress.md)</sub> | Spec | 2026-08-27 | [plan](consumer-capture-spends-an-hour-in-the-refresh.md) |
 | `R855` | The materialization refresh emits nothing, so a hang inside it is anonymous | Ready | 2026-08-27 | [plan](materialization-refresh-emits-no-progress.md) |
 | `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows | Spec | 2026-08-27 | [plan](dev-start-refreshes-the-register-twice.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
@@ -599,7 +599,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### model-cleanup
 
-- `R856` [**A consumer-schema capture spends over an hour inside the materialization refresh**](consumer-capture-spends-an-hour-in-the-refresh.md) — Ready, bug, blocked by [materialization-refresh-emits-no-progress](materialization-refresh-emits-no-progress.md)
+- `R856` [**A consumer-schema capture spends over an hour inside the materialization refresh**](consumer-capture-spends-an-hour-in-the-refresh.md) — Spec, bug, blocked by [materialization-refresh-emits-no-progress](materialization-refresh-emits-no-progress.md)
 - `R848` [**Design the materialization cut set as a whole instead of accreting it one registration at a time**](materialization-cut-set-is-accreted-not-designed.md) — Backlog, architecture
 - `R849` [**Measure re-evaluation rather than naming, so a materialization cut set can be chosen on evidence**](re-evaluation-metric-for-derived-relations.md) — Spec, architecture
 - `R839` [**The carrier states one condition twice, and the duplicate re-derives the producer once per driving row**](carrier-refresh-inlined-producer-cte.md) — Spec, model
