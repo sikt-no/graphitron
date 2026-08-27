@@ -1,7 +1,7 @@
 ---
 id: R859
 title: "A dev pass captures the same graph twice, so every save evaluates the register twice"
-status: In Progress
+status: In Review
 bucket: dx
 priority: 2
 theme: dev-loop
@@ -365,17 +365,25 @@ apart from the removed duplicate messages, is unchanged.
 
 ## Implementation notes
 
-**The console observation this item asked for is not available yet, and what replaces it.** The
+**The console observation this item asked for, and why it is not a number read off a console.** The
 plan's measurement paragraph deferred the before / after count to R855's per-pass refresh lines.
-That item is still Ready at the time this landed, so the refresh announces nothing and there is no
-console to read a count off. Two things stand in for it, and the second is the one worth putting in
-`changelog.md` at Done.
+R855 landed before this item did, so the instrument exists: `FactCapture` hands the refresh a
+`RefreshProgress.lines(LOG::info, LOG::debug)`, and every capture prints one
+`graphitron: refreshing N materializations for graph '...'` line at INFO. What is still missing is a
+console. No build step in the reactor runs a dev round (`graphitron:dev` blocks until Ctrl+C, which
+is why `DevMojoTest` drives the mojo's methods rather than `execute`), and neither `graphitron`'s nor
+`graphitron-maven-plugin`'s test scope carries an SLF4J binding, so a test that drives a round emits
+no line to count. Counting the lines therefore means running `graphitron:dev` against a consumer by
+hand, which is worth doing once and is not something this tree can gate.
 
-- The capture count per pass is now structural rather than measured: `GraphQLRewriteGenerator` has
-  one capture call site, and every public entry point is a projection of the one body that reaches
-  it. A dev round calls exactly one entry point, so it captures once, so the register is refreshed
-  once. Before this change a round called two, and the second wrote the rows the first had just
-  written.
+Two things stand in for it, and both belong in `changelog.md` at Done.
+
+- The count is structural rather than measured. `GraphQLRewriteGenerator` has one capture call site;
+  every public entry point is a projection of the one body that reaches it; each capture ends in one
+  refresh pass. A dev round calls exactly one entry point, so a save refreshes the register once
+  where it refreshed twice, and a start refreshes it twice where it refreshed three times (R857's
+  reader-side `refreshAll` is the remaining one). What a developer sees on the console after this is
+  one `graphitron: refreshing` line per save instead of two.
 - The agreement test is the executable half of the argument: on one fixture context the pass's
   reporting half equals `buildOutput()`'s component by component and its emitted half names the
   units `generate()` emits, which is the plan's claim that the second pass computed nothing the
