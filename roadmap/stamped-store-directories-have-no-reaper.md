@@ -326,3 +326,78 @@ Non-blocking, and genuinely not for this gate to settle: the second unit-tier te
 `GraphitronModelStoreTest` today (`openAt`'s coverage lives in `graphitron`'s `PersistentStoreTest`
 and in the `FactStores` helper), so the implementer picks both the class and whether it is new. The
 declaring type of `Reaped` is likewise unstated; nested in `StoreReaper` reads as the intent.
+
+### Round 2 (2026-08-27, Spec -> Ready, reviewer session 01Sf8Rk5tvnvn7FMoV1Jai7k)
+
+Verdict: withhold. The plan body is unchanged since the Spec transition, so round 1's two findings
+are open on their own terms and I am not restating them; I confirmed both against the tree and
+sharpened the first, and I have one new finding of my own on question 1.
+
+What I checked. Every code symbol the plan names exists as named:
+`GraphitronModelStore.openAt` / `fileUrl` (which does refuse `AUTO_SERVER`, with the reasoning the
+plan leans on) and the class javadoc's "A shared store is never deleted by this class" sentence;
+`FactCapture.runInternal` and the `DEMOTED_TO_MEMORY` warning it would log beside;
+`DevMojo`'s own `openAt` at the session store, and the `skipInitial` branch that makes it the first
+opener on that path, which is what the report's two-caller argument rests on;
+`PersistentStoreTest.HoldingWriter`; `AbstractRewriteMojo.resolveStoreDirectory`, which is the only
+home resolver and does hold the two facts the dead-workspace follow-up needs; H2 pinned at 2.4.240;
+`docs/manual/reference/mojo-configuration.adoc`'s `storeDirectory` row and `dev-loop.adoc`'s
+"nothing to clean up". `graphitron-model`'s `boot` package carries the `Store*` unit tier
+`StoreReaperTest` would join, and has no recursive-delete helper for the reaper to reuse, so a new
+class there is the right shape rather than a parallel one.
+
+I also re-ran the lock probe myself rather than inheriting it, against H2 2.4.240 on Linux, on a
+file a store URL of our shape opens: the directory holds `store.mv.db` and no lock file; `tryLock`
+on a database this JVM holds through H2 throws `OverlappingFileLockException`; the lock is gone once
+the connection closes; and `Files.delete` succeeds with the lock held. The premise holds, and the
+recency-over-compatibility argument holds with it.
+
+**Question 1. The lock probe's fourth result is a POSIX property, and the ordering the plan builds
+on it is the one Windows refuses.** "A candidate is released only while the reaper holds an
+exclusive lock on its database" requires an open `FileChannel` on `store.mv.db` at the moment of
+deletion. Unlinking a file with an open handle is a POSIX guarantee, which is why my Linux run
+showed it permitted; on Windows the JDK does not open channels with `FILE_SHARE_DELETE`, so
+`Files.delete` on a path this process holds a channel on fails with `AccessDeniedException`. That
+platform is not out of scope: the `storeDirectory` row documents `%LOCALAPPDATA%\graphitron\model\`
+as the Windows cache home, `resolveStoreDirectory` resolves it, and the natives release ships
+Windows binaries. No CI job runs there, and the reaper "catches everything it can throw and returns
+what it managed", so the failure surfaces as a sweep that reports zero and frees nothing, forever,
+on the platform whose contributors would have exactly the disk growth the item is about, with no
+diagnostic pointing at it.
+
+What would satisfy this: say what the reaper does when the hold-and-unlink order is refused. Probing
+with `tryLock` and then closing the channel before unlinking is the obvious answer and costs only
+the residual race the plan already accepts and prices ("the opener runs cold"), which makes it
+strictly weaker as a proof and strictly portable; keeping the hold-and-delete order where the
+platform allows it and falling back to close-then-delete is the other; declaring the sweep
+POSIX-only and saying so in the `storeDirectory` row is a third. Any of the three settles it. What
+cannot stand is the current text, which presents one measured platform's behaviour as the proof and
+prescribes the ordering as if it were universal, because the implementer will write the ordering as
+written and never see it fail.
+
+**Round 1's question-2 finding, sharpened.** The marker-only directory is not a corner the
+implementer can reason away, because the tree already documents the operation that produces one:
+`GraphitronModelStore.DATABASE`'s javadoc says "a hand cleanup means removing everything in the
+directory that starts with it", and a reader who does that to a swept cache leaves a directory
+holding `last-used` and nothing else. Recognition admits it and the release rule has no lock to
+take, which is round 1's point standing on a reachable state rather than a race. It also decides
+round 1's naming fork on its own: folding the marker under the `store` prefix puts it inside the set
+that documented cleanup removes, which keeps the two states aligned, whereas a marker outside the
+prefix is exactly what survives the cleanup and produces the undefined case. Requiring
+`store.mv.db` for candidacy is what makes the residue inert either way; if the plan takes that
+route, saying that a partially failed deletion leaves a directory the next sweep must still
+recognise (so the marker is not the last file unlinked) is worth one clause.
+
+**Round 1's question-1 finding, confirmed and slightly worse than stated.** The `storeDirectory` row
+does not merely lack an antecedent for "these": it asserts "one store per project checkout, shared
+by that checkout's modules". A reader meeting the new sentence immediately after that reads a
+retention policy over a population the same paragraph has just told them is a single object. The
+sentence of setup round 1 asked for has to correct that claim, not just precede it.
+
+Non-blocking. The once-per-home guard is a set of normalised homes consulted from `openAt`, and CI
+builds the reactor with `-T 1C`, so two modules in one Maven JVM can reach it concurrently: the
+guard wants to be a set whose check-and-set is atomic, or the second sweep is not actually
+prevented. Nothing unsafe follows if it is not (the same-JVM probe refuses one of the two sweeps and
+the deletion races are all caught), but the reported count and byte total can be wrong, and the
+report is the feature's whole user surface on an ordinary build. Implementation detail, not for this
+gate.
