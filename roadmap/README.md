@@ -18,7 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R839` | The carrier refresh costs 41 seconds per capture, and it is the producer CTE inlined per driving row | Spec | 2026-08-27 <sub>created 2026-08-26</sub> | [plan](carrier-refresh-inlined-producer-cte.md) |
 | `R849` | Measure re-evaluation rather than naming, so a materialization cut set can be chosen on evidence | Ready | 2026-08-27 | [plan](re-evaluation-metric-for-derived-relations.md) |
-| `R847` | A reference path ending in a condition hop resolves no column scope | In Progress | 2026-08-27 <sub>created 2026-08-26</sub> | [plan](reference-path-condition-terminal-column-scope.md) |
+| `R847` | A reference path ending in a condition hop resolves no column scope | In Review | 2026-08-27 <sub>created 2026-08-26</sub> | [plan](reference-path-condition-terminal-column-scope.md) |
 | `R834` | A top-level @service returning a @table type reads columns off the returned record instead of refetching by key | In Review | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](root-service-table-return-skips-key-refetch.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-27 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
@@ -355,7 +355,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R846` [**A field returning an author-declared connection type has no scope table**](authored-connection-type-scope-silence.md) — Backlog, bug
-- `R847` [**A reference path ending in a condition hop resolves no column scope**](reference-path-condition-terminal-column-scope.md) — In Progress, bug
+- `R847` [**A reference path ending in a condition hop resolves no column scope**](reference-path-condition-terminal-column-scope.md) — In Review, bug
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
 - `R850` [**The column scope named-type arm cannot be repointed while its authored-claim anti-join stands**](column-scope-named-type-arm-anti-join.md) — Backlog, bug
 - `R852` [**A field-site terminal condition hop resolves only through its signature, never the declared target**](field-walk-declared-target-condition-rung.md) — Backlog, bug, blocked by [reference-path-condition-terminal-column-scope](reference-path-condition-terminal-column-scope.md)
