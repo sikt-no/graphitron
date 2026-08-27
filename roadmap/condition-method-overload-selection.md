@@ -301,3 +301,82 @@ Non-blocking, no revision required:
   tree: `roadmap/condition-table-parameter-anchor-assignability.md` carries it. Nothing to do.
 
 Status stays Spec.
+
+### Round 4, Spec → Ready, revisions requested (session `019dE95KHUhTJFYPk8eyKmHs`, 2026-08-27)
+
+The spec body is unchanged since round 3, so F1 through F4 are still open and this round does not
+restate them. I re-derived them rather than taking them on trust. `inferBindingsByType`'s reflective
+form builds `paramNames` from every named parameter with no `Table` predicate, and the `eligible`
+list drops `Table`-assignable parameters one loop later, so F1's worked example and F4's live
+single-method defect both reproduce exactly as written; `checkConditionOverrideTargets` skips
+identity entries before its reserved-slot branch, which is what lets an identity entry keyed on a
+table-slot name reach the claimed-slots loop unguarded. `reflectTableMethod` closes with
+`declaredExceptionFqns(javaMethod)`, so F2's `throws` carriage is the representative's. The decision
+holds and the rest of the plan checks out against the tree: `candidateArities` has no reader outside
+`AmbiguousMethod.message()`, so that deliverable is as cheap as the plan implies; `reflectTableMethod`
+has exactly the four callers the plan names (`ConditionResolver.resolveArg` / `resolveField`,
+`BuildContext.resolveConditionRef` / `buildInputFieldCondition`); all four documentation coordinates
+read as described, including `polymorphic-types.adoc` carrying no filter material at all; and every
+test home and fixture exists, with `assertLowersConditionFilterPerParticipant` asserting `methodName`
+only, so the chosen pipeline home is already representative-invariant.
+
+One finding is new. It is round 3's own invariant, in a habitat the deliverable's scope does not
+reach.
+
+**F5. The LSP reads table-slot names as `argMapping` binding targets in two places, and admission
+multiplies what they get wrong.** `@condition(condition: ExternalCodeReference)` shares its
+`argMapping` coordinate with `@service` and `@externalField`, and the LSP keys
+`Behavior.ArgMappingBinding` on `InputField("ExternalCodeReference", "argMapping")`, so both LSP
+`argMapping` surfaces are live at every `@condition` site:
+
+- `ArgMappingCompletions.leftCandidates` selects `JVM_METHOD_PARAMETER.PARAMETER_NAME` for the named
+  class and method with no type predicate, deduplicated across descriptors. Its own javadoc states
+  the union is deliberate ("the union ... offers every name that could be right").
+- `Diagnostics.parameterNames` unions `parameterNames()` across `answers.overloads(...)` the same
+  way, and `judgeArgMappingJavaParam` accepts any name in that union, flagging only names outside it.
+
+Today, with a single `cond(Film film, FilmFilter kriterier)`, the LSP offers `film` as a left-hand
+target and accepts `argMapping: "film: ..."` without a diagnostic, while
+`checkConditionOverrideTargets` rejects it at build. That is a pre-existing divergence over one name.
+Under admission the reporter's set makes it three: `film`, `forestilling` and `arrangement` are all
+offered and all accepted, all three must be rejected by the build once F4's first half makes
+reservation set-wide, and two of the three are not even parameters of the declaration reflection
+picks. So the item widens an existing wrong-completion surface by a factor of the participant count,
+at the same coordinate whose reserved-slot rule it is redefining.
+
+The census carries `JVM_METHOD_PARAMETER.PARAMETER_TYPE` and `DECLARED_PARAMETER_TYPE`, so the
+filter is expressible without new capture. But the coordinate is shared with `@service`, where a
+`Table`-assignable parameter is not a reserved slot in the same sense (`ArgCallEmitter`'s
+`ParamSource.Table` arm exists precisely to fail loudly on a leaked one), so a blanket type filter at
+that coordinate is not obviously the right shape and this may deserve its own item.
+
+What the spec has to do is decide which, in a clause. Round 3's positive invariant is worded to reach
+every reader of a table-slot name as a binding target ("invisible everywhere else a parameter name is
+read as a binding target or printed as one"), while the deliverable that carries it is scoped to
+`ServiceCatalog`. As it stands the implementer either overreaches into `graphitron-lsp` unbriefed, or
+lands an invariant with two counterexamples in another module and no record that they were seen.
+
+Non-blocking, no revision required:
+
+- The plan declines a structural enforcer for the single-resolution-point invariant, correctly, but
+  for a weaker reason than the tree supports. `RecordBindingResolver.findUniqueMethod` and
+  `LifterMethodResolver.resolve` are two further `getDeclaredMethods()` name filters in main sources,
+  on the `@service` / `@externalField` grounding pass and the `@sourceRow` preamble respectively, so
+  the check as described ("no second `getDeclaredMethods()` name filter in main sources") would be a
+  false-positive machine rather than merely redundant. Worth a clause only if that sentence is
+  touched anyway. While in the area: `findUniqueMethod`'s comment justifies its first-match pick as
+  mirroring "`ServiceCatalog.pickMethod`'s `methods.get(0)`", which `pickMethod` has not done since
+  it grew the `AmbiguousMethod` arm, and the admission deliverable redefines that contract again.
+- `validateConditionParamTables` has two callers, not one: the condition-hop arm passes `cr.ref()`
+  with the reflected target, and `validateWhereFilterParamTables` passes `hop.filter().method()`
+  against an FK-join hop's `originTable` / `targetTable`, which `synthesizeFkJoin` resolved rather
+  than the method signature. Naming the method covers both, but the anchor definition handed to R647
+  reads as if the condition hop were the only path-step anchor source, and R647 inherits that
+  sentence.
+- The Tests deliverable says the admitted set's reflected `ConditionFilter` is "the same either way".
+  Any assertion that reaches into the filter's params pins whichever declaration
+  `getDeclaredMethods()` yielded first, which is stable within a JVM run and unspecified across runs.
+  The existing helper asserts `methodName` only; the new admission case should hold that discipline
+  explicitly rather than by luck.
+
+Gate: question 2, unchanged from round 3. Status stays Spec.
