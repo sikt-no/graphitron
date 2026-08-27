@@ -1,7 +1,7 @@
 ---
 id: R849
 title: "Measure re-evaluation rather than naming, so a materialization cut set can be chosen on evidence"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 2
 theme: model-cleanup
@@ -305,7 +305,11 @@ on whether that report is worth printing.
 
 **Where a negative result is recorded.** Not in this file, which is deleted at Done. It goes in
 `roadmap/changelog.md`, one of the three permanent roadmap artifacts, naming the item and what the
-gate refused and why. A finding that a static count cannot rank these registrations is worth as much
+gate refused and why. Three things have to reach it rather than only the verdict: the corrected
+inversion counts, including that the naming count ranks the top of the register better than the
+weighted one; and the condition under which the retained positions should themselves be removed,
+which names two open items by id and so cannot live in the javadoc that otherwise carries this
+result, `RoadmapReferenceGuardTest` failing the build on an `R<n>` in a comment. A finding that a static count cannot rank these registrations is worth as much
 to the next author as a working metric would have been, and it is the kind of result this tree loses
 by default.
 
@@ -852,6 +856,20 @@ rather than at the compiler.
 `ReEvaluationMetric` and `ReEvaluationMetricTest` go, and that section is what gives the Done-gate
 reviewer a grep query for the retirement sweep. Cheap to add here, and I have already checked the
 sweep comes back clean on the current tree, so it costs a list rather than a search.
+
+## Retired vocabulary
+
+The negative branch retires the weighted instrument and nothing else. Two symbols, both
+`graphitron-model` test scope, neither ever reachable from main:
+
+- `no.sikt.graphitron.model.test.ReEvaluationMetric`, and its nested `Weighting`, `Cardinalities`
+  and `Score`
+- `no.sikt.graphitron.model.ReEvaluationMetricTest`
+
+Nothing outside those two files ever named either, so the sweep is a grep for the two class names
+and comes back clean. `ViewReferences` and `ScratchSchema` are not retired and are deliberately not
+listed here: the first is the parse the branch keeps, the second is a harness whose remaining
+consumer is `ViewReferencesTest`.
 
 ## Slice 3: the gate was run, and it fails
 
