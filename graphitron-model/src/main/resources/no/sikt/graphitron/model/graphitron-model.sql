@@ -3810,6 +3810,79 @@ COMMENT ON COLUMN intent_condition_method_route_defect.class_name IS 'the condit
 COMMENT ON COLUMN intent_condition_method_route_defect.method IS 'the condition method name as the author wrote it';
 COMMENT ON COLUMN intent_condition_method_route_defect.verdict IS 'which refusal, in a closed vocabulary of five. CLASS_NOT_IN_CENSUS: no class of that name in the graph''s classpath sources, which is a misspelling or a class the scan drops, nested and non-public classes and the generated jOOQ package all being outside it. METHOD_NOT_ON_CLASS: the class is there and declares no method of that name, so a misspelling or a method that is not public, the census being public-only. FEWER_THAN_TWO_PARAMETERS: no overload of the name declares a parameter at position 1, and a condition method the generator can call positionally needs a source and a target. WILDCARD_TARGET_PARAMETER: a second parameter typed as the bare jOOQ table interface, which names no table and so resolves no arrival; the same signature is enough at a projection site, where the carrier field''s return-type binding supplies the target, which is why this is a verdict about the site''s demand rather than about the method being ill-formed. TARGET_NOT_A_TABLE_CLASS: a second parameter that names something else, or that names no class at all as a primitive one does, and no table in the graph''s sources is generated as it. Decided in that order over four existence tests, each a positive statement about a captured population; this column is a discriminator a consumer switches on and never a precedence to re-test';
 
+CREATE VIEW intent_java_enum_class (graph_name, class_fqn) AS
+SELECT g.graph_name, c.class_name
+  FROM store_graph_source g
+  JOIN jvm_class c ON c.source_name = g.source_name
+ WHERE c.class_kind = 'ENUM'
+ UNION
+SELECT g.graph_name, e.class_fqn
+  FROM store_graph_source g
+  JOIN sql_enum_binding e ON e.source_name = g.source_name;
+COMMENT ON VIEW intent_java_enum_class IS 'Which Java classes a graph can see are enums: the store''s answer to Class.isEnum, which several of the generator''s type rules turn on and no single captured relation could state. Two arms because the question spans two censuses and neither subsumes the other. The classpath census carries a class_kind and answers for an author''s own enum; it deliberately excludes the generated jOOQ package, so a generated enum has no row there at all and the catalog side answers for it instead, through sql_enum_binding, which reaches an enum by walking the columns that bind to one. A relation rather than a predicate each reader spells, on the rule this schema applies throughout: a resolution with two askers is a relation. Both arms scope through store_graph_source, so a sibling graph''s classpath entries and a sibling module''s generated package resolve nothing here, which is the same scoping intent_condition_method_route performs over the same two corpora. UNION and not UNION ALL: an enum an author declared and a column also binds to is in both censuses, and that is one fact about one class rather than two rows to be deduplicated by every reader. No basis column, deliberately. A reader wanting to know which census answered, or wanting the database coordinate a generated enum carries, joins the arm it cares about; a tag no reader forks on is inventory. Absence is not-known-to-be-an-enum and never known-not-to-be-one, and the silences are the two censuses'' own, stated on their tables: the classpath scan admits public top-level classes only, so a nested or package-private enum has no row and reads as not an enum, where the generator resolves the same name through its codegen loader; and the catalog arm sees an enum only where a column binds to it, so a generated enum type no column uses is absent too. The GraphQL corpus has enums of its own and none of them are these: this relation is about a Java class named by a signature, and a GraphQL enum type is graphql_enum_value''s subject.';
+COMMENT ON COLUMN intent_java_enum_class.graph_name IS 'the owning graph''s partition, carried from the membership relation both arms scope through';
+COMMENT ON COLUMN intent_java_enum_class.class_fqn IS 'the enum''s fully-qualified binary name, a nested one spelled with the $ the JVM uses; keyed with the graph, one row per enum class however many arms answered for it. The same spelling jvm_method_parameter_type_ref.referenced_class and sql_table.class_fqn carry, which is what lets a signature''s decomposed type join straight onto it';
+
+CREATE VIEW intent_condition_param_extraction
+  (graph_name, class_name, method_name, descriptor, position, param_name, java_type,
+   extraction_kind, candidates) AS
+WITH
+named (graph_name, class_name, method) AS (
+  SELECT graph_name, class_name, method
+    FROM graphitron_field_condition
+   WHERE class_name IS NOT NULL AND method IS NOT NULL
+   UNION
+  SELECT graph_name, class_name, method
+    FROM graphitron_argument_condition
+   WHERE class_name IS NOT NULL AND method IS NOT NULL
+   UNION
+  SELECT graph_name, class_name, method
+    FROM graphitron_field_reference_step
+   WHERE class_name IS NOT NULL AND method IS NOT NULL
+   UNION
+  SELECT graph_name, class_name, method
+    FROM graphitron_argument_reference_step
+   WHERE class_name IS NOT NULL AND method IS NOT NULL
+   UNION
+  SELECT graph_name, class_name, method
+    FROM graphitron_reference_for_step
+   WHERE class_name IS NOT NULL AND method IS NOT NULL
+),
+resolved (graph_name, class_name, method_name, descriptor, position, param_name, java_type,
+          extraction_kind) AS (
+  SELECT DISTINCT n.graph_name, n.class_name, n.method, p.descriptor, p.position,
+         p.parameter_name, tr.referenced_class,
+         CASE WHEN EXISTS (SELECT 1
+                             FROM intent_java_enum_class e
+                            WHERE e.graph_name = n.graph_name
+                              AND e.class_fqn = tr.referenced_class)
+              THEN 'ENUM_VALUE_OF' ELSE 'DIRECT' END
+    FROM named n
+    JOIN store_graph_source g ON g.graph_name = n.graph_name
+    JOIN jvm_method_parameter p
+      ON p.source_name = g.source_name AND p.class_name = n.class_name
+     AND p.method_name = n.method
+    LEFT JOIN jvm_method_parameter_type_ref tr
+      ON tr.source_name = p.source_name AND tr.class_name = p.class_name
+     AND tr.method_name = p.method_name AND tr.descriptor = p.descriptor
+     AND tr.position = p.position AND tr.type_path = ''
+)
+SELECT r.graph_name, r.class_name, r.method_name, r.descriptor, r.position, r.param_name,
+       r.java_type, r.extraction_kind,
+       CAST(COUNT(*) OVER (PARTITION BY r.graph_name, r.class_name, r.method_name,
+                                        r.descriptor, r.position) AS INT)
+  FROM resolved r;
+COMMENT ON VIEW intent_condition_param_extraction IS 'The extraction a value bound to a condition method''s parameter takes, decided by that parameter''s declared type: an enum gets ENUM_VALUE_OF and everything else gets DIRECT. The whole vocabulary of the authored predicate arm, and the reason it could not be stated before is intent_java_enum_class''s second arm, a condition parameter typed as a generated enum being exactly the class the classpath census excludes. The @condition call surface and not the @service one, which is a different rule with a different answer: that path runs a wire-coercion check that can reject and an enum-constant parity check that can reject, and this one cannot reject at all, having no dimensional channel to surface a refusal through. So a reader must not carry an answer from here to a @service parameter, and the population below is what keeps that from being an accident. That population is every parameter of a method a @condition names anywhere in the graph, the five spellings of the directive folded into one: at a field, at an input field, at an argument, and at a path element of a @reference or a @referenceFor. Method-keyed and not site-keyed, because the rule does not vary by site: the same signature written at two sites is one row here, which is intent_condition_method_route''s shape for the same reason. It is also what keeps a site fact out of a method-keyed relation, the path-element sites having no GraphQL slots in scope and therefore no bound value parameters at all; that is a fact about the site, so it prunes at the site and not here. Nothing here claims the parameter is bound. Which of a method''s parameters receives an argument, which receives the source table and which receives a context value is decided per directive application from the slots and the context keys in scope, so it is a site-keyed relation and lands with its own consumer, exactly as jvm_method_parameter''s own comment defers it. This states what the extraction would be, for every parameter, and a reader that knows the role applies it to the parameters that have one. The type is read as the census decomposed it, jvm_method_parameter_type_ref at the empty type path, and that reading is what makes the two rules agree on the awkward shapes rather than by coincidence. The live rule asks Class.forName of the declared type''s own spelling, so a parameterised type, an array, a primitive and a type variable all fail to load and all fall to Direct. The decomposition answers each of them the same way: a parameterised type names its raw head at the root, which is not an enum since no enum is generic; an array names nothing at the root, its component being the next step down; and a primitive and a type variable name nothing at all. Hence the LEFT JOIN, which keeps a parameter that names no class as a DIRECT row rather than dropping it, absence of a class being a fact about the parameter and not a reason to stop describing it. The silences are intent_java_enum_class''s, and they fall in one direction: a nested or package-private enum has no census row, so a parameter typed as one reads DIRECT here where the generator, resolving through its codegen loader, emits the enum decode. That is the classpath scan''s disclosed rule rather than a shortfall of this relation, and it is the same silence intent_condition_method_route_defect names CLASS_NOT_IN_CENSUS. A generated enum is no longer in that set, which is what this increment bought. Overloads are rows, kept apart by the descriptor the census keys on, so a reader holding only a class and a method name either finds one descriptor or picks between them the way the generator does, by name and arity; the descriptor is here so that picking is possible rather than silent.';
+COMMENT ON COLUMN intent_condition_param_extraction.graph_name IS 'the owning graph''s partition, carried from whichever directive named the pair; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN intent_condition_param_extraction.class_name IS 'the condition class as the author wrote it, fully qualified; the same spelling intent_condition_method_route.class_name carries';
+COMMENT ON COLUMN intent_condition_param_extraction.method_name IS 'the condition method name as the author wrote it, which is also the census column it matched. Spelled method_name and not method, as jvm_method spells it, because the descriptor beside it makes this row a statement about one signature where the route relation''s method column is a statement about a name';
+COMMENT ON COLUMN intent_condition_param_extraction.descriptor IS 'the owning method''s raw JVM descriptor, the census''s own overload discriminator; part of the key, so two overloads'' position 2 are two rows rather than one collision';
+COMMENT ON COLUMN intent_condition_param_extraction.position IS 'the parameter''s 0-based position, completing the key. Positions are total over the method: the table parameter and any context parameter are rows here too, this relation deliberately not deciding which role a position plays';
+COMMENT ON COLUMN intent_condition_param_extraction.param_name IS 'the parameter name the classfile recorded; NULL where the consumer compiled without -parameters, which is the state that makes a binding by name impossible and is reported as a warning rather than by this column';
+COMMENT ON COLUMN intent_condition_param_extraction.java_type IS 'the fully-qualified binary name at the root of the parameter''s declared type, on intent_argmapping_bound_parameter_type.java_type''s terms; NULL where the type names no class, a primitive, an array, or a type variable. The payload the ENUM_VALUE_OF arm carries into emitted code, and never NULL on that arm by construction';
+COMMENT ON COLUMN intent_condition_param_extraction.extraction_kind IS 'which extraction, in a closed vocabulary of two: ENUM_VALUE_OF where intent_condition_param_extraction.java_type is an enum either census names, DIRECT everywhere else including where the type names no class. Two and not more because the @condition path has exactly two outcomes; the richer extractions in the generator''s vocabulary belong to the generated predicate arm''s column terms and to the @service path, neither of which this relation is about';
+COMMENT ON COLUMN intent_condition_param_extraction.candidates IS 'how many rows resolved for this key, this row''s being one of them; 1 on an unambiguous parameter. Above one means the class is declared by two of the graph''s classpath sources whose parameters at this position genuinely differ, identical answers having collapsed already, and is a resolution nothing here picks between, on intent_argmapping_bound_parameter_type.candidates'' terms';
+
 CREATE VIEW intent_field_reference_step_hop_live
   (graph_name, type_name, field_name, ordinal, position, via, key_matched_by,
    from_source_name, from_schema, from_table,

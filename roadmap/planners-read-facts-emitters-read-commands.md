@@ -3452,6 +3452,83 @@ rides on whether the bound path is dotted, which the argMapping family's segment
 state. That is the whole authored-arm vocabulary, and after it `ConditionCommands` can produce the
 authored predicate from store rows.
 
+### Conditions, twenty-third increment: the authored arm's vocabulary, and the question it turned out to be two of
+
+**The derivation the last increment specified landed as two relations rather than one, and the split
+is the point rather than a tidiness.** The extraction rule is a predicate over one type: is this
+parameter's declared type an enum. That predicate has more than one asker already, the `@service`
+call surface running the same test before its own wire-coercion gate, and the schema's standing rule
+is that a resolution with two askers is a relation instead of a subquery repeated in each of them.
+So `intent_java_enum_class` states the predicate on its own, over the two censuses that each answer
+half of it, and `intent_condition_param_extraction` reads it. Written as one view the enum join
+would have been buried inside a rule about condition parameters, and the `@service` reader would
+have had to copy it.
+
+**`intent_java_enum_class` is a union and deliberately carries no provenance column.** The classpath
+census answers by class kind and the catalog arm answers through the columns that bind to an enum,
+and a class both of them name, which is what an author's own enum reached through a converter is, is
+one fact and therefore one row. A reader wanting to know which census answered, or wanting the
+database coordinate the generated half carries, joins the arm it cares about; a tag nothing forks on
+is inventory. Absence reads as not-known-to-be-an-enum and never as known-not-to-be-one, and the two
+silences are the censuses' own: a nested or package-private enum has no classpath row, and a
+generated enum type no column binds to has no catalog row.
+
+**The extraction relation is keyed on the method and not on the site, which is the grain lesson from
+two increments ago applied rather than restated.** The rule does not vary by site, so a signature
+written at a field, at an argument and at a path element is one set of rows. Keying it by site would
+also have smuggled a site fact into it: a path-element condition has no GraphQL slots in scope and
+so binds no value parameter at all, and pruning those methods here would have made the relation
+answer differently for a signature written at both kinds of site. The population is therefore every
+parameter of every method a `@condition` names anywhere in the graph, the five spellings of the
+directive folded into one.
+
+**Nothing in it claims a parameter is bound, and saying so is what keeps the relation honest rather
+than incomplete.** Which position receives an argument, which receives the source table and which
+receives a context value is decided per directive application from the slots and the context keys in
+scope. That is a site-keyed question and it lands with its own consumer, which is exactly how the
+parameter census itself defers the same question in its own comment. So every position of a captured
+method is a row here, including the table parameter, and a reader that knows the role applies the
+extraction to the positions that have one.
+
+**The agreement with the live rule on the awkward types is the content of the rule, not a
+footnote.** The generator asks `Class.forName` of the declared type's own spelling, so a
+parameterised type, an array, a primitive and a type variable all fail to load and all fall to the
+plain extraction. The store cannot ask that question and reads the census's decomposition instead,
+which arrives at the same four answers by a different route: a parameterised type names its raw head
+at the root and no enum is generic; an array names nothing at the root, its component being the next
+step down; and a primitive and a type variable name no class at all. Each of those is a case, because
+two rules agreeing by different routes is worth pinning rather than assuming. The array one is the
+case that would have gone wrong under the obvious shortcut: reading the component would answer the
+enum extraction for a parameter the generator hands the array to verbatim.
+
+**One silence remains and it falls in a single direction.** A nested or package-private enum is
+outside the classpath census, so a parameter typed as one reads as the plain extraction here where
+the generator, resolving through its codegen loader, emits the enum decode. That is the scan's own
+disclosed rule and the same silence the route relation's defect vocabulary already names. What
+changed is that a generated enum is no longer in that set, which was the whole blocker.
+
+**Coverage is fifteen seeded cases and one over a real capture, and the second kind catches what the
+first structurally cannot.** The seeded tier says what the relations return given rows. It cannot say
+whether the two captures a real run performs actually meet, and the way they could fail to is silent:
+both sides document the enum's spelling as the fully-qualified binary name, and a mismatch would look
+exactly like a parameter that is honestly not an enum. So the capture-backed case reads the store a
+real classpath scan and a real catalog walk wrote, asserts first that the classpath census does not
+hold the generated enum, and then that the extraction is the enum one anyway. It needed a fixture to
+stand on: the condition stub every other condition case uses is package-private and therefore outside
+the census entirely, so the signature was added beside the two that already live on the public
+carrier, with a generated enum parameter and a scalar one for contrast.
+
+**The next increment is the role, which is what stands between these relations and the producer.**
+`ConditionCommands.produce` needs, per parameter, not only the extraction but which of the three
+sources it takes: the table, an argument, or a context value. All three rules are site-keyed. The
+table test is the one the route defect relation already performs, a declared type that a generated
+table class or the bare jOOQ interface answers for; the context test is a name in the directive's own
+context-argument child; and the argument test is the slot names in scope at the site, widened by the
+`argMapping` overrides the pair family already decodes and by the generator's type-unique inference,
+which is the part with no relation behind it yet. That inference is the piece to count readers for
+before planning it, since it is also the one place the role rule reads a GraphQL type against a Java
+one.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the

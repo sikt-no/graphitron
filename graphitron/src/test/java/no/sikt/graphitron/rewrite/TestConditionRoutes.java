@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.test.jooq.enums.MpaaRating;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
 import no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor;
 import no.sikt.graphitron.rewrite.test.jooq.tables.RentFilm;
@@ -43,6 +44,17 @@ public final class TestConditionRoutes {
      * condition arm exists for.
      */
     public static Condition filmToFilmActor(Film src, FilmActor tgt) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * A field-site condition taking a value parameter typed as a generated enum, beside one typed
+     * as a plain scalar. The two extractions the {@code @condition} call surface has, on one real
+     * signature, which is what a case reading them out of the store needs: a generated enum is in
+     * the package the classpath census drops, so this parameter's type is knowable only through the
+     * catalog's own enum relation and a fixture typed on an author's enum would not test that.
+     */
+    public static Condition filmByRating(Film table, MpaaRating rating, String title) {
         throw new UnsupportedOperationException();
     }
 }

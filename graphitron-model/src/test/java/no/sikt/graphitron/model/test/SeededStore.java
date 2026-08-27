@@ -77,6 +77,7 @@ import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
@@ -1722,6 +1723,25 @@ public final class SeededStore {
             .set(SQL_COLUMN.SQL_TYPE, "character varying")
             .set(SQL_COLUMN.BINDING_TYPE, bindingType)
             .set(SQL_COLUMN.NULLABLE, true)
+            .execute();
+    }
+
+    /**
+     * An enum class a column of the source's generated model binds to, with the catalog type it
+     * names. The grain is the class rather than the column, so a case about an enum several columns
+     * bind states this once.
+     *
+     * @param tableSchema the enum type's SQL schema, {@code null} on a converter-bound Java enum
+     *                    that names no catalog type at all
+     * @param typeName the catalog enum type's name, {@code null} on the same terms
+     */
+    public static void seedEnumBinding(DSLContext dsl, String sourceName, String classFqn,
+                                       String tableSchema, String typeName) {
+        dsl.insertInto(SQL_ENUM_BINDING)
+            .set(SQL_ENUM_BINDING.SOURCE_NAME, sourceName)
+            .set(SQL_ENUM_BINDING.CLASS_FQN, classFqn)
+            .set(SQL_ENUM_BINDING.TABLE_SCHEMA, tableSchema)
+            .set(SQL_ENUM_BINDING.TYPE_NAME, typeName)
             .execute();
     }
 
