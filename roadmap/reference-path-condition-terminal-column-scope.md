@@ -83,8 +83,10 @@ shape `intent_spelled_table` and `intent_name_matched_key_pair` already have, an
 the two sibling hop views textually parallel arm for arm instead of forking the rule. No
 `returns_condition` guard: `pickMethod` rejects by name-ambiguity alone, so filtering overloads by
 return type here would make the store *route* a chain the generator refuses as ambiguous; overload
-multiplicity flows into the existing arity columns instead, with a comment noting the census is
-public-only so the count approximates `pickMethod` from below.
+multiplicity surfaces where extra hop rows always surface, in the hop and target views' `targets`
+and `candidates`, with a comment noting the census is public-only so the count approximates
+`pickMethod` from below. Two overloads landing on one table still resolve, the scope arm demanding
+`targets = 1` and not `candidates = 1`.
 
 **A fourth arm, `via = 'CONDITION'`, on both hop views.** Population: captured elements where
 `class_name IS NOT NULL AND key_ref IS NULL AND table_ref IS NULL`. An element carrying a condition
@@ -97,7 +99,15 @@ hops falls out of the existing recursion in `intent_argument_reference_step_targ
 bridged fixture's condition hop sits at position 1 and its candidate departures include
 `film_actor`, so the chain extends. Downstream relations pick the rows up with no edit of their
 own: `intent_argument_column_scope`'s `PATH_TERMINAL` arm, `intent_argument_column_match`,
-`intent_argument_filter_role`'s NAME_MATCHED arm, and `intent_condition_membership`.
+`intent_argument_filter_role`'s NAME_MATCHED arm, and `intent_condition_membership`. The
+field-site hop has three readers, and each gets exactly what it should: the input-field walk gains
+the filter rule with no preference, `intent_field_reference_step_target` extends chains it could
+not before (the R852 rung stays the projection terminal's own business), and
+`intent_field_chain_node` reaches seq 1 through a bare-condition first hop, which flips
+`intent_mutation_routine_seat`'s verdict at that shape from CHAIN_UNRESOLVED to
+UNANCHORED_FIRST_HOP, the verdict its CASE already states for exactly this hop once the chain can
+see it. That flip ships with this item because it is inseparable from the arm; the seat's own
+comment discloses today's silence and is corrected below.
 
 **A defect view with a closed vocabulary, so one absence does not carry seven meanings.**
 `resolveConditionJoinTarget` has typed author errors (fewer than two parameters, wildcard target
@@ -127,13 +137,23 @@ its population.
   `docs/architecture/explanation/fact-model.adoc`, and in `ArgumentReferenceStepTargetTest`'s
   javadoc. The two actual sources are the carrier's return-type `@table` and the method's second
   parameter. Correct every site a grep finds.
-- `anElementNamingNeitherKeyNorTableIsNotAHop` pins the very absence this item removes; it inverts
-  into a fixture of the new arm rather than being re-scoped.
+- `anElementNamingNeitherKeyNorTableIsNotAHop` pins the very absence this item removes, in both
+  `ReferenceStepTargetTest` and `ArgumentReferenceStepTargetTest`; each inverts into a fixture of
+  the new arm rather than being re-scoped. The "neither key nor table" clause the DDL comments
+  carry (both hop views, the target views and the input-field target's) narrows the same way.
 - The `via` column comments enumerate a closed vocabulary and gain CONDITION; the sibling views'
   "textually identical arm for arm" comments hold with one added sentence naming the shared rung,
   and the sibling anchor test keeps its full claim.
 - `intent_condition_membership`'s missing-populations sentence drops the stale coordinate count and
   names the enforcer below instead.
+- `intent_mutation_routine_seat`'s comment discloses today's silence: "A first hop that joins by an
+  authored condition alone resolves to no hop row at all, so it reads here as CHAIN_UNRESOLVED
+  where the classification walk calls it a shape owed an emitter; separating them needs the stalled
+  step named." The arm names that step, so the sentence becomes false the moment this lands and no
+  build gate catches it (it is neither the return-type claim nor the "neither key nor table"
+  clause). Rewrite it to state the resolved behaviour: such a chain now reaches seq 1 and the
+  verdict CASE's UNANCHORED_FIRST_HOP arm fires, which is the verdict that comment already assigns
+  to this hop shape.
 
 ## Anchors and the Done measurement
 
@@ -148,10 +168,17 @@ its population.
   walk when the producer converts. This item lands it; the producer conversion in
   `roadmap/planners-read-facts-emitters-read-commands.md` then consumes it, and if that item lands
   one first, this item adopts it instead.
-- Read cost, measured and stated at Done: the argument hop view is unregistered and inlined into
-  both terms of a recursion feeding a registered target, so the arm's census joins are priced on
-  the read-cost fixture (before and after, `OPTIMIZE_REUSE_RESULTS` off), and the rung is the
-  registerable unit if the measurement asks for one.
+- A seat fixture for a bare-condition first hop on a routine chain, pinning the CHAIN_UNRESOLVED to
+  UNANCHORED_FIRST_HOP flip. That shape is unexercised at the seat relation today: the existing
+  `MutationRoutineSeatTest` fixture for UNANCHORED_FIRST_HOP writes `{table: "rental",
+  condition: {...}}`, a TABLE-arm row the new arm deliberately leaves alone, so no existing test
+  moves when the flip happens.
+- Read cost, measured and stated at Done, for both arms: the argument hop view is unregistered and
+  inlined into both terms of a recursion feeding a registered target, so its census joins are
+  priced as plan cost on the read-cost fixture (before and after, `OPTIMIZE_REUSE_RESULTS` off);
+  the field-site hop is a materialized table, so there a wildcard parameter 0's every-table
+  departure fan-out lands as realized rows and refresh fill cost, priced on the same fixture. The
+  rung is the registerable unit if either measurement asks for one.
 
 ## Reviewer findings
 
