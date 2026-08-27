@@ -1,6 +1,6 @@
 ---
 id: R839
-title: "The carrier refresh costs 41 seconds per capture, and it is the producer CTE inlined per driving row"
+title: "The carrier states one condition twice, and the duplicate re-derives the producer once per driving row"
 status: Spec
 bucket: model
 priority: 2
@@ -10,7 +10,7 @@ created: 2026-08-26
 last-updated: 2026-08-27
 ---
 
-# The carrier refresh costs 41 seconds per capture, and it is the producer CTE inlined per driving row
+# The carrier states one condition twice, and the duplicate re-derives the producer once per driving row
 
 `intent_carrier_data_field_live` takes 41 seconds to produce 151 rows against a real consumer store,
 and the whole of it is one correlated `EXISTS` re-deriving a 172-row rule once per driving row.
@@ -22,23 +22,23 @@ the priority reflects.
 
 ## What changes when this lands
 
-A capture of a consumer schema stops spending 41 seconds on the carrier relation and spends about
-0.3 seconds instead, so a consumer whose schema reaches the carrier family gets most of a minute
-back on every build. Nothing about what the store answers changes: the same rows, in the same
-columns, under the same names every reader already spells.
+The carrier relation stops re-deriving its producer once per driving row, because the condition that
+made it do so is stated once instead of twice. Nothing about what the store answers changes: the same
+rows, in the same columns, under the same names every reader already spells, which is proved for both
+spellings rather than argued.
 
-How the minute is collected is an open choice among three arms, settled by one round of timings that
-has not been taken yet: delete the redundant predicate, respell it as a join, or register the relation
-it re-derives. "The filter is redundant, so the lever is a choice among three arms" below states them
-and the doctrine that orders them. Whichever wins, the change also edits three stored `reason` figures
-the measurements below moved.
+**What a consumer gets, stated at the strength the evidence supports.** The re-derivation is gone by
+construction, and that is checkable in the tree today. The size of the win is not: the 41 seconds this
+item measured was measured on one consumer schema, and no figure for the shipped spelling can be taken
+in this reactor at all, for the reasons the audit records. So a consumer whose schema reaches the
+carrier family should expect the dominant term of that 41 seconds to go, and this item does not promise
+a number. An earlier draft of this section promised 0.3 seconds, which was one candidate lever's
+measurement read as the item's outcome.
 
-If the registration arm wins, it is one row in `meta_materialize` saying "refill this table from that
-view, once per capture, per graph": the view keeps the rule's text under a `_live` name, the table
-takes the canonical name every reader spells, and so no reader is edited and the rule is still written
-exactly once. The relation to register at that point is `intent_field_payload_producer`, and the two
-candidate depths are already priced. If either rewrite arm wins, the change is an edit to one view
-body and the register gains no row.
+The change is an edit to one view body, plus the three stored `reason` figures the measurements below
+moved, plus one seeded anchor that makes the row-identity claim fail when it breaks. The register gains
+no row: why registering the relation is a later question rather than an arm of this one is argued in
+"The condition is stated twice" below.
 
 ## What a capture pays today
 
@@ -103,7 +103,11 @@ The last row is the one worth keeping. The CTE also probes those two views insid
 EXISTS`, which is where a reader following the plan's shape would look first, and substituting tables
 for both changes nothing. Reading the body without pricing it would have named the wrong term.
 
-## The filter is redundant, so the lever is a choice among three arms
+## The condition is stated twice, so the duplicate goes before anything is priced
+
+The predicate this item is about **removes no row, and that is not the same as doing nothing.** It has
+two jobs, and only one of them is redundant. Getting that distinction wrong is what made an earlier
+draft of this section state a three-way race that principle does not admit.
 
 The predicate this item is about removes no row. The view's outer query is `FROM producer p JOIN
 data_channel d ON d.graph_name = p.graph_name AND d.type_name = p.payload_type_name`, and
@@ -116,51 +120,78 @@ thins a partition, and it is not in question. `data_channel` is named once, by t
 no second reader for which the difference could matter. Confirmed by execution as well as by reading;
 see `roadmap/audits/2026-08-27-carrier-filter-redundancy-probe.md`.
 
-That makes the diagnosed cost term removable three ways, not one, and `producer` is named exactly
-twice: the outer `FROM producer p`, which is one inlining, and this correlated `EXISTS`, which is the
-per-driving-row one and the redundant one.
+**The filter's second job is not redundant, and the page predicts it.** Beyond testing a condition the
+join re-tests, the filter narrows the population that the two `CASE WHEN EXISTS` probes and the window
+run over. That narrowing cannot be recovered from outside, and the reason is stated rather than
+guessed: a derived view carrying a window function cannot be pruned by a predicate applied outside it,
+so a reader takes it once per answer and pairs it on its key rather than correlating it per row.
+`data_channel` carries the window. So deleting the filter outright does not merely risk a wider
+population, it is *predicted* to widen one, and this is not a correctness-preserving simplification
+with no cost side.
 
-* **A. Delete the filter.** Three lines out. Leaves `producer` named once in a plain `FROM`, which is
-  the same one-evaluation shape a registration buys, and needs no registration at all. What it costs
-  is that the two `CASE WHEN EXISTS` probes and the window then face every field of every OBJECT type
-  rather than the carrier candidates.
-* **B. Respell the filter as a join** into `data_channel` on a projection of the producer. One
-  inlining rather than one per driving row, and it keeps the narrow population A widens. It needs its
-  own narrower projection: the `producer` CTE is `SELECT DISTINCT graph_name, payload_type_name,
-  family` and so is not unique on the two columns the filter tests, and joining it as it stands
-  duplicates each field row per family and doubles `data_fields`, which is reproduced in the audit.
-* **C. Register `intent_field_payload_producer`**, leaving the filter spelled as it is: the change
-  the rest of this plan specifies. Measured at 327 ms and 261 ms against the promoted-CTE depth's
-  253 ms and 206 ms, so the deeper registration buys about 60 ms more for a new relation with a name
-  and comments of its own and is declined either way.
+So `producer` is named exactly twice, the outer `FROM producer p` being one inlining and this
+correlated `EXISTS` the per-driving-row one, and the duplication has two spellings that remove it:
 
-**The order these are tried in is not this item's preference.** `meta_materialize`'s own reasons
-carry it: `intent_mutation_payload_key_membership_live` states that "a registration prices the rule
-as it stands, so a rule with a re-evaluation inside it should be rewritten before it is priced", and
-the two rows after it each cite that and record the reader-side rewrite they tried first, one that
-worked and one that did not. Both were join orders in a reading view, which is what A and B are here.
-The fact model page says the same thing from the other side: the relation to register is the one every
-expensive reader has in common, "and not the relation that looked slow from where the reader happened
-to stand". A cost that exists only because one reader states a condition twice is that case exactly.
+* **A. Delete the filter**, letting the outer join carry the condition. Three lines out, and
+  `producer` is left named once in a plain `FROM`. It gives up the narrowing above, which is why it is
+  not obviously the smaller change it looks like.
+* **B. Respell the filter as a join** into `data_channel`. One inlining rather than one per driving
+  row, and the narrowing stays inside the derivation where the window can use it, which is the shape
+  the page describes. It needs its own narrower projection: the `producer` CTE is `SELECT DISTINCT
+  graph_name, payload_type_name, family` and so is not unique on the two columns the filter tests, and
+  joining it as it stands duplicates each field row per family and doubles `data_fields`, reproduced in
+  the audit.
 
-**What decides it is one round of timings, and it is outstanding.** Time A, B and C on the consumer
-store the two registration depths were priced on, `OPTIMIZE_REUSE_RESULTS` off, two sweeps. For A the
-deciding figure is not the carrier's total but what the two `CASE WHEN EXISTS` probes cost once the
-filter no longer narrows their population, which is a driving-row ratio the same store answers. This
-cannot be taken in the reactor: the largest store a build here writes carries 63 fields and no
-carrier rows, and a synthetic fixture at that scale does not reproduce the re-derivation at all, both
-recorded in the audit. So the figures come from the consumer store or they do not come.
+**Registering the relation is not a third arm, and principle rather than measurement is why.**
+`meta_materialize.reason`'s own column comment defines what a row of that register claims: a
+hand-written derivation argues in its table comment that no view could express its rule, a
+registration argues that a view expresses the rule correctly and only too slowly, and a row that
+cannot say which is not a registration. A registration's honest row here cannot say either. The rule
+is right as a view, and it is not too slow to evaluate per naming; it is slow because a naming exists
+that need not. The doctrine two rows below says the same as an obligation rather than an option: "a
+registration prices the rule as it stands, so a rule with a re-evaluation inside it should be
+rewritten before it is priced", argued from a case where pricing first was wrong by three orders. Both
+rows that discharge it use obligation language, and in the register there is no row where a rewrite
+and a registration were priced side by side and the registration taken without the rewrite having
+first landed or been refuted. The fact model page says it from the other side: register the relation
+every expensive reader has in common, "and not the relation that looked slow from where the reader
+happened to stand".
 
-Whichever arm ships, the argument is recorded where the change lands. For C that is the registration's
-own `reason`, which must say the motivating probe is redundant with the outer join and was kept
-deliberately, on the terms the two rows above it in the register use. For A or B there is still a
-`reason` to edit, because `intent_carrier_data_field` is itself a registration and this change edits
-its row already; that row also already prices a rewrite beside a registration, recording the carrier
-falling "from about 49 seconds to that 170 milliseconds by restructure alone". The asymmetry worth
-stating once is that a rewrite arm's argument lands in the store's ungated prose while a
-registration's earns a gated row and cells in the read-cost gate.
+So a registration is not forbidden here. It is inadmissible as a *first* move, and the question it
+answers is unaskable until the duplication is gone, because a registration prices the rule as it
+stands and the shape being priced still contains a naming that need not exist. That splits into two
+questions with an order:
 
-## What the registration arm is, if it wins
+1. **Is the condition stated twice?** Yes, proved, and no cost figure is needed to act on it. This
+   item is that question. Which of A or B, and by how much, is what the timings decide, and the page's
+   rule about pruning a windowed derivation from outside already leans towards B.
+2. **Does anything still want a registration?** Not answerable here, and filed as R861
+   (`roadmap/producer-registration-after-duplication-removal.md`), to be taken up after this item
+   lands and the carrier is re-measured on a consumer store. The two candidate depths already priced
+   (327 ms and 261 ms against the promoted CTE's 253 ms and 206 ms) carry forward to it as evidence,
+   along with the audit.
+
+**Why the duplication goes even if the cost turns out small.** Two spellings of one condition agree
+exactly until one of them changes, which is the state that precedes drift rather than evidence against
+it, and the audit has just proved they agree today. The fact model page also names what this predicate
+is in its taxonomy: a filter one caller applies, which is one of the things to watch for as never
+having been a fact at all.
+
+**What decides between A and B, and it is outstanding.** Time both on the consumer store the two
+registration depths were priced on, `OPTIMIZE_REUSE_RESULTS` off, two sweeps. For A the deciding
+figure is not the carrier's total but what the two `CASE WHEN EXISTS` probes cost once the filter no
+longer narrows their population, a driving-row ratio the same store answers. This cannot be taken in
+the reactor: the largest store a build here writes carries 63 fields and no carrier rows, and a
+synthetic fixture at that scale does not reproduce the re-derivation at all, both recorded in the
+audit.
+
+**Where the argument lands.** `intent_carrier_data_field` is itself a registration and this change
+edits its row already, so there is a `reason` to write either way; that row also already prices a
+rewrite beside a registration, recording the carrier falling "from about 49 seconds to that 170
+milliseconds by restructure alone". The asymmetry worth stating once is that a rewrite's argument lands
+in the store's ungated prose while a registration's earns a gated row and cells in the read-cost gate.
+
+## The registration this item does not make
 
 The trade the middle rung has to win is a refresh against the re-evaluations it avoids, and here it
 is not close. One evaluation of `intent_field_payload_producer` is 4 to 31 ms. It has two readers in
@@ -213,12 +244,17 @@ rather than a pick". Uniqueness holds on the inputs rather than by assumption: `
 and `graphitron_mutation` are each keyed on `(graph_name, type_name, field_name)` so their arms
 produce one row per coordinate, the ROUTINE arm carries `SELECT DISTINCT` because
 `graphitron_routine` is keyed per hop, and `root_operation` is a function of `(graph_name,
-type_name)` through a grouped subquery so it adds no multiplicity. `root_operation` being nullable is
-therefore not an obstacle: it is not in the key. Declaring it matters beyond tidiness, because the
-fact model page is explicit that a registered target with no key is a heap and every join a
-derivation performs against it scans all of it, with the cost landing inside the reading derivations
-rather than on the reader's own predicate. That is most of what the index question below was trying
-to settle by measurement, and the key reduces that question to the probe coordinate alone.
+type_name)` through a grouped subquery so it adds no multiplicity. `payload_type_name` is `f.named_type`,
+carried straight off the coordinate's own row, so both non-key columns are functions of the coordinate
+and the ROUTINE arm's `DISTINCT` collapses to one row per coordinate rather than merely deduplicating
+hops. `root_operation` being nullable is therefore not an obstacle: it is not in the key.
+
+The key is declared on that grain argument and on nothing else. It does **not** narrow the index
+question: the heap the fact model page warns about is the cost a *probing* reader pays, the one known
+probe here seeks `(graph_name, payload_type_name)`, and only `graph_name` is a prefix of this key, so
+the probe gains a graph-partition seek and no more. The index question below is exactly as open as it
+was. What declaring the key does buy is that a modeling error becomes a capture-time constraint
+violation on a consumer's build rather than silent duplicate rows.
 
 **Move the comments rather than write new ones.** The relation's existing view comment and its six
 column comments belong on the table, verbatim, with the standard materialization sentence appended
@@ -322,6 +358,12 @@ retired registration away from inverting, and that is a regression the shape tes
 
 ## Two reason rows are completed and one is corrected, where they live
 
+These three edits depend on no part of the lever question. Their figures are in hand and the rows they
+correct are wrong now, so nothing about which spelling ships changes a word of them. They have been
+carried across five review rounds by coupling to a decision they do not touch, which is bookkeeping
+rather than a seam; if this item is split again for any reason, they go with whichever half lands
+first.
+
 The three rows differ in what a next reader can trust them for, and the difference is worth keeping
 because it teaches opposite lessons to whoever writes the next one.
 
@@ -395,12 +437,41 @@ an index would have to earn its cost on every refresh on top of them.
 
 ## Tests and gates
 
-No new behavioural test: a registration changes no answer, and the claim that the target holds its
-view's rows is what the capture agreement machinery already asserts once the `_live` view is
-registered with it. One new structural test does land, the edge-presence assertion argued in the
-"Nothing orders the refresh by hand" paragraph above, because the ordering that keeps the agreement
-true has to rest on a derived edge rather than on the alphabetical accident that currently orders
-these two relations correctly.
+**One new behavioural test, and it is the item's own invariant.** The claim this change rests on is
+that the filter removes no row, and right now that claim is a proof by reading plus a synthetic probe
+recorded in an audit. Nothing fails if it is wrong, which means it is not yet an invariant. It gets an
+enforcer: a new seeded anchor for the carrier relation in
+`graphitron-model/src/test/java/no/sikt/graphitron/model/intent/`, alongside `ProducerCardinalityTest`,
+`MutationPayloadColumnTest` and their siblings.
+
+The habitat is not a preference. What a view returns given rows is pinned in `graphitron-model`, the
+module whose DDL declares it, against a store seeded row by row, and the rule's own edges are that
+seeded half's business; agreement with the transitional walk stays beside the walk and retires with it.
+`CarrierDataFieldTest` is in `graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/`, the second
+habitat, so an anchor placed there is scheduled to drain while this view is not, and its population is
+whatever the fixture schema happens to declare. That last part is the same vacuity the earlier findings
+caught twice: a captured fixture cannot be relied on to contain the discriminating type, so a test over
+it can pass without ever exercising the claim.
+
+What makes the anchor an enforcer rather than a re-run of the audit is which rows it seeds: an OBJECT
+type in `data_channel`'s pre-filter population that no mutation-rooted producer names, so the filter
+and the join have something to disagree about, and a producing type whose partition `data_fields` is
+asserted over, so a false redundancy claim changes an asserted count instead of passing unobserved.
+Pinning where no row appears is pinning the boundary rather than reporting a gap.
+
+Its scope needs stating beside it: this closes the row-identity half only. The read-cost gate asserts
+no duration anywhere, so the cost half stays unenforced whichever spelling ships, and the anchor must
+not be read as covering it.
+
+**The rest of this section covers the registration this item does not make**, and is kept because the
+follow-up item inherits it.
+
+No new behavioural test would have been needed for a registration: a registration changes no answer,
+and the claim that the target holds its view's rows is what the capture agreement machinery already
+asserts once the `_live` view is registered with it. One new structural test does land with it, the
+edge-presence assertion argued in the "Nothing orders the refresh by hand" paragraph above, because the
+ordering that keeps the agreement true has to rest on a derived edge rather than on the alphabetical
+accident that currently orders these two relations correctly.
 
 * `FactCaptureAgreementTest`: one line,
   `registrations.put("intent_field_payload_producer_live", Arm.DERIVED);`, beside the existing row
@@ -430,22 +501,22 @@ these two relations correctly.
   instruction is safe whichever way the counts move, and the point of predicting only the one is that
   a `READERS_IN_SCHEMA` that did rise would mean this change added a view it did not intend to, which
   is a signal to keep rather than a movement to absorb.
-  `KNOWN_NON_MONOTONIC` may gain a row; with the target keyed as declared above the keyless-heap
-  reason for one is gone, so a new row there is a finding to argue in that set's javadoc after
-  measuring the index shape, never a tolerance to add quietly.
+  `KNOWN_NON_MONOTONIC` may gain a row. The declared key does not rule that out, for the reason given
+  where the key is declared: it does not serve the one known probe. A new row there is a finding to
+  argue in that set's javadoc after measuring the index shape, never a tolerance to add quietly.
 * The inline-multiplicity report (`roadmap-tool report-inline-multiplicity`) reports rather than
   gates, and a registered relation leaves its ranking by construction, so nothing there needs
   re-pinning.
 
 ## Verification
 
-`mvn install -Plocal-db` from the repo root, on the exact tree that gets pushed. The agreement test
-and the read-cost gate both need the full pipeline, so a scoped `-pl` run is not verification for
-this item.
+`mvn install -Plocal-db` from the repo root, on the exact tree that gets pushed. The new seeded anchor
+is a `graphitron-model` test and the carrier's existing behavioural anchors need a captured store, so a
+scoped `-pl` run is not verification for this item. The agreement test and the read-cost gate matter to
+the registration follow-up rather than to this change, which registers nothing.
 
-Separately from the build, re-take the figures the edited `reason` rows will state (the producer's
-refresh cost and the carrier's move for the new row, and the two sibling refresh durations for the
-corrected ones), by the procedure in the
+Separately from the build, re-take the figures the edited `reason` rows will state (the carrier's move
+and the two sibling refresh durations), by the procedure in the
 `store-performance` skill: a store a real build already wrote rather than a fixture, single-file JDBC
 programs over the pinned H2 version, `OPTIMIZE_REUSE_RESULTS` off, the real refresh statements. Do
 not transcribe this item's numbers into the DDL. They were measured on a tree whose register has
@@ -454,8 +525,9 @@ grown since, and the register growing is exactly what moves them.
 ## What would falsify this plan
 
 * A rewrite arm measuring as cheap as the registration. That does not falsify the diagnosis, it
-  falsifies the registration: a lever that removes the same cost for one edit to one view body and no
-  refresh wins on the ladder's own arithmetic, and the register gains no row. This is the fork, and it
+  falsifies the registration: the middle rung's trade is a refresh against the re-evaluations it
+  avoids, and a lever that removes the same re-evaluations for one edit to one view body wins that
+  trade at zero refresh. This is the fork, and it
   is the one thing that has to be measured before anything here is built.
 * The refresh costing materially more than the 4 to 31 ms measured. The whole trade is one refresh
   against the re-evaluations it avoids, and a dearer refresh is a different trade. Re-price before
@@ -953,12 +1025,18 @@ be the first row that skipped the rung below it without saying so.
 
 *Author's note (round 5 revision).* Taken. The lever section now carries the doctrine and both of its
 discharges, and states the order as the register's rather than as this item's preference. One
-correction to the finding's framing, from the architecture read: the fact-model lever ladder and this
-doctrine are not in tension, because the ladder ranks expected payoff per lever class while the
-doctrine is a precondition on whether the middle rung's trade has been measured on the right shape at
-all. The ladder also has no rung for removing or de-correlating a naming, so calling arm A "a rewrite"
-inherits a demotion the page's own argument does not support for this shape; that sentence is in the
-body.
+The finding understated itself, and a later architecture read
+found the stronger form now in the body: `meta_materialize.reason`'s column comment says a row that
+cannot say which of the two claims it makes is not a registration, and a registration's row here
+cannot say either, so this is not a completeness gap in a `reason` but a registration that is
+inadmissible as a first move. The register is consequently not edited by this item at all, and the
+registration question is filed separately.
+
+A correction to an earlier version of this note, which claimed the ladder-versus-doctrine
+reconciliation was in the body when it was only in the note: it is in the body now, in "Registering the
+relation is not a third arm". The claim was wrong when written, and a note asserting a body edit that
+does not exist is exactly the hazard the workflow names about reviewer-authored prose reaching the next
+reviewer labelled settled.
 
 **12. The fork has a third arm, and it is the arm that survives whichever way the deletion's
 population question goes.** Round 4 states the fork as a registration or a deletion, and prices the
