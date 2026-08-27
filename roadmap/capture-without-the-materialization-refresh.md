@@ -108,6 +108,16 @@ the one that terminates on a schema where the first does not, which is the debug
 
 ## Three seams in the code
 
+**0. The framing, so the parameter is not mistaken for an escape hatch.** The store has two kinds of
+consumer and the register serves them differently. A reader that opens a store it did not write (the
+language server, the MCP server) has to ask for current targets, which is what `refreshAll` exists
+for and says so in its javadoc. A run that captures does not ask, because currency is implied by its
+own write. `Materializations` already calls that difference "a real contract, not a convenience".
+What the API does not support is a caller expressing it: `FactCapture.capture` welds the writer
+cadence in, so no caller can decline. This parameter is the first place that becomes expressible,
+and R864 makes it the general rule. Read `<skipMaterialize>` as naming a cadence, not as a debugging
+switch that happens to be useful.
+
 **1. The refresh becomes a decision the capture entry point carries.** `FactCapture.capture`'s
 widest overload owns the transaction and ends it with `Materializations.refresh`, followed by
 `Materializations.analyse` after the commit. Both move behind one new parameter. An enum

@@ -152,6 +152,42 @@ is what that seam was reaching for. If R865 lands first, the separation it makes
 deletes. Either order works and neither is wasted; they must not both be planned as though the other
 will not happen.
 
+## Refresh cadence is the caller's, not capture's
+
+The store has two kinds of consumer and they need opposite things from the materialization register.
+The language server and the MCP server open a store they did not write, so they have to ask for the
+registered targets to be made current. A run that captures does not: currency is implied by its own
+write. `Materializations` already states this as two cadences and calls the difference "a real
+contract, not a convenience", and `refreshAll`'s javadoc names its caller as "a reader that opens a
+store it did not capture into".
+
+The API supports both. **Capture does not.** `FactCapture.capture` ends its transaction with
+`Materializations.refresh` unconditionally, so the writer cadence is welded in and no caller can
+express the other. That is the same ownership defect this item is about, in a second place: the
+cadence belongs to whoever opened the store, and today it belongs to whoever filled it.
+
+So the constraint on the moved API is explicit: **a consumer that needs current targets asks; a
+consumer that does not, does not pay.** After the move, capture does not decide the cadence. The
+caller that opened the store does, which for a generating run means it keeps asking for exactly what
+it asks for now, and for a dev session means it asks once instead of being handed a refresh it did
+not want on top of one it did (which is R857).
+
+**One fact this does not license, and it needs stating so nobody plans on it.** "The generator does
+not need refreshing" is true of the *call* and not yet of the *rows*. Three registered targets are
+read from main sources today: `RoutineWriteFacts` in `plan` reads `intent_carrier_data_field`, which
+is one of the two most expensive registrations in R856's consumer-schema price list at 59 seconds;
+`ArgmappingProjectionDefects` reads `intent_argmapping_pair`; `StoreNodeTables` reads
+`intent_resolved_type_binding`. A generating run depends on those rows being current and gets that
+from its own capture.
+
+Whether it would be cheaper for those three reads to go to the `_live` views and for the register to
+exist only for interactive readers is a real question with a real prize, since a consumer capture
+would stop paying a register that serves the editor. It is also a measurement rather than an
+argument: the registrations exist because H2 inlines a view at every naming and eliminates no common
+subexpression, and that cost lands inside a single read as much as across many. R848 owns that
+measurement. This item makes the cadence expressible; it does not decide what any consumer should
+ask for.
+
 ## The corpus
 
 `graphitron/src/test/resources/corpus` moves with capture. In the destination it is spec-by-example
