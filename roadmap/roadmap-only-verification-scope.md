@@ -135,3 +135,90 @@ answers, and the reviewer should pick one:
   not; the real reactor passes.
 * A negative probe re-run at implementation, confirming both numbers above still hold: stale README
   fails the scoped build, and a dangling anchor in an item body fails it in the docs module.
+
+## Reviewer findings
+
+### Round 1 (2026-08-27, Spec -> Ready, reviewer session 0169pRZRYLidSbfcif3xovzW)
+
+Verdict: withhold. Two findings, one root cause: the grep behind the scope claim missed one idiom,
+and that same idiom is what the recommended enforcer would fail on. The goal reads clearly and the
+prose half of the change is well placed. A session about to commit a roadmap state transition runs a
+42-second scoped build instead of an 11-minute reactor build, and the three documents a session
+actually reads before that push all say so. Nothing about the plan's shape is a parallel mechanism:
+`CLAUDE.md`'s "Building and testing" already names one verification build and already carries a
+carry-forward judgment for rebased commits, so a second named build with a stated predicate extends
+that section rather than competing with it, and the publish skill's step 2 already reasons about
+whether a build still covers the tree.
+
+Most of what the plan asserts about the tree holds. Both module selectors are real reactor
+directories (`roadmap-tool`, `docs`); the artifact ids `graphitron-roadmap-tool` and `graphitron-docs`
+are the ones the plan gives them. All five named steps exist at the phases claimed:
+`verify-roadmap-readme` and `check-adoc-tables` bound to `verify` in `roadmap-tool/pom.xml`, and
+`render-roadmap-adoc`, `check-adoc-xrefs` bound to `process-resources` plus `render-site` at `compile`
+under the `activeByDefault` `docs` profile in `docs/pom.xml`, with the xref check declared after the
+renderer in the same phase so it walks a staged tree. Neither pom declares `local-db`, so `verify`
+without that profile is right and the catalog-jar footgun really is out of reach. The
+`check-adoc-xrefs` asymmetry the plan relies on is the check's actual behaviour: a dangling anchored
+xref throws, a dangling cross-file path from roadmap prose goes onto a report-only list and prints.
+`docs` declares a reactor-order dependency on `graphitron-roadmap-tool` and a repo dependency on
+`graphitron`, so the prior-full-install precondition is stated correctly. The arithmetic checks
+(687s / 42.1s is 16.3; five commits at 11m27s is 57 minutes). `InertSpans`,
+`check-module-enumeration`, `check-coverage-agent-wiring` and `check-transient-citations` all exist
+under those names. The pom half of the scope claim holds exactly as stated: outside `roadmap-tool` and
+`docs`, the only pom naming the directory is the root, in XML comments and in `<module>roadmap-tool</module>`.
+
+**1. The source half of the scope claim is false, and it is the claim the whole item rests on
+(question 1).** "Nothing else. Established by grep rather than assumed: ... no main or test source
+outside them resolves it" does not survive an FQN-blind grep for the path. Four test sources in three
+modules outside the scoped set resolve it today:
+`graphitron/src/test/java/no/sikt/graphitron/rewrite/GuardScope.java:48` and
+`JavadocReferenceGateTest.java:128` (`p.resolve("roadmap/workflow.adoc")`),
+`graphitron-mcp/src/test/java/no/sikt/graphitron/mcp/StoreClientBoundaryTest.java:244` (the same),
+and `graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/internal/ReadmeLinkIntegrityTest.java:116`
+(`Files.isDirectory(p.resolve("roadmap"))`). All four are repo-root probes rather than readers, which
+is why the conclusion is probably still right, but the last one does read roadmap content:
+`ReadmeLinkIntegrityTest` walks every `README.md` in the repo, `roadmap/README.md` among them, and
+asserts each of its 623 relative link targets exists. A roadmap-only diff that leaves a dangling
+`[plan](<slug>.md)` fails a test in `graphitron-sakila-example`, which the scoped build does not run.
+
+What would satisfy this is the argument the plan currently forecloses by asserting there is nothing
+to argue about. That argument exists and it is a good one: `verify-roadmap-readme` compares
+`roadmap/README.md` byte-for-byte against a fresh render of the item files, and `ConceptIndex`
+resolves item liveness in one place, so a README the scoped build passes has item links that resolve
+by construction, and the residual link surface (the header's `../docs/...` and `workflow.adoc` links)
+comes from the renderer's own template in `roadmap-tool` main source, where editing it is not a
+roadmap-only diff. Say that, and restate the claim as what was actually established: no build step
+and no test outside those two modules reads content a roadmap-only diff can change. As written, an
+implementer who re-runs the grep the plan says was run finds four hits and no guidance.
+
+**2. The recommended enforcer, as specified, fails the reactor as it stands, and names a reuse target
+that does not do the work (question 2).** The plan asks the reviewer to pick an arm, so the arm has to
+be pickable. "Fail the build when a module outside `{graphitron-roadmap-tool, graphitron-docs}` names
+the roadmap directory as a build-time path, in a pom configuration or in a main or test source,
+outside comment regions" fires on all four sites in finding 1, none of which is in a comment. The
+Tests section then requires "the real reactor passes". Those two cannot both hold, and the distinction
+that would reconcile them, a repo-root existence probe against a genuine consumer, is the entire
+design content of the check: it decides whether the enforcer pins something worth pinning or becomes
+a rule contributors route around. That distinction is the author's to draw, not the implementer's to
+invent at the keyboard, which is what makes this a question-2 finding rather than an implementation
+note.
+
+The reuse premise is also misdirected. `InertSpans` masks AsciiDoc code spans and structural blocks,
+which is why its consumers are `AdocXrefAnchorCheck`, `SchemaIdentifierDriftCheck` and the generated
+AsciiDoc renderers; it has no notion of a Java or XML comment. The pom half of the scan does have a
+precedent, `CoverageAgentWiringCheck`, which strips `<!-- ... -->` before matching and already walks
+the root pom plus every declared module. The Java half has none in `roadmap-tool`: comment-region
+masking over Java lives in `RoadmapReferenceScanner`, in `graphitron`'s test tier. So the arm as
+specified needs either a new Java scanner in `roadmap-tool` or a habitat in the `graphitron` test tier
+next to the guard that already does this work, and picking between those changes what gets built. Name
+the precedents the arm actually reuses, and say which module the Java half lives in.
+
+Worth noting because it cuts toward the enforcer rather than against it: if the check is spelled as
+"names the roadmap directory", `roadmap-tool` as a bare module name is a substring hit, so the rule
+needs to be path-shaped rather than word-shaped.
+
+Non-blocking, noticed along the way. `RetiredVocabularyGuardTest` puts `roadmap/` out of scope
+explicitly in its own javadoc, and `DocsIndexBuilder` says the same for the MCP retrieval index, so
+both of the plausible-looking third consumers really are non-consumers by declared intent. That is
+worth a clause in the scope section: it is the strongest evidence the plan has that the boundary is
+deliberate in this tree rather than accidental, and it costs one sentence.
