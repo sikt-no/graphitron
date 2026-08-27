@@ -260,8 +260,8 @@ machinery already asserts once the `_live` view is registered with it.
   column shape, acyclicity, order, and nothing materializing outside the mechanism) are what check
   the pair, and they need nothing from the author.
 * `DerivedReadCostTest`: three pinned counts move and one pinned set may.
-  `READERS_IN_SCHEMA` rises by one, the new `_live` view being a view in the schema; it was 99 when
-  this item was drafted and is 101 on trunk today, so re-pin it from the tree rather than from a
+  `READERS_IN_SCHEMA` rises by one, the new `_live` view being a view in the schema; the constant has
+  moved twice in the days since this item was drafted, so re-pin it from the tree rather than from any
   figure this file states.
   `READERS_WITH_CELLS` and `CELLS` move in both directions at once, which the constant's own javadoc
   explains: the reachability walk stops at a registered target, so every reader that reached a
@@ -386,3 +386,70 @@ Corrected in passing, in the same commit as these findings: the `READERS_IN_SCHE
 and gates pinned 99 rising to 100, and trunk moved that constant to 101 after this item was drafted.
 Rewritten to say it rises by one and to point at the tree for the figure, which is what the section's
 own "re-pin from the failure message rather than predicting them" already asks for.
+
+### Round 2 (2026-08-27, Spec -> Ready, reviewer session 51a08584-2b89-44ad-bff7-75ac900ba795)
+
+Verdict: withhold. The plan body is unchanged since round 1, so findings 1 to 3 stand unaddressed and
+this round does not restate them. What it does instead is check them against the tree independently
+and add what they did not reach.
+
+Both round 1 findings re-verified and confirmed, in the code rather than by reading its prose.
+`theDerivedDependenciesAdmitARefreshOrder` asserts set equality between `refreshOrder().registrations()`
+and `registrations()`, which holds whatever edges exist; `theRefreshOrderRespectsEveryDependencyRow`
+iterates the rows of `META_MATERIALIZE_DEPENDENCY` and appends an offender only per row, so a missing
+edge produces no row and no offender. Neither can fail on the store the finding is about. The index
+finding is confirmed at the source: the `producer` CTE is `SELECT DISTINCT graph_name,
+payload_type_name, family FROM intent_field_payload_producer WHERE root_operation = 'MUTATION'`, and
+`intent_argument_column_match`'s roster row does close with "worth revisiting where a reader probes it
+from a population larger than the table itself, which is the shape that would change the answer".
+
+Two things the plan asserts and round 1 did not check, both of which hold and neither of which is a
+finding. The dependency edge really does arrive on its own: `relationsReadBy` renders the parsed query
+under a `VisitListener` and keeps every `Table<?>` whose qualified name is `PUBLIC` plus one segment,
+which the reference inside a CTE body satisfies, and today the walk recurses through the producer view
+to five base tables reaching no registration, so registering it adds exactly one edge and removes
+none. And the capture-order hazard every registration carries is closed here rather than argued away:
+`FactCapture` writes the directive tables through `SdlFactCapture.capture`, flushes, and only then
+calls `Materializations.refresh` inside the same transaction, so the three `graphitron_*` inputs this
+rule reads are complete before the refresh reads them. The plan's sentence about declaration order is
+about the DDL file and answers a different question; the answer to this one happens to be yes.
+
+**4. The two sibling `reason` rows are deferred to an item whose subject excludes them.** "Not in
+scope" hands `intent_errors_field_live`'s ten milliseconds against a measured 4.2 s, and
+`intent_field_column_scope_live`'s "about 170 ms on a real schema" against a measured 6.4 s, to R831
+on the grounds that "re-pricing the register's recorded claims is R831's subject rather than this
+item's". R831's subject is the opposite of that. Its body is about measured claims in ordinary
+relation comments, and it scopes the register out by name: "`meta_materialize`'s registrations are
+priced against their readers on every build. What has no gate is the far larger population of measured
+claims written into ordinary relation comments." So the deferral lands nowhere. Nothing is filed
+against those two rows, R831 is Backlog with `depends-on: []` in both directions, and the next reader
+of either row gets a figure this item has already measured to be two to three orders out.
+
+The bind is sharper than a missing cross-reference, because this item's own evidence falsifies the
+sentence R831 uses to scope itself out. The plan's "Not in scope" section establishes that the register
+is *not* priced on every build: `DerivedReadCostTest` holds scan counts over a twelve-unit synthetic
+fixture and asserts no duration anywhere, and `MaterializeRegistryGateTest` asks nothing about cost.
+Both cannot be true. Either the register's recorded durations belong to R831 after all, in which case
+R831's premise needs correcting and this item should say so and link it, or they belong here, where the
+measurements already are, sitting in this item's own first table. The plan already argues the second
+for the carrier's row, on the fact model page's rule that a stored reason contradicted by a later
+measurement is corrected where it lives; that rule does not distinguish the carrier's row from these
+two. Pick one and state it. What the plan may not do is keep a deferral whose destination does not
+accept the work.
+
+**5. Sharpening finding 2 rather than adding to it, because the roster row is asserted by equality.**
+Round 1 is right that the omitted `root_operation` constant has to be timed. The reason it matters more
+than a shape choice is that the correlated equality sits outside a `SELECT DISTINCT`: whether an index
+on the target is reachable at all depends on H2 pushing `p.graph_name = f.graph_name AND
+p.payload_type_name = f.type_name` through that `DISTINCT` into the inlined CTE body. If it does not,
+every shape times identically and a `NO_INDEX` row reading "measured, nothing moved" would record the
+wrong cause: not that the coordinate is unhelpful, but that no index was ever reached. Include a
+baseline that separates the two, the cheapest being the same timing with the `DISTINCT` removed, and
+let whichever artifact ships say which shapes were timed and what the baseline showed. A roster
+asserted by equality in both directions is read as settled by the next author, which is the whole
+reason this section elevated the question in the first place.
+
+Corrected in passing, in the same commit as these findings: the `READERS_IN_SCHEMA` line under Tests
+and gates named 101 as the value on trunk, and trunk is at 109. The line now says the constant has
+moved twice since drafting and points at the tree, which is what the sentence was already trying to
+say; naming a third figure would be stale on the same schedule as the first two.
