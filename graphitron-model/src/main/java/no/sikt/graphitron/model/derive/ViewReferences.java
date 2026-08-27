@@ -50,6 +50,21 @@ import static org.jooq.impl.DSL.table;
  * unqualified, and filtering on that shape is what keeps an alias sharing a relation's name from
  * counting as a read of it.
  *
+ * <p><strong>Weighting these positions into a single cost has been tried against the register and
+ * refused.</strong> The obvious next step from here is to multiply each position by the rows of its
+ * driving side and rank the registrations in {@code meta_materialize} by what materializing each one
+ * saves. That was built, run against a real capture, and scored against the savings the registry's
+ * own reasons record, classified into coarse bands orders of magnitude apart. It did not reproduce
+ * them, and it was worse than a plain count of namings exactly where it mattered most: counting every
+ * position as one puts the three registrations whose reasons record a read that never terminates in
+ * the top three, and weighting by cardinality pushes one of them down below registrations that save
+ * seconds. The cause is in {@link Position#RECURSIVE} below. A recursive term runs once per
+ * iteration, this walk cannot see iterations, and weighting by the largest relation the term names
+ * gives a self-walk its own row count, so the one position the register describes as unbounded is
+ * the one the weighting cannot size, and a finite number demotes it beneath the positions it can.
+ * The walk is kept because reading <em>where</em> a reference sits is established and useful on its
+ * own; what failed is the step from a position to a number.
+ *
  * <p><strong>What the three positions are worth is not equal, and a caller weighting them should
  * know which is which.</strong> {@link Position#RECURSIVE} and {@link Position#CORRELATED} are read
  * off semantics that survive planning: a self-referencing common table expression is evaluated per
