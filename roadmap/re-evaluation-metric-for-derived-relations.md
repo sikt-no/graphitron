@@ -1,7 +1,7 @@
 ---
 id: R849
 title: "Measure re-evaluation rather than naming, so a materialization cut set can be chosen on evidence"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 2
 theme: model-cleanup
@@ -792,6 +792,66 @@ question.
 `## Slice 3` sits below `## Reviewer findings`, where the item-file convention puts the findings
 section below every plan section. I appended this round inside the findings section rather than at the
 end of the file, so it stays with the other rounds.
+
+### Round 6 (2026-08-27, Spec -> Ready, reviewer session session_014R3TSfjFfZQzoms4otDrVn)
+
+Verdict: sign off. The branch executes, the arm that needed arguing is argued rather than asserted,
+and the figure the previous version leaned on is corrected to the number that makes the argument
+harder rather than easier.
+
+What changes when this lands, said without reading the slices. Nothing at a consumer's surface. The
+tree loses a metric and keeps a parse, and the finding it keeps is that a static reading of the stored
+definitions cannot rank this register: the obstacle is the weighting, not the parse, and the weighted
+reading is *worse* than the naming count exactly where the register's reasons are most emphatic. That
+is a better result than a working metric would have been for the next author, and it is the kind this
+tree loses by default. R848 is still Backlog, so nothing downstream is stranded by the refusal.
+
+On architecture. Keeping `ViewReferences` with its positions is a judgment taken in the open, with a
+named consumer and a stated expiry, rather than drifted into by a literal reading of the branch. It
+also leaves one set of H2 normalization rules where slice 1 found two, so the tree the item leaves
+behind is better than the one it started from even on the negative outcome, and the dead-API risk is
+named as a risk rather than hidden.
+
+What I verified. Every cell of the corrected table reproduces under an independent computation. I ran
+the instrument against the same `it-store` capture before this revision landed and got the same five
+totals and the same B-over-A splits: 10 and 3, 8 and 5, 5 and 3, 6 and 4, 18 and 14. The C-over-B
+column is what each row's total leaves over, and no row leaves a C-over-A inversion, so the three
+columns close. The two ranking claims hold as stated:
+`intent_node_id_decode_hop_column` is third of seventeen unweighted, behind only
+`intent_resolved_type_binding` and `intent_node_id_instruction`, and fifth weighted, below
+`intent_errors_field` and `intent_field_reference_step_hop`. The account of where the twelve came from
+is the right diagnosis rather than a concession: a hand count over an intermediate ranking, shielded by
+the two figures that happened not to move.
+
+The keep-arm's consumers are real and open. R839 is `Spec`, and its body's second sentence is the quote
+this plan gives it: `intent_carrier_data_field_live` takes 41 seconds to produce 151 rows and "the
+whole of it is one correlated `EXISTS` re-deriving a 172-row rule once per driving row". R856 is
+`Spec`, says no capture has been observed to finish, and names the recursive terms as the suspects.
+Both are asking, of one relation, which of its references re-evaluate and against what, which is the
+question the positions answer and the one no other instrument in the tree answers.
+
+The deletion is clean as the tree stands. Nothing outside `ReEvaluationMetric` and its own test names
+the class, so there is no dangling `{@link}` to repoint and nothing else to unwire. `ScratchSchema`
+keeps `ViewReferencesTest` as a consumer, so the fifth harness and its `StoreFixtureGuardTest`
+declaration both survive the deletion rather than becoming a home with no resident.
+
+#### Non-blocking
+
+**The removal condition has no durable home, and the one durable place the plan names cannot spell
+it.** The keep-arm rests on a condition written to be checkable: if neither of the two named items nor
+a successor reads `Position` or `Enclosure` by the time both close, the positions go the way the metric
+went. It is stated in this file, which Done deletes, and both items are open, so as written the
+condition outlives its own record and the debt cannot be collected. `roadmap/changelog.md` can carry
+it and may name the two items by id, being one of the three permanent roadmap artifacts.
+`ViewReferences`' javadoc cannot: `RoadmapReferenceGuardTest` fails the build on an `R<n>` in a comment
+region, so the javadoc note this plan commits to has to state the mechanism rather than cite the
+items, and it cannot `{@link}` the deleted class either. Worth settling before the javadoc is written
+rather than at the compiler.
+
+**No `## Retired vocabulary` section, though the item now retires two symbols.**
+`ReEvaluationMetric` and `ReEvaluationMetricTest` go, and that section is what gives the Done-gate
+reviewer a grep query for the retirement sweep. Cheap to add here, and I have already checked the
+sweep comes back clean on the current tree, so it costs a list rather than a search.
 
 ## Slice 3: the gate was run, and it fails
 
