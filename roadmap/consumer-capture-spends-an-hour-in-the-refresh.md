@@ -1001,3 +1001,107 @@ two missed relations into that branch as a worked case rather than proposing an 
 Roadmap entries section opens on one expected item instead of two, and Related says where the finding
 went. The recursive-source-view note is recorded as a first in the structural-candidate section, in the
 terms it was given, viability included.
+
+### Round 2 (2026-08-27, Spec -> Ready, reviewer session 01FLu4Z5tDnLbeZXMWU7jGe4)
+
+Verdict: withhold. Two findings, both on question 2. Round 1's two findings are answered and stay
+answered: the pre-fix capture is now item 2 of the sequence with a decision rule and a discharge
+condition, and the first rung is checked with an answer that holds up against the tree. Neither
+finding below disputes the localisation or the choice of lever, which remain the strongest work in
+this item.
+
+Question 1 passes, and it reads off the plan without reconstruction. Today a developer working on a
+large internal schema, about 8,400 fields and 2,300 types, cannot use this tooling at all:
+`mvn graphitron:validate` never returns and `mvn graphitron:dev` never binds its language server or
+MCP ports, because both sit behind a fact-store capture that spends over an hour inside the
+materialization refresh and has never once been observed to finish. When this lands, that capture
+completes: validate returns, dev binds, and the store answers exactly what it answers now, the same
+relations and rows under the same names every reader already spells. The outcome is reachable in this
+codebase, because the lever is a mechanism the tree already runs twenty times rather than a new one,
+and the identification behind it is positive and measured rather than an elimination.
+
+**Finding 1: the plan does not say what index either new target carries, and that decision is
+build-gated, precedented as decisive, and inside the measurement the plan is priced on.** Step 3b
+closes with "what remains of this step is the two registrations and their `reason` rows" and then
+enumerates three things those rows have to carry: the saving and the refresh, the per-driving-row
+mechanism, and the rung below. The index is not among them, and the word does not appear anywhere in
+the Implementation, Tests or structural-candidate sections; its only appearances in this item are the
+control's own indexed snapshots and a note about the *existing* refusal registration's index.
+
+Three facts make that an omission rather than a detail. First, it is enforced:
+`MaterializeRegistryGateTest.everyTargetIsIndexedOrStatesWhyNot` fails the build unless every
+registered target either carries a declared index or has a row in that test's `NO_INDEX` roster
+saying why not, and the roster's own standard is a measured decline, "measured as several index
+shapes, over every view whose derivation reaches the target, with statistics current on both sides".
+So an implementer following step 3b lands the registration, meets a gate the plan never mentions, and
+has to design and measure the answer with no guidance on a priority-1 bug.
+
+Second, the question is live rather than formal for the registration this plan lands *first*.
+`intent_mutation_payload_column_live`, the 1075.8 ms statement, reaches the deeper candidate through
+`JOIN intent_node_id_decode_column d ON d.graph_name = a.graph_name AND d.site = 'INPUT_FIELD' AND
+d.path = a.path`, driven from its `admitted` CTE. That is a probe on a coordinate, which is exactly
+the shape the gate's roster calls a seek an index could serve, and it is the shape
+`intent_mutation_payload_refusal`'s own reason row calls "the whole point of the registration".
+
+Third, the register already records this going wrong in the direction that matters.
+`intent_field_scope_table`'s reason prices its one reader at 6167 ms over the view, 342 ms over the
+indexed target and 91045 ms over the target with no index declared, which its own text calls fifteen
+times worse than the view. That is the case where registering without the index was worse than not
+registering, and this item's headline figures are on the other side of that fork: the 15x and the 81x
+were both measured by snapshotting into an *indexed* table, as the control paragraph says outright. So
+the numbers that justify the fix are numbers an un-indexed registration is not entitled to.
+
+What would satisfy it: say in step 3b what the index decision is for each of the two registrations,
+or say that it is the implementer's to measure and name the gate and the roster it has to satisfy.
+Either is fine, and pricing it here is not required. What a reviewer cannot approve is an
+enumeration that presents itself as the remaining work while leaving out the one obligation the
+build will refuse the change for.
+
+**Finding 2: the item's disposal of its own `report-inline-multiplicity` finding routes it into R849,
+which has shipped, and whose acceptance gate has already run.** The Roadmap entries bullet says the
+capability exists and that "R849 is Ready to build the weighted metric over it", that R849 "disclaims
+touching this reporter at any outcome except through its acceptance gate's negative branch", and that
+the finding "should be carried into R849 rather than filed beside it". Related says the same, that
+R849 "builds the instrument that frame needs". R849 is Done: `roadmap/changelog.md` records it as a
+negative result, the metric was built, run against a real capture and refused, `ReEvaluationMetric`
+and `ReEvaluationMetricTest` are deleted, and `ViewReferences` and its positions are kept. The
+negative branch is one of the commits that entry lists as executed.
+
+The reporter itself survived that: `InlineMultiplicityCheck` is still in `roadmap-tool`, still wired
+into `Main`, still configured in that module's pom and still documented on the fact model page. So
+this item's observation is live, and it is a good one, the two relations that stopped captures from
+finishing being the sharpest worked case anybody has for what that reporter cannot see. As the plan
+now reads it lands nowhere: the destination is closed, and the decision it was meant to inform was
+taken without it. This is not a plan-body edit a reviewer can make, because the alternatives, file it
+fresh, fold it into R848 where the register's shape is argued, or drop it as spent, are a choice about
+what gets filed rather than a stale pointer.
+
+What would satisfy it: pick one of those and say so, with the two false sentences about R849's status
+corrected. On its own this finding would not have withheld the gate; it travels with finding 1.
+
+Non-blocking, no response needed:
+
+- The declined middle rung cites the wrong register row. "That is the same move `meta_materialize`'s
+  hop-column reason already describes wanting for its own inner alias" names
+  `intent_node_id_decode_hop_column_live`, whose reason is about collapsing the walk's six-column
+  coordinate key and says nothing about an inner alias. The sentence the item wants is in
+  `intent_node_id_instruction_live`'s reason, the only row in the register that mentions one: "The
+  narrower registration that would cut this one is the inner alias, which is a local alias rather
+  than a named relation today and wants promoting to one before it can be registered." The precedent
+  is real, so this is a pointer to fix rather than an argument to withdraw. Left for the author
+  because correcting a citation inside a paragraph is close enough to the plan body to be worth not
+  touching.
+- The amended sequence's item 1 is spent. R855 went Done while this review was being written, and
+  that commit emptied `depends-on` and rewrote the Roadmap entries paragraph to say the instrument is
+  in the tree; the sequence itself still opens "Land the sibling logging item", so as it now reads
+  the work starts at item 2. The ordering this item leans on is confirmed at the source rather than
+  taken from that item: `RefreshProgress` exists, `FactCapture.capture` passes
+  `RefreshProgress.lines(LOG::info, LOG::debug)`, `RegistrationStarted` is observed before
+  `refreshPartition` issues the `DELETE`, and both `Materializations`' javadoc and
+  `docs/architecture/explanation/fact-model.adoc` state that ordering as the instrument's whole
+  point. So the discharge rule in step 1 rests on something real.
+- The per-registration line is behind a debug tier, in both the code comment and the fact model page.
+  The paragraph R855's Done commit added names `mvn -X`, so the item does carry it now, but it
+  carries it in the Roadmap entries section while the run that needs it is step 1 and the discharge
+  rule that depends on it is the paragraph under step 1. Repeating it there would cost a clause and
+  save the person on that machine a second attempt at an hour-long run.
