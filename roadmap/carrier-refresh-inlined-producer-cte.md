@@ -1213,3 +1213,115 @@ Non-blocking. `DerivedReadCostTest` is now at `READERS_IN_SCHEMA` 111 and `CELLS
 again since round 5; the plan names neither figure any more, which is why it did not go stale this time,
 and that is the pattern to keep. Corrected in passing, in the same commit as these findings: round 5's
 author note under finding 11 carried a stray "One" left mid-sentence by an edit, which is now joined up.
+
+### Round 7 (2026-08-27, Spec -> Ready, reviewer session 01LZ7eesfmnkBdKZpmvJsAvd)
+
+Verdict: withhold, on question 1 and question 2. The plan body is unchanged since `c4ec2f5`; the only
+commit on this file since is round 6's own findings, so findings 13 to 16 have had no revision and all
+four stand. This round does not restate them. It re-derives each from the tree, sharpens 13, and adds
+two that no earlier round reached, one of which changes what would satisfy the item.
+
+What I checked and would not change. The redundancy is exactly as the body describes, read at the
+source: the `data_channel` filter is `EXISTS (SELECT 1 FROM producer p WHERE p.graph_name =
+f.graph_name AND p.payload_type_name = f.type_name)`, the outer query is `FROM producer p JOIN
+data_channel d ON d.graph_name = p.graph_name AND d.type_name = p.payload_type_name` with `d.graph_name`
+and `d.type_name` being `f.graph_name` and `f.type_name` projected, the window is `COUNT(*) OVER
+(PARTITION BY f.graph_name, f.type_name)` so the filter is constant per partition, and `data_channel` is
+named once. The four-line comment above `data_channel` does state the inlining hazard from the tree's
+own side. The producer view's five inputs really are captured base tables and its declared column list
+is the six columns in the order the proposed table gives them. The three `reason` strings read verbatim
+as quoted, and only `intent_field_column_scope_live`'s "about 170 ms on a real schema" reads as a
+general claim. `fact-model.adoc` carries the windowed-derivation pruning rule, the "not the relation
+that looked slow" sentence and the "a filter one caller applies" taxonomy line as cited. The register is
+at twenty rows; `MaterializeRegistryGateTest` has nine tests including
+`targetsAreShapedLikeTheViewsThatFillThem` and `NO_INDEX`; `MaterializationOrderTest` fixtures are
+`SELECT v FROM scratch_p` / `scratch_mid` / `scratch_src` / `scratch_x` / `scratch_y` and no fixture
+reads a relation from inside a `WITH` body; `DerivedReadCostTest` is at `READERS_IN_SCHEMA` 111,
+`READERS_WITH_CELLS` 67, `CELLS` 178, none of which the plan names. Every other symbol exists as named,
+by FQN-aware grep: `SchemaIdentifierDriftCheck`, `FactCaptureAgreementTest` with `Arm.DERIVED`,
+`CarrierDataFieldTest`, `MaterializeDependencies.populate`, `relationsReadBy`,
+`registrationsReachedByView`, `Materializations.refreshOrder` / `analyse`, `ix_spelled_table_spelling`,
+`report-inline-multiplicity`, and `SeededStore.withSeededStore` in the anchor habitat, which holds
+`ProducerCardinalityTest` and `MutationPayloadColumnTest` and carries no carrier anchor yet. R861 and
+the audit exist at the paths given, and the audit is honest about what it could not establish. The
+seeded anchor is the right piece of new work and nothing below touches it.
+
+**13 confirmed, and it is sharper than round 6 stated: the label the two conditional sections gate on
+is not defined in this file at all.** "arm C" appears three times in the body, at the head of
+"Implementation of the registration arm", in its second paragraph, and at the head of "The index
+question is the registration arm's own". The arm list in "The condition is stated twice" names two
+spellings, A and B, and the section beneath it argues that a registration is not a third arm. So C is
+defined only in `roadmap/audits/2026-08-27-carrier-filter-redundancy-probe.md`, which is not the plan.
+An implementer reading this file top-down meets two sections whose applicability condition names
+something the file never introduced, and whose condition ("if the timings pick it") is on an arm the
+body two sections earlier removed from the set the timings choose from. Round 6's remedy is the right
+one and this only makes it cheaper to see why it is needed.
+
+**14 confirmed at the source, and the audit is the strongest evidence for it.** "What decides between A
+and B" requires both arms timed on the consumer store and then says the timing cannot be taken in the
+reactor; the first falsifier bullet makes that timing a precondition on building anything. The audit
+agrees in its own words, "the cost half is open and needs a store this repository does not contain",
+and records the only store a build here writes as three graphs, 63 `graphql_field` rows, one
+`intent_field_payload_producer` row and zero `intent_carrier_data_field` rows, plus a synthetic
+instrument that failed and must not be retried. Nothing in the repository supplies what the fork needs.
+
+**15 and 16 confirmed.** All five falsifier bullets are registration-conditional and the third
+reinstates the 0.3 s figure that "What changes when this lands" retracts by name. And the
+`MaterializationOrderTest` `WITH`-body case is assigned by this item's tests list to "the registration
+this item does not make ... kept because the follow-up item inherits it", while R861 reads "the sibling
+item adds that synthetic case, so this one inherits it rather than needing it". Both sentences read
+verbatim on the tree, and the hole they are about is real.
+
+**17. The half of the item that does not depend on the fork is also not startable here, so settling the
+fork alone would not make this Ready.** "Two reason rows are completed and one is corrected" opens with
+"These three edits depend on no part of the lever question. Their figures are in hand and the rows they
+correct are wrong now", which reads as the unconditional half of the item. The Verification section
+then withdraws exactly that: "re-take the figures the edited `reason` rows will state (the carrier's
+move and the two sibling refresh durations)", by the `store-performance` procedure "against a store a
+real build had already written rather than a fixture", closing with "Do not transcribe this item's
+numbers into the DDL." All three figures are consumer-schema figures (41 s, 6.4 s, 4.2 s at 8408
+fields), and the carrier's is a post-rewrite figure besides. On the store this repository can write they
+would all be near zero and none of them would be the figure the row needs, which is the whole reason the
+rows are being corrected.
+
+So of the three deliverables "What changes when this lands" names, the view-body edit is blocked on
+finding 14 and the three `reason` edits are blocked on the same unavailable store, and the seeded anchor
+is the only one an implementer here can produce. That is a question 2 failure and not a restatement of
+14, because it changes the remedy: naming the arm, which is what round 6 asks for, leaves two thirds of
+the item still unstartable. What would satisfy it is the same decision applied to the figures. Either
+say that the `reason` edits state this item's figures with their provenance and the date they were
+taken, which is what the carrier's existing row already does for two schemas and what
+`store-performance` calls evidence about the schema it was measured on, or say plainly that this item
+completes outside the reactor and what an implementer without a consumer store does with it. What may
+not stand is an item whose every DDL-touching deliverable waits on a measurement the item itself
+records as unavailable here.
+
+**18. The one-sentence answer to "what changes for a consumer" is true of the arm the plan leans away
+from.** "What changes when this lands" says the carrier "stops re-deriving its producer once per driving
+row, because the condition that made it do so is stated once instead of twice", and the title says the
+same. Under arm A that is exact. Under arm B it is not: respelling the filter as a join into
+`data_channel` leaves the condition stated in two places, the new join inside the CTE and the outer join
+that already tested it, and what goes is the correlated evaluation rather than the duplication. Arm B
+also names the producer twice in the body rather than once, the narrow two-column projection being a
+second naming of either the relation or the `producer` CTE, which is still constant work rather than
+per-driving-row work but is not "named once in a plain `FROM`" either. The body's own reading is that
+the page rule "already leans towards B", so the sentence a reader gets for the item's outcome describes
+the spelling the plan expects not to ship.
+
+The consumer-facing outcome is arm-independent and is available in one sentence: the carrier evaluates
+its producer rule a fixed number of times per refresh instead of once per driving row, and returns the
+same rows under the same names. This is a question 1 finding rather than phrasing because that section
+is the answer to question 1, and because the arm-specific causal clause is what makes the section read
+as though the fork were already settled towards A when the plan's own argument leans the other way.
+
+**What would satisfy this round.** Round 6's four, unchanged, plus these two. Finding 17 is the one that
+needs a decision beyond round 6's: say how the three `reason` figures are obtained, or state what an
+implementer without a consumer store delivers. Finding 18 is one sentence, once the arm question in 14
+is answered, or one arm-independent sentence if it is not. Nothing here asks for new scope, and nothing
+here disputes the split, the diagnosis, the redundancy proof, the seeded anchor or the three `reason`
+edits themselves, all of which I checked and would keep.
+
+Non-blocking. The "`MaterializeRegistryGateTest` carries nine tests, not the five the plan enumerates"
+note carried by rounds 4, 5 and 6 is itself stale: the tests list already reads "Its nine existing tests
+check the pair", so there is nothing left to correct there. Nothing else in the body went stale this
+round, and no in-passing corrections were needed.
