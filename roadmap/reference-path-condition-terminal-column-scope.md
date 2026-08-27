@@ -1,7 +1,7 @@
 ---
 id: R847
 title: "A reference path ending in a condition hop resolves no column scope"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: classification-model
@@ -139,8 +139,10 @@ its population.
   parameter. Correct every site a grep finds.
 - `anElementNamingNeitherKeyNorTableIsNotAHop` pins the very absence this item removes, in both
   `ReferenceStepTargetTest` and `ArgumentReferenceStepTargetTest`; each inverts into a fixture of
-  the new arm rather than being re-scoped. The "neither key nor table" clause the DDL comments
-  carry (both hop views, the target views and the input-field target's) narrows the same way.
+  the new arm rather than being re-scoped. The "neither key nor table" clause narrows the same way,
+  in the three view comments that carry it: `intent_field_reference_step_target`,
+  `intent_argument_reference_step_target` and `intent_input_field_reference_step_target`. Neither
+  hop view states it, nor mentions conditions at all.
 - The `via` column comments enumerate a closed vocabulary and gain CONDITION; the sibling views'
   "textually identical arm for arm" comments hold with one added sentence naming the shared rung,
   and the sibling anchor test keeps its full claim.
@@ -265,3 +267,32 @@ implementer would otherwise have to settle mid-flight.
 - R740 wants the oracle-diff shadow tests retired, and this item adds one. It is not a conflict:
   R740 is Backlog, and this shadow test arrives with the retirement condition stated, which is part
   of what R740 objects to their lacking.
+
+### Round 2 (2026-08-27, Spec -> Ready, reviewer session 013khiqfW8iWtQnU391kRN8B)
+
+Verdict: sign off. The round-1 finding is answered on the terms it asked for, and the scoping call
+it left to the author is the right one: the flip ships with the arm, because the arm sits on the
+relation the chain-node walk reads and there is no landing one without the other.
+
+All three readers of the field-site hop are now named with what each gets, and the two additions
+that finding asked for are both there and both accurate. The Corrections bullet quotes
+`intent_mutation_routine_seat`'s disclosure and says what replaces it, and the replacement is the
+verdict that relation's CASE already assigns to the shape: an `intent_field_chain_node` row at
+`seq = 1` whose captured step has `class_name IS NOT NULL`. The Anchors bullet adds the seat
+fixture and states correctly why nothing existing moves, the shipped `UNANCHORED_FIRST_HOP` fixture
+writing `{table: "rental", condition: {...}}`, which is a TABLE-arm row the new arm leaves alone.
+The three non-blocking notes that bore on the plan are answered too: read cost now prices both arms
+and names the field-site hop's fan-out as realized rows and refresh fill cost rather than plan cost,
+the overload-multiplicity sentence now names `targets` and `candidates` on the hop and target views
+and draws the `targets = 1` against `candidates = 1` distinction the scope arm actually makes, and
+the inverted test is named in both files.
+
+One site list was wrong and is corrected in this commit rather than returned: the "neither key nor
+table" clause sits in exactly three view comments, all of them target views, and neither hop view
+states it or mentions conditions anywhere. The directive is unchanged; only the list of places to
+apply it is.
+
+One convention note, not a finding: the round-1 finding carries no response note beneath it, which
+`roadmap/workflow.adoc` asks of the author so the returning reviewer audits a delta instead of
+re-reading. Nothing is lost here, the revision commit's message records the response in full, and
+it is worth keeping to at the Done gate.
