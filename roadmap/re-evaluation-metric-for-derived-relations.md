@@ -244,6 +244,63 @@ the store-performance skill records that a scan count stops tracking cost exactl
 moves rows between a view and a table, "which is what every registration in the register does", so
 the shipped scan-count instruments are the wrong primary here for a reason the tree already states.
 
+### Round 2 (2026-08-27, Spec -> Ready, reviewer session session_014R3TSfjFfZQzoms4otDrVn)
+
+Verdict: withhold, on one finding, in the one section Round 1's asks produced.
+
+Three of the four asks landed and landed well. The referent section separates the two metrics
+correctly on every detail I checked: `InlineMultiplicityCheck` does print the fifteen heaviest, does
+count authored text, does report rather than gate on an over-approximation premise its own javadoc
+states, and `MaterializeDependencies.relationsReadBy` does return a `Set` that discards multiplicity
+along with position, which slice 1 now requires be recovered. Slice 2's regression test is now
+runnable by the implementer who writes it, and the trade it names is the right one: agreement with a
+hand-derived count over agreement with a second implementation on an incommensurable basis. The
+negative branch says exactly what is deleted and what is not. Sending a negative result to
+`roadmap/changelog.md` rather than to a file that Done deletes is right, and the changelog is one of
+the three permanent roadmap artifacts, so it is a durable home rather than another transient one.
+
+**1. Every stated ground of the home argument is false about `roadmap-tool`.** "Why not extend
+`InlineMultiplicityCheck` instead" rests on two inputs being unavailable in that module: jOOQ's
+parser for position, and a populated store for cardinality. Both are there, and both are already
+used at `verify`.
+
+- `roadmap-tool/pom.xml` depends on `graphitron-model` at compile scope, so jOOQ is on the
+  classpath. The dependency's own comment says what it is for: "The fact store:
+  render-schema-reference boots it from the DDL and reads the relation census, comments and meta rows
+  back through the shared catalog reader". The module also depends on `org.duckdb:duckdb_jdbc`.
+- `SchemaIdentifierDriftCheck` and `SchemaReferencePages` both call `GraphitronModelStore.open()`.
+- `check-schema-identifiers` is bound to `verify` beside `report-inline-multiplicity`. Running
+  `mvnd -pl roadmap-tool verify -Plocal-db` prints "check-schema-identifiers: 51 pages and 4402
+  store prose values resolve against 275 relations in 13 families", so a populated store is opened
+  in that module on every full build.
+
+So nothing would be "added" to host a store-dependent instrument there, and the property the plan
+says adding it would destroy is one the module does not have. The quoted premise "needing no database
+and no profiler" belongs to `InlineMultiplicityCheck`, describing that check, and the plan reads it
+as a property of the module.
+
+This is a finding about the argument and not a request to move the instrument. I expect
+`graphitron-model` is still right, on grounds the plan has available and does not use: the walk being
+extended and the sibling test instruments both live there, this is on-demand research code that
+should not sit on any `verify` path, and `roadmap-tool`'s store boot serves build-time documentation
+rendering and gating, which is a different job at a different cadence from scoring a candidate cut
+set. But that is the author's argument to write, and it lands somewhere the current one does not:
+it argues from what the instrument is and where its collaborators live, rather than from a
+dependency that is missing.
+
+What would satisfy this: restate the home decision on grounds that survive the pom. If the true
+grounds change the answer, say that instead.
+
+#### Non-blocking
+
+"which both naming metrics get backwards", in the acceptance section, claims more than the tree
+supports. The first draft said "the naming metric", meaning the probe, and the +10 and +36 marginals
+support it. The shipped tool produces no per-registration ranking at all, and on the obvious way to
+derive one, each registration's source view subtree count, it gets the demanded order right rather
+than backwards: `intent_mutation_write_destination_live` 28,
+`intent_field_reference_step_hop_live` 20, `intent_argument_column_match_live` 6. Nothing in the gate
+turns on the sentence.
+
 Everything else checkable checked out. The census is exact: the DDL declares 107 `CREATE VIEW` and
 168 `CREATE TABLE` statements, `meta_materialize` holds 20 rows with `intent_field_scope_table` the
 twentieth, and 48 views are named by no other view. `intent_field_scope_table` was indeed registered
