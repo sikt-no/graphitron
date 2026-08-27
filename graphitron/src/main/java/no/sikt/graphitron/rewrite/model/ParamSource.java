@@ -118,8 +118,99 @@ public sealed interface ParamSource
     /**
      * The jOOQ {@code Table<?>} instance for the field's target table.
      * Used in condition and table-method calls to build SQL expressions.
+     *
+     * <p>{@code slot} carries what the slot's <em>declared</em> types resolve to in the catalog,
+     * decided once at reflection time rather than re-derived from
+     * {@link MethodRef.Param#typeName()} by each reader. Two readers used to run the identical
+     * decode (a wildcard string predicate, a substring strip of type arguments, then
+     * {@code Class.forName} plus a catalog lookup), and a {@code @condition} target that is an
+     * admitted <em>set</em> of same-named declarations has one such fact per declaration, which a
+     * single type-name string cannot carry.
      */
-    record Table() implements ParamSource {}
+    record Table(TableSlot slot) implements ParamSource {
+        public Table {
+            Objects.requireNonNull(slot, "slot");
+        }
+
+        /**
+         * What the declared types at one {@code Table}-assignable parameter position resolve to.
+         * Sealed so a consumer's switch is exhaustive over the three answers the catalog can give,
+         * and so the two author-facing refusals below stay distinguishable rather than collapsing
+         * into one "unresolvable" bucket.
+         *
+         * <p>Precedence when an admitted set's declarations disagree on the arm: {@link Wildcard}
+         * first, then {@link Unresolved}, then {@link Bound}. A set that leaves the generator a
+         * choice of joined table leaves it no table, so one wildcard declaration makes the whole
+         * slot a wildcard; the same precedence the census-side defect vocabulary reads
+         * ({@code WILDCARD_TARGET_PARAMETER} ahead of {@code TARGET_NOT_A_TABLE_CLASS}).
+         */
+        public sealed interface TableSlot {
+
+            /**
+             * At least one declaration types the slot as the bare jOOQ table interface: a wildcard
+             * {@code Table<?>} or a raw {@code org.jooq.Table}. It admits every aliased table and
+             * therefore names none, so nothing about a join target or a parameter-type agreement is
+             * assertable from it.
+             */
+            record Wildcard() implements TableSlot {}
+
+            /**
+             * At least one declaration types the slot concretely on a class no table in the catalog
+             * is generated as (another {@code Table} subtype, a hand-written table base). Carries
+             * the declared type name for the author-facing message, which names what was read.
+             */
+            record Unresolved(String typeName) implements TableSlot {}
+
+            /**
+             * Every declaration types the slot on a generated table class, one {@link TableRef} per
+             * admitted declaration in declaration order. A singleton list is the single-method case;
+             * several entries are a per-participant overload set, where the consumer's javac picks
+             * the declaration and the generator only has to decide whether the set agrees on
+             * whatever fact it needs.
+             */
+            record Bound(List<BoundTable> tables) implements TableSlot {
+                public Bound {
+                    tables = List.copyOf(tables);
+                    if (tables.isEmpty()) {
+                        throw new IllegalArgumentException(
+                            "ParamSource.Table.TableSlot.Bound requires at least one BoundTable");
+                    }
+                }
+
+                /**
+                 * One declaration's answer at this slot: the resolved ref, beside the
+                 * schema-qualified name a diagnostic quotes. Both, because {@link TableRef} carries
+                 * no schema and two tables can share a bare name across schemas, so a mismatch
+                 * message rendered from {@link TableRef#tableName()} alone would name a table the
+                 * author cannot tell from the one they meant.
+                 */
+                public record BoundTable(TableRef table, String qualifiedName) {
+                    public BoundTable {
+                        Objects.requireNonNull(table, "table");
+                        Objects.requireNonNull(qualifiedName, "qualifiedName");
+                    }
+                }
+
+                /** The resolved refs alone, for a reader scanning the slot for applicability. */
+                public List<TableRef> tableRefs() {
+                    return tables.stream().map(BoundTable::table).toList();
+                }
+
+                /**
+                 * The single table every admitted declaration names at this slot, or empty when they
+                 * name more than one. The generator needs this where it must emit one table and has
+                 * no consumer call site to defer the choice to (a path-step hop's join target);
+                 * where the choice is javac's, a reader scans the refs for applicability instead.
+                 */
+                public java.util.Optional<TableRef> agreedTable() {
+                    TableRef first = tables.get(0).table();
+                    return tables.stream().allMatch(t -> t.table().denotesSameTableAs(first))
+                        ? java.util.Optional.of(first)
+                        : java.util.Optional.empty();
+                }
+            }
+        }
+    }
 
     /**
      * The jOOQ {@code Table<?>} instance for the parent/source table.

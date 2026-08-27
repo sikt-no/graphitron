@@ -74,7 +74,7 @@ class NestingFieldValidationTest {
     private static final MethodRef IS_ENGLISH = TestFixtures.staticServiceMethodRef(
         "com.example.FilmExtensions", "isEnglish",
         ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"), ClassName.get(Boolean.class)),
-        List.of(new MethodRef.Param.Typed("table", "com.example.tables.Film", new ParamSource.Table())));
+        List.of(new MethodRef.Param.Typed("table", "com.example.tables.Film", new ParamSource.Table(new ParamSource.Table.TableSlot.Wildcard()))));
 
     /** An {@code @externalField} expression leaf: no join path, the supported form. */
     private static ComputedField isEnglishOn(String parentTypeName) {
@@ -342,7 +342,7 @@ class NestingFieldValidationTest {
             new ReturnTypeRef.ScalarReturnType(scalar, new FieldWrapper.Single(true)),
             List.of(),
             TestFixtures.staticServiceMethodRef("com.example.FilmExtensions", "flag", helperReturn,
-                List.of(new MethodRef.Param.Typed("table", "org.jooq.Table", new ParamSource.Table()))),
+                List.of(new MethodRef.Param.Typed("table", "org.jooq.Table", new ParamSource.Table(new ParamSource.Table.TableSlot.Wildcard())))),
             AliasOwner.shared());
     }
 

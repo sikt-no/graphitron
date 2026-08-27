@@ -33,8 +33,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Every case here seeds census and catalog rows directly. A real capture would have walked a
  * classfile to get them, and what the rule reads is the walked result rather than the walk, so the
- * shapes worth stating are the ones a signature can take: both parameters concrete, either one
- * naming no table, a name carrying two overloads, and a method the census never reached.
+ * shapes worth stating are the ones a name can take: both parameters concrete, either one naming no
+ * table, a name carrying several declarations that agree on the arrival or do not, and a method the
+ * census never reached.
  *
  * <p>The asymmetry between the two parameters is this relation's whole content and is asserted from
  * both sides. A second parameter naming no generated table class yields no row, because the arrival
@@ -162,15 +163,55 @@ class ConditionMethodRouteTest {
         });
     }
 
-    // ===== Overloads and the guard that is deliberately absent =====
+    // ===== Overloads, and the one thing the set must agree on =====
 
     /**
-     * Two overloads of one name landing on two tables are two routes. The generator picks a method
-     * by name and rejects an ambiguous one, so the multiplicity belongs here as rows and is counted
-     * where every other hop's ambiguity is counted, in the hop and target views' arities.
+     * The set must agree on its arrival, and a set that does routes. Two declarations of one name
+     * both arriving at {@code address} are one route where they also share a departure: the outer
+     * UNION collapses the two descriptors' identical rows, which is the collapse every case below
+     * rests on.
      */
     @Test
-    void twoOverloadsLandingOnTwoTablesAreTwoRoutes() {
+    void twoOverloadsAgreeingOnBothSlotsAreOneRoute() {
+        withCatalog(dsl -> {
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("customer"), tableClass("address"));
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("customer"), tableClass("address"), null);
+            seedBareConditionArgument(dsl, "district", CONDITIONS, "bridge");
+
+            assertThat(routes(dsl, GRAPH)).containsExactly("bridge customer->address");
+        });
+    }
+
+    /**
+     * Departure multiplicity is still rows, which is the shape overload admission exists for: one
+     * declaration per participant table, all arriving at the same table. Each is a candidate
+     * departure the chain narrows, exactly as an unconstrained departure enumerates every table.
+     */
+    @Test
+    void twoOverloadsAgreeingOnTheArrivalAreOneRoutePerDeparture() {
+        withCatalog(dsl -> {
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("customer"), tableClass("address"));
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("film_actor"), tableClass("address"));
+            seedBareConditionArgument(dsl, "district", CONDITIONS, "bridge");
+
+            assertThat(routes(dsl, GRAPH))
+                .containsExactly("bridge customer->address", "bridge film_actor->address");
+        });
+    }
+
+    /**
+     * Two overloads of one name arriving at two tables route nothing. The build admits the set on
+     * the binding shape and then has one joined table to emit with no consumer call site to defer
+     * the choice to, so it rejects the disagreement; a route with two candidate arrivals is no
+     * route, which is what {@code to_table} claims for a single declaration too. Which refusal it
+     * was is the defect relation's answer.
+     */
+    @Test
+    void twoOverloadsArrivingAtTwoTablesRouteNothing() {
         withCatalog(dsl -> {
             seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
                 tableClass("customer"), tableClass("address"));
@@ -178,16 +219,70 @@ class ConditionMethodRouteTest {
                 tableClass("film_actor"), tableClass("actor"));
             seedBareConditionArgument(dsl, "district", CONDITIONS, "bridge");
 
-            assertThat(routes(dsl, GRAPH))
-                .containsExactly("bridge customer->address", "bridge film_actor->actor");
+            assertThat(routes(dsl, GRAPH)).isEmpty();
+        });
+    }
+
+    /**
+     * A wildcard declaration beside a concrete one routes nothing, and the reason is not a count
+     * over arrivals: the wildcard contributes no arrival row at all, so a test phrased over the
+     * arrival rows would see one table and route it. The rule is over the declarations, which is why
+     * the wildcard is caught here rather than only where it is the whole set.
+     */
+    @Test
+    void aWildcardDeclarationBesideAConcreteOneRoutesNothing() {
+        withCatalog(dsl -> {
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("customer"), "org.jooq.Table");
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("customer"), tableClass("address"));
+            seedBareConditionArgument(dsl, "district", CONDITIONS, "bridge");
+
+            assertThat(routes(dsl, GRAPH)).isEmpty();
+        });
+    }
+
+    /**
+     * The same divergence one class name over: a declaration whose target names a class no table is
+     * generated as is equally invisible to the arrival rows, so it suppresses the pair for the same
+     * reason the wildcard does. This is the case a rule about arrivals cannot state and a rule about
+     * declarations states without a second arm.
+     */
+    @Test
+    void aNonTableTargetDeclarationBesideAConcreteOneRoutesNothing() {
+        withCatalog(dsl -> {
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("customer"), "com.example.Widget");
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("customer"), tableClass("address"));
+            seedBareConditionArgument(dsl, "district", CONDITIONS, "bridge");
+
+            assertThat(routes(dsl, GRAPH)).isEmpty();
+        });
+    }
+
+    /**
+     * A declaration carrying no position-1 parameter declares no arrival, so it makes no claim this
+     * relation answers and the pair keeps routing off the declarations that do. Whether its arity
+     * nevertheless makes the set ill-formed is the build's admission question, asked at all four
+     * {@code @condition} coordinates rather than here.
+     */
+    @Test
+    void aOneParameterOverloadDeclaresNoArrivalAndSuppressesNothing() {
+        withCatalog(dsl -> {
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge", tableClass("customer"));
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("customer"), tableClass("address"));
+            seedBareConditionArgument(dsl, "district", CONDITIONS, "bridge");
+
+            assertThat(routes(dsl, GRAPH)).containsExactly("bridge customer->address");
         });
     }
 
     /**
      * No return-type guard, stated as a case because its absence is deliberate: the generator picks
-     * by name alone, so a method the census records as returning something other than a condition
-     * routes here too. Filtering it out would make this relation route a chain the generator
-     * refuses as ambiguous, which is a worse answer than routing one it accepts.
+     * by name and never by return type, so a method the census records as returning something other
+     * than a condition routes here too. Filtering it out would refuse a chain the generator accepts.
      */
     @Test
     void aMethodTheCensusSaysReturnsNoConditionRoutesAnyway() {

@@ -68,6 +68,10 @@ The interface field `name` is synthetic on the GraphQL side; each implementer re
 
 At request time the rewrite emits a two-stage fetcher. Stage 1 is a narrow `UNION ALL` projecting `(__typename, __pk__, __sort__)` per branch; stage 2 dispatches per typename to a batched lookup that hydrates the full row. The records carry `__typename` so the GraphQL `TypeResolver` routes per row without a discriminator column.
 
+=== Filtering a multi-table field
+
+Filter arguments on a multi-table field are lowered once per participant, each against that participant's own table, so a plain xref:../reference/directives/field.adoc[`@field(name:)`] filter needs the column to exist on every branch. To hand the predicate to your own Java method instead, the directive is xref:../reference/directives/condition.adoc[`@condition`] (the SQL-predicate directive, not the `{condition:}` element of a `@reference` path used later on this page), and the multi-table coordinate is the one place its method signature has a choice worth making deliberately: one declaration per participant table keeps each branch's generated typed columns, while a single `Table<?>` declaration serves every branch and resolves columns by name. xref:add-custom-conditions.adoc#filter-a-multitable-interface[Filter a multitable interface or union] covers both forms, the mixed set, and what each one checks at compile time.
+
 == Polymorphic child fields
 
 A polymorphic interface or union can be the return type of a child field, not just a root query. Two shapes are common.

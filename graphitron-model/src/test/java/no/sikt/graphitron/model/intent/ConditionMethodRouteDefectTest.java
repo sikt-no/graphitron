@@ -109,6 +109,69 @@ class ConditionMethodRouteDefectTest {
     }
 
     /**
+     * Two declarations whose second parameters each resolve, to different tables. The build admits
+     * the set on the binding shape and then rejects it, having one joined table to emit and no
+     * consumer call site to defer the choice to; the census sees the same disagreement, routes
+     * nothing, and this is the verdict that says so. It sits after the wildcard arm, so a set that
+     * is both wildcard-mixed and disagreeing reads as the wildcard case.
+     */
+    @Test
+    void twoOverloadsResolvingToDifferentTablesAreNamedAsSuch() {
+        withCatalog(dsl -> {
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("customer"), tableClass("address"));
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("address"), tableClass("customer"));
+            seedBareConditionArgument(dsl, "district", CONDITIONS, "bridge");
+
+            assertThat(defects(dsl))
+                .containsExactly(
+                    "com.example.Conditions.bridge TARGET_DISAGREEMENT_ACROSS_OVERLOADS");
+        });
+    }
+
+    /**
+     * A wildcard declaration beside a concrete one is the wildcard case, and it reaches that verdict
+     * by the untouched precedence rather than by a new arm: the wildcard test is an EXISTS over any
+     * position-1 slot of the name, so it was set-wide already. The case is asserted on both
+     * relations because this is where the two modules' rules could most easily be spelled apart.
+     */
+    @Test
+    void aWildcardDeclarationBesideAConcreteOneIsTheWildcardCase() {
+        withCatalog(dsl -> {
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("customer"), "org.jooq.Table");
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("customer"), tableClass("address"));
+            seedBareConditionArgument(dsl, "district", CONDITIONS, "bridge");
+
+            assertThat(defects(dsl))
+                .containsExactly("com.example.Conditions.bridge WILDCARD_TARGET_PARAMETER");
+        });
+    }
+
+    /**
+     * A declaration whose target names a class no table is generated as, beside a concrete one, is
+     * the fall-through: only one slot of the pair resolves, so nothing disagrees among the resolving
+     * ones and the verdict names the fact the census can see. For a set this is the build's
+     * admission refusal rather than its routing refusal, and both are no route, which is the whole
+     * of what this rung claims.
+     */
+    @Test
+    void aNonTableTargetDeclarationBesideAConcreteOneIsTheFallThrough() {
+        withCatalog(dsl -> {
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("customer"), "com.example.Widget");
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("customer"), tableClass("address"));
+            seedBareConditionArgument(dsl, "district", CONDITIONS, "bridge");
+
+            assertThat(defects(dsl))
+                .containsExactly("com.example.Conditions.bridge TARGET_NOT_A_TABLE_CLASS");
+        });
+    }
+
+    /**
      * Overloads are why the verdict is picked by one pass over the pair rather than by an arm per
      * refusal: a name carrying a one-parameter overload beside a wildcard-target one is one row and
      * not two, and the precedence says which, the parameter count preceding the parameter's type.
@@ -137,6 +200,13 @@ class ConditionMethodRouteDefectTest {
             seedConditionMethod(dsl, JAR, CONDITIONS, "customerToAddress",
                 tableClass("customer"), tableClass("address"));
             seedBareConditionArgument(dsl, "district", CONDITIONS, "customerToAddress");
+            // An admitted set agreeing on its arrival routes, so it is not a defect either: the
+            // pairing has to hold for a set exactly as it does for one declaration.
+            seedConditionMethod(dsl, JAR, CONDITIONS, "agreeing",
+                tableClass("customer"), tableClass("address"));
+            seedConditionMethod(dsl, JAR, CONDITIONS, "agreeing",
+                tableClass("address"), tableClass("address"));
+            seedBareConditionArgument(dsl, "third", CONDITIONS, "agreeing");
             seedArgument(dsl, GRAPH, "Query", "customers", "other", "String");
             seedArgumentReference(dsl, GRAPH, "Query", "customers", "other", 0);
             seedArgumentReferenceElement(dsl, GRAPH, "Query", "customers", "other", 0, 0,

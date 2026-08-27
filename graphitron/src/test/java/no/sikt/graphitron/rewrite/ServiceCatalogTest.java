@@ -986,16 +986,23 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_overloadedMethod_producesAmbiguousMethod() {
-        // TestServiceStub declares two methods named getOverloaded (arity 0 and 1); the classifier
-        // rejects the silent first-match pick with a typed AmbiguousMethod carrying both arities.
+        // TestServiceStub declares two methods named getOverloaded (arity 0 and 1). The @service
+        // coordinate admits exactly one declaration, so any second one lands the NameShared axis;
+        // admission on the binding shape is the @condition coordinate's rule and not this one's.
         var result = reflect(newCatalog(),
             STUB_CLASS, "getOverloaded", bindings(Map.of()), Set.of(), List.of());
 
         assertThat(result.failed()).isTrue();
         assertThat(result.rejection())
             .isInstanceOf(no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod.class);
-        assertThat(result.rejection().message())
-            .contains("overloaded")
-            .contains("getOverloaded");
+        var ambiguous =
+            (no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod) result.rejection();
+        assertThat(ambiguous.ambiguity())
+            .isEqualTo(new no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod
+                .Ambiguity.NameShared());
+        assertThat(ambiguous.candidateSignatures())
+            .as("the declarations arrive as rendered signatures, not as bare arities")
+            .hasSize(2)
+            .allSatisfy(signature -> assertThat(signature).startsWith("getOverloaded("));
     }
 }

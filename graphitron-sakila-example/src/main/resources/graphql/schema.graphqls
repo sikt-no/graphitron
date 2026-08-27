@@ -839,6 +839,22 @@ type Query {
         className: "no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures",
         method: "firstNamePrefix"}, override: true)): [AddressOccupant!]!
 
+    # The per-participant form of the same filter: the condition names an overload set with one
+    # declaration per participant table, differing only in that table parameter. Each branch's glue
+    # is typed from the coordinate, so this module's javac picks the branch's own declaration and the
+    # method body keeps jOOQ's generated typed column handles instead of resolving by name.
+    occupantsByTypedNamePrefix(firstName: String @field(name: "first_name") @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures",
+        method: "occupantTypedNamePrefix"}, override: true)): [AddressOccupant!]!
+
+    # The mixed set: one concrete declaration for customer plus a Table<?> declaration that serves
+    # every branch no concrete declaration covers, staff here. It compiles, which is the point, and
+    # the trade-off is that a partial concrete set with a fallback has no compile-time
+    # partial-coverage guard; the fixture's javadoc states it.
+    occupantsByMixedNamePrefix(firstName: String @field(name: "first_name") @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures",
+        method: "occupantMixedNamePrefix"}, override: true)): [AddressOccupant!]!
+
     # Per-participant @nodeId decode routes. Each participant of LanguageStock states its own path
     # from its own table to the language the id decodes to (see LanguageStockFilter), so one filter
     # leaf narrows both branches even though the two routes share no hop. An id encoded for another

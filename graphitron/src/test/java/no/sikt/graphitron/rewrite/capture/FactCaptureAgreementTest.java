@@ -183,9 +183,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       unresolvable arrival being no route where an unresolvable departure is every table in the
  *       graph's sources;
  *       {@code no.sikt.graphitron.model.intent.ConditionMethodRouteDefectTest} binds
- *       {@code intent_condition_method_route_defect} on the same terms, one case per verdict plus
- *       the case that makes the pairing complete: a pair that routes draws no row, so the two
- *       relations partition the authored population rather than overlapping on it;
+ *       {@code intent_condition_method_route_defect} on the same terms, every verdict named at
+ *       least once and the set populations named on both relations, plus the case that makes the
+ *       pairing complete: a pair that routes draws no row, so the two relations partition the
+ *       authored population rather than overlapping on it;
  *       {@code no.sikt.graphitron.model.intent.ArgumentScopeTableTest} binds
  *       {@code intent_argument_scope_table}, which table an argument's column-shaped content binds
  *       against, one case per rung plus the cases where the rungs compete, the precedence being the

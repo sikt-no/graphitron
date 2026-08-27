@@ -266,4 +266,90 @@ class TestConditionStub {
             no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor tgt) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * Fixture: the per-participant overload set, on the {@code Customer | Staff} union the
+     * multitable filter cases use. The two declarations agree on the binding shape and differ only
+     * in their table slots, so they are one {@code @condition} target; the branch emitter passes
+     * each participant's concretely-typed stage-1 alias and the consumer's javac picks the
+     * declaration. The table slots are named differently on purpose: a per-participant author names
+     * each slot after its own table, and no reader may take one of those names for a binding target.
+     */
+    public static Condition occupantNameOverload(
+            no.sikt.graphitron.rewrite.test.jooq.tables.Customer customer, String firstName) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The {@code Staff} branch of {@link #occupantNameOverload}. */
+    public static Condition occupantNameOverload(
+            no.sikt.graphitron.rewrite.test.jooq.tables.Staff ansatt, String firstName) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Fixture: an overload set that disagrees on the binding shape. Position 1 shares its name and
+     * differs in declared type, so the shared name denotes two call shapes and the set is refused
+     * with the parameter-position axis, at every {@code @condition} coordinate alike.
+     */
+    public static Condition occupantNameDisagreeing(
+            no.sikt.graphitron.rewrite.test.jooq.tables.Customer customer, String firstName) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The disagreeing sibling of {@link #occupantNameDisagreeing}: {@code firstName} is an Integer. */
+    public static Condition occupantNameDisagreeing(
+            no.sikt.graphitron.rewrite.test.jooq.tables.Staff ansatt, Integer firstName) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Fixture: a single-declaration {@code @condition} whose table slot is named after the field's
+     * only GraphQL argument. The table slot contributes no name to the claimed-slot set, so the
+     * argument stays unclaimed and type-based inference binds {@code kriterier} to it; reading the
+     * table slot's name as a claim used to leave {@code kriterier} unbound and reject structurally.
+     */
+    public static Condition tableSlotNamedLikeAnArgument(
+            no.sikt.graphitron.rewrite.test.jooq.tables.Film film, FilmFilter kriterier) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The filter bean {@link #tableSlotNamedLikeAnArgument} takes: a named input's Java carrier. */
+    public record FilmFilter(String navn) {}
+
+    /**
+     * Fixture: a path-step overload set whose second slots agree. Both declarations arrive at
+     * {@code film_actor} and depart from different tables, so a {@code Film} parent's hop has one
+     * applicable declaration and one resolved join target. Pairs with a following
+     * {@code {table: "actor"}} step exactly as {@link #intermediate} does.
+     */
+    public static Condition agreeingIntermediate(
+            no.sikt.graphitron.rewrite.test.jooq.tables.Film src,
+            no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor tgt) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The {@code City}-departing declaration of {@link #agreeingIntermediate}. */
+    public static Condition agreeingIntermediate(
+            no.sikt.graphitron.rewrite.test.jooq.tables.City src,
+            no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor tgt) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Fixture: a path-step overload set whose second slots name different tables. The set is
+     * admitted (it agrees on the binding shape) and then resolves no join target, because the hop
+     * emits one joined table and there is no consumer call site to defer the choice to.
+     */
+    public static Condition disagreeingIntermediate(
+            no.sikt.graphitron.rewrite.test.jooq.tables.Film src,
+            no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor tgt) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The {@code Actor}-arriving declaration of {@link #disagreeingIntermediate}. */
+    public static Condition disagreeingIntermediate(
+            no.sikt.graphitron.rewrite.test.jooq.tables.Film src,
+            no.sikt.graphitron.rewrite.test.jooq.tables.Actor tgt) {
+        throw new UnsupportedOperationException();
+    }
 }

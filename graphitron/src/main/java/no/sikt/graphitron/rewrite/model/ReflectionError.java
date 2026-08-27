@@ -89,25 +89,93 @@ public sealed interface ReflectionError extends Rejection.AuthorError permits
     }
 
     /**
-     * More than one declared method shares the referenced name. The reflect helpers previously
-     * took {@code methods.get(0)} (JVM declaration order) silently; this arm makes the ambiguity a
-     * typed failure. Carries the class/method coordinate and the parameter arities of every
-     * same-name declaration so the author can see which overloads collide.
+     * The referenced name does not denote one call shape. Two populations reach this arm, told
+     * apart by {@link Ambiguity} rather than by prose composed at the detection site: a coordinate
+     * that admits exactly one declaration found several ({@link Ambiguity.NameShared}), or the
+     * {@code @condition} path found several that disagree on the binding shape, on the axis the
+     * remaining arms name.
+     *
+     * <p>Carries the class/method coordinate and every same-named declaration's rendered signature,
+     * so a consumer (the LSP included) sees the overload set the author actually wrote without
+     * parsing prose. Signatures rather than bare arities: an arity list cannot show a set that
+     * collides at one arity, which is the whole of the {@code @condition} population.
      */
     record AmbiguousMethod(
         String className,
         String methodName,
-        List<Integer> candidateArities
+        List<String> candidateSignatures,
+        Ambiguity ambiguity
     ) implements ReflectionError {
-        public AmbiguousMethod { candidateArities = List.copyOf(candidateArities); }
+        public AmbiguousMethod {
+            candidateSignatures = List.copyOf(candidateSignatures);
+            java.util.Objects.requireNonNull(ambiguity, "ambiguity");
+        }
         @Override public String message() {
-            return "method '" + methodName + "' in class '" + className + "' is overloaded ("
-                + candidateArities.size() + " declarations with parameter counts "
-                + candidateArities.stream().map(String::valueOf).collect(Collectors.joining(", ", "[", "]"))
-                + ") — graphitron cannot pick one; rename or remove overloads so exactly one method"
-                + " named '" + methodName + "' exists";
+            return "method '" + methodName + "' in class '" + className + "' has "
+                + candidateSignatures.size() + " declarations ("
+                + String.join("; ", candidateSignatures) + "): " + guidance();
         }
         @Override public String lspCode() { return "graphitron.reflect.ambiguous-method"; }
+
+        /** The remedy, rendered from the typed axis rather than assembled by the detection site. */
+        private String guidance() {
+            String shapeRule = " On a @condition the declarations of one name may differ only in"
+                + " their jOOQ Table parameters, so make the rest of the signature identical across"
+                + " them, or collapse the set to a single method taking org.jooq.Table<?>.";
+            return switch (ambiguity) {
+                case Ambiguity.NameShared ignored ->
+                    "graphitron cannot pick one; rename or remove overloads so exactly one method"
+                        + " named '" + methodName + "' exists";
+                case Ambiguity.StaticModifier ignored ->
+                    "they disagree on the static modifier." + shapeRule;
+                case Ambiguity.ReturnType ignored ->
+                    "they disagree on the return type." + shapeRule;
+                case Ambiguity.ParameterCount ignored ->
+                    "they declare different numbers of parameters." + shapeRule;
+                case Ambiguity.ThrowsClause ignored ->
+                    "they disagree on the declared throws clause." + shapeRule;
+                case Ambiguity.ParameterPosition p ->
+                    "parameter " + p.position() + " is neither a jOOQ Table parameter in every"
+                        + " declaration nor identical in name and declared type across them."
+                        + shapeRule;
+            };
+        }
+
+        /**
+         * Why the shared name resolved to no single call shape. A typed discriminant threaded as an
+         * explicit constructor input, the way {@code ServiceCatalog.SeamFilter} is, so
+         * {@link #message()} switches on it and no caller pre-renders a hint. The five shape arms
+         * are exactly the axes the {@code @condition} admission rule demands agreement on, which is
+         * what lets the agreed-shape value name the axis at the moment its construction fails.
+         */
+        public sealed interface Ambiguity {
+
+            /**
+             * A coordinate admitting exactly one declaration found several. The {@code @service},
+             * {@code @externalField}, and enum-mapping paths resolve by name alone, so any second
+             * declaration lands here.
+             */
+            record NameShared() implements Ambiguity {}
+
+            /** Some declarations are {@code static} and some are not. */
+            record StaticModifier() implements Ambiguity {}
+
+            /** The declarations return different types. */
+            record ReturnType() implements Ambiguity {}
+
+            /** The declarations take different numbers of parameters. */
+            record ParameterCount() implements Ambiguity {}
+
+            /** The declarations declare different checked exceptions. */
+            record ThrowsClause() implements Ambiguity {}
+
+            /**
+             * One position is neither {@code Table}-assignable in every declaration nor identical
+             * in name and declared type across them. {@code position} is zero-based, as the
+             * generator counts parameters everywhere else.
+             */
+            record ParameterPosition(int position) implements Ambiguity {}
+        }
     }
 
     /**

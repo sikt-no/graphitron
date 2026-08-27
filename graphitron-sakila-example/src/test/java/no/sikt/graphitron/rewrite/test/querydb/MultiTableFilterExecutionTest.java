@@ -504,6 +504,49 @@ class MultiTableFilterExecutionTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void perParticipantOverloadSet_dispatchesToEachBranchsOwnDeclaration() {
+        // The reporter's scenario end to end. The @condition names an overload set with one
+        // declaration per participant table; each branch's glue is typed from the coordinate, so
+        // javac selected the branch's own declaration at compile time and each body used that
+        // table's generated typed column. Mary and Mike coming back from a prefix match proves both
+        // branches fired with the developer predicate: an implicit equality on "M" matches no row.
+        Map<String, Object> data = execute("""
+            { occupantsByTypedNamePrefix(firstName: "M") {
+                __typename
+                ... on Customer { firstName }
+                ... on Staff { firstName }
+            } }
+            """);
+        List<Map<String, Object>> rows =
+            (List<Map<String, Object>>) data.get("occupantsByTypedNamePrefix");
+        assertThat(rows).extracting(r -> (String) r.get("firstName"))
+            .containsExactlyInAnyOrder("Mary", "Mike");
+        assertThat(rows).extracting(r -> (String) r.get("__typename"))
+            .containsExactlyInAnyOrder("Customer", "Staff");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void mixedOverloadSet_servesTheUncoveredBranchFromTheFallback() {
+        // One concrete declaration covers customer; the Table<?> declaration beside it serves staff
+        // by javac's most-specific rule. That it compiles at all is the compilation tier's proof;
+        // that both branches still filter is this one's, and it is the same trade-off stated in the
+        // fixture and the how-to: the fallback is what a partial concrete set silently falls into.
+        Map<String, Object> data = execute("""
+            { occupantsByMixedNamePrefix(firstName: "M") {
+                __typename
+                ... on Customer { firstName }
+                ... on Staff { firstName }
+            } }
+            """);
+        List<Map<String, Object>> rows =
+            (List<Map<String, Object>>) data.get("occupantsByMixedNamePrefix");
+        assertThat(rows).extracting(r -> (String) r.get("firstName"))
+            .containsExactlyInAnyOrder("Mary", "Mike");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void nestedInputCondition_receivesMapTraversedValue() {
         // Phase c: a nested-input developer @condition (OccupantFilter.namePrefix) receives
         // the Map-traversed value per branch. Prefix "Li" matches only customer Linda.

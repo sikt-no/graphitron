@@ -143,4 +143,48 @@ class ReferencePathConditionParamTest {
             """.formatted(STUB), "Film", "actors");
         assertThat(f).isNotInstanceOf(UnclassifiedField.class);
     }
+
+    // ===== Admitted overload sets at the path-step coordinate =====
+
+    @Test
+    void overloadSetAgreeingOnTheTarget_classifiesLikeASingleMethod() {
+        // Two declarations arriving at film_actor and departing from two tables. The hop's target is
+        // read off the set and the declarations agree on it, so it resolves; the hop's origin is
+        // `film`, which one of the two declarations accepts, and per-anchor applicability asks for
+        // exactly that. Which declaration javac then selects is javac's business.
+        var f = field("""
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") {
+                actors: [Actor!]! @reference(path: [
+                    {condition: {className: "%s", method: "agreeingIntermediate"}},
+                    {table: "actor"}
+                ]) @defaultOrder(primaryKey: true)
+            }
+            type Query { film: Film }
+            """.formatted(STUB), "Film", "actors");
+        assertThat(f).isNotInstanceOf(UnclassifiedField.class);
+    }
+
+    @Test
+    void overloadSetDisagreeingOnTheTarget_isRejectedAsUnresolvedTarget() {
+        // The same admission, a different answer: the hop emits one joined table and the set's
+        // second slots name two, so there is nothing for the generator to emit and no consumer call
+        // site to defer the choice to. Rejected through the existing unresolved-target path, which
+        // is also where a set intending per-branch join topology lands.
+        var f = field("""
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") {
+                actors: [Actor!]! @reference(path: [
+                    {condition: {className: "%s", method: "disagreeingIntermediate"}},
+                    {table: "actor"}
+                ]) @defaultOrder(primaryKey: true)
+            }
+            type Query { film: Film }
+            """.formatted(STUB), "Film", "actors");
+        assertThat(f).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) f).reason())
+            .contains("naming different tables")
+            .contains("public.actor")
+            .contains("public.film_actor");
+    }
 }

@@ -581,10 +581,40 @@ class ServiceCatalog {
      * Resolves the single declared method named {@code methodName} on {@code cls}. Shared by all
      * three reflect helpers: zero matches produce the typed {@code unknownServiceMethod}
      * {@link Rejection.AuthorError.UnknownName}; more than one produce
-     * {@link ReflectionError.AmbiguousMethod} carrying every candidate's parameter arity.
+     * {@link ReflectionError.AmbiguousMethod} carrying every candidate's rendered signature.
      */
     private static MethodPick pickMethod(Class<?> cls, String className, String methodName) {
         return pickMethod(cls, className, methodName, null);
+    }
+
+    /** Outcome of {@link #candidateMethods}: the same-named declarations, or the not-found rejection. */
+    private sealed interface MethodCandidates {
+        record Named(List<java.lang.reflect.Method> declarations) implements MethodCandidates {}
+        record Rejected(Rejection rejection) implements MethodCandidates {}
+    }
+
+    /**
+     * The name filter alone, as {@link #pickMethod}'s sibling entry: every declaration sharing the
+     * referenced name, or the same not-found rejection {@code pickMethod} produces. The
+     * {@code @condition} coordinate judges the <em>set</em> rather than picking from it, so it needs
+     * the candidates where the other coordinates need a pick; both read one name filter, so the
+     * zero-match rejection cannot drift between them.
+     */
+    private static MethodCandidates candidateMethods(Class<?> cls, String className, String methodName) {
+        var methods = Arrays.stream(cls.getDeclaredMethods())
+            .filter(m -> m.getName().equals(methodName))
+            .toList();
+        if (methods.isEmpty()) {
+            var declaredMethodNames = Arrays.stream(cls.getDeclaredMethods())
+                .map(java.lang.reflect.Method::getName)
+                .distinct()
+                .toList();
+            return new MethodCandidates.Rejected(
+                Rejection.unknownServiceMethod(
+                    "method '" + methodName + "' not found in class '" + className + "'",
+                    methodName, declaredMethodNames));
+        }
+        return new MethodCandidates.Named(methods);
     }
 
     /**
@@ -598,19 +628,11 @@ class ServiceCatalog {
      */
     private static MethodPick pickMethod(Class<?> cls, String className, String methodName,
             SeamFilter seamFilter) {
-        var methods = Arrays.stream(cls.getDeclaredMethods())
-            .filter(m -> m.getName().equals(methodName))
-            .toList();
-        if (methods.isEmpty()) {
-            var declaredMethodNames = Arrays.stream(cls.getDeclaredMethods())
-                .map(java.lang.reflect.Method::getName)
-                .distinct()
-                .toList();
-            return new MethodPick.Rejected(
-                Rejection.unknownServiceMethod(
-                    "method '" + methodName + "' not found in class '" + className + "'",
-                    methodName, declaredMethodNames));
+        var candidates = candidateMethods(cls, className, methodName);
+        if (candidates instanceof MethodCandidates.Rejected notFound) {
+            return new MethodPick.Rejected(notFound.rejection());
         }
+        var methods = ((MethodCandidates.Named) candidates).declarations();
         if (seamFilter != null) {
             var qualifying = methods.stream().filter(ServiceCatalog::carriesOneSeam).toList();
             if (qualifying.isEmpty()) {
@@ -626,10 +648,9 @@ class ServiceCatalog {
             return new MethodPick.Picked(qualifying.get(0));
         }
         if (methods.size() > 1) {
-            var arities = methods.stream()
-                .map(java.lang.reflect.Method::getParameterCount)
-                .toList();
-            return new MethodPick.Rejected(new ReflectionError.AmbiguousMethod(className, methodName, arities));
+            return new MethodPick.Rejected(new ReflectionError.AmbiguousMethod(className, methodName,
+                methods.stream().map(ServiceCatalog::renderSignature).toList(),
+                new ReflectionError.AmbiguousMethod.Ambiguity.NameShared()));
         }
         return new MethodPick.Picked(methods.get(0));
     }
@@ -723,24 +744,16 @@ class ServiceCatalog {
 
     /**
      * Post-reflection typo guard for {@code argMapping} overrides: verifies each explicit
-     * override target ({@code javaTarget} differs from the path head) is among the resolved method's
-     * parameter names. Returns a failure message naming the directive site, the target, and the
-     * actual parameter list, or {@code null} when every target resolves.
+     * override target ({@code javaTarget} differs from the path head) is among the parameter names
+     * a binding may target. Returns a failure message naming the directive site, the target, and
+     * that name set, or {@code null} when every target resolves. On the {@code @condition} path the
+     * set is the admitted shape's bindable names, table slots excluded, so the message lists only
+     * names an {@code argMapping} entry may actually name; the {@code @service} path passes its own
+     * decoded parameter names unchanged.
      *
      * <p>Identity entries skip the guard: an unresolved identity entry produces the per-parameter
      * "does not match any GraphQL argument" error in the main loop, which is already actionable.
      */
-    private static String checkOverrideTargets(Map<String, PathExpr> argByJavaName,
-                                               java.lang.reflect.Method javaMethod,
-                                               String methodName, String className) {
-        var paramNames = Arrays.stream(javaMethod.getParameters())
-            .filter(java.lang.reflect.Parameter::isNamePresent)
-            .map(java.lang.reflect.Parameter::getName)
-            .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
-        return checkOverrideTargets(argByJavaName, paramNames, methodName, className);
-    }
-
-    /** Reflection-free form of {@link #checkOverrideTargets}, over a decoded parameter-name set. */
     private static String checkOverrideTargets(Map<String, PathExpr> argByJavaName,
                                                Set<String> paramNames,
                                                String methodName, String className) {
@@ -759,12 +772,266 @@ class ServiceCatalog {
     }
 
     /**
+     * The binding shape a set of same-named {@code @condition} declarations agrees on, and the
+     * only thing {@link #reflectTableMethod} reads past admission. Built exclusively by
+     * {@link #admitConditionShape}, whose folds fail on the first disagreement, so agreement on
+     * arity, static-ness, return type and the {@code throws} clause are properties this value
+     * cannot exist without rather than rules a reader has to remember. No
+     * {@code java.lang.reflect.Method} survives admission, which is what makes a privileged
+     * representative unconstructable instead of merely discouraged.
+     *
+     * <p>The two name components are disjoint and carry the whole of the table-slot-name rule by
+     * <em>which component a consumer receives</em>: {@link AgreedConditionShape#reservedTableSlotNames()} is the union of
+     * every admitted declaration's table-slot names, handed to the one check that asks whether an
+     * {@code argMapping} target is bindable; {@link AgreedConditionShape#bindableParamNames()} holds the non-table names
+     * alone and is what every reader that treats a parameter name as a binding target, or prints
+     * one, receives. A table parameter therefore cannot claim a GraphQL slot or appear in a
+     * fall-through message listing targets an {@code argMapping} entry may name.
+     */
+    private record AgreedConditionShape(
+            List<ShapeSlot> slots,
+            Set<String> bindableParamNames,
+            Set<String> reservedTableSlotNames,
+            boolean allStatic,
+            boolean allParameterNamesPresent,
+            Class<?> returnType,
+            List<String> declaredExceptions) {
+
+        private AgreedConditionShape {
+            slots = List.copyOf(slots);
+            bindableParamNames = Set.copyOf(bindableParamNames);
+            reservedTableSlotNames = Set.copyOf(reservedTableSlotNames);
+            declaredExceptions = List.copyOf(declaredExceptions);
+        }
+
+        /** True when at least one position is {@code Table}-assignable, the directive's own floor. */
+        boolean hasTableSlot() {
+            return slots.stream().anyMatch(s -> s instanceof ShapeSlot.TableSlot);
+        }
+    }
+
+    /**
+     * One parameter position of an admitted {@code @condition} set: a reserved table slot, or a
+     * position every declaration spells identically and the call site may bind.
+     */
+    private sealed interface ShapeSlot {
+
+        /** The zero-based parameter position, as the generator counts parameters everywhere else. */
+        int position();
+
+        /**
+         * A {@code Table}-assignable position in every admitted declaration. {@code decided} is the
+         * catalog answer for the position, resolved once here rather than re-decoded from a type
+         * name by each reader. The emitted trio ({@code name}, {@code typeName}, {@code javaType})
+         * is what the position's {@link MethodRef.Param} carries: emission-inert (the emitters
+         * substitute a coordinate-typed expression and {@link MethodRef}'s extraction accessors
+         * throw on {@link ParamSource.Table}), and set-derived rather than picked from one
+         * declaration. Where the declarations disagree the trio reduces to the bare jOOQ table
+         * interface, which is the honest reading: none of the declared types is the one the emitter
+         * passes, and {@code decided} is where a consumer reads what the set actually names.
+         */
+        record TableSlot(int position, String name, String typeName, TypeName javaType,
+                         ParamSource.Table.TableSlot decided, Set<String> declaredNames)
+                implements ShapeSlot {}
+
+        /**
+         * A position identical in name and declared type across every admitted declaration, so the
+         * binding it carries is a property of the set. {@code name} is null when the class was
+         * compiled without {@code -parameters}, which {@link ServiceCatalog#reflectTableMethod} rejects.
+         */
+        record Bindable(int position, String name, Class<?> rawType,
+                        java.lang.reflect.Type declaredType) implements ShapeSlot {
+
+            String typeName() { return declaredType.getTypeName(); }
+
+            TypeName javaType() { return TypeName.get(declaredType); }
+        }
+    }
+
+    /** Outcome of {@link #admitConditionShape}: the agreed shape, or the axis it failed on. */
+    private sealed interface ConditionAdmission {
+        record Admitted(AgreedConditionShape shape) implements ConditionAdmission {}
+        record Refused(ReflectionError.AmbiguousMethod.Ambiguity ambiguity) implements ConditionAdmission {}
+    }
+
+    /**
+     * Folds every declaration sharing a {@code @condition}'s method name into one
+     * {@link AgreedConditionShape}, or refuses with the axis they disagree on.
+     *
+     * <p>Same-named declarations are one {@code @condition} target when they agree on the binding
+     * shape: the same parameter count; position by position, each position either
+     * {@code Table}-assignable in every declaration or identical in name and declared type in every
+     * declaration; the same static-ness; the same return type; and the same declared {@code throws}
+     * clause. Nothing else has to agree, because nothing else reaches emitted code: the glue's table
+     * parameter is typed from the coordinate, so the call site the generator emits is identical for
+     * every member of such a set and the consumer's javac performs the overload selection. A set
+     * that disagrees is not "a shared name" but "a shared name denoting more than one call shape",
+     * which is what {@link ReflectionError.AmbiguousMethod} then says.
+     *
+     * <p>{@code declarations} is non-empty. The first declaration seeds each fold; every fold then
+     * demands agreement, so no fact of it survives that the whole set does not share.
+     */
+    private ConditionAdmission admitConditionShape(List<java.lang.reflect.Method> declarations) {
+        var first = declarations.get(0);
+        int arity = first.getParameterCount();
+        for (var m : declarations) {
+            if (m.getParameterCount() != arity) {
+                return new ConditionAdmission.Refused(
+                    new ReflectionError.AmbiguousMethod.Ambiguity.ParameterCount());
+            }
+        }
+        boolean allStatic = java.lang.reflect.Modifier.isStatic(first.getModifiers());
+        for (var m : declarations) {
+            if (java.lang.reflect.Modifier.isStatic(m.getModifiers()) != allStatic) {
+                return new ConditionAdmission.Refused(
+                    new ReflectionError.AmbiguousMethod.Ambiguity.StaticModifier());
+            }
+        }
+        Class<?> returnType = first.getReturnType();
+        for (var m : declarations) {
+            if (!m.getReturnType().equals(returnType)) {
+                return new ConditionAdmission.Refused(
+                    new ReflectionError.AmbiguousMethod.Ambiguity.ReturnType());
+            }
+        }
+        var declaredExceptions = new java.util.TreeSet<>(declaredExceptionFqns(first));
+        for (var m : declarations) {
+            if (!new java.util.TreeSet<>(declaredExceptionFqns(m)).equals(declaredExceptions)) {
+                return new ConditionAdmission.Refused(
+                    new ReflectionError.AmbiguousMethod.Ambiguity.ThrowsClause());
+            }
+        }
+        // Positional agreement is judged for every position before any slot is minted, so a refused
+        // set never reaches the catalog: minting a table slot resolves its declared types, which is
+        // work the answer does not need.
+        for (int position = 0; position < arity; position++) {
+            int at = position;
+            boolean tableEverywhere = declarations.stream()
+                .allMatch(m -> org.jooq.Table.class.isAssignableFrom(m.getParameters()[at].getType()));
+            boolean tableNowhere = declarations.stream()
+                .noneMatch(m -> org.jooq.Table.class.isAssignableFrom(m.getParameters()[at].getType()));
+            if (!tableEverywhere && !tableNowhere) {
+                return new ConditionAdmission.Refused(
+                    new ReflectionError.AmbiguousMethod.Ambiguity.ParameterPosition(position));
+            }
+            if (tableEverywhere) continue;
+            var p = first.getParameters()[position];
+            String name = p.isNamePresent() ? p.getName() : null;
+            var declaredType = p.getParameterizedType();
+            for (var m : declarations) {
+                var q = m.getParameters()[at];
+                String qName = q.isNamePresent() ? q.getName() : null;
+                if (!java.util.Objects.equals(qName, name)
+                        || !q.getParameterizedType().equals(declaredType)) {
+                    return new ConditionAdmission.Refused(
+                        new ReflectionError.AmbiguousMethod.Ambiguity.ParameterPosition(position));
+                }
+            }
+        }
+        var slots = new ArrayList<ShapeSlot>();
+        var bindableParamNames = new java.util.LinkedHashSet<String>();
+        var reservedTableSlotNames = new java.util.LinkedHashSet<String>();
+        boolean allNamesPresent = true;
+        for (int position = 0; position < arity; position++) {
+            int at = position;
+            boolean tableEverywhere = org.jooq.Table.class
+                .isAssignableFrom(first.getParameters()[at].getType());
+            for (var m : declarations) {
+                if (!m.getParameters()[at].isNamePresent()) allNamesPresent = false;
+            }
+            if (tableEverywhere) {
+                var declaredNames = declarations.stream()
+                    .map(m -> m.getParameters()[at])
+                    .filter(java.lang.reflect.Parameter::isNamePresent)
+                    .map(java.lang.reflect.Parameter::getName)
+                    .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+                var declaredTypeNames = declarations.stream()
+                    .map(m -> m.getParameters()[at].getParameterizedType().getTypeName())
+                    .distinct()
+                    .toList();
+                boolean oneType = declaredTypeNames.size() == 1;
+                reservedTableSlotNames.addAll(declaredNames);
+                slots.add(new ShapeSlot.TableSlot(position,
+                    declaredNames.size() == 1 ? declaredNames.iterator().next() : "table",
+                    oneType ? declaredTypeNames.get(0) : org.jooq.Table.class.getName(),
+                    oneType
+                        ? TypeName.get(first.getParameters()[at].getParameterizedType())
+                        : ClassName.get("org.jooq", "Table"),
+                    decideTableSlot(declarations, position), declaredNames));
+                continue;
+            }
+            // The agreement pass above proved every declaration spells this position identically,
+            // so reading it off the first is reading the set's own answer.
+            var p = first.getParameters()[position];
+            String name = p.isNamePresent() ? p.getName() : null;
+            if (name != null) bindableParamNames.add(name);
+            slots.add(new ShapeSlot.Bindable(position, name, p.getType(),
+                p.getParameterizedType()));
+        }
+        return new ConditionAdmission.Admitted(new AgreedConditionShape(slots,
+            bindableParamNames, reservedTableSlotNames, allStatic, allNamesPresent,
+            returnType, List.copyOf(declaredExceptions)));
+    }
+
+    /**
+     * The catalog answer for one {@code Table}-assignable position, over every admitted declaration:
+     * the fact both path-step consumers used to re-derive from a type-name string with the identical
+     * wildcard predicate, substring strip and {@code Class.forName} plus catalog lookup. Pluralising
+     * that string would have multiplied the recomputation by the declaration count, so the decided
+     * fact is what the slot carries instead.
+     *
+     * <p>Arm precedence is documented on {@link ParamSource.Table.TableSlot}: one wildcard
+     * declaration makes the slot a wildcard, then one unresolvable concrete declaration makes it
+     * unresolved, and only a slot every declaration resolves is {@link
+     * ParamSource.Table.TableSlot.Bound}.
+     */
+    private ParamSource.Table.TableSlot decideTableSlot(
+            List<java.lang.reflect.Method> declarations, int position) {
+        var tables = new ArrayList<ParamSource.Table.TableSlot.Bound.BoundTable>();
+        String unresolvedTypeName = null;
+        boolean wildcard = false;
+        for (var m : declarations) {
+            var p = m.getParameters()[position];
+            String typeName = p.getParameterizedType().getTypeName();
+            if (namesNoTable(typeName)) {
+                wildcard = true;
+                continue;
+            }
+            var entry = ctx.catalog.findTableByClass(p.getType());
+            if (entry.isEmpty()) {
+                if (unresolvedTypeName == null) unresolvedTypeName = typeName;
+                continue;
+            }
+            var table = entry.get().table();
+            tables.add(new ParamSource.Table.TableSlot.Bound.BoundTable(
+                entry.get().toTableRef(table.getName()),
+                table.getSchema().getName() + "." + table.getName()));
+        }
+        if (wildcard) return new ParamSource.Table.TableSlot.Wildcard();
+        if (unresolvedTypeName != null) {
+            return new ParamSource.Table.TableSlot.Unresolved(unresolvedTypeName);
+        }
+        return new ParamSource.Table.TableSlot.Bound(tables);
+    }
+
+    /**
+     * True when a declared parameter type is the bare jOOQ table interface: a wildcard
+     * {@code Table<?>} (the literal type name jOOQ reflection yields) or a raw {@code org.jooq.Table}.
+     * The one home of a predicate two path-step readers each spelled for themselves.
+     */
+    private static boolean namesNoTable(String typeName) {
+        return typeName.contains("<?>") || typeName.equals(org.jooq.Table.class.getName());
+    }
+
+    /**
      * Reflects a static, table-parameterised developer method: the {@code @condition} call
-     * surface. Loads the class and method through the codegen classloader and classifies each
-     * parameter — binding-map keys become {@link ParamSource.Arg}, context keys
-     * {@link ParamSource.Context}, and the single required {@code Table<?>} parameter becomes
-     * {@link ParamSource.Table}. Any other parameter shape is an error, as is a method with no
-     * {@code Table<?>} parameter at all.
+     * surface. Loads the class and every declaration of the method name through the codegen
+     * classloader, folds them into one {@link AgreedConditionShape}, and classifies each position
+     * of that shape: binding-map keys become {@link ParamSource.Arg}, context keys
+     * {@link ParamSource.Context}, and each {@code Table}-assignable position becomes
+     * {@link ParamSource.Table} carrying the catalog answer for the position. Any other parameter
+     * shape is an error, as is a method with no {@code Table<?>} parameter at all, and so is a set
+     * of same-named declarations that do not agree on the binding shape.
      *
      * <p>{@code argBindings} carries the Java-target to GraphQL-arg-name mapping per
      * {@link #bindServiceMethod}, with the same override typo guard; an override entry
@@ -800,44 +1067,49 @@ class ServiceCatalog {
         try {
             // nameability: checked (author-written @condition className, gated above)
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
-            MethodPick pick = pickMethod(cls, className, methodName);
-            if (pick instanceof MethodPick.Rejected rejected) {
-                return new ServiceReflectionResult(null, rejected.rejection());
+            var candidates = candidateMethods(cls, className, methodName);
+            if (candidates instanceof MethodCandidates.Rejected notFound) {
+                return new ServiceReflectionResult(null, notFound.rejection());
             }
-            var javaMethod = ((MethodPick.Picked) pick).method();
-            if (!java.lang.reflect.Modifier.isStatic(javaMethod.getModifiers())) {
+            var declarations = ((MethodCandidates.Named) candidates).declarations();
+            var admission = admitConditionShape(declarations);
+            if (admission instanceof ConditionAdmission.Refused refused) {
+                return new ServiceReflectionResult(null,
+                    new ReflectionError.AmbiguousMethod(className, methodName,
+                        declarations.stream().map(ServiceCatalog::renderSignature).toList(),
+                        refused.ambiguity()));
+            }
+            var shape = ((ConditionAdmission.Admitted) admission).shape();
+            if (!shape.allStatic()) {
                 return new ServiceReflectionResult(null,
                     Rejection.structural("method '" + methodName + "' in class '" + className
                     + "' must be declared 'static' — instance condition methods are not supported;"
                     + " the call site emits 'ClassName.method(...)' which requires a static method"));
             }
-            if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
+            if (!shape.allParameterNamesPresent()) {
                 emitParametersWarning();
             }
-            String tableTypoGuard = checkConditionOverrideTargets(argByJavaName, javaMethod, methodName, className);
+            String tableTypoGuard = checkConditionOverrideTargets(argByJavaName,
+                shape.bindableParamNames(), shape.reservedTableSlotNames(), methodName, className);
             if (tableTypoGuard != null) {
                 return new ServiceReflectionResult(null, Rejection.structural(tableTypoGuard));
             }
-            argByJavaName = inferBindingsByType(javaMethod, argByJavaName, ctxKeys, slotTypes);
+            argByJavaName = inferBindingsByType(shape, argByJavaName, ctxKeys, slotTypes);
             var params = new ArrayList<MethodRef.Param>();
-            boolean foundTable = false;
-            for (var p : javaMethod.getParameters()) {
-                if (org.jooq.Table.class.isAssignableFrom(p.getType())) {
-                    String paramName = p.isNamePresent() ? p.getName() : "table";
-                    params.add(new MethodRef.Param.Typed(paramName,
-                        p.getParameterizedType().getTypeName(),
-                        TypeName.get(p.getParameterizedType()),
-                        new ParamSource.Table()));
-                    foundTable = true;
+            for (var slot : shape.slots()) {
+                if (slot instanceof ShapeSlot.TableSlot table) {
+                    params.add(new MethodRef.Param.Typed(table.name(), table.typeName(),
+                        table.javaType(), new ParamSource.Table(table.decided())));
                     continue;
                 }
-                String pName = p.isNamePresent() ? p.getName() : null;
+                var bindable = (ShapeSlot.Bindable) slot;
+                String pName = bindable.name();
                 if (pName == null) {
                     return new ServiceReflectionResult(null,
                         new ReflectionError.ParameterNamesMissing(className, methodName));
                 }
-                String typeName = p.getParameterizedType().getTypeName();
-                TypeName javaType = TypeName.get(p.getParameterizedType());
+                String typeName = bindable.typeName();
+                TypeName javaType = bindable.javaType();
                 PathExpr resolvedPath = argByJavaName.get(pName);
                 if (resolvedPath != null) {
                     // No wire-coercion check on this path: @condition arguments
@@ -853,15 +1125,15 @@ class ServiceCatalog {
                         + "' is not a GraphQL argument and not a context key"));
                 }
             }
-            if (!foundTable) {
+            if (!shape.hasTableSlot()) {
                 return new ServiceReflectionResult(null,
                     Rejection.structural("method '" + methodName + "' in class '" + className
                     + "' has no Table<?> parameter — the directive requires exactly one Table<?> parameter"));
             }
             return new ServiceReflectionResult(
                 new MethodRef.StaticOnly(className, methodName,
-                    ClassName.get(javaMethod.getReturnType()), List.copyOf(params),
-                    declaredExceptionFqns(javaMethod)),
+                    ClassName.get(shape.returnType()), List.copyOf(params),
+                    shape.declaredExceptions()),
                 null);
         } catch (ClassNotFoundException e) {
             return new ServiceReflectionResult(null, new ReflectionError.ClassNotLoaded(className));
@@ -964,7 +1236,9 @@ class ServiceCatalog {
             List<MethodRef.Param> params = List.of(new MethodRef.Param.Typed(
                 paramName, p.getParameterizedType().getTypeName(),
                 TypeName.get(p.getParameterizedType()),
-                new ParamSource.Table()));
+                // A singleton set: this coordinate resolves one declaration, and the decided fact is
+                // the same catalog lookup layer 1 above already performs on the very same parameter.
+                new ParamSource.Table(decideTableSlot(List.of(javaMethod), 0))));
             TypeName returnTypeName = TypeName.get(genericReturn);
             return new ServiceReflectionResult(
                 new MethodRef.StaticOnly(className, methodName, returnTypeName, params, List.of()),
@@ -1030,17 +1304,20 @@ class ServiceCatalog {
 
     /**
      * Override-target check for {@link #reflectTableMethod}'s {@code @condition} callers:
-     * rejects argMapping entries that target the reserved {@code Table<?>} parameter slot, then
+     * rejects argMapping entries that target a reserved {@code Table<?>} parameter slot, then
      * defers to {@link #checkOverrideTargets} for missing-parameter detection.
+     *
+     * <p>The one place a table slot's <em>name</em> is read set-wide. {@code reservedTableSlotNames}
+     * is the union across every admitted declaration, so a target hitting any admitted table slot
+     * renders the reserved-slot message no matter which declaration named the slot; the
+     * fall-through below receives {@code bindableParamNames} instead, so its message lists only
+     * names an {@code argMapping} entry may actually target.
      */
     private static String checkConditionOverrideTargets(Map<String, PathExpr> argByJavaName,
-                                                        java.lang.reflect.Method javaMethod,
+                                                        Set<String> bindableParamNames,
+                                                        Set<String> reservedTableSlotNames,
                                                         String methodName, String className) {
-        var tableParamNames = Arrays.stream(javaMethod.getParameters())
-            .filter(p -> org.jooq.Table.class.isAssignableFrom(p.getType()))
-            .filter(java.lang.reflect.Parameter::isNamePresent)
-            .map(java.lang.reflect.Parameter::getName)
-            .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        var tableParamNames = reservedTableSlotNames;
         for (var entry : argByJavaName.entrySet()) {
             String javaTarget = entry.getKey();
             PathExpr path = entry.getValue();
@@ -1052,7 +1329,7 @@ class ServiceCatalog {
                     + " bound to a GraphQL argument";
             }
         }
-        return checkOverrideTargets(argByJavaName, javaMethod, methodName, className);
+        return checkOverrideTargets(argByJavaName, bindableParamNames, methodName, className);
     }
 
     private void emitParametersWarning() {
@@ -1630,24 +1907,30 @@ class ServiceCatalog {
      * binding wins); nameless parameters are skipped (the {@code -parameters} diagnostic still
      * fires from the binder); SOURCES-shape parameters are skipped so the SOURCES candidate role
      * downstream retains precedence at child coordinates.
+     *
+     * <p>The skip is a skip of the <em>name</em> as much as of the parameter. A table slot
+     * contributes nothing to the claimed-slot set, which is what the {@code @condition} form below
+     * reads {@link AgreedConditionShape#bindableParamNames()} for.
      */
     private Map<String, PathExpr> inferBindingsByType(
-            java.lang.reflect.Method javaMethod,
+            AgreedConditionShape shape,
             Map<String, PathExpr> existing,
             Set<String> ctxKeys,
             Map<String, GraphQLInputType> slotTypes) {
         if (slotTypes == null || slotTypes.isEmpty()) return existing;
-        var paramNames = Arrays.stream(javaMethod.getParameters())
-            .filter(java.lang.reflect.Parameter::isNamePresent)
-            .map(java.lang.reflect.Parameter::getName)
-            .collect(Collectors.toCollection(HashSet::new));
+        // bindableParamNames, not every parameter name: a table slot never claims a GraphQL slot,
+        // which is why the eligibility loop below drops Table-assignable positions outright. Feeding
+        // a table slot's name in here marks the same-named slot claimed and disables inference for a
+        // slot no parameter binds, so a table parameter named after a field argument used to suppress
+        // the inference the argument needed.
+        var paramNames = new HashSet<>(shape.bindableParamNames());
         var eligible = new ArrayList<InferParam>();
-        for (var p : javaMethod.getParameters()) {
-            if (org.jooq.Table.class.isAssignableFrom(p.getType())) continue;
-            if (org.jooq.DSLContext.class.isAssignableFrom(p.getType())) continue;
-            if (!p.isNamePresent()) continue;
-            if (classifySourcesType(p.getParameterizedType()).isPresent()) continue;
-            eligible.add(new InferParam(p.getName(), p.getParameterizedType().getTypeName()));
+        for (var slot : shape.slots()) {
+            if (!(slot instanceof ShapeSlot.Bindable p)) continue;
+            if (org.jooq.DSLContext.class.isAssignableFrom(p.rawType())) continue;
+            if (p.name() == null) continue;
+            if (classifySourcesType(p.declaredType()).isPresent()) continue;
+            eligible.add(new InferParam(p.name(), p.typeName()));
         }
         return inferBindingsByType(paramNames, eligible, existing, ctxKeys, slotTypes);
     }

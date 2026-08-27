@@ -44,6 +44,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.On;
+import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import org.jooq.ForeignKey;
@@ -2385,6 +2386,16 @@ class BuildContext {
      * <p>Wildcard parameter types ({@code Table<?>}) resolve nothing, so they are tolerated only
      * where a declared target answers the question; reflection requires a concrete generated jOOQ
      * table class.
+     *
+     * <p>The slot's catalog answer is read off {@link ParamSource.Table#slot()}, decided once in
+     * {@code ServiceCatalog} at reflection time. Where the {@code @condition} names an admitted set
+     * of same-named declarations, the slot's {@link ParamSource.Table.TableSlot.Bound} arm carries
+     * one {@link TableRef} per declaration and this rung demands they agree. That reduction is
+     * graphitron's and not javac's on purpose: the hop target names the joined table in the emitted
+     * {@code EXISTS}, decided here at classification time, so there is no consumer call site to
+     * defer the choice to. Agreement is demanded exactly where javac cannot dispatch. A set that
+     * intends a different join target per branch is asking for per-branch join topology, which is a
+     * join-shape feature rather than overload admission, and it rejects through the same path.
      */
     private ConditionJoinTargetResolution resolveConditionJoinTarget(
             MethodRef methodRef, TableRef declaredTarget) {
@@ -2404,29 +2415,41 @@ class BuildContext {
                 + "to use `{table:}` or `{key:}` for this hop.");
         }
         var p1 = params.get(1);
-        String typeName = p1.typeName();
-        // Wildcard `Table<?>` (the literal type-name jOOQ reflection yields) can't resolve a
-        // specific target table; reject with the wildcard-specific message.
-        if (typeName.contains("<?>") || typeName.equals("org.jooq.Table")) {
-            return new ConditionJoinTargetResolution.AuthorError(
-                "`@condition` method '" + methodRef.className() + "." + methodRef.methodName()
-                + "' has wildcard target parameter `Table<?>`; " + source + ". Change the second "
-                + "parameter to the concrete jOOQ table type, or rewrite the path to use "
-                + "`{table:}` or `{key:}` for this hop.");
+        if (!(p1.source() instanceof ParamSource.Table table)) {
+            // Not a table slot at all (a scalar second parameter): nothing in the catalog answers
+            // for it, which is the same no-resolution the concrete non-table case has always been.
+            return unresolvedConditionTarget(methodRef, p1.typeName(), source);
         }
-        String rawTypeName = typeName.contains("<") ? typeName.substring(0, typeName.indexOf('<')) : typeName;
-        try {
-            // nameability: exempt (parameter type read off a reflected @condition signature)
-            Class<?> cls = Class.forName(rawTypeName, false, codegenLoader());
-            var entry = catalog.findTableByClass(cls);
-            if (entry.isPresent()) {
-                return new ConditionJoinTargetResolution.Resolved(
-                    entry.get().toTableRef(entry.get().table().getName()));
-            }
-        } catch (ClassNotFoundException ignored) {
-            // Falls through to the AuthorError below — the class isn't on the codegen
-            // classloader, so the parameter type cannot map to a catalog entry.
-        }
+        return switch (table.slot()) {
+            case ParamSource.Table.TableSlot.Wildcard ignored ->
+                new ConditionJoinTargetResolution.AuthorError(
+                    "`@condition` method '" + methodRef.className() + "." + methodRef.methodName()
+                    + "' has wildcard target parameter `Table<?>`; " + source + ". Change the second "
+                    + "parameter to the concrete jOOQ table type, or rewrite the path to use "
+                    + "`{table:}` or `{key:}` for this hop.");
+            case ParamSource.Table.TableSlot.Unresolved unresolved ->
+                unresolvedConditionTarget(methodRef, unresolved.typeName(), source);
+            case ParamSource.Table.TableSlot.Bound bound -> bound.agreedTable()
+                .<ConditionJoinTargetResolution>map(ConditionJoinTargetResolution.Resolved::new)
+                .orElseGet(() -> new ConditionJoinTargetResolution.AuthorError(
+                    "`@condition` method '" + methodRef.className() + "." + methodRef.methodName()
+                    + "' is declared " + bound.tables().size() + " times with second parameters"
+                    + " naming different tables ("
+                    + bound.tables().stream()
+                        .map(ParamSource.Table.TableSlot.Bound.BoundTable::qualifiedName)
+                        .collect(java.util.stream.Collectors.joining(", "))
+                    + "); " + source + ", and the hop joins one table, so the declarations must"
+                    + " agree on it. Give every declaration the same second parameter type, or"
+                    + " rewrite the path to use `{table:}` or `{key:}` for this hop."));
+        };
+    }
+
+    /**
+     * The shared "second parameter names no generated table" refusal: the fall-through both a
+     * concrete non-catalog table type and a non-table second parameter reach.
+     */
+    private static ConditionJoinTargetResolution unresolvedConditionTarget(
+            MethodRef methodRef, String typeName, String source) {
         return new ConditionJoinTargetResolution.AuthorError(
             "`@condition` method '" + methodRef.className() + "." + methodRef.methodName()
             + "' second parameter type '" + typeName + "' does not resolve to a generated jOOQ "
@@ -2461,7 +2484,7 @@ class BuildContext {
      * absent from the codegen loader) is likewise skipped: this check validates a constraint the
      * author opted into by naming a concrete jOOQ table, it imposes no new signature requirement.
      *
-     * <p>Reads the reflected {@link MethodRef} parameter types and the resolved source/target
+     * <p>Reads the slot facts the reflected {@link MethodRef} carries and the resolved source/target
      * tables already in scope at the call site; it never re-inspects the directive element nor
      * re-walks the path.
      */
@@ -2475,49 +2498,39 @@ class BuildContext {
     /**
      * Validates one positional table parameter of a condition method against the table the emitter
      * will pass it. Skips when the position is out of range, the {@code expected} table is null
-     * (unknown, e.g. a non-table-backed source), the declared parameter is a wildcard
-     * {@code Table<?>}, or the concrete type does not resolve to a catalog table. Reuses
-     * {@link #resolveConditionJoinTarget}'s {@code Class.forName} +
-     * {@link JooqCatalog#findTableByClass} machinery and the wildcard predicate. The final compare
-     * is jOOQ class identity via {@link TableRef#denotesSameTableAs}: both operands are
-     * catalog-built refs, so schema-qualified {@code @table} echoes match their unqualified jOOQ
+     * (unknown, e.g. a non-table-backed source), the position is not a table slot at all, the slot
+     * is a wildcard {@code Table<?>}, or its concrete type resolves to no catalog table. Each of
+     * those is the slot's own catalog answer, decided in {@code ServiceCatalog} at reflection time
+     * (see {@link ParamSource.Table.TableSlot}) rather than re-decoded from a type-name string here.
+     *
+     * <p>Where the {@code @condition} names an admitted set of same-named declarations, the check is
+     * per-anchor <em>applicability</em>: at least one declaration whose slot accepts this anchor, the
+     * most-specific selection among the applicable ones being javac's at the emitted call site. A set
+     * covering some anchors and not others is therefore this check's finding only where <em>no</em>
+     * declaration covers the anchor.
+     *
+     * <p>The compare is jOOQ class identity via {@link TableRef#denotesSameTableAs}: both operands
+     * are catalog-built refs, so schema-qualified {@code @table} echoes match their unqualified jOOQ
      * canonical names and same-named tables across schemas stay distinct.
      */
     private void checkConcreteParamTable(MethodRef method, List<MethodRef.Param> params,
             int index, TableRef expected, String role, List<String> errors) {
         if (expected == null || index >= params.size()) return;
-        String typeName = params.get(index).typeName();
-        // Wildcard `Table<?>` (the literal type-name jOOQ reflection yields) accepts any aliased
-        // table; nothing is assertable. Same predicate as resolveConditionJoinTarget.
-        if (typeName.contains("<?>") || typeName.equals("org.jooq.Table")) return;
-        String rawTypeName = typeName.contains("<") ? typeName.substring(0, typeName.indexOf('<')) : typeName;
-        Class<?> cls;
-        try {
-            // nameability: exempt (parameter type read off a reflected @condition signature)
-            cls = Class.forName(rawTypeName, false, codegenLoader());
-        } catch (ClassNotFoundException notOnLoader) {
-            // Not a class on the codegen loader, so it cannot map to a catalog table; not assertable.
-            return;
-        }
-        var entry = catalog.findTableByClass(cls);
-        if (entry.isEmpty()) return; // a concrete non-table parameter; nothing to assert.
-        // Both sides are catalog-built refs, so the compare is jOOQ class identity, not a
-        // bare-vs-qualified name string compare: a parameter typed with the correct
-        // generated table class classifies green even when the hop's table name is
-        // schema-qualified, and two same-named tables in different schemas stay distinguishable.
-        TableRef declared = entry.get().toTableRef(entry.get().table().getName());
-        if (!declared.denotesSameTableAs(expected)) {
-            // A mismatch can now pair two tables that share a bare name across schemas, so render
-            // the declared side schema-qualified (the entry carries the schema) to stay actionable;
-            // the expected side keeps the author's verbatim (possibly qualified) @table echo.
-            String declaredQualified = entry.get().table().getSchema().getName()
-                + "." + entry.get().table().getName();
-            errors.add("condition method '" + method.className() + "." + method.methodName()
-                + "' parameter " + index + " is typed for table '" + declaredQualified
-                + "' but this hop's " + role + " table is '" + expected.tableName()
-                + "'; the emitter passes the " + role + " alias positionally, so the concrete "
-                + "parameter type must match (or use a wildcard `Table<?>`).");
-        }
+        if (!(params.get(index).source() instanceof ParamSource.Table table)) return;
+        // A wildcard slot accepts any aliased table and an unresolvable one maps to no catalog
+        // entry; neither makes a claim this check could contradict. This check validates a
+        // constraint the author opted into by naming a concrete jOOQ table.
+        if (!(table.slot() instanceof ParamSource.Table.TableSlot.Bound bound)) return;
+        if (bound.tableRefs().stream().anyMatch(t -> t.denotesSameTableAs(expected))) return;
+        String declaredList = bound.tables().stream()
+            .map(ParamSource.Table.TableSlot.Bound.BoundTable::qualifiedName)
+            .collect(java.util.stream.Collectors.joining(", "));
+        errors.add("condition method '" + method.className() + "." + method.methodName()
+            + "' parameter " + index + " is typed for table "
+            + (bound.tables().size() == 1 ? "'" + declaredList + "'" : "[" + declaredList + "]")
+            + " but this hop's " + role + " table is '" + expected.tableName()
+            + "'; the emitter passes the " + role + " alias positionally, so the concrete "
+            + "parameter type must match (or use a wildcard `Table<?>`).");
     }
 
     /**

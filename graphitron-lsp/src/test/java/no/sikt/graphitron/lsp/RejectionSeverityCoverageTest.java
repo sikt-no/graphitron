@@ -331,7 +331,10 @@ class RejectionSeverityCoverageTest {
         }
         if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod.class) {
             return new no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod(
-                "com.example.Svc", "getFilm", List.of(0, 1));
+                "com.example.Svc", "getFilm",
+                List.of("getFilm(java.lang.String)", "getFilm(java.lang.String, int)"),
+                new no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod
+                    .Ambiguity.NameShared());
         }
         if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.SeamParameterMissing.class) {
             return new no.sikt.graphitron.rewrite.model.ReflectionError.SeamParameterMissing(

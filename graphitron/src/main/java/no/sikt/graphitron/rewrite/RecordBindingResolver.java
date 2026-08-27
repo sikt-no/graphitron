@@ -1020,8 +1020,11 @@ final class RecordBindingResolver {
             for (Method m : cls.getDeclaredMethods()) {
                 if (!m.getName().equals(methodName)) continue;
                 if (found != null) {
-                    // Overloaded: ambiguous; existing reflection takes the first match per
-                    // ServiceCatalog.pickMethod's `methods.get(0)`. Mirror that.
+                    // Overloaded: ambiguous. This is an observation pass with no rejection channel,
+                    // so it takes the first match rather than judging the set. ServiceCatalog is
+                    // where the name is judged, and it no longer picks a first match at all: the
+                    // directive coordinates reject a shared name, and the @condition coordinate
+                    // admits the set on its binding shape.
                     return found;
                 }
                 found = m;

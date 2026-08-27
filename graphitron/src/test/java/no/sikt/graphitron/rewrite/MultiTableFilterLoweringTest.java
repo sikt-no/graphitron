@@ -553,6 +553,117 @@ class MultiTableFilterLoweringTest {
         assertLowersConditionFilterPerParticipant(schema.field("Query", "occupants"), "occupantsFirstName");
     }
 
+    @Test
+    void perParticipantOverloadSet_argLevel_lowersPerParticipant() {
+        // The reporter's shape: one declaration per participant table, agreeing on the binding shape
+        // and differing only in their table slots. The set is one @condition target; each branch's
+        // glue passes that participant's concretely-typed alias and the consumer's javac picks the
+        // declaration. Nothing here has to choose between the declarations, which is the whole point.
+        var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
+            union Occupant = Customer | Staff
+            type Query {
+                occupants(firstName: String @field(name: "first_name") @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "occupantNameOverload"})): [Occupant!]!
+            }
+            """);
+        assertLowersConditionFilterPerParticipant(
+            schema.field("Query", "occupants"), "occupantNameOverload");
+    }
+
+    @Test
+    void perParticipantOverloadSet_inputField_lowersPerParticipant() {
+        // The same set at the input-field coordinate, which resolves with no table in scope. The
+        // shape judgement is table-blind, so admission is the same answer here as at the argument
+        // coordinate: resolution stays coordinate-invariant.
+        var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
+            input OccupantFilter {
+                firstName: String @field(name: "first_name") @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "occupantNameOverload"})
+            }
+            union Occupant = Customer | Staff
+            type Query {
+                occupants(filter: OccupantFilter): [Occupant!]!
+            }
+            """);
+        assertLowersConditionFilterPerParticipant(
+            schema.field("Query", "occupants"), "occupantNameOverload");
+    }
+
+    @Test
+    void shapeDisagreeingOverloadSet_fieldLevel_surfacesAsTypedAmbiguousMethod() {
+        // Two declarations sharing position 1's name and differing in its declared type: the shared
+        // name denotes two call shapes, which is what AmbiguousMethod now means. Asserted as the
+        // typed arm and its axis rather than as message prose, since the same delta rewrites the
+        // message. The field-level coordinate carries the rejection on the field it unclassifies.
+        var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
+            union Occupant = Customer | Staff
+            type Query {
+                occupants: [Occupant!]! @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "occupantNameDisagreeing"})
+            }
+            """);
+        assertThat(schema.field("Query", "occupants"))
+            .isInstanceOf(GraphitronField.UnclassifiedField.class);
+        assertAmbiguousAtParameterPosition(firstAmbiguousMethod(schema), 1);
+    }
+
+    @Test
+    void shapeDisagreeingOverloadSet_inputField_surfacesAsTypedAmbiguousMethod() {
+        // The parity half of the pair. The Backlog report claimed the query-field coordinate accepts
+        // overloads while the input-field coordinate rejects; both route through the one @condition
+        // resolution entry, so a set that disagrees on the shape rejects identically at each. The
+        // input-field coordinate reports at the input field's own coordinate, as it does today.
+        var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
+            input OccupantFilter {
+                firstName: String @field(name: "first_name") @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "occupantNameDisagreeing"})
+            }
+            union Occupant = Customer | Staff
+            type Query {
+                occupants(filter: OccupantFilter): [Occupant!]!
+            }
+            """);
+        assertThat(schema.field("Query", "occupants"))
+            .isInstanceOf(GraphitronField.UnclassifiedField.class);
+        assertAmbiguousAtParameterPosition(firstAmbiguousMethod(schema), 1);
+    }
+
+    /**
+     * The typed rejection in the schema's diagnostics. A per-participant lowering failure reaches the
+     * field as the consequence ("2 participants could not be lowered") and its cause as a diagnostic
+     * at the participant's own coordinate, so the typed arm is read from there at both coordinates.
+     */
+    private static no.sikt.graphitron.rewrite.model.Rejection firstAmbiguousMethod(
+            GraphitronSchema schema) {
+        return schema.diagnostics().stream()
+            .map(no.sikt.graphitron.rewrite.ValidationError::rejection)
+            .filter(r -> r instanceof no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "no typed AmbiguousMethod in " + schema.diagnostics()));
+    }
+
+    /**
+     * The rejection is a typed {@link no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod}
+     * naming the parameter position the declarations disagree on. The axis is the assertion, not the
+     * rendered sentence: the message is data-driven from exactly this value.
+     */
+    private static void assertAmbiguousAtParameterPosition(
+            no.sikt.graphitron.rewrite.model.Rejection rejection, int position) {
+        assertThat(rejection)
+            .as("a shape-disagreeing @condition overload set must reject as a typed AmbiguousMethod")
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod.class);
+        var ambiguous =
+            (no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod) rejection;
+        assertThat(ambiguous.ambiguity())
+            .isEqualTo(new no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod
+                .Ambiguity.ParameterPosition(position));
+        assertThat(ambiguous.candidateSignatures())
+            .as("the overload set the author wrote arrives as data, not as prose")
+            .hasSize(2);
+        assertThat(ambiguous.lspCode()).isEqualTo("graphitron.reflect.ambiguous-method");
+    }
+
     /**
      * The field classifies as a {@link QueryField.QueryUnionField} and every
      * table-bound participant's filter list carries the developer

@@ -27,7 +27,7 @@ class ComputedFieldValidationTest {
     private static final MethodRef DUMMY_METHOD = TestFixtures.staticServiceMethodRef(
         "com.example.Ext", "fullTitle",
         ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"), ClassName.get(String.class)),
-        List.of(new MethodRef.Param.Typed("table", "com.example.tables.Film", new ParamSource.Table())));
+        List.of(new MethodRef.Param.Typed("table", "com.example.tables.Film", new ParamSource.Table(new ParamSource.Table.TableSlot.Wildcard()))));
 
     enum Case implements ValidatorCase {
 

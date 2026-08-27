@@ -8,7 +8,7 @@ The recipe assumes you've read xref:external-code.adoc[How-to: Wire external Jav
 
 == Write the Java method
 
-Every condition method has the same shape: a `static` method on a public class, returning a jOOQ `Condition`, taking the surrounding `Table<?>` first and the GraphQL argument values after. The example fixture filters films by primary key:
+Every condition method has the same shape: a `static` method on a public class, returning a jOOQ `Condition`, taking the surrounding table first and the GraphQL argument values after. That first parameter may be the wildcard `Table<?>`, which accepts any table, or the concrete generated jOOQ class of the table the directive sits over, which keeps the typed column handles; both are supported everywhere, and xref:#filter-a-multitable-interface[Filter a multitable interface or union] below is where the choice starts to matter. The example fixture filters films by primary key:
 
 [source,java]
 ----
@@ -34,7 +34,7 @@ public final class InputFieldConditionFixtures {
 
 Three things matter:
 
-* *The first parameter is the surrounding `Table<?>`.* The rewrite passes the aliased table the field's fetcher is selecting from. Resolve column references through `table.field(Film.FILM.FILM_ID)` rather than `Film.FILM.FILM_ID` directly, the alias-bearing handle keeps the predicate anchored in the caller's `FROM` and lets jOOQ render the `WHERE` against the correct alias.
+* *The first parameter is the surrounding table.* The rewrite passes the aliased table the field's fetcher is selecting from, and the generated call site is typed from that coordinate, so declaring the parameter as `Table<?>` or as the coordinate's own generated class are both accepted. Either way, resolve column references through the parameter, `table.field(Film.FILM.FILM_ID)` on the wildcard form or `table.FILM_ID` on the concrete one, rather than through `Film.FILM.FILM_ID` directly: the alias-bearing handle keeps the predicate anchored in the caller's `FROM` and lets jOOQ render the `WHERE` against the correct alias.
 * *The remaining parameters bind by name.* The Java parameter named `filmId` receives the GraphQL argument named `filmId`. Names must agree; the rewrite reads them through reflection. Compile the Java module with `-parameters` so the parameter names survive into the bytecode (the example fixtures' `pom.xml` carries `<parameters>true</parameters>` for this reason).
 * *Return `DSL.noCondition()` to opt out.* When the GraphQL argument is null or absent, return the no-op so the predicate is structurally present but contributes nothing to the `WHERE` clause. This is the contract that lets optional filter inputs degrade cleanly to "unconstrained".
 
@@ -146,6 +146,53 @@ type Query {
 
 The Java method `fieldConditionRenamed(Table<?> table, String city, String country)` receives both GraphQL arguments under their renamed Java identifiers. Unmentioned Java parameters bind to a GraphQL argument of the same name, so partial mappings are valid.
 
+[#filter-a-multitable-interface]
+== Filter a multitable interface or union
+
+A field returning an interface or union whose implementations sit on different tables is fetched one branch at a time: the rewrite emits one `SELECT` per participant and calls your `@condition` method once per branch, against that branch's own aliased table. Three ways to write the method, and they differ in what the compiler checks for you.
+
+*One declaration per participant.* Write one method per participant table, all sharing the name the directive references, each differing only in its table parameter:
+
+[source,java]
+----
+public static Condition occupantNamePrefix(Customer customer, String firstName) {
+    return customer.FIRST_NAME.like(firstName + "%");
+}
+
+public static Condition occupantNamePrefix(Staff ansatt, String firstName) {
+    return ansatt.FIRST_NAME.like(firstName + "%");
+}
+----
+
+Same-named declarations are accepted as one `@condition` target when they agree on the *binding shape*: the same parameter count, the same static-ness, the same return type, the same `throws` clause, and, position by position, each position either a jOOQ `Table` parameter in every declaration or identical in name and declared type in every declaration. Only the table parameters may differ, and they may differ in name as well as in type, so naming each slot after its own table is fine. The generated call site is typed from the coordinate, so your compiler performs the selection and each body gets the participant's generated typed column handles, which is what the wildcard form gives up.
+
+A participant with no applicable declaration fails *your* compile, at the branch whose call site has no method to bind. That is the intended guard for partial coverage: add the missing participant's declaration, or widen one to `Table<?>`.
+
+*One declaration taking `Table<?>`.* One method serves every branch:
+
+[source,java]
+----
+public static Condition occupantNamePrefix(Table<?> table, String firstName) {
+    return table.field(DSL.name("first_name"), String.class).like(firstName + "%");
+}
+----
+
+The column is resolved by name, so the participants must share it. Two failure modes to plan for. `table.field(Film.FILM.TITLE)` is typed but returns `null` on a branch whose table has no such column, and an unguarded `.eq(...)` on that `null` throws at request time, not at build time; return `DSL.noCondition()` for a branch you mean to leave unconstrained. And `instanceof` narrowing recovers the whole concrete table when you want one branch handled differently:
+
+[source,java]
+----
+public static Condition occupantNamePrefix(Table<?> table, String firstName) {
+    if (table instanceof Customer customer) {
+        return customer.FIRST_NAME.like(firstName + "%");
+    }
+    return DSL.noCondition();
+}
+----
+
+*A mixed set.* A `Table<?>` declaration beside concrete ones is legal, and it is the case to think twice about. Your compiler's most-specific rule picks the concrete declaration where one applies and the `Table<?>` one everywhere else, so the fallback serves every branch no concrete declaration covers. That trades the compile-time partial-coverage guard above for runtime fallback behaviour: a set covering two of three participants plus a fallback compiles clean and silently serves the third from the fallback, which is exactly where a mistyped participant table would otherwise have been caught. Nothing at build time flags it. You opt into that by writing the fallback declaration, so write one when you mean "and everything else", not to quiet a compile error.
+
+Declarations of one name that disagree on anything outside their table parameters are rejected at build time, naming the axis they disagree on and the signatures the generator read.
+
 == Pull request-context values via `contextArguments`
 
 When the predicate depends on values from the request context (current user, tenant ID, correlation ID), name them via `contextArguments:`. The rewrite appends one Java parameter per listed key, after the table and the GraphQL-argument parameters:
@@ -171,7 +218,7 @@ Two consequences worth pinning:
 == Constraints
 
 * `condition.className:` and `condition.method:` are both required for a meaningful directive. A `@condition` whose reference resolves to no method surfaces with the diagnostic `field '<name>' @condition: ...` or `argument '<name>' @condition: ...`. The class must be nameable per xref:external-code.adoc#make-the-class-nameable[Make the class nameable]: this module, a reactor sibling once declared, or a dependency this module declares itself.
-* The first Java parameter is always the surrounding `Table<?>`. Resolve column references through `table.field(...)` rather than the static jOOQ-table handle, the alias-bearing accessor keeps the predicate anchored to the calling fetcher's `FROM` clause.
+* The first Java parameter is always the surrounding table, declared either as `Table<?>` or as that table's own generated jOOQ class. Resolve column references through the parameter rather than the static jOOQ-table handle, the alias-bearing accessor keeps the predicate anchored to the calling fetcher's `FROM` clause. A concrete parameter typed on a table the coordinate does not pass is rejected at build time where the generator knows the table, and fails your compile where it does not.
 * Parameter names bind GraphQL argument names. Compile the carrying module with `<parameters>true</parameters>` so the names survive reflection. Diverging names are reconciled by `argMapping:`, not by reordering the method.
 * `DSL.noCondition()` is the explicit no-op; return it for null or absent inputs. Returning `null` is undefined and currently throws at the predicate-folding site.
 * Argument-level placement sees only that argument; sibling arguments are invisible. Field-level placement sees every direct argument, including input-typed ones (the input arrives as the carrier type the input is bound to). Input-field-level placement walks the GraphQL argument map by path and delivers the leaf scalar.

@@ -315,13 +315,15 @@ class ArgumentReferenceStepTargetTest {
     }
 
     /**
-     * Overload multiplicity lands in the arities and nowhere else. Two overloads of one name leaving
-     * {@code film} for two tables are two rows at one position, so the element reaches two
-     * destinations by two routes, which is the ambiguity a reader that needs a certain landing reads
-     * off {@code targets}.
+     * Overload multiplicity lands in the arities where it lands at all, and the departure slot is
+     * where that is. Two overloads of one name arriving at two different tables agree on nothing the
+     * route needs, so the pair routes nothing and the chain does not reach the element: the build
+     * admits the set and then has one joined table to emit and no consumer call site to defer the
+     * choice to, so it rejects, and the census reads the disagreement the same way. The silence is
+     * named next door as {@code TARGET_DISAGREEMENT_ACROSS_OVERLOADS}.
      */
     @Test
-    void twoOverloadsOfOneConditionAreTwoTargetsAtOnePosition() {
+    void twoOverloadsArrivingAtTwoTablesResolveNoHop() {
         withCatalog(dsl -> {
             seedTableBinding(dsl, GRAPH, "Film", "film");
             seedQueryField(dsl, "films", "Film");
@@ -331,13 +333,38 @@ class ArgumentReferenceStepTargetTest {
                 tableClass("film"), tableClass("language"));
             seedConditionPath(dsl, "Query", "films", "inActor", "bridge");
 
+            assertThat(chain(dsl, GRAPH)).isEmpty();
+            assertThat(dsl.fetchCount(INTENT_CONDITION_METHOD_ROUTE_DEFECT,
+                INTENT_CONDITION_METHOD_ROUTE_DEFECT.GRAPH_NAME.eq(GRAPH)
+                    .and(INTENT_CONDITION_METHOD_ROUTE_DEFECT.VERDICT
+                        .eq("TARGET_DISAGREEMENT_ACROSS_OVERLOADS"))))
+                .as("the silence is named next door rather than left to a reader")
+                .isEqualTo(1);
+        });
+    }
+
+    /**
+     * Where the overloads agree on the arrival they route, and the departure slot is where their
+     * multiplicity shows: two declarations arriving at {@code actor} from two tables are two route
+     * rows, of which the chain reaches the one departing the element's own standing table, so the
+     * element has one certain landing.
+     */
+    @Test
+    void twoOverloadsAgreeingOnTheArrivalRouteFromTheirOwnDepartures() {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedQueryField(dsl, "films", "Film");
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("film"), tableClass("actor"));
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("language"), tableClass("actor"));
+            seedConditionPath(dsl, "Query", "films", "inActor", "bridge");
+
             var rows = chain(dsl, GRAPH);
             assertThat(rows.map(ArgumentReferenceStepTargetTest::hop))
-                .containsExactly("film->actor", "film->language");
+                .containsExactly("film->actor");
             assertThat(rows.map(r -> r.get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.TARGETS)))
-                .containsExactly(2, 2);
-            assertThat(rows.map(r -> r.get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.CANDIDATES)))
-                .containsExactly(2, 2);
+                .containsExactly(1);
         });
     }
 
