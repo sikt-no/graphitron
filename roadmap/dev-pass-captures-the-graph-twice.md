@@ -1,7 +1,7 @@
 ---
 id: R859
 title: "A dev pass captures the same graph twice, so every save evaluates the register twice"
-status: Spec
+status: Ready
 bucket: dx
 priority: 2
 theme: dev-loop
@@ -71,14 +71,14 @@ Two things, and neither needs a pass of its own.
 
 **The completion catalog** (`CompletionData`, from `CatalogBuilder.build`) has one arm that is
 load-bearing and three that are not. The census arm is what capture writes the classpath families
-from, so it is built on both paths already and is in the table above. The tables, scalars and
-node-metadata arms have exactly two production readers left, both of them console counts in
-`DevMojo`: the startup line reporting how many external references were indexed, and
-`rebuildCatalog`'s "catalog refreshed (N tables, M scalars)". Every editor-facing surface that used
-to read them resolves the same material out of the store through `StoreAccess`, which is why
-`graphitron-lsp` carries no reference to the type outside its test fixtures. That does not make the
-projection free to drop, the two lines being worth keeping, and it does mean nothing in the second
-pass is waiting on it.
+from, so it is built on both paths already and is in the table above; its own console count, the
+startup line reporting how many external references were indexed, reads that same arm. The tables
+and scalars arms have exactly one production reader left, a console count in `DevMojo`:
+`rebuildCatalog`'s "catalog refreshed (N tables, M scalars)". The node-metadata arm has none. Every
+editor-facing surface that used to read them resolves the same material out of the store through
+`StoreAccess`, which is why `graphitron-lsp` carries no reference to the type outside its test
+fixtures. That does not make the projection free to drop, both console lines being worth keeping,
+and it does mean nothing in the second pass is waiting on it.
 
 **The two diagnostics lists**, `walkErrors` and `warnings`, are the products with a live consumer:
 `DevMojo.writeReportFacts` writes them to the store's diagnostics stratum, which is where the
@@ -186,8 +186,9 @@ The four projections after the change:
 - `validate()`. No emission, no graph, no catalog. Throws on errors. `ValidateMojo`.
 - `buildOutput()`. No emission, no graph, catalog and diagnostics. Never throws on a verdict.
   `DevMojo.rebuildCatalog` on a consumer `.class` change, `DevMojo.buildOutputQuietly` under
-  `-Dgraphitron.dev.skipInitial`, and three test callers (`BuildOutputReportPipelineTest`,
-  `LintSuppressionPipelineTest`, and the `BuiltStore` fixture helper).
+  `-Dgraphitron.dev.skipInitial`, and four test callers (`BuildOutputReportPipelineTest`,
+  `LintSuppressionPipelineTest`, the `BuiltStore` fixture helper, and
+  `FixtureWarningsGateTest` in `graphitron-sakila-example`).
 - `runPass()`, new. Emission, compile graph, catalog and diagnostics, no verdict throw. The dev
   loop's pass, and the only projection that unions the emitting and the reporting halves.
 
@@ -290,7 +291,7 @@ front half is the regression this collapse exists to prevent.
 
 **`CatalogBuilder`.** New `build(JooqCatalog, GraphQLSchema, RewriteContext, List<ExternalReference>)`
 overload taking the census the caller already scanned. The existing three-argument form scans its
-own and stays for the four tests that use it; production moves to the new one, which is what makes
+own and stays for the five test classes that use it; production moves to the new one, which is what makes
 "one census per pass" structural instead of incidental. Javadoc says which is which and why.
 
 **`ValidationFailedException`.** The javadoc paragraph claiming the dev formatter replaces the
@@ -331,8 +332,9 @@ catalog question and not a generation one.
 - **`DevMojoTest`.** A `regenerate` round publishes the round's rejection and warning facts and marks
   the workspace for recalculation, driven through the merged pass. The parse-failure discrimination
   that test already drives through `runGeneratorPass` keeps working, one message now rather than two.
-- **`BuildOutputReportPipelineTest`, `LintSuppressionPipelineTest`, `BuiltStore`.** Unchanged callers
-  of `buildOutput`, which is the regression surface for the projection that keeps its contract.
+- **`BuildOutputReportPipelineTest`, `LintSuppressionPipelineTest`, `BuiltStore`,
+  `FixtureWarningsGateTest`.** Unchanged callers of `buildOutput`, which is the regression surface
+  for the projection that keeps its contract.
 
 No new tier. The one property no test in the tree can state exactly is the capture count per pass,
 there being no per-pass capture counter to assert on and no case for inventing a production seam to
@@ -384,8 +386,8 @@ other's arithmetic if it quotes it.
   generation produces, and today that path refreshes the catalog and recompiles the cached tree
   without regenerating. Possibly wrong, and not this item's question; the merge leaves that path
   exactly as it is.
-- **Retiring the completion catalog's projection.** Its three non-census arms reach two console
-  counts, which is a finding this item records and does not act on. Whether the counts should come
+- **Retiring the completion catalog's projection.** Its three non-census arms reach one console
+  count, which is a finding this item records and does not act on. Whether the count should come
   from the store instead is its own item, and it wants writing only if someone wants the type gone.
 - **The store-backed catalog**, which waits on the consumer migrations.
 

@@ -16,11 +16,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R856` | A consumer-schema capture spends over an hour inside the materialization refresh <sub>blocked by: [materialization-refresh-emits-no-progress](materialization-refresh-emits-no-progress.md)</sub> | Ready | 2026-08-27 | [plan](consumer-capture-spends-an-hour-in-the-refresh.md) |
 | `R855` | The materialization refresh emits nothing, so a hang inside it is anonymous | Ready | 2026-08-27 | [plan](materialization-refresh-emits-no-progress.md) |
-| `R859` | A dev pass captures the same graph twice, so every save evaluates the register twice | Spec | 2026-08-27 | [plan](dev-pass-captures-the-graph-twice.md) |
 | `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows | Spec | 2026-08-27 | [plan](dev-start-refreshes-the-register-twice.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R849` | Measure re-evaluation rather than naming, so a materialization cut set can be chosen on evidence | Spec | 2026-08-27 | [plan](re-evaluation-metric-for-derived-relations.md) |
 | `R839` | The carrier states one condition twice, and the duplicate re-derives the producer once per driving row | Spec | 2026-08-27 <sub>created 2026-08-26</sub> | [plan](carrier-refresh-inlined-producer-cte.md) |
+| `R859` | A dev pass captures the same graph twice, so every save evaluates the register twice | Ready | 2026-08-27 | [plan](dev-pass-captures-the-graph-twice.md) |
 | `R850` | The column scope named-type arm cannot be repointed while its authored-claim anti-join stands | Ready | 2026-08-27 | [plan](column-scope-named-type-arm-anti-join.md) |
 | `R853` | A roadmap-only diff owes the two gates that read roadmap/, not the whole reactor | In Review | 2026-08-27 | [plan](roadmap-only-verification-scope.md) |
 | `R834` | A top-level @service returning a @table type reads columns off the returned record instead of refetching by key | In Review | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](root-service-table-return-skips-key-refetch.md) |
@@ -567,7 +567,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### dev-loop
 
-- `R859` [**A dev pass captures the same graph twice, so every save evaluates the register twice**](dev-pass-captures-the-graph-twice.md) — Spec, dx
+- `R859` [**A dev pass captures the same graph twice, so every save evaluates the register twice**](dev-pass-captures-the-graph-twice.md) — Ready, dx
 - `R522` [**Reconcile the emitted-code seam-pin assertion convention with the testing doc**](emitted-seam-pin-assertion-convention.md) — Backlog, tech-debt
 - `R762` [**The census stores every class member to answer questions only ever asked by name**](census-stores-members-it-reads-by-name.md) — Backlog, architecture
 - `R462` [**Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder**](nested-fetcher-outgoing-field-edges.md) — Spec, bug
