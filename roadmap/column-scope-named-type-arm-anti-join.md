@@ -1,7 +1,7 @@
 ---
 id: R850
 title: "The column scope named-type arm cannot be repointed while its authored-claim anti-join stands"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: classification-model
