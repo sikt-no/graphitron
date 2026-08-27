@@ -1,7 +1,7 @@
 ---
 id: R858
 title: "Stamped store directories accumulate one per DDL hash and nothing ever removes them"
-status: Spec
+status: Ready
 bucket: dx
 priority: 3
 theme: tooling
@@ -684,3 +684,62 @@ dead-workspace note gives. And "What it reports" now says the two callers are th
 a sample, so an implementer reading it knows a third reporter would be something a later caller adds.
 The log line changed while I was there, for a reason that came out of your pinned-home note: it names
 the home rather than saying "for this workspace", which a pinned home does not have.
+
+### Round 4 (2026-08-27, Spec -> Ready, reviewer session 01EMLyTVJ6cDXBLkwxRmTMmX)
+
+Verdict: sign off. The revision closes all four findings from rounds 1 to 3 on their own terms, and
+I checked each closure against the tree rather than against the author responses.
+
+Both gate questions answer off the plan. What changes: today a stamped directory is minted whenever
+graphitron's own fact-schema DDL or version moves and nothing ever removes the previous one, so a
+contributor doing model work accumulates several hundred megabytes per DDL edit and a consumer
+accumulates one directory per graphitron version their checkout has built with. After this lands,
+any process that opens the store sweeps its own home: it keeps the directory it opened plus the two
+most recently used others, and releases the rest, but only a directory it has positively recognised
+as a store's own and has just taken an exclusive lock on, so a `graphitron:dev` session's cache in
+another window is never touched. It reports once what it freed, and the `storeDirectory` row tells a
+consumer the population and the retention. The outcome is reachable and the shape is one already
+here: the sweep has to live behind `openAt` because the stamp segment is that method's private
+knowledge, which is the same argument the class already makes for appending the segment there, and
+the reaper's posture (catches everything, costs warmth and never correctness, never fails a build)
+is the store's own posture rather than a new one.
+
+What I verified. Every symbol exists as named: `GraphitronModelStore.openAt`, `fileUrl` (which does
+refuse `AUTO_SERVER` for the reason the probe leans on), `stampSegment` as
+`ddlHash().substring(0, 16) + "-" + generatorVersion()` over `DDL_RESOURCE`, `DATABASE` and its
+hand-cleanup javadoc, and all three javadoc sentences the Implementation section says this change
+falsifies, quoted accurately. The private constructor and final fields do make an `open(Reaped)`
+overload necessary as stated. `FactCapture.runInternal` with `DEMOTED_TO_MEMORY` beside it, and
+`DevMojo`'s session open, are the only `openAt` callers in main sources across the whole tree, so
+the two-reporter set is closed. `AbstractRewriteMojo.resolveStoreDirectory` returns a pinned home
+verbatim with no workspace segment and carries the "one file per workspace, holding every graph that
+workspace's modules capture" javadoc the manual section cites; `userCacheRoot` does resolve
+`%LOCALAPPDATA%` on Windows. The `storeDirectory` row asserts "one store per project checkout" as
+quoted, and `dev-loop.adoc`'s "nothing to clean up" reads as the plan says. H2 is pinned at 2.4.240.
+`graphitron-model`'s `boot` package carries the `Store*` unit tier and no `GraphitronModelStoreTest`;
+`PersistentStoreTest.HoldingWriter` is the forked-holder shape, and it does open through `openAt` on
+the live stamp, so a sibling holder is needed as the plan says. `StoreReaper`, `Reaped`,
+`store.last-used` and `tryLock` appear nowhere in the tree yet.
+
+Non-blocking, in descending order of how much I would care.
+
+* The cross-process test asks for two sweeps of one home ("released by the next sweep after that
+  process exits"), and the once-per-home-per-JVM guard is exactly what stops a second sweep of one
+  home in one JVM. Driving both through `openAt` cannot express it. The plan already supplies the
+  seam, `StoreReaper`'s static entry point with the retention as a parameter, and `reaped()`
+  returning a nested `Reaped` forces the class public anyway, so calling the reaper directly for
+  both sweeps settles it. Worth knowing before writing the test rather than after.
+* `FactStores.fileBacked`'s javadoc says "The store never deletes what it finds", which joins the
+  three sentences the Implementation section already lists. Its operative claim survives (a shared
+  home's live stamp is spared, so a previous case's rows still carry), but the sentence as written
+  does not.
+* `CatalogSearchIndex.reapSiblings` in `graphitron-mcp` is prior art for the policy shape: keep the
+  current hash plus `PRIORS_TO_KEEP` most-recently-modified siblings, delete the rest. It is over
+  build output under `target/`, recurses, throws, and needs no lock probe, so there is nothing to
+  share and no path where the two mechanisms meet. It is worth knowing that the tree already answers
+  the recency-and-a-count question the same way.
+* The marker write is a new IO call inside `openAt`, which promises never to fail. Swallowing its
+  own failure is the obvious reading and matches the class's idiom, but wrapping it unchecked would
+  land inside the existing `catch (RuntimeException e)` and demote a perfectly good warm store to
+  memory. The one state where that is reachable is a full disk, which is this feature's own
+  audience.

@@ -26,11 +26,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-27 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
-| `R858` | Stamped store directories accumulate one per DDL hash and nothing ever removes them | Spec | 2026-08-27 | [plan](stamped-store-directories-have-no-reaper.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
+| `R858` | Stamped store directories accumulate one per DDL hash and nothing ever removes them | Ready | 2026-08-27 | [plan](stamped-store-directories-have-no-reaper.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R860` | The LSP trace test rebinds JVM-global state while the module's other classes run beside it | Ready | 2026-08-27 | [plan](lsp-trace-double-close-count-unscoped.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-27 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
@@ -666,7 +666,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R298` [**Leverage Rover and GraphOS: composition checks in CI, contract verification, rover lsp in the dev loop**](rover-graphos-integration.md) — Backlog, feature, blocked by [oneof-augment-defeated-by-descriptions](oneof-augment-defeated-by-descriptions.md)
 - `R790` [**Nothing enforces that the sakila-example suite stays green when another class writes the tables it reads**](sakila-example-suite-green-against-foreign-rows.md) — Backlog, cleanup
 - `R594` [**Snapshot axis keys are consistent across the snapshot-reporting MCP tools**](mcp-snapshot-axis-key-naming.md) — Backlog, cleanup
-- `R858` [**Stamped store directories accumulate one per DDL hash and nothing ever removes them**](stamped-store-directories-have-no-reaper.md) — Spec, dx
+- `R858` [**Stamped store directories accumulate one per DDL hash and nothing ever removes them**](stamped-store-directories-have-no-reaper.md) — Ready, dx
 - `R643` [**Supergraph peer surface for the dev loop**](supergraph-peer-surface.md) — Backlog, feature
 - `R716` [**The MCP boundary guard names one generator package of five**](mcp-boundary-guard-generator-package-coverage.md) — Backlog, architecture
 - `R767` [**graphitron-maven-plugin writes its descriptor twice and runs its three ITs one at a time**](maven-plugin-descriptor-runs-twice.md) — Backlog, dx
