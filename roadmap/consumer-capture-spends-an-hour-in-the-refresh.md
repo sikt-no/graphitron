@@ -789,3 +789,81 @@ R848 is the frame, asking whether the register's shape is right at all. R857 has
 evaluating the register twice, which doubles whatever a refresh costs on the surface a person waits
 on, and its second pass runs on a settled store with statistics, so it is not the pass this item is
 about.
+
+## Reviewer findings
+
+### Round 1 (2026-08-27, Spec -> Ready, reviewer session 011bBUdhmLsSsrtotN6UKsdg)
+
+Verdict: withhold. Two findings, both on question 2, and both about the same thing: the
+Implementation section holds two positions at once on whether the two registrations are the fix.
+Neither finding disputes the localisation, which is the strongest work in this item.
+
+Question 1 passes and reads off the plan without reconstruction. Today a developer on a consumer
+schema of this size cannot use the tooling at all: `graphitron:validate` never returns and
+`graphitron:dev` never binds its language server or MCP ports, because the bind sits behind a
+capture that has never been observed to finish. When this lands, that capture completes and both
+goals return, with the store answering exactly what it answers now. The mechanism behind it is
+identified positively rather than by elimination, the identification survives its own controls, and
+two independent lines of evidence, the population before-and-after and the fixture prices, land on
+the same pair of registrations. The item is also careful about what it has not established: no
+consumer-scale capture, no exponent, and it refuses to extrapolate one. That care is what makes the
+rest of it trustworthy.
+
+**Finding 1: the amended sequence drops the pre-fix consumer capture, and the section it supersedes
+says nothing below may be chosen before that capture reports.** Step 1 is "one instrumented capture
+of that schema on the current DDL", and its own text says "Nothing below is chosen before this step
+reports" and that if it completes, the remaining work is step 5 alone and the priority drops. The
+amended sequence's preamble agrees the debt is live, saying step 1 "is still owed on the consumer
+schema", and then the sequence never pays it: its item 4 is the capture *against the fix*, mapped
+explicitly onto step 4. So an implementer following the amended sequence lands the twenty-first and
+twenty-second registrations without ever learning whether the failure still reproduces on the DDL the
+tree ships. The item supplies the reason that makes this matter rather than pedantic: the section
+above it establishes that `intent_mutation_write_payload`, the driving relation of both suspects, was
+an inlined view on the slow store and is a table now, so the suspects' cost has already moved in the
+direction of cheaper by an unmeasured amount, and R848 is a live item asking whether the register
+should grow at all. The same paragraph in the same section also opens "Steps 1 and 2 have run" and
+then says step 1 is still owed, which is the contradiction in miniature.
+
+What would satisfy it: either put the pre-fix capture ahead of the registrations in the amended
+sequence, or say plainly that the fixture prices justify both registrations whatever that capture
+would now report, and carry the argument for why that survives R848. Either is fine; what a reviewer
+cannot approve is the plan holding both.
+
+**Finding 2: the plan tells the implementer to write into a permanent `reason` row that the top rung
+is unavailable, and the paragraph below it says nobody has checked and that if it is available it
+beats both registrations.** Step 3b's third `reason`-row obligation is "The rung below, and why it
+was not taken", with the reason given as settled: what these relations compute is a fold over the
+decode walk rather than anything the capture reads off a schema document or a catalog. The next
+paragraph then asks for "one explicit check before either registration is written, because nothing
+above has run it", frames it as whether the per-position lift is derivable at capture time from rows
+the capture already writes, and states outright that "If it is, that is a captured fact and it beats
+both registrations". Those are two positions on one question in adjacent paragraphs, and this one is
+not a detail of the fix: it is the identity of the fix. The check is also not obviously going to come
+back "no". `intent_node_id_decode_hop_column` is already a registered target, so the rows the fold
+walks are already a table the capture writes, and `InputOccurrencePaths.derive` is standing precedent
+in this repo for a hand-written capture-time derivation that computes a walk. An implementer who runs
+the check and gets "yes" is designing a captured fact, which this plan does not specify anywhere.
+
+What would satisfy it: run the check, which the plan itself prices at a read of the hop relation's
+comment and no measurement, and record the answer in the plan body. Then the design under review is
+the fix rather than a fork, and the `reason`-row obligation states something that was established
+rather than assumed. This is the item's own standard: the reopen paragraph withholds approval from an
+arm whose decision rule had returned a verdict, and this is a decision rule that has not been run.
+
+Non-blocking, no response needed:
+
+- The two refresh-position tables number from different bases, the price list from the
+  16-registration order and the measurement section's from the 20-registration one, so positions 12
+  and 13 name different relations in each. Both are provenance rather than instruction, and the
+  measurement section already warns the two populations are separate; saying which order each table
+  numbers in would cost a clause.
+- The proposed Backlog item on `report-inline-multiplicity` may already be filed. R849 is open on
+  exactly that question and reached Ready while this review was being written, and `ViewReferences`
+  plus `ReEvaluationMetric` are already in the tree
+  reading recursive and correlated positions off the stored view definitions, which is the capability
+  the bullet asks someone to build. Worth reading R849 before filing.
+- Registering `intent_node_id_decode_column` would be the first registration whose source view
+  carries a recursive term; none of the twenty has one. I looked for a viability problem and found
+  none: the dependency walk already parses this view today, reaching it from
+  `intent_mutation_payload_column_live`, and `ViewReferences` handles recursive CTEs explicitly. Noted
+  only because it is a first.
