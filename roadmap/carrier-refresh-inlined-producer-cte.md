@@ -169,11 +169,15 @@ and therefore already pays exactly one evaluation; the registration does not cha
 reads the rule, only what one read costs, an unmeasured small gain in the same direction as the
 carrier's large one.
 
-## Implementation
+## Implementation of the registration arm
 
-All of it lands in
+Everything from here to "Tests and gates" specifies arm C and applies only if the timings pick it. A
+rewrite arm is an edit to `intent_carrier_data_field_live`'s body and none of what follows: no table,
+no rename, no relocated comments, no registration row, no re-pinned constants.
+
+All of arm C lands in
 `graphitron-model/src/main/resources/no/sikt/graphitron/model/graphitron-model.sql`, except one line
-of a test list, one new gate-test method, and the re-pinned figures under "Tests and gates" below.
+of a test list, two new test methods, and the re-pinned figure under "Tests and gates" below.
 It is the established cheap registration shape, so nothing here is a new mechanism.
 
 **Rename the rule's view.** `CREATE VIEW intent_field_payload_producer` becomes
