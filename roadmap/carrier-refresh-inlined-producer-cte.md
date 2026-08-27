@@ -754,3 +754,111 @@ registered `INTENT_ERRORS_FIELD` the same way and so its fixture refreshes befor
 "two readers in SQL" is still literally right. It is worth knowing that a behavioural test does read
 this relation directly, because it is the test that would fail first if the capture-order argument
 round 2 closed ever stopped holding.
+
+### Round 5 (2026-08-27, Spec -> Ready, reviewer session 01PgVUtgWCaJD7QmwLHtHTmy)
+
+Verdict: withhold, on question 2, and for the same reason round 4 gave. The plan body is unchanged
+since `0a7980b`, whose only edit after round 3 was round 3's own citation repoint, so round 3's
+findings 6 to 9 and round 4's finding 10 have had no revision and all five stand. This round does
+not restate them. It re-derives the one that decides the item, and then adds two things neither
+earlier round reached: the doctrine this register already carries for exactly this fork, and a third
+arm of the fork that round 4's framing treats as binary.
+
+Question 1 passes, and it is worth saying plainly rather than as a formality, because four rounds of
+withholding can read as a plan in trouble and this one is not. In my own words: a consumer whose
+GraphQL schema declares mutation payloads gets most of a minute back on every build, once per
+capture, and gets back byte-identical rows under the names every reader already spells. The cost is
+real, being paid now, and diagnosed rather than guessed: a real captured store, a bisect that names
+one predicate rather than a section, and a control that killed the reading a reader of the view's
+shape would arrive at first. Nothing about that is in doubt, and nothing in this round touches it.
+What is in doubt is only which lever collects the minute, and the plan still prices two of at least
+four.
+
+**Finding 6 re-derived at the source, and every part of it holds.** Checked against the view body
+rather than against round 3's or round 4's account of it. The `data_channel` filter is
+`EXISTS (SELECT 1 FROM producer p WHERE p.graph_name = f.graph_name AND p.payload_type_name =
+f.type_name)` and the outer query is `FROM producer p JOIN data_channel d ON d.graph_name =
+p.graph_name AND d.type_name = p.payload_type_name`, where `d.graph_name` and `d.type_name` are
+`f.graph_name` and `f.type_name` projected; so the join's surviving condition is the filter's
+condition verbatim and the filter keeps no row from being dropped and drops no row the join keeps.
+The window is `COUNT(*) OVER (PARTITION BY f.graph_name, f.type_name)` and the filter is a function
+of those two columns alone, so it is constant across each partition and removes whole partitions
+without thinning one; the per-field `NOT EXISTS` against `intent_errors_field` beside it is the one
+that thins, and it is not in question. `data_channel` is named once, by that join. And the view names
+`intent_field_payload_producer` once, at line 5399, so the two namings round 4 counts are namings of
+the CTE and its reading is right: the outer `FROM producer p` is one inlining and the correlated
+`EXISTS` is the per-driving-row one. Deleting three lines therefore leaves the relation named once in
+a plain `FROM`, which is the one-evaluation shape the registration is being bought to produce.
+
+Also verified while there, because the plan's `reason` will state it: `intent_field_payload_producer`
+is named exactly three times in the whole DDL, its own `CREATE VIEW`, the carrier's CTE body and
+`intent_field_error_channel`'s `FROM intent_field_payload_producer p`. That last one is a single
+uncorrelated naming inside a derived table, so "two readers in SQL, one of which already pays exactly
+one evaluation" is exact rather than approximate.
+
+**11. The register states a doctrine for this exact fork, and its last three rows are that doctrine
+and both of its discharges. This plan discharges neither.** Round 3 asked for the deletion's timing
+on the grounds of "the item's own control discipline". The grounds are stronger than that and they
+are written down in the surface this change edits. `intent_mutation_payload_key_membership_live`'s
+`reason` closes with the general form: "a registration prices the rule as it stands, so a rule with a
+re-evaluation inside it should be rewritten before it is priced". The two rows immediately after it
+are the two ways that comes out. `intent_mutation_write_destination_live` reads "The rewrite came
+first, as the row above this one says it must", and records the rewrite it tried, reversing one join
+in `intent_mutation_write_agreement` so the small derived side drives, with the figure it bought
+(75741 ms to about 13 s) beside what the registration then bought (13 s to 5.4 ms).
+`intent_field_scope_table_live` reads "So the rewrite was tried first, as the doctrine here says it
+must be, and it is the case where the rewrite is not the answer", and records the rewrite it tried
+and the 68349 ms that refuted it.
+
+Two things follow that finding 6 does not already say. First, the doctrine's literal subject is a
+re-evaluation *inside the rule being registered*, and this one is inside the reader; but both rows
+that cite it discharged it with a reader-side rewrite, a join order in the reading view, so the
+register's own practice reads the doctrine the way that covers this item. The re-evaluation here is
+one predicate in one reader, which is the smallest reader-side rewrite either of those rows
+contemplated. Second, and this is what makes it a question-2 finding rather than a restatement: the
+row this change writes is the twenty-first in that register and it lands directly under those three.
+As the plan stands it can state the trade and the measured move honestly and cannot state the one
+thing its two immediate predecessors both state, because the rewrite was never priced. A reason that
+is silent where the two rows above it are explicit is not a stylistic gap in a comment; the register
+is where this project keeps the argument that a registration was the right rung, and this one would
+be the first row that skipped the rung below it without saying so.
+
+**12. The fork has a third arm, and it is the arm that survives whichever way the deletion's
+population question goes.** Round 4 states the fork as a registration or a deletion, and prices the
+deletion's risk correctly: without the filter, the two `CASE WHEN EXISTS` probes and the window face
+every field of every OBJECT type rather than the carrier candidates, and how much that costs is a
+driving-row ratio the same store can answer. But those are not the only two spellings that remove
+the per-driving-row naming. The filter can also be spelled as a join into `data_channel` rather than
+as a correlated `EXISTS`, which is one inlining of the producer instead of one per driving row, and
+which keeps the narrow population that the probes and the window run over. It is the arm that needs
+no registration, no table, no relocated comments, no `reason` row, no structural test and no re-pinned
+constants, and it does not depend on the ratio coming back small.
+
+Two things constrain it, and both are why it belongs in the priced set rather than in a
+recommendation. The `producer` CTE is `SELECT DISTINCT graph_name, payload_type_name, family`, so it
+is not unique on the two columns the filter tests: a payload type produced under two families is two
+rows there, which is load-bearing in the outer join, where the plan's own prose says a payload two
+families both return is a row per family. Joined into `data_channel` on the two columns it would
+duplicate each field row per family and double `data_fields`, which is the one column of this
+relation a reader refuses on. So the arm needs its own two-column projection and is not a
+three-character edit. And whether H2 plans it as one evaluation is a claim about the engine, which on
+this item's own standard is measured rather than reasoned about. Naming it is not choosing it: it is
+the third timing the same store and the same program can take in the same sitting as the deletion's,
+and leaving it unpriced would repeat the shape of finding 6, a lever the plan did not look at because
+it was not the lever the plan started from.
+
+**What would satisfy this round.** Round 4's requirement, widened by one arm. Price, on the store the
+two registration depths were priced on: the deletion; the filter respelled as a join on a two-column
+projection; and the registration figures already in hand. State the three figures and say which
+ships. Then discharge the rung, in whichever surface the change lands in: if a registration ships,
+its `reason` says the rewrite was tried, what each spelling measured, that the motivating probe is
+redundant with the outer join, and that it was kept deliberately, which is what the three rows above
+it in the register do and what round 3's second half already asked for; if a rewrite ships, this item
+is a much smaller change and the register gains no row at all. Findings 7 to 10 are cheap once the
+fork is settled and round 4 has already said what each wants.
+
+Non-blocking, and confirming rather than adding. `MaterializeRegistryGateTest` carries nine tests,
+per round 4, not the five the plan enumerates. `MaterializationOrderTest`'s fixtures are
+`SELECT v FROM scratch_p`, `SELECT v FROM scratch_mid`, `SELECT v FROM scratch_src` and
+`SELECT v FROM scratch_x` / `SELECT v FROM scratch_y`, none of which reads a relation from inside a
+`WITH` body, so finding 7's missing shape is missing. The register now carries twenty rows.
