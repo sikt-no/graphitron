@@ -1,7 +1,7 @@
 ---
 id: R860
-title: "The LSP trace double-close case counts every close line in a JVM-global sink"
-status: Backlog
+title: "The LSP trace test rebinds JVM-global state while the module's other classes run beside it"
+status: Spec
 bucket: testing
 priority: 3
 theme: lsp
@@ -10,33 +10,194 @@ created: 2026-08-27
 last-updated: 2026-08-27
 ---
 
-# The LSP trace double-close case counts every close line in a JVM-global sink
+# The LSP trace test rebinds JVM-global state while the module's other classes run beside it
 
 `LspTraceTest.doubleCloseIsIgnored` opens one span, closes it twice, and asserts that the captured
 output holds exactly one line containing `lsp-trace <`. The count ranges over every close line in the
 sink, and the sink is not the test's own: `LspTrace` holds its enabled flag and its sink in static
-fields, and `redirectSink` rebinds that global for the whole JVM. So any other emitter alive in the
-test JVM while this case runs contributes a close line and the count is two.
+fields, and the test's `redirectSink` rebinds that global for the whole JVM. Observed once, in a full
+`mvn install -Plocal-db` on 2026-08-27, as `expected: 1L but was: 2L` at `LspTraceTest.java:142`; the
+class passes in isolation and the module passes on a re-run.
 
-Observed once, in a full `mvn install -Plocal-db` on 2026-08-27, as `expected: 1L but was: 2L` at
-`LspTraceTest.java:142`. The same class passes in isolation and the whole `graphitron-lsp` module
-passes on a re-run, 646 tests green, so the second line comes from outside the case rather than from
-`close()` emitting twice.
+The Backlog draft recorded that `graphitron-lsp` "declares no parallel execution at all today" and
+reasoned from there. The module declares none and runs its test classes four at a time regardless,
+because the settings arrive on its test classpath inside `graphitron-model`'s test-jar. R764 owns that
+channel and measured what it is worth; this item takes the concurrency as a fact of the module and
+makes the trace seam's tests hold under it. The split follows the one already in the tree between
+R764 and the since-shipped R832: the channel is one item, a test that is not thread-safe under it is
+another.
 
-The other cases in the class are already immune, and by the right means: they read
-`lineContaining(marker, name)` and so range over the span they named. This one filters on the marker
-alone. The narrow fix is to scope the count the same way, to the `phase` span the case opened, which
-makes the assertion about this span's closes rather than about what the JVM happened to be doing.
+What changes when this lands: the two classes in `graphitron-lsp` that read and write `LspTrace`'s
+process-global state stop being able to break each other or to be broken by the other 75 classes in
+the module, and the one assertion that was broken this way says what it saw when it fails again.
 
-Whether the narrow fix is enough is the question for a Spec, and it turns on where the other line
-came from. The class mutates process-global state and nothing isolates it, which the
-`graphitron` module's own `junit-platform.properties` names as the case that a per-class fixture
-boundary cannot contain, and it handles with `@Isolated` on the two classes that rebind
-`ClassificationTrace`. `graphitron-lsp` declares no parallel execution at all today, so the more
-likely source is a sibling class leaving live LSP machinery (a diagnostics drain, a debounce
-executor) running into the window where this class turns tracing on. If that is what it is, scoping
-the count fixes this case and leaves every other assertion over the shared sink exposed to the same
-thing, and the seam wants a per-test isolation of its own.
+## Vocabulary
 
-Cheap to leave alone and worth not leaving alone: a test that fails on state it never touched is the
-one failure mode that teaches a contributor to re-run the build rather than read it.
+**Class-level concurrency** is the arm this reactor's parallel modules choose:
+`junit.jupiter.execution.parallel.mode.classes.default=concurrent` with
+`junit.jupiter.execution.parallel.mode.default=same_thread`, so test classes overlap while the methods
+inside one class do not. A class is then the unit that owns a fixture, which is what makes the setting
+safe wherever state is per-class and unsafe wherever it is per-JVM.
+
+**Process-global state** is state a fixture boundary cannot contain: a static field, a system
+property, a rebound stream. `@Isolated` is JUnit's answer for a class that owns some: the annotated
+class runs while nothing else does. `graphitron` carries it today on `ClassificationTraceTest` and
+`SingleWalkClassificationOrderTest`, the two classes that rebind `ClassificationTrace`'s writer.
+
+## That the module really is concurrent, measured
+
+`mvn test -pl graphitron-lsp -Plocal-db` on this tree, 646 tests in 76 classes, against the same
+command with `-Djunit.jupiter.execution.parallel.enabled=false`. A JVM system property outranks a
+`junit-platform.properties` on the classpath in JUnit's precedence order, so the second arm is the
+module as its own pom and test resources describe it. One pair, this session:
+
+| Arm | Module total | Sum of the per-class elapsed times |
+|---|---|---|
+| As it runs today | 54.9 s | 591.1 s |
+| `parallel.enabled=false` | 99.0 s | 96.6 s |
+
+The second column is the proof rather than the first. A sum of per-class wall clocks that lands within
+a couple of seconds of the module total means no two classes overlapped; a sum an order of magnitude
+above it means they overlapped heavily. So the module's classes do run concurrently, and the
+concurrency is worth 44 s of a 99 s test phase, which is why `@Isolated` below is load-bearing rather
+than decorative: the likely settlement of R764 is that `graphitron-lsp` keeps this and says so
+locally.
+
+The system-property arm switch is also worth recording as a technique. R764 measured by stripping the
+entry out of the installed test-jar, and `graphitron-model`'s own file describes measuring by deleting
+`target/test-classes/junit-platform.properties` and warns that a stale copy makes both arms parallel.
+The property has neither failure mode.
+
+## Why a leaked background thread is not the mechanism
+
+The draft proposed that a sibling class left live LSP machinery running (a diagnostics drain, a
+debounce executor) into the window where this class turns tracing on. That cannot produce the line by
+itself, for a reason in the seam's design: `LspTrace.span` decides at open time and returns the shared
+no-op while the seam is off. A thread that opened its spans during another class's run is holding
+no-ops and emits nothing later, however long it outlives that class. A foreign close line requires a
+span **opened** while `enabled` is true, which means a thread doing new work inside this class's
+window.
+
+Under class-level concurrency that is the ordinary case. Any of the other classes in the module that
+parses a buffer, mutates a workspace or computes diagnostics opens spans through
+`WorkspaceFile.reparse`, `Workspace.mutate` or `Diagnostics.compute`, and while `LspTraceTest` holds
+the flag on and the sink rebound, those lines land in its `ByteArrayOutputStream`. This matters for
+the fix and not only for the record: chasing the executors would have left the actual exposure in
+place.
+
+## The other race in the same state, which no filter reaches
+
+`LspTraceTest.offByDefault` asserts `LspTrace.enabled()` is false. `GraphitronLanguageServerTest`'s
+nested `SetTrace` class sets it true, and its three cases assert `enabled()` is true while
+`LspTraceTest.resetSeam` sets it false after every case. Either class can break the other, in both
+directions, and scoping an assertion to a span name reaches neither. The comment already in
+`SetTrace.resetSeam` says leaving the flag on "would fail LspTraceTest's off-by-default assertion
+depending on class ordering": the hazard is interleaving, and ordering is the sequential model of a
+module that is not sequential.
+
+So the narrow fix the draft proposed, scoping the count, is necessary and not sufficient. It fixes one
+assertion and leaves four exposed.
+
+## The decision
+
+Hold the process-global state the way this tree already holds it, and fix the assertion on its own
+merits.
+
+### `@Isolated` on `LspTraceTest`
+
+`@Isolated("rebinds LspTrace's process-global sink and enabled flag")`, exactly as `graphitron`'s two
+classes carry it for `ClassificationTrace`'s writer. Extending that shape is the point: this module
+has the problem `graphitron` already solved, and a second mechanism beside it would be a second thing
+to learn.
+
+One annotation, not two. Isolation is symmetric, so excluding every other class while `LspTraceTest`
+runs also keeps `SetTrace`'s `enabled()` assertions away from `LspTraceTest.resetSeam`. No third class
+writes the flag: the other classes that drive a server reach `initialize` with no trace value, and the
+handshake is enable-only, so an absent value leaves the flag as it was. `GraphitronLanguageServerTest`
+keeps its reset, whose remaining job is to stop leaving tracing on for whatever runs next, and its
+comment stops attributing the hazard to class ordering. While `SetTrace` holds tracing on, spans opened by classes running beside it go to the
+default sink, which is stderr and is captured per class by surefire, so that direction is noise rather
+than a failure.
+
+If R764 settles `graphitron-lsp` as sequential, `@Isolated` becomes inert and stays: it states what
+the class does to the JVM, and it is what keeps the class safe if concurrency is ever turned on
+deliberately.
+
+Rejected alternative: making the capture structurally immune by giving `LspTrace` a thread-scoped test
+sink. It would put a test-shaped read on the emit path, and the statics are what make the seam free at
+a per-keystroke call site. `@Isolated` costs the production path nothing.
+
+### The assertion says what it saw
+
+Two fixes to `doubleCloseIsIgnored`, each right independently of the concurrency question.
+
+- **Scope the count to the span the case opened**, as every other case in the class already does
+  through `lineContaining(marker, name)`. Rename the span from `phase` to `double-close` so the filter
+  is a scope the case owns rather than a word that happens not to collide with a production span name
+  today.
+- **Assert over the filtered list, not over its size.** `expected: 1L but was: 2L` destroyed the one
+  piece of evidence that would have named the foreign emitter, which is why this item reconstructed
+  the mechanism from the code rather than reading it off the failure. A `hasSize(1)` over the list
+  prints the lines it found, so the next breach of this invariant arrives with its cause attached.
+
+## Implementation
+
+- `graphitron-lsp/src/test/java/no/sikt/graphitron/lsp/trace/LspTraceTest.java`: the `@Isolated`
+  annotation, the span rename, the scoped list assertion, and the new case below. The class javadoc
+  gains a sentence naming what the class does to the JVM and why that means isolation, in the shape
+  `ClassificationTraceTest`'s javadoc already uses.
+- `graphitron-lsp/src/test/java/no/sikt/graphitron/lsp/server/GraphitronLanguageServerTest.java`: the
+  comment on `SetTrace.resetSeam`, which currently teaches the wrong execution model to the next
+  reader of the class most likely to need the right one.
+
+Two files. The item is small on purpose: what it buys is that a green build stops depending on which
+class happened to be running.
+
+## Tests
+
+Unit tier, on the module's own test surface. No pipeline, compilation or execution work.
+
+- **The double close is still one close.** The existing case, with its count scoped to its own span
+  and asserted over the list.
+- **A foreign emitter cannot break it.** In the same case, a second thread opens and closes a span
+  under a different name and is joined before the assertion. The case then asserts that its own span
+  closed exactly once and that the foreign close line is in the sink, so it fails if the filter
+  reverts to the bare marker. Both halves are scoped on purpose: an assertion on the sink's total
+  number of close lines would be the same JVM-global count this item is removing. Deterministic, a
+  joined thread with no sleep and no timing. This is the case that pins the scoping, since `@Isolated`
+  would otherwise make the old assertion pass again and hide the defect rather than fix it.
+- **What must stay green.** `LspTraceTest`'s other thirteen cases and `SetTrace`'s three, in the
+  verification build, which is the run where these classes meet the other 75.
+
+How we know the item is delivered: the foreign-emitter case fails against today's filter and passes
+against the scoped one, and `LspTraceTest` carries the annotation that says why it may not overlap
+another class. Neither claim rests on a flake failing to recur.
+
+## Out of scope
+
+The channel. Whether `graphitron-model`'s test-jar should ship its properties file, where the
+exclusion belongs, whether the "Discovered 2" launcher warning should fail a build, and what
+`graphitron-lsp`, `graphitron-mcp` and `graphitron-maven-plugin` should each declare, all belong to
+R764, which already carries the options and the measurements. The numbers above are contributed to it
+rather than acted on here. This item's two changes are correct under either settlement, which is why
+it does not wait for one.
+
+Documenting the reactor's test-execution model in `docs/architecture/how-to/testing.adoc`, which today
+says nothing about parallel execution. That page's section should be written by whoever settles the
+model, not by an item that only obeys it.
+
+Awaiting executor termination in `TextDocumentServiceTest` or `DiagnosticsDrainThreadingTest`. Their
+teardown interrupts without awaiting, which is untidy, and per the mechanism section the spans those
+threads hold are no-ops, so nothing observable follows from it here.
+
+Anything about `LspTrace`'s production behaviour: the seam, its output format, its enabling surface
+and its statics are unchanged.
+
+## Related
+
+R764 owns the channel that makes this module concurrent, and its body now records this failure as the
+second predicted flake to arrive through it. R832, since shipped, was the same relationship one module
+over: it held a `graphitron-maven-plugin` test whose latch budget this concurrency broke, while R764
+held the channel. R741 owns the stale "this module and only this module" claim in `graphitron`'s
+properties file, which is the same misreading of the reactor's execution model that
+`SetTrace.resetSeam`'s comment carries one module over.

@@ -35,6 +35,29 @@ generator work under the four-way class parallelism this leak enables, paralleli
 pom and test resources never mention. R832 owns the test's budget; this item owns the channel. A
 Spec pass should answer its questions for all four consumers, not three.
 
+The second one arrived in `graphitron-lsp` on 2026-08-27:
+`LspTraceTest.doubleCloseIsIgnored` counts close lines in a sink it rebinds JVM-wide and read two,
+because a class running beside it opened a span while it held tracing on. R860 owns that test and
+takes this module's concurrency as given; this item still owns the channel. Worth noting for the
+questions below: the draft of R860 reasoned from `graphitron-lsp`'s pom and test resources that the
+module "declares no parallel execution at all today" and looked for the cause elsewhere, which is the
+invisible-provenance cost predicted above, paid.
+
+Re-measured on the 2026-08-27 tree by the system-property arm switch below rather than by stripping
+the jar, one pair per module, `mvn test -pl <module> -Plocal-db`, all six arms green:
+
+| Module | As it runs | `parallel.enabled=false` | Delta |
+|---|---|---|---|
+| `graphitron-lsp` (646 tests, 76 classes) | 54.9 s | 99.0 s | **-44.1 s, -45%** |
+| `graphitron-mcp` (158 tests) | 32.4 s | 44.0 s | **-11.6 s, -26%** |
+| `graphitron-maven-plugin` (125 tests) | 19.1 s | 25.9 s | **-6.8 s, -26%** |
+
+So 62 s across the three consumers on this machine, against the 25 s measured in August over two of
+them. What pins the arms beyond the totals is the sum of the per-class elapsed times surefire reports
+for `graphitron-lsp`: 591.1 s in the concurrent arm against 96.6 s in the sequential one. A sum can
+only exceed the module total when class wall-clocks overlap, and it lands within a couple of seconds
+of it when they do not, so the two arms are what they claim to be without trusting either total.
+
 ## The mechanism, and that it was already known
 
 `graphitron/pom.xml` configures `maven-jar-plugin`'s `test-jar` goal with an explicit exclusion, and
@@ -113,6 +136,11 @@ unzip -l ~/.m2/repository/no/sikt/graphitron-model/10-SNAPSHOT/*-tests.jar | gre
 # alternate the arms; a single pair is not enough for a delta this size.
 zip -d <the jar> junit-platform.properties
 mvn test -pl :graphitron-lsp -Plocal-db
+
+# Or switch the arms without touching the jar: a JVM system property outranks a
+# junit-platform.properties on the classpath, so this arm is the module as its own pom describes it.
+# Neither the stale-install footgun above nor the stale target/test-classes copy applies.
+mvn test -pl :graphitron-lsp -Plocal-db -Djunit.jupiter.execution.parallel.enabled=false
 
 # Is the warning firing?
 grep -r "Discovered 2 'junit-platform.properties'" graphitron/target/surefire-reports/
