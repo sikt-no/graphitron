@@ -12,9 +12,11 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.INTENT_CONDITION_METHOD_ROUTE_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.INTENT_SPELLED_TABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
+import static no.sikt.graphitron.model.test.SeededStore.seedConditionMethod;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldReference;
@@ -256,17 +258,53 @@ class ReferenceStepTargetTest {
     }
 
     /**
-     * An element carrying neither key nor table is not a hop this view knows. Its destination comes
-     * from a condition method's Java return type, a resolution this view does not perform, and the
-     * silence must not read as "resolves to nothing".
+     * An element carrying a condition and naming neither a key nor a table is a hop, routed by the
+     * method's own signature through {@code intent_condition_method_route}: parameter 0 the
+     * departure, parameter 1 the arrival. The hop joins on an authored predicate, so it names no
+     * constraint and has no foreign-key direction.
      */
     @Test
-    void anElementNamingNeitherKeyNorTableIsNotAHop() {
-        withCollidingKeySeed(dsl -> {
-            seedFieldReference(dsl, GRAPH, "Root", "hop", 0);
-            seedFieldReferenceCall(dsl, GRAPH, "Root", "hop", 0, 0,
-                "com.example.Conditions", "byOwner");
+    void aBareConditionElementIsAHopThroughTheMethodsParameters() {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedConditionMethod(dsl, JAR, CONDITIONS, "filmToActor",
+                tableClass("film"), tableClass("actor"));
+            seedConditionPath(dsl, "Film", "actorsByCondition", "filmToActor");
+
+            var rows = chain(dsl, GRAPH);
+            assertThat(rows).hasSize(1);
+            assertThat(hop(rows.getFirst())).isEqualTo("film->actor");
+            assertThat(rows.getFirst().get(INTENT_FIELD_REFERENCE_STEP_TARGET.VIA))
+                .isEqualTo("CONDITION");
+            assertThat(rows.getFirst().get(INTENT_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME))
+                .isNull();
+            assertThat(rows.getFirst().get(INTENT_FIELD_REFERENCE_STEP_TARGET.FK_ON_FROM)).isNull();
+        });
+    }
+
+    /**
+     * The one route the generator has at a projection site and this view deliberately does not: a
+     * chain-ending condition hop on an output field may take its target from the carrier field's
+     * own return-type binding, so a wildcard-typed method resolves there and nothing here. That
+     * preference belongs to the projection site rather than to the hop, which is why it is not in
+     * the arm both this walk and the input-field walk read; the defect relation names the silence
+     * meanwhile.
+     */
+    @Test
+    void aWildcardTargetParameterResolvesNoHopHereEvenAtAProjectionSite() {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedTableBinding(dsl, GRAPH, "Actor", "actor");
+            seedConditionMethod(dsl, JAR, CONDITIONS, "filmToAnything",
+                tableClass("film"), "org.jooq.Table");
+            seedConditionPath(dsl, "Film", "actorsByCondition", "filmToAnything");
+
             assertThat(chain(dsl, GRAPH)).isEmpty();
+            assertThat(dsl.fetchCount(INTENT_CONDITION_METHOD_ROUTE_DEFECT,
+                INTENT_CONDITION_METHOD_ROUTE_DEFECT.GRAPH_NAME.eq(GRAPH)
+                    .and(INTENT_CONDITION_METHOD_ROUTE_DEFECT.VERDICT
+                        .eq("WILDCARD_TARGET_PARAMETER"))))
+                .isEqualTo(1);
         });
     }
 
@@ -392,7 +430,9 @@ class ReferenceStepTargetTest {
 
     private static final String GRAPH = "g";
     private static final String PKG = "pkg";
+    private static final String JAR = "conditions.jar";
     private static final String PUBLIC = "public";
+    private static final String CONDITIONS = "com.example.Conditions";
 
     /**
      * A catalog of six tables holding the three shapes the chain cases turn on: two foreign keys
@@ -407,6 +447,8 @@ class ReferenceStepTargetTest {
         withSeededStore(GRAPH, dsl -> {
             seedSource(dsl, PKG, "JOOQ_SCHEMA");
             seedGraphSource(dsl, GRAPH, PKG);
+            seedSource(dsl, JAR, "JAR");
+            seedGraphSource(dsl, GRAPH, JAR);
             for (String table : List.of("film", "actor", "language", "category",
                     "film_actor", "film_translation")) {
                 seedTable(dsl, PKG, PUBLIC, table);
@@ -437,6 +479,19 @@ class ReferenceStepTargetTest {
             seedKeyPath(dsl, "Film", "lang", keySpelling);
             body.accept(dsl);
         });
+    }
+
+    /** The generated table class the seeded catalog names for a table, its own join key. */
+    private static String tableClass(String table) {
+        return PKG + ".tables." + table;
+    }
+
+    /** A field carrying one {@code @reference} whose single element is a bare condition. */
+    private static void seedConditionPath(DSLContext dsl, String typeName, String fieldName,
+                                          String method) {
+        seedField(dsl, GRAPH, typeName, fieldName);
+        seedFieldReference(dsl, GRAPH, typeName, fieldName, 0);
+        seedFieldReferenceCall(dsl, GRAPH, typeName, fieldName, 0, 0, CONDITIONS, method);
     }
 
     /** A field carrying one {@code @reference} whose elements each spell a key. */

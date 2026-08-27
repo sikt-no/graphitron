@@ -623,18 +623,39 @@ public final class SeededStore {
 
     /**
      * One element of a path spelling a condition method instead of a hop: the class and the method
-     * as the author wrote them, and neither a key nor a table. The arm exists so a case can state
-     * that shape by name, an element naming neither being what several relations decline on.
+     * as the author wrote them, and neither a key nor a table. The route such an element takes comes
+     * off the method's own signature, so a case using this arm seeds the census rows that signature
+     * decomposes into, {@link #seedConditionMethod} being the one line that does.
      */
     public static void seedFieldReferenceCall(DSLContext dsl, String graphName, String typeName,
                                               String fieldName, int ordinal, int position,
                                               String className, String method) {
+        seedFieldReferenceElement(dsl, graphName, typeName, fieldName, ordinal, position,
+            null, null, className, method);
+    }
+
+    /**
+     * One element spelling every form at once, for a case whose subject is a combination the two
+     * arms above cannot state: a key or a table carrying a condition beside it, which is that hop's
+     * filter rather than its route and is therefore a different authored form from a bare condition.
+     * Any of the four may be null.
+     */
+    public static void seedFieldReferenceElement(DSLContext dsl, String graphName, String typeName,
+                                                 String fieldName, int ordinal, int position,
+                                                 String tableRef, String keyRef,
+                                                 String className, String method) {
         dsl.insertInto(GRAPHITRON_FIELD_REFERENCE_STEP)
             .set(GRAPHITRON_FIELD_REFERENCE_STEP.GRAPH_NAME, graphName)
             .set(GRAPHITRON_FIELD_REFERENCE_STEP.TYPE_NAME, typeName)
             .set(GRAPHITRON_FIELD_REFERENCE_STEP.FIELD_NAME, fieldName)
             .set(GRAPHITRON_FIELD_REFERENCE_STEP.ORDINAL, ordinal)
             .set(GRAPHITRON_FIELD_REFERENCE_STEP.POSITION, position)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP.TABLE_REF, tableRef)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP.KEY_REF, keyRef)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP.KEY_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(keyRef))
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP.KEY_REF_NAME_PART, QualifiedNameGrammar.namePart(keyRef))
             .set(GRAPHITRON_FIELD_REFERENCE_STEP.CLASS_NAME, className)
             .set(GRAPHITRON_FIELD_REFERENCE_STEP.METHOD, method)
             .execute();
@@ -687,12 +708,26 @@ public final class SeededStore {
 
     /**
      * One element of an argument-site path spelling a condition method instead of a hop: neither a
-     * key nor a table, the shape the resolution relations decline on.
+     * key nor a table, so the route comes off the method's signature and a case using this arm seeds
+     * that signature with {@link #seedConditionMethod}.
      */
     public static void seedArgumentReferenceCall(DSLContext dsl, String graphName, String typeName,
                                                  String fieldName, String argumentName,
                                                  int ordinal, int position,
                                                  String className, String method) {
+        seedArgumentReferenceElement(dsl, graphName, typeName, fieldName, argumentName, ordinal,
+            position, null, null, className, method);
+    }
+
+    /**
+     * The argument-site twin of {@link #seedFieldReferenceElement}: one element spelling every form
+     * at once, for the combination the two arms above cannot state. Any of the four may be null.
+     */
+    public static void seedArgumentReferenceElement(DSLContext dsl, String graphName,
+                                                    String typeName, String fieldName,
+                                                    String argumentName, int ordinal, int position,
+                                                    String tableRef, String keyRef,
+                                                    String className, String method) {
         dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_STEP)
             .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.GRAPH_NAME, graphName)
             .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TYPE_NAME, typeName)
@@ -700,6 +735,12 @@ public final class SeededStore {
             .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ARGUMENT_NAME, argumentName)
             .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ORDINAL, ordinal)
             .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.POSITION, position)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TABLE_REF, tableRef)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.KEY_REF, keyRef)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.KEY_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(keyRef))
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.KEY_REF_NAME_PART, QualifiedNameGrammar.namePart(keyRef))
             .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.CLASS_NAME, className)
             .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.METHOD, method)
             .execute();
@@ -2072,6 +2113,54 @@ public final class SeededStore {
                 .set(JVM_METHOD_PARAMETER_TYPE_REF.REFERENCED_CLASS, referencedClass)
                 .set(JVM_METHOD_PARAMETER_TYPE_REF.VARIANCE, "NONE")
                 .execute());
+    }
+
+    /**
+     * A whole condition-method signature in one line: the class, the method, and one parameter per
+     * entry of {@code parameterClasses} typed by the class its declared type names at the root
+     * position. What a case seeding a {@code @condition} reference wants, since the rule reading
+     * these rows reads a method by name and then two parameter positions, so stating that shape
+     * through {@link #seedClass}, {@link #seedMethod} and {@link #seedMethodParameter} takes four
+     * calls whose only content is the same three names repeated.
+     *
+     * <p>A {@code null} entry is a parameter whose declared type names no class at all, which is
+     * what a primitive one is; a wildcard {@code Table<?>} is spelled as the bare interface
+     * {@code org.jooq.Table}, because that is the class the census records at the root of it and
+     * the unbounded wildcard below it names nothing. The two absences are different facts and the
+     * relations reading them tell them apart, so this helper does not fold them together.
+     *
+     * <p>The descriptor is derived from the parameter classes, so two overloads of one name are two
+     * rows as long as their signatures differ, which is the only property a case about overloads
+     * needs from it. The class row is seeded idempotently, two overloads of one class being the
+     * ordinary case here.
+     */
+    public static void seedConditionMethod(DSLContext dsl, String sourceName, String className,
+                                           String methodName, String... parameterClasses) {
+        dsl.insertInto(JVM_CLASS)
+            .set(JVM_CLASS.SOURCE_NAME, sourceName)
+            .set(JVM_CLASS.CLASS_NAME, className)
+            .set(JVM_CLASS.CLASS_KIND, "CLASS")
+            .onDuplicateKeyIgnore()
+            .execute();
+        var descriptor = new StringBuilder("(");
+        for (String parameterClass : parameterClasses) {
+            descriptor.append(parameterClass == null ? "I"
+                : "L" + parameterClass.replace('.', '/') + ";");
+        }
+        descriptor.append(")Lorg/jooq/Condition;");
+        seedMethod(dsl, sourceName, className, methodName, descriptor.toString());
+        dsl.update(JVM_METHOD)
+            .set(JVM_METHOD.RETURNS_CONDITION, true)
+            .where(JVM_METHOD.SOURCE_NAME.eq(sourceName))
+            .and(JVM_METHOD.CLASS_NAME.eq(className))
+            .and(JVM_METHOD.METHOD_NAME.eq(methodName))
+            .and(JVM_METHOD.DESCRIPTOR.eq(descriptor.toString()))
+            .execute();
+        for (int position = 0; position < parameterClasses.length; position++) {
+            String parameterClass = parameterClasses[position];
+            seedMethodParameter(dsl, sourceName, className, methodName, descriptor.toString(),
+                position, parameterClass == null ? Map.of() : Map.of("", parameterClass));
+        }
     }
 
     /**

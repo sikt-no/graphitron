@@ -11,12 +11,15 @@ import java.util.function.Consumer;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_COORDINATE;
 import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_REFERENCE_STEP_TARGET;
+import static no.sikt.graphitron.model.Tables.INTENT_CONDITION_METHOD_ROUTE_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReference;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReferenceCall;
+import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReferenceElement;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReferenceStep;
+import static no.sikt.graphitron.model.test.SeededStore.seedConditionMethod;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldReference;
@@ -200,21 +203,141 @@ class ArgumentReferenceStepTargetTest {
         });
     }
 
+    // ===== The condition arm =====
+
     /**
-     * An element carrying neither key nor table is not a hop this view knows. Its destination comes
-     * from a condition method's Java return type, a resolution this view does not perform, and the
-     * silence must not read as "resolves to nothing".
+     * An element carrying a condition and naming neither a key nor a table is a hop, routed by the
+     * method's own signature: parameter 0 the departure and parameter 1 the arrival, read through
+     * {@code intent_condition_method_route}. The element joins on an authored predicate rather than
+     * on a foreign key, so it names no constraint and carries no direction.
      */
     @Test
-    void anElementNamingNeitherKeyNorTableIsNotAHop() {
+    void aBareConditionElementIsAHopThroughTheMethodsParameters() {
         withCatalog(dsl -> {
             seedTableBinding(dsl, GRAPH, "Film", "film");
             seedQueryField(dsl, "films", "Film");
+            seedConditionMethod(dsl, JAR, CONDITIONS, "filmToActor",
+                tableClass("film"), tableClass("actor"));
+            seedConditionPath(dsl, "Query", "films", "inActor", "filmToActor");
+
+            var rows = chain(dsl, GRAPH);
+            assertThat(rows).hasSize(1);
+            assertThat(hop(rows.getFirst())).isEqualTo("film->actor");
+            assertThat(rows.getFirst().get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.VIA))
+                .isEqualTo("CONDITION");
+            assertThat(rows.getFirst().get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.CONSTRAINT_NAME))
+                .as("an authored predicate is not a foreign key")
+                .isNull();
+            assertThat(rows.getFirst().get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.FK_ON_FROM))
+                .isNull();
+            assertThat(rows.getFirst().get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.KEY_MATCHED_BY))
+                .isNull();
+        });
+    }
+
+    /**
+     * The composition the recursion already had, with a condition hop as its second element: an FK
+     * hop to the junction, then the condition's own route out of it. Nothing in the walk changed to
+     * admit this; the arm supplies a hop row at position 1 whose departure the previous arrival
+     * matches, which is all the recursive term ever asked of an arm.
+     */
+    @Test
+    void anFkHopThenAConditionHopComposes() {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedQueryField(dsl, "films", "Film");
+            seedConditionMethod(dsl, JAR, CONDITIONS, "junctionToActor",
+                tableClass("film_actor"), tableClass("actor"));
             seedArgument(dsl, GRAPH, "Query", "films", "inActor", "String");
             seedArgumentReference(dsl, GRAPH, "Query", "films", "inActor", 0);
-            seedArgumentReferenceCall(dsl, GRAPH, "Query", "films", "inActor", 0, 0,
-                "com.example.Conditions", "byOwner");
+            seedArgumentReferenceStep(dsl, GRAPH, "Query", "films", "inActor", 0, 0,
+                null, "film_actor_film_id_fkey");
+            seedArgumentReferenceCall(dsl, GRAPH, "Query", "films", "inActor", 0, 1,
+                CONDITIONS, "junctionToActor");
+
+            var rows = chain(dsl, GRAPH);
+            assertThat(rows.map(ArgumentReferenceStepTargetTest::hop))
+                .containsExactly("film->film_actor", "film_actor->actor");
+            assertThat(rows.map(r -> r.get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.VIA)))
+                .containsExactly("KEY", "CONDITION");
+        });
+    }
+
+    /**
+     * A condition written beside a key is the KEY arm's row and not the condition arm's: the
+     * condition there is that hop's filter and the key is its route, so the signature is never
+     * consulted and the hop keeps its constraint and its direction.
+     */
+    @Test
+    void aConditionBesideAKeyStaysTheKeyArmsRow() {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedQueryField(dsl, "films", "Film");
+            seedConditionMethod(dsl, JAR, CONDITIONS, "filmToActor",
+                tableClass("film"), tableClass("actor"));
+            seedArgument(dsl, GRAPH, "Query", "films", "inActor", "String");
+            seedArgumentReference(dsl, GRAPH, "Query", "films", "inActor", 0);
+            seedArgumentReferenceElement(dsl, GRAPH, "Query", "films", "inActor", 0, 0,
+                null, "film_actor_film_id_fkey", CONDITIONS, "filmToActor");
+
+            var rows = chain(dsl, GRAPH);
+            assertThat(rows).hasSize(1);
+            assertThat(hop(rows.getFirst()))
+                .as("the key routes it; the condition method's own target is not read")
+                .isEqualTo("film->film_actor");
+            assertThat(rows.getFirst().get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.VIA))
+                .isEqualTo("KEY");
+        });
+    }
+
+    /**
+     * A wildcard target parameter resolves no route, so the element is no hop and the chain does not
+     * reach it. This is the silence that would otherwise be indistinguishable from "not reached",
+     * and the defect relation beside the route is what names it instead.
+     */
+    @Test
+    void aWildcardTargetParameterResolvesNoHop() {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedQueryField(dsl, "films", "Film");
+            seedConditionMethod(dsl, JAR, CONDITIONS, "filmToAnything",
+                tableClass("film"), "org.jooq.Table");
+            seedConditionPath(dsl, "Query", "films", "inActor", "filmToAnything");
+
             assertThat(chain(dsl, GRAPH)).isEmpty();
+            assertThat(dsl.fetchCount(INTENT_CONDITION_METHOD_ROUTE_DEFECT,
+                INTENT_CONDITION_METHOD_ROUTE_DEFECT.GRAPH_NAME.eq(GRAPH)
+                    .and(INTENT_CONDITION_METHOD_ROUTE_DEFECT.VERDICT
+                        .eq("WILDCARD_TARGET_PARAMETER"))))
+                .as("the silence is named next door rather than left to a reader")
+                .isEqualTo(1);
+        });
+    }
+
+    /**
+     * Overload multiplicity lands in the arities and nowhere else. Two overloads of one name leaving
+     * {@code film} for two tables are two rows at one position, so the element reaches two
+     * destinations by two routes, which is the ambiguity a reader that needs a certain landing reads
+     * off {@code targets}.
+     */
+    @Test
+    void twoOverloadsOfOneConditionAreTwoTargetsAtOnePosition() {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedQueryField(dsl, "films", "Film");
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("film"), tableClass("actor"));
+            seedConditionMethod(dsl, JAR, CONDITIONS, "bridge",
+                tableClass("film"), tableClass("language"));
+            seedConditionPath(dsl, "Query", "films", "inActor", "bridge");
+
+            var rows = chain(dsl, GRAPH);
+            assertThat(rows.map(ArgumentReferenceStepTargetTest::hop))
+                .containsExactly("film->actor", "film->language");
+            assertThat(rows.map(r -> r.get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.TARGETS)))
+                .containsExactly(2, 2);
+            assertThat(rows.map(r -> r.get(INTENT_ARGUMENT_REFERENCE_STEP_TARGET.CANDIDATES)))
+                .containsExactly(2, 2);
         });
     }
 
@@ -255,7 +378,9 @@ class ArgumentReferenceStepTargetTest {
 
     private static final String GRAPH = "g";
     private static final String PKG = "pkg";
+    private static final String JAR = "conditions.jar";
     private static final String PUBLIC = "public";
+    private static final String CONDITIONS = "com.example.Conditions";
 
     /**
      * The sibling test's catalog, which is the point: the agreement case needs both sites resolved
@@ -266,6 +391,8 @@ class ArgumentReferenceStepTargetTest {
         withSeededStore(GRAPH, dsl -> {
             seedSource(dsl, PKG, "JOOQ_SCHEMA");
             seedGraphSource(dsl, GRAPH, PKG);
+            seedSource(dsl, JAR, "JAR");
+            seedGraphSource(dsl, GRAPH, JAR);
             for (String table : List.of("film", "actor", "language", "film_actor",
                     "film_translation")) {
                 seedTable(dsl, PKG, PUBLIC, table);
@@ -315,6 +442,20 @@ class ArgumentReferenceStepTargetTest {
                 tableRefs == null ? null : tableRefs[position],
                 keyRefs == null ? null : keyRefs[position]);
         }
+    }
+
+    /** The generated table class the seeded catalog names for a table, its own join key. */
+    private static String tableClass(String table) {
+        return PKG + ".tables." + table;
+    }
+
+    /** An argument carrying one {@code @reference} whose single element is a bare condition. */
+    private static void seedConditionPath(DSLContext dsl, String typeName, String fieldName,
+                                          String argumentName, String method) {
+        seedArgument(dsl, GRAPH, typeName, fieldName, argumentName, "String");
+        seedArgumentReference(dsl, GRAPH, typeName, fieldName, argumentName, 0);
+        seedArgumentReferenceCall(dsl, GRAPH, typeName, fieldName, argumentName, 0, 0,
+            CONDITIONS, method);
     }
 
     /** The field-site path the agreement case compares against. */

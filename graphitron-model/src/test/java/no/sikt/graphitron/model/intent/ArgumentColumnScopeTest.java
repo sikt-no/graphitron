@@ -13,7 +13,9 @@ import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_REFERENCE_STEP_TAR
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReference;
+import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReferenceCall;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReferenceStep;
+import static no.sikt.graphitron.model.test.SeededStore.seedConditionMethod;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
@@ -47,7 +49,9 @@ class ArgumentColumnScopeTest {
 
     private static final String GRAPH = "g";
     private static final String PKG = "cat";
+    private static final String JAR = "conditions.jar";
     private static final String PUBLIC = "public";
+    private static final String CONDITIONS = "com.example.Conditions";
 
     // ===== ARGUMENT_SCOPE =====
 
@@ -157,6 +161,52 @@ class ArgumentColumnScopeTest {
         });
     }
 
+    /**
+     * A path whose one element is a bare condition resolves like any other: the arm reads the
+     * terminal element of the walk and never which arm resolved it, so the coordinate the generator
+     * emits a predicate at gets a scope row without this rule being edited. The population this case
+     * stands for is the one that used to have none.
+     */
+    @Test
+    void aPathEndingInAConditionHopResolvesOnTheConditionsTargetTable() {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedConditionMethod(dsl, JAR, CONDITIONS, "filmToActor",
+                tableClass("film"), tableClass("actor"));
+            seedArgument(dsl, GRAPH, "Query", "films", "inActor", "String");
+            seedArgumentReference(dsl, GRAPH, "Query", "films", "inActor", 0);
+            seedArgumentReferenceCall(dsl, GRAPH, "Query", "films", "inActor", 0, 0,
+                CONDITIONS, "filmToActor");
+
+            assertThat(rows(dsl).map(ArgumentColumnScopeTest::render))
+                .containsExactly("Query.films(inActor) PATH_TERMINAL actor");
+        });
+    }
+
+    /**
+     * An FK hop then a condition hop resolves on the condition's arrival, the terminal being the
+     * last position and not the last foreign key.
+     */
+    @Test
+    void anFkHopThenAConditionHopResolvesOnTheConditionsArrival() {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedConditionMethod(dsl, JAR, CONDITIONS, "junctionToActor",
+                tableClass("film_actor"), tableClass("actor"));
+            seedArgument(dsl, GRAPH, "Query", "films", "inActor", "String");
+            seedArgumentReference(dsl, GRAPH, "Query", "films", "inActor", 0);
+            seedArgumentReferenceStep(dsl, GRAPH, "Query", "films", "inActor", 0, 0,
+                null, "film_actor_film_id_fkey");
+            seedArgumentReferenceCall(dsl, GRAPH, "Query", "films", "inActor", 0, 1,
+                CONDITIONS, "junctionToActor");
+
+            assertThat(rows(dsl).map(ArgumentColumnScopeTest::render))
+                .containsExactly("Query.films(inActor) PATH_TERMINAL actor");
+        });
+    }
+
     // ===== Where certainty is refused =====
 
     /**
@@ -262,6 +312,8 @@ class ArgumentColumnScopeTest {
         withSeededStore(GRAPH, dsl -> {
             seedSource(dsl, PKG, "JOOQ_SCHEMA");
             seedGraphSource(dsl, GRAPH, PKG);
+            seedSource(dsl, JAR, "JAR");
+            seedGraphSource(dsl, GRAPH, JAR);
             for (String table : List.of("film", "actor", "language", "film_actor")) {
                 seedTable(dsl, PKG, PUBLIC, table);
                 seedConstraint(dsl, PKG, PUBLIC, table, table + "_pkey", "PRIMARY KEY", null);
@@ -286,6 +338,11 @@ class ArgumentColumnScopeTest {
         seedConstraint(dsl, PKG, PUBLIC, table, constraintName, "FOREIGN KEY", null);
         seedReferentialConstraint(dsl, PKG, PUBLIC, table, constraintName,
             PKG, referencedSchema, referencedTable, referencedTable + "_pkey");
+    }
+
+    /** The generated table class the seeded catalog names for a table, its own join key. */
+    private static String tableClass(String table) {
+        return PKG + ".tables." + table;
     }
 
     /** An argument carrying one {@code @reference} whose elements each spell a table. */
