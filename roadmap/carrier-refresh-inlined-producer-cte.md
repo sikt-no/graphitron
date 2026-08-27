@@ -1024,9 +1024,8 @@ is where this project keeps the argument that a registration was the right rung,
 be the first row that skipped the rung below it without saying so.
 
 *Author's note (round 5 revision).* Taken. The lever section now carries the doctrine and both of its
-discharges, and states the order as the register's rather than as this item's preference. One
-The finding understated itself, and a later architecture read
-found the stronger form now in the body: `meta_materialize.reason`'s column comment says a row that
+discharges, and states the order as the register's rather than as this item's preference. The finding
+understated itself, and a later architecture read found the stronger form now in the body: `meta_materialize.reason`'s column comment says a row that
 cannot say which of the two claims it makes is not a registration, and a registration's row here
 cannot say either, so this is not a completeness gap in a `reason` but a registration that is
 inadmissible as a first move. The register is consequently not edited by this item at all, and the
@@ -1084,3 +1083,133 @@ per round 4, not the five the plan enumerates. `MaterializationOrderTest`'s fixt
 `SELECT v FROM scratch_p`, `SELECT v FROM scratch_mid`, `SELECT v FROM scratch_src` and
 `SELECT v FROM scratch_x` / `SELECT v FROM scratch_y`, none of which reads a relation from inside a
 `WITH` body, so finding 7's missing shape is missing. The register now carries twenty rows.
+
+### Round 6 (2026-08-27, Spec -> Ready, reviewer session 01V5QbYrN6uc9qHQeuwRZmma)
+
+Verdict: withhold, on question 1 and question 2. Rounds 3 to 5 are addressed and the plan is a
+different and better item than the one they reviewed. What withholds it is not a new objection to the
+design; it is that the revision that narrowed the item left three sections speaking for the wider one,
+and that the arm the implementer must ship is chosen by a measurement the plan itself says cannot be
+taken here.
+
+What is settled, checked against the tree rather than against the revision commits. The split is the
+right call and the argument it rests on reads verbatim: `meta_materialize.reason`'s column comment does
+say that a row which cannot claim either "no view could express this" or "a view expresses it correctly
+and only too slowly" is not a registration, so a registration whose subject is a naming that need not
+exist really is inadmissible as a first move rather than merely unattractive. The doctrine sentence is
+in `intent_mutation_payload_key_membership_live`'s reason as quoted, and the two rows after it do
+discharge it in obligation language ("The rewrite came first, as the row above this one says it must",
+"So the rewrite was tried first, as the doctrine here says it must be"). The redundancy holds at the
+source: the filter, the outer join, the `COUNT(*) OVER (PARTITION BY f.graph_name, f.type_name)` window
+and the single naming of `data_channel` are all as the body describes, and the four-line comment above
+`data_channel` states the inlining hazard from the tree's own side. The narrowing claim that makes arm A
+a real cost risk is the page's, at `docs/architecture/explanation/fact-model.adoc:125`, quoted
+accurately. Both page quotes about which relation to register check out. The three `reason` rows read on
+the tree exactly as the plan quotes them, and only `intent_field_column_scope_live`'s reads as a general
+claim, which is what the "completed and corrected" framing now says. R861 exists at the path given, and
+the audit exists and is honest about its failed instrument. Every symbol named exists as named, by
+FQN-aware grep: the nine `MaterializeRegistryGateTest` tests including
+`targetsAreShapedLikeTheViewsThatFillThem` and `NO_INDEX`, `MaterializationOrderTest` with no
+`WITH`-body fixture, `MaterializeDependencies.populate` / `relationsReadBy` /
+`registrationsReachedByView`, `Materializations.refreshOrder` / `analyse`, `SchemaIdentifierDriftCheck`,
+`FactCaptureAgreementTest`, `CarrierDataFieldTest`, `DerivedReadCostTest`'s four constants,
+`ix_spelled_table_spelling`, `report-inline-multiplicity`, and the register at twenty rows. The seeded
+anchor's habitat is real and the pattern supports what the plan asks of it:
+`graphitron-model/src/test/java/no/sikt/graphitron/model/intent/` holds `ProducerCardinalityTest` and
+its siblings over `SeededStore.withSeededStore`, and no carrier anchor exists there yet, so "a new
+seeded anchor" is the right shape. That anchor is the best new material in this revision, and nothing
+below touches it.
+
+Question 1, in my own words and not from the phase list: after this lands the carrier view names its
+producer once instead of once per driving row, so a consumer whose schema declares mutation payloads
+stops paying the dominant term of a per-capture cost it pays today, gets the same rows back under the
+same names, and gets an invariant that fails if the predicate being removed ever did remove a row. That
+sentence is available from the body's first two sections and it is the right one. It stops being the
+only available answer three sections later, which is finding 13.
+
+**13. The item's scope is stated two ways, and the second one is a live conditional.** "What changes
+when this lands" says "The register gains no row", "Registering the relation is not a third arm" argues
+that a registration is inadmissible as a first move, and question 2 of the sequenced pair files it as
+R861. Then "Implementation of the registration arm" opens with "Everything from here to 'Tests and
+gates' specifies arm C and applies only if the timings pick it", and "The index question is the
+registration arm's own" opens with "This section applies only if arm C ships". Those are not
+inheritance notes for the follow-up item; they are conditions this item's own timings could satisfy, on
+an arm the body two sections earlier removed from the set the timings choose from. So an implementer
+reading top-down gets two answers to the first question they have, and the two deliverables are not
+close: one edit to one view body against a table, a view rename, seven relocated comments, a register
+row, two structural tests and a re-pinned constant.
+
+The Tests and gates section already shows the framing that works, in "**The rest of this section covers
+the registration this item does not make**, and is kept because the follow-up item inherits it". What
+would satisfy this finding is the same sentence at the head of the other two sections, with the
+conditional gone. Retaining the material is right and I am not asking for it to be deleted; R861 says it
+inherits it, and a reader of R861 will want it. It just has to be inherited rather than optional.
+
+**14. The arm the implementer ships is chosen by a measurement the plan says cannot be taken here, and
+no fallback replaced the one the revision dropped.** "What decides between A and B, and it is
+outstanding" requires both arms timed on the consumer store, and then states that this cannot be taken
+in the reactor. The previous revision closed that paragraph with "So the figures come from the consumer
+store or they do not come"; `c4ec2f5` dropped the clause and nothing took its place. The falsifier
+section hardens it into a precondition: "This is the fork, and it is the one thing that has to be
+measured before anything here is built." Read together, the item cannot be taken In Progress in this
+repository at all, and Ready means an implementer can pick it up.
+
+This is the question 2 failure, and it is the one that decides the round: handed this plan as-is, an
+implementer either stops at the fork or picks an arm on their own reading, and which arm ships is
+exactly what this gate exists to see settled before the work starts.
+
+The plan already holds what settles it, which is why this is cheap. The page rule at
+`fact-model.adoc:125` predicts that arm A widens the population the two `CASE WHEN EXISTS` probes and
+the window run over, the DDL comment above `data_channel` says the same from the tree's side, and round
+5's finding 12 observed that arm B is the arm that survives whichever way A's population question goes.
+The body itself says the rule "already leans towards B". What would satisfy this finding is a decision
+procedure that terminates in this reactor: name the arm that ships and give the timing its actual role,
+confirmation where a consumer store is reachable and a recorded absence where it is not, or state
+plainly what an implementer does when the figures cannot be taken. Which of those, and which arm, is the
+author's call; what may not stand is a fork whose only stated resolution is unavailable.
+
+**15. "What would falsify this plan" describes only the change this item does not make, and reinstates
+the number the opening retracts.** All five bullets are registration-conditional. The third makes "The
+carrier refresh not landing near 0.3 s on the consumer store after the registration" a stop-and-rebisect
+condition, while "What changes when this lands" retracts that figure by name as "one candidate lever's
+measurement read as the item's outcome". The second prices a refresh this item does not install, the
+fourth is about a roster set no rewrite touches, and the fifth is about an edge assertion the tests
+section files under work this item does not do. The first, as finding 14 says, states a precondition the
+plan cannot meet.
+
+So the section that says when to stop says nothing about what ships. That is a question 1 finding
+because a falsifier list is how a reader learns what the author thinks could still be wrong, and on the
+rewrite the honest ones are available and interesting: the seeded anchor showing that the filter does
+remove a row or does move a `data_fields` count, which falsifies the item rather than an arm; arm B's
+respelling not planning as one evaluation, which is a claim about the engine the plan elsewhere insists
+on measuring; and the carrier staying expensive after the rewrite, which is R861's trigger rather than
+this item's failure and is worth saying so rather than leaving to inference. Keep the registration
+bullets if they are inherited, marked as inherited.
+
+**16. The CTE-body shape case is assigned by each of the two items to the other.** This item's tests
+list places `MaterializationOrderTest`'s new synthetic case inside "the registration this item does not
+make ... kept because the follow-up item inherits it". R861 says the opposite: "`MaterializationOrderTest`
+covers no shape where a source view reads a relation from inside a `WITH` body, which is how the carrier
+reaches this relation; the sibling item adds that synthetic case, so this one inherits it rather than
+needing it." Confirmed that the hole is real, no fixture in that class reading a relation from inside a
+`WITH` body. This is round 2's finding 4 in mirror form: a hand-off whose destination hands it back, so
+the work lands nowhere.
+
+My reading is that R861's sentence is the wrong one, the shape mattering only where a registration's
+refresh edge has to be derived, and one line in R861 closes it; any session may land that, so this is
+the smallest of the four. It is a finding rather than a note because this item's own text is one half of
+the contradiction and a returning reader of either file cannot tell which half is stale.
+
+**What would satisfy this round.** Findings 13 and 15 are editorial in effort and about scope in
+substance: say once, at the head of each retained section, that the registration material is R861's
+inheritance rather than a conditional arm, and give the falsifier list at least one entry about the
+change that ships. Finding 14 is the one that needs a decision: state how the A / B choice is made when
+the deciding figures cannot be taken here, or name the arm and demote the timing to confirmation.
+Finding 16 is one line, in whichever of the two files the author judges stale. Nothing here asks for new
+scope, and nothing here disputes the split, the diagnosis, the seeded anchor or the three `reason`
+edits, all of which I checked and none of which I would change.
+
+Non-blocking. `DerivedReadCostTest` is now at `READERS_IN_SCHEMA` 111 and `CELLS` 178, having moved
+again since round 5; the plan names neither figure any more, which is why it did not go stale this time,
+and that is the pattern to keep. Corrected in passing, in the same commit as these findings: round 5's
+author note under finding 11 carried a stray "One" left mid-sentence by an edit, which is now joined up.
