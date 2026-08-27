@@ -31,10 +31,17 @@ and it is invisible in the log because the refresh emits nothing at all, which i
 
 ## What it costs
 
-One full evaluation of the register, on the cadence of every `graphitron:dev` start. On a consumer
-schema measured for the sibling hang item, one pass over sixteen registrations is about 200 seconds,
-so the doubling is not a rounding error; on a small schema it is small. The register has grown since
-that measurement, to twenty registrations. The cost scales with the store rather than with the
+One full evaluation of the register, on the cadence of every `graphitron:dev` start. What that
+evaluation costs is bounded from below rather than known, and the figure has to be quoted with the
+fence its source puts on it. R856's price list prices positions 1 to 14 of a consumer schema's
+refresh at 199 seconds, marks positions 15 and 16 unmeasured at that scale, notes that those
+fourteen are exactly the registrations its populated store holds, and states outright that the total
+was measured post-commit against a settled store and is to be read as a price list rather than as an
+account of where an hour goes. So one pass over that schema costs at least those 199 seconds and
+plausibly a good deal more, and nothing here invents a figure for the tail. The register has grown
+since that measurement, to twenty registrations, and on a small schema the pass is small. The
+error direction matters more than the number: the motivation only needs the pass to be expensive,
+and 199 seconds is a floor. The cost scales with the store rather than with the
 session: `refreshAll` loops graphs in its inner loop, so a store holding several graphs pays one
 evaluation per graph per registration, where the capture paid one for the session's own graph. A
 shared store holding several graphs is the ordinary state of a multi-module workspace, not an
@@ -62,9 +69,16 @@ the third pass only: the one evaluation that no capture asked for.
 
 A `graphitron:dev` start over a store that already holds the graphs it opens stops re-deriving the
 materialization register at all. The language server and MCP ports bind one full register pass
-sooner, plus one further pass per graph the store holds beyond the session's own. Nothing about
-generated output changes, and no reader may observe a stale row: the pass that gets skipped is
-exactly the pass that would have rewritten every row with the value it already held.
+sooner, plus one further pass per graph the store holds whose partitions no capture has disturbed.
+Nothing about generated output changes.
+
+What a reader may observe is worth stating exactly rather than sweepingly, because the first draft
+of this item promised more than it could deliver and three review rounds said so. Within one JVM,
+which is every cadence a build or a dev session produces on its own, no reader observes a stale row:
+a partition is refilled unless something recorded that it was already filled from rows nothing has
+touched since. Two cases fall outside that, both of them named and argued under "What the rule gives
+up" below rather than left to be discovered: a target somebody emptied by hand, and two JVMs
+capturing into one shared store at the same moment.
 
 The same change makes `-Dgraphitron.dev.skipInitial` over a warm store genuinely cheap, which it is
 not today: a start that captures nothing currently still pays the whole register.
@@ -97,167 +111,338 @@ the next caller, and today's caller is its only production caller. The fix that 
 the one that makes the cheap answer the default answer.
 
 This is the project's standing move rather than a new one: decide once and record the decision as a
-fact, then let the reader ask instead of assume. The store already carries two relations of exactly
-this kind about the materializer, `meta_materialize` for the registrations and
-`meta_materialize_dependency` for the refresh order derived from the stored view definitions.
+fact, then let the reader ask instead of assume. Two relations about the materializer already work
+that way, `meta_materialize` for the registrations and `meta_materialize_dependency` for the refresh
+order derived from the stored view definitions. Both sit in `meta_`, because both are a function of
+the DDL alone; what this item records is a function of what a run did, which is why it lands in
+`store_` instead, and the Implementation section quotes the family comment that draws that line.
 
 The cheapest alternative of all, deleting the call and trusting that every capture refreshed what it
 wrote, is rejected on the same grounds and one more. A cold store, and a store holding a graph no
 capture ever reached, genuinely need the pass, so the call cannot go; and with it gone the argument
 that the targets are current would live only in prose, which is the state this item is a report of.
 
-**What the rule gives up.** A restart stops repairing a target somebody emptied by hand, through the
-store console the dev session exposes or otherwise, because the fill row still says it is current.
-That is the ordinary standing of a cache whose contents were hand-damaged, and the remedy is the
-ordinary one: delete the store directory and let the next build refill it. Worth stating because
-today's unconditional pass does silently repair it, so this is a real property being traded away
-rather than an oversight.
+**What the rule gives up.** Three properties, and all three are traded knowingly. Today's
+unconditional pass silently holds each of them, so each is a real loss rather than an oversight.
 
-## What makes a target current
+*A hand-damaged target stops being repaired by a restart.* Somebody who empties a target through the
+store console the dev session exposes, or otherwise, no longer gets it back on the next start,
+because the claim recorded for it still stands. That is the ordinary standing of a cache whose
+contents were hand-damaged, and the remedy is the ordinary one: delete the store directory and let
+the next build refill it.
 
-A registered target is stale exactly when the rows its source view reads have changed since the
-target was filled. The store already stamps that: `store_graph.last_captured` is rewritten by
-`FactCapture.writeGraph`, which leads the capture transaction, so the stamp changes in the same
-transaction as the rows and never apart from them.
+*A re-walk that changed nothing still invalidates.* The rule below records that a partition was
+filled and deletes that record when anything the partition reads is rewritten, without asking
+whether the rewrite changed a row. So a sibling graph in a shared store refills after any capture
+that re-walks a source it names, even where the rows came back byte-identical. This is the price of
+recording a claim rather than a content stamp, and the store cannot currently be made to pay less:
+`store_source.stamp` is NULL by design for exactly the two kinds that hold these rows, jOOQ schema
+packages and directory roots, and `last_seen` moves on every run that merely names a source. It is
+also strictly less work than today, which refills that partition unconditionally whether or not any
+capture ran at all.
 
-So one relation closes it. `meta_materialize_fill` records, per registration and graph, the stamp
-the graph stood at when the refresh last filled that partition. Every refresh writes it: the capture
-path inside its own transaction, where the stamp it reads is the one its own `writeGraph` just set,
-and the reader-side pass as it goes. The reader-side rule is then an equality: refill the partition
-for a graph when no fill row matches that graph's current `last_captured`, skip it when one does.
+*Two JVMs capturing into one store at the same moment can leave a claim that should have been
+deleted.* The reader-side pass refills a partition and records its claim in one small transaction,
+but it does not serialize against a capture in another process. A foreign capture that deletes this
+graph's claims before the pass inserts one, and commits its rewrite after the pass has read the
+rows, leaves a claim recorded against rows that have since changed, and unlike every case above the
+wrong answer then persists instead of being recomputed on the next start. It needs two JVMs sharing
+one store simultaneously, with one capturing a source the other's graph names. Closing it wants
+cross-process serialization the store does not offer, and the obvious instrument, locking the
+graph's source rows for the pass, invites a deadlock against a capture that locks the same hundreds
+of rows in its own order. If it is ever observed, the cheap detector is a watermark: read
+`max(last_seen)` over the graph's sources before the pass and again before each claim, and withhold
+the claim if it moved. That reuses the column dismissed above, correctly, because a currency key may
+not err and a race detector may err toward doing more work. This item leaves it unbuilt rather than
+building a mechanism against a failure nobody has seen, and states the window here so that the
+promise in "What changes for a consumer" is one the rule actually keeps.
 
-Four properties are worth stating because they are what make the rule sound rather than merely
-plausible.
+## What makes a partition current: a claim, and whoever falsifies it deletes it
 
-**A writer never consults it.** `Materializations.refresh`, the capture-cadence entry point, stays
-unconditional and only records. A writer that has just rewritten the partition's inputs knows they
-changed; only a reader has a question. That also removes any dependence on the stamp being unique or
-monotonic, since the rule compares for equality and the writer never compares at all.
+This section replaces the rule the first three review rounds refused, and the reason it was refused
+decides the shape of what replaces it. That rule recorded the graph's `last_captured` stamp at fill
+time and refilled a partition when the stamp no longer matched. Currency, though, is a property of
+the rows a partition reads, and not all of those rows are graph-keyed: `intent_spelled_table_live`
+joins `store_graph_source` to `sql_table`, whose key is `(source_name, table_schema, table_name)`,
+and `jvm_class` is `(source_name, class_name)`. `store_source`'s own comment says why no stamp of a
+graph's can speak for them, that it "can say what a file hashed to, never which graph read it". A
+capture of graph A re-walks a shared jOOQ package and rewrites those rows inside A's transaction,
+while `FactCapture.writeGraph` moves `last_captured` for A alone, so B's stamp still equals the one
+its fill row recorded against rows that no longer exist.
 
-**The rule covers graph-keyed targets only.** A target with no `graph_name` in its shape may read
-rows no graph's stamp covers, so its currency cannot be argued from `store_graph` and it is refreshed
-whole and unconditionally, as today. Every one of the twenty registered targets is graph-keyed, so the
-production register is covered completely; the whole-target arm has residents only in the scratch
-fixtures of `MaterializationOrderTest`, which is also what keeps those cases working unchanged.
+**So this draft stops comparing values.** A partition's currency is recorded as a claim, and every
+writer that falsifies a claim deletes it in the same transaction that falsifies it. That inverts
+where the argument has to hold, which is the whole gain. A stamp rule is sound only if the recorded
+value covers everything the partition reads, which is what three rounds could not establish and what
+round 3 established the store holds no material for. A claim is sound if every writer of what the
+partition reads deletes it, which is a statement about writers, and there are two kinds of them.
 
-**A missing fill row means genuinely stale, not merely unproven.** The store's file lives in a
-directory stamped with the DDL hash and generator version (`GraphitronModelStore`), so a partition
-filled before a registration existed is in a different file rather than in this one, unrecorded.
+**One relation, two columns.** `store_materialized_partition (source_view_name, graph_name)`: a row
+claims that this graph's partition of this registration's target holds exactly the rows its source
+view computes. No stamp column and no timestamp, deliberately, because a value nothing compares is a
+value nothing keeps correct; the row's presence is the entire claim. The family placement changes
+with it. The first draft put this relation in `meta_`, which that family's own comment forbids: "Not
+store_, because these rows are a statement of what this file declares, never a record of what a run
+read." A claim is precisely a record of what a run did, and `store_`'s comment opens with "Every run
+of the generator leaves a record of itself here."
 
-**Partial progress is safe, so the reader-side pass needs no transaction of its own,** which it
-cannot have anyway because `analyse` commits. Two cases. A pass that dies after refilling some
-registrations leaves those partitions filled under the current stamp and the rest unrecorded, and the
-next pass finishes them. And a partition refilled while its stamp is unchanged is refilled with the
-values it already held, so a dependent whose prerequisite was refilled under one stamp is not made
-stale by it. Ordering holds the other direction too: the pass refreshes prerequisites first, so a
-death mid-pass leaves a prerequisite fresher than its dependent, which is the safe direction.
+**Who writes a claim.** Only a refresh, and only for a partition it has just refilled.
+`Materializations.refresh`, the capture-cadence entry point, stays unconditional and records; the
+reader-side pass refills the pairs with no claim and records those. A writer never consults a claim:
+a writer that has just rewritten a partition's inputs knows they changed, and only a reader has a
+question.
+
+**Who deletes one, and why that is only two writers.**
+
+1. *The graph's own rows.* A capture rewrites its own graph's graph-keyed rows, so its
+   `Materializations.refresh` deletes that graph's claims ahead of the pass and inserts one per
+   registration it refills, inside the capture's transaction. The claim therefore becomes visible in
+   the same commit as the rows it vouches for. `StoreRefresh`'s graph-scoped clear reaches the
+   relation independently, by the `graph_name` column and the derivation whose stated purpose is
+   that "a new graph-keyed relation is ownership-scoped by default", so the two agree rather than
+   either relying on the other.
+
+2. *Source-keyed rows, which are the half the stamp rule missed.* Every rewrite of a source's
+   partition is preceded, in the same transaction, by one upsert of that source's `store_source`
+   row. `ClasspathSources.upsert` is the single site for all three kinds: the classpath entries
+   through `ClasspathSources.record`, the jOOQ schema package through `CatalogFactCapture`, and the
+   schema files through `SdlFactCapture`. Its javadoc already states the invariant this leans on,
+   that "this run is about to (re)write the source's partition", which is also why the stamp it
+   writes there is null. So that upsert additionally deletes the claims of every graph that names
+   the source, read off `store_graph_source`. A source whose partition survives unexamined is never
+   upserted (`StoreRefresh.prepare` pre-claims its `store_source` row, so `record` returns early),
+   and it correctly invalidates nothing.
+
+**Why membership is the right reach and not an approximation of one.** The relation the invalidation
+reads to find the affected graphs is the same relation the affected views read to scope themselves.
+`store_graph`'s comment states that rule: any derivation joining an SDL fact to a catalog or
+classpath fact "is underdetermined in a shared store until a membership relation says which sources
+are the joining graph's; store_graph_source below is that relation", and "such a join scopes its
+catalog side through it". A registered view that obeys that rule sees exactly the source-keyed rows
+of the sources its graph names, which is exactly the set of graphs the upsert invalidates. Soundness
+is therefore not a second rule to keep beside the first; it is the first rule read from the other
+end. A view that disobeys it is already wrong, resolving a sibling module's tables into its own
+answers, and the gate below is where that stops being prose.
+
+**What the hooks cost.** One `DELETE` per upserted source, over a relation holding at most one row
+per registration per graph, against a capture that already pays a full unconditional refresh of its
+own graph. Nothing on the capture cadence gets measurably dearer, which matters because that cadence
+is the one R856 is about.
+
+Four properties are what make the rule sound rather than merely plausible.
+
+**A missing claim means refill, and absence is always the safe direction.** Three ways a claim can be
+absent, all of them ending in the conservative answer. A partition filled before a registration
+existed lives in a different store file, the directory being stamped with the DDL hash and generator
+version (`GraphitronModelStore`), so it is not merely unrecorded here but elsewhere. A graph minted
+outside any capture, which `CompileFacts` and `OwnedGraphPartition` both do by inserting a
+`store_graph` anchor row, has no claims and refills; round 1 flagged those two writers as a hole in
+the old family roster with a benign outcome, and under a claim there is nothing there to get wrong.
+And a scratch store with no `store_graph` row records nothing at all, the foreign key declining it,
+so it refills exactly as today.
+
+**Invalidation is per graph rather than per registration, and that is what keeps the dependency order
+honest.** A source rewrite deletes all of a graph's claims instead of working out which registrations
+read that source. Conservative in the cheap direction, over a relation of twenty rows per graph, and
+it forecloses a failure the per-registration alternative would have had: a dependent still claiming
+currency while the prerequisite its view reads is refilled underneath it.
+
+**Partial progress is safe.** The reader-side pass holds no transaction over the whole pass, which it
+cannot anyway because `analyse` commits, but each refill and its claim share one small transaction,
+so a pass that dies leaves claims only for the partitions it finished and the next pass finishes the
+rest. Ordering holds in the safe direction too: the pass refills prerequisites first, so a death
+mid-pass leaves a prerequisite fresher than its dependent and never the reverse.
+
+**Both refresh shapes survive unchanged.** A target with no `graph_name` in its shape has no
+partition to claim and is refreshed whole and unconditionally, as today. All twenty production
+targets are graph-keyed, so the register is covered; the whole-target arm has residents only in the
+scratch fixtures of `MaterializationOrderTest`, which is what keeps those cases passing untouched.
+Note what changed in this argument since the first draft: the keying of the *target* now decides only
+the refresh shape, as it always did, and no longer stands in for an argument about what the target's
+view reads. That substitution was the finding.
 
 ## The premise, and its enforcer
 
-The rule rests on one premise: every relation a registered source view reads changes only inside a
-capture transaction, the transaction that stamps the graph and records the fill. That premise holds
-today and nothing enforces it.
+The premise is now a closure statement rather than a cadence one, which is the second half of what
+the review rounds asked for. **Every base relation a registered source view reads is covered by one
+of the two hooks.** A relation is covered when it is graph-keyed and rewritten only inside a capture
+transaction of that graph, or source-keyed and rewritten only inside a transaction that upserts that
+source's `store_source` row. A relation that is neither, or one written on a cadence no capture owns,
+serves stale rows under this rule and does so silently.
 
-It is checkable from the store, with the walk that already exists.
+The closure itself is cheap to compute and needs no new production API.
 `ViewReferences.relationsReadBy` answers what one stored view definition reads, parsed out of the
 definition rather than scanned for textually, and `MaterializeDependencies` already recurses over it
-to reach the registrations a view depends on. The premise wants the same recursion stopped at base
-tables instead: the closure of a registered source view's reads, which is a handful of lines over
-that primitive and needs no new production API. Today every registered source
-view bottoms out in the `store_`, `graphql_`, `graphitron_`, `sql_`, `jvm_` and `intent_` families,
-all of them written by capture. None reaches `java_`, `javac_`, `walk_`, `rejection_`, `lint_` or
-`build_warning_`, which are the families written outside a capture transaction: the dev session's
-`CompileFacts`, `JavaSourceFacts`, `RejectionFacts` and `BuildWarningFacts` write on their own
-cadences, and the walk-side backing rows are written by `FactCapture.detect` after the capture
-transaction has committed.
+to reach the registrations a view depends on. This wants the same recursion stopped at base tables
+instead, which is a handful of lines over that primitive in the test.
 
-A registration whose view reached one of those would serve stale rows to the language server under
-this rule, silently, and that is the gate to add: the read set of the registered source views is
-disjoint from the families written off the capture cadence.
+Three assertions over that closure, and the first is the instrument three rounds asked for: one that
+fails on the class of registration that breaks the rule, rather than one that passes while the rule
+is unsound.
 
-The gate is not debt this item introduces. Such a registration is already wrong on the build path,
-where nothing calls `refreshAll` at all and the target is therefore never filled from the rows
-written after the transaction; the dev session's unconditional pass is the only thing that would have
-hidden it, and it hides it on one goal out of several. So the premise is one the register already
-depends on, stated and enforced here because this is where it becomes load-bearing.
+1. **Shape.** Every base relation in the closure carries `graph_name` or `source_name`. Read off
+   `INFORMATION_SCHEMA`, so it is derived rather than rostered, and it fails on a read of a relation
+   neither hook can reach. That is not a hypothetical shape: the `java_` family is keyed on `file`
+   and is deliberately not `store_source`-anchored, its charter saying so, and a registered view
+   reading it would fail here. The assertion also catches the wholesale-cleared relations for free,
+   since `StoreRefresh.wholesale` empties every base relation that is neither graph-keyed nor
+   source-partitioned, so a registered view reading a relation that any run empties outright fails
+   this assertion too. Nothing today detects that at all.
+
+2. **Scoping.** A registered view whose closure contains a source-keyed relation also reads
+   `store_graph_source`. Necessary and not sufficient, and stated as such: it asserts the presence
+   of the membership relation, not the correctness of the join. The soundness argument above leans
+   on that membership, so the gate says at least that much rather than nothing, and it makes the
+   gate a second reader of a rule `store_graph`'s comment already states rather than a new rule of
+   its own.
+
+3. **Cadence.** The closure is disjoint from the families written off the capture cadence: `walk_`,
+   `rejection_`, `lint_`, `build_warning_` and `javac_`, every one of them graph-keyed and therefore
+   invisible to assertion 1, plus `java_`, which assertion 1 catches on shape as well. Their writers are the
+   dev session's `CompileFacts`, `JavaSourceFacts`, `RejectionFacts` and `BuildWarningFacts`, on
+   their own cadences, and `FactCapture.detect`, which writes the walk-side backing rows after the
+   capture transaction has committed. A roster in the test with the writer named per prefix, which
+   is the shape this gate already uses for its index exemptions.
+
+Rounds 2 and 3 objected to a roster twice, on the ground that `sql_` and `jvm_` sit on it as
+capture-written families while the rule was unsound over exactly those reads. That objection does
+not carry against assertion 3, and the reason is not that the roster improved. A source-keyed read
+is now *covered* rather than exempted: hook 2 invalidates it, so there is nothing for a gate to
+catch there. What the roster is left holding is the narrow question a prefix genuinely answers, each
+of those families having exactly one writer, and the question a prefix cannot answer has moved to
+assertion 1, where a column answers it.
+
+The gate is not debt this item introduces. A registration reading an off-cadence family is already
+wrong on the build path, where nothing calls `refreshAll` at all and the target is therefore never
+filled from the rows written after the transaction; the dev session's unconditional pass is the only
+thing that would have hidden it, and it hides it on one goal out of several. So the premise is one
+the register already depends on, stated and enforced here because this is where it becomes
+load-bearing.
 
 ## Implementation
 
-**`graphitron-model.sql`.** New table `meta_materialize_fill (source_view_name, graph_name,
-filled_stamp)`, primary key on the first two columns, foreign keys to `meta_materialize` and
-`store_graph`. Its comment states what a row claims and, in one sentence, the premise above, since
-that is where a future registration's author will meet it. Column comments per the schema's own
-convention; the `meta_` prefix places it in the family census with no exemption row needed, and the
-generated schema reference picks it up from the comments.
+**`graphitron-model.sql`.** New table `store_materialized_partition (source_view_name, graph_name)`,
+primary key on both columns, foreign keys to `meta_materialize (source_view_name)` and to
+`store_graph (graph_name)`. Its comment states what a row claims, names the two writers that delete
+one, and states in one sentence the premise above, since that is where a future registration's author
+will meet it. Column comments per the schema's own convention; the `store_` prefix places it in the
+family census with no exemption row needed, and the generated schema reference picks it up from the
+comments. No secondary index: the relation holds one row per registration per graph, twenty times the
+graphs in the store, so both reads over it are cheaper as a scan than as an index descent, and the
+gate that demands an index or a stated reason applies to registered targets rather than to this.
+
+The foreign key into `meta_` needs no `meta_family_bridge` row. That roster covers normalization
+crossings and says so explicitly, that "a foreign key is already a declared, engine-checked join
+path" and carries no rule anything could fork.
 
 Adding a table changes the DDL hash, so the first build after this lands opens a new store directory
 and captures cold once, and the directory it stopped using stays behind. That is the standing cost of
 any DDL edit here rather than anything this item introduces, and it is R858's subject.
 
-**`Materializations.refresh(DSLContext, String)`.** Unchanged in effect, plus the fill record: one
-read of the graph's `last_captured`, and one row written per registration whose partition it filled.
-A graph with no `store_graph` row records nothing, which is the scratch-store case and correctly
-leaves the partition unproven.
+**`Materializations.refresh(DSLContext, String, RefreshProgress)`.** Unchanged in effect, plus the
+claim: delete this graph's rows ahead of the pass, and insert one per registration whose partition it
+filled. Both statements run on the caller's `DSLContext`, which is how the claim comes to be
+published in the same commit as the rows it vouches for. A graph with no `store_graph` row records
+nothing, the foreign key declining it, which is the scratch-store case and correctly leaves the
+partition unclaimed.
 
-**`Materializations.refreshAll(DSLContext)`.** Keeps its name and its postcondition, every target
-current on return, and gains the currency check: read the graphs and the fill rows once, refill the
-pairs whose stamps do not match, record each fill, and call `analyse` only if something was filled.
-Returns the number of partitions refilled, which is the test observable, on the precedent `analyse`
-set by returning a count rather than logging. Its javadoc states the premise it now rests on.
+**`Materializations.refreshAll(DSLContext, RefreshProgress)`.** Keeps its name and its
+postcondition, every target current on return, and gains the claim check: read the graphs and the
+claims once, refill the pairs with no claim in the existing order (registrations outer, graphs
+inner, so the dependency order is untouched), insert each claim in the same small transaction as the
+refill it vouches for, and call `analyse` only if something was filled. Returns the number of
+partitions refilled, which is the test observable, on the precedent `analyse` set by returning a
+count rather than logging. Its javadoc states the premise it now rests on and the concurrency window
+named under "What the rule gives up".
+
+**`Materializations.invalidate(DSLContext, String sourceName)`,** new and public: deletes the claims
+of every graph naming that source, one statement over `store_graph_source`. It lives here rather than
+in the capture package because the relation is this class's, and it is plain-name jOOQ like the rest
+of this class, for the reason stated there: this module's hand-written half does not reference its own
+generated half.
+
+**`ClasspathSources.upsert`.** One added call to that method. The javadoc sentence that already says
+"this run is about to (re)write the source's partition" gains the consequence, so the site states why
+it is the invalidation's home rather than leaving that argument only in this item.
+
+**`RefreshProgress`.** One new sealed arm, `Event.RegistrationSkipped(registration, position, total,
+graph)`, emitted where the reader-side pass declines to refill, and two counts on
+`Event.PassFinished` so the pass-boundary tier says what the pass decided rather than falling silent.
+This is not decoration. R855 exists because an anonymous pass is unreadable, and a pass that skips
+everything and reports nothing would reintroduce exactly that by a new route: a person watching a
+warm dev start would see the same two lines as a person watching a stuck one. The sealed interface
+names every switch site when the arm is added, which is its stated purpose, and the skip arm keeps
+the name-before-statement property trivially, there being no statement.
 
 **`DevMojo.execute`.** No code change. The comment at the call site says the refresh is there because
 a warm store whose capture was skipped would otherwise serve stale rows; that stays true and becomes
-precise, so it gains a sentence naming what the call now costs on the ordinary path.
+precise, so it gains a sentence saying the currency question is now answered in the store and what
+the call costs on the ordinary path.
 
 **No production change for the gate.** The reach it needs is `ViewReferences.relationsReadBy` closed
-over the views it returns, computed in the test. Worth stating because the first draft of this spec
-proposed exposing a base-relation reach from `MaterializeDependencies`, and the public primitive that
-landed with the re-evaluation metric makes that unnecessary.
+over the views it returns, plus two `INFORMATION_SCHEMA` reads, all computed in the test. Worth
+stating because the first draft of this spec proposed exposing a base-relation reach from
+`MaterializeDependencies`, and the public primitive that landed with the re-evaluation metric makes
+that unnecessary.
 
-**`SeededStore.derive`.** Clears `meta_materialize_fill` before refreshing. The fixture seeds rows
-directly, without a capture and without touching a graph's stamp, so it is precisely the writer the
-premise excludes; clearing the fill rows is that fixture stating its own irregularity in one line,
-and it keeps the production surface at one entry point rather than adding an unconditional variant
-for tests to reach for. Its javadoc says so, next to the sentence that already explains why the
-helper refreshes unconditionally.
+**`SeededStore.derive`.** Clears `store_materialized_partition` before refreshing. The fixture seeds
+rows directly, without a capture and without upserting a source, so it is precisely the writer the
+premise excludes; clearing the claims is that fixture stating its own irregularity in one line, and
+it keeps the production surface at one entry point rather than adding an unconditional variant for
+tests to reach for. Its javadoc says so, next to the sentence that already explains why the helper
+refreshes unconditionally.
 
 ## Tests
 
 - **`MaterializationOrderTest`**, or a sibling class if that one's fixtures stay graph-free: a
   graph-keyed scratch registration, refreshed at capture cadence, after which `refreshAll` refills
-  nothing and returns zero. Then the same store with the graph's stamp moved, where it refills.
-- **Two graphs, one recorded and one not**: `refreshAll` refills only the unrecorded graph's
-  partition. Asserted on rows and not only on the count, by planting a row in the recorded partition
+  nothing and returns zero. Then the same store after `Materializations.invalidate` for a source the
+  graph names, where it refills.
+- **Two graphs, one claimed and one not**: `refreshAll` refills only the unclaimed graph's
+  partition. Asserted on rows and not only on the count, by planting a row in the claimed partition
   that the source view does not produce and showing it survives while the other partition fills.
+- **The sibling-invalidation case, which is the finding's own scenario**, in the capture tier: two
+  graphs in one store naming a shared source, both captured, then graph A captured again. The pass
+  refills B's partitions and none of A's, A's claims having been rewritten by its own refresh and B's
+  deleted by A's upsert of the shared source. **This is the case the rejected design fails**, so it
+  is the test that pins the difference rather than the design's own restatement, and it is worth
+  writing as the finding writes it: the shared jOOQ package of two modules in one workspace store.
 - **The end-to-end claim, in the capture tier over `CapturedStore`**: capture a fixture schema into a
-  real store, then `Materializations.refreshAll` refills nothing. This is the item's goal in one
-  assertion, and it is the one that fails if a future registration breaks the premise in a way the
-  family gate below does not catch. Beside it, the two-graph shape `WarmStartRefreshTest` already
-  captures for its sibling-partition cases: two graphs captured, and a refresh after both refills
-  nothing for either.
-- **The premise gate, in `MaterializeRegistryGateTest`**: the base relations reached by the
-  registered source views, closed over `ViewReferences.relationsReadBy`, are disjoint from the
-  families written off the capture cadence. The
-  off-cadence prefixes are a roster in the test with the reason stated, which is the shape that gate
-  already uses for its index exemptions; lifting the cadence into a `meta_family` column is a bigger
-  question and is out of scope here.
+  real store, then `Materializations.refreshAll` refills nothing and returns zero. This is the item's
+  goal in one assertion, and the one that fails if a future registration breaks the premise in a way
+  the gate below does not catch. Beside it, the two-graph shape `WarmStartRefreshTest` already
+  captures for its sibling-partition cases: capture both graphs, then assert that the pass refills
+  exactly the pairs whose claims the second capture deleted, with the expectation derived from
+  `store_graph_source` in the test rather than hardcoded. Deriving it is the point: whether that
+  fixture's two graphs share a source decides the answer, and a test that hardcoded "nothing refills"
+  would either be asserting the fixture's source layout by accident or be wrong.
+- **The premise gate, in `MaterializeRegistryGateTest`**: the three assertions above over the closure
+  of the registered source views' reads, computed with `ViewReferences.relationsReadBy`. Shape and
+  scoping are derived; the off-cadence prefixes are a roster in the test with the writer named per
+  prefix, which is the shape that gate already uses for its index exemptions. Lifting the cadence
+  into a `meta_family` column is a bigger question and is out of scope here.
+- **`MaterializationProgressTest`**: the new skip arm and the widened pass-finished event, on the
+  same terms the existing cases hold for the two registration events. A reader-side pass that skips
+  everything emits one skip per pair and a pass-boundary line saying so, which is the assertion that
+  fails if a later change makes a warm start silent again.
 - `MaterializationOrderTest`'s existing `refreshAll` case and the seeded-store fixture's callers are
   the regression surface for the two arms deliberately left unconditional; they pass unchanged, which
   is the point, so no new case is owed there beyond the graph-keyed ones above.
 
-## Sequencing against R855
+## Building on R855, which has landed
 
-R855 is `Spec` at priority 1 and rewrites the same two methods: `refresh` and `refreshAll` gain a
-`RefreshProgress` observer, and the position is threaded through the private helpers this item also
-edits. Land R855 first and build on its shape rather than the shape in the tree today; taking them in
-the other order means one of the two rewrites the other's edit.
+The first draft asked for R855 to land first. It has: R855 is `Done`, its item file gone with the
+state and its account in `roadmap/changelog.md`, and its shape is in the tree, so `refresh` and
+`refreshAll` already take a `RefreshProgress`, `RefreshProgress.lines` renders the two tiers, and
+both `DevMojo` and `FactCapture` already pass one. The sequencing preference is
+therefore settled by the tree rather than argued here, and the Implementation section above names the
+observer-carrying signatures because those are the ones that exist.
 
-Its shape also decides something this item would otherwise get wrong. A pass that skips every
-partition and says nothing is the anonymity R855 exists to remove, arriving by a new route: a person
-watching a warm dev start would see the same silence as a person watching a stuck one. So a skipped
-partition is an observation the observer reports, not an absence, and the reader-side pass owes a
-statement of what it skipped and why on the same terms as what it filled. Whether that is per
-registration or one summary line is R855's vocabulary to decide, not this item's.
+That also closes a question the first draft left open. A pass that skips every partition and says
+nothing is the anonymity R855 exists to remove, arriving by a new route, so a skipped partition is an
+observation the observer reports rather than an absence. The first draft left the vocabulary for it to
+R855; R855 has decided the vocabulary, so this item fits into it: one sealed arm at the
+per-registration tier and two counts at the pass boundary, per the Implementation section.
 
 ## Out of scope
 
@@ -270,17 +455,25 @@ registration or one summary line is R855's vocabulary to decide, not this item's
   in the store. Making it a relational fact is defensible and is a change to the family roster's
   charter, so it wants its own item if the gate's roster ever grows a second reader.
 - **Anything about eviction of stamped store directories**, which is R858.
+- **Content stamps for the two source kinds that carry none.** Round 3 named this as one of the three
+  answers available: a stamp covering the source-keyed partitions, so a re-walk that changed nothing
+  would leave a claim standing. It is a capture-path and DDL change with a measurement of its own,
+  since hashing a jOOQ package or a directory root is the cost it exists to avoid, and the rule here
+  does not need it: the conservative answer already does strictly less work than today. If the
+  re-walk case above is ever measured and found to matter, that is the item to file.
+- **The cross-process window** under "What the rule gives up". Named, argued, and left open, with the
+  detector that would close it described rather than built.
 
 ## Related
 
 The sibling logging item R855 would have made this visible without reading the source, which is how
-both sessions that found it found it instead; it is now specced, and the sequencing section above says
-what this item owes it. R848 asks whether the register needs to be this large at all. R859 is the
-double capture this item's fix leaves in place.
+both sessions that found it found it instead; it has now landed, and the section above says what this
+item builds on and what it owes it. R848 asks whether the register needs to be this large at all. R859
+is the double capture this item's fix leaves in place.
 
-`depends-on` is left empty deliberately. The dependency on R855 is a sequencing preference between two
-items that touch one pair of methods, not a blocker: this item is implementable against the tree as it
-stands and would only have to be re-fitted afterwards.
+`depends-on` is left empty deliberately, and now for a simpler reason than the first draft's: R855's
+shape is in the tree, so there is nothing left to sequence. This item is implementable against the
+tree as it stands.
 
 ## Reviewer findings
 
@@ -331,6 +524,27 @@ defensible answer if it is argued and stated in the "What the rule gives up" par
 terms as the hand-emptied-target trade, but it cannot stay implicit while the spec promises no reader
 observes a stale row.
 
+> *Author response, revision 1.* Accepted, and the rule is replaced rather than patched. The finding
+> is right on both halves: the equality rule skips genuinely stale partitions, and the family-prefix
+> gate cannot see it. What replaces it is none of the three answers the three rounds enumerated,
+> because all three keep the stamp comparison and hunt for a value wide enough to compare. "What
+> makes a partition current" now records a *claim* rather than a value, and every writer that
+> falsifies a claim deletes it in the transaction that falsifies it. That moves the burden of proof
+> from "the recorded stamp covers everything the partition reads", which round 3 established the
+> store holds no material for, to "every writer of what the partition reads deletes the claim", where
+> there are two kinds of writer and the second is one method, `ClasspathSources.upsert`, whose own
+> javadoc already states the invariant it needs. This finding's material is used, just not as a
+> stamp: `store_graph_source` carries the invalidation's reach, and it is the same relation those
+> views already scope themselves through, so soundness is that rule read from the other end rather
+> than a second rule to maintain. Consequently: the currency argument now runs over what a partition
+> reads and never over the target's keying; the gate gains a catalog-derived shape assertion that
+> fails on this class of read; "What changes for a consumer" stops promising what the rule does not
+> deliver, with two residual cases argued under "What the rule gives up" beside the hand-emptied
+> target. The relation also moved out of `meta_` into `store_`, on that family's own stated
+> discriminator, being a record of what a run did rather than of what the DDL declares. The second
+> half of this finding, `store_graph` anchor rows minted by `CompileFacts` and `OwnedGraphPartition`,
+> is now covered by construction and said so: such a graph has no claims, and absence means refill.
+
 **Non-blocking, precision on the cost figure.** "One pass over sixteen registrations is about 200
 seconds" attributes to sixteen registrations a total R856 measures over fourteen. R856's table prices
 positions 1 to 14 at 199 seconds and marks positions 15 and 16 unmeasured, notes that those fourteen
@@ -340,6 +554,14 @@ an hour goes, with no figure to be invented for the tail. The error is conservat
 per-pass cost on that schema is at least 199 seconds and plausibly much more, so nothing in the
 motivation weakens. Left to the author rather than corrected here because restating it accurately is
 more than swapping a numeral.
+
+> *Author response, revision 1.* Fixed in "What it costs", and restated rather than renumbered. The
+> paragraph now says what R856 measured (positions 1 to 14 at 199 seconds, the tail marked unmeasured
+> at that scale, the total fenced as a price list read post-commit against a settled store), that
+> those fourteen are exactly the registrations its populated store held, and that one pass therefore
+> costs at least that and plausibly a good deal more. No figure is invented for the tail, and the
+> sentence naming the error direction is there so a later reader does not "correct" the floor back
+> into a point estimate.
 
 Verdict: stays in Spec.
 
@@ -410,9 +632,26 @@ saying so: `sql_` and `jvm_` are capture-written families, so the disjointness a
 the rule is unsound. The gate is the spec's only defence against a future registration breaking the
 rule, so it has to be able to see the failure it is guarding.
 
+> *Author response, revision 1.* Accepted; answered by the same replacement, filed in full under
+> round 1. Three points this round contributed specifically. Its refutation of round 1's suggested
+> material is what ruled out the stamp family altogether, `store_source.stamp` being NULL by design
+> for the two kinds involved and `last_seen` moving on every run that merely names a source; both
+> facts are now stated in the item, the first under "What the rule gives up" as the reason the
+> conservative answer cannot be sharpened today, and the second as the reason a `last_seen`
+> comparison is unfit as a currency key while being exactly fit as a race detector, which is the one
+> place the item still offers it. The `store_graph_source` disjointness shape offered here is not the
+> answer taken, and the reason is that it forfeits the multi-module win the cost section leans on:
+> the claim design falls back for the affected graph rather than for every graph that shares a
+> source, and it falls back only after a capture actually rewrote something. And the three revision
+> requirements are each met: currency is stated over what a partition reads, "What changes for a
+> consumer" is bounded to the single-JVM cadences with the residuals argued beside the hand-emptied
+> target, and the gate's first assertion is catalog-derived and can fail on this class of read.
+
 **Non-blocking, still open from round 1.** The 200-second figure and its attribution to sixteen
 registrations. R856 prices positions 1 to 14 at 199 seconds, marks 15 and 16 unmeasured, and fences the
 total explicitly. Left to the author again rather than corrected here, for round 1's reason.
+
+> *Author response, revision 1.* Fixed; see the response under round 1's copy of this finding.
 
 **Verified clean this round,** so a revision need not re-argue any of it: `Materializations.refresh`,
 `refreshAll` and `analyse` with `DevMojo` as `refreshAll`'s only production caller;
@@ -463,6 +702,17 @@ and argue it in "What the rule gives up" beside the hand-emptied-target trade, w
 consumer" amended to match. Choosing among those is the author's call, and continuing to look for an
 existing column that closes it is not going to pay.
 
+> *Author response, revision 1.* This is the round that unlocked the revision, and it did it by
+> closing the option set. Having no third stamping relation to reach for is what made clear that the
+> question itself was wrong: the design was asking which recorded value proves a partition current,
+> when the store's own idiom is to record the decision and let a writer retract it. So the answer is a
+> fourth one, outside the three listed here because it is not a stamp at all, and the two the round
+> ruled out stay ruled out for the reasons given. On the round's own three: membership overlap is
+> used, as the invalidation's reach rather than as a fallback trigger; a new stamp is out of scope
+> with a reason, filed under "Out of scope" as the item to open if the identical-re-walk case is ever
+> measured; and staleness is accepted only where it is argued, in the two named residuals rather than
+> across the rule.
+
 The premise gate still needs to become an instrument that could fail on this class of registration.
 `sql_` and `jvm_` are capture-written families, so the family-prefix disjointness assertion passes
 while the rule is unsound, and the gate is the spec's only stated defence against a future
@@ -471,6 +721,9 @@ registration breaking it.
 **Non-blocking, still open.** The 200-second figure attributed to sixteen registrations. Third round of
 saying so; still not corrected here, because restating it accurately is a change to the motivation's
 prose rather than a numeral swap.
+
+> *Author response, revision 1.* Fixed, as the prose change it needed rather than a numeral swap; see
+> the response under round 1's copy of this finding.
 
 **Verified independently this round**, so a revision still need not re-argue any of it: the twenty
 `meta_materialize` registrations; `DevMojo.execute` as `refreshAll`'s only production caller, with
