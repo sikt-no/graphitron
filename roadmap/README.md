@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R856` | A consumer-schema capture spends over an hour inside the materialization refresh <sub>blocked by: [materialization-refresh-emits-no-progress](materialization-refresh-emits-no-progress.md)</sub> | Spec | 2026-08-27 | [plan](consumer-capture-spends-an-hour-in-the-refresh.md) |
-| `R855` | The materialization refresh emits nothing, so a hang inside it is anonymous | In Progress | 2026-08-27 | [plan](materialization-refresh-emits-no-progress.md) |
+| `R855` | The materialization refresh emits nothing, so a hang inside it is anonymous | In Review | 2026-08-27 | [plan](materialization-refresh-emits-no-progress.md) |
 | `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows | Spec | 2026-08-27 | [plan](dev-start-refreshes-the-register-twice.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R849` | Measure re-evaluation rather than naming, so a materialization cut set can be chosen on evidence | Spec | 2026-08-27 | [plan](re-evaluation-metric-for-derived-relations.md) |
@@ -655,7 +655,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
 - `R768` [**The build boots the fact schema 1051 times, and a reset costs a fraction of a boot**](store-boots-once-per-test-not-once-per-build.md) — Backlog, dx
-- `R855` [**The materialization refresh emits nothing, so a hang inside it is anonymous**](materialization-refresh-emits-no-progress.md) — In Progress, dx
+- `R855` [**The materialization refresh emits nothing, so a hang inside it is anonymous**](materialization-refresh-emits-no-progress.md) — In Review, dx
 - `R857` [**A dev start evaluates the whole materialization register twice, the second pass producing identical rows**](dev-start-refreshes-the-register-twice.md) — Spec, dx
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
 - `R764` [**graphitron-model ships its junit-platform.properties to four consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx

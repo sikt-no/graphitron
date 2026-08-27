@@ -1,7 +1,7 @@
 ---
 id: R855
 title: "The materialization refresh emits nothing, so a hang inside it is anonymous"
-status: In Progress
+status: In Review
 bucket: dx
 priority: 1
 theme: tooling
@@ -228,6 +228,27 @@ With `-X`, per registration, between those two lines:
 
 A run that stops after the first line is inside the refresh. A run that stops after a `4/20` line is
 inside that registration, which is the sentence the sibling item currently cannot write.
+
+## Checked at implementation
+
+The `-X` question this plan left open is answered: slf4j debug from `graphitron` does reach the Maven
+console, so the per-registration tier arrives with `mvn -X` and the fallback enabling property ships
+nothing. Verified by running `graphitron:generate -X` on the sakila example, which printed all twenty
+registrations, and by the pass boundary appearing at `[INFO]` in an ordinary reactor build. The
+rendering came out as the console check above predicted, position padded to the width of the total:
+
+```
+[INFO] graphitron: refreshing 20 materializations for graph 'graphitron-sakila-example'
+[DEBUG] graphitron:  4/20 intent_field_reference_step_hop_live -> intent_field_reference_step_hop, graph 'graphitron-sakila-example'
+[DEBUG] graphitron:  4/20 done in 20 ms, deleted 0 rows in 1 ms, inserted 20 rows in 19 ms
+[INFO] graphitron: materialization refresh done in 440 ms
+```
+
+Two facts about the shipped register came out of that run and are worth carrying forward. All twenty
+registrations are graph-keyed, so the whole-relation refresh shape has no shipped exemplar and the
+graph-free arm is exercised only by the test's synthetic registration; and a warm pass over this
+fixture costs about 400 ms in total, the first pass of a run costing 6.2 s, which is the ordinary-case
+figure a reader now gets for free.
 
 ## Documentation
 
