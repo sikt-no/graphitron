@@ -287,6 +287,15 @@ the hour goes did not survive. It is retained in full because a future reader lo
 capture will reach for the transaction boundary on exactly this reasoning, and should meet the
 measurement rather than repeat the argument.
 
+A second session measured this same arm over a wider surface, concurrently and without seeing the
+result below, and the two measurements agree where they overlap and part company on how far the
+verdict reaches. "The first arm measured over all twenty registrations" further down carries it. The
+short version, so a reader of this section is not left with a claim the next section qualifies: the
+two statements timed below are the right two to have timed and their clocks really do not move, and
+the plans of seven of the twenty registrations do move, on a mechanism that grows with the schema.
+None of that touches the case for the second arm, which is an order of magnitude larger and stands
+unaffected. What it changes is the label: not the fix for the hour, and not nothing.
+
 **The measurement, in the form this section itself specified.** Capture, time the two suspects, drop
 the selectivity the capture's own analysis stated on every base-table column, time them again. Same
 rows, same indexes, statistics the only difference. 1263 columns had their selectivity dropped:
@@ -398,6 +407,111 @@ only instrument for a statement that never returns, which is why it stays descri
 The sibling logging item helps in a way worth naming separately: it prices nothing, but it makes a
 cold capture legible while it runs, so the seventy minutes nobody currently waits out would at least
 report which registration they went into.
+
+## The first arm measured over all twenty registrations
+
+Taken independently of the section above and before it existed, on the read-cost gate's scaled
+fixture rather than on the sakila example, four statistics regimes over one captured store with the
+same rows and the same declared indexes throughout. Landed as `RefreshPlanStatisticsTest`. It exists
+because the section above measures two statements at one size and the arm it sets down is a claim
+about the whole refresh at any size.
+
+**Where the two measurements agree, and they do.** Both suspects' clocks are flat, and this
+measurement gets the same answer from the other fixture. Three runs apiece, targets analysed against
+cold: the payload column 68/54/50 ms against 61/57/63, the refusal 37/37/35 against 44/43/35.
+Overlapping ranges on both, which is a wash and is the same verdict the timing pair reached. So the
+section above is right about the statements it timed, and it is right about why, which is the part
+worth keeping: no selectivity informs a `GROUP BY` over a recursive term that is re-evaluated once
+per driving row, because there is nothing there for a planner to choose. That reasoning is sound and
+this section does not touch it.
+
+**One thing does move on those two, and it is a warning about the instrument rather than about the
+arm.** Their *plans* differ cold, and their rows visited roughly triple, the payload column 41961
+against 12483 and the refusal 42685 against 13207, while the clocks stay inside each other's spread.
+Rows visited moving by a factor of three for no time at all is this repo's most-repeated measurement
+lesson met once more, and here it cuts in favour of the timing pair rather than against it: the
+counter is the misleading instrument and the clock is right. What it also shows is that "there is
+nothing for a plan to choose differently" holds of the dominant term and not of the statement around
+it, which is why a plan comparison finds these two and a timing does not.
+
+**Seven of the twenty registrations plan differently on a cold store.** The field column scope, the
+field scope table, the input-field filter role, the payload column, the payload refusal, the node-id
+decode hop column, and the node-id instruction. One mechanism, seen plainly on the decode hop
+column's read of `intent_field_reference_step_hop`, a registered target: with statistics H2 seeks
+`IX_FIELD_REFERENCE_STEP_HOP_STEP` on seven columns, and without them it seeks `CONSTRAINT_INDEX_98`
+on `graph_name` alone, which is a scan of the whole graph's partition per driving row. H2's
+no-statistics default assumes every column has half as many distinct values as its table has rows,
+which reads a partition column as highly selective, so the one-column seek prices as though it were
+nearly exact. That is the case `Materializations.analyse`'s javadoc describes, arriving at the one
+call site `analyse` cannot reach. Where the clocks do move it is these relations rather than the
+suspects, and there the ranges do not overlap: the decode hop column 29/29/29 ms analysed against
+107/103/120 cold, the input-field filter role 40/29/26 against 59/51/61.
+
+**Which half of the boundary, which this item asked for and nothing had answered.** Two further
+regimes over the same store settle it. Analysing the base fact tables alone, which is the most that
+committing the facts ahead of a still-single-transaction refresh could buy, leaves every one of the
+seven planning exactly as it did cold and moves two further registrations onto plans of their own.
+Analysing the registered targets alone reproduces the settled store's plans on all twenty. So the
+cheap rung the implementation section reaches for is refuted independently of whether the arm is the
+fix: the statistics these plans turn on belong to relations the refresh itself writes.
+`analysingTheFactsAloneReachesNoneOfThem` is the assertion that fails the day somebody lands it
+believing otherwise. The targets-analysed regime is also a faithful upper bound for what the
+expensive half would give rather than only an approximation, `MaterializeDependencies` refusing a
+registration whose source view reads its own target and ordering every registration after the ones
+whose targets it reads.
+
+**The cold penalty is not a constant, which is the whole of what this section adds to the verdict.**
+One whole `Materializations.refresh` of the fixture graph against a populated store, cold and then
+with the targets analysed, twice each and the second run reported:
+
+| fields | types | cold refresh | targets analysed | ratio |
+|---|---|---|---|---|
+| 187 | 79 | 338 ms | 274 ms | 1.2 |
+| 349 | 139 | 504 ms | 377 ms | 1.3 |
+| 673 | 259 | 1841 ms | 976 ms | 1.9 |
+| 1321 | 499 | 9633 ms | 3036 ms | 3.2 |
+| 2617 | 979 | 68347 ms | 13199 ms | 5.2 |
+
+A ratio at one size is consistent with a constant overhead. Five sizes are not: a fifth at 187
+fields, a factor of five at 2617, still climbing at the last row, which is what a per-driving-row
+seek against a growing partition looks like. At the top row the refresh has become the capture, the
+whole capture taking 66.9 seconds and the cold refresh alone 68.3.
+
+**Read the analysed column too, because it is a separate finding.** With statistics throughout, one
+refresh goes from 274 ms at 187 fields to 13.2 seconds at 2617. The register is superlinear in schema
+size before any statistics question is asked, which is R848's frame stated as a measurement and is
+what R857 doubles.
+
+**What this fixture does and does not exercise, which bounds the reading.** It scales the input,
+reference and node-id families with its unit count and holds the `@mutation` payload surface fixed at
+three, so the suspects' driving population does not grow here. The growth in the table above is
+therefore not the second arm's mechanism showing up under another name; it is a second cost sitting
+beside it. That cuts both ways: it is evidence the two are independent, and it means this fixture
+understates the total by leaving the larger mechanism flat.
+
+**So the label.** The first arm is not the fix for the hour, the second arm's 81-fold is an order of
+magnitude larger and the sequencing argument above is right that landing a transaction restructure
+against it would be the wrong trade. "Recorded dead end" is one word too strong for what was
+measured: what the timing pair shows is that statistics do not inform the dominant term of two
+statements, and what this shows is a real cost on a different set of relations, growing with the
+schema, with the fix's cheap half refuted and its expensive half priced at exactly the settled
+store's plans. The honest sequencing is that it waits behind the second arm and behind a
+consumer-scale capture that says whether anything is left after the second arm lands.
+
+**Two notes the section above asked for.** Its correction is that
+`Materializations.analyse`'s javadoc prices statistics with a scan count and no timing, and should
+carry one or say it does not; the wall clocks in this section are that timing, and the widest of them
+is a factor of three and a half on one relation at fixture scale. And its own instrument note, that a
+timing pair is the better instrument where a statement terminates, is right and needs one correction
+that cost this session real time: plain `EXPLAIN` is not the plan that runs. H2 optimizes a view's
+inner query per set of index conditions at execution, so a bare `EXPLAIN` renders the unmasked form
+and reports three of the seven above while agreeing on the other four. `EXPLAIN ANALYZE` renders what
+ran. A reduction of the plan to relation order and index names, which this item's Tests entry
+recommends, is also wrong here and for a related reason: the failing shape is one index used two ways
+and the difference lives in the seek conditions a reduction discards. Whole executed plan text with
+the rows-visited annotation removed is both simpler and strictly more faithful, and that is what the
+test compares. Both notes are on the engine rather than on this item, so they are also recorded in
+`docs/architecture/explanation/fact-model.adoc`, which outlives this file.
 
 ## A refuted hypothesis, recorded so nobody re-runs it
 
@@ -558,7 +672,13 @@ nothing in the register's machinery meets a new shape here.
 Numbered because each step's result decides the next and the intermediate states are observable.
 
 **Step 2 has run and its outcome is recorded above. Step 1 has not.** Step 2 came back with an
-agreement, so the branch is 3b and 3a is set down. Step 1 is a consumer-schema capture, it is still
+agreement on the two suspects, which is what decides the branch: it is 3b and 3a is set down. Read
+that as the narrow claim it is. The same step run as a plan pair over all twenty registrations rather
+than as a timing pair over two came back with a disagreement on seven of them, and "The first arm
+measured over all twenty registrations" above carries it. Nothing in that moves the branch, the
+re-evaluation mechanism being an order of magnitude larger, and it is recorded here rather than only
+there so that an implementer reading this preamble does not meet the wider result later as a
+contradiction. Step 1 is a consumer-schema capture, it is still
 owed, and the sequence below pays it where an earlier draft of this preamble claimed the debt and then
 skipped it. The step list further down is kept in its original order because it is the record of what
 was decided when; the sequence for the work that remains is:
@@ -648,6 +768,15 @@ came back with an agreement: 0.82 on the expensive statement and 0.98 on the oth
 running against a consumer store copy if one becomes available, where the estimates are the real
 ones, and that is the only part of this step still owed.*
 
+*Also run in the plan-pair form, concurrently and on the other fixture, over all twenty
+registrations rather than two, and landed as `RefreshPlanStatisticsTest`. Seven registrations plan
+differently cold, the statistics they turn on are the registered targets' rather than the base
+facts', and the cold penalty on a whole refresh grows from a fifth to a factor of five between 187
+and 2617 fields. "The first arm measured over all twenty registrations" above carries it, and none
+of it disturbs the branch: the agreement on the two suspects is confirmed from the other fixture, and
+3b remains the fix. What it does change is that 3a's cheap half is refuted rather than merely
+unpriced, so a future reader picking this arm up starts from its expensive half.*
+
 **3a. If the plans differ: change capture's transaction shape.** *(Not taken. Step 2 agreed. Retained
 as the design that was approved and set down, and as the reasoning a future reader will need if a
 statistics-shaped failure ever does turn up. Nothing in it is work under this item.)* The shape that reaches both
@@ -659,7 +788,13 @@ the arm claims is missing. Landing only the cheaper half, facts committed and an
 refresh still one transaction, fixes the base population and leaves the target population exactly as
 it is, so say which half is being landed and why rather than describing the split as one change.
 
-Take the cheap rung before building anything. `Materializations.analyse`'s argument against a bare
+*The cheap rung below is refuted rather than merely unpriced, so a reader picking this arm up starts
+from the expensive half. The plan-pair measurement ran the base-facts-only regime directly: it
+reaches none of the seven registrations whose plans move, because every one of them turns on a
+registered target's statistics, and it moves two further registrations onto plans of their own. The
+paragraph is kept because both arguments in it are true on their own terms and a reader will
+otherwise re-derive them.* Take the cheap rung before building anything.
+`Materializations.analyse`'s argument against a bare
 `ANALYZE` is premised on the captured tables being ones "nothing here just rewrote", and at a call
 site after the facts commit the capture has just rewritten them, so that objection does not transfer
 and one statement may be the whole of the base half. H2 may even supply it for free: its auto-analysis
@@ -791,10 +926,19 @@ Three, and which tier each sits in follows from what it can hold at fixture scal
   this assertion pins current behaviour rather than a fix, which is still worth having and should be
   labelled as what it is.
 
-  *Step 2 agreed, so this is the pinning form. Which makes it the weakest of the three and the one to
-  drop if a reviewer wants the item narrower: it would pin that these statements do not depend on
-  statistics, which is true, is not what was broken, and costs the plan-text reduction described above
-  to state.*
+  *Landed, as `RefreshPlanStatisticsTest`, and in the disagreeing form rather than the pinning one.
+  This note previously read that step 2 agreed and that the test would pin statements not depending on
+  statistics; the wider measurement says otherwise, seven of the twenty registrations depending on
+  them, so what it pins is which seven. Three corrections to the paragraph above, each arrived at by
+  getting it wrong first. The claim cannot be the equality stated, seven registrations failing it on
+  the shipping tree, so it is a pinned set asserted by equality both ways, which is
+  `DerivedReadCostTest`'s ratchet. The trap named is not the trap: H2 renders no estimate into these
+  plans except the rows-visited annotation, which the test removes. And the reduction recommended is
+  itself the trap, missing four of the seven because the failing shape is one index used two ways and
+  the difference lives in the seek conditions a reduction discards, so whole executed plan text minus
+  that one annotation is both simpler and strictly more faithful. The assertion in it that earns its
+  place is `analysingTheFactsAloneReachesNoneOfThem`, which is what fails if somebody lands 3a's cheap
+  half believing it closes this.*
 - **The per-driving-row claim is the assertion worth having instead**, and it is the one the fix is
   actually about. What the measurement above establishes, and what a future edit could silently undo,
   is that no registered source view re-evaluates an unregistered view once per driving row. The
