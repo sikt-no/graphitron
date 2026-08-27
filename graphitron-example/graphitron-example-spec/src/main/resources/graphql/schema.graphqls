@@ -94,6 +94,9 @@ type Customer implements Node @node @table {
     addressSplitQuery: Address @splitQuery
     addressSplitQueryWithKey: Address @splitQuery @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
     payments: [Payment] @reference(path: [{key: "PAYMENT__PAYMENT_CUSTOMER_ID_FKEY"}]) @splitQuery
+    # Same condition-without-key path as City.addressesViaConditionPaginated, but over a relation with many rows per
+    # customer, so totalCount can be checked against a page smaller than the total.
+    paymentsViaConditionPaginated: [Payment] @splitQuery @asConnection @reference(path: [{condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "paymentsForCustomer"}}])
     paymentsFilteredByInventory(inventoryId: Int @field(name: "inventory_id") @reference(path: [{table: "RENTAL"}])): [Payment] @asConnection @splitQuery
     activeBool: Boolean @field(name: "ACTIVEBOOL") @feature(flags: "experimental")
     storeId: Int @field(name: "STORE_ID") @feature(flags: ["experimental", "preview"])

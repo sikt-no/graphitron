@@ -1,6 +1,7 @@
 package no.sikt.graphitron.example.service.conditions;
 
 import no.sikt.graphitron.example.generated.jooq.tables.Customer;
+import no.sikt.graphitron.example.generated.jooq.tables.Payment;
 import no.sikt.graphitron.example.generated.jooq.tables.records.CustomerRecord;
 import org.jooq.Condition;
 import org.jooq.impl.DSL;
@@ -8,6 +9,15 @@ import org.jooq.impl.DSL;
 import java.util.List;
 
 public class CustomerConditions {
+    /**
+     * Reaches a table with no key in the reference path, over a relation with enough rows per customer that a page of
+     * payments is smaller than the count behind it. That gap is what separates counting the whole set from counting
+     * the page.
+     */
+    public static Condition paymentsForCustomer(Customer customer, Payment payment) {
+        return customer.CUSTOMER_ID.eq(payment.CUSTOMER_ID);
+    }
+
     public static Condition activeCustomers(Customer customer) {
         return customer.ACTIVE.eq(1);
     }

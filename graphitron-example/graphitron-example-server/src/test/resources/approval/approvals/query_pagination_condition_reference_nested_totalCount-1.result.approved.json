@@ -1,0 +1,42 @@
+{
+    "data": {
+        "customers": {
+            "nodes": [
+                {
+                    "id": "Q3VzdG9tZXI6MQ",
+                    "paymentsViaConditionPaginated": {
+                        "totalCount": 32,
+                        "nodes": [
+                            {
+                                "paymentId": 1
+                            },
+                            {
+                                "paymentId": 2
+                            },
+                            {
+                                "paymentId": 3
+                            }
+                        ]
+                    }
+                },
+                {
+                    "id": "Q3VzdG9tZXI6Mg",
+                    "paymentsViaConditionPaginated": {
+                        "totalCount": 27,
+                        "nodes": [
+                            {
+                                "paymentId": 33
+                            },
+                            {
+                                "paymentId": 34
+                            },
+                            {
+                                "paymentId": 35
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    }
+}

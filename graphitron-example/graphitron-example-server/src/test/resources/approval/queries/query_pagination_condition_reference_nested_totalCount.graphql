@@ -1,0 +1,15 @@
+# totalCount must count every payment reached through the condition, not just the page returned,
+# so the page size here is deliberately smaller than the number of payments each customer has.
+{
+    customers(first: 2) {
+        nodes {
+            id
+            paymentsViaConditionPaginated(first: 3) {
+                totalCount
+                nodes {
+                    paymentId
+                }
+            }
+        }
+    }
+}
