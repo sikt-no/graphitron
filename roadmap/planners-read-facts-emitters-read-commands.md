@@ -3272,14 +3272,80 @@ vocabulary". The glue renderer then reads that borrowed reference in full, not i
 `CallSiteExtraction` chain to build the extraction expression, reads the Java type and the list axis
 to declare the body local, and forks on the extraction arm to decide whether the local's declaration
 carries an unchecked cast. So the authored arm's remaining distance from the store is the argument
-extraction chain, and it is a different size of problem than the method address was: that was two
-strings, this is a recursive shape with a javapoet type at its leaves. The store states where an
+extraction chain, and it is a wider surface than the method address was. How much wider is left to
+the next increment to answer by counting the readers, rather than settled here from the type's
+declaration. The store states where an
 argument's content binds (`intent_argument_scope_table`) and which column a name reaches
 (`intent_argument_column_match`) and which rule answers for an input field
 (`intent_input_field_filter_role`), but nothing states an extraction chain in the shape the renderer
 walks. Whether that narrows the same way the method address did, or whether the extraction chain is
 the one thing this family genuinely needs the store to grow, is the next increment's question, and
 it should be answered by counting the renderer's reads the same way this one was.
+
+### Conditions, twentieth increment: the extraction vocabulary counted, and a guess retracted
+
+**The previous increment guessed at this surface and guessed wrong.** It called the extraction chain
+"a recursive shape with a javapoet type at its leaves", one paragraph after saying the way to answer
+such a question is to count the renderer's reads. The guess came from `CallSiteExtraction`'s
+declaration, where the nesting arm's leaf is typed as the whole seal and several arms carry
+structural payloads. Counting the readers gives a different answer, and the sentence has been
+corrected in place rather than left standing beside its correction.
+
+**What a condition binding actually reads off a `CallParam`.** The record has five components and two
+derived predicates. The glue renderer reads the name, the list axis, the Java type (as the structured
+`javaType` when the declared type is parameterized, otherwise the string `typeName`), and the
+extraction. The command tier reads the two predicates, `readsRequestContext()` and `decodesNodeId()`,
+both of which are one-line tests over the extraction arm and exist precisely so no consumer
+re-derives them.
+
+**Six of the nine extraction arms are reachable in this family, and a seventh shape is not.** The
+renderer throws outright on `InputBean`, `JooqRecord` and `NodeIdDecodeRecord`, each of which its
+message names as a `@service` parameter concept that is never a condition binding. It also throws on
+a nesting arm whose leaf is a request-context read, because the resolver keeps context params bare
+when it rewraps a nested condition's value params, so that shape is unconstructable rather than
+merely unhandled.
+
+**Of the six reachable arms, four carry nothing or exactly one string.** `Direct` and `ContextArg`
+carry no payload at all; the argument name does the work. `EnumValueOf` carries a fully-qualified
+enum class name. `JooqConvert` carries a column's generated Java name.
+
+**The nesting arm is one level deep by construction, not by luck.** `NestedInputField`'s compact
+constructor rejects a `NestedInputField` leaf outright, alongside requiring a non-empty path. So the
+arm is an outer argument name, a path of segment names, and a leaf drawn from the same small set. It
+is not a recursive shape, and the renderer's handling of exactly three leaf shapes plus one throw is
+total over what can be built rather than an accident that has held so far.
+
+**The one structurally rich payload is `HelperRef.Decode`, and it is not developer reflection.** It
+references a helper Graphitron itself emits, whose call-site signature is derived from a node type's
+key columns rather than from a classpath scan; that is the stated difference between `HelperRef` and
+`MethodRef`. The decode registry reads its method name, encoder class, return type, output column
+shape (for arity), typeId and node type name.
+
+**So the extraction vocabulary is store-shaped, and every fact in it is already captured.** The
+argument name and the nesting path are SDL facts the store holds (`intent_argmapping_pair` for the
+bound parameter names, `intent_input_occurrence_path` for the descent). The list axis is a captured
+type modifier. The one fact that genuinely requires a classpath is the authored parameter's declared
+Java type, generics included, and the classfile side already states it twice over:
+`jvm_method_parameter.declared_parameter_type` carries the type as the source declared it, and
+`jvm_method_parameter_type_ref` decomposes that declared form position by position with variance. The
+node-id leaf routes to the node-id relations rather than needing a helper reference restated.
+
+**What that makes the next increment.** Not "grow the store a new kind of fact", which is what the
+retracted guess implied, but derive one relation: the per-binding extraction, keyed by the condition
+row's key plus the parameter position, carrying the argument name, the list axis, the declared Java
+type, an extraction kind and that kind's one payload, with the nesting arm's path segments as an
+ordered child relation. The kind column's domain is the six reachable arms, and the three the
+renderer rejects are exactly the ones that must not appear in it, which gives the relation a
+non-vacuity check with teeth: a captured `@service` parameter concept reaching this relation is the
+defect it should refuse.
+
+**The method itself is the durable finding.** Two increments in a row asked how far a command carrier
+sits from the store, and both times the type's declaration overstated the distance: `MethodRef`
+suggested a reflected signature where two strings were read, and `CallSiteExtraction` suggested
+recursion where a construction-time invariant forbids it. Counting the readers took minutes in both
+cases and the guess was wrong in both. The remaining families in this item's order (fetcher edges,
+type units, projections and launchers) should be scoped that way before their conversions are
+planned, not after.
 
 ### Emitter half: family by family
 
