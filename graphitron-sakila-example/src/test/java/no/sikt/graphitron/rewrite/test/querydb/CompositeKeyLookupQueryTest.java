@@ -107,11 +107,18 @@ class CompositeKeyLookupQueryTest {
 
     @Test
     void compositeKeyLookup_subset_returnsOnlyMatchingPair() {
-        // (film 4, actor 1) is NOT a real film_actor row; (film 1, actor 1) is. Both keys keep
+        // (film 2, actor 2) is NOT a real film_actor row; (film 1, actor 1) is. Both keys keep
         // their slot: the unmatched composite holds null at index 0 and the matched one lands at
         // index 1, which is the slot-per-key lookup contract on composite keys.
+        //
+        // The unmatched pair has to be one no other class writes. Test classes in this module run
+        // concurrently against one database, and DmlBulkMutationsExecutionTest seeds real
+        // film_actor rows for (1, 4), (2, 3), (3, 3) and (3, 4), removing them afterwards. Any of
+        // those four read as matched for as long as that class holds them, which fails this test on
+        // a row it never wrote. film_actor's seed is (1,1), (2,1), (1,2), (3,2), (1,3), (2,4),
+        // (3,5), so (film 2, actor 2) is absent from the fixture and outside every seeded pair.
         Map<String, Object> data = execute(
-            "{ filmActorsByKey(key: [{filmId: 4, actorId: 1}, {filmId: 1, actorId: 1}]) { filmId actorId } }");
+            "{ filmActorsByKey(key: [{filmId: 2, actorId: 2}, {filmId: 1, actorId: 1}]) { filmId actorId } }");
 
         assertThat(data).extractingByKey("filmActorsByKey", as(LIST))
             .hasSize(2)
