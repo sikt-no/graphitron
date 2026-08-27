@@ -5,15 +5,15 @@ status: Backlog
 bucket: bug
 priority: 3
 theme: classification-model
-depends-on: [reference-path-condition-terminal-column-scope]
+depends-on: []
 created: 2026-08-27
 last-updated: 2026-08-27
 ---
 
 # A field-site terminal condition hop resolves only through its signature, never the declared target
 
-Once `roadmap/reference-path-condition-terminal-column-scope.md` lands, both hop views resolve a
-bare condition element through the route the condition method's signature declares. That covers a
+Both hop views resolve a bare condition element through the route the condition method's signature
+declares, which `intent_condition_method_route` states and R847 landed at `b6b0ca1`. That covers a
 filter path completely and covers a projection path only when the method is concrete-typed. The
 Java-side rule (`BuildContext.resolveConditionJoinTarget`) has one more rung at the projection
 site: a chain-ending element on an output field *prefers* the carrier field's return-type `@table`

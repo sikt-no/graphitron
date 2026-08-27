@@ -424,8 +424,7 @@ One finding, and it is terrain no previous round could have seen: it landed on t
 after the round-4 revision was committed.
 
 **F6. A third producer of the path-step routing fact is now on trunk, and its design rationale
-rests on the behaviour this item removes.** R847
-(`reference-path-condition-terminal-column-scope`, In Review as of `c108a7b`) added
+rests on the behaviour this item removes.** R847 (shipped at `b6b0ca1`) added
 `intent_condition_method_route` and `intent_condition_method_route_defect` to `graphitron-model`'s
 store. They answer over the census the same question `BuildContext.resolveConditionJoinTarget`
 answers over live reflection, at the same coordinate and over the same population: R847's arm is
