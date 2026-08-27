@@ -5,7 +5,7 @@ status: Spec
 bucket: dx
 priority: 2
 theme: tooling
-depends-on: []
+depends-on: [capture-moves-below-the-generator, capture-without-the-materialization-refresh]
 created: 2026-08-27
 last-updated: 2026-08-27
 ---
@@ -468,12 +468,39 @@ per-registration tier and two counts at the pass boundary, per the Implementatio
 
 The sibling logging item R855 would have made this visible without reading the source, which is how
 both sessions that found it found it instead; it has now landed, and the section above says what this
-item builds on and what it owes it. R848 asks whether the register needs to be this large at all. R859
-is the double capture this item's fix leaves in place.
+item builds on and what it owes it.
 
-`depends-on` is left empty deliberately, and now for a simpler reason than the first draft's: R855's
-shape is in the tree, so there is nothing left to sequence. This item is implementable against the
-tree as it stands.
+`depends-on` names R864 and R865, and the reason is a correctness interaction rather than a merge
+conflict. R855's shape is in the tree and nothing is owed there any more; what is owed is to the two
+items that change who decides the refresh cadence.
+
+**This item and R864 agree, which is why the sequencing is worth getting right.** The rule below
+already draws the line R864 states as an API constraint: a writer never consults a claim, because a
+writer that has just rewritten a partition's inputs knows they changed, and only a reader has a
+question. R864 says the same thing from the other end, that a consumer needing current targets asks
+and a consumer that does not pays nothing, and makes the cadence belong to whoever opened the store
+rather than to capture. Two statements of one rule, so the risk between them is not disagreement.
+
+**The risk is R865, and it is specific.** That item makes `Materializations.refresh` declinable, so
+a capture can commit having refilled nothing. This item's rule says the capture-cadence entry point
+stays unconditional and records a claim per partition it refills. Those two sentences are compatible
+only if a capture that declined the refresh records no claims: otherwise it commits rows claiming
+partitions it never refilled, the reader-side pass believes them, and the dev session serves stale
+targets with a claim vouching for them. That is the one failure this item's whole design exists to
+prevent, arriving through a door that did not exist when the rule was written.
+
+**The direction is this way round because the reverse is already safe.** A capture that recorded no
+claims leaves partitions with no claim, which the reader-side pass refills; that is the cold-store
+case the rule handles by construction. So R865 landing first costs this item nothing. This item
+landing first leaves a rule stating that refresh records unconditionally, for R865's implementer to
+find and reconcile without the context that produced it.
+
+R864 adds a second, weaker reason: it moves capture and every caller of `Materializations` across a
+module boundary, and this item adds a relation and two writers in exactly that area. Writing them
+against the final module shape costs nothing; writing them against today's costs a migration.
+
+R848 asks whether the register needs to be this large at all, and R859 is the double capture this
+item's fix leaves in place. Neither is a dependency.
 
 ## Reviewer findings
 

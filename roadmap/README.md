@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R865` | A capture cannot be run without the materialization refresh, so a schema whose refresh never returns leaves no store to debug | Spec | 2026-08-27 | [plan](capture-without-the-materialization-refresh.md) |
 | `R856` | A consumer-schema capture spends over an hour inside the materialization refresh | Spec | 2026-08-27 | [plan](consumer-capture-spends-an-hour-in-the-refresh.md) |
-| `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows | Spec | 2026-08-27 | [plan](dev-start-refreshes-the-register-twice.md) |
+| `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows <sub>blocked by: [capture-moves-below-the-generator](capture-moves-below-the-generator.md), [capture-without-the-materialization-refresh](capture-without-the-materialization-refresh.md)</sub> | Spec | 2026-08-27 | [plan](dev-start-refreshes-the-register-twice.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R864` | Capture moves below the generator: the fact tier becomes a module boundary | Spec | 2026-08-27 | [plan](capture-moves-below-the-generator.md) |
 | `R859` | A dev pass captures the same graph twice, so every save evaluates the register twice | Ready | 2026-08-27 | [plan](dev-pass-captures-the-graph-twice.md) |
@@ -663,7 +663,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R865` [**A capture cannot be run without the materialization refresh, so a schema whose refresh never returns leaves no store to debug**](capture-without-the-materialization-refresh.md) — Spec, dx
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
 - `R768` [**The build boots the fact schema 1051 times, and a reset costs a fraction of a boot**](store-boots-once-per-test-not-once-per-build.md) — Backlog, dx
-- `R857` [**A dev start evaluates the whole materialization register twice, the second pass producing identical rows**](dev-start-refreshes-the-register-twice.md) — Spec, dx
+- `R857` [**A dev start evaluates the whole materialization register twice, the second pass producing identical rows**](dev-start-refreshes-the-register-twice.md) — Spec, dx, blocked by [capture-moves-below-the-generator](capture-moves-below-the-generator.md), [capture-without-the-materialization-refresh](capture-without-the-materialization-refresh.md)
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
 - `R764` [**graphitron-model ships its junit-platform.properties to four consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
 - `R780` [**srp names the reviewer as the disqualified party: the session grep takes the first ID in the body, not the trailer**](srp-disqualified-session-read-from-trailer.md) — Backlog, dx
