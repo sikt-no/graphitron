@@ -1,7 +1,7 @@
 ---
 id: R850
 title: "The column scope named-type arm cannot be repointed while its type binding hangs off graphql_type"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: classification-model
@@ -253,9 +253,11 @@ because the sweep needed it but because it is the reader rule at the head of `gr
 applied to the reader that violated it, and it measures better rather than worse.
 
 Same-run before and after, all three statements in one capture: the arm 47 to 60 ms before and 6 to
-10 ms after, and `intent_field_column_scope_live` whole 10 to 12 ms after. The whole relation now
-costs a fifth of what its named-type arm alone cost, so the gate's question, whether the rewritten
-arm becomes the dominant term of the refresh, does not arise in either direction.
+10 ms after, and `intent_field_column_scope_live` whole 10 to 12 ms after. Read against the gate as
+the protocol framed it, with the shipped arm as the reference point: the rewritten arm is still most
+of what the relation costs, and it is most of a relation that now costs a fifth of what this one arm
+cost on its own, at a sixth of the reference figure in absolute terms. Dominant term is the wrong
+question to ask of a refresh where every term got cheaper.
 
 ### B and C did not ship, and the sweep is why
 
@@ -270,10 +272,10 @@ in the shipped arm forecloses it.
 
 C did not ship for the reason the plan ranked it last. It was the only ranked candidate that moved
 anything, 507 to 516 ms against 3399, and that is exactly the shape of a partial answer: it defuses
-the amplification without touching the flip, so it would have bought a tenfold improvement on a
-statement that is now sixty times cheaper without it. None of its costs, the row grain with no honest
-name, the unbound mask alignment, the which-layer decision every future claim arm inherits, needed
-to be paid.
+the amplification without touching the flip, so it would have bought a sevenfold improvement on a
+statement the shipped shape makes five hundred times cheaper without it. None of its costs, the row
+grain with no honest name, the unbound mask alignment, the which-layer decision every future claim
+arm inherits, needed to be paid.
 
 ### The sentence owed to R848
 
