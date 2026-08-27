@@ -1,7 +1,7 @@
 ---
 id: R860
 title: "The LSP trace test rebinds JVM-global state while the module's other classes run beside it"
-status: Spec
+status: Ready
 bucket: testing
 priority: 3
 theme: lsp
@@ -80,7 +80,7 @@ window.
 
 Under class-level concurrency that is the ordinary case. Any of the other classes in the module that
 parses a buffer, mutates a workspace or computes diagnostics opens spans through
-`WorkspaceFile.reparse`, `Workspace.mutate` or `Diagnostics.compute`, and while `LspTraceTest` holds
+`WorkspaceFile.applyEdit`, `Workspace.mutate` or `Diagnostics.compute`, and while `LspTraceTest` holds
 the flag on and the sink rebound, those lines land in its `ByteArrayOutputStream`. This matters for
 the fix and not only for the record: chasing the executors would have left the actual exposure in
 place.

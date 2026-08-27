@@ -28,12 +28,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R858` | Stamped store directories accumulate one per DDL hash and nothing ever removes them | Spec | 2026-08-27 | [plan](stamped-store-directories-have-no-reaper.md) |
-| `R860` | The LSP trace test rebinds JVM-global state while the module's other classes run beside it | Spec | 2026-08-27 | [plan](lsp-trace-double-close-count-unscoped.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R860` | The LSP trace test rebinds JVM-global state while the module's other classes run beside it | Ready | 2026-08-27 | [plan](lsp-trace-double-close-count-unscoped.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-27 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -553,7 +553,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R798` [**A build swap still spends its session budget loading the directive vocabulary on the watcher thread**](vocabulary-load-blocks-the-build-watcher-thread.md) — Backlog, bug
 - `R430` [**LSP publishes graphitron:dev compile diagnostics against generated-file URIs**](lsp-compile-diagnostics-publish.md) — Backlog, feature
 - `R578` [**Raise the LSP unknown-input-field diagnostic to Error severity**](unknown-input-field-diagnostic-severity.md) — Backlog, cleanup
-- `R860` [**The LSP trace test rebinds JVM-global state while the module's other classes run beside it**](lsp-trace-double-close-count-unscoped.md) — Spec, testing
+- `R860` [**The LSP trace test rebinds JVM-global state while the module's other classes run beside it**](lsp-trace-double-close-count-unscoped.md) — Ready, testing
 - `R782` [**Completions and code actions get statement-count enforcers**](completion-and-code-action-statement-counts.md) — Backlog, architecture
 - `R802` [**The scan-count ceiling javadoc contradicts itself about what a ceiling catches**](scan-ceiling-lesson-contradicts-itself.md) — Backlog, docs
 - `R381` [**LSP-guided @reference path authoring**](lsp-reference-path-authoring.md) — Spec, architecture
