@@ -216,6 +216,34 @@ class FieldColumnTableTest {
     }
 
     /**
+     * The author's own connection type resolves the same table the generator's does. A hand-written
+     * wrapper carries the structural {@code edges}/{@code node} shape and no synthesis row at all,
+     * so the rule that reads the synthesis record alone answered nothing here and a column named at
+     * such a field resolved against nothing. Read through the navigation relation the rule has both
+     * halves, and the case sits beside {@link #aConnectionFieldResolvesItsElementsTable} because the
+     * two are one rule seen from its two populations.
+     */
+    @Test
+    void anAuthorDeclaredConnectionFieldResolvesItsElementsTable() {
+        withBoundTypes(dsl -> {
+            seedType(dsl, GRAPH, "LanguageConnection", "OBJECT");
+            seedType(dsl, GRAPH, "LanguageEdge", "OBJECT");
+            seedField(dsl, GRAPH, "LanguageConnection", "edges", "LanguageEdge", true);
+            seedField(dsl, GRAPH, "LanguageEdge", "node", "Language", false);
+            seedField(dsl, GRAPH, "Film", "languages", "LanguageConnection", false);
+
+            assertThat(scopeRow(dsl, "Film", "languages").orElseThrow()
+                .get(INTENT_FIELD_COLUMN_SCOPE.TABLE_NAME))
+                .as("the element type's table, reached with no synthesis row to read")
+                .isEqualToIgnoringCase("language");
+            var row = row(dsl, "Film", "languages").orElseThrow();
+            assertThat(row.get(INTENT_FIELD_COLUMN_TABLE.BASIS)).isEqualTo("NAMED_TYPE_TABLE");
+            assertThat(row.get(INTENT_FIELD_COLUMN_TABLE.TABLE_NAME))
+                .isEqualToIgnoringCase("language");
+        });
+    }
+
+    /**
      * A scalar field contributes no row. Its column lives on its parent's own table, and a reader
      * already holding that binding needs no relation to be told so.
      */

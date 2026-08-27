@@ -1,6 +1,6 @@
 ---
 id: R850
-title: "The column scope named-type arm cannot be repointed while its authored-claim anti-join stands"
+title: "The column scope named-type arm cannot be repointed while its type binding hangs off graphql_type"
 status: In Progress
 bucket: bug
 priority: 2
@@ -10,7 +10,14 @@ created: 2026-08-27
 last-updated: 2026-08-27
 ---
 
-# The column scope named-type arm cannot be repointed while its authored-claim anti-join stands
+# The column scope named-type arm cannot be repointed while its type binding hangs off graphql_type
+
+> **The title changed at implementation.** It named the authored-claim anti-join as what blocks the
+> repoint, because that is what the Backlog's reading of the plan said. The sweep's floor control
+> refuted it: with the anti-join deleted from the statement outright the repoint still costs seventy
+> times the shipped arm. The blocker is one join in the arm's own graph, and the
+> "What the sweep measured" section below carries the correction, the figures and what shipped.
+> Everything above that section is the plan as it was signed off, left as written.
 
 `intent_field_column_scope`'s `NAMED_TYPE_TABLE` arm answers where a column name written at an
 object-typed field resolves: the table the field's named type binds. It navigates connections by
@@ -160,6 +167,154 @@ navigation relation's `CONNECTION_ELEMENT` rung answers where the synthesis reco
 named type read from the relation that states it once. The arm's three guards, the root guard, the
 reference-step guard and the `@pivot` guard, are all unchanged, and the `@pivot` guard's
 fold-into-the-anti-join note stays; that day is still not this item's.
+
+## What the sweep measured
+
+The protocol above says no DDL lands before the sweep, and this is what the sweep was for. All four
+ranked candidates were measured with the repoint in place, on a store captured from the sakila
+example schema, 928 fields, this arm alone, 39 rows out, interleaved sweeps with result reuse off.
+None of them is the fix, and three of them move the arm by nothing at all.
+
+Every figure below is re-taken rather than carried from the Backlog's table, which is why the
+shipped arm reads 51 to 55 ms here where that table records 89: a wall clock is a property of the
+machine it was taken on, so nothing in this section is compared against a figure from another run.
+The shipped arm is re-measured alongside each candidate for exactly that reason.
+
+[cols="3,1"]
+|===
+| shape | one evaluation
+
+| the shipped arm
+| 51 to 55 ms
+
+| the repoint alone
+| 3399 to 3430 ms
+
+| A, the de-correlated anti-join
+| 3277 to 3578 ms
+
+| B, the promoted closure
+| 3392 to 3490 ms
+
+| A composed with B
+| 3247 to 3403 ms
+
+| C, the probe restricted to the reachable arms
+| 507 to 516 ms
+|===
+
+### The diagnosis was wrong, and the control that says so is the cheapest one
+
+The floor control the store-performance procedure asks for, removing the suspect from the statement
+entirely, refutes the Decision section's whole premise. With the authored-claim anti-join deleted
+outright the arm costs 3 ms over the synthesis expression and 203 to 213 ms with the navigated type
+read from `intent_field_navigated_type`. So the plan flip happens with no anti-join in the statement
+at all: the anti-join is not what flips the plan, it is what the flipped plan makes expensive. That
+also explains why A changes nothing, and the explanation is a rule already recorded in
+`DerivedReadCostTest`: H2 re-evaluates a derived relation on the inner side of a join once per
+driving row whatever the join is spelled as, so pairing the claim keys on their key buys nothing
+while the driving side is 62 thousand rows rather than 928.
+
+`EXPLAIN ANALYZE` names the real cause, and it is one join. The arm joined
+`intent_resolved_type_binding` on `graphql_type`'s echo of the navigated type rather than on the
+navigated type itself. With the navigation spelled as an expression over the field's own columns
+that costs nothing, because the binding can only be reached through a chain that starts at
+`graphql_field`. With the navigation projected into a column of a relation, the same spelling makes
+the binding a legal driver and the cheapest relation in the join graph, 68 rows after its
+`candidates = 1` filter, so H2 drives from it; and a view is seekable on the coordinate it is keyed
+by and not on a name it projects, so the navigation lands on the probed side and is evaluated once
+per driving row.
+
+### What shipped
+
+Three changes, each one measured, and each one a consequence of the one before it.
+
+[cols="3,1"]
+|===
+| shape | one evaluation
+
+| the repoint, with the binding joined on `nv.navigated_type_name`
+| 50 to 56 ms
+
+| the same, with the OBJECT test spelled as an existence test
+| 14 ms
+
+| the same, with A on top: what ships
+| 6 to 7 ms
+|===
+
+Binding the type binding to the navigation relation's own projection is what removes the flip: with
+nothing hanging the binding off `graphql_type`, the navigation drives and every other term is a
+seek. That alone puts the repoint at the shipped arm's cost with the anti-join untouched, which is
+the reading that settles the item: the arm was always repointable. Once the binding reads
+`nv.navigated_type_name`, `graphql_type` contributes no column to the arm, so its OBJECT test is
+spelled as the existence test it had become, and that is worth 50 ms to 14. A then goes on top, not
+because the sweep needed it but because it is the reader rule at the head of `graphitron-model.sql`
+applied to the reader that violated it, and it measures better rather than worse.
+
+Same-run before and after, all three statements in one capture: the arm 47 to 60 ms before and 6 to
+10 ms after, and `intent_field_column_scope_live` whole 10 to 12 ms after. The whole relation now
+costs a fifth of what its named-type arm alone cost, so the gate's question, whether the rewritten
+arm becomes the dominant term of the refresh, does not arise in either direction.
+
+### B and C did not ship, and the sweep is why
+
+B, promoting the recursive closure to a relation of its own, was measured at 3392 to 3490 ms against
+the repoint's 3399 to 3430: no effect, which the plan predicted it might have, H2 inlining a view the
+way it inlines a non-recursive `WITH`. That leaves B standing on the restatement argument alone, and
+against that argument stands what the plan already established about the relation it would add: on
+every schema the build accepts it is empty. Adding an empty relation to the composition to restate a
+term that costs nothing where it is, in an item whose measured fix is elsewhere, is not a trade this
+increment should make. It is a defensible piece of work on its own and it is not this one; nothing
+in the shipped arm forecloses it.
+
+C did not ship for the reason the plan ranked it last. It was the only ranked candidate that moved
+anything, 507 to 516 ms against 3399, and that is exactly the shape of a partial answer: it defuses
+the amplification without touching the flip, so it would have bought a tenfold improvement on a
+statement that is now sixty times cheaper without it. None of its costs, the row grain with no honest
+name, the unbound mask alignment, the which-layer decision every future claim arm inherits, needed
+to be paid.
+
+### The sentence owed to R848
+
+The shipped rewrite adds no relation to the register's composition and removes none. What it changes
+for that question is the arm's reach: `intent_field_column_scope_live` no longer names
+`graphitron_field_synthesis` or `graphql_field` at this arm, and names `intent_field_navigated_type`
+instead, which reaches both. `DerivedReadCostTest`'s cell count is unmoved at 178, so the register's
+as-composed depth is what it was. Nothing here is a rung a whole-register pass would want to fold,
+and one thing is worth carrying into that pass as a general fact rather than as this arm's: a
+projected name is not a probe key, so a registration that turns a view into a table changes which
+side of a join the planner can drive from, and a reader that joins a *second* relation on the
+projection rather than on the projecting relation is the shape that turns that into a per-row
+re-evaluation. That is the same mirror `ix_resolved_type_binding_type`'s comment records from the
+other direction.
+
+### Deliverables the selection made vacuous
+
+Three of the plan's deliverables are conditional on B or C shipping and are therefore not present:
+B's relation and its comment, C's both-directions `EXCEPT` enforcer, and the row-set pin over the
+claim view. The pin is worth a sentence rather than a silent omission: it was asked for so that a
+restatement of `intent_authored_field_claim` could be shown to change no row, and no restatement
+ships, the view being untouched by this change. What did change shape is what the arm *reads* from
+that view, and a pin over the view's own rows cannot observe that; the arm's answer is pinned where
+it belongs, in `FieldColumnTableTest`.
+
+`DerivedReadCostTest`'s pinned set did not move: the cell count, both pinned sets and all four
+assertions are green unchanged. The surviving pair
+`intent_field_reference_step_hop|intent_field_column_scope_live` had its justification rewritten to
+the figures it now records, per the plan: 3272 scans registered against 3084, and 13 milliseconds
+against 34, where it recorded 2854 against 2666 and 15 against 29. The difference of 188 scans is
+unchanged, which is the reading worth keeping: that gap is the walk's namings against the registered
+target, which this arm never touched, so the pair survives on the mechanism it was always charged to.
+
+The relation's live consumers were named in the plan as the walk differential and the language
+server's `FieldColumnTable` surface. Neither moves on this fixture set: the rows the repoint adds
+exist only at a non-root field returning an author-declared connection type and carrying no
+`@reference`, and both such fields in the sakila example schema, `Film.actorsConnection` and
+`Film.actorsOrderedConnection`, carry one and so take the path-terminal rule instead. The new
+rows are therefore pinned at the tier that can state them as rows, which is the seeded anchor, and no
+pipeline-tier fixture was added, per the plan's own instruction that a fixture at a tier that cannot
+observe the change pins nothing.
 
 ## Deliverables
 

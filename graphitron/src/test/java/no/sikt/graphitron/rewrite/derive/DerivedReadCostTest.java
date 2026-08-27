@@ -443,13 +443,20 @@ class DerivedReadCostTest {
         "intent_mutation_write_payload|intent_mutation_payload_column_live",
         // The two reference-step walks over the field-site hop, which joined this set when that
         // hop gained its condition arm, and the clearest case in it for reading the counter as a
-        // row count. Both are 188 scans dearer registered (795 against 607 on the walk, 2854
-        // against 2666 on the scope rule) and both are decisively faster: 2 milliseconds against
-        // 17, and 15 against 29. The rows are the unregistered side's to lose rather than the
+        // row count. Both are 188 scans dearer registered (795 against 607 on the walk, 3272
+        // against 3084 on the scope rule) and both are decisively faster: 2 milliseconds against
+        // 18, and 13 against 34. The rows are the unregistered side's to lose rather than the
         // registered side's to gain, which is what the new arm changed: inlined, its route join
         // short-circuits to nothing on this fixture and H2 charges it no scans, where the same
         // arm against a table is charged a visit per naming and the walk names the relation twice.
         // No index question, the target carrying one already.
+        //
+        // The scope rule's own two figures moved when its named-type arm stopped spelling the
+        // navigation over the synthesis record and read intent_field_navigated_type instead. The
+        // difference of 188 scans did not, and that is the reading to take from the re-measurement:
+        // the gap is the walk's namings against the registered target, which that arm never
+        // touched, so the pair survives on the mechanism it was always charged to rather than on
+        // a coincidence of totals.
         "intent_field_reference_step_hop|intent_field_reference_step_target",
         "intent_field_reference_step_hop|intent_field_column_scope_live",
         // The same arm reaching the argument-site walk, where it is the argument scope table's
