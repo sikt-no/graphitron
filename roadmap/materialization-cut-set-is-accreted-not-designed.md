@@ -533,3 +533,53 @@ shape while nobody looks, not a registration landing.
   to it rather than here.
 - **R831** files the same drift problem for the measured claims written into ordinary relation
   comments, which is why this item does not re-measure the twenty reason rows.
+
+## Reviewer findings
+
+### Round 1 (2026-08-27, Spec -> Ready, reviewer session 01WajEgSkL8dc4owJXtVbyui)
+
+Verdict: withhold. One finding, on question 2, confined to slice 2's candidate-realisation
+mechanism. Question 1 passes: what a consumer gets reads off the plan without reconstructing it
+from the slices (the pass every capture and `graphitron:dev`/`validate` start pays gets measured
+and recorded, the register either shrinks or is confirmed with figures behind it, and the
+register's size and refresh depth become equality-pinned so the next registration is a deliberate
+edit), and every checkable claim behind it verified against the tree, the details in this round's
+commit message.
+
+**The candidate-realisation mechanism hand-writes a machine-written relation, and derives the
+wrong edges for exactly the candidates slice 2 needs.** The mechanism paragraph pins deleting the
+excluded registrations' rows from `meta_materialize_dependency` by hand. Two things are wrong with
+that, one architectural and one behavioral.
+
+The architectural one: that table's own comment declares its rows the family's one machine-written
+resident, "a hand edit is a bug the next boot undoes", and `MaterializeDependencies`' javadoc opens
+by naming itself "the one writer of `meta_materialize_dependency`". A harness that deletes rows
+there is a second writer standing beside the one the tree already has, which is the shape question
+2 exists to refuse.
+
+The behavioral one: the paragraph's "both tables is not a detail" justification covers only the
+rows whose `source_view_name` is an excluded registration, the direction that NPEs `refreshOrder`.
+The rows that bite are the other direction, a *retained* registration depending on an excluded
+one, and the paragraph does not say what happens to them. Leave them and `refreshOrder` still dies
+on the same null map entry, inside its cycle namer. Delete them and the transitive constraint is
+silently lost: when the excluded registration was live, the retained view's stored definition
+named the excluded *target table* and could not reach past it, so the only edges are retained ->
+excluded and excluded -> deeper. After `UnregisteredRelation.install` the retained refill
+evaluates the excluded rule live, which reads deeper retained targets, so the retained
+registration must still refresh after them; with both hand-deletions no row says so, the refresh
+can refill it against stale prerequisites, and the candidate's price is wrong on both axes with
+nothing failing. Candidate C removes most of a twelve-layer register and cannot avoid this shape,
+and most of 2a's twenty leave-one-out stores hit it too.
+
+What would satisfy the finding: realise a candidate by deleting the excluded rows from
+`meta_materialize` only, installing the swap for each excluded registration, and then calling
+`MaterializeDependencies.populate(dsl)` before the refresh. That routine rewrites the relation
+wholesale from the current census and descends through unregistered intermediate views, which is
+what an excluded registration's canonical name becomes after the swap, so it derives the
+transitive edges the hand deletion loses; the table comment names transitive reach through
+unregistered intermediates as the very reason the relation is machine-written. The sequencing
+belongs in the paragraph, because before the swap the excluded canonical name is a base table and
+the walk ends at it, deriving no onward edge. The rest of slice 2 stands: the fallback, the
+`Set<Registration>` typing, the reader-domain sourcing and the 2a/2b structure are untouched by
+this, and the "establish the mechanism first" risk posture applies to the corrected mechanism as
+written.
