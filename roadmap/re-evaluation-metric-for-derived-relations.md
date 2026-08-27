@@ -406,3 +406,70 @@ without 3, which is clear as written. Worth deciding at the same time as the fin
 slice 3's negative outcome is recorded in this item's body, in `roadmap/changelog.md`, or in the
 register's own prose, since a negative result that lands only in a roadmap item disappears when the
 item does.
+
+### Round 3 (2026-08-27, Spec -> Ready, reviewer session session_014R3TSfjFfZQzoms4otDrVn)
+
+Verdict: withhold, on one finding in the acceptance gate. It is the only thing I have left, and the
+home argument Round 2 asked for is settled.
+
+First, a correction I owe the record: the false premise Round 2 found was mine before it was the
+plan's. Round 1's closing aside said the store and the walk were "neither available in
+`roadmap-tool`", and the plan picked that up. Round 2's finding was against my own error restated.
+
+The rewritten home argument checks out on every claim. `graphitron-model`'s pom does republish the
+compiled tests as a test-jar, its own comment naming the store harness under
+`no/sikt/graphitron/model/test` as what consumers want from it and "every module downstream builds
+its own fixtures over that floor" as the reason. `UnregisteredRelation` does exactly what the plan
+says it does: its javadoc opens "Reverses one materialization registration inside a live store" and
+names its purpose as "What a case needs to ask what a registration costs: the two shapes of one
+relation, in one process, with no DDL edit and no model rebuild", taking a store from `FactStores`.
+`roadmap-tool` sets no `classpathScope` on any `exec:java` execution, so the default applies and its
+main-scope steps cannot reach those instruments, and it declares no test-jar dependency that would
+put them on any classpath of its own. The primary ground is the right one: the walk being extended is
+main scope in `graphitron-model`, and its H2 normalization rules are the part that must not be
+re-derived in a second place.
+
+**1. The gate's ship condition is passed by the metric this item exists to replace, on the plan's own
+figures.** The section states the discriminating test in its first paragraph, score every
+registration and check the ranking against the magnitude ordering the reasons record, and then
+narrows what "ships only if" attaches to: "Concretely it must rank
+`intent_mutation_write_destination` and `intent_field_reference_step_hop` well above
+`intent_argument_column_match`, which the probe's marginals get backwards at +10 and +36 against +4."
+
+Read as figures, +10 and +36 both sit above +4, which is the demanded order rather than backwards.
+The sign convention that makes them backwards is not stated anywhere in the plan, and the reading
+that keeps the rest of the plan consistent is the opposite one: a register whose leading lever takes
+913,978 to 77,209 has marginals in the tens of thousands, which is what makes +10 and +36 "near the
+bottom" as the blindness section says. Under that convention the probe orders this triple correctly,
+and the concrete test is one the probe passes.
+
+The paragraph immediately after says why that matters, and says it correctly against the other
+metric: "A metric blind to per-row and recursive re-evaluation can still order three particular
+relations correctly, and an ordering that survives by luck on the one triple anybody checked is not
+evidence the mechanism is modelled." That argument applies to the ship condition stated one paragraph
+earlier, because the ship condition is an ordering over that one triple. So the gate as written can
+be passed by a metric that models one of three mechanisms, which leaves the item's stated purpose,
+failing honestly rather than shipping a plausible number nobody can check, resting on a check that
+does not discriminate.
+
+I cannot resolve the sign question from the tree, the probe not being in it, and neither can the
+implementer.
+
+What would satisfy this: make the all-twenty comparison the ship condition rather than the triple,
+and say what agreement counts, for instance that no registration whose reason records a small win may
+outrank one whose reason records an order-of-magnitude win. Keep the triple as the illustration it is
+good at being. The "backwards" claim then has no work left to do and can go, or stay with its
+convention stated.
+
+#### Non-blocking
+
+The census has already moved under the plan. Trunk now declares 109 views, not the 107 both figure
+sections state, base tables and registrations unchanged at 168 and 20, an increment having landed
+between revision 2 and this review. I have not corrected the number, because the probe's 470 and
+913,978 were computed against the 107-view tree and swapping the census while leaving the totals
+would misattribute them. Say the figures are pinned to the tree they were taken on and the drift
+stops mattering; the gate itself is unaffected, since the magnitudes it compares against are recorded
+in the DDL rather than measured per run. Two views in one day is also the item's own thesis
+happening again while it waits.
+
+The two prior rounds' non-blocking notes were both taken.
