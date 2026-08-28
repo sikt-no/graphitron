@@ -1,7 +1,7 @@
 ---
 id: R856
 title: "A consumer-schema capture spends over an hour inside the materialization refresh"
-status: In Review
+status: Ready
 bucket: bug
 priority: 1
 theme: model-cleanup
@@ -1635,3 +1635,78 @@ Non-blocking, no response needed:
   carries it in the Roadmap entries section while the run that needs it is step 1 and the discharge
   rule that depends on it is the paragraph under step 1. Repeating it there would cost a clause and
   save the person on that machine a second attempt at an hour-long run.
+
+### Round 3 (2026-08-28, In Review -> Done, reviewer session 016N8zPSpeN7FyaJWQdDePCY)
+
+Verdict: rework, back to Ready. Two findings, one per gate question, and they are one decision seen
+from two sides. Neither disputes the delivered code, which was read against every obligation step 3b
+enumerates and holds, and the full verification build (`mvn install -Plocal-db`) is green on the
+reviewed tree.
+
+What was checked and passes, recorded so the next pass does not re-derive it. Both registrations are
+in the DDL and were priced one at a time in the order the sequence names. Each `reason` row carries
+the four obligations: the saving and the refresh, the per-driving-row mechanism, the seam that closes
+the captured-fact rung, and the index decision with the reader that dictates it.
+`ix_node_id_decode_column_use_site` argues its shape, its second reader and its UNIQUE decision at
+its own site in the exemplars' form; the carrier's decline is a measured roster row in
+`MaterializeRegistryGateTest.NO_INDEX`; the probe's third conjunct moved to `d.use_site = a.path`
+with the `path` column comments staying true; `ix_node_id_decode_hop_column_step`'s comment moved
+with its reader's changed cadence. The four equality-pinned figures moved with argued javadoc:
+`REGISTRATIONS` 22, `REFRESH_STAGES` 14, `DerivedReadCostTest.CELLS` 168, and
+`PLAN_DEPENDS_ON_STATISTICS` gaining the carrier rule with the mechanism stated. No code-string
+assertions on generated method bodies anywhere in the delivered tests. The user-facing-doc check
+passes on the `fact-model.adoc` diff, whose count updates carry no roadmap markers, and the
+retirement sweep skips, nothing being retired. Had the delivered sequence been the one the Ready
+gate approved, question 1 would pass without a note.
+
+**Finding 1 (question 2): the item's own completeness evidence does not exist, the body says so in
+its closing sentence, and Done would delete the only artifact carrying the step that produces it.**
+The stated goal is a capture of the consumer schema that completes, so that `graphitron:validate`
+returns and `graphitron:dev` binds. The spec names its own proof twice: "The proof of this item is a
+capture of that schema that completes. No fixture-scale figure substitutes for it" (step 4), and the
+Implementation preamble's closing words, "nobody yet knows whether these two registrations are the
+fix for the hour or an improvement that leaves it standing. Only step 1 answers that, and it is the
+next thing anybody should do with this item." A reviewer cannot mark Done an item whose own body
+names the next thing still to do with it. The deletion cost is concrete rather than ceremonial: step
+1's discharge rule, `mvn -X` for the debug-tier registration line, the store pinned with
+`-Dgraphitron.store.directory`, and what "reports" means without a completion, lives only in this
+file. R867 carries the first arm's residue by design and nothing carries this; on Done the owed
+capture would survive only as changelog prose, which is a record and not a to-do.
+
+What would satisfy it, either branch. (a) The capture is taken on the machine that holds the
+consumer schema, per step 1's own discharge rule, and the outcome recorded here: a completion with a
+duration delivers the stated goal and the item returns through this gate carrying the figure; a run
+that sits in one named registration past every earlier registration's lines together names the
+statement and reopens the fix. The registrations being on the tree, the run the current head offers
+is step 5's; the pre-fix run item 2 asked for is still takeable from the parent of 9e01ccf if the
+attribution is wanted, and if it is not, record the limit rather than reconstructing it. Or (b) the
+item is re-cut through the gate: reopen Ready -> Spec, state that the two registrations are this
+item's whole deliverable, carry the argument the exception paragraph already sketches past a
+reviewer who can refuse it, and file the consumer-scale verification as an item that survives this
+file's deletion. What a reviewer cannot do is take branch (b) unilaterally at the Done gate, which is
+what approval here would amount to.
+
+**Finding 2 (question 1): the delivered ordering is not the ordering the Ready gate approved, and
+the exception licensing it passed no gate.** Round 1's finding 1 withheld over exactly this fork and
+the author took the capture-first branch. The round 3 sign-off names "the pre-fix consumer capture is
+item 2 of the amended sequence" as one of the two things that made the gate pass, and item 2 is
+bolded "before either registration is written", with "Nothing below is chosen before this step
+reports" retained. The implementation commit, 9e01ccf, landed items 3 and 4 with item 2 unpaid and
+wrote the "What licenses that ordering" paragraph into the body in the same commit. That paragraph is
+honest, plainly labelled and well argued, and it is the implementer authorizing its own exception to
+a decision rule a gate approved after a reviewer withheld over it. Its argument, that the
+registrations stand as register improvements whatever the capture reports, was available at round 1,
+and the author chose the other branch then; taking that back mid-implementation is the gate's to
+approve, not the diff's. This finding travels with finding 1: the remedy is the same fork, pay the
+capture under branch (a) or re-approve the scope under branch (b), and either closes both.
+
+Non-blocking, no response needed:
+
+- Both registrations landed in one commit where the sequence says "take these one at a time". The
+  purpose of that sentence, each `reason` row carrying its own arithmetic, is met: the pricing was
+  taken sequentially and the two measurement sections record which half each registration bought.
+  Recorded so the next reviewer does not re-litigate the commit granularity.
+- The Tests bullet asking for the per-driving-row assertion is satisfied structurally rather than by
+  a new test: both relations are now registrations, so `DerivedReadCostTest`'s store-derived domain
+  prices each against its readers in both shapes, which is the "prefer joining it" outcome the
+  bullet named.
