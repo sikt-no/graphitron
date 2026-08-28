@@ -13,6 +13,12 @@ registrations that landed 2026-08-28. The store file is kept, 99 MB, SHA-256 rec
 Everything below is either a reading off that capture's own log, a reading taken afterwards against
 that store, or a static walk over the shipped DDL and the main sources. Each section says which.
 
+**Section 1's absolute figures describe a DDL the tree has since left, and section 10 re-prices the
+same store on the shipping one.** The pass that section 1 reports is 15477.1 seconds; the same store
+rebuilt on the DDL of 2026-08-28 refreshes in 43.0 seconds. Read section 1 as the record of what the
+defect cost, and section 10 for what is left. What survives the re-pricing, and what does not, is
+stated there rather than left for a reader to work out.
+
 Two standing cautions apply to every number here and are stated once. Readings taken after the
 capture were taken with `SET OPTIMIZE_REUSE_RESULTS FALSE`, on a fresh connection per statement,
 because H2 caches plans per connection and will otherwise hand back a byte-identical plan for a
@@ -61,11 +67,21 @@ simply big.
 
 A static walk, not a measurement.
 
-The generator, the language server and the MCP server read the store only through jOOQ
-`Tables.INTENT_*` constants. No raw-SQL relation name appears in any main source, and the only other
-accessor form (`model.tables.IntentX`) names relations already in that set, so the set of relations a
-consumer names is exactly extractable: 39 relations across `graphitron`, `graphitron-mcp` and
-`graphitron-lsp`. Walking the view dependency graph outward from those 39, following `<target>_live`
+The generator, the language server and the MCP server reach every `intent_` relation through jOOQ
+`Tables.INTENT_*` constants. The only other accessor form, `model.tables.IntentX`, names relations
+already in that set, so the set of relations a consumer names is exactly extractable: 39 relations
+across `graphitron`, `graphitron-mcp` and `graphitron-lsp`. Re-checked on 2026-08-28, and the same
+39 come out.
+
+A third access form does exist and the first version of this paragraph was wrong to deny it. Main
+sources also reach relations by string, through jOOQ's `table(name("..."))`, in `Materializations`,
+`MaterializeDependencies`, `StoreCatalog` and `StoreProse`. Every such site names a `meta_*` relation
+or `store_graph`, never an `intent_` one, which is why the walk below is unaffected: those are the
+register's own machinery reading the register, not a consumer reading a derivation. But the soundness
+of the walk rests on that continuing to hold, and a string-named read is precisely the form that
+would break it silently. This makes the case for a gate over the access form stronger than a claim
+that no such form exists would have: the form is there, it is legitimate where it is used, and
+nothing stops the next author pointing it at a derived relation. Walking the view dependency graph outward from those 39, following `<target>_live`
 wherever the walk meets a registered target that is a base table with no view definition of its own,
 gives what a read can reach. Ten registered targets fall outside it.
 
@@ -187,7 +203,11 @@ together. The register has been acting as an index-delivery mechanism.
 **Every figure was taken in a regime the build never entered.** Each registration's stated `reason`
 was measured against a settled store whose statistics were current, while the capture refresh ran
 against an unanalysed one. On this store that difference is 69-fold across refresh positions 1 to 16,
-6293 seconds against 90.8. The cold-refresh split has since fixed the ordering, which is what made
+6262.6 seconds against 90.8. That figure is the pass, re-derived position by position from the
+capture log's own `n/20 done in ...` lines, which also sum to 15477.2 over all twenty and to 15382.5
+over positions 14 to 18, matching section 1's table. An earlier reading of 6293 seconds circulated in
+the working notes and is arithmetic rather than a second measurement: it exceeds the pass by 30.4
+seconds, which is exactly position 8, counted twice. The ratio is unaffected at 69-fold either way. The cold-refresh split has since fixed the ordering, which is what made
 the two regimes separable on one store and is why this audit could be taken at all.
 
 **And statistics are necessary, not sufficient.** The same split buys almost nothing on the tail:
@@ -330,3 +350,289 @@ as it tests that entry.
 None of this argues the register is incoherent. It argues that the register is coherent against a
 metric that is the wrong one for half of it, on a population its own author flagged as the one not
 measured.
+
+## 10. The same store, re-priced on the shipping DDL
+
+Taken 2026-08-28, after sections 1 to 9 were written, against the same kept capture. It is filed as a
+section of this audit rather than as a second document because it moves section 1's headline figure
+by more than two orders of magnitude, and a reader who found section 1 without this would carry away
+a number the tree stopped producing on the day the audit was written.
+
+### How a capture can be re-priced without re-taking one
+
+Section 1's figures came off one build's log, and the closing sections treat a capture on the shipping
+DDL as out of reach for any session working from the repository. That was too strong, and the
+distinction it missed is between capturing a schema and refreshing one already captured. A capture
+needs the consumer's machine, its sources and its catalog. A refresh needs only the captured base
+facts, which the kept store holds, and a schema to run them against, which is a file in the
+repository.
+
+So the pass is reproducible from the kept store on any DDL: build the schema from the DDL under
+measurement, copy every base table's rows in from the kept store, derive the refresh order, refresh
+each registered target from its `_live` view, and time each one. `MatBench` already did the first two
+steps and the last, and needed two corrections before it could price a pass rather than a workload.
+It took the refresh order from the order the `meta_materialize` seed rows appear in the DDL, which is
+not the order the store computes: the shipped `refreshOrder` is a Kahn walk over edges parsed from
+the booted store's own view definitions, and the literal order refreshes
+`intent_argument_scope_table` before the relation it reads, which empties it and everything under it.
+And it analysed once before the pass, where the shipped capture cadence,
+`Materializations.refreshAnalysing`, analyses each target immediately after refilling it.
+
+**Two checks say the rebuild is the same population.** The derived order reproduces the observed
+capture order for all twenty registrations that existed on 2026-08-27, position for position. And
+every one of those twenty targets comes out at the row count section 1 records for it: 108, 149, 313,
+12817, 635, 151, 3737, 2618, 967, 967, 114, 1804, 86, 629, 1725, 1078, 41, 545, 239, 344. A rebuild
+that agreed on cost and disagreed on rows would be answering a different question.
+
+**One known shortfall.** `sql_enum_binding` is a capture-written table the shipping DDL declares and
+the 2026-08-27 store predates, so it is empty in the rebuild. One view reads it,
+`intent_java_enum_class`, whose other arm is unaffected; what is missing is the arm that reaches a
+generated jOOQ enum. No registered target's row count moves, which bounds the effect, but a figure
+below should not be taken as exact for a relation whose answer turns on a generated enum.
+
+### The pass on the shipping DDL: 43.0 seconds
+
+Twenty-two registrations, the cadence above, positions in the order the store derives.
+
+[cols="1,5,2,2,2"]
+|===
+| # | registration | refresh | rows | reachable
+
+| 1 | `intent_argmapping_pair` | < 0.05 s | 108 | yes
+| 2 | `intent_errors_field` | 5.6 s | 149 | yes
+| 3 | `intent_spelled_table` | 0.1 s | 313 | yes
+| 4 | `intent_field_reference_step_hop` | 1.0 s | 12817 | yes
+| 5 | `intent_resolved_type_binding` | 0.1 s | 635 | yes
+| 6 | `intent_carrier_data_field` | 1.5 s | 151 | yes
+| 7 | `intent_field_column_scope` | 1.2 s | 3737 | yes
+| 8 | `intent_field_scope_table` | 0.9 s | 2618 | yes
+| 9 | `intent_argument_scope_table` | < 0.05 s | 967 | yes
+| 10 | `intent_argument_column_scope` | < 0.05 s | 967 | no
+| 11 | `intent_argument_column_match` | < 0.05 s | 114 | no
+| 12 | `intent_input_field_resolving_table` | < 0.05 s | 1804 | no
+| 13 | `intent_mutation_write_payload` | < 0.05 s | 86 | no
+| 14 | `intent_node_id_instruction` | 3.6 s | 629 | yes
+| 15 | `intent_input_field_filter_role` | 18.7 s | 1725 | no
+| 16 | `intent_node_id_decode_hop_column` | 4.1 s | 1078 | no
+| 17 | `intent_node_id_decode_column` | 3.7 s | 1559 | no
+| 18 | `intent_input_field_carrier_role` | < 0.05 s | 1165 | no
+| 19 | `intent_mutation_payload_refusal` | 1.3 s | 41 | no
+| 20 | `intent_mutation_payload_column` | 0.2 s | 545 | no
+| 21 | `intent_mutation_payload_key_membership` | 0.4 s | 239 | no
+| 22 | `intent_mutation_write_destination` | 0.6 s | 344 | no
+|===
+
+Seven positions are reported as a bound rather than a figure because the harness renders a tenth of a
+second and they came in under one; nothing below turns on which side of a millisecond they fall.
+
+Two totals appear for this pass and they are not in conflict. The positions above sum to 43.0
+seconds, and the harness reports the pass as 43.2, the difference being the per-position `ANALYZE`
+calls the cadence makes between positions. Comparisons against other arms use the harness total on
+both sides.
+
+The two positions that carried 9213.3 seconds of section 1's pass, the payload refusal and the
+payload column, cost 1.5 seconds between them. The dearest position is now
+`intent_input_field_filter_role` at 18.7 seconds.
+
+### Which of the two landed changes did it, and a control that the harness is not simply fast
+
+Two things landed between the capture and this reading: the cold-refresh split, which is the
+`refreshAnalysing` cadence, and two registrations on the payload family,
+`intent_node_id_decode_column` and `intent_input_field_carrier_role`.
+
+**The two registrations are the tail.** The same DDL and the same cadence, with those two demoted
+back to views and the other twenty kept, refreshes in **588.2 s**: the payload refusal at 82.3 s and
+the payload column at 464.5 s, against 1.3 and 0.2 with them. Every other position is within noise of
+the table above. So the pair is worth 13.6-fold on the pass, and all of that lands on the two
+positions that dominated section 1.
+
+**The split is the prefix, and the control says the harness reproduces the regime it should.** The
+DDL as of the capture, twenty registrations, with no analysis anywhere in the pass, is the condition
+section 4 describes. Position 14 costs **727.2 s** in the rebuild against 624.5 s in the capture
+itself, so the harness reproduces within about sixteen per cent a figure it was not fitted to, on the
+position where section 4 predicts hundreds of seconds. That is the check that matters: a harness that
+returned seconds here would have said nothing about the 43.0.
+
+### What survives, and what does not
+
+**The reachability finding survives and has grown.** Re-run on the shipping DDL, over a read set
+re-derived from today's main sources and unchanged at 39 relations, twelve of the twenty-two
+registered targets are outside the consumer cone: the same ten, plus both of the two that landed on
+2026-08-28. They carry 29.0 of the 43.0 seconds, 67.4 per cent.
+
+**But its force changes with the number it governs.** Section 2 says a registration was made before
+it had a reader, and that this puts 95 per cent of a four-hour refresh into filling relations nothing
+demands. The first half is unchanged and is a statement about how registrations get made. The second
+half is now 29 seconds, and 29 seconds is a coherence argument rather than a performance one. Anybody
+carrying section 2 forward should carry that with it.
+
+**The three defect classes are untouched, because they were never about the refresh.** Section 3's
+grain measurements, section 5's re-derivation and the expression-keyed join in class B were all taken
+against reads, and the read side is where the consumer-scale cost now lives. Timed on the rebuilt
+store over the 39 relations a consumer names, one statement per fresh connection, 120 seconds per
+statement, with the register as it ships:
+
+```
+intent_field_accessor_hop              over 120 s, refused
+intent_resolved_node_key_projection        32.6 s
+intent_argmapping_projection_defect        32.3 s
+intent_resolved_field_demand               29.6 s
+intent_field_column_table                   9.2 s
+intent_resolved_type_demand                 9.1 s
+intent_authored_claim_conflict              8.0 s
+intent_field_participant_scope_table        7.1 s
+                             total        251.5 s, 1 refused
+```
+
+**The workload is a proxy and its bias is upward.** It is `SELECT count(*)` over each of the 39
+relations, which is the set a consumer names but not the queries a consumer writes: a real read
+carries predicates that can prune, where a count forces the whole relation. So every read figure in
+this section is an upper bound on what a consumer actually pays for that relation, and a relation that
+looks like it needs help here may not. What the proxy is fit for is comparing arms, since the same
+statement runs in each, and that is all it is used for below. Extracting a faithful workload from a
+traced `generate` run is the standing prerequisite before retiring any registration on read evidence.
+
+**So the register is not buying good reads either, and the relation it cannot fix is the worst one.**
+`intent_field_accessor_hop` is class B's measured instance over the bean-property expression, and it
+refuses the budget with all twenty-two registrations in place, because no registration can index an
+expression.
+
+### The arm nobody had run: no registrations at all, with the shape fixes in
+
+Section 4 says materialization kept winning because it was the only candidate on the ballot. The arm
+that puts the other candidates on it is the register emptied and the shape fixes applied: both known
+supertypes captured and repointed, the bean-property key as a `GENERATED ALWAYS AS` column with an
+index, the navigated type as a stored total relation, and indexes on the folded `sql_*` columns. It
+applies to the rebuilt store in 0.9 seconds and every repointed relation returns exactly the rows it
+returned before, 313, 108, 4198 and 8408.
+
+[cols="4,2,2,2"]
+|===
+| arm | refresh | reads | over budget
+
+| 22 registrations, no shape fixes | 43.0 s | 251.5 s | 1 of 39
+| no registrations, shape fixes in | 0 s | 1054 s, a floor | 7 of 39
+|===
+
+The total says the register wins as things stand. The composition says something more useful.
+
+**One relation moves the right way and it is the one that refused above.** `intent_field_accessor_hop`
+goes from refusing 120 seconds with the whole register to **1.90 seconds with none of it**, which
+reproduces the 1.84 s class B predicted for the stored key. A third arm isolates which change did it:
+with no registrations *and* no column it refuses the budget too, so the register makes no difference
+to that relation in either direction and the generated column makes all of it. Same 21287 rows in all
+three.
+
+**Ten move the wrong way**, worst first: `intent_node_id_decode_defect` 0.49 s to refused,
+`intent_column_match_claim` 0.10 to refused, `intent_field_reference_discovery` 0.38 to refused,
+`intent_resolved_field_claim` 1.77 to refused, `intent_field_column_table` 9.2 to refused,
+`intent_argmapping_projection_defect` 32.3 to refused, `intent_resolved_node_key_projection` 32.6 to
+refused, `intent_field_participant_scope_table` 7.1 to 89.9, `intent_carrier_data_field` 0.00 to 35.3,
+`intent_resolved_node_key_column` 0.16 to 18.4.
+
+**Three of the ten have a named cause and the rest do not.**
+`intent_argmapping_projection_defect`, `intent_node_id_decode_defect` and
+`intent_resolved_node_key_projection` are exactly the residual relations whose dependency closure
+reaches `intent_argmapping_bound_parameter_type`, which section 11 identifies as a six-arm
+reconstruction of a supertype nothing has captured. No other residual relation reaches an unrepointed
+reconstruction, and one relation that does reach one, the accessor hop through
+`intent_declared_type_ref`, is fast anyway. So the signature explains part of this residual and is not
+a general theory of it, which is worth stating precisely because the temptation is to read three
+confirmations as seven.
+
+**And section 4's prediction is refuted by the thing it predicted.** It forecast a capture on a DDL
+carrying the split but not the payload pair at over 7126 seconds. That DDL was never shipped: the
+pair landed the same day. The pass on what did ship is 43.0 seconds, and the prediction should be
+read as a superseded intermediate rather than as a figure to quote.
+
+### Where the store and the instruments are
+
+The store is at `~/temp/graphitron-store-backups/sis-2026-08-27/store.mv.db` on the workstation that
+took the capture, read-only, beside a `PROVENANCE.txt` and a recorded SHA-256 which this reading
+verified before using it. The sibling `investigation-2026-08-27/` directory holds `MatBench`, the
+smaller probes and the pass harness above. None of it is reactor code and none of it belongs there:
+it measures one consumer's store against schemas from several days of the tree, and it is research
+apparatus rather than anything a build should run. What the repository owes instead is the gate over
+the access form that section 2 argues for, which is the one claim here a build could hold.
+
+## 11. The defect class underneath class A, stated without measuring anything
+
+Section 3's class A described "a grain the capture family never wrote" and argued it from what it
+cost. That is the symptom. This section states the defect, which is a modelling one, and gives a
+detector for it that reads the shipped DDL and needs no store, no capture and no timing. It was taken
+on 2026-08-28 after sections 1 to 10, and it finds instances those sections missed.
+
+### The defect
+
+Where one fact is written at several kinds of site, capture writes one table per kind and no table for
+the fact. Each set is closed and every member carries the same attributes, differing only in the key
+that says which site owns the row. That is a subtype set with no supertype.
+
+A reader whose question is uniform across the sites then has to reconstruct the supertype, and SQL
+gives it one way to do that: union the arms, synthesise a discriminator, synthesise a uniform key.
+The reader is doing the modelling capture did not do, and it does it once per reader.
+
+**The store already contains a worked confession of this**, in `intent_declared_type_ref`. Its comment
+says "the three census relations are three keys, so a reader whose question is uniform across the
+owners has to name the owner before it can ask". It carries `owner_kind`, whose comment says there is
+"one value per census relation of this shape, and there is no fourth". It carries `owner_descriptor`
+and `owner_position`, NULL on exactly the arms whose key does not need them, each documented as "the
+union's key shape rather than a fact withheld". A discriminator over a closed subtype set, arm-
+determined NULLs and a synthesised uniform key is a supertype relation, written as a view because
+capture wrote no table for it.
+
+### The detector
+
+Two halves, both off the DDL. A **subtype set** is three or more capture tables sharing a group of two
+or more attribute names, where an attribute is a column not in that table's own primary key and not
+provenance. A **confirmed omission** is a subtype set that some view `UNION`s three or more members
+of. `investigation-2026-08-27/tools/supertype_scan.py` is the implementation.
+
+The key-versus-value split has to come from each table's own primary key and not from a list of
+key-looking names. The first version of this scan excluded `class_name` globally, because it is the
+key of `jvm_class`, and missed the largest subtype set in the schema for that reason alone. A name is
+a key in one family and a value in another.
+
+### What it finds on today's schema
+
+[cols="4,1,1,4"]
+|===
+| the fact nobody wrote a table for | subtypes | union sites | shared attributes
+
+| a directive site that names a Java method | 10 | 6 | `class_name`, `method`
+| a written table-or-routine reference | 6 | 4 | `table_ref` and its four split and folded halves
+| an argMapping pair | 8 | 1 | `argument_path`, `param_name`
+| a declared type reference | 3 | 2 | `referenced_class`, `variance`
+|===
+
+Two further sets share an attribute group that nothing unions yet, which is the same defect with no
+reader paying for it: a GraphQL type expression across `graphql_field`, `graphql_argument` and
+`graphql_directive_argument`, sharing all eight of `type_sdl`, `named_type`, `non_null`, `is_list`,
+`item_non_null`, `default_value_sdl`, `description` and `ordinal`; and a described ordinal member
+across three.
+
+**The first row is what this section adds.** Ten directive tables carry `class_name` and `method`,
+because ten directives can name a Java method, and no relation says which site declares which method.
+Six views reconstruct it. The widest is `intent_argmapping_bound_parameter_type`, whose six
+`UNION ALL` arms are one query written six times: take an argMapping pair, join the directive table
+that owns the site, project `class_name` and `method`. The arms differ only in which table is joined
+and which `site` literal is filtered on.
+
+**Two things section 3 got wrong by looking at cost.** It named one reconstruction of the
+table-or-routine reference and there are four, so a fix that repoints `intent_spelled_table_live`
+alone leaves three standing. And it never reached the declared type reference at all, because that one
+is cheap on this consumer's schema and a hunt driven by wall clock stops when the clock stops.
+
+**And this is the mechanism connecting the modelling defect to section 3's plan sizes.** H2 expands a
+shared subtree once per path through the dependency graph, so each independent reconstruction of one
+missing supertype is expanded independently at every reader above it. That is why the symptom is plan
+expansion rather than slow scans, and why the fix is a table rather than an index.
+
+### What the detector does not settle
+
+A shared attribute group is a candidate and not a verdict. Four `sql_*` tables share `table_schema`,
+`table_name` and `column_name` and are not subtypes of anything: they reference a column rather than
+being kinds of one. The union half separates the two, a reader wanting a supertype unioning where a
+reader wanting a reference joins. Any gate built on this needs a written exemption list for that
+reason, and for the two sets being left alone deliberately, which is the point rather than a weakness:
+it turns adding the eleventh sibling into a decision somebody records.
