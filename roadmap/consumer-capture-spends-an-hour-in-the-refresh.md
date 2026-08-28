@@ -1,7 +1,7 @@
 ---
 id: R856
 title: "A consumer-schema capture spends over an hour inside the materialization refresh"
-status: Ready
+status: Spec
 bucket: bug
 priority: 1
 theme: model-cleanup
@@ -17,21 +17,102 @@ hour inside the materialization refresh, and no capture has been observed to fin
 everyone kills them, and `graphitron:dev` never binds its language server or MCP ports at all,
 because the bind sits behind the initial run.
 
-Whether this terminates at all is not established. The recursive terms carry path guards, which is a
-structural argument that the walk is bounded rather than infinite, and it is the only argument there
-is: no completion has ever been observed on a DDL carrying the two suspect registrations. Treat it as
-combinatorial blowup of unknown magnitude rather than as either a deadlock or a known-finite wait,
-and be careful about the word "hang", which invites a deadlock hunt this evidence does not support.
+**Termination is now settled, and it is settled the way this section hoped rather than feared.** When
+this item was filed no completion had ever been observed, and the only argument that the walk was
+bounded rather than infinite was a structural one, the recursive terms carrying path guards. A
+completion has since been observed and measured: R867 records one capture of this schema, taken
+2026-08-27 against a DDL that predates this item's two registrations, whose refresh cost four hours
+and nineteen minutes. So this is a cost and not a deadlock, the caution against the word "hang" was
+the right caution, and "no capture finishes" and "nobody waits four hours" turn out to be different
+claims. Everything below that reasons from an unobserved completion is superseded by that figure, and
+the two places it mattered say so where they stand: the population fact, and the price list's
+inference about the tail.
+
+The cost is still the bug. Four hours is not a wait anybody takes, so a developer on this schema still
+has no working tooling, and `graphitron:dev` still never reaches its binds in any run anybody has sat
+through.
+
+## The second reopen, and the one decision this gate is asked for
+
+Round 3 reviewed the delivered registrations at the Done gate, found the code sound against every
+obligation the plan set, and refused to approve on a narrower ground: this item's body names its own
+proof as a capture of the consumer schema that completes, that capture had not been taken, and the
+paragraph licensing the registrations to land ahead of it was written by the implementer into the same
+commit that landed them. The reviewer named two remedies and refused to pick between them, correctly,
+because one of them is a scope change and a Done gate is not where a scope change is approved. They
+were: (a) take the capture, or (b) reopen to Spec, state that the two registrations are this item's
+whole deliverable, carry the argument for that past a reviewer who can refuse it, and file the
+consumer-scale verification as an item that survives this file's deletion.
+
+**This reopen takes branch (b), and the whole of what this gate is asked to approve is that scope
+re-cut.** The two registrations are on the tree, priced one at a time, and nothing about them is
+reopened here. What is asked is whether this item is finished without the consumer-scale capture, on
+the argument below, with the capture filed as R875. A reviewer who thinks it is not can refuse this
+and the item goes back to waiting on branch (a).
+
+Three things carry the argument, and only the first was available when round 1 chose the other branch.
+
+**The capture is no longer this item's discriminator, because it has been taken and it answered a
+different question.** Round 1's finding and round 3's both rest on step 1 being a decision rule: a
+completion would drop this item to nothing, a non-completion would name the guilty registration.
+R867 has since taken a capture of this schema and it completed, in four hours and nineteen minutes of
+refresh. So the rule's first branch has fired, and it did not drop this item to nothing, because what
+it revealed is a second and independent defect: 69-fold on the sixteen refresh positions R867 priced,
+from a cold capture planning with no statistics on the registered targets it reads, on three positions
+disjoint from this item's pair. A decision rule whose outcome space was "the pair is the fix" or "the
+pair is not the fix" met a third outcome, which is that the register has two costs of different
+mechanisms and this item localised one of them.
+
+**The measurement that is still owed has moved into a regime that does not exist yet.** R867's own
+ordering argument, which passed its Spec gate, is that every optimisation decision the fact model has
+taken was measured against a settled store while the capture refresh runs against an unanalysed one,
+so R867 goes first and every subsequent measurement of the register is taken in the regime the build
+actually runs in. R867 says this of this item by name: its remaining verification against a
+consumer-size schema should be re-taken once that has landed rather than before. So the capture this
+item owes is not merely unpaid, it is a measurement that would have to be re-taken after the next item
+lands. That is a reason to file it behind R867 rather than to hold a priority-1 bug open in front of
+it.
+
+**And the two registrations stand on evidence that does not depend on the capture either way.** The
+mechanism is measured directly rather than read off a plan: driving *n* rows through a correlated term
+over the unregistered view is linear in *n* at one whole evaluation of the view per row, and flat over
+a table. Every reader of both new targets improved and none got worse, which is the claim a
+registration makes and the gate `DerivedReadCostTest` holds; four of that gate's recorded regressions
+left with the change and none arrived. Both index decisions were measured and argued at their own
+sites. If R875's capture comes back saying the pair was too small a lever, that is a finding about
+what remains and not a retraction of these two registrations.
+
+What the re-cut costs is stated plainly rather than argued away: nobody knows what these two
+registrations are worth on the schema they were cut for, and this item ships without knowing. R875 is
+where that is measured, it carries step 1's discharge rule and the two outcomes verbatim in substance,
+and it is filed rather than promised.
 
 ## What changes when this lands
 
-A capture of a consumer schema this size completes, so `mvn graphitron:validate` returns and
-`mvn graphitron:dev` binds its language server and MCP ports. Today neither happens on the schema
-described here, and the only honest advice anyone can give a developer on it is that the schema
-cannot be captured at all. Nothing about what the store answers changes: the same relations, the
-same rows, under the same names every reader already spells.
+**On the schema anybody can measure, the two statements that dominate the materialization refresh get
+about thirty times cheaper, and nothing about what the store answers changes:** the same relations,
+the same rows, under the same names every reader already spells. On a store captured from the
+`graphitron-sakila-example` schema, `intent_mutation_payload_column_live` goes from about 851 ms to
+about 27 and `intent_mutation_payload_refusal_live` from about 69 ms to about 10, against a combined
+refresh of about 67 ms per graph. Every other reader of the two new targets improves too, and the
+read-cost gate lost four recorded regressions and gained none.
 
-One identification stood between here and that: which statement of the refresh spends the time, and
+**What that is expected to buy on a large consumer schema, and what nobody has confirmed.** The
+mechanism removed is a whole evaluation of an unregistered view per driving row of a correlated term,
+and both of its factors grow with the schema: the driving population grows with the mutation payload
+surface, and the per-evaluation cost grows with the input-field decode population, which nothing in
+the statement can restrict. So the saving is expected to be larger at consumer scale than the figures
+above, not smaller. It is not measured there, the fixture holding the mutation payload surface fixed
+at three, and this item states the mechanism rather than a curve. R875 is the measurement.
+
+**What does not change here, and used to be this item's headline.** A capture of the consumer schema
+still costs hours, and the largest measured share of that is a defect this item does not touch: R867's
+cold-planning penalty, 69-fold on the refresh positions it priced. So `mvn graphitron:validate` on
+that schema does not become usable when this lands. Two items make that claim between them, R867 for
+the cold penalty and R875 for what remains after both.
+
+**How the item reached that shape, kept because it is the reasoning the sections below are written
+in.** One identification stood between here and a fix: which statement of the refresh spends the time, and
 why the same statement is cheap when it is measured after a capture and not while one runs. Two arms
 were standing. Either the refresh's statements are planned differently inside a cold capture than
 they are anywhere a measurement has ever been taken, in which case the fix is capture's transaction
@@ -46,10 +127,11 @@ correlated subquery, the per-row cost is one whole evaluation of that view, and 
 for the one name removes it. The first arm was tested in the form the plan specified and came back
 with a ratio of 0.82 against it.
 
-So the reopen. What the Spec gate was previously asked to approve was the decision rule and the
-first arm's design; the decision rule has now returned a verdict and the first arm is not it. What
-this gate is asked to approve instead is smaller and is a design nobody has signed off on yet: two
-registrations, which relation each one is, and the order they land in. The first arm's design is
+So the first reopen, which is a different one from the reopen at the top of this file and is recorded
+here in the past tense. What the Spec gate had originally been asked to approve was the decision rule
+and the first arm's design; the decision rule returned a verdict and the first arm was not it. What
+that gate was asked to approve instead was two registrations, which relation each one is, and the
+order they land in, and it approved them at round 3 of that pass. The first arm's design is
 retained below as a recorded dead end rather than as work, because the item is priority 1 and a
 future reader tempted by the transaction boundary should meet the measurement against it rather than
 the argument for it.
@@ -125,12 +207,24 @@ Positions 1 to 14 total 199 seconds and are exactly the set of registrations the
 holds, so nothing ahead of the tail is unmeasured and nothing is argued cheap from its shape. The
 tempting conclusion is that a run still going at 80 minutes must be at position 15 or 16.
 
-The tail is still unmeasured *on this schema*, and the two rows say so rather than saying nothing:
-no populated consumer store exists at 16 registrations for them to be timed against, which is the
-population fact below. What has changed since this table was written is that both are now measured on
-the fixture, where position 16 is the most expensive statement in the whole refresh by a factor of
-fifty over its neighbours. That figure lives in the measurement section rather than in this table,
-which is a consumer-schema price list and must not be read as carrying a fixture number in one row.
+The tail is still unmeasured *on this schema*, and the two rows say so rather than saying nothing.
+When this table was written the reason was that no populated consumer store existed at 16
+registrations for them to be timed against, which is the population fact below. What has changed since
+is that both are now measured on the fixture, where position 16 is the most expensive statement in the
+whole refresh by a factor of fifty over its neighbours. That figure lives in the measurement section
+rather than in this table, which is a consumer-schema price list and must not be read as carrying a
+fixture number in one row.
+
+**A later consumer store exists and its tail is unmeasured for a different reason, which is worth
+recording because it is the sharpest thing anybody has on these two rows.** R867's 2026-08-27 capture
+of this schema completed and was priced position by position, on a DDL later than this table's and
+still earlier than this item's two registrations. It priced positions 1 to 16 of that store at 6293
+seconds, and its whole refresh took four hours and nineteen minutes. Subtracting the one from the other
+leaves the positions past 16 carrying most of that refresh, and this item's two suspects are among
+them. That subtraction is arithmetic across two of R867's own figures rather than a measurement
+anybody took, so it belongs here as a reason to take the measurement R875 asks for and not as a
+result. It is also not a figure for these two rows: R867's store has a different register and a
+different order, and a position is comparable between two orders only through the relation it names.
 
 **That inference does not carry on its own, because of a flaw in the comparison.** The 199 seconds
 were measured post-commit, against a settled store, on connections that wrote nothing. The 63 and 80
@@ -140,9 +234,27 @@ refresh, and an in-transaction refresh may cost more than the same relations cos
 afterwards. So read the table as a price list. It says which relations are expensive when evaluated
 against a settled store, and it is not by itself a statement about where an hour goes.
 
-## The population fact, which does carry
+## The population fact, which carried the localisation and is now half superseded
 
-The localisation rests on this instead, and it needs no cross-quantity comparison at all.
+Read this section knowing what happened to it. Its evidence is a survey rather than a duration, which
+is what made it the strongest thing this item had, and its conclusion was drawn from an absence: no
+store at the current registration count had ever been captured into, so captures had stopped
+finishing. R867's 2026-08-27 capture is the completion that absence was standing in for, and it
+changes the reading in one direction and leaves it standing in the other.
+
+**What it takes away** is "captures stopped finishing". They did not. A capture of this schema at a
+DDL past this section's cut completed, in four hours and nineteen minutes of refresh. The survey found
+what it found because everybody kills a four-hour run, and a killed capture commits nothing, which the
+section on why killing it is not free explains at length. So the fifteen empty stores are fifteen kills
+rather than fifteen non-terminations, and this section's own instrument was blind to the difference.
+
+**What it leaves standing** is the before-and-after itself, weakened from a proof to a coincidence
+worth keeping. Two tail registrations appeared, nineteen minutes later the last capture anybody had the
+patience for stopped happening, and the two relations those registrations name are the two the fixture
+measurement independently prices as the expensive ones. Two lines of evidence still land on the same
+pair. One of them is now an argument about how long people wait rather than about what terminates.
+
+The section as it stood:
 
 A survey of all fifteen stores this schema has left on disk finds that every store at 16 or 20
 registrations holds zero graphs and zero fields. Not one has ever been captured into. The only
@@ -619,11 +731,14 @@ full-size file holding no rows, and the next run starts as cold as the last. One
 was 124 MB and held 67 rows. So every kill guarantees the next run pays from the beginning again, and
 a person hitting this repeatedly is not making the situation worse only by luck.
 
-The tempting advice that follows is "let one capture finish and the store stays warm". Do not give
-it. It is true at 14 registrations, where a completed capture is on record and a warm store does open
-in milliseconds afterwards, and it is unproven at 16 or more, where no capture has ever finished and
-nobody knows what waiting would cost. Advising a developer to wait out an unbounded run is worse than
-telling them the truth, which is that there is currently no way to capture this schema.
+The tempting advice that follows is "let one capture finish and the store stays warm", and it has gone
+from unproven to priced rather than from unproven to true. When this section was written no capture at
+16 registrations or more had ever finished, so the advice was an invitation to wait out a run of
+unknown length. R867's 2026-08-27 capture put a number on it: four hours and nineteen minutes of
+refresh, once, after which a warm store opens as fast as it does at 14 registrations. So the advice is
+now sayable and is still not worth giving as advice. A four-hour wait on a first checkout, repeated
+every time a DDL change moves the store to a fresh compatibility-stamped directory, is not a working
+tool; it is a number to quote when somebody asks why their build has not returned.
 
 ## The structural candidate, which the measurement confirmed
 
@@ -801,78 +916,56 @@ term the consumer schema grows.
 
 Numbered because each step's result decides the next and the intermediate states are observable.
 
-**Step 2 has run and its outcome is recorded above. Step 1 has not.** Step 2 came back with an
-agreement on the two suspects, which is what decides the branch: it is 3b and 3a is set down. Read
-that as the narrow claim it is. The same step run as a plan pair over all twenty registrations rather
-than as a timing pair over two came back with a disagreement on seven of them, and "The first arm
-measured over all twenty registrations" above carries it. Nothing in that moves the branch, the
-re-evaluation mechanism being an order of magnitude larger, and it is recorded here rather than only
-there so that an implementer reading this preamble does not meet the wider result later as a
-contradiction. Step 1 is a consumer-schema capture, it is still
-owed, and the sequence below pays it where an earlier draft of this preamble claimed the debt and then
-skipped it. The step list further down is kept in its original order because it is the record of what
-was decided when; the sequence for the work that remains is:
+**Read the numbered steps below as a record and this preamble as the state.** Step 2 ran, step 3b is
+the branch it picked, and steps 3 and 4 of the sequence below have landed. Step 1 is the
+consumer-schema capture and it has moved to R875, for the reasons the scope section at the top of this
+file gives; every sentence below that treats step 1 as this item's own work or its own proof is
+superseded by that section and left in place because it is the reasoning R875 inherits.
+
+Step 2's own outcome is worth restating once, because two measurements of it exist and a reader meeting
+the second one later has taken it for a contradiction before. Run as a timing pair over the two
+suspects it came back with an agreement, which is what picked 3b and set 3a down. Run as a plan pair
+over the whole register it came back with a disagreement on seven of twenty, which does not move the
+branch, the re-evaluation mechanism being an order of magnitude larger, and which R867 now carries and
+has since re-measured at consumer scale at 69-fold. Both readings stand and "The first arm measured
+over all twenty registrations" below reconciles them.
+
+The sequence as it was approved, with what became of each item:
 
 1. *Spent.* This was "land the sibling logging item, so the next real capture reports which
-   registration it entered". R855 is Done and the instrument is in the tree, so the work starts at
-   item 2.
-2. **Step 1 on the consumer schema, against the DDL the tree ships, before either registration is
-   written.** Step 1's own text stands as written, "Nothing below is chosen before this step reports"
-   included, and the paragraph added under that step says what "reports" means on a run that does not
-   complete.
-3. Register `intent_node_id_decode_column`, the deeper candidate, with the index its probing reader
-   dictates, and re-price both suspects against that declared shape rather than against the snapshot
-   control's. This is step 3b with the localisation already done.
-4. Register `intent_input_field_carrier_role`, on the same terms about its index, if the first
-   registration leaves either suspect
-   expensive. Take these one at a time rather than together, so each `reason` row carries the
-   arithmetic of what its own registration bought, and so the second is landed on evidence rather
-   than on the pair having been proposed together.
-5. Step 1 again against the fix, which is step 4 below and is still the proof of this item.
-6. Step 5 below, unchanged.
+   registration it entered". R855 is Done and the instrument is in the tree.
+2. *Moved to R875.* This was step 1 on the consumer schema, against the DDL the tree ships, before
+   either registration is written. It did not happen in that position; the scope section at the top of
+   this file is where that is accounted for, and R875 is where the measurement lives.
+3. *Landed.* Register `intent_node_id_decode_column`, the deeper candidate, with the index its probing
+   reader dictates, and re-price both suspects against that declared shape rather than against the
+   snapshot control's. "What the first registration bought" below is its measurement.
+4. *Landed.* Register `intent_input_field_carrier_role`, on the same terms about its index, priced on
+   its own rather than on the pair's figures. "What the second registration bought" below is its
+   measurement, and the order the two were taken in is what makes either number mean anything.
+5. *Moved to R875.* Step 1 again against the fix.
+6. Step 5 below, which is what the repo keeps, and is discharged: see Tests.
 
-**Where the work stands, and the one item of it nobody in this repository can do.** Items 3 and 4 have
-landed, in that order and priced one at a time, and the two sections below carry their measurements.
-Items 2 and 5 are both step 1, and step 1 needs the machine that holds the consumer schema; no session
-working from this repository alone can take it, which is why step 1's own text calls it a step rather
-than a test. So item 2 is owed and unpaid, and this is said plainly rather than left to be inferred
-from a silence: both registrations landed without anybody knowing whether the failure still reproduces
-on the DDL the tree ships.
+**Where the work stands after the second reopen.** Items 3 and 4 have landed, in that order and priced
+one at a time, and the two sections below carry their measurements. That is the whole of this item's
+delivery, and the section at the top of this file is where the scope re-cut making it so is argued.
+Items 2 and 5 are both step 1, both need the machine that holds the consumer schema, and both have
+moved to R875, which carries step 1's instrument, its discharge rule and its two outcomes. Nothing
+below is work under this item any more; the numbered steps are the record of what was decided when.
 
-What licenses that ordering is narrower than the decision rule item 2 was written to be, and it is
-worth stating as the exception it is rather than as a reading of the rule. Both registrations are
-measured on their own figures; every reader of the first improves and none is worse; the register's
-own gates admit both, and the read-cost gate did more than admit them, four of its recorded
-regressions leaving and none arriving. If the capture item 2 asks for turns out to complete, neither
-registration becomes wrong: they stand as improvements to the register, argued in their own `reason`
-rows on their own numbers, and this item's remaining work is step 5 alone, which is the outcome that
-branch already names. What the ordering costs is the thing item 2 was there to buy, and it is a real
-cost: nobody yet knows whether these two registrations are the fix for the hour or an improvement
-that leaves it standing. Only step 1 answers that, and it is the next thing anybody should do with
-this item.
+The ordering that landed was not the ordering the Ready gate approved, and the paragraph that used to
+license it here was the implementer's own exception written into the commit that took it. That
+paragraph is gone rather than softened, because a self-authorized exception to a gated decision rule is
+not something a plan body should carry at any strength. The argument it was making is real and now sits
+where a reviewer can refuse it, in "The second reopen" at the top of this file, alongside the two
+things that were not available when it was written: the consumer capture has since been taken and
+returned a third outcome the decision rule had no branch for, and R867's approved ordering puts every
+further measurement of the register behind its own landing.
 
-**Why the capture keeps its place ahead of the registrations, rather than the fixture prices standing
-in for it.** The prices establish that those two refresh statements are expensive and that the
-mechanism is a per-driving-row re-evaluation. What no fixture figure can say is whether a capture of
-the consumer schema still fails on the DDL the tree currently ships, and two facts recorded above make
-that a live question rather than a formality: `intent_mutation_write_payload`, the driving relation of
-both suspects, was an inlined view on the slow store and is a table now, so the multiplier's own input
-has moved in the direction of cheaper by an unmeasured amount; and R848 is open on whether the
-register should grow at all, so a twenty-first and twenty-second registration have to be worth their
-place rather than merely be an improvement on something. Landing two registrations without knowing
-whether the failure still reproduces is the one thing the evidence here does not support.
-
-So step 1 is a decision rule and not a formality, and it has two outcomes:
-
-- **The capture completes.** Then this item's remaining work is step 5 alone, its priority drops, and
-  neither registration lands under it. The fixture prices become evidence for whatever item argues the
-  register's shape, R848 or R849, rather than a fix here.
-- **The capture does not complete.** Then the logging names the registration it went into, that name
-  is consumer-scale confirmation of the fixture identification, and steps 3 onward are the fix.
-
-Do not read the ordering as licence to skip the re-pricing between the two registrations. The measured
-81× is the pair's, the 15× is the carrier view's alone, and no figure yet isolates what the deeper
-registration buys on its own.
+Do not read any of this as licence to skip the re-pricing between the two registrations, which is the
+one part of the delivered sequence that carried its own reason. The measured 81× is the pair's and the
+15× is the carrier view's alone, and the two measurement sections below exist because a figure that
+does not say which registration bought it is a figure nobody can act on later.
 
 **1. One instrumented capture of that schema on the current DDL.** Either instrument names the
 statement, and the point of naming one here is that neither is a guess about a plan:
@@ -894,9 +987,19 @@ statement, and the point of naming one here is that neither is a guess about a p
 Either way, pin the store with `-Dgraphitron.store.directory` so the file is findable afterwards, and
 record either a completion with a duration or a named statement.
 
+*This step is R875, and R875 carries both bullets above and the paragraph below. What follows is the
+step as it was written when it sat ahead of the fix.*
+
 Nothing below is chosen before this step reports, and the outcome to prepare for is that it completes:
 the driving relation of both suspects is a table now and was an inlined view then. If it completes,
 this item's remaining work is step 5 alone and its priority drops.
+
+*The outcome it told a reader to prepare for is the one that happened, and one thing about it was not
+anticipated anywhere in this item. A capture of this schema completed, and what it revealed was not a
+verdict on this pair but a second defect of a different mechanism, now R867, which no branch of this
+decision rule had a place for. That is the substance of why the step moved rather than being deleted:
+the question it asks is still the right question, and the answer it gets is now a measurement of what
+two defects leave rather than of what one lever bought.*
 
 **What "reports" means, since this step now sits ahead of the fix and must not become an unbounded
 wait on a priority-1 bug.** It does not mean a completion. It does mean `mvn -X`, repeated here
@@ -1179,9 +1282,13 @@ unpriced where the two registrations here are priced, and it does not remove the
 per-driving-row aggregate either. It belongs to whatever item argues the register's shape rather than
 to this fix.
 
-**4. Re-run step 1 against whatever the fix is.** The proof of this item is a capture of that schema
-that completes. No fixture-scale figure substitutes for it, and the ratchet in step 5 is not that
-proof either.
+**4. Re-run step 1 against whatever the fix is.** *Moved to R875.* As written, this step said the proof
+of this item is a capture of that schema that completes, that no fixture-scale figure substitutes for
+it, and that the ratchet in step 5 is not that proof either. All three sentences are true of the
+question and none of them is any longer true of this item, which is exactly the change the scope
+section at the top of this file asks a reviewer to approve rather than assume. What this item is
+finished on instead is stated there and in "What changes when this lands": the two registrations, their
+fixture prices, and the three gates that hold them. R875 is the capture.
 
 **5. What the repo keeps afterwards.** See Tests.
 
@@ -1234,14 +1341,22 @@ Three, and which tier each sits in follows from what it can hold at fixture scal
   `DerivedReadCostTest` refuses a registration that costs another reader more than it saves. What the
   implementer writes is a measurement and two comments, not a test. The equality-pinned constants in
   step 3b's last paragraph move in the same commit for the same reason.
-- **The consumer-scale result stays a figure**, in this item while it lives and in the registration's
-  `reason` or the changelog afterwards. Nothing in this repo captures a schema of that size, and
-  building a fixture that did would be a wall-clock gate, which the build-guardrail item is the place
-  for.
+- **The consumer-scale result stays a figure**, and it now lives in R875 rather than here, for the one
+  reason that makes filing it necessary: this file dies at Done and a figure nobody has taken yet
+  cannot be recorded in it. Nothing in this repo captures a schema of that size, and building a fixture
+  that did would be a wall-clock gate, which the build-guardrail item is the place for. When the figure
+  exists it lands in the two registrations' `reason` rows or in `roadmap/changelog.md`, which is where
+  R875 sends it.
 
-If step 1 reports a completing capture, the deliverable is the smallest thing that would have told us
-so in the first place: the sibling logging item, which is its own item, plus a `roadmap/changelog.md`
-entry recording that the failure was on a DDL two generations back and which registrations closed it.
+**So what demonstrates this item is complete, stated as one answer rather than left across five
+bullets.** Three things, all in the tree and all green on the delivered head. The two measurement
+sections above give each registration's own arithmetic, taken one at a time, with the refresh each adds
+priced as a cost. `DerivedReadCostTest` asserts directionally that no reader of either new target got
+worse, which is the per-driving-row claim's assertable form and is where that Tests bullet asked for it
+to go. And the three gates that govern a registration admit both: the index gate and its
+reader-naming sibling on the shapes declared and declined, and the read-cost gate, which lost four
+recorded regressions with the change and gained none. What none of that demonstrates is the outcome the
+title of this file describes, and R875 is the item that will.
 
 ## Roadmap entries
 
@@ -1252,17 +1367,38 @@ is what let the measurement land here and pick a branch without a second filing.
 reopen, which is the mechanism the plan named for exactly this case, so the trade came out roughly
 even rather than badly.
 
-Three entries, all from the measurement rather than from the fix and none blocking. Two are filed and
-the third is still expected:
+Four entries. Three are from the measurement rather than from the fix and none of those blocks; the
+fourth carries this item's own unpaid proof and is what the second reopen turns on.
+
+- **R875 carries the consumer-scale capture past this file's deletion**, and it is the entry the scope
+  re-cut at the top of this file stands or falls on. It is not a spin-off from the measurement: it is
+  step 1, the item's own stated proof, filed as an item because this file dies at Done and the machine
+  that can take the measurement is not one any session here reaches. It carries what would otherwise be
+  lost with the file, and the loss was concrete rather than ceremonial: the discharge rule (`mvn -X` for
+  the debug-tier registration line, `-Dgraphitron.store.directory` to pin the store, and what "reports"
+  means on a run nobody watches to the end) exists nowhere else in the tree. It also carries a pickup
+  gate this item did not have when step 1 was written, that the measurement waits behind R867, on
+  R867's own approved argument that a figure taken before its split lands is a figure taken in the wrong
+  regime.
 
 - **R867 carries the first arm's measurement past this file's deletion**, and it is filed rather than
   left here for one reason: what "The first arm measured over all twenty registrations" establishes is
   a cost that grows with the schema, and this item's body dies at Done. The test and the fact model
   page keep the finding, and R867 keeps the prospective work: the cheap half refuted, the expensive
   half priced at exactly the settled store's plans, and the three invariants a transaction split
-  touches. It opens by saying it should not be picked up unless the registrations have landed and a
-  consumer-scale capture still costs materially more than the same refresh warm, so it cannot compete
-  with the branch this item chose.
+  touches.
+
+  **It has since reversed its own ordering and this bullet's last sentence is why the reversal
+  matters.** When it was filed it gated itself behind three conditions, the third being that this
+  item's registrations land first, so it could not compete with the branch chosen here. It has dropped
+  all three: two were answered by a real-schema figure it has since taken, 69-fold on the sixteen
+  refresh positions it priced against a store captured from the sis consumer project, and the third is
+  the ordering it reversed. The argument is that every optimisation the fact model has taken, this
+  item's two registrations included, was measured against a settled store while the capture refresh
+  plans against an unanalysed one, so moving that regime is the point rather than the hazard and every
+  later measurement of the register should be taken after it. That is not a competing claim about this
+  item's mechanism, which no statistics inform and which R867 says so of by name. It is the reason
+  R875's measurement carries a pickup gate.
 
 - **`report-inline-multiplicity` cannot see the two things that made this expensive**, and R871
   carries it, filed fresh. It counts references to relations the DDL declares, so a local CTE name is
@@ -1326,6 +1462,17 @@ gate having already run without reaching the reporter. R857 has a dev start
 evaluating the register twice, which doubles whatever a refresh costs on the surface a person waits
 on, and its second pass runs on a settled store with statistics, so it is not the pass this item is
 about.
+
+Three items now carry between them what this file used to claim alone, and the split is worth reading
+once because none of the three is a subset of another. **R867** is the second defect at the same site:
+a cold capture's refresh plans with no statistics on the registered targets it reads, measured at
+69-fold on the prefix of a real consumer store it priced, and it goes first by its own approved
+ordering. **R875** is this item's own proof, the consumer-scale capture, waiting behind R867 and
+carrying step 1's discharge rule. **R865** would let a capture skip the refresh entirely, which is the
+cheapest route to a populated consumer store anybody can time relations against, and its absence is
+why every consumer figure in this file was read off stores that a failed run happened to leave behind.
+R841 asks the fixture-versus-real question about the same two statements from the refresh side, and
+R875's run supplies its first step.
 
 ## Reviewer findings
 
@@ -1686,6 +1833,55 @@ reviewer who can refuse it, and file the consumer-scale verification as an item 
 file's deletion. What a reviewer cannot do is take branch (b) unilaterally at the Done gate, which is
 what approval here would amount to.
 
+**Author note.** Took branch (b), and the item is reopened `Ready → Spec` so a reviewer can refuse it.
+All three of its obligations are discharged. The scope re-cut is stated in a new section, "The second
+reopen, and the one decision this gate is asked for", which opens the file's argumentative sections
+rather than sitting where a reader would find it late. The consumer-scale verification is filed as
+R875, `roadmap/payload-refresh-registrations-unverified-at-consumer-scale.md`, and it is filed rather
+than promised: it carries step 1's two instruments, the discharge rule the finding named as the
+concrete deletion cost (`mvn -X`, `-Dgraphitron.store.directory`, and what "reports" means without a
+completion), the two outcomes as a decision rule, and a pickup gate. And "What changes when this lands"
+is rewritten to the delivered scope, because the old text promised a completing consumer capture and
+that promise is what branch (b) withdraws.
+
+Branch (a) was not takeable here and that is not the reason it was declined, so both reasons are stated
+rather than the convenient one. Two things landed between the round 3 review and this revision, neither
+available when round 1 chose the capture-first branch.
+
+The capture has been taken. R867 has since captured this schema, on 2026-08-27, against a DDL earlier
+than the two registrations, and it completed: four hours and nineteen minutes of refresh. So the
+decision rule fired, and it returned a third outcome neither of its two branches described. What the run
+found was a second defect of a different mechanism, a cold refresh planning with no statistics on the
+registered targets it reads, priced at 69-fold on the sixteen positions it measured, on three positions
+disjoint from this item's pair. "The pair is the fix" and "the pair is not the fix" were the wrong
+alternatives; the register has two costs and this item localised one. Four places in the body that
+reasoned from an unobserved completion are corrected in place rather than deleted, each saying what the
+completion took away and what it left: the opening's termination argument, the price list's inference
+about the tail, the population fact, and the advice about waiting a capture out.
+
+And the measurement that is still owed has moved into a regime that does not exist yet. R867 dropped
+the three conditions that used to order it behind this item and now goes first, on the argument that
+every optimisation the fact model has taken was measured against a settled store while the capture
+refresh plans against an unanalysed one. It says so of this item by name: its remaining verification
+against a consumer-size schema should be re-taken once that has landed rather than before. Paying
+branch (a) now would buy a figure that has to be re-taken, so R875 carries the pickup gate instead.
+
+Finding 2's specific charge is answered by deletion rather than by argument. The "What licenses that
+ordering" paragraph is gone from the Implementation preamble, and what replaces it says plainly that
+the delivered ordering was not the approved one and that a self-authorized exception to a gated
+decision rule does not belong in a plan body at any strength. The argument it was making now sits in the
+scope section where a reviewer can refuse it. The numbered steps are relabelled as a record: items 2
+and 5 say "moved to R875", items 3 and 4 say "landed" and name their measurement sections, and step 4's
+"the proof of this item is a capture that completes" is marked as true of the question and no longer
+true of this item, which is the sentence the whole re-cut turns on.
+
+One thing this revision adds that neither finding asked for, on the reviewer's own standard that a
+Done gate wants a named demonstration rather than a green build. The Tests section closed on five
+bullets and no answer, so it now closes on one paragraph naming what demonstrates the delivered scope:
+the two per-registration measurement sections, `DerivedReadCostTest` asserting directionally that no
+reader of either target got worse, and the three gates that admit both registrations. It also says what
+that does not demonstrate, which is the outcome this file's title describes.
+
 **Finding 2 (question 1): the delivered ordering is not the ordering the Ready gate approved, and
 the exception licensing it passed no gate.** Round 1's finding 1 withheld over exactly this fork and
 the author took the capture-first branch. The round 3 sign-off names "the pre-fix consumer capture is
@@ -1699,6 +1895,19 @@ registrations stand as register improvements whatever the capture reports, was a
 and the author chose the other branch then; taking that back mid-implementation is the gate's to
 approve, not the diff's. This finding travels with finding 1: the remedy is the same fork, pay the
 capture under branch (a) or re-approve the scope under branch (b), and either closes both.
+
+**Author note.** Accepted without qualification, and closed by the same branch (b) the note under
+finding 1 records. The one thing worth adding here, because this finding is about the plan body rather
+than about the scope: the offending paragraph is deleted rather than rewritten. Its argument was
+available at round 1, the author chose the other branch then, and a paragraph in a plan body cannot
+carry an exception a gate refused however carefully it is labelled. What stands in its place says the
+delivered ordering was not the approved one, and the argument moved to the scope section at the top of
+the file where a reviewer can refuse it. The finding's reading of round 1 is also correct on a detail
+worth conceding: the exception's argument, that the registrations stand as register improvements
+whatever the capture reports, is not what makes branch (b) defensible now. What makes it defensible is
+that the capture has since been taken and returned an outcome the rule had no branch for, and that
+R867's approved ordering has moved the regime the measurement has to be taken in. Neither was true when
+the paragraph was written.
 
 Non-blocking, no response needed:
 
