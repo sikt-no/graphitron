@@ -90,11 +90,13 @@ class GeneratorUtils {
     }
 
     /**
-     * The default source binding for a record-parent key extraction: the fetcher reads its backing
-     * object straight off {@code env.getSource()}. The arm-switch substitutes
-     * {@code success.value()} here once it has narrowed the {@code Outcome} source to
-     * {@code Success}; see
-     * {@link #buildRecordParentKeyExtraction(SourceKey, KeyLift, TableRef, GraphitronType.ResultType, CodeBlock)}.
+     * The {@code env.getSource()} source binding for the table-parent key-extraction defaults
+     * ({@link #buildKeyExtraction(SourceKey, TableRef)},
+     * {@link #buildKeyExtractionWithNullCheck(SourceKey, TableRef)}) and the two
+     * environment-reading {@link ServiceKeySource} arms. Deliberately <em>not</em> a default on
+     * {@link #buildRecordParentKeyExtraction}: a record-parent read must state its source
+     * expression, which callers obtain from a {@link ParentSourceBinding} so the narrowing
+     * prelude and the source expression cannot be minted apart.
      */
     static final CodeBlock SOURCE_FROM_ENV = CodeBlock.of("env.getSource()");
     /** {@code <outputPackage>.schema.GraphitronContext} — generated per build; see {@link no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator}. */
@@ -194,24 +196,13 @@ class GeneratorUtils {
      * <p>On the {@link KeyLift.Lifter} arm, leaf-PK and {@code @reference}-composed shapes share
      * emit logic; the path identity is carried first-class on the leaf's {@code joinPath} but not
      * consumed here.
-     */
-    static CodeBlock buildRecordParentKeyExtraction(
-            SourceKey sourceKey,
-            KeyLift lift,
-            TableRef keyOwnerTable,
-            GraphitronType.ResultType resultType) {
-        return buildRecordParentKeyExtraction(sourceKey, lift, keyOwnerTable, resultType, SOURCE_FROM_ENV);
-    }
-
-    /**
-     * Source-bound variant of
-     * {@link #buildRecordParentKeyExtraction(SourceKey, KeyLift, TableRef, GraphitronType.ResultType)}.
-     * {@code sourceExpr} is the Java expression the backing object is read from before the cast:
-     * {@code env.getSource()} on the normal path, {@code success.value()} when this fetcher is an
-     * immediate child of a flipped {@code Outcome} payload and the caller has already narrowed
-     * {@code env.getSource()} to {@code Outcome.Success}. The cast and accessor logic are identical
-     * either way; only the source binding moves, so the arm-switch reuses the field's own key
-     * extraction rather than re-deriving it.
+     *
+     * <p>{@code sourceExpr} is the Java expression the backing object is read from before the
+     * cast, stated by every caller (there is deliberately no {@code env.getSource()}-defaulting
+     * overload): callers obtain it from a {@link ParentSourceBinding}, whose prelude has already
+     * narrowed {@code Outcome.Success} or guarded the null source, so the arm-switch reuses the
+     * field's own key extraction rather than re-deriving it. The cast and accessor logic are
+     * identical whatever the source binding.
      *
      * <p>{@code keyOwnerTable} is the table whose typed {@code Tables.X.COL} constants the
      * {@link KeyLift.Accessor} and single-arity {@link KeyLift.ProducedRecords} arms project the

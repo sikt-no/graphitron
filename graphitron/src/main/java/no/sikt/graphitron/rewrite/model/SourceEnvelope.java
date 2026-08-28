@@ -16,8 +16,10 @@ package no.sikt.graphitron.rewrite.model;
  * {@link ChildField.SingleRecordIdField#envelope()} and
  * {@link ChildField.RecordCompositeField#envelope()}. (Formerly
  * {@code SourceKey.Reader.SourceEnvelope}, riding on the retired {@code ResultRowWalk} reader
- * arm; the batched re-fetch path never carries it — there the generator derives the same fork
- * at the type level as {@code sourceIsOutcome}.)
+ * arm.) The batched re-fetch and polymorphic paths never carry it; there the generator derives
+ * the same fork once per type into the
+ * {@link no.sikt.graphitron.rewrite.generators.ParentSourceBinding}, this envelope's type-level
+ * twin, which every parent-reading fetcher builder consumes.
  */
 public enum SourceEnvelope {
     /** {@code env.getSource()} is the value(s) directly (DML mutation carrier). */

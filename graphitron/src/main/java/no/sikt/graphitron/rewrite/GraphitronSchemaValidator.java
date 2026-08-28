@@ -44,6 +44,7 @@ public class GraphitronSchemaValidator {
         validateLocalContextErrorsFieldGuards(schema, errors);
         validateOutcomeTypeShape(schema, errors);
         validateOutcomeChildArmSwitch(schema, errors);
+        validateWrapperArmSiblingPosture(schema, errors);
         validateContextArgumentTypeAgreement(schema, errors);
         validateSessionHandleBindings(schema, errors);
         validateTenantBindings(schema, errors);
@@ -2116,6 +2117,44 @@ public class GraphitronSchemaValidator {
                         ef.location()
                     ));
                 }
+            }
+        }
+    }
+
+    /**
+     * The posture-partition sibling of {@link #validateOutcomeChildArmSwitch}. That rule covers
+     * the {@code PropertyDataFetcher} registration-escape family; this one covers graphitron's
+     * own emit paths: a leaf declared in
+     * {@link no.sikt.graphitron.rewrite.generators.ParentSourceBinding#WRAPPER_INADMISSIBLE_LEAVES}
+     * reads its parent's backing object without the parent-source binding seam, so under the
+     * {@code Outcome} wrapper transport its read would land on the {@code Outcome} object itself
+     * ({@code ClassCastException} on every request). Rejecting the combination here turns "cannot
+     * appear under a wrapper payload" from folklore into a build-time rejection. First-bucket
+     * leaves need no rule (obtaining the binding is how their builders get a source expression at
+     * all), and {@code UnclassifiedField} stays with the registration-escape rule above.
+     */
+    private void validateWrapperArmSiblingPosture(GraphitronSchema schema, List<ValidationError> errors) {
+        for (var f : schema.fields().values()) {
+            if (!(f instanceof ChildField.ErrorsField ef)) continue;
+            if (!(ef.transport() instanceof ChildField.Transport.WrapperArm)) continue;
+            for (var sib : schema.fieldsOf(ef.parentTypeName())) {
+                if (sib == ef) continue;
+                if (sib instanceof GraphitronField.UnclassifiedField) continue;
+                if (!no.sikt.graphitron.rewrite.generators.ParentSourceBinding
+                        .WRAPPER_INADMISSIBLE_LEAVES.contains(sib.getClass())) {
+                    continue;
+                }
+                errors.add(new ValidationError(
+                    sib.qualifiedName(),
+                    Rejection.structural("Field '" + sib.qualifiedName() + "' ("
+                        + sib.getClass().getSimpleName() + ") reads its parent's backing object "
+                        + "without unwrapping the Outcome wrapper, so it cannot sit beside the "
+                        + "errors field '" + ef.qualifiedName() + "' (WrapperArm transport): at "
+                        + "run time env.getSource() is the Outcome itself and the read would "
+                        + "throw ClassCastException on every request. Move the field off the "
+                        + "errors-bearing payload, or drop the errors field from this type."),
+                    sib.location()
+                ));
             }
         }
     }

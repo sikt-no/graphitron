@@ -228,6 +228,26 @@ admissible, the guard is live and gets an execution-tier pin on a LocalContext f
 the combination is rejected upstream, the leaf's partition bucket and the validator rule
 above are the enforcer, not a javadoc sentence.
 
+## Implementation notes
+
+Two facts the design left to be established during implementation, now established:
+
+- **The LocalContext sibling is rejected upstream.** `validateLocalContextErrorsFieldGuards`
+  admits only `BatchedTableField` (record-sourced, no lookup) and
+  `SingleRecordIdFieldFromReturning` beside a LocalContext errors field; the polymorphic leaves
+  are not on that allow-list, so a LocalContext payload cannot carry a polymorphic child today.
+  Per the design's fork, the enforcer is that existing rule plus the posture partition; no
+  LocalContext execution fixture exists to pin. The direct-record arm's null-source guard still
+  lands on every binding consumer, so the parity holds structurally if the allow-list ever widens.
+- **The child `@service` leaves land in the third bucket.** `ChildField.ServiceTableField` and
+  `ChildField.ServiceRecordField` are mintable on class-backed parents but their key sources read
+  `env.getSource()` unconditionally (the same defect family this item fixes for the polymorphic
+  leaves), so beside a `WrapperArm` errors field they were a request-time `ClassCastException`.
+  Migrating them through the binding seam is out of this item's declared scope; the partition
+  declares them wrapper-inadmissible and the new sibling validator rule turns the combination
+  into a build-time rejection. Lifting that rejection by routing their key sources through the
+  seam is follow-up work for whoever needs the combination.
+
 ## Coverage
 
 Execution tier (`graphitron-sakila-example`), the tier that would have caught a CCE on

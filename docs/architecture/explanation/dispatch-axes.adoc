@@ -68,7 +68,7 @@ The four arms name how the batch key is lifted off the parent's held object, and
 
 === `SourceEnvelope`: carrier read-site fork
 
-`DIRECT` vs `OUTCOME_SUCCESS`: whether a carrier data field reads `env.getSource()` verbatim or narrows the error-channel `Outcome.Success` first. Minted once per leaf at classification from the same structural signal (an errors-shaped payload field) that gives the producer its `ErrorChannel.Mapped` channel, and carried first-class on the two envelope-forking leaves (`SingleRecordIdField`, `RecordCompositeField`). The batched re-fetch path never carries it; there the generator derives the same fork at the type level as `sourceIsOutcome`.
+`DIRECT` vs `OUTCOME_SUCCESS`: whether a carrier data field reads `env.getSource()` verbatim or narrows the error-channel `Outcome.Success` first. Minted once per leaf at classification from the same structural signal (an errors-shaped payload field) that gives the producer its `ErrorChannel.Mapped` channel, and carried first-class on the two envelope-forking leaves (`SingleRecordIdField`, `RecordCompositeField`). The batched re-fetch and polymorphic paths never carry it; there the generator derives the same fork once per type into `ParentSourceBinding` (this envelope's type-level twin, pairing the narrowing prelude with the source expression as one value), which every parent-reading fetcher builder consumes.
 
 === `Container` + `Dispatch`: DataLoader identity
 

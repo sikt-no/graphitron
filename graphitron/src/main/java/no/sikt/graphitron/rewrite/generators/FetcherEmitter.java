@@ -165,25 +165,28 @@ public final class FetcherEmitter {
      *                      {@code null} when the parent is not table-backed
      * @param resultType    the parent type's class backing, or {@code null}
      * @param outputPackage the base output package (e.g. {@code no.sikt.graphql})
-     * @param sourceIsOutcome {@code true} when this field is an immediate child of an outcome type
-     *                        flipped to the {@code Outcome} wrapper transport: its fetcher receives
-     *                        an {@code Outcome} as {@code env.getSource()}, so a data-channel
-     *                        field's read must unwrap {@code Success} first and resolve null on the
-     *                        {@code ErrorList} arm. The errors field itself is exempt (it reads
-     *                        {@code ErrorList.errors()} directly via its {@code WrapperArm}
-     *                        transport).
+     * @param parentSource  the parent-source binding minted once per type by
+     *                      {@link ParentSourceBinding#of}. On the
+     *                      {@link ParentSourceBinding.OutcomeRecord} arm this field is an immediate
+     *                      child of an outcome type flipped to the {@code Outcome} wrapper
+     *                      transport: its fetcher receives an {@code Outcome} as
+     *                      {@code env.getSource()}, so a data-channel field's read must unwrap
+     *                      {@code Success} first and resolve null on the {@code ErrorList} arm.
+     *                      The errors field itself is exempt (it reads {@code ErrorList.errors()}
+     *                      directly via its {@code WrapperArm} transport).
      */
     public static FetcherBinding bind(
             GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType,
-            String outputPackage, boolean sourceIsOutcome) {
+            String outputPackage, ParentSourceBinding parentSource) {
         // Immediate children of a flipped Outcome payload: inline-resolved data fields arm-switch
         // here; the errors field (WrapperArm transport, handled by bindRaw) and DataLoader/
         // method-backed data fields (their generated fetcher method arm-switches internally) fall
         // through. The fork is on a structural fact the model already carries (inline value vs.
         // method reference), not a parallel allow-list of variants.
-        if (sourceIsOutcome && isInlineArmSwitchedDataField(field)) {
-            return armSwitchedInlineDataFetcher(field, fetchersClass, resultType, outputPackage);
+        if (parentSource instanceof ParentSourceBinding.OutcomeRecord
+                && isInlineArmSwitchedDataField(field)) {
+            return armSwitchedInlineDataFetcher(field, fetchersClass, resultType, outputPackage, parentSource);
         }
         return bindRaw(field, fetchersClass, parentTable, resultType, outputPackage);
     }
@@ -290,19 +293,21 @@ public final class FetcherEmitter {
     /**
      * An inline-resolved data-channel child of a flipped outcome type reads off
      * {@code Success.value()} of the non-null {@code Outcome} source and resolves null on the
-     * {@code ErrorList} arm. The success-arm read is the field's <em>own</em> read, source-bound to
-     * {@code success.value()} instead of {@code env.getSource()}; record-backed accessors go via
-     * the shared {@link #recordBackedAccessorRead} (the same helper {@link #recordReadBinding}
-     * uses), so there is no parallel accessor taxonomy.
+     * {@code ErrorList} arm. Both halves come from the {@link ParentSourceBinding} producer: the
+     * prelude narrows the subject and escapes with {@code null}, and the success-arm read is the
+     * field's <em>own</em> read, source-bound to the binding's source expression instead of the
+     * subject; record-backed accessors go via the shared {@link #recordBackedAccessorRead} (the
+     * same helper {@link #recordReadBinding} uses), so there is no parallel accessor taxonomy.
      */
     private static FetcherBinding armSwitchedInlineDataFetcher(
             GraphitronField field, ClassName fetchersClass,
-            GraphitronType.ResultType resultType, String outputPackage) {
+            GraphitronType.ResultType resultType, String outputPackage,
+            ParentSourceBinding parentSource) {
         boolean envDependent = isEnvDependentAccessorRead(field);
         CodeBlock subject = envDependent ? ENV_SOURCE : CodeBlock.of("source");
         CodeBlock body = CodeBlock.builder()
-            .add("if (!($L instanceof $T<?> success)) return null;\n", subject, successClass(outputPackage))
-            .add(inlineSuccessReturn(field, resultType))
+            .add(parentSource.prelude(subject, CodeBlock.of("null")))
+            .add(inlineSuccessReturn(field, resultType, parentSource.sourceExpr(subject)))
             .build();
         return envDependent
             ? envDependent(field.name(), fetchersClass, body)
@@ -330,8 +335,9 @@ public final class FetcherEmitter {
     }
 
     /**
-     * The success-arm value expression: the field's own read, source-bound to {@code success.value()}.
-     * The read shape is an exhaustive switch over the record-read leaf's {@link ValueLocator},
+     * The success-arm value expression: the field's own read, source-bound to {@code sourceExpr}
+     * (the {@link ParentSourceBinding}'s source expression, {@code success.value()} on the outcome
+     * arm). The read shape is an exhaustive switch over the record-read leaf's {@link ValueLocator},
      * mirroring {@link #bindRaw} / {@link #recordReadBinding} so there is no parallel taxonomy:
      * a jOOQ-record column {@code get}, a class-backed accessor call, or the nesting source
      * passthrough. The parent {@code resultType} is consulted only for the cast target, per
@@ -342,28 +348,29 @@ public final class FetcherEmitter {
      * {@code get} yields {@code Object}, which no {@code encode<TypeName>} signature takes. The
      * wrapping itself is the caller's, through {@link #encodedReadReturn}.
      */
-    private static CodeBlock inlineSuccessReturn(GraphitronField field, GraphitronType.ResultType resultType) {
+    private static CodeBlock inlineSuccessReturn(
+            GraphitronField field, GraphitronType.ResultType resultType, CodeBlock sourceExpr) {
         if (field instanceof ChildField.NestingField) {
-            return CodeBlock.of("return success.value();\n");
+            return CodeBlock.of("return $L;\n", sourceExpr);
         }
         var rrf = (ChildField.RecordReadField) field;
         var encode = rrf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys e ? e : null;
         CodeBlock read = switch (rrf.locator()) {
             case ValueLocator.TypedColumn tc -> {
                 var table = ((GraphitronType.JooqTableRecordType) resultType).table();
-                yield CodeBlock.of("(($T) success.value()).get($T.$L.$L)",
-                    RECORD, table.constantsClass(), table.javaFieldName(), tc.column().javaName());
+                yield CodeBlock.of("(($T) $L).get($T.$L.$L)",
+                    RECORD, sourceExpr, table.constantsClass(), table.javaFieldName(), tc.column().javaName());
             }
             case ValueLocator.ByName bn -> encode == null
-                ? CodeBlock.of("(($T) success.value()).get($T.field($S))", RECORD, DSL, bn.sqlName())
-                : CodeBlock.of("(($T) success.value()).get($T.field($S, $T.class))",
-                    RECORD, DSL, bn.sqlName(), encodeKeyType(encode));
+                ? CodeBlock.of("(($T) $L).get($T.field($S))", RECORD, sourceExpr, DSL, bn.sqlName())
+                : CodeBlock.of("(($T) $L).get($T.field($S, $T.class))",
+                    RECORD, sourceExpr, DSL, bn.sqlName(), encodeKeyType(encode));
             case ValueLocator.JavaAccessor ja -> {
                 String javaBackingFqcn =
                     resultType instanceof GraphitronType.JavaRecordType jrt ? jrt.fqClassName()
                     : ((GraphitronType.PojoResultType.Backed) resultType).fqClassName();
                 yield recordBackedAccessorRead(
-                    ClassName.bestGuess(javaBackingFqcn), ja.accessor(), CodeBlock.of("success.value()"));
+                    ClassName.bestGuess(javaBackingFqcn), ja.accessor(), sourceExpr);
             }
             // Unreachable: isInlineArmSwitchedDataField excludes DefaultRead reads, and the
             // outcome-parent combination is rejected at validate time
@@ -376,15 +383,18 @@ public final class FetcherEmitter {
     }
 
     private static ClassName successClass(String outputPackage) {
-        return ClassName.get(outputPackage + ".schema", "Outcome").nestedClass("Success");
+        return outcomeClass(outputPackage)
+            .nestedClass(no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator.SUCCESS_CLASS);
     }
 
     private static ClassName errorListClass(String outputPackage) {
-        return ClassName.get(outputPackage + ".schema", "Outcome").nestedClass("ErrorList");
+        return outcomeClass(outputPackage)
+            .nestedClass(no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator.ERROR_LIST_CLASS);
     }
 
     private static ClassName outcomeClass(String outputPackage) {
-        return ClassName.get(outputPackage + ".schema", "Outcome");
+        return ClassName.get(outputPackage + ".schema",
+            no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator.CLASS_NAME);
     }
 
     /**

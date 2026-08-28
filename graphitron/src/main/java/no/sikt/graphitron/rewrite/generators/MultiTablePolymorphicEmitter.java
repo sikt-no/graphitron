@@ -142,6 +142,8 @@ public final class MultiTablePolymorphicEmitter {
     private static final String CONNECTION_PAGES_LOCAL = "pagesTable";
     /** Directive context surfaced in {@link ValuesJoinRowBuilder}'s arity-cap error messages. */
     private static final String DIRECTIVE_CONTEXT = "@interface participant PK";
+    /** The env-dependent subject every fetcher here hands the {@link ParentSourceBinding}. */
+    private static final CodeBlock ENV_SOURCE = CodeBlock.of("env.getSource()");
 
     private MultiTablePolymorphicEmitter() {}
 
@@ -542,6 +544,7 @@ public final class MultiTablePolymorphicEmitter {
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
             boolean isList,
+            ParentSourceBinding parentSource,
             String outputPackage) {
         var tableBoundParticipants = participants.stream()
             .filter(p -> p instanceof ParticipantRef.TableBound)
@@ -549,7 +552,8 @@ public final class MultiTablePolymorphicEmitter {
             .toList();
         var methods = new ArrayList<MethodSpec>();
         methods.add(buildScalarPerParentFetcher(ctx, fieldName, tableBoundParticipants,
-            participantJoinPaths, parentKeyLift, sourceKey, parentKeyOwnerTable, isList, outputPackage));
+            participantJoinPaths, parentKeyLift, sourceKey, parentKeyOwnerTable, isList,
+            parentSource, outputPackage));
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, false,
                 outputPackage));
@@ -577,6 +581,7 @@ public final class MultiTablePolymorphicEmitter {
             KeyLift parentKeyLift,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
+            ParentSourceBinding parentSource,
             String outputPackage) {
         var tableBoundParticipants = participants.stream()
             .filter(p -> p instanceof ParticipantRef.TableBound)
@@ -584,7 +589,7 @@ public final class MultiTablePolymorphicEmitter {
             .toList();
         var methods = new ArrayList<MethodSpec>();
         methods.add(buildBatchedListFetcher(ctx, batchKey, rowsMethodName,
-            parentKeyLift, parentKeyOwnerTable, parentResultType, outputPackage));
+            parentKeyLift, parentKeyOwnerTable, parentResultType, parentSource, outputPackage));
         methods.add(buildBatchedListRowsMethod(ctx, batchKey.name(), rowsMethodName,
             tableBoundParticipants, participantJoinPaths, batchKey.sourceKey(),
             parentKeyOwnerTable, outputPackage));
@@ -661,6 +666,7 @@ public final class MultiTablePolymorphicEmitter {
             KeyLift parentKeyLift,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
+            ParentSourceBinding parentSource,
             String outputPackage) {
         var tableBoundParticipants = participants.stream()
             .filter(p -> p instanceof ParticipantRef.TableBound)
@@ -668,7 +674,7 @@ public final class MultiTablePolymorphicEmitter {
             .toList();
         var methods = new ArrayList<MethodSpec>();
         methods.add(buildBatchedConnectionFetcher(ctx, batchKey, rowsMethodName,
-            parentKeyLift, parentKeyOwnerTable, parentResultType, outputPackage));
+            parentKeyLift, parentKeyOwnerTable, parentResultType, parentSource, outputPackage));
         methods.add(buildBatchedConnectionRowsMethod(ctx, batchKey.name(), rowsMethodName,
             tableBoundParticipants, participantJoinPaths, defaultPageSize, batchKey.sourceKey(),
             parentKeyOwnerTable, outputPackage));
@@ -882,7 +888,7 @@ public final class MultiTablePolymorphicEmitter {
             Map<String, ParticipantCorrelation> participantJoinPaths,
             KeyLift parentKeyLift,
             SourceKey parentSourceKey, TableRef parentKeyOwnerTable,
-            boolean isList, String outputPackage) {
+            boolean isList, ParentSourceBinding parentSource, String outputPackage) {
 
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName valueType = isList ? listOfRecord : RECORD;
@@ -891,6 +897,13 @@ public final class MultiTablePolymorphicEmitter {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
+
+        // The binding's prelude runs first (outside the try: its escape is deliberate control
+        // flow, not a failure path), narrowing Outcome.Success or short-circuiting a null
+        // source; the sync escape is a null-data DataFetcherResult, the shape the sibling
+        // errors field renders beside on the error arm.
+        builder.addCode(parentSource.prelude(ENV_SOURCE,
+            CodeBlock.of("$T.<$T>newResult().data(null).build()", DATA_FETCHER_RESULT, valueType)));
 
         builder.beginControlFlow("try");
         builder.addStatement("$T dsl = $L", DSL_CONTEXT, TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage));
@@ -913,15 +926,19 @@ public final class MultiTablePolymorphicEmitter {
             // parents to buildBatchedListFetcher, so the accessor return is a single TableRecord
             // (not a List), assignable to Record.
             var accessor = ac.accessor();
-            builder.addStatement("$T parentRecord = (($T) env.getSource()).$L()",
-                RECORD, accessor.parentBackingClass(), accessor.methodName());
+            builder.addStatement("$T parentRecord = (($T) $L).$L()",
+                RECORD, accessor.parentBackingClass(), parentSource.sourceExpr(ENV_SOURCE),
+                accessor.methodName());
             builder.beginControlFlow("if (parentRecord == null)");
             builder.addStatement("$T payload = ($T) null", RECORD, RECORD);
             builder.addCode(returnSyncSuccess(valueType, "payload"));
             builder.endControlFlow();
         } else {
-            // Table-backed parent: env.getSource() is the hub jOOQ Record itself.
-            builder.addStatement("$T parentRecord = ($T) env.getSource()", RECORD, RECORD);
+            // FkColumns lift: the binding's source expression is the hub jOOQ Record itself —
+            // the type's own projected row on the TableRow arm, the producer-handed typed
+            // record (possibly unwrapped from Outcome.Success) on the record arms.
+            builder.addStatement("$T parentRecord = ($T) $L", RECORD, RECORD,
+                parentSource.sourceExpr(ENV_SOURCE));
         }
 
         // Child polymorphic fields carry no field-level filter surface (filters are root-only),
@@ -1592,6 +1609,7 @@ public final class MultiTablePolymorphicEmitter {
             KeyLift parentKeyLift,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
+            ParentSourceBinding parentSource,
             String outputPackage) {
 
         String fieldName = batchKey.name();
@@ -1617,15 +1635,23 @@ public final class MultiTablePolymorphicEmitter {
             .returns(asyncResultType(valueType))
             .addParameter(ENV, "env");
 
+        // The binding's prelude runs ahead of the loader registration: narrow Outcome.Success
+        // (escaping completedFuture(null) on the ErrorList arm) or short-circuit the
+        // LocalContext null source before touching the loader registry.
+        builder.addCode(parentSource.prelude(ENV_SOURCE,
+            CodeBlock.of("$T.completedFuture(null)", COMPLETABLE_FUTURE)));
         builder.addCode(TenantDslEmitter.loaderNameDeclaration(ctx, fieldName, "name", outputPackage));
         builder.addCode(
             "$T loader = env.getDataLoaderRegistry()\n"
             + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
             loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
-        // Parent-object key extraction: delegated to the canonical KeyLift helper.
-        // Emits the typed {@code <KeyType> key = ...} statement consumed by load(key, env).
-        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(batchKey.sourceKey(), parentKeyLift, parentKeyOwnerTable, parentResultType));
+        // Parent-object key extraction: delegated to the canonical KeyLift helper against the
+        // binding's source expression. Emits the typed {@code <KeyType> key = ...} statement
+        // consumed by load(key, env).
+        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(batchKey.sourceKey(),
+            parentKeyLift, parentKeyOwnerTable, parentResultType,
+            parentSource.sourceExpr(ENV_SOURCE)));
 
         // Dispatch is LOAD_ONE by classifier construction: a connection cannot resolve an
         // accessor-many parent (the cardinality gate rejects the mismatch upstream), so the
@@ -1664,6 +1690,7 @@ public final class MultiTablePolymorphicEmitter {
             KeyLift parentKeyLift,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
+            ParentSourceBinding parentSource,
             String outputPackage) {
 
         String fieldName = batchKey.name();
@@ -1688,13 +1715,18 @@ public final class MultiTablePolymorphicEmitter {
             .returns(asyncResultType(valueType))
             .addParameter(ENV, "env");
 
+        // Same prelude placement as the connection twin: ahead of the loader registration.
+        builder.addCode(parentSource.prelude(ENV_SOURCE,
+            CodeBlock.of("$T.completedFuture(null)", COMPLETABLE_FUTURE)));
         builder.addCode(TenantDslEmitter.loaderNameDeclaration(ctx, fieldName, "name", outputPackage));
         builder.addCode(
             "$T loader = env.getDataLoaderRegistry()\n"
             + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
             loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
-        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(batchKey.sourceKey(), parentKeyLift, parentKeyOwnerTable, parentResultType));
+        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(batchKey.sourceKey(),
+            parentKeyLift, parentKeyOwnerTable, parentResultType,
+            parentSource.sourceExpr(ENV_SOURCE)));
 
         // The load site must match the key shape buildRecordParentKeyExtraction declared
         // (single key for LOAD_ONE, List of keys for LOAD_MANY); the dispatch is the

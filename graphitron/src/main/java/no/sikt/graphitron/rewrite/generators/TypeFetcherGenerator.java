@@ -512,6 +512,15 @@ public class TypeFetcherGenerator {
         // registration-site routing in FetcherRegistrationsEmitter; FetcherEmitter.hasWrapperArmErrors
         // is the single home so the two sites cannot drift.
         boolean sourceIsOutcome = FetcherEmitter.hasWrapperArmErrors(fields);
+        // The per-type parent-source binding every child-field fetcher builder that reads a
+        // parent backing object consumes: the narrowing prelude and the source expression as one
+        // value, so the pair cannot be minted apart. The shape fact mirrors the leaves' stored
+        // sourceShape() (SourceShapeProjectionTest pins the projection both ways).
+        var parentSource = ParentSourceBinding.of(
+            parentTable != null
+                ? no.sikt.graphitron.rewrite.model.SourceShape.Table
+                : no.sikt.graphitron.rewrite.model.SourceShape.Record,
+            sourceIsOutcome, outputPackage);
 
         // Build the create* / decode* helper-name resolver from every jOOQ-record @service carrier,
         // every bean (POJO / @record) class, and every @nodeId record-decode target on this class
@@ -652,7 +661,7 @@ public class TypeFetcherGenerator {
                             "Graphitron generator bug (batched child dispatch): coordinate '"
                             + btf.qualifiedName() + "' has no launcher row;"
                             + " the producer's membership and this dispatch have drifted"));
-                    builder.addMethod(buildBatchedDataFetcher(ctx, btf, btf.returnType(), btf.sourceKey(), btf.lift(), parentTable, resultType, sourceIsOutcome, outputPackage, batchedRow));
+                    builder.addMethod(buildBatchedDataFetcher(ctx, btf, btf.returnType(), btf.sourceKey(), btf.lift(), parentTable, resultType, parentSource, outputPackage, batchedRow));
                     var dslDeclaration = batchedRow.tenancy()
                             instanceof no.sikt.graphitron.command.TenantStrategy.Single
                         ? TenantDslEmitter.resolve(ctx, btf, outputPackage).declaration()
@@ -782,7 +791,7 @@ public class TypeFetcherGenerator {
                             + f.qualifiedName() + "' has no launcher row;"
                             + " the producer's membership and this dispatch have drifted"));
                     builder.addMethod(buildBatchedDataFetcher(ctx, f, f.returnType(), f.sourceKey(),
-                        f.lift(), parentTable, resultType, sourceIsOutcome, outputPackage,
+                        f.lift(), parentTable, resultType, parentSource, outputPackage,
                         interfaceBatchedRow));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer.render(
                         interfaceBatchedRow, launchers.carrierDsl(),
@@ -815,7 +824,7 @@ public class TypeFetcherGenerator {
                         MultiTablePolymorphicEmitter
                             .emitInlineMethods(ctx, f.name(), f.participants(), f.participantJoinPaths(),
                                 f.sourceKey(), f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(),
-                                f.returnType().wrapper().isList(), outputPackage)
+                                f.returnType().wrapper().isList(), parentSource, outputPackage)
                             .forEach(builder::addMethod);
                     }
                 }
@@ -829,7 +838,7 @@ public class TypeFetcherGenerator {
                         MultiTablePolymorphicEmitter
                             .emitInlineMethods(ctx, f.name(), f.participants(), f.participantJoinPaths(),
                                 f.sourceKey(), f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(),
-                                f.returnType().wrapper().isList(), outputPackage)
+                                f.returnType().wrapper().isList(), parentSource, outputPackage)
                             .forEach(builder::addMethod);
                     }
                 }
@@ -844,12 +853,12 @@ public class TypeFetcherGenerator {
                         MultiTablePolymorphicEmitter
                             .emitBatchedConnectionMethods(ctx, f, rowsName, f.participants(), f.participantJoinPaths(),
                                 conn.defaultPageSize(), f.parentKeyLift(), f.parentKeyOwnerTable(),
-                                f.parentResultType(), outputPackage)
+                                f.parentResultType(), parentSource, outputPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
                             .emitBatchedListMethods(ctx, f, rowsName, f.participants(), f.participantJoinPaths(),
-                                f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(), outputPackage)
+                                f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(), parentSource, outputPackage)
                             .forEach(builder::addMethod);
                     }
                 }
@@ -860,12 +869,12 @@ public class TypeFetcherGenerator {
                         MultiTablePolymorphicEmitter
                             .emitBatchedConnectionMethods(ctx, f, rowsName, f.participants(), f.participantJoinPaths(),
                                 conn.defaultPageSize(), f.parentKeyLift(), f.parentKeyOwnerTable(),
-                                f.parentResultType(), outputPackage)
+                                f.parentResultType(), parentSource, outputPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
                             .emitBatchedListMethods(ctx, f, rowsName, f.participants(), f.participantJoinPaths(),
-                                f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(), outputPackage)
+                                f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(), parentSource, outputPackage)
                             .forEach(builder::addMethod);
                     }
                 }
@@ -912,7 +921,7 @@ public class TypeFetcherGenerator {
                 resultType, outputPackage, dualWiring);
             if (binding == null) {
                 binding = FetcherEmitter.bind(field, reifiedFetchersClass, parentTable, resultType,
-                    outputPackage, sourceIsOutcome);
+                    outputPackage, parentSource);
             }
             if (binding instanceof FetcherEmitter.FetcherBinding.Reified reified) {
                 builder.addMethod(reified.method());
@@ -5722,13 +5731,15 @@ public class TypeFetcherGenerator {
      *       loader round-trip). A {@link SourceShape#Record} parent holds a producer-handed
      *       backing object; the key read consumes the stored {@link KeyLift}
      *       ({@link GeneratorUtils#buildRecordParentKeyExtraction}).</li>
-     *   <li><b>Prelude.</b> Only the Record arm participates in the LocalContext / Outcome
-     *       transports: under a flipped Outcome payload the fetcher narrows
+     *   <li><b>Prelude.</b> Only the record arms participate in the LocalContext / Outcome
+     *       transports, and both halves come from the per-type {@link ParentSourceBinding}:
+     *       under a flipped Outcome payload the binding's prelude narrows
      *       {@code env.getSource()} to {@code Outcome.Success} before touching the loader
-     *       registry, and otherwise short-circuits a null source (the LocalContext errors
-     *       transport fires the data-channel fetcher with {@code data(null)}, so the merged
-     *       arm must keep the null-source guard). A table
-     *       parent's source is never null mid-query and never Outcome-wrapped: empty prelude.</li>
+     *       registry and its source expression repoints the key extraction at
+     *       {@code success.value()}; otherwise the prelude short-circuits a null source (the
+     *       LocalContext errors transport fires the data-channel fetcher with
+     *       {@code data(null)}, so the guard is load-bearing). The {@code TableRow} arm's
+     *       source is never null mid-query and never Outcome-wrapped: empty prelude.</li>
      * </ul>
      *
      * <p>The loader's per-key value is the row's per-key view
@@ -5743,7 +5754,7 @@ public class TypeFetcherGenerator {
                     ReturnTypeRef.TableBoundReturnType returnType,
                     SourceKey sourceKey, KeyLift lift,
                     TableRef parentTable,
-                    GraphitronType.ResultType resultType, boolean sourceIsOutcome,
+                    GraphitronType.ResultType resultType, ParentSourceBinding parentSource,
                     String outputPackage, no.sikt.graphitron.command.LauncherCommand row) {
 
         boolean isList = returnType.wrapper().isList();
@@ -5766,35 +5777,21 @@ public class TypeFetcherGenerator {
 
         CodeBlock prelude;
         CodeBlock keyExtraction;
-        if (field.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table) {
+        var envSource = CodeBlock.of("env.getSource()");
+        if (parentSource instanceof ParentSourceBinding.TableRow) {
             prelude = CodeBlock.of("");
             keyExtraction = isList
                 ? GeneratorUtils.buildKeyExtraction(sourceKey, parentTable)
                 : GeneratorUtils.buildKeyExtractionWithNullCheck(sourceKey, parentTable);
-        } else if (sourceIsOutcome) {
-            // Outcome arm-switch: narrow Success ahead of the loader registration (returning
-            // completedFuture(null) on the ErrorList arm) and read the key off success.value() —
-            // the same backing object the non-wrapped source would have been (the
-            // Success.value() invariant). Only the source binding moves; the key extraction is
-            // the field's own.
-            var successClass = ClassName.get(outputPackage + ".schema", "Outcome").nestedClass("Success");
-            var completableFuture = ClassName.get("java.util.concurrent", "CompletableFuture");
-            prelude = CodeBlock.builder()
-                .beginControlFlow("if (!(env.getSource() instanceof $T<?> success))", successClass)
-                .addStatement("return $T.completedFuture(null)", completableFuture)
-                .endControlFlow()
-                .build();
-            keyExtraction = GeneratorUtils.buildRecordParentKeyExtraction(
-                sourceKey, lift, returnType.table(), resultType, CodeBlock.of("success.value()"));
         } else {
-            var completableFuture = ClassName.get("java.util.concurrent", "CompletableFuture");
-            prelude = CodeBlock.builder()
-                .beginControlFlow("if (env.getSource() == null)")
-                .addStatement("return $T.completedFuture(null)", completableFuture)
-                .endControlFlow()
-                .build();
+            // Record arms: the binding's prelude runs ahead of the loader registration (narrowing
+            // Outcome.Success, or short-circuiting the LocalContext null source) and its source
+            // expression repoints the field's own key extraction — the same backing object the
+            // non-wrapped source would have been (the Success.value() invariant).
+            var escape = CodeBlock.of("$T.completedFuture(null)", COMPLETABLE_FUTURE);
+            prelude = parentSource.prelude(envSource, escape);
             keyExtraction = GeneratorUtils.buildRecordParentKeyExtraction(
-                sourceKey, lift, returnType.table(), resultType);
+                sourceKey, lift, returnType.table(), resultType, parentSource.sourceExpr(envSource));
         }
 
         return DataLoaderFetcherEmitter.build(

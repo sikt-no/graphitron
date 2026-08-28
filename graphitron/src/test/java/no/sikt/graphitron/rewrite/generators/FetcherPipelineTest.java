@@ -372,6 +372,59 @@ class FetcherPipelineTest {
             .contains(DataFetcherKind.METHOD_REFERENCE);
     }
 
+    // ===== Polymorphic children under an @service Outcome payload =====
+    //
+    // Multi-table polymorphic children (interface/union across participant tables) sibling to a
+    // WrapperArm errors field. Hygiene pins holding the classification and registration shape:
+    // presence of the emitted fetcher, its return-type shape, and METHOD_REFERENCE wiring (a real
+    // graphitron fetcher, never graphql-java's default PropertyDataFetcher). The parent-source
+    // arm-switch itself (narrow Outcome.Success, read the parent off success.value()) lives in
+    // the method bodies this tier deliberately does not string-match; the behavioural pins are
+    // the graphitron-sakila-example execution round-trips over the AddressOccupant fixtures.
+    private static final String OUTCOME_POLYMORPHIC_CHILD_SDL = """
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) { path: [String!]! message: String! }
+            union SakError = ValidationErr | DbErr
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type Content @table(name: "content") { contentId: Int! @field(name: "content_id") }
+            union FilmReferrer = Inventory | Content
+            type Film {
+                referrer: FilmReferrer
+                referrers: [FilmReferrer!]!
+                errors: [SakError]
+            }
+            type Query {
+                film: Film
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
+            """;
+
+    @Test
+    void outcomePayload_polymorphicChildren_emitFetcherAndRowsMethods() {
+        // The single-valued child keeps the sync per-parent fetcher shape and the batched list
+        // child keeps the DataLoader fetcher + rows-method pair under the wrapper payload; the
+        // wrapper flips the parent-source binding, never the delivery split.
+        var fetchers = findSpec("FilmFetchers", OUTCOME_POLYMORPHIC_CHILD_SDL);
+        assertThat(method(fetchers, "referrer").returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Record>");
+        assertThat(method(fetchers, "referrers").returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>>");
+        assertThat(fetchers.methodSpecs())
+            .extracting(MethodSpec::name).contains("rowsReferrers");
+    }
+
+    @Test
+    void outcomePayload_polymorphicChildren_wiringIsMethodReferenceNotPropertyFetcher() {
+        // Both deliveries register a real emitted fetcher under the wrapper payload — the
+        // registration-escape hole validateOutcomeChildArmSwitch guards against cannot reopen
+        // silently for the polymorphic family.
+        var bodies = fetcherBodies(OUTCOME_POLYMORPHIC_CHILD_SDL);
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "Film", "referrer"))
+            .contains(DataFetcherKind.METHOD_REFERENCE);
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "Film", "referrers"))
+            .contains(DataFetcherKind.METHOD_REFERENCE);
+    }
+
     // ===== Bulk DML mutations =====
     //
     // Pipeline-tier coverage of the bulk-arm structural shapes. No code-string assertions on the

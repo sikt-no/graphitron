@@ -6,6 +6,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.plan.TypeUnitCommands;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.FetcherEmitter;
+import no.sikt.graphitron.rewrite.generators.ParentSourceBinding;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.PivotSpecField;
@@ -163,7 +164,8 @@ public final class FetcherRegistrationsEmitter {
         }
         ClassName nestedFetchersClass = fetchersClass(units, ntw.nestedTypeName());
 
-        boolean sourceIsOutcome = FetcherEmitter.hasWrapperArmErrors(ntw.fields());
+        var parentSource = parentSourceBinding(
+            ntw.representativeParentTable(), ntw.fields(), outputPackage);
         var body = CodeBlock.builder();
         body.add("codeRegistry").indent();
         for (var field : ntw.fields()) {
@@ -171,7 +173,7 @@ public final class FetcherRegistrationsEmitter {
             // ResultType, emitted via typeBody), so resultType and dualWiring are null and the dispatch
             // path in registrationEntry short-circuits before reading the schema.
             body.add(registrationEntry(null, ntw.nestedTypeName(), field,
-                nestedFetchersClass, ntw.representativeParentTable(), null, outputPackage, sourceIsOutcome, null));
+                nestedFetchersClass, ntw.representativeParentTable(), null, outputPackage, parentSource, null));
         }
         body.add(";\n").unindent();
         return Optional.of(body.build());
@@ -222,24 +224,39 @@ public final class FetcherRegistrationsEmitter {
     private static CodeBlock buildBody(GraphitronSchema schema, String typeName, List<GraphitronField> fields,
             ClassName fetchersClass, TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage, NestedTypeWiring dualWiring) {
-        boolean sourceIsOutcome = FetcherEmitter.hasWrapperArmErrors(fields);
+        var parentSource = parentSourceBinding(parentTable, fields, outputPackage);
         var body = CodeBlock.builder().add("codeRegistry").indent();
         for (var field : fields) {
             body.add(registrationEntry(schema, typeName, field, fetchersClass, parentTable, resultType,
-                outputPackage, sourceIsOutcome, dualWiring));
+                outputPackage, parentSource, dualWiring));
         }
         body.add(";\n").unindent();
         return body.build();
     }
 
+    /**
+     * The registration-site mint of the per-type {@link ParentSourceBinding}, from the same two
+     * facts {@code TypeFetcherGenerator.generateTypeSpec} splices its own from (the type's table
+     * backing and {@link FetcherEmitter#hasWrapperArmErrors}), so the registration value and the
+     * reified method it references derive their arm-switch from one producer.
+     */
+    private static ParentSourceBinding parentSourceBinding(
+            TableRef parentTable, List<? extends GraphitronField> fields, String outputPackage) {
+        return ParentSourceBinding.of(
+            parentTable != null
+                ? no.sikt.graphitron.rewrite.model.SourceShape.Table
+                : no.sikt.graphitron.rewrite.model.SourceShape.Record,
+            FetcherEmitter.hasWrapperArmErrors(fields), outputPackage);
+    }
+
     private static CodeBlock registrationEntry(GraphitronSchema schema, String typeName, GraphitronField field,
             ClassName fetchersClass, TableRef parentTable, GraphitronType.ResultType resultType,
-            String outputPackage, boolean sourceIsOutcome, NestedTypeWiring dualWiring) {
+            String outputPackage, ParentSourceBinding parentSource, NestedTypeWiring dualWiring) {
         var registrationValue = dispatchRegistrationValue(schema, typeName, field, fetchersClass,
             resultType, outputPackage, dualWiring);
         if (registrationValue == null) {
             registrationValue = FetcherEmitter.bind(field, fetchersClass, parentTable, resultType,
-                outputPackage, sourceIsOutcome).registrationValue();
+                outputPackage, parentSource).registrationValue();
         }
         return CodeBlock.builder()
             .add("\n.dataFetcher($T.coordinates($S, $S), ", FIELD_COORDS, typeName, field.name())

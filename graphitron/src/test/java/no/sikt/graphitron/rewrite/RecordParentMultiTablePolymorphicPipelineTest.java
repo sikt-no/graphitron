@@ -91,7 +91,11 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         // Two SDLs differing only in how Film acquires its film backing: a @service producer
         // returning FilmRecord (JooqTableRecordType) vs. @table(name: "film"). Both classify to
         // the same permit on the same hub, so the emitted FilmFetchers methods for the polymorphic
-        // child field must be identical; drift in either producer fails this comparison.
+        // child field must be identical up to the parent-source binding: the record parent is
+        // producer-handed, so its fetcher additionally carries the DirectRecord null-source guard
+        // (the LocalContext errors transport fires data fetchers with data(null)); the table
+        // parent's own projected row is never null mid-query, so its prelude is empty. Everything
+        // else must match; drift in either producer fails this comparison.
         var recordParentSchema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
             type Film {
               referrers: [FilmReferrer!]!
@@ -116,7 +120,17 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             .filter(m -> m.name().equals("referrers")).findFirst().orElseThrow();
         var tableReferrers = tableSpec.methodSpecs().stream()
             .filter(m -> m.name().equals("referrers")).findFirst().orElseThrow();
-        assertThat(recordReferrers.toString()).isEqualTo(tableReferrers.toString());
+        String nullSourceGuard = """
+                if (env.getSource() == null) {
+                  return java.util.concurrent.CompletableFuture.completedFuture(null);
+                }
+                """.indent(2);
+        assertThat(recordReferrers.toString())
+            .as("the record parent's fetcher carries the DirectRecord null-source guard")
+            .contains(nullSourceGuard);
+        assertThat(recordReferrers.toString().replace(nullSourceGuard, ""))
+            .as("modulo the parent-source binding's guard, the two producers must emit the same fetcher")
+            .isEqualTo(tableReferrers.toString());
         var recordRows = recordSpec.methodSpecs().stream()
             .filter(m -> m.name().equals("rowsReferrers")).findFirst().orElseThrow();
         var tableRows = tableSpec.methodSpecs().stream()

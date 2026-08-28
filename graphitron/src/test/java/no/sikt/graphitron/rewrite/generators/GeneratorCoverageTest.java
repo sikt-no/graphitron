@@ -128,6 +128,52 @@ public class GeneratorCoverageTest {
             .isEmpty();
     }
 
+    /**
+     * The parent-source posture partition: every sealed leaf of {@link GraphitronField} lands in
+     * exactly one of {@link ParentSourceBinding#BINDING_SEAM_LEAVES} (reads the parent's backing
+     * object through an outcome-answering seam), {@link ParentSourceBinding#NO_PARENT_SOURCE_LEAVES}
+     * (reads no parent backing object), or {@link ParentSourceBinding#WRAPPER_INADMISSIBLE_LEAVES}
+     * (reads the parent without the seam, so
+     * {@code GraphitronSchemaValidator.validateWrapperArmSiblingPosture} forbids it beside a
+     * {@code WrapperArm} errors field). Exhaustive and disjoint, so a new field leaf fails this
+     * build until its author answers the outcome question.
+     */
+    @Test
+    void everyGraphitronFieldLeafHasADeclaredParentSourcePosture() {
+        Set<Class<?>> leaves = sealedLeaves(GraphitronField.class);
+        Set<Class<?>> seam = new HashSet<>(ParentSourceBinding.BINDING_SEAM_LEAVES);
+        Set<Class<?>> noSource = new HashSet<>(ParentSourceBinding.NO_PARENT_SOURCE_LEAVES);
+        Set<Class<?>> inadmissible = new HashSet<>(ParentSourceBinding.WRAPPER_INADMISSIBLE_LEAVES);
+
+        assertThat(simpleNames(intersection(seam, noSource)))
+            .as("BINDING_SEAM ∩ NO_PARENT_SOURCE — a leaf either reads the parent or it does not")
+            .isEmpty();
+        assertThat(simpleNames(intersection(seam, inadmissible)))
+            .as("BINDING_SEAM ∩ WRAPPER_INADMISSIBLE — a seam consumer is admissible by construction")
+            .isEmpty();
+        assertThat(simpleNames(intersection(noSource, inadmissible)))
+            .as("NO_PARENT_SOURCE ∩ WRAPPER_INADMISSIBLE — a leaf reading nothing has nothing to forbid")
+            .isEmpty();
+
+        Set<Class<?>> union = new HashSet<>();
+        union.addAll(seam);
+        union.addAll(noSource);
+        union.addAll(inadmissible);
+
+        Set<Class<?>> missing = new HashSet<>(leaves);
+        missing.removeAll(union);
+        assertThat(simpleNames(missing))
+            .as("every GraphitronField leaf must declare its parent-source posture in exactly one "
+                + "of ParentSourceBinding's three sets")
+            .isEmpty();
+
+        Set<Class<?>> stale = new HashSet<>(union);
+        stale.removeAll(leaves);
+        assertThat(simpleNames(stale))
+            .as("none of the posture sets may name a class outside the GraphitronField sealed hierarchy")
+            .isEmpty();
+    }
+
     private static <T> Set<T> intersection(Set<T> a, Set<T> b) {
         return a.stream().filter(b::contains).collect(Collectors.toSet());
     }
