@@ -428,6 +428,10 @@ public final class FactCapture {
      * offer, and doubling a silent wait is precisely what made a contended store read as a hang.
      * The split is by cause rather than by call site so a deadlock keeps its retry, that being
      * exactly the transient casualty the retry was written for.
+     *
+     * <p>Each attempt asks {@link #reconciles} what it has to reconcile rather than being handed the
+     * store's warm flag, for the reason stated there. A deadlock out of the first-graph refresh is
+     * the retry's own reason for existing, so the retry has to be able to survive one.
      */
     private static boolean captureWithRetry(GraphitronModelStore store, GraphIdentity graph,
                                             SubjectConfig config, TypeDefinitionRegistry registry,
@@ -435,8 +439,8 @@ public final class FactCapture {
                                             Map<String, SchemaInput> attribution, JooqCatalog jooq,
                                             List<CompletionData.ExternalReference> extensions) {
         try {
-            capture(store.dsl(), store.warm(), graph, config, registry, assembly, verdicts,
-                attribution, jooq, extensions);
+            capture(store.dsl(), reconciles(store, graph), graph, config, registry, assembly,
+                verdicts, attribution, jooq, extensions);
             return true;
         } catch (DataAccessException first) {
             if (timedOutOnALock(first)) {
@@ -447,8 +451,8 @@ public final class FactCapture {
             LOG.debug("shared fact store write failed; retrying once before recapturing in memory", first);
         }
         try {
-            capture(store.dsl(), store.warm(), graph, config, registry, assembly, verdicts,
-                attribution, jooq, extensions);
+            capture(store.dsl(), reconciles(store, graph), graph, config, registry, assembly,
+                verdicts, attribution, jooq, extensions);
             return true;
         } catch (DataAccessException second) {
             LOG.warn("shared fact store write for graph '{}' failed twice in a row; this looks like a "
@@ -457,6 +461,30 @@ public final class FactCapture {
                 graph.name(), second);
             return false;
         }
+    }
+
+    /**
+     * Whether an attempt at {@code graph} has rows of its own to reconcile: the store opened onto a
+     * previous run's, or this graph stands committed in it already.
+     *
+     * <p><b>Asked per attempt rather than taken from the open.</b> {@link GraphitronModelStore#warm}
+     * is fixed when the store opens, and it stood in for this question only while a capture was
+     * all-or-nothing: a failed attempt rolled back, so the next attempt met the store the first one
+     * found. That equivalence does not survive the first-graph refresh cadence, which commits this
+     * graph's facts, its anchor row and its hand-written derivations before it refreshes. A retry
+     * after a failed refresh therefore meets a partition its own first attempt wrote, and taking
+     * warmth from the open would have it skip {@link StoreRefresh#prepare} and collide with itself on
+     * the first key it re-inserts. The collision is a {@link DataAccessException} rather than a lock
+     * timeout, so the retry would report it as a deterministic capture bug, which is a false
+     * accusation about the run's own predecessor.
+     *
+     * <p>Package-private because that broken equivalence is what a test pins: the store's warm flag
+     * and this predicate disagree the moment a capture on the same handle commits, and no assertion
+     * over generated output can see the difference.
+     */
+    static boolean reconciles(GraphitronModelStore store, GraphIdentity graph) {
+        return store.warm() || store.dsl().fetchExists(STORE_GRAPH,
+            STORE_GRAPH.GRAPH_NAME.eq(graph.name()));
     }
 
     /**

@@ -32,6 +32,7 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.test.StoreAnswers.answered;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 /**
@@ -423,6 +424,54 @@ class PersistentStoreTest {
         assertThat(FactCapture.timedOutOnALock(
             new DataAccessException("wrapped", new SQLException("Unique index violation"))))
             .as("a capture bug is retried once, so it fails the same way twice and says so").isFalse();
+    }
+
+    /**
+     * The other half of what the retry needs to be right, and the half a capture's own atomicity used
+     * to supply for free. An attempt has to know whether it is walking into rows of its own, and the
+     * store's warm flag is fixed when the store opens: it answered that question only while a capture
+     * was all-or-nothing, a failed attempt rolling back so that the next one met the store the first
+     * one found. The first-graph refresh cadence commits this graph's facts, its anchor row and its
+     * hand-written derivations before it refreshes, so an attempt after a failed refresh meets a
+     * partition its own predecessor wrote while the flag still reports the store as empty. Handed the
+     * flag, it skips reconciliation and collides with itself on the first key it re-inserts, and the
+     * collision is a plain write failure rather than a lock timeout, so the case above spends the
+     * retry on it and the run is told it has a deterministic capture bug it does not have.
+     *
+     * <p>Asserted on the predicate for the same reason the case above is: no assertion over the
+     * store's final rows can see it. The store self-heals on the next run, which opens warm against
+     * null stamps and reloads the partition, so what a census would show is a store that is fine and
+     * a retry that was spent.
+     */
+    @Test
+    @DisplayName("what an attempt reconciles is read from the store, not from the open")
+    void whatAnAttemptReconcilesIsReadFromTheStore(@TempDir Path tmp) {
+        try (var store = GraphitronModelStore.openAt(tmp.resolve("graphitron-model"))) {
+            assertThat(FactCapture.reconciles(store, graph(tmp)))
+                .as("a store holding no graph has nothing for a first attempt to reconcile")
+                .isFalse();
+
+            FactCapture.capture(store.dsl(), false, graph(tmp), FactCapture.SubjectConfig.none(),
+                CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null,
+                List.of());
+
+            assertThat(store.warm())
+                .as("the open's answer, and it is stale: this handle has committed a partition since")
+                .isFalse();
+            assertThat(FactCapture.reconciles(store, graph(tmp)))
+                .as("what a retry after a failed refresh walks into, which is its own first attempt's"
+                    + " committed partition")
+                .isTrue();
+
+            assertThatCode(() -> FactCapture.capture(store.dsl(),
+                FactCapture.reconciles(store, graph(tmp)), graph(tmp),
+                FactCapture.SubjectConfig.none(), CapturedStore.registryOf(tmp, SDL),
+                CapturedStore.attributionOf(tmp), null, List.of()))
+                .as("the retry itself, taking what the predicate answered. Handed the open's answer"
+                    + " instead it fails on the first key it re-inserts, which is a plain write"
+                    + " failure and spends the retry the case above reserves for a casualty")
+                .doesNotThrowAnyException();
+        }
     }
 
     @Test

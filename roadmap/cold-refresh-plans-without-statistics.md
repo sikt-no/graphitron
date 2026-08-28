@@ -1,7 +1,7 @@
 ---
 id: R867
 title: "A cold capture's refresh plans without statistics, and the penalty grows with the schema"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: model-cleanup
@@ -262,6 +262,15 @@ is the whole cost of the per-registration analysis the split path adds.
   being the last thing the split path writes. The next capture reads a null stamp, does not retain the
   partition, and reloads and re-derives it. That is the recovery `ClasspathSources` already documents
   for a part-way run, reached by a new route.
+
+  **The retry is that state's first reader, and it is inside the same run.** `captureWithRetry` gives a
+  capture that failed on anything but a lock timeout one more attempt, and a deadlock out of the
+  refresh is precisely the casualty it exists for, so this is the intended path rather than a corner.
+  What an attempt has to reconcile is therefore read from the store at the attempt rather than taken
+  from the store's warm flag, which is fixed at the open and stood in for the question only while a
+  capture was all-or-nothing. Handed the flag, the retry would skip `StoreRefresh.prepare` and collide
+  with its own first attempt on the first key it re-inserts, and report the collision as a
+  deterministic capture bug.
 - **What a stamp means.** `ClasspathSources` states that a stamp is written after the rows it vouches
   for, and on the split path the derived targets are written after the load's flush, so the stamps
   move after the last refresh transaction. That placement is what makes the paragraph above true: move
@@ -300,7 +309,8 @@ a tolerance to widen. `MaterializeRegistryGateTest`, `MaterializationOrderTest`,
 
 ### Phases
 
-All four shipped at `60e4ea8`, on one verification build of the full reactor.
+The four phases shipped at `60e4ea8`; the retry fix below shipped after the Done-gate review. Each on
+its own full-reactor verification build.
 
 1. `Materializations`: the third cadence `refreshAnalysing`, its anchor lock, its javadoc, and the
    class javadoc's cadence paragraph. Shipped.
@@ -312,7 +322,9 @@ All four shipped at `60e4ea8`, on one verification build of the full reactor.
 
 ### What shipped differently from the plan above, and why
 
-Four departures, none of them changing the fix and all of them found by building it.
+Five departures, none of them changing the fix. Four were found by building it and the fifth by the
+Done-gate review, which is recorded here rather than only in the findings below because it is part of
+what shipped.
 
 - **The cadences differ only in what encloses one registration's statement pair, so that is the
   parameter.** `refreshOne` takes an `Enclosure`: the two old cadences run the pair on the caller's
@@ -338,6 +350,10 @@ Four departures, none of them changing the fix and all of them found by building
   what it does hold: that a store left with facts complete, a target emptied and no stamp is brought
   back to what a cold run produces. The round also needed a table-bound schema, that family's
   two-type schema filling no registered target at all.
+- **The retry's warmth, which round 2 found and the first version of this section did not name.**
+  `captureWithRetry` asks `FactCapture.reconciles` per attempt instead of handing both attempts the
+  store's warm flag; the invariant section carries why, under what a stopped pass leaves behind. Shipped
+  as part of this item because the split path is what makes the flag wrong.
 - **One shared instrument rather than two spellings of "unanalysed".** `StoreStatistics` carries the
   reset and the analysed reading, and `RefreshPlanStatisticsTest` now uses it instead of its own
   copy. That is the one edit to an existing test beyond the round above.
@@ -517,6 +533,24 @@ belongs, since "what a run that stops mid-refresh leaves behind" is stated there
 first thing that reads it. A case in the retry's own family, beside
 `PersistentStoreTest.aHeldAnchorRowGivesUpFast`, would hold it.
 
+> *Author response, revision 2.* Accepted, and the finding is right about the cause and about where
+> the answer goes. `captureWithRetry` no longer hands either attempt the store's warm flag; both ask
+> `FactCapture.reconciles`, which is the flag or this graph standing committed in the store, read at
+> the attempt rather than at the open. The first attempt's answer is unchanged by construction,
+> nothing of this run having committed before it, so the fix costs the unsplit path nothing.
+>
+> Two things the finding sharpened. The broken thing is an *equivalence*, not a flag: warmth at open
+> answered "what will this attempt walk into" only while a capture was all-or-nothing, and it is that
+> coupling the split severed rather than the flag going wrong. And the consequence is invisible to
+> every assertion over rows or output, the store self-healing next run, so the case is on the
+> predicate, in the retry's own family as suggested, beside the lock-timeout case that asserts
+> `timedOutOnALock` the same way. It goes one step further than the predicate: it runs the retry with
+> what the predicate answered and pins that it does not throw, so the test says both that the
+> predicate flips and that the flipped value is the one that works.
+>
+> The invariant section's "what a run that stops mid-refresh leaves behind" now names the retry as its
+> first reader, which is the sentence that would have caught this at the gate.
+
 **Non-blocking, bookkeeping: a departure claims a correction that did not ship.** The second
 departure says the population filter "also corrects a claim `RefreshPlanStatisticsTest` carries in
 passing, that twelve units is the size at which every registered target holds rows". That claim is
@@ -524,3 +558,12 @@ still in the tree, on that test's `UNITS` javadoc, and the new test's own filter
 against it: three registrations read a target the `@mutation` payload surface leaves empty. Either
 correct the javadoc or drop the clause from the departure; leaving both is a record that says a thing
 was done and a tree that says it was not.
+
+> *Author response, revision 2.* Fixed the tree rather than the claim, and measured the correction
+> instead of hedging it: exactly two registered targets are empty on that fixture at twelve units,
+> `intent_mutation_payload_key_membership` and `intent_mutation_payload_refusal`, and they are empty
+> at every size because their rules read a `@mutation` payload surface the fixture holds fixed. Both
+> claim sites are corrected, the `UNITS` javadoc and `MaterializedRegistryFixture`'s own class
+> javadoc, which stated the same property for both gates and is where a later gate would have read it.
+> The finding's "three registrations" is the count of *registrations* that read one of those two
+> targets, which is what the failing assertion listed.

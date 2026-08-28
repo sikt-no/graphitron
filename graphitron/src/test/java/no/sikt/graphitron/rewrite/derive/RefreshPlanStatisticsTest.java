@@ -91,8 +91,15 @@ class RefreshPlanStatisticsTest {
     /**
      * Repetitions of the fixture's node cluster, which {@link MaterializedRegistryFixture} scales.
      * Twelve for {@code DerivedReadCostTest}'s reason and not independently: it is the size at which
-     * every registered target holds rows, and a plan chosen over an empty relation is not the plan
-     * that ships.
+     * the targets these gates measure hold rows, and a plan chosen over an empty relation is not the
+     * plan that ships.
+     *
+     * <p>Not <em>every</em> registered target, which this note claimed until it was measured. Two are
+     * empty at this size and at any other, {@code intent_mutation_payload_key_membership} and
+     * {@code intent_mutation_payload_refusal}: their rules read a {@code @mutation} payload surface the
+     * fixture holds fixed, and neither rule has rows to state about what it holds. Scale is not the
+     * lever for them, so {@code RefreshPrerequisiteStatisticsTest} asks per target rather than
+     * trusting the size, which is the shape a later gate over this fixture should copy.
      */
     private static final int UNITS = 12;
 
