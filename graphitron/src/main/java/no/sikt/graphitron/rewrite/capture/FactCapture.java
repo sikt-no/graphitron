@@ -513,6 +513,16 @@ public final class FactCapture {
      * <p>Leading with the anchor also makes it the one row worth failing fast on, which is what
      * {@link #ANCHOR_LOCK_MILLIS} is: every row after it is worth waiting for, and this one is not.
      *
+     * <p><b>One exception, on the one store where the contract protects nothing.</b> A capture into a
+     * store that holds no graph at all commits its facts and then refreshes the materialized targets
+     * outside this transaction, on {@link Materializations#refreshAnalysing}'s cadence, because on
+     * such a store every target is empty and a refresh inside the transaction cannot be given the
+     * statistics its own statements are planned against. Nothing committed can be emptied there, and
+     * no reader can be reading a partition the store does not yet have. What the window does publish
+     * is the graph present with its derivations incomplete, which is the state
+     * {@link Materializations#refreshAll} already publishes on every reader open. Every other capture
+     * is one transaction exactly as above.
+     *
      * @param warm whether the store opened onto a previous run's rows. A cold store needs no
      *             reconciliation; a warm one is cleared of everything this run owns and rewrites,
      *             and keeps the partitions whose source still hashes to what it recorded
@@ -553,10 +563,11 @@ public final class FactCapture {
         Objects.requireNonNull(attribution, "attribution");
         Objects.requireNonNull(verdicts, "verdicts");
         Objects.requireNonNull(assembly, "assembly");
+        boolean firstGraph = !dsl.fetchExists(STORE_GRAPH);
+        var sources = new ClasspathSources();
         dsl.transaction(tx -> {
             DSLContext txDsl = tx.dsl();
             var sink = new FactSink(txDsl, graph.name());
-            var sources = new ClasspathSources();
             // The budget is narrowed for the anchor row alone and restored the moment it is held;
             // ANCHOR_LOCK_MILLIS carries why the two rows deserve different answers. Set per
             // capture rather than once at open because SET LOCK_TIMEOUT is a session command and
@@ -585,21 +596,48 @@ public final class FactCapture {
             InputOccurrencePaths.derive(txDsl, graph.name());
             TypeBackingRows.derive(txDsl, graph.name());
             AuthoredClaimRejectionRows.derive(txDsl, graph.name());
-            // Two lines per capture at info, naming the pass, and the per-registration tier at
-            // debug, which mvn -X turns on: a capture that stops after the pass line is stuck
-            // inside the refresh, and a re-run with -X names the registration it is stuck in.
-            Materializations.refresh(txDsl, graph.name(),
-                RefreshProgress.lines(LOG::info, LOG::debug));
-            sources.commitStamps(txDsl);
+            if (!firstGraph) {
+                Materializations.refresh(txDsl, graph.name(), refreshLines());
+                sources.commitStamps(txDsl);
+            }
         });
+        if (firstGraph) {
+            // The one exception to the paragraph above, and the whole of it: a store that held no
+            // graph when this capture began refreshes outside this transaction, one committed
+            // transaction per registration, analysing each target as it refills it. Every target on
+            // such a store is empty, so the pass inside the transaction plans every statement it
+            // issues with no selectivity on anything it reads, which on a consumer-size schema is
+            // hours rather than a factor; Materializations.refreshAnalysing carries the measurement,
+            // and carries why this is the one store where committing between two registrations
+            // publishes nothing. Nothing before this point is conditional: the facts, the anchor row
+            // and the hand-written derivations are written the same way on both paths.
+            Materializations.refreshAnalysing(dsl, graph.name(), refreshLines());
+            // And the stamps follow the refresh rather than the flush, because here they vouch for
+            // the derived targets as well: a pass that stops part-way has to leave a null stamp, so
+            // that the next run reloads and re-derives the partition instead of retaining one whose
+            // targets were never filled. ClasspathSources states the rule this follows.
+            dsl.transaction(tx -> sources.commitStamps(tx.dsl()));
+        }
         // Statistics on what the refresh above just rewrote, so the planner uses the indexes
         // declared beside the materialized targets. Outside the transaction and not inside it,
         // which Materializations.analyse states the reason for: H2's ANALYZE commits, and a commit
         // between this capture's delete and its inserts would publish the emptied partition the
         // one-transaction contract above exists to prevent. After the commit the store is settled,
         // so analysing here is exactly as safe as the dev session's own call and reaches the
-        // readers a captured store has, the build path's diagnostics among them.
+        // readers a captured store has, the build path's diagnostics among them. On the first-graph
+        // path it is the idempotent restatement of what that pass already analysed, kept so that one
+        // call states the whole register's statistics on every path out of a capture.
         Materializations.analyse(dsl);
+    }
+
+    /**
+     * What a refresh says on the way past: two lines per capture at info naming the pass, and the
+     * per-registration tier at debug, which {@code mvn -X} turns on. Named once because both refresh
+     * cadences a capture can take report the same way, and a cadence reporting differently would
+     * make the two paths' logs incomparable on exactly the runs anybody reads them for.
+     */
+    private static RefreshProgress refreshLines() {
+        return RefreshProgress.lines(LOG::info, LOG::debug);
     }
 
     /** SDL-only capture, for callers with no catalog in hand. */

@@ -67,9 +67,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p><b>The statistics regimes.</b> Four, all over one captured store with the same rows and the
  * same declared indexes throughout, so statistics are the only thing that varies.
- * {@code ALTER TABLE ... ALTER COLUMN ... SELECTIVITY 0} is the reset: H2 stores it as the default
- * fifty rather than as zero, which is precisely the value it assumes for a column it has never
- * looked at, so the reset states "no statistics" rather than a third state of its own.
+ * {@link StoreStatistics#reset} is the reset, and that type carries why the statement it issues
+ * states "no statistics" rather than a third state of its own.
  *
  * <ul>
  *   <li><b>settled</b>: the store as a capture leaves it, before anything here touches it.
@@ -255,7 +254,7 @@ class RefreshPlanStatisticsTest {
     /** Resets every column's selectivity, analyses {@code analysed}, and plans every registration. */
     private static Map<String, String> regime(CapturedStore store, DSLContext dsl,
                                               List<String> analysed) {
-        resetSelectivity(dsl);
+        StoreStatistics.reset(dsl);
         analysed.forEach(table -> dsl.execute("ANALYZE TABLE \"" + table + "\""));
         return plans(store);
     }
@@ -294,18 +293,4 @@ class RefreshPlanStatisticsTest {
             """).map(row -> row.get(0, String.class));
     }
 
-    /**
-     * Puts every base table's every column back to the selectivity H2 assumes for a column it has
-     * never analysed. Views are skipped because a view has no selectivity of its own to state.
-     */
-    private static void resetSelectivity(DSLContext dsl) {
-        dsl.fetch("""
-            SELECT c.TABLE_NAME, c.COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS c
-            JOIN INFORMATION_SCHEMA.TABLES t
-              ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
-            WHERE c.TABLE_SCHEMA = 'PUBLIC' AND t.TABLE_TYPE = 'BASE TABLE'
-            ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION
-            """).forEach(row -> dsl.execute("ALTER TABLE \"" + row.get(0)
-                + "\" ALTER COLUMN \"" + row.get(1) + "\" SELECTIVITY 0"));
-    }
 }

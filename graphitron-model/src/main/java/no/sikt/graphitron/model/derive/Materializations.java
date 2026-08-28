@@ -11,6 +11,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.function.IntSupplier;
 
 import static org.jooq.impl.DSL.asterisk;
@@ -60,15 +61,19 @@ import static org.jooq.impl.DSL.table;
  * holds the folded upper-case spelling, so every name is folded here before it becomes an
  * identifier.
  *
- * <p>Callers refresh on one of two cadences and the difference is a real contract, not a
- * convenience. Capture calls {@link #refresh} inside its own transaction once the run's rows are
+ * <p>Callers refresh on one of three cadences and the differences are real contracts, not
+ * conveniences. Capture calls {@link #refresh} inside its own transaction once the run's rows are
  * flushed, so a target is current exactly when the partition it derives from is. A reader that
  * opens a store without capturing into it (the language server, the MCP server, a warm start that
  * skipped capture because nothing changed) calls {@link #refreshAll}, which assumes nothing about
- * whether a capture ran.
+ * whether a capture ran. A capture into a store that holds no graph at all calls
+ * {@link #refreshAnalysing}, which commits each registration on its own and analyses the target it
+ * just refilled: on that store every target is empty, so the pass would otherwise plan every
+ * statement it issues with no selectivity on anything it reads, and it is also the one store where
+ * committing between two registrations publishes nothing, there being nothing committed to empty.
  *
- * <p>Both cadences owe the planner statistics on what they just wrote, which is {@link #analyse},
- * and the two reach it differently for a reason stated there rather than here: a refresh may run
+ * <p>Every cadence owes the planner statistics on what it just wrote, which is {@link #analyse},
+ * and they reach it differently for a reason stated there rather than here: a refresh may run
  * inside a transaction and an analysis may not.
  *
  * <p>A refresh says what it is doing, to a {@link RefreshProgress} the caller supplies: two events
@@ -129,11 +134,75 @@ public final class Materializations {
         long startedAt = System.nanoTime();
         for (int position = 0; position < registrations.size(); position++) {
             Registration registration = registrations.get(position);
-            refreshOne(dsl, registration, position + 1, registrations.size(),
+            refreshOne(registration, position + 1, registrations.size(),
                 graphKeyed(dsl, registration.targetTableName())
                     ? Optional.of(graphName)
                     : Optional.empty(),
-                progress);
+                progress, statements -> statements.apply(dsl));
+        }
+        progress.observe(new RefreshProgress.Event.PassFinished(System.nanoTime() - startedAt));
+    }
+
+    /**
+     * {@link #refresh(DSLContext, String, RefreshProgress)}'s statements, one committed transaction
+     * per registration, each analysing the target it just refilled. The cadence for a capture into a
+     * store that holds no graph at all, which is the one case where nothing committed can be emptied
+     * and the one case where it matters: every registered target is empty, so every statement in the
+     * pass would otherwise be planned with no selectivity on anything it reads.
+     *
+     * <p><b>What this buys, and why no cheaper placement reaches it.</b> The plans that move are the
+     * ones reading a <em>registered target</em>, which the refresh itself writes, so a statistics
+     * pass before the refresh has nothing to state: {@code ANALYZE} on an empty table records
+     * nothing, and H2's unanalysed default reads a partition column as nearly unique, which prices a
+     * one-column seek on {@code graph_name} as though it were exact and loses against the
+     * multi-column index a settled store picks. Analysed after each refill, a registration plans
+     * against the targets the registrations before it filled, which
+     * {@link MaterializeDependencies} makes exactly the population it reads: it refuses a
+     * registration whose source view reads its own target, and orders every registration after the
+     * ones whose targets it reads. The measurement is on the fact-model page.
+     *
+     * <p><b>Each transaction leads with the graph's {@code store_graph} row.</b> The single
+     * transaction {@code FactCapture} otherwise holds is what makes a second writer of one graph
+     * serialize instead of interleaving deletes with inserts, and a per-registration transaction
+     * holds no anchor row of its own unless it takes one. Taken under the session's standing lock
+     * budget rather than the narrowed one a capture leads with: the whole refresh sits in front of
+     * this wait, so waiting its turn is worth more than falling back, and a refusal is a
+     * {@link DataAccessException} from a refresh statement like any other.
+     *
+     * <p><b>What a pass that stops part-way leaves.</b> The targets before the stopping registration
+     * refilled and analysed, the ones after it stale or empty, and the caller's stamps unwritten,
+     * which is what makes the next capture reload and re-derive the partition rather than retain it.
+     * A caller on this cadence therefore owes its stamps after this returns and not before.
+     */
+    public static void refreshAnalysing(DSLContext dsl, String graphName) {
+        refreshAnalysing(dsl, graphName, RefreshProgress.none());
+    }
+
+    /**
+     * {@link #refreshAnalysing(DSLContext, String)}, reporting to {@code progress} as it goes. The
+     * registration's name still precedes its statements, the anchor wait included, for the reason
+     * this class gives: a pass stuck waiting on a lock has already printed the registration waiting.
+     */
+    public static void refreshAnalysing(DSLContext dsl, String graphName, RefreshProgress progress) {
+        List<Registration> registrations = refreshOrder(dsl).registrations();
+        if (registrations.isEmpty()) {
+            return;
+        }
+        progress.observe(new RefreshProgress.Event.PassStarted(registrations.size(),
+            List.of(graphName)));
+        long startedAt = System.nanoTime();
+        for (int position = 0; position < registrations.size(); position++) {
+            Registration registration = registrations.get(position);
+            refreshOne(registration, position + 1, registrations.size(),
+                graphKeyed(dsl, registration.targetTableName())
+                    ? Optional.of(graphName)
+                    : Optional.empty(),
+                progress,
+                statements -> dsl.transactionResult(tx -> {
+                    anchor(tx.dsl(), graphName);
+                    return statements.apply(tx.dsl());
+                }));
+            analyse(dsl, registration);
         }
         progress.observe(new RefreshProgress.Event.PassFinished(System.nanoTime() - startedAt));
     }
@@ -173,12 +242,12 @@ public final class Materializations {
             Registration registration = registrations.get(position);
             if (graphKeyed(dsl, registration.targetTableName())) {
                 for (String graph : graphs) {
-                    refreshOne(dsl, registration, position + 1, registrations.size(),
-                        Optional.of(graph), progress);
+                    refreshOne(registration, position + 1, registrations.size(),
+                        Optional.of(graph), progress, statements -> statements.apply(dsl));
                 }
             } else {
-                refreshOne(dsl, registration, position + 1, registrations.size(),
-                    Optional.empty(), progress);
+                refreshOne(registration, position + 1, registrations.size(),
+                    Optional.empty(), progress, statements -> statements.apply(dsl));
             }
         }
         progress.observe(new RefreshProgress.Event.PassFinished(System.nanoTime() - startedAt));
@@ -205,6 +274,13 @@ public final class Materializations {
      * emptied target, and an implicit commit between the delete and the rest of the capture would
      * publish exactly that state. So the capture path analyses after its transaction closes, from
      * the caller that owns the transaction, and {@link #refreshAll} analyses inline, holding none.
+     *
+     * <p>The rule is about a transaction that must not be committed, not about a moment in the pass,
+     * and {@link #refreshAnalysing} is where that distinction pays: on a store with nothing
+     * committed under any graph there is no state a commit could publish, so that cadence analyses
+     * between registrations and the statistics reach the pass that needs them. Which is the whole of
+     * why it is a cadence of its own rather than a flag: no other store can be analysed part-way
+     * through its own refresh.
      *
      * <p>Scoped to the registered targets rather than the whole database, for a measured reason
      * and not only a modest one. A bare {@code ANALYZE} also restates statistics for the hundred
@@ -235,16 +311,30 @@ public final class Materializations {
     public static int analyse(DSLContext dsl) {
         int analysed = 0;
         for (Registration registration : registrations(dsl)) {
-            try {
-                dsl.execute("ANALYZE TABLE "
-                    + dsl.render(table(relation(registration.targetTableName()))));
+            if (analyse(dsl, registration)) {
                 analysed++;
-            } catch (DataAccessException refused) {
-                // Left uncounted rather than rethrown, per the paragraph above; the caller's own
-                // reads go on planning against whatever statistics the target already carried.
             }
         }
         return analysed;
+    }
+
+    /**
+     * One registered target's statistics, and the single site the best-effort posture
+     * {@link #analyse(DSLContext)} states lives at, so the split cadence cannot reach a stricter
+     * answer for the same statement.
+     *
+     * @return whether the target was analysed, false being a database refusal and nothing else
+     */
+    private static boolean analyse(DSLContext dsl, Registration registration) {
+        try {
+            dsl.execute("ANALYZE TABLE "
+                + dsl.render(table(relation(registration.targetTableName()))));
+            return true;
+        } catch (DataAccessException refused) {
+            // Reported as not analysed rather than rethrown, per the paragraph above; the caller's
+            // own reads go on planning against whatever statistics the target already carried.
+            return false;
+        }
     }
 
     /**
@@ -326,18 +416,46 @@ public final class Materializations {
     /**
      * One registration's refresh, in the shape {@code graph} names: a partition where a graph is
      * present, the whole relation where it is absent. The one place the registration events are
-     * emitted, so the rule this class states about their order holds for both cadences at once and
+     * emitted, so the rule this class states about their order holds for every cadence at once and
      * for both shapes.
      */
-    private static void refreshOne(DSLContext dsl, Registration registration, int position,
-                                   int total, Optional<String> graph, RefreshProgress progress) {
+    private static void refreshOne(Registration registration, int position, int total,
+                                   Optional<String> graph, RefreshProgress progress,
+                                   Enclosure enclosure) {
         progress.observe(new RefreshProgress.Event.RegistrationStarted(registration, position,
             total, graph));
-        Costs costs = graph
+        Costs costs = enclosure.around(dsl -> graph
             .map(graphName -> refreshPartition(dsl, registration, graphName))
-            .orElseGet(() -> refreshWhole(dsl, registration));
+            .orElseGet(() -> refreshWhole(dsl, registration)));
         progress.observe(new RefreshProgress.Event.RegistrationFinished(registration,
             costs.deleteNanos(), costs.insertNanos(), costs.rowsDeleted(), costs.rowsInserted()));
+    }
+
+    /**
+     * What a cadence puts around one registration's statement pair, and the only thing the cadences
+     * differ in: {@link #refresh} and {@link #refreshAll} run the pair on the caller's context, and
+     * {@link #refreshAnalysing} runs it in a transaction of its own behind the anchor row. A
+     * parameter rather than a second loop per cadence because the emission order this class states
+     * has to hold for all of them, which it cannot if each cadence emits the events itself; and the
+     * pair receives its context from here rather than closing over one so that a cadence cannot
+     * issue the statements outside the transaction it opened for them.
+     */
+    private interface Enclosure {
+        Costs around(Function<DSLContext, Costs> statements);
+    }
+
+    /**
+     * Holds the graph's anchor row for the caller's transaction, so a second writer of one graph
+     * waits for the registration in flight instead of interleaving its own delete with this one's
+     * insert. The row {@code FactCapture} leads its load with, taken again here because the
+     * transaction that held it has committed by the time this cadence runs.
+     */
+    private static void anchor(DSLContext dsl, String graphName) {
+        dsl.select(field(name("GRAPH_NAME")))
+            .from(table(name("STORE_GRAPH")))
+            .where(field(name("GRAPH_NAME"), String.class).eq(graphName))
+            .forUpdate()
+            .fetch();
     }
 
     /**

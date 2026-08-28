@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
@@ -47,6 +48,8 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_INPUT;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.jooq.impl.DSL.name;
+import static org.jooq.impl.DSL.table;
 
 /**
  * What a warm store keeps and what it rewrites, under ownership scoping: a run deletes exactly
@@ -78,6 +81,16 @@ class WarmStartRefreshTest {
         type Actor { name: String }
         """;
 
+    /**
+     * A schema that fills registered targets, which {@link #SDL} does not: the intent relations are
+     * classifications of bound coordinates, so a schema with no table binding leaves every one of
+     * them empty and a case about a stale target would have nothing to make stale.
+     */
+    private static final String TABLE_BOUND_SDL = """
+        type Query { films: [Film!]! }
+        type Film @table(name: "film") { title: String, releaseYear: Int }
+        """;
+
     @Test
     @DisplayName("a warm run ends with the rows a cold run would have produced")
     void warmAndColdAgreeRelationByRelation(@TempDir Path tmp) throws IOException {
@@ -100,6 +113,64 @@ class WarmStartRefreshTest {
                 .as("relations whose warm row count differs from a cold load's")
                 .isEqualTo(cold);
         }
+    }
+
+    /**
+     * The recovery the first-graph refresh cadence leans on, and the one shape of stopped run this
+     * family did not already cover. A capture into a store holding no graph commits its facts and
+     * then refreshes the registered targets outside that transaction, one committed transaction per
+     * registration, because on such a store every target is empty and a refresh inside the
+     * transaction cannot be given statistics on the targets its own statements read;
+     * {@code Materializations.refreshAnalysing} carries that argument. The cost is that this is the
+     * one capture that can stop having left the facts complete and a target stale, and what makes
+     * that acceptable is the round below.
+     *
+     * <p>The stopped state is constructed rather than reached, the stop being a kill inside a
+     * transaction sequence with no seam to inject one at. Both halves are set: a registered target
+     * emptied, and every source's stamp nulled, which is what a pass that never reached its
+     * {@code commitStamps} leaves.
+     *
+     * <p>What this does <em>not</em> hold, so nobody reads it as more than it is: it does not fail if
+     * the stamps move back ahead of the refresh, because every capture refreshes every registered
+     * target for its graph unconditionally, so a stale target comes back either way. The stamp
+     * placement is a consistency requirement on what a stamp claims, which {@link ClasspathSources}
+     * states, rather than a defence against a reachable stale store. What this would catch is a
+     * capture that stopped refreshing a target it had emptied, the shape any future narrowing of the
+     * refresh would take.
+     */
+    @Test
+    @DisplayName("a store stopped part-way through its first refresh is repaired by the next capture")
+    void aStoppedFirstRefreshIsRepairedByTheNextCapture(@TempDir Path tmp) {
+        var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE, testContext().codegenLoader());
+        Path directory = tmp.resolve("graphitron-model");
+
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            captureBound(store.dsl(), false, tmp, jooq);
+            DSLContext dsl = store.dsl();
+            String emptied = lastPopulatedTarget(dsl);
+            assertThat(emptied)
+                .as("a registered target holding rows, without which the stopped state constructed"
+                    + " here is the state a finished run leaves and this case is vacuous")
+                .isNotNull();
+            dsl.deleteFrom(table(name(emptied))).execute();
+            dsl.update(STORE_SOURCE).setNull(STORE_SOURCE.STAMP).execute();
+        }
+
+        Map<String, Integer> repaired;
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            captureBound(store.dsl(), true, tmp, jooq);
+            repaired = census(store.dsl());
+        }
+        Map<String, Integer> cold;
+        try (var store = GraphitronModelStore.open()) {
+            captureBound(store.dsl(), false, tmp, jooq);
+            cold = census(store.dsl());
+        }
+        assertThat(repaired)
+            .as("relations whose row count after a capture over the stopped store differs from a"
+                + " cold load's. None: the next capture reloads what carries no stamp and refills"
+                + " every registered target, so the emptied one comes back")
+            .isEqualTo(cold);
     }
 
     @Test
@@ -342,6 +413,31 @@ class WarmStartRefreshTest {
             return store.dsl().selectFrom(STORE_GRAPH)
                 .where(STORE_GRAPH.GRAPH_NAME.eq(graphName)).fetchOne();
         }
+    }
+
+    /** {@link #TABLE_BOUND_SDL} captured over a real catalog, so the intent targets take rows. */
+    private static void captureBound(DSLContext dsl, boolean warm, Path scratch, JooqCatalog jooq) {
+        FactCapture.capture(dsl, warm, graph(scratch), FactCapture.SubjectConfig.none(),
+            CapturedStore.registryOf(scratch, TABLE_BOUND_SDL),
+            CapturedStore.attributionOf(scratch), jooq, List.of());
+    }
+
+    /**
+     * The latest registered target in refresh order that holds a row, which is the one a stopped
+     * pass would have left emptied: the pass empties and refills in that order, so the last
+     * populated target is the one furthest from having been reached.
+     *
+     * @return the folded relation name, or null when no registered target holds a row
+     */
+    private static String lastPopulatedTarget(DSLContext dsl) {
+        var order = Materializations.refreshOrder(dsl).registrations();
+        for (int position = order.size() - 1; position >= 0; position--) {
+            String target = order.get(position).targetTableName().toUpperCase();
+            if (dsl.fetchCount(table(name(target))) > 0) {
+                return target;
+            }
+        }
+        return null;
     }
 
     /** Row counts per base relation; views hold nothing of their own and are left out. */
