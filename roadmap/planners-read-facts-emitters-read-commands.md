@@ -12,6 +12,11 @@ last-updated: 2026-08-27
 
 # Planners read facts, emitters read commands: dissolve the walk and the leaf zoo
 
+> **Citation redirect, 2026-08-28.** The R765 and R831 citations below name items dissolved into R876;
+> both subjects live there now, R765's expression-keyed join as rung 2 of that item's lever order and
+> R831's stale DDL claims as a slice. The evidence is in
+> `roadmap/audits/2026-08-28-derived-read-cost-premise.md`.
+
 The intended architecture is one sentence. Capture writes facts; planners read facts and produce
 commands; emitters render commands; validation is questions asked of the facts. Each tier reads
 only the tier below it, so a planner never reaches past the facts into anything that produced

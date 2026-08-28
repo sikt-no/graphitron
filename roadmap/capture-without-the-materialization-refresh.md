@@ -12,6 +12,16 @@ last-updated: 2026-08-27
 
 # A capture cannot be run without the materialization refresh, so a schema whose refresh never returns leaves no store to debug
 
+> **Citation redirect, 2026-08-28.** The R856 citations below name an item dissolved into R876, which
+> takes over the performance narrative; the evidence is in
+> `roadmap/audits/2026-08-28-derived-read-cost-premise.md`. R848 is unaffected and its citations stand.
+> Two of this item's claims are also now settled rather than open: a capture of that consumer schema
+> has been observed to finish, at four hours and nineteen minutes, so the survey of fifteen empty store
+> files is explained by everybody killing it rather than by non-termination; and the number this item
+> says R848 needs, what the register's refresh costs, has been measured position by position. That
+> strengthens this item's case rather than weakening it, because the store it would produce is exactly
+> the instrument the audit had to reach for.
+
 Every capture pays the materialization refresh, and no caller can decline it. `FactCapture.capture`
 ends its one transaction with `Materializations.refresh`, then calls `Materializations.analyse`
 straight after the commit. There is no parameter, no property and no goal that stops before either.

@@ -12,6 +12,11 @@ last-updated: 2026-08-27
 
 # Capture moves below the generator: the fact tier becomes a module boundary
 
+> **Citation redirect, 2026-08-28.** The R856 citations below name an item dissolved into R876; the
+> figures it carried are in `roadmap/audits/2026-08-28-derived-read-cost-premise.md`. R848 is
+> unaffected. The 59-second registration this item cites is `intent_carrier_data_field`, priced at
+> 50.9 s on the audit's consumer-schema capture.
+
 R682 states the destination in one sentence: capture writes facts, planners read facts and produce
 commands, emitters render commands, and validation is questions asked of the facts. Each tier reads
 only the tier below it.

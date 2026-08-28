@@ -12,6 +12,20 @@ last-updated: 2026-08-28
 
 # A dev start evaluates the whole materialization register twice, the second pass producing identical rows
 
+> **Citation redirect, 2026-08-28.** The R856 citations throughout this file name an item dissolved
+> into R876, which takes over the performance narrative; the evidence is in
+> `roadmap/audits/2026-08-28-derived-read-cost-premise.md`. R848 is unaffected and its citations stand.
+> Reviewer-findings rounds below are left as written, being a dated record.
+>
+> One correction that bears on this item's arithmetic rather than only on its links. The price list
+> this file quotes, positions 1 to 14 of a consumer schema at 199 seconds with 15 and 16 unmeasured,
+> was taken **after** a capture, against a settled store, on connections that wrote nothing. A real
+> capture of that schema has since been measured from inside the refresh, and it cost 15477.1 seconds
+> over twenty registrations. Do not map the two position-by-position: the registers differ, and a
+> position is comparable between two orders only through the relation it names. What does carry is
+> the direction, and it makes this item's case stronger: a second identical pass over the register is
+> a duplicate of something that costs hours on a real schema, not of something that costs 199 seconds.
+
 `DevMojo.execute` runs the initial generator pass, whose capture already refills every registered
 materialization for the graph it captured, and then calls `Materializations.refreshAll` on the
 session store. `refreshAll` refills every registration for every graph the store holds,
