@@ -291,11 +291,12 @@ view reads. That substitution was the finding.
 ## The premise, and its enforcer
 
 The premise is now a closure statement rather than a cadence one, which is the second half of what
-the review rounds asked for. **Every base relation a registered source view reads is covered by one
-of the two hooks.** A relation is covered when it is graph-keyed and rewritten only inside a capture
-transaction of that graph, or when it is *source-partitioned*: rewritten one source at a time, inside
-a transaction that upserts that source's `store_source` row. A relation that is neither, or one
-written on a cadence no capture owns, serves stale rows under this rule and does so silently.
+the review rounds asked for. **Every base relation in the gate closure of a registered source view's
+reads, the closure defined below, is covered by one of the two hooks.** A relation is covered when
+it is graph-keyed and rewritten only inside a capture transaction of that graph, or when it is
+*source-partitioned*: rewritten one source at a time, inside a transaction that upserts that
+source's `store_source` row. A closure member that is neither, or one written on a cadence no
+capture owns, serves stale rows under this rule and does so silently.
 
 **Source-keyed and source-partitioned are two different predicates in this tree, and the first draft
 of this premise used the wrong one.** A `source_name` column says how a relation is keyed. What
@@ -332,11 +333,30 @@ omission breaks, that the relation is "refreshed in the same clearing round by t
 answer that four constants close is not a trade; it is a bug to depend on, and the assertion below
 is what turns it from a defect nobody watches into one the build states.
 
-The closure itself is cheap to compute. `ViewReferences.relationsReadBy` answers what one stored
-view definition reads, parsed out of the
-definition rather than scanned for textually, and `MaterializeDependencies` already recurses over it
-to reach the registrations a view depends on. This wants the same recursion stopped at base tables
-instead, which is a handful of lines over that primitive in the test.
+**The closure, defined once because every assertion below ranges over it: recursion that ends only
+at base relations that are no registration's target, and passes through a registration target into
+that registration's own source view.** Starting from a registered source view, a read of an unregistered
+view recurses into that view's definition, a read of a registration target recurses into the source
+view of that target's registration, and a base relation that is no registration's target ends the
+walk and joins the closure. The pass-through arm is load-bearing rather than a refinement: a
+registration target is a base table, and seventeen of the twenty registered views read at least
+one, so under a walk that stopped at every base table the targets would be the closure's most
+common member class and the premise would have to answer for them. It has no answer to give, and
+rightly: a target has no writer with a cadence of its own to cover, its rows being whatever its own
+source view computed, so its currency delegates to that view's closure. That is the same delegation
+the refresh already performs when it refills prerequisites ahead of dependents, and it is sound
+under this rule for the reason the per-graph invalidation property above states: a source rewrite
+deletes the prerequisite's claims and the dependent's together, and the pass refills prerequisites
+first, so a dependent is never recomputed over a target whose own inputs moved. With targets passed
+through, the premise needs no coverage arm for them, a target not being a closure member.
+
+This walk is a third one, deliberately not the recursion `MaterializeDependencies` runs, and not
+describable as that recursion "stopped at base tables", which is what an earlier draft of this
+section called it. That walk stops at a registered target and emits an edge saying the target's
+registration refreshes first; this one passes through the target and keeps going. Both are a
+handful of lines over the same public primitive, `ViewReferences.relationsReadBy`, which answers
+what one stored view definition reads, parsed out of the definition rather than scanned for
+textually; the gate computes its walk in the test.
 
 Four assertions over that closure, and the first is the instrument four rounds asked for: one that
 fails on the class of registration that breaks the rule, rather than one that passes while the rule
@@ -360,12 +380,15 @@ fail on the four registrations above.
    a `source_name` column is no evidence about the clear. Assertion 1 is that claim's replacement,
    and this one is left holding only the question a column genuinely answers.
 
-3. **Scoping.** A registered view whose closure contains a source-keyed relation also reads
-   `store_graph_source`. Necessary and not sufficient, and stated as such: it asserts the presence
-   of the membership relation, not the correctness of the join. The soundness argument above leans
-   on that membership, so the gate says at least that much rather than nothing, and it makes the
-   gate a second reader of a rule `store_graph`'s comment already states rather than a new rule of
-   its own.
+3. **Scoping.** A registered view whose closure contains a source-keyed relation also contains
+   `store_graph_source` in that closure. Necessary and not sufficient, and stated as such: it
+   asserts the presence of the membership relation, not the correctness of the join. This holds over
+   the register as it stands, so the case is green today, and the pass-through arm is what makes it
+   true where the scoping happened one registration upstream: a source-keyed coordinate that reaches
+   a view through a target arrives with the upstream view's `store_graph_source` read in the same
+   closure, which is where the scoping was in fact performed. The soundness argument above leans on
+   that membership, so the gate says at least that much rather than nothing, and it makes the gate a
+   second reader of a rule `store_graph`'s comment already states rather than a new rule of its own.
 
 4. **Cadence.** The closure is disjoint from the families written off the capture cadence: `walk_`,
    `rejection_`, `lint_`, `build_warning_` and `javac_`, every one of them graph-keyed and therefore
@@ -382,8 +405,8 @@ depends on `graphitron-model` and not the reverse, so the join can only land on 
 `FactSchemaGateTest` is the home: it already sits in `StoreRefresh`'s own package, already reaches
 `Materializations` and `MaterializeDependencies`, and already walks foreign-key and key-column
 closures over the generated model, so this is a sibling of what that class does rather than a new
-kind of test. The closure reach it needs is the same public `ViewReferences.relationsReadBy`
-recursion, computed in the test.
+kind of test. The closure it needs is the pass-through walk defined above, computed in the test
+over the same public `ViewReferences.relationsReadBy` primitive.
 
 The one production change the gate wants is a visibility widening. `StoreRefresh.wholesale()` is
 `private static`, and a private member is unreachable from another class in the same package, so the
@@ -477,8 +500,9 @@ list. Its javadoc gains a sentence naming the gate as the second reader and sayi
 the definition rather than a summary of one, which is why a copy would be wrong. No behaviour change,
 and the method stays inside its package.
 
-**Nothing else for the gate.** The remaining reach is `ViewReferences.relationsReadBy` closed over
-the views the register names, plus two `INFORMATION_SCHEMA` reads, all computed in the tests. Worth
+**Nothing else for the gate.** The remaining reach is the pass-through walk the premise section
+defines, a recursion over `ViewReferences.relationsReadBy` from the views the register names, plus
+two `INFORMATION_SCHEMA` reads, all computed in the tests. Worth
 stating because the first draft of this spec proposed exposing a base-relation reach from
 `MaterializeDependencies`, and the public primitive that landed with the re-evaluation metric makes
 that unnecessary.
@@ -515,16 +539,21 @@ refreshes unconditionally.
   fixture's two graphs share a source decides the answer, and a test that hardcoded "nothing refills"
   would either be asserting the fixture's source layout by accident or be wrong.
 - **The premise gate, part one, in `MaterializeRegistryGateTest`**: assertions 2 to 4 over the
-  closure of the registered source views' reads, computed with `ViewReferences.relationsReadBy`.
+  pass-through closure the premise section defines, computed with `ViewReferences.relationsReadBy`.
   Shape and scoping are derived; the off-cadence prefixes are a roster in the test with the writer
-  named per prefix, which is the shape that gate already uses for its index exemptions. Lifting the
-  cadence into a `meta_family` column is a bigger question and is out of scope here.
+  named per prefix, which is the shape that gate already uses for its index exemptions. All three
+  hold over the register as it stands, so no case here is red. Lifting the cadence into a
+  `meta_family` column is a bigger question and is out of scope here.
 - **The premise gate, part two, in `FactSchemaGateTest`**: assertion 1, the same closure intersected
   with `StoreRefresh.wholesale()`, asserted empty. It lives in `graphitron` because that is where the
   clear predicate lives, per the placement argument above. This case is red until R872 lands, which
   is the dependency stated in the front-matter rather than a case to write around; the failure
   message names the offending relation and the registrations that reach it, so a fifth registration
-  walking into the same hole reads as the same failure rather than as a puzzle.
+  walking into the same hole reads as the same failure rather than as a puzzle. When R872 lands it
+  does not merely fix the four registrations: its four relations are `wholesale()`'s entire
+  base-relation set, so the set the closure intersects becomes empty and the assertion goes from red
+  to vacuously green. From then on it is a live instrument for exactly one future event, a relation
+  added without a partition, and that reader is the one the failure message is worded for.
 - **`MaterializationProgressTest`**: the new skip arm and the widened pass-finished event, on the
   same terms the existing cases hold for the two registration events. A reader-side pass that skips
   everything emits one skip per pair and a pass-boundary line saying so, which is the assertion that
@@ -1161,6 +1190,28 @@ is that the closure's treatment of a registration target is stated once and expl
 3's predicate is one that holds over the register as it stands, and that the premise's coverage
 definition accounts for the class of relation seventeen of the twenty registered views actually read.
 
+> *Author response, revision 3.* Accepted, and the offered shape is the one taken: the gate's
+> closure now passes through a registration target into that registration's own source view and
+> ends only at base relations that are no registration's target. The premise section states the treatment
+> once, in a definition paragraph every assertion ranges over, and carries the argument the offer
+> left to the author: a target has no writer with a cadence of its own to cover, its rows being
+> whatever its own source view computed, so its currency delegates to that view's closure, and the
+> delegation is sound because per-graph invalidation deletes a prerequisite's claims and its
+> dependent's together while the pass refills prerequisites first, so a dependent is never
+> recomputed over a target whose own inputs moved. The same paragraph retires the sentence this
+> finding caught, saying explicitly that this is a third walk rather than `MaterializeDependencies`'
+> recursion "stopped at base tables": that walk stops at a registered target and emits an edge,
+> this one passes through it. The three requirements land as follows. The treatment is stated once
+> and explicitly, as above. Assertion 3 is reworded to range over the closure ("contains
+> `store_graph_source` in that closure" rather than "reads"), holds over the register as it stands,
+> and says why the pass-through arm is what makes it true where the scoping happened one
+> registration upstream; the Tests section now states outright that assertions 2 to 4 are green
+> today, so an implementer meets no unpredicted failure. And the premise's coverage definition
+> gains no fourth arm, a target no longer being a closure member, which the definition paragraph
+> states rather than leaves to be inferred. Checked against this round's own instrument: under the
+> pass-through closure, assertion 1 is red on `sql_node_metadata` and `sql_node_key_column` alone
+> and assertions 2, 3 and 4 are green over all twenty registrations.
+
 **Non-blocking, and only worth a sentence if the author agrees.** If R872 adds its four relations to
 `PARTITIONED`, `wholesale()`'s base-relation set becomes empty, every remaining base table being
 graph-keyed, `meta_`-prefixed, source-partitioned or one of the three named `store_` exemptions. That
@@ -1169,6 +1220,12 @@ intersection with an empty set cannot fail, so the assertion goes from red to va
 stays a live instrument only for a relation added later without a partition. Worth knowing when the
 Tests section says the failure message should read as the same failure for a fifth registration
 walking into the hole.
+
+> *Author response, revision 3.* Agreed, and taken as the sentence it is worth, in the Tests section
+> beside the case it qualifies: R872's four relations are `wholesale()`'s entire base-relation set,
+> so its landing empties what assertion 1 intersects and the case goes from red to vacuously green,
+> staying a live instrument for exactly one future event, a relation added without a partition. The
+> failure-message guidance there now names that reader as the one the wording is for.
 
 **Verified this round,** beyond what rounds 2 to 4 list, so a revision need not re-argue any of it:
 `StoreRefresh.PARTITIONED` holds twenty-three relations, ten `sql_`, nine `jvm_` and four `java_`, with
