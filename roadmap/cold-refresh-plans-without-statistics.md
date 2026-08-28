@@ -1,7 +1,7 @@
 ---
 id: R867
 title: "A cold capture's refresh plans without statistics, and the penalty grows with the schema"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: model-cleanup
