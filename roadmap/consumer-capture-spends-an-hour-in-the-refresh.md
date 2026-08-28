@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-27
-last-updated: 2026-08-27
+last-updated: 2026-08-28
 ---
 
 # A consumer-schema capture spends over an hour inside the materialization refresh
@@ -253,7 +253,12 @@ expensive ones at any scale anybody can measure.
 
 **The snapshot control, which is also the price of the fix.** Snapshot the suspect into an indexed
 table, check the content agrees in both directions, re-time the readers. `source EXCEPT target` and
-`target EXCEPT source` were both empty for both snapshots, so these are cost changes and nothing else:
+`target EXCEPT source` were both empty for both snapshots, so these are cost changes and nothing else.
+Read "indexed" as load-bearing and unrecorded: the snapshots carried an index, the shape is not written
+down anywhere in this item, and the register holds one case where the same registration without its
+index was fifteen times worse than the view it replaced. So the two ratios below are an indexed
+target's, they are not a registration's until the declared shape reproduces them, and step 3b's index
+paragraph is where that is owed:
 
 | refresh statement | as shipped | `carrier_role` as table | and `decode_column` too |
 |---|---|---|---|
@@ -281,11 +286,28 @@ which orders these two.
 
 ## The transaction boundary, which was the first arm and now has a measurement against it
 
-**Read this section as a recorded dead end.** It was the strongest arm this item had before the
-measurement above, its reasoning about H2 is correct and worth keeping, and its conclusion about where
-the hour goes did not survive. It is retained in full because a future reader looking at a cold
-capture will reach for the transaction boundary on exactly this reasoning, and should meet the
-measurement rather than repeat the argument.
+**Read this section as an arm set down rather than as a dead end, and read the label off the section
+after it.** It was the strongest arm this item had before the measurement above, its reasoning about
+H2 is correct and worth keeping, and its conclusion about where the hour goes did not survive. It is
+retained in full because a future reader looking at a cold capture will reach for the transaction
+boundary on exactly this reasoning, and should meet the measurement rather than repeat the argument.
+An earlier draft of this paragraph said "recorded dead end" flatly; that is one word too strong for
+what was measured, and the correction is the next section's closing paragraph rather than a hedge
+here.
+
+**The two measurements against this arm are consistent, and it is worth saying so once rather than
+leaving a reader to reconcile them.** The timing pair below finds two statements whose clocks do not
+move with statistics. The plan pair in the next section finds seven of the twenty registrations
+planning differently on a cold store, and finds the statistics they turn on to be the registered
+targets' rather than the base facts'. Those are not the same claim about the same relations: the
+timing pair's two statements are among the seven, their plans move too, and what does not move is
+their clocks, because the term that dominates them is a `GROUP BY` over a recursive term re-evaluated
+once per driving row and no selectivity informs it. Where the clocks do move it is among the other
+five, of which that section prices two. So both readings stand as taken. What the
+wider one refutes is not this arm's premise but the cheap rung of the fix under it, and what it adds
+is that the cold penalty on a whole refresh grows with the schema rather than sitting at a constant.
+Neither touches the second arm, whose 81-fold is an order of magnitude larger than anything measured
+here, and R867 is where the residue goes, so this item's branch is unaffected in both directions.
 
 A second session measured this same arm over a wider surface, concurrently and without seeing the
 result below, and the two measurements agree where they overlap and part company on how far the
@@ -683,14 +705,18 @@ owed, and the sequence below pays it where an earlier draft of this preamble cla
 skipped it. The step list further down is kept in its original order because it is the record of what
 was decided when; the sequence for the work that remains is:
 
-1. Land the sibling logging item, so the next real capture reports which registration it entered.
+1. *Spent.* This was "land the sibling logging item, so the next real capture reports which
+   registration it entered". R855 is Done and the instrument is in the tree, so the work starts at
+   item 2.
 2. **Step 1 on the consumer schema, against the DDL the tree ships, before either registration is
    written.** Step 1's own text stands as written, "Nothing below is chosen before this step reports"
    included, and the paragraph added under that step says what "reports" means on a run that does not
    complete.
-3. Register `intent_node_id_decode_column`, the deeper candidate, and re-price both suspects. This is
-   step 3b with the localisation already done.
-4. Register `intent_input_field_carrier_role` if the first registration leaves either suspect
+3. Register `intent_node_id_decode_column`, the deeper candidate, with the index its probing reader
+   dictates, and re-price both suspects against that declared shape rather than against the snapshot
+   control's. This is step 3b with the localisation already done.
+4. Register `intent_input_field_carrier_role`, on the same terms about its index, if the first
+   registration leaves either suspect
    expensive. Take these one at a time rather than together, so each `reason` row carries the
    arithmetic of what its own registration bought, and so the second is landed on evidence rather
    than on the pair having been proposed together.
@@ -723,10 +749,11 @@ registration buys on its own.
 **1. One instrumented capture of that schema on the current DDL.** Either instrument names the
 statement, and the point of naming one here is that neither is a guess about a plan:
 
-- The sibling logging item's per-registration line, emitted before each statement is issued. Its spec
-  has settled where the output goes, an observer the caller supplies, so this step needs nothing from
-  this item once it lands. It should land first for that reason and this step is the argument for its
-  priority.
+- The sibling logging item's per-registration line, emitted before each statement is issued. It has
+  landed, R855 being Done, so this step needs nothing from this item: `Materializations.refresh`
+  reports to a `RefreshProgress` the caller supplies and `FactCapture.capture` passes one. The pass
+  boundary prints by default and the per-registration line is at the debug tier, so **the run that
+  matters has to be taken under `mvn -X`** or the line this step is discharged by never appears.
 - H2's own statement trace, `SET TRACE_LEVEL_FILE 2`, whose finished file
   `org.h2.tools.ConvertTraceFile` turns into a per-statement ranking and whose last entry names a
   statement that never returned. It needs a knob the tree does not have:
@@ -744,7 +771,10 @@ the driving relation of both suspects is a table now and was an inlined view the
 this item's remaining work is step 5 alone and its priority drops.
 
 **What "reports" means, since this step now sits ahead of the fix and must not become an unbounded
-wait on a priority-1 bug.** It does not mean a completion. The sibling logging item emits a
+wait on a priority-1 bug.** It does not mean a completion. It does mean `mvn -X`, repeated here
+because the run costs an hour and a second attempt for want of a flag is the avoidable failure: the
+per-registration line is at the debug tier, so a default-verbosity run reports the pass boundary and
+nothing this rule can be discharged by. The refresh emits a
 registration's name *before* its `DELETE` is issued, which is the ordering that item argues for
 precisely so that the registration which never returns is the one that gets named; the fact model page
 states the same property as the instrument's whole point. So a console stopped after a registration
@@ -777,9 +807,12 @@ of it disturbs the branch: the agreement on the two suspects is confirmed from t
 3b remains the fix. What it does change is that 3a's cheap half is refuted rather than merely
 unpriced, so a future reader picking this arm up starts from its expensive half.*
 
-**3a. If the plans differ: change capture's transaction shape.** *(Not taken. Step 2 agreed. Retained
-as the design that was approved and set down, and as the reasoning a future reader will need if a
-statistics-shaped failure ever does turn up. Nothing in it is work under this item.)* The shape that reaches both
+**3a. If the plans differ: change capture's transaction shape.** *(Not taken. Step 2's timing pair
+agreed on the two suspects, which is what decides the branch; the wider plan pair disagreed on seven
+of the twenty registrations, which does not, and R867 carries that. The transaction-boundary section
+above says why those two results are consistent. Retained
+as the design that was approved and set down, and as the reasoning a future reader will need for the
+statistics-shaped cost that did turn up. Nothing in it is work under this item.)* The shape that reaches both
 populations from the boundary section is one transaction per registration, each committing its own
 target's `DELETE` and `INSERT` together and analysing the target it just refilled, with the facts
 committed ahead of the first of them. Then a registration plans against base tables its predecessor's
@@ -848,7 +881,10 @@ materialization removes re-evaluation for more than one reader, and put the arit
 registration's `reason` with the refresh it adds priced as a cost and not only as a saving.
 
 The localisation and the control are done and the lever is chosen; what remains of this step is the
-two registrations and their `reason` rows. Three things the rows have to carry, since the measurement
+two registrations, the index each new target declares, and their `reason` rows. An earlier draft of
+this sentence said "the two registrations and their `reason` rows" and enumerated three obligations
+with the index absent, which is the one obligation the build refuses the change for; the paragraph
+after the bullets is that correction. Four things the rows have to carry, since the measurement
 section is a fixture measurement and a `reason` is read as a statement about the relation:
 
 - The saving and the refresh both, per registration, taken one registration at a time. The refresh
@@ -863,6 +899,113 @@ section is a fixture measurement and a `reason` is read as a statement about the
   reason is the seam and not the shape of the computation: the rows the fold walks are written by the
   refresh, and every hand-written producer has already run by then. The section below establishes
   that, and the row should say it in one clause rather than restate the argument.
+- The index's own figure and the reader it was bought for, on whatever shape the target ends up
+  declaring. The register's convention is that an index deciding a registration is argued twice, in the
+  `reason` and at the index's own site, which is what `intent_field_scope_table` and
+  `ix_field_scope_table_coordinate` do between them.
+
+**The index each new target declares, which is part of the registration rather than a tuning of it.**
+The decision is the implementer's to measure and it is not open, because the shape is dictated by a
+join predicate that is readable in the DDL today and the page states the rule:
+`docs/architecture/explanation/fact-model.adoc` says to declare an index on the target, on the columns
+a named reader joins it on, and to give the planner current statistics after the refill. So this step
+names the shape to measure first per registration and the reader that dictates it, and leaves the
+figure and any alternative shapes to the measurement.
+
+The default is to declare rather than to decline, and the reason is the register's own worst case.
+`intent_field_scope_table`'s `reason` prices its one correlating reader at 6167 ms over the view,
+342 ms over the indexed target and 91045 ms over the target with no index declared, so registering
+without the index was fifteen times worse than not registering: an inlined view can be evaluated
+restricted where a table can only be scanned. This item's own headline figures sit on that side of the
+fork. The 15x and the 81x were measured by snapshotting each candidate into an *indexed* table and the
+control did not record which shape, so neither figure transfers to a declared index by assumption, and
+re-taking them against the shape actually declared is part of this step rather than a refinement of it.
+
+**`intent_node_id_decode_column`: one probing reader and two scanning ones, and the probe spells a
+column the family says is not a key.** `intent_mutation_payload_column_live` probes it from its
+`admitted` CTE, `ON d.graph_name = a.graph_name AND d.site = 'INPUT_FIELD' AND d.path = a.path`.
+`intent_node_id_decode` drives from it through a window over the whole relation, and the carrier view's
+`landing` CTE aggregates it filtered on `site` and grouped on `(graph_name, use_site)`. So there is one
+seek for an index to serve and two readers that would pay only maintenance, which is the
+`intent_field_scope_table` shape exactly.
+
+The shape to measure first is `(graph_name, site, use_site)` rather than the probe's literal columns,
+and the reader's third conjunct becomes `d.use_site = a.path` in the same diff. That is the same
+predicate and not a widening: `intent_node_id_instruction.use_site` states that an input field's
+serialization *is* the occurrence path, so the two columns hold one string on every row this probe
+touches. What the swap buys is that the index is then on the family's declared key rather than beside
+it. `intent_node_id_decode_column.use_site`'s own comment says the whole decode family keys on that
+pair and says why, and `path`'s comment on the same relation says it is carried for a reader that wants
+the descent *rather than as a join key*, its sibling on the hop relation saying "never as a join key".
+An index on `path` would ratify a second spelling of a value the relation already carries under its
+key, in a family that states the discipline twice. It also stands to serve a second reader, `landing`'s
+`WHERE site = 'INPUT_FIELD' GROUP BY graph_name, use_site` being an ordered input this shape can
+supply, which makes the index a two-reader investment rather than a one-reader cost. If the measurement
+prefers keeping `d.path` and indexing `path`, that is a fair outcome and it carries a second
+obligation: the two column comments that say `path` is not a join key stop being true and move in the
+same commit.
+
+**`intent_input_field_carrier_role`: both readers drive from it, and it still owes a measurement rather
+than a structural decline.** Each suspect names it inside an inlined CTE, `refused` in the refusal view
+and `site` in the column view, joining `intent_input_field_filter_role` on the full grain
+`(graph_name, type_name, field_name, resolving_source_name, resolving_schema, resolving_table)`, and
+each outer query then joins that CTE on the same coordinate. Whether the outer coordinate reaches the
+carrier read as a seek is a plan question and not a reading of the text, this item having recorded that
+H2 optimizes an inlined view or CTE per set of index conditions at execution. That is exactly the
+question a "nothing probes in" decline may not assume, so the roster's structural route is unavailable
+here and `EXPLAIN ANALYZE` is the instrument. The null hypothesis to measure is the mirror of the
+sibling index `ix_input_field_filter_role_site`: that six-column grain, with `carrier_role` appended on
+the sibling comment's own reasoning, the refusal arm filtering `cr.carrier_role = 'REMOTE'` where the
+payload arm applies no role filter, so the tail makes the two arms' populations disjoint in the index
+for one reader of the two.
+
+**Three gates, and what each wants.** `MaterializeRegistryGateTest.everyTargetIsIndexedOrStatesWhyNot`
+asserts by equality in both directions that the registered targets carrying no declared index are
+exactly that test's `NO_INDEX` roster, so each new target either declares an index or adds a roster
+row. The roster takes two kinds of argument and the difference decides which is available here: most
+rows are a measured decline, several index shapes over every view whose derivation reaches the target
+with statistics current on both sides, and four rows decline structurally on a reader roster with no
+measurement, every reader driving from the target so that no coordinate is sought. The deeper candidate
+has a probing reader and the carrier's probe is a plan question, so neither may take the structural
+route. The sibling gate `everyIndexOnATargetStatesItsReader` then requires any declared index to carry
+a `COMMENT ON INDEX` naming the reader that justifies it;
+`ix_node_id_decode_hop_column_step` and `ix_input_field_filter_role_site` are the exemplars for what
+that comment contains, a named reader, the predicate it spells, the shapes weighed and the `UNIQUE`
+decision argued. So the measurement's output is a comment and not only a column list.
+`DerivedReadCostTest` is the third gate on the same decision, failing a registration that costs another
+reader more than it saves, and both scanning readers of the deeper candidate are inside its matrix.
+
+**Do not reach for a primary key instead.** Where a target's grain has no nullable column a
+`PRIMARY KEY` on it looks like the fact model's key discipline arriving, and the carrier candidate may
+well be that shape. It is the wrong reflex here: a PK's backing index is generated and
+`declaredIndexesOf` counts only indexes the DDL declares, so a PK-only target reports as unindexed and
+the gate then demands a roster row whose argument would be false. No registered target declares a PK
+today, which settles the house pattern. The deeper candidate could not take that route anyway, its
+grain carrying `argument_name`, `path` and `local_column_name` nullable, which is the gate's own stated
+reason a key cannot supply the index.
+
+**One thing the recursive source view changes, and it is not the index.** The recursion sits on the
+write side of the registration, so it says nothing about what shape the new target wants; the
+dependency walk already parses this view and `ViewReferences` handles recursive CTEs, as the
+structural-candidate section records. What it touches is a `reason` one rung below.
+`ix_node_id_decode_hop_column_step`'s comment opens by naming `intent_node_id_decode_column`, "whose
+recursive `lifted` term joins this relation on these three columns once per accumulated row", and
+after the registration the canonical name is a table with no recursive term, the recursion running once
+per refresh in the `_live` view instead of once per naming. That index's justification is the weakest
+in its family by its own account, the smallest gain of the five indexes it ranks itself among and
+claimed on the shape rather than on its 6268-against-6124 figure, and it is now charged against a
+reader whose cadence changed. Its comment moves in the same commit, and
+that gate checks a comment is non-blank rather than true, so nothing but this paragraph will catch it.
+
+**Four equality-pinned figures move with the registrations**, and they are the same omission class the
+index was. `MaterializeRegistryGateTest.REGISTRATIONS` is 20 by equality and each registration edits
+it. `REFRESH_STAGES` is 12 and the deeper registration lengthens the chain
+`hop_column → decode_column → payload views`, so state the new depth rather than discovering it; that
+constant's javadoc sanctions raising it in the commit that argues for it.
+`RefreshPlanStatisticsTest.PLAN_DEPENDS_ON_STATISTICS` is pinned by equality both ways and already
+holds both suspects, and an index on a freshly registered target is precisely the mechanism that set
+documents, so the index decision is expected to move it. And `DerivedReadCostTest`'s cell counts move
+by the readers reaching the new target.
 
 **The first rung, checked.** Nothing above had run this check and the plan asked for it, so here it is
 and here is what it returned. The question was not whether the decode walk can be captured, the hop
@@ -900,7 +1043,10 @@ registration is needed on the measurement whatever happens above it.
 
 One narrower middle-rung candidate exists and is not preferred: registering the fold itself, which
 would first need `lifted` promoted from a local CTE to a named relation. That is the same move
-`meta_materialize`'s hop-column reason already describes wanting for its own inner alias, it is
+`intent_node_id_instruction_live`'s `meta_materialize` reason already describes wanting for its own
+inner alias, the one row in the register that mentions one: "The narrower registration that would cut
+this one is the inner alias, which is a local alias rather than a named relation today and wants
+promoting to one before it can be registered." It is
 unpriced where the two registrations here are priced, and it does not remove the carrier's
 per-driving-row aggregate either. It belongs to whatever item argues the register's shape rather than
 to this fix.
@@ -952,6 +1098,14 @@ Three, and which tier each sits in follows from what it can hold at fixture scal
   what a source stamp promises once facts and targets commit separately. Both are assertable at the
   pipeline tier, and the second already has a family of tests to join rather than a new one to invent.
   *Moot while 3a is set down. Retained with that arm.*
+- **The index decision has its gates already and adds no test.** Three existing assertions decide it
+  and none of them is written for this item, which is the reason to name them here rather than to
+  invent a fourth: `MaterializeRegistryGateTest.everyTargetIsIndexedOrStatesWhyNot` refuses a target
+  that neither declares an index nor earns a `NO_INDEX` roster row, its sibling
+  `everyIndexOnATargetStatesItsReader` refuses a declared index whose comment names no reader, and
+  `DerivedReadCostTest` refuses a registration that costs another reader more than it saves. What the
+  implementer writes is a measurement and two comments, not a test. The equality-pinned constants in
+  step 3b's last paragraph move in the same commit for the same reason.
 - **The consumer-scale result stays a figure**, in this item while it lives and in the registration's
   `reason` or the changelog afterwards. Nothing in this repo captures a schema of that size, and
   building a fixture that did would be a wall-clock gate, which the build-guardrail item is the place
@@ -970,9 +1124,8 @@ is what let the measurement land here and pick a branch without a second filing.
 reopen, which is the mechanism the plan named for exactly this case, so the trade came out roughly
 even rather than badly.
 
-Two new Backlog items are now expected, both from the measurement rather than from the fix, and
-neither blocking. A third candidate turned out to be already covered, and the finding it rests on
-belongs to that item instead:
+Three entries, all from the measurement rather than from the fix and none blocking. Two are filed and
+the third is still expected:
 
 - **R867 carries the first arm's measurement past this file's deletion**, and it is filed rather than
   left here for one reason: what "The first arm measured over all twenty registrations" establishes is
@@ -983,20 +1136,34 @@ belongs to that item instead:
   consumer-scale capture still costs materially more than the same refresh warm, so it cannot compete
   with the branch this item chose.
 
-- **`report-inline-multiplicity` cannot see the two things that made this expensive**, and R849 is
-  where that lands rather than a new filing. It counts references to relations the DDL declares, so a
-  local CTE name is invisible to it, and H2 inlines a non-recursive CTE exactly like a view; it
-  under-reported the carrier view's expansion by half in each suspect for that reason. And it cannot
-  see correlation at all, which is the factor that turns a constant into a driving-row count. The
-  metric's own documentation is careful that it ranks breadth and not cost, so this is not a broken
-  tool; it is a tool that missed the two relations that stopped captures from finishing. What has
-  changed since this bullet was written is that the capability exists: `ViewReferences` is in the tree
-  reading multiplicity, correlated positions and recursive CTEs off the stored view definitions, and
-  R849 is Ready to build the weighted metric over it. R849 disclaims touching this reporter at any
-  outcome except through its acceptance gate's negative branch, which asks whether the shipped step is
-  deleted rather than kept as a nearly-right one. So this is evidence for that branch and not an item:
-  the two relations the reporter missed are a worked case of what keeping it nearly-right costs, and
-  it should be carried into R849 rather than filed beside it.
+- **`report-inline-multiplicity` cannot see the two things that made this expensive**, and R871
+  carries it, filed fresh. It counts references to relations the DDL declares, so a local CTE name is
+  invisible to it, and H2 inlines a non-recursive CTE exactly like a view; it under-reported the
+  carrier view's expansion by half in each suspect for that reason. And it cannot see correlation at
+  all, which is the factor that turns a constant into a driving-row count. The metric's own
+  documentation is careful that it ranks breadth and not cost, so this is not a broken tool; it is a
+  tool that missed the two relations that stopped captures from finishing.
+
+  An earlier draft of this bullet routed the finding into R849 instead, on the reading that R849 was
+  Ready and would put the keep-or-delete question to this reporter through its acceptance gate's
+  negative branch. That reading is wrong twice over now. R849 is Done, and `roadmap/changelog.md`
+  records it as a negative result: the weighted metric was built, run against a real capture, failed
+  its own pre-committed gate, and the negative branch was executed, `ReEvaluationMetric` and its test
+  deleted with `ViewReferences` and its positions kept. The branch asked its question of the metric
+  R849 itself built, and `report-inline-multiplicity` survived that pass without being asked:
+  `InlineMultiplicityCheck` is still wired into `Main`, still configured in that module's pom and
+  still documented on the fact model page. So the destination is closed and the decision it was meant
+  to inform was taken without it.
+
+  Filed fresh rather than folded into R848, which is the other candidate and is the wrong one on its
+  own terms: R848 is In Progress and declines instrument work explicitly, on R849's result that a
+  static reading of the stored definitions cannot rank the twenty registrations. Folding a live
+  reporter's keep-correct-or-delete question into an item under implementation would widen a plan
+  whose scope section exists to refuse exactly that. Dropped-as-spent was the third option and is
+  refused for the opposite reason: the reporter runs in the build today, its ranking is what a reader
+  meets first, and the two relations it missed are the sharpest worked case anybody has for what it
+  cannot see. R871 carries the case and the three dispositions, and the observation itself outlives
+  this file either way, being recorded where a reader of the metric meets it.
 - **`Materializations.analyse`'s javadoc prices statistics with a scan count.** 8880 scans against
   523, offered as "most of the gain the indexes exist for". Scan counts are row counts and not costs,
   and the tree already records an index that removed 96% of a relation's visits and moved the clock not
@@ -1022,9 +1189,12 @@ an hour of silence into a progress report. It should still land first, and step 
 argument for it.
 R850 describes this failure mode at a different relation and assumes the trigger is someone editing
 that arm; this is a second trigger, on store size alone with no code change. R839 is position 6.
-R848 is the frame, asking whether the register's shape is right at all, and R849 builds the
-instrument that frame needs; the reporter finding in the Roadmap entries section is evidence for
-R849's acceptance gate rather than an item of its own. R857 has a dev start
+R848 is the frame, asking whether the register's shape is right at all, and it is In Progress. R849
+was the instrument that frame asked for and it is Done as a negative result: the weighted metric was
+built, refused by its own acceptance gate and deleted, with `ViewReferences` kept, and
+`roadmap/changelog.md` carries the figures. So the frame proceeds without a score, which is what R848
+now plans around. The reporter finding in the Roadmap entries section is R871, filed fresh, that
+gate having already run without reaching the reporter. R857 has a dev start
 evaluating the register twice, which doubles whatever a refresh costs on the surface a person waits
 on, and its second pass runs on a settled store with statistics, so it is not the pass this item is
 about.
@@ -1210,6 +1380,51 @@ Either is fine, and pricing it here is not required. What a reviewer cannot appr
 enumeration that presents itself as the remaining work while leaving out the one obligation the
 build will refuse the change for.
 
+**Author note.** Took both branches, which turned out to be one: the shape is named per registration
+and the figure is the implementer's. Step 3b's closing sentence now says "the two registrations, the
+index each new target declares, and their `reason` rows", the enumeration is four obligations with the
+index's own figure and its reader as the fourth, and a paragraph after the bullets carries the
+decision. What made the shape nameable rather than open is that the fact model page already states the
+rule, declare an index on the target on the columns a named reader joins it on, and that for both
+candidates the reader that dictates it is in the DDL now. So the paragraph names the shape to measure
+first with the reader that dictates it, states the default as declare-rather-than-decline on the
+`intent_field_scope_table` precedent the finding supplied, and leaves the figure and any alternative
+shape to the measurement.
+
+The deeper candidate's shape is not the probe's literal columns, and finding it out is the one place
+this went somewhere the finding did not point. The probe is on `(graph_name, site, path)` as quoted,
+but `intent_node_id_decode_column.path`'s own comment says it is carried for a reader that wants the
+descent *rather than as a join key*, the hop sibling says "never as a join key", and `use_site`'s
+comment states that the whole decode family keys on that pair and why. The two columns hold one string
+on every row the probe touches, `intent_node_id_instruction.use_site` recording that an input field's
+serialization is the occurrence path itself. So the shape to measure first is
+`(graph_name, site, use_site)` with the reader's third conjunct spelled `d.use_site = a.path` in the
+same diff: the same predicate, on the family's declared key instead of beside it, and it stands to
+serve the carrier view's `landing` aggregate as an ordered input too, which makes it a two-reader
+investment. Indexing `path` stays a fair outcome of the measurement and now carries its own
+obligation, the two column comments that call it not-a-join-key moving in the same commit.
+
+Four things came with it that the finding did not ask for and that belong to the same omission class.
+The carrier candidate cannot take the roster's structural route, its readers driving from it inside
+inlined CTEs whose outer coordinate may or may not reach it as a seek, which is precisely the plan
+question a "nothing probes in" decline may not assume; its null hypothesis is stated as the mirror of
+`ix_input_field_filter_role_site`. The gate has a sibling, `everyIndexOnATargetStatesItsReader`, so the
+measurement's output is a `COMMENT ON INDEX` and not only a column list, and `DerivedReadCostTest` is a
+third gate on the same decision. A `PRIMARY KEY` is the wrong reflex here, its backing index being
+generated where the gate counts only declared ones. And the deeper registration makes
+`ix_node_id_decode_hop_column_step`'s comment false one rung below, that comment naming
+`intent_node_id_decode_column`'s recursive term as the reader it serves once per accumulated row, which
+is the one thing the recursive source view actually changes and it is not the index. Step 3b closes on
+the four equality-pinned constants each registration moves, `REGISTRATIONS`, `REFRESH_STAGES`,
+`PLAN_DEPENDS_ON_STATISTICS` and `DerivedReadCostTest`'s cell counts, for the same reason the index was
+worth stating: they are what the build refuses the change for.
+
+Two places outside step 3b moved with it. The snapshot control paragraph now says that "indexed" is
+load-bearing and that the shape was not recorded, so the 15x and the 81x are an indexed target's and
+not a registration's until the declared shape reproduces them. And Tests gains a bullet naming the
+three existing gates and saying that what the implementer writes here is a measurement and two
+comments rather than a test.
+
 **Finding 2: the item's disposal of its own `report-inline-multiplicity` finding routes it into R849,
 which has shipped, and whose acceptance gate has already run.** The Roadmap entries bullet says the
 capability exists and that "R849 is Ready to build the weighted metric over it", that R849 "disclaims
@@ -1231,6 +1446,40 @@ what gets filed rather than a stale pointer.
 
 What would satisfy it: pick one of those and say so, with the two false sentences about R849's status
 corrected. On its own this finding would not have withheld the gate; it travels with finding 1.
+
+**Author note.** Picked file-fresh, and filed it rather than only saying so: R871,
+`roadmap/inline-multiplicity-reporter-misses-inlined-ctes-and-correlation.md`, Backlog, carrying the
+worked case and three dispositions for the reporter, keep-as-is with the blind spots documented,
+re-base it on `ViewReferences`, or delete it on R849's own precedent. Filing rather than pointing is
+the part this finding is really about: a disposal that names a destination it does not create is the
+same failure one round later.
+
+Fold-into-R848 was the alternative and is refused on that item's own terms. R848 is In Progress and its
+"What this item does not do" section declines instrument work explicitly, on R849's result that a static
+reading of the stored definitions cannot rank the twenty registrations, so a live reporter's
+keep-correct-or-delete question would widen a plan whose scope section exists to refuse exactly that.
+Drop-as-spent is refused for the opposite reason: the reporter runs in the build today, its ranking is
+what a reader meets first, and the two relations it missed are the sharpest case anybody has for what a
+breadth ranking cannot see.
+
+The two false sentences are corrected and the correction is stated as one rather than silently applied,
+since the Roadmap entries bullet is where a future reader will look for the reasoning. That bullet now
+says R849 is Done and a negative result, names what the negative branch actually deleted, and says that
+the branch put its question to the metric R849 built while `report-inline-multiplicity` survived the
+pass unasked, `InlineMultiplicityCheck` still being wired into `Main`, still configured in that
+module's pom and still documented on the fact model page. Related no longer says R849 "builds the
+instrument that frame needs": it says the instrument was built, refused by its own gate and deleted
+with `ViewReferences` kept, that `roadmap/changelog.md` carries the figures, and that R848 therefore
+proceeds without a score.
+
+**Author note on the three non-blocking items.** All three acted on. The middle-rung citation now names
+`intent_node_id_instruction_live`'s reason and quotes the sentence, that being the only row in the
+register that mentions an inner alias, where it previously pointed at the hop-column reason, which is
+about collapsing the walk's six-column coordinate key. The amended sequence's item 1 is struck through
+and marked spent, saying R855 is Done and the work starts at item 2. And the debug tier is now stated
+twice where it is needed rather than once where it is not: step 1's instrument bullet says the run that
+matters has to be taken under `mvn -X`, and the discharge paragraph repeats it, on the reviewer's
+reasoning that a second attempt at an hour-long run for want of a flag is the avoidable failure.
 
 Non-blocking, no response needed:
 
