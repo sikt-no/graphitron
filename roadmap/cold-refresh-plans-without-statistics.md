@@ -65,6 +65,52 @@ it. The two are independent on the evidence: the fixture behind the table above 
 reference and node-id families and holds the `@mutation` payload surface fixed at three, so the
 growth measured is not the larger mechanism under another name.
 
+## A real-schema figure, taken 2026-08-27 and recorded here 2026-08-28
+
+The gate below asks for a figure from a real schema rather than from the fixture above, and one
+exists. Measured on H2 2.4.240 against a captured store from the sis consumer project, the same
+store and the same SQL with only the presence of statistics varying:
+
+| refresh position | registration | fresh capture | selectivity zeroed | statistics present |
+|---|---|---|---|---|
+| 14 | `intent_node_id_instruction` | 624.5 s | 584.8 s | 3.8 s |
+| 15 | `intent_input_field_filter_role` | 2823.2 s | 2555.4 s | 20.9 s |
+| 16 | `intent_node_id_decode_hop_column` | 2721.5 s | did not finish | 4.7 s |
+| 1 to 16 | total | 6293 s | | 90.8 s |
+
+Sixty-nine times on the measured prefix, against 1.2 to 5.2 on the fixture. `EXPLAIN` diffs confirm
+the join order reversing between the two conditions, with identical `tableScan` counts either way,
+so the count `DerivedReadCostTest` sums does not move when this defect is present and is not the
+instrument for it. The whole refresh of that capture took four hours and nineteen minutes; an
+`ANALYZE` over the registered targets on that store costs 0.2 s.
+
+**These are not the statements the section above measured, and that is why both readings stand.**
+The 0.82 and 0.98 ratios recorded against this arm in R856 were taken on
+`intent_mutation_payload_column_live` and `intent_mutation_payload_refusal_live`, whose dominant term
+is a `GROUP BY` over a recursive term re-evaluated once per driving row and which no selectivity
+informs. The three above are disjoint from that pair. So the arm is statistics-independent where
+R856 measured it and 69-fold where this store measures it, which is the "grows with the schema"
+claim of the table above arriving at consumer scale rather than a contradiction of anything.
+
+The three dear positions are also exactly the ones reading a target the same pass refilled earlier:
+`intent_node_id_decode_hop_column_live` reads `intent_node_id_decode`, which reads
+`intent_node_id_instruction`, the target filled at position 14. Positions 1 to 13 together are 124 s
+of the 6293, against 90.8 s for all sixteen with statistics. That is the same split this item
+already states, holding at consumer scale: the target half is the whole of the penalty and the base
+half is a fraction of it.
+
+Two engine facts checked while this was recorded, both closing an escape the fix would otherwise be
+asked about:
+
+- `ANALYZE` on an empty table records nothing. Selectivity stays at H2's unanalysed default of 50 on
+  every column, and a later fill does not revisit it. This is a second and sharper reason the cheap
+  rung fails: quite apart from reaching the wrong population, an analysis placed before the refresh
+  runs against twenty empty tables and states nothing about any of them.
+- `ALTER TABLE ... ALTER COLUMN ... SELECTIVITY n` commits, verified the same way `ANALYZE` was. So
+  stating the figure by hand instead of calling `ANALYZE`, which would be the one route to
+  statistics that left the single transaction intact, is not available. Every route into H2's
+  statistics crosses a commit, and the split is forced rather than preferred.
+
 ## When to pick this up
 
 Only if all three hold. The registration that closes the larger mechanism has landed. A capture of a
@@ -73,6 +119,19 @@ figure comes from a real schema rather than from the fixture above, whose growth
 repeated and whose partitions therefore grow while its shapes do not.
 
 Absent those, this is a recorded measurement and the right action is nothing.
+
+**Where the three stand as of 2026-08-28.** The second and third are met by the section above: a real
+consumer store, and a cost of 6293 s against 90.8 s on the same rows. The first is close but not yet
+met. R856 went `Ready` to `In Progress` on 2026-08-28 and its first implementation commit registers
+`intent_node_id_decode_column` and `intent_input_field_carrier_role`, taking that item's refresh from
+60 ms to 6 on the sakila example schema; it is not yet at `Done`, and its verification against a
+consumer-size schema is what would answer its own second condition here.
+
+The order therefore stays R856 then this, and the reason is now about instrument rather than about
+priority: landing the split while R856 is mid-flight would change the regime every one of that
+item's timings was taken in, so its remaining verification would be read against a store whose
+statistics regime had moved under it. What has changed is that this item has its figure and will not
+need one when its turn comes.
 
 ## What a fix would be
 
