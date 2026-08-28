@@ -94,8 +94,10 @@ class GraphitronLanguageServerTest {
 
         @AfterEach
         void resetSeam() {
-            // Global static state; leaving it on would fail LspTraceTest's off-by-default
-            // assertion depending on class ordering.
+            // Global static state, so leaving it on would enable tracing for whatever runs next
+            // in this JVM. It is not what keeps LspTraceTest's off-by-default assertion safe:
+            // test classes in this module overlap, so a reset here could land mid-way through
+            // that class either way. Its @Isolated is what separates the two.
             LspTrace.setEnabled(false);
         }
 

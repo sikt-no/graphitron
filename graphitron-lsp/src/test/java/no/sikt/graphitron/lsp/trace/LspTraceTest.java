@@ -4,6 +4,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -25,7 +26,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * arm are all resolved once at class initialisation in production, so they are reached here
  * through the package-private seams ({@code slowMsForTesting}, {@code openSink},
  * {@code enabledFrom}) rather than by mutating the JVM's properties or environment.
+ *
+ * <p>{@code @Isolated} because its subject is process-global rather than a fixture: {@link LspTrace}
+ * holds its enabled flag and its sink in static fields, and this class rebinds both. With test
+ * classes running concurrently that cuts both ways. While the flag is on here, any sibling that
+ * parses a buffer, mutates a workspace or computes diagnostics opens spans that land in this
+ * class's capture; and {@link #resetSeam} turns the flag off under a sibling asserting that its own
+ * {@code $/setTrace} handshake left it on. Isolation is symmetric, so one annotation closes both
+ * directions.
  */
+@Isolated("rebinds LspTrace's process-global sink and enabled flag")
 class LspTraceTest {
 
     private ByteArrayOutputStream captured;
@@ -130,16 +140,30 @@ class LspTraceTest {
     }
 
     @Test
-    @DisplayName("a double close is ignored rather than corrupting the depth counter")
-    void doubleCloseIsIgnored() {
+    @DisplayName("a double close is ignored, and a span closed on another thread is not counted as it")
+    void doubleCloseIsIgnored() throws InterruptedException {
         redirectSink();
         LspTrace.setEnabled(true);
 
-        var span = LspTrace.span("phase");
+        var span = LspTrace.span("double-close");
         span.close();
         span.close();
 
-        assertThat(emitted().stream().filter(l -> l.contains("lsp-trace <")).count()).isEqualTo(1);
+        // The sink is process-global, so while this case holds the seam on, anything else running
+        // in the JVM emits into the same capture. One joined thread stands in for that: no sleep,
+        // no timing, and the sink is quiet again before the assertions read it.
+        var foreign = new Thread(() -> LspTrace.span("foreign-emitter").close(), "foreign-emitter");
+        foreign.start();
+        foreign.join();
+
+        // Scoped to the span this case opened, and over the list rather than its size, so a future
+        // breach prints the lines it found instead of "expected: 1 but was: 2".
+        assertThat(linesContaining("lsp-trace <", "double-close"))
+            .as("the second close emits nothing, and no other span's close is this span's")
+            .hasSize(1);
+        assertThat(linesContaining("lsp-trace <", "foreign-emitter"))
+            .as("the foreign close really did land in the capture, so the scoping above is doing work")
+            .hasSize(1);
     }
 
     @Test
@@ -294,12 +318,16 @@ class LspTraceTest {
         return captured.toString(StandardCharsets.UTF_8).lines().toList();
     }
 
+    private List<String> linesContaining(String marker, String name) {
+        return emitted().stream().filter(l -> l.contains(marker) && l.contains(name)).toList();
+    }
+
     private String lineContaining(String marker, String name) {
-        var lines = emitted();
-        return lines.stream()
-            .filter(l -> l.contains(marker) && l.contains(name))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("no line with " + marker + " and " + name + " in " + lines));
+        var matches = linesContaining(marker, name);
+        if (matches.isEmpty()) {
+            throw new AssertionError("no line with " + marker + " and " + name + " in " + emitted());
+        }
+        return matches.getFirst();
     }
 
     private static int indentBefore(String line, String name) {
