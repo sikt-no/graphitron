@@ -1,13 +1,13 @@
 ---
 id: R860
 title: "The LSP trace test rebinds JVM-global state while the module's other classes run beside it"
-status: Ready
+status: In Progress
 bucket: testing
 priority: 3
 theme: lsp
 depends-on: []
 created: 2026-08-27
-last-updated: 2026-08-27
+last-updated: 2026-08-28
 ---
 
 # The LSP trace test rebinds JVM-global state while the module's other classes run beside it
