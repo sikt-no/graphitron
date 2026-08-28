@@ -132,17 +132,19 @@ a measurement against it already recorded in R856, and this item takes no positi
 unrelated things in one arm: it writes `walk_type_backing_class` from the run's `ClassifiedRun`, and
 it runs the store-backed detections. A capture-only run wants the first and not the second, so
 today "capture faithfully but detect nothing" is not reachable. Lifting `TypeBackingClassRows.write`
-into its own step the caller sequences is a small change, and it is the same lift R864 names as its
-blocker, so this item pays down a piece of that one rather than working around it.
+into its own step the caller sequences is a small change, and it is a piece of the edge R870
+removes, so this item pays down part of that one rather than working around it.
 
 A capture-only run therefore still walks and still writes those rows. That is deliberate: the
 artifact this goal exists to produce is *the store a real capture writes*, minus the refresh, and a
 store missing a relation would not answer the question anyone opens it for.
 
-If R864 lands first this seam disappears rather than changing: it deletes `walk_type_backing_class`
+If R870 lands first this seam disappears rather than changing: it deletes `walk_type_backing_class`
 outright, having established that the comparison the relation served reads the walk in memory and
-needs no store-side copy, and `detect` becomes detections-only with nothing left to separate. Plan
-this seam as work, but check whether it is already done before starting it.
+needs no store-side copy, and `detect` becomes detections-only with nothing left to separate. R870
+is small and unblocked, so that is the likely order. Plan this seam as work, but check whether it is
+already done before starting it, and if it is, delete the seam rather than reinstating a write to
+have something to lift.
 
 **3. `packagesRequired()` returns `false`, as it does for `validate`.** The sentinel only substitutes
 when the parameter is absent, so a consumer with `<jooqPackage>` configured gets a full catalog

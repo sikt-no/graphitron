@@ -16,9 +16,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R865` | A capture cannot be run without the materialization refresh, so a schema whose refresh never returns leaves no store to debug | Spec | 2026-08-27 | [plan](capture-without-the-materialization-refresh.md) |
 | `R856` | A consumer-schema capture spends over an hour inside the materialization refresh | Spec | 2026-08-27 | [plan](consumer-capture-spends-an-hour-in-the-refresh.md) |
+| `R870` | The fact tier reads its consumer: capture writes a relation from the classification walk, and the comparison that relation serves never needed a store-side copy | Spec | 2026-08-28 | [plan](capture-stops-reading-the-walk.md) |
 | `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows <sub>blocked by: [capture-moves-below-the-generator](capture-moves-below-the-generator.md), [capture-without-the-materialization-refresh](capture-without-the-materialization-refresh.md)</sub> | Spec | 2026-08-27 | [plan](dev-start-refreshes-the-register-twice.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
-| `R864` | Capture moves below the generator: the fact tier becomes a module boundary | Spec | 2026-08-27 | [plan](capture-moves-below-the-generator.md) |
+| `R864` | Capture moves below the generator: the fact tier becomes a module boundary <sub>blocked by: [capture-stops-reading-the-walk](capture-stops-reading-the-walk.md)</sub> | Spec | 2026-08-27 | [plan](capture-moves-below-the-generator.md) |
 | `R848` | Design the materialization cut set as a whole instead of accreting it one registration at a time | In Progress | 2026-08-27 <sub>created 2026-08-26</sub> | [plan](materialization-cut-set-is-accreted-not-designed.md) |
 | `R859` | A dev pass captures the same graph twice, so every save evaluates the register twice | In Review | 2026-08-27 | [plan](dev-pass-captures-the-graph-twice.md) |
 | `R834` | A top-level @service returning a @table type reads columns off the returned record instead of refetching by key | In Review | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](root-service-table-return-skips-key-refetch.md) |
@@ -606,7 +607,8 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### model-cleanup
 
 - `R856` [**A consumer-schema capture spends over an hour inside the materialization refresh**](consumer-capture-spends-an-hour-in-the-refresh.md) — Spec, bug
-- `R864` [**Capture moves below the generator: the fact tier becomes a module boundary**](capture-moves-below-the-generator.md) — Spec, architecture
+- `R870` [**The fact tier reads its consumer: capture writes a relation from the classification walk, and the comparison that relation serves never needed a store-side copy**](capture-stops-reading-the-walk.md) — Spec, architecture
+- `R864` [**Capture moves below the generator: the fact tier becomes a module boundary**](capture-moves-below-the-generator.md) — Spec, architecture, blocked by [capture-stops-reading-the-walk](capture-stops-reading-the-walk.md)
 - `R848` [**Design the materialization cut set as a whole instead of accreting it one registration at a time**](materialization-cut-set-is-accreted-not-designed.md) — In Progress, architecture
 - `R839` [**The carrier states one condition twice, and the duplicate re-derives the producer once per driving row**](carrier-refresh-inlined-producer-cte.md) — In Review, model
 - `R781` [**intent_field_column_table costs 151 seconds for 116 rows, and it is the inlining**](field-column-table-inlining-cost.md) — Backlog, model
