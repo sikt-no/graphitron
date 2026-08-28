@@ -5,9 +5,9 @@ status: Spec
 bucket: dx
 priority: 2
 theme: tooling
-depends-on: [capture-moves-below-the-generator, capture-without-the-materialization-refresh]
+depends-on: [capture-moves-below-the-generator, capture-without-the-materialization-refresh, warm-capture-empties-unpartitioned-catalog-relations]
 created: 2026-08-27
-last-updated: 2026-08-27
+last-updated: 2026-08-28
 ---
 
 # A dev start evaluates the whole materialization register twice, the second pass producing identical rows
@@ -51,19 +51,22 @@ There is a second-order effect worth stating because it bears on the fix. `refre
 `analyse` inline and the capture path calls it after its transaction closes, so both passes also
 re-gather statistics.
 
-## The pass count is three, and only one of them is this item's
+## The pass count is two, and only one of them is this item's
 
-Worth stating so the fix is not credited with more than it does. A dev start captures twice, because
-`DevMojo.execute` calls `runGeneratorPass` and then `buildOutputQuietly`, and every generator entry
-point captures: `generateIncremental` and `buildOutput` both reach
+Worth stating so the fix is not credited with more than it does. A dev start captures once, and every
+generator entry point captures: `runPass` and `buildOutput` both reach
 `GraphQLRewriteGenerator.captureAndRead`, and each capture ends with `Materializations.refresh` for
-its graph inside its own transaction. So a dev start evaluates the register twice before `refreshAll`
-makes it three times, and `DevMojo.regenerate` pays the first two again on every schema save, which
-is the cadence a developer actually feels.
+its graph inside its own transaction. So a dev start evaluates the register once before `refreshAll`
+makes it twice, and `DevMojo.regeneratePass` pays the first one again on every schema save, which is
+the cadence a developer actually feels.
 
-The double capture is a separate defect with a separate fix (one pass producing both the emitted
-tree and the catalog, or the catalog read off the pass that already ran), filed as R859. This item is
-the third pass only: the one evaluation that no capture asked for.
+It was three until R859 landed, and the arithmetic is worth keeping because it is what this fix is
+measured against. `DevMojo.execute` used to call `runGeneratorPass` and then `buildOutputQuietly`,
+and `regenerate` the same pair, so a round captured the graph twice milliseconds apart from one
+context. That was a separate defect with a separate fix, and R859 shipped it: the generator carries
+one pipeline body and four projections of it, and each mojo entry point takes exactly one. This item
+is the pass that survives that collapse, the one evaluation no capture asked for, and it is now half
+of a dev start's register work rather than a third of it.
 
 ## What changes for a consumer
 
@@ -73,15 +76,24 @@ sooner, plus one further pass per graph the store holds whose partitions no capt
 Nothing about generated output changes.
 
 What a reader may observe is worth stating exactly rather than sweepingly, because the first draft
-of this item promised more than it could deliver and three review rounds said so. Within one JVM,
+of this item promised more than it could deliver and four review rounds said so. Within one JVM,
 which is every cadence a build or a dev session produces on its own, no reader observes a stale row:
 a partition is refilled unless something recorded that it was already filled from rows nothing has
 touched since. Two cases fall outside that, both of them named and argued under "What the rule gives
 up" below rather than left to be discovered: a target somebody emptied by hand, and two JVMs
 capturing into one shared store at the same moment.
 
-The same change makes `-Dgraphitron.dev.skipInitial` over a warm store genuinely cheap, which it is
-not today: a start that captures nothing currently still pays the whole register.
+That single-JVM promise is one the rule keeps only over a store whose source-keyed relations are
+actually partitioned by source, and four of them are not today. That is a defect in the warm-refresh
+path rather than in this rule, it is filed as R872, and this item depends on it; the premise section
+below states the dependency and says why it is a dependency rather than a fourth thing given up.
+
+`-Dgraphitron.dev.skipInitial` gets the same win and no more, which is worth saying because an
+earlier draft advertised it as a case of its own. That flag skips the emitting run, not the capture:
+`buildOutputQuietly` reaches `buildOutput`, which is a projection of the one pipeline and captures
+like any other, so such a start refreshes its own graph once and then pays `refreshAll` on top,
+exactly as an ordinary start does. It stopped being the extreme case when R859 collapsed the double
+capture; before that it was the one start paying one capture rather than two.
 
 ## Where the knowledge belongs: in the store
 
@@ -123,7 +135,10 @@ capture ever reached, genuinely need the pass, so the call cannot go; and with i
 that the targets are current would live only in prose, which is the state this item is a report of.
 
 **What the rule gives up.** Three properties, and all three are traded knowingly. Today's
-unconditional pass silently holds each of them, so each is a real loss rather than an oversight.
+unconditional pass silently holds each of them, so each is a real loss rather than an oversight. A
+fourth candidate was raised in review and is deliberately not here: the four source-keyed relations
+the warm refresh empties wholesale, which the premise section takes as a dependency on R872 and
+argues there rather than accepting as a trade.
 
 *A hand-damaged target stops being repaired by a restart.* Somebody who empties a target through the
 store console the dev session exposes, or otherwise, no longer gets it back on the next start,
@@ -203,15 +218,27 @@ question.
    either relying on the other.
 
 2. *Source-keyed rows, which are the half the stamp rule missed.* Every rewrite of a source's
-   partition is preceded, in the same transaction, by one upsert of that source's `store_source`
-   row. `ClasspathSources.upsert` is the single site for all three kinds: the classpath entries
-   through `ClasspathSources.record`, the jOOQ schema package through `CatalogFactCapture`, and the
-   schema files through `SdlFactCapture`. Its javadoc already states the invariant this leans on,
-   that "this run is about to (re)write the source's partition", which is also why the stamp it
-   writes there is null. So that upsert additionally deletes the claims of every graph that names
-   the source, read off `store_graph_source`. A source whose partition survives unexamined is never
-   upserted (`StoreRefresh.prepare` pre-claims its `store_source` row, so `record` returns early),
-   and it correctly invalidates nothing.
+   partition happens in the same transaction as one upsert of that source's `store_source`
+   row. Same transaction is the property the rule needs, and it is deliberately not stated as an
+   ordering: two of the three sites delete before they upsert, `StoreRefresh.clear` peeling off the
+   stale `jvm_` partitions ahead of any upsert and `clearSchemaSources` deleting the `sql_`
+   partition and upserting after it. `ClasspathSources.upsert` is the single site for all three
+   kinds: the classpath entries through `ClasspathSources.record`, the jOOQ schema package through
+   `CatalogFactCapture`, and the schema files through `SdlFactCapture`. Its javadoc already states
+   the invariant this leans on, that "this run is about to (re)write the source's partition", which
+   is also why the stamp it writes there is null. So that upsert additionally deletes the claims of
+   every graph that names the source, read off `store_graph_source`. A source whose partition
+   survives unexamined is never upserted (`StoreRefresh.prepare` pre-claims its `store_source` row,
+   so `record` returns early), and it correctly invalidates nothing.
+
+   One corner in that reach, stated rather than mechanised. `captureExtensions` reaches
+   `sources.record` only past a successful `sink.claim(JVM_CLASS, className)`, so a source whose
+   every class name is shadowed by a duplicate earlier in the same census has its stale partition
+   deleted by `StoreRefresh.clear` and is never upserted, leaving the claims of graphs naming it
+   standing. It needs every one of a source's classes to be shadowed, so it is rare rather than
+   impossible, and the graphs that also name the shadowing source see those classes there anyway.
+   Worth a sentence here so the next reader of `captureExtensions` finds it named; not worth a
+   mechanism, and closing it would mean upserting a source the walk found nothing new in.
 
 **Why membership is the right reach and not an approximation of one.** The relation the invalidation
 reads to find the affected graphs is the same relation the affected views read to scope themselves.
@@ -266,51 +293,114 @@ view reads. That substitution was the finding.
 The premise is now a closure statement rather than a cadence one, which is the second half of what
 the review rounds asked for. **Every base relation a registered source view reads is covered by one
 of the two hooks.** A relation is covered when it is graph-keyed and rewritten only inside a capture
-transaction of that graph, or source-keyed and rewritten only inside a transaction that upserts that
-source's `store_source` row. A relation that is neither, or one written on a cadence no capture owns,
-serves stale rows under this rule and does so silently.
+transaction of that graph, or when it is *source-partitioned*: rewritten one source at a time, inside
+a transaction that upserts that source's `store_source` row. A relation that is neither, or one
+written on a cadence no capture owns, serves stale rows under this rule and does so silently.
 
-The closure itself is cheap to compute and needs no new production API.
-`ViewReferences.relationsReadBy` answers what one stored view definition reads, parsed out of the
+**Source-keyed and source-partitioned are two different predicates in this tree, and the first draft
+of this premise used the wrong one.** A `source_name` column says how a relation is keyed. What
+decides whether a capture of one graph leaves another graph's rows alone is
+`StoreRefresh.PARTITIONED`, a hand-maintained `Set<Table<?>>` that `wholesale()` subtracts: a base
+relation outside it and carrying no `graph_name` is emptied for every source by `clear`'s
+predicate-free `deleteFrom(table).execute()`, on every warm capture of any graph. Four source-keyed
+`sql_` relations are outside it today, and two of those are in the closure of four of the twenty
+registrations: `sql_node_metadata` and `sql_node_key_column`, reached through
+`intent_node_metadata_defect` by `intent_node_id_instruction_live`,
+`intent_input_field_filter_role_live`, `intent_mutation_payload_refusal_live` and
+`intent_mutation_payload_column_live`. So the premise as first stated is false over the register as
+it stands.
+
+The failure it admits is the persisting kind, which is what decides what this item does about it. A
+capture of graph A empties those two relations for B's sources without upserting any of them, so
+nothing deletes B's claims and B is served its previous, still-correct rows. Then let A and B share
+one source, which is the ordinary reason two graphs sit in one store: A's upsert of the shared source
+deletes B's claims, the reader-side pass refills B's partitions from a store in which B's other
+sources' node metadata is gone, and records a fresh claim over the result. That wrong answer stands
+until B is captured again.
+
+**Why this is a dependency and not a fourth thing given up.** The omission is `StoreRefresh`'s, not
+this rule's, and it is filed as R872, which this item's `depends-on` names. Two reasons for taking it
+as a dependency rather than absorbing it into "What the rule gives up". First, what it would cost to
+absorb: a gate that lets the four registrations pass has to exempt the two relations by name, which
+is a roster of exactly the shape rounds 2 and 3 refused twice, and it would sit beside a claim rule
+whose entire argument is that a source-keyed read needs no exemption because a writer retracts it.
+Second, what it would cost to fix: R872's likely change is four constants added to a set whose
+per-source deletes `CatalogFactCapture.clearSchemaSources` already performs, in the same loop body as
+the ten listed relations, and `sql_node_metadata`'s own table comment already claims the property the
+omission breaks, that the relation is "refreshed in the same clearing round by the same walk" as
+`sql_table` and that "a family boundary here would cut one refresh unit in half". A persisting wrong
+answer that four constants close is not a trade; it is a bug to depend on, and the assertion below
+is what turns it from a defect nobody watches into one the build states.
+
+The closure itself is cheap to compute. `ViewReferences.relationsReadBy` answers what one stored
+view definition reads, parsed out of the
 definition rather than scanned for textually, and `MaterializeDependencies` already recurses over it
 to reach the registrations a view depends on. This wants the same recursion stopped at base tables
 instead, which is a handful of lines over that primitive in the test.
 
-Three assertions over that closure, and the first is the instrument three rounds asked for: one that
+Four assertions over that closure, and the first is the instrument four rounds asked for: one that
 fails on the class of registration that breaks the rule, rather than one that passes while the rule
-is unsound.
+is unsound. It is new in this revision, and it exists because the three that preceded it could not
+fail on the four registrations above.
 
-1. **Shape.** Every base relation in the closure carries `graph_name` or `source_name`. Read off
-   `INFORMATION_SCHEMA`, so it is derived rather than rostered, and it fails on a read of a relation
-   neither hook can reach. That is not a hypothetical shape: the `java_` family is keyed on `file`
-   and is deliberately not `store_source`-anchored, its charter saying so, and a registered view
-   reading it would fail here. The assertion also catches the wholesale-cleared relations for free,
-   since `StoreRefresh.wholesale` empties every base relation that is neither graph-keyed nor
-   source-partitioned, so a registered view reading a relation that any run empties outright fails
-   this assertion too. Nothing today detects that at all.
+1. **Emptied.** No base relation in the closure is emptied by the clear's wholesale arm. Read from
+   `StoreRefresh.wholesale()` itself rather than recomputed from a column or a prefix, because the
+   predicate *is* that method's exemption list and a gate that restated it would drift from the thing
+   it is guarding. This is the assertion that fails on the four registrations named above, and it
+   goes green exactly when R872 lands. Nothing today detects that class of read at all: the relation
+   passes every shape check the store can state about it and is emptied anyway.
 
-2. **Scoping.** A registered view whose closure contains a source-keyed relation also reads
+2. **Shape.** Every base relation in the closure carries `graph_name` or `source_name`. Read off
+   `INFORMATION_SCHEMA`, so it is derived rather than rostered. What it catches is a read of a
+   relation neither hook can key on at all, which is not a hypothetical shape: the `java_` family is
+   keyed on `file` and is deliberately not `store_source`-anchored, its charter saying so, and a
+   registered view reading it fails here. What it does *not* catch is the wholesale-cleared
+   relations, and the first draft of this section claimed it did, on a misreading: `wholesale()`
+   subtracts a hand-maintained set rather than computing "not source-partitioned" from any column, so
+   a `source_name` column is no evidence about the clear. Assertion 1 is that claim's replacement,
+   and this one is left holding only the question a column genuinely answers.
+
+3. **Scoping.** A registered view whose closure contains a source-keyed relation also reads
    `store_graph_source`. Necessary and not sufficient, and stated as such: it asserts the presence
    of the membership relation, not the correctness of the join. The soundness argument above leans
    on that membership, so the gate says at least that much rather than nothing, and it makes the
    gate a second reader of a rule `store_graph`'s comment already states rather than a new rule of
    its own.
 
-3. **Cadence.** The closure is disjoint from the families written off the capture cadence: `walk_`,
+4. **Cadence.** The closure is disjoint from the families written off the capture cadence: `walk_`,
    `rejection_`, `lint_`, `build_warning_` and `javac_`, every one of them graph-keyed and therefore
-   invisible to assertion 1, plus `java_`, which assertion 1 catches on shape as well. Their writers are the
+   invisible to assertion 2, plus `java_`, which assertion 2 catches on shape as well. Their writers are the
    dev session's `CompileFacts`, `JavaSourceFacts`, `RejectionFacts` and `BuildWarningFacts`, on
    their own cadences, and `FactCapture.detect`, which writes the walk-side backing rows after the
    capture transaction has committed. A roster in the test with the writer named per prefix, which
    is the shape this gate already uses for its index exemptions.
 
+**Where each assertion lives, and the one production change it wants.** Assertions 2 to 4 range over
+the model schema alone and stay in `MaterializeRegistryGateTest`, in `graphitron-model`. Assertion 1
+joins a fact about the model to a fact about capture, and `StoreRefresh` is in `graphitron`, which
+depends on `graphitron-model` and not the reverse, so the join can only land on the capture side.
+`FactSchemaGateTest` is the home: it already sits in `StoreRefresh`'s own package, already reaches
+`Materializations` and `MaterializeDependencies`, and already walks foreign-key and key-column
+closures over the generated model, so this is a sibling of what that class does rather than a new
+kind of test. The closure reach it needs is the same public `ViewReferences.relationsReadBy`
+recursion, computed in the test.
+
+The one production change the gate wants is a visibility widening. `StoreRefresh.wholesale()` is
+`private static`, and a private member is unreachable from another class in the same package, so the
+gate as written cannot call it; it becomes package-private, with a javadoc sentence naming the gate
+as its second reader and saying why reading the method beats restating its exemption list. No
+behaviour changes and nothing is exposed beyond the package. The first draft of this item said the
+gate needed no production change; that was true of the three assertions it had, and it is not true of
+the one that works.
+
 Rounds 2 and 3 objected to a roster twice, on the ground that `sql_` and `jvm_` sit on it as
 capture-written families while the rule was unsound over exactly those reads. That objection does
-not carry against assertion 3, and the reason is not that the roster improved. A source-keyed read
-is now *covered* rather than exempted: hook 2 invalidates it, so there is nothing for a gate to
-catch there. What the roster is left holding is the narrow question a prefix genuinely answers, each
-of those families having exactly one writer, and the question a prefix cannot answer has moved to
-assertion 1, where a column answers it.
+not carry against assertion 4, and the reason is not that the roster improved. A source-partitioned
+read is *covered* rather than exempted: hook 2 invalidates it, so there is nothing for a gate to
+catch there. Whether a source-keyed read is source-partitioned is precisely assertion 1's question,
+which is where the objection's residue now lands rather than in the roster. What the roster is left
+holding is the narrow question a prefix genuinely answers, each of those families having exactly one
+writer.
 
 The gate is not debt this item introduces. A registration reading an off-cadence family is already
 wrong on the build path, where nothing calls `refreshAll` at all and the target is therefore never
@@ -336,8 +426,10 @@ crossings and says so explicitly, that "a foreign key is already a declared, eng
 path" and carries no rule anything could fork.
 
 Adding a table changes the DDL hash, so the first build after this lands opens a new store directory
-and captures cold once, and the directory it stopped using stays behind. That is the standing cost of
-any DDL edit here rather than anything this item introduces, and it is R858's subject.
+and captures cold once. The directory it stopped using no longer stays behind: R858 has shipped
+`StoreReaper`, which sweeps on open and retains the directory this run opened plus the two most
+recently used others, so the cold capture is the whole of the cost and it is the standing cost of any
+DDL edit here rather than anything this item introduces.
 
 **`Materializations.refresh(DSLContext, String, RefreshProgress)`.** Unchanged in effect, plus the
 claim: delete this graph's rows ahead of the pass, and insert one per registration whose partition it
@@ -379,8 +471,14 @@ a warm store whose capture was skipped would otherwise serve stale rows; that st
 precise, so it gains a sentence saying the currency question is now answered in the store and what
 the call costs on the ordinary path.
 
-**No production change for the gate.** The reach it needs is `ViewReferences.relationsReadBy` closed
-over the views it returns, plus two `INFORMATION_SCHEMA` reads, all computed in the test. Worth
+**`StoreRefresh.wholesale()`.** One visibility widening, `private static` to package-private, so the
+gate's first assertion reads the predicate that decides the clear instead of restating its exemption
+list. Its javadoc gains a sentence naming the gate as the second reader and saying that the list is
+the definition rather than a summary of one, which is why a copy would be wrong. No behaviour change,
+and the method stays inside its package.
+
+**Nothing else for the gate.** The remaining reach is `ViewReferences.relationsReadBy` closed over
+the views the register names, plus two `INFORMATION_SCHEMA` reads, all computed in the tests. Worth
 stating because the first draft of this spec proposed exposing a base-relation reach from
 `MaterializeDependencies`, and the public primitive that landed with the re-evaluation metric makes
 that unnecessary.
@@ -416,11 +514,17 @@ refreshes unconditionally.
   `store_graph_source` in the test rather than hardcoded. Deriving it is the point: whether that
   fixture's two graphs share a source decides the answer, and a test that hardcoded "nothing refills"
   would either be asserting the fixture's source layout by accident or be wrong.
-- **The premise gate, in `MaterializeRegistryGateTest`**: the three assertions above over the closure
-  of the registered source views' reads, computed with `ViewReferences.relationsReadBy`. Shape and
-  scoping are derived; the off-cadence prefixes are a roster in the test with the writer named per
-  prefix, which is the shape that gate already uses for its index exemptions. Lifting the cadence
-  into a `meta_family` column is a bigger question and is out of scope here.
+- **The premise gate, part one, in `MaterializeRegistryGateTest`**: assertions 2 to 4 over the
+  closure of the registered source views' reads, computed with `ViewReferences.relationsReadBy`.
+  Shape and scoping are derived; the off-cadence prefixes are a roster in the test with the writer
+  named per prefix, which is the shape that gate already uses for its index exemptions. Lifting the
+  cadence into a `meta_family` column is a bigger question and is out of scope here.
+- **The premise gate, part two, in `FactSchemaGateTest`**: assertion 1, the same closure intersected
+  with `StoreRefresh.wholesale()`, asserted empty. It lives in `graphitron` because that is where the
+  clear predicate lives, per the placement argument above. This case is red until R872 lands, which
+  is the dependency stated in the front-matter rather than a case to write around; the failure
+  message names the offending relation and the registrations that reach it, so a fifth registration
+  walking into the same hole reads as the same failure rather than as a puzzle.
 - **`MaterializationProgressTest`**: the new skip arm and the widened pass-finished event, on the
   same terms the existing cases hold for the two registration events. A reader-side pass that skips
   everything emits one skip per pair and a pass-boundary line saying so, which is the assertion that
@@ -448,13 +552,18 @@ per-registration tier and two counts at the pass boundary, per the Implementatio
 
 - **The capture-cadence cost R856 is about.** This item removes an evaluation nobody asked for; it
   does nothing about the one the capture itself performs, which is where that hour goes.
-- **The double capture per pass**, filed as R859 and described above.
+- **The double capture per pass**, which R859 has shipped and the pass-count section above accounts for.
 - **Whether the register needs to be this large**, which is R848 and upstream of how many times it is
   evaluated.
 - **A cadence column on `meta_family`.** The premise gate states the cadence in the test rather than
   in the store. Making it a relational fact is defensible and is a change to the family roster's
   charter, so it wants its own item if the gate's roster ever grows a second reader.
-- **Anything about eviction of stamped store directories**, which is R858.
+- **Fixing the `PARTITIONED` omission itself**, which is R872. This item states the premise, depends
+  on the omission being closed, and gates it; the four constants and whatever `StoreRefresh` owes its
+  own set in the other direction are that item's. The two relations with no registered reader yet,
+  `sql_routine` and `sql_routine_parameter`, are the reason it is worth an item of its own rather than
+  a line in this one: this gate would say nothing about them until a registration named a routine.
+- **Anything about eviction of stamped store directories**, which R858 has shipped.
 - **Content stamps for the two source kinds that carry none.** Round 3 named this as one of the three
   answers available: a stamp covering the source-keyed partitions, so a re-walk that changed nothing
   would leave a claim standing. It is a capture-path and DDL change with a measurement of its own,
@@ -470,9 +579,17 @@ The sibling logging item R855 would have made this visible without reading the s
 both sessions that found it found it instead; it has now landed, and the section above says what this
 item builds on and what it owes it.
 
-`depends-on` names R864 and R865, and the reason is a correctness interaction rather than a merge
-conflict. R855's shape is in the tree and nothing is owed there any more; what is owed is to the two
-items that change who decides the refresh cadence.
+`depends-on` names R864, R865 and R872, and in every case the reason is a correctness interaction
+rather than a merge conflict. R855's shape is in the tree and nothing is owed there any more; what is
+owed is to the two items that change who decides the refresh cadence, and to the one that makes the
+premise true.
+
+**R872 is the hard one of the three.** R864 and R865 are ordering preferences: this item is sound
+either way round and only the reconciliation work moves. R872 is different, because the first
+assertion of the gate is red until it lands and the premise it enforces is false until it lands. So
+this item can be specified, and its rule reviewed, ahead of R872; it cannot be marked Done ahead of
+it. The premise section carries the argument for taking it as a dependency instead of as a fourth
+accepted loss.
 
 **This item and R864 agree, which is why the sequencing is worth getting right.** The rule below
 already draws the line R864 states as an API constraint: a writer never consults a claim, because a
@@ -499,8 +616,9 @@ R864 adds a second, weaker reason: it moves capture and every caller of `Materia
 module boundary, and this item adds a relation and two writers in exactly that area. Writing them
 against the final module shape costs nothing; writing them against today's costs a migration.
 
-R848 asks whether the register needs to be this large at all, and R859 is the double capture this
-item's fix leaves in place. Neither is a dependency.
+R848 asks whether the register needs to be this large at all, and it is not a dependency. R859 was
+the double capture; it has shipped, so what this item's fix leaves in place is one capture per dev
+round rather than two, and the pass-count section states the arithmetic that follows.
 
 ## Reviewer findings
 
@@ -851,6 +969,60 @@ What would satisfy the finding, any of these, and the choice is the author's:
   reading of what was found: `sql_routine` and `sql_routine_parameter` sit in the same hole with no
   registered reader yet, so the next registration that names a routine walks into it.
 
+> *Author response, revision 2.* Accepted, and the answer is the first and third options together,
+> not the second. The omission is filed as R872 (`warm-capture-empties-unpartitioned-catalog-relations`,
+> Backlog) and named in `depends-on`; the premise now states the predicate that decides the clear
+> rather than the one a column answers; and the gate gains a fourth assertion, first in the list,
+> that intersects the closure with `StoreRefresh.wholesale()` and asserts it empty. That assertion is
+> red until R872 lands, which is what a dependency is for and is stated as such in the Tests section
+> rather than written around.
+>
+> Three things the revision had to settle that the finding leaves to the author. **Why not the cheap
+> answer.** Absorbing the omission as a fourth accepted loss requires a gate that exempts the two
+> relations by name, which is a roster of exactly the shape rounds 2 and 3 refused, sitting beside a
+> rule whose whole argument is that a source-keyed read needs no exemption because a writer retracts
+> its claim. Set against a fix that is plausibly four constants added to a set whose per-source
+> deletes `clearSchemaSources` already performs, that is not a trade worth making. The premise section
+> now carries that argument, and "What the rule gives up" says explicitly that the fourth candidate
+> went to a dependency rather than into the list.
+>
+> **Why the failure is the persisting kind,** which is what rules the cheap answer out rather than
+> merely making it unattractive. Immediately after A's warm capture, B is served its previous and
+> still-correct rows, because nothing upserted B's sources and so nothing deleted B's claims: on that
+> step alone the claim rule is better off than today's pass, which recomputes B's four targets from
+> the emptied relations. The damage arrives one step later, when A and B share a source. A's upsert of
+> the shared source deletes B's claims, the pass refills B's partitions from a store missing B's other
+> sources' node metadata, and records a fresh claim over the result, which then stands until B is
+> captured again. A wrong answer the rule records a claim for is the one category this item treats as
+> unacceptable everywhere else, the cross-process window being called out precisely because it is the
+> other member.
+>
+> **Where the assertion lives, which the finding correctly flags as a placement question.**
+> `MaterializeRegistryGateTest` is in `graphitron-model` and cannot see `graphitron`, so the gate
+> splits: assertions 2 to 4 range over the model schema and stay there, and the new assertion 1 lands
+> in `FactSchemaGateTest`, which is already in `StoreRefresh`'s own package, already reaches
+> `Materializations` and `MaterializeDependencies`, and already walks closures over the generated
+> model. That costs one production change, which the item now owns rather than eliding:
+> `StoreRefresh.wholesale()` is `private static` and a private member is unreachable from a sibling
+> class in its own package, so it widens to package-private. Restating its exemption list in the test
+> instead was the alternative and is worse for the reason the assertion exists: the list is the
+> definition, and a copy would drift from the thing being guarded.
+>
+> Also fixed, on the finding's second half: the sentence claiming assertion 1 caught the
+> wholesale-cleared relations for free is gone, replaced by an explicit statement of what a
+> `source_name` column is and is not evidence about, and the shape assertion is left holding only the
+> `java_`-shaped read it can actually fail on. The count "three assertions" and the cross-references
+> to "assertion 1" elsewhere in the section are renumbered with it.
+>
+> Not part of this finding, but changed in the same revision because trunk moved under it: R858 and
+> R859 both went `Done` between round 4 and this revision, and three passages attributed live-item
+> status to them. So the pass-count section is now "two", `DevMojo.execute` taking one projection of
+> R859's single pipeline rather than two entry points; the `skipInitial` sentence stops advertising a
+> case of its own, that flag having skipped the emitting run and never the capture, which was the
+> extreme case only while the ordinary path captured twice; and the DDL-hash paragraph says the
+> abandoned store directory is swept by R858's `StoreReaper` instead of staying behind. None of it
+> touches the rule or the gate. R864 and R865 are both still `Spec`.
+
 **Non-blocking, precision in hook 2's statement.** "Every rewrite of a source's partition is
 preceded, in the same transaction, by one upsert of that source's `store_source` row." Preceded is
 not what the code does in two of the three sites, and does not need to be: `StoreRefresh.clear`
@@ -858,12 +1030,25 @@ deletes the stale `jvm_` partitions before any upsert, and `clearSchemaSources` 
 partition and upserts after it. Same transaction is the property the rule needs and the property the
 tree has, so the fix is to drop "preceded".
 
+> *Author response, revision 2.* Fixed. Hook 2 now says the rewrite and the upsert happen in the same
+> transaction, and adds a sentence saying the ordering is deliberately not claimed, naming both sites
+> that delete before they upsert. Stating the negative is worth the clause: an implementer reading the
+> rule could otherwise take "same transaction" as shorthand for the ordering and go looking for a
+> guarantee the tree does not offer.
+
 **Non-blocking, a corner in hook 1's reach.** `captureExtensions` calls `sources.record` only after
 `sink.claim(JVM_CLASS, className)` succeeds, so a source whose every class name was already claimed
 by an earlier entry in the same census gets its partition cleared by `StoreRefresh.clear` and never
 upserted. It needs a source all of whose classes are shadowed by a duplicate earlier on the
 classpath, so it is rare rather than impossible, and it is worth a sentence somewhere rather than a
 mechanism.
+
+> *Author response, revision 2.* Taken, as a sentence in hook 2's own paragraph rather than under
+> "What the rule gives up", because it is a corner in the hook's reach rather than a property the rule
+> trades. It names the `sink.claim(JVM_CLASS, className)` gate `sources.record` sits behind, says what
+> is left standing (the claims of graphs naming the shadowed source), and says why no mechanism
+> follows: closing it means upserting a source whose walk found nothing new, and the graphs that also
+> name the shadowing source see those classes there anyway.
 
 **Verified this round,** beyond what rounds 2 and 3 list: every class the item names exists at the
 path it implies, all twenty-four of them; `meta_materialize` holds twenty rows and all twenty target
