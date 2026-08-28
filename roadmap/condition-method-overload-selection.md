@@ -1,13 +1,13 @@
 ---
 id: R675
 title: "@condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 3
 theme: interface-union
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-27
+last-updated: 2026-08-28
 ---
 
 # @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible
@@ -670,3 +670,85 @@ key; and the departure-slot multiplicity is named as the item's own headline sha
 anything the deliverable adds.
 
 Gate: question 2, and confined to one deliverable. Status stays Spec.
+
+### Round 8, In Review → Done, rework requested (session `01GMrrdoiVpD3Gu5scCzJU2g`, 2026-08-28)
+
+The mechanism is delivered and I could not fault it. `mvn install -Plocal-db` is green on the
+rebased tree. Everything below is one finding against one acceptance bullet; nothing else in the
+delivery needs to move.
+
+What I verified rather than took on trust. Admission folds the declarations into
+`AgreedConditionShape` whose constructor cannot be reached without arity, static-ness, return-type
+and `throws` agreement, and no `java.lang.reflect.Method` survives past it, so representative
+invariance is unconstructable as the deliverable promised. `pickMethod` keeps its zero/one/many
+contract byte for byte for `@service`, `@externalField` and the session hook, with
+`candidateMethods` extracted as the shared name filter so the zero-match rejection cannot drift.
+The two name components are disjoint and reach exactly the consumers the deliverable named:
+`checkConditionOverrideTargets` takes both, `inferBindingsByType`'s reflective form takes
+`bindableParamNames` alone, and the single-method inference repair falls out of that split with its
+own pipeline pin. `ParamSource.Table.TableSlot` carries the three arms the Implementation notes
+disclose, both path-step consumers read the decided fact instead of re-decoding a type name, and
+`resolveConditionJoinTarget`'s pre-existing behaviour is preserved arm for arm including the scalar
+second parameter now routed through the shared fall-through. `AmbiguousMethod` carries rendered
+signatures plus a typed `Ambiguity` discriminant that `message()` switches on, with `lspCode()`
+unchanged.
+
+Completeness evidence, checked against what the spec named for itself rather than against the
+build. The census `NOT EXISTS` is a rule over declarations and not a test over arrivals: I traced
+it and a wildcard or primitive slot is suppressed precisely because it contributes no arrival row,
+which is the reason round 6 established. Both shipped pins invert as directed and the three
+genuinely new route cases exist, the agreeing set among them. `TARGET_DISAGREEMENT_ACROSS_OVERLOADS`
+sits after the wildcard arm, so the mixed set reads as `WILDCARD_TARGET_PARAMETER` on both
+relations, asserted on both as the spec asked. The dispatch proof is real: two concrete declarations
+on `MultiTableConditionFixtures` naming their slots `customer` and `ansatt`, so the case also
+exercises the table-slot-name divergence the rule deliberately admits, and
+`occupantsByTypedNamePrefix` returns Mary and Mike, which an implicit equality could not. The mixed
+set compiles in `graphitron-sakila-example`. All four documentation coordinates are reconciled,
+including the null-probe failure mode, the `DSL.noCondition()` escape and the mixed set's trade-off
+stated in the same breath. No code-string assertions on generated method bodies anywhere in the
+delivered tests; the one message-substring assertion is at the path-step coordinate, which has no
+typed arm to assert by the spec's own out-of-scope note, and it follows three pre-existing
+assertions in the same file. Item declares no retired vocabulary. No roadmap-internal markers in the
+`docs/manual/` prose.
+
+#### F1. Three sentences in the two census views still count the pre-admission vocabulary
+
+The census deliverable said the stale rationale goes with the fold, "in the DDL and in the test
+prose that repeats it", and the acceptance bullet says neither view carries a sentence asserting the
+pre-admission rule. The three sentences the deliverable enumerated by name were rewritten. Three
+arithmetic sentences that the sixth verdict falsifies were not:
+
+- `intent_condition_method_route_defect.verdict` opens "which refusal, in a closed vocabulary of
+  five" and then enumerates six. Its closing "over five tests" was correctly updated in the same
+  comment, which is what makes the opening read as an oversight rather than a different reading.
+- `intent_condition_method_route_defect`'s view comment says "any of seven things at once, four …
+  two … and the sixth the walk's honest 'not reached'". Four plus two makes the walk's silence the
+  seventh; the leading count was updated and the ordinal was not.
+- `intent_condition_method_route`'s view comment ends "its vocabulary spans both kinds of reason:
+  three of the resolver's own typed author errors and two silences the census contributes". Four
+  now, as the defect view's own comment and `fact-model.adoc` both say.
+
+This is not phrasing. Both comments render into the published schema reference
+(`architecture/reference/schema/intent.adoc`), so the authoritative statement of the vocabulary's
+size now contradicts its own enumeration, and a reader cannot tell whether the sixth verdict is real
+or a leftover. It reads as drift rather than as a judgement because the same delta updated exactly
+this arithmetic in `fact-model.adoc` (six to seven, three to four) while leaving the DDL copy the
+architecture doc's prose is derived from. Under the item's own standard, a comment asserting a rule
+that no longer holds is a defect in the model rather than documentation drift; a comment asserting a
+vocabulary size that no longer holds is the same defect.
+
+To satisfy: correct the three counts, and confirm no fourth copy survives (`fact-model.adoc` and the
+`method` column comment are already right).
+
+#### F2, non-blocking, but fix it in the same pass
+
+Acceptance still reads "rejects with the typed `AmbiguousMethod` at the argument-, field-, and
+input-field coordinates", carving out only the path step. The Implementation notes record that the
+argument-level coordinate does not surface it, that this is pre-existing and reproduces with a
+nonexistent method name, and that it was filed as `multitable-arg-condition-rejection-dropped`. That
+disclosure is the right call and the Backlog item exists; the Acceptance bullet just was not brought
+along, so the contract now contradicts its own implementation note. Narrow the bullet to the two
+coordinates the pair actually pins.
+
+Gate: question 1, on one acceptance bullet, and the fix is three counts plus one bullet. Question 2
+passes as delivered. Status back to Ready.
