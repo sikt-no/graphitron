@@ -32,7 +32,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-27 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
-| `R860` | The LSP trace test rebinds JVM-global state while the module's other classes run beside it | In Progress | 2026-08-28 <sub>created 2026-08-27</sub> | [plan](lsp-trace-double-close-count-unscoped.md) |
+| `R860` | The LSP trace test rebinds JVM-global state while the module's other classes run beside it | In Review | 2026-08-28 <sub>created 2026-08-27</sub> | [plan](lsp-trace-double-close-count-unscoped.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -557,7 +557,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R798` [**A build swap still spends its session budget loading the directive vocabulary on the watcher thread**](vocabulary-load-blocks-the-build-watcher-thread.md) — Backlog, bug
 - `R430` [**LSP publishes graphitron:dev compile diagnostics against generated-file URIs**](lsp-compile-diagnostics-publish.md) — Backlog, feature
 - `R578` [**Raise the LSP unknown-input-field diagnostic to Error severity**](unknown-input-field-diagnostic-severity.md) — Backlog, cleanup
-- `R860` [**The LSP trace test rebinds JVM-global state while the module's other classes run beside it**](lsp-trace-double-close-count-unscoped.md) — In Progress, testing
+- `R860` [**The LSP trace test rebinds JVM-global state while the module's other classes run beside it**](lsp-trace-double-close-count-unscoped.md) — In Review, testing
 - `R782` [**Completions and code actions get statement-count enforcers**](completion-and-code-action-statement-counts.md) — Backlog, architecture
 - `R802` [**The scan-count ceiling javadoc contradicts itself about what a ceiling catches**](scan-ceiling-lesson-contradicts-itself.md) — Backlog, docs
 - `R381` [**LSP-guided @reference path authoring**](lsp-reference-path-authoring.md) — Spec, architecture

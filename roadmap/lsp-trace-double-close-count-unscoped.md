@@ -1,7 +1,7 @@
 ---
 id: R860
 title: "The LSP trace test rebinds JVM-global state while the module's other classes run beside it"
-status: In Progress
+status: In Review
 bucket: testing
 priority: 3
 theme: lsp
@@ -142,6 +142,8 @@ Two fixes to `doubleCloseIsIgnored`, each right independently of the concurrency
 
 ## Implementation
 
+Both files shipped at `7511442`. Nothing remains.
+
 - `graphitron-lsp/src/test/java/no/sikt/graphitron/lsp/trace/LspTraceTest.java`: the `@Isolated`
   annotation, the span rename, the scoped list assertion, and the new case below. The class javadoc
   gains a sentence naming what the class does to the JVM and why that means isolation, in the shape
@@ -152,6 +154,17 @@ Two fixes to `doubleCloseIsIgnored`, each right independently of the concurrency
 
 Two files. The item is small on purpose: what it buys is that a green build stops depending on which
 class happened to be running.
+
+One shape decision inside the contract, recorded because the two sections read differently on it.
+The Tests section below places the foreign emitter "in the same case", and that is where it landed:
+`doubleCloseIsIgnored` now opens `double-close`, closes it twice, joins a thread that closes
+`foreign-emitter`, and asserts `hasSize(1)` over each name's close lines. So the class still holds
+fourteen `@DisplayName` cases rather than fifteen; the Implementation bullet's "the new case below"
+names the scenario the Tests section describes, not a fifteenth method. A separate method would have
+had to restage the double close to exercise the same filter.
+
+The reviewer's precision was taken as given: `linesContaining(marker, name)` is a new list-returning
+helper, and the existing `lineContaining` now sits on top of it so one filter serves both.
 
 ## Tests
 
@@ -172,6 +185,13 @@ Unit tier, on the module's own test surface. No pipeline, compilation or executi
 How we know the item is delivered: the foreign-emitter case fails against today's filter and passes
 against the scoped one, and `LspTraceTest` carries the annotation that says why it may not overlap
 another class. Neither claim rests on a flake failing to recur.
+
+Both directions were run before the commit, on the implementing session's tree. Against the
+bare-marker filter restored in place, with everything else as shipped, `doubleCloseIsIgnored` fails
+with `expected: 1L but was: 2L`: the foreign thread's close line is the second one, which is the
+original failure reproduced on demand rather than waited for. Against the scoped filter the class is
+14 of 14. In the verification build at `7511442`, `graphitron-lsp` runs 646 tests green, including
+`LspTraceTest`'s fourteen and the six under `$/setTrace drives the trace seam`.
 
 ## Out of scope
 
@@ -249,3 +269,9 @@ One precision for the implementer, not a finding: that helper returns a single `
 `findFirst().orElseThrow(...)`, so the specified "`hasSize(1)` over the list" needs a
 list-returning sibling beside it rather than a call to `lineContaining` itself. The spec's intent is
 unambiguous and the shape of the helper is the implementer's call.
+
+**Answered (2026-08-28).** The implementation landed at `7511442`, reachable on
+`claude/graphitron-rewrite` and on `r860-lsp-trace-isolation`. The item ran Ready -> In Progress from
+here, which is the second of the two paths the round names: the previous session's branch was not
+recoverable. All four sites the finding checked are now changed, and the precision above was taken as
+specified. The finding's text stands as the record of the round that produced this pass.
