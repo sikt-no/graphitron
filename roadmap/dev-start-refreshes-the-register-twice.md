@@ -765,3 +765,122 @@ and `MaterializeRegistryGateTest`; and `meta_materialize_fill` absent from the s
 relation should be.
 
 Verdict: stays in Spec.
+
+### Round 4: Spec -> Ready, revisions requested
+
+Revision 1 answers rounds 1 to 3. The stamp comparison is gone, and the claim rule it is replaced with
+is the better shape: it moves the burden of proof from "the recorded value covers everything the
+partition reads", which the store holds no material for, onto "every writer of what the partition
+reads deletes the claim", which is a statement about a small, enumerable set of writers. That
+inversion is right, and the two writers it names check out. `ClasspathSources.upsert` really is the
+single site: three callers in main sources, exactly the three kinds the item lists, `record` for
+classpath entries, `CatalogFactCapture.clearSchemaSources` for the jOOQ package and
+`SdlFactCapture` for schema files, and in `clearSchemaSources` the upsert sits in the same loop body
+as the per-source `sql_` deletes. `FactCapture.capture` wraps the whole capture in one
+`dsl.transaction`, so "in the same transaction that falsifies it" holds. `StoreRefresh.prepare`
+pre-claims a surviving source's `store_source` row, so `record` returns early and an unexamined
+partition correctly invalidates nothing.
+
+Question 1 passes. Stated without the phase list: today a `graphitron:dev` start pays a full
+derivation of the materialization register that no capture asked for, on top of the two its own
+captures already paid, and after this lands a start over a store that already holds its graphs pays
+none of it, so the language server and MCP ports bind a full pass sooner and
+`-Dgraphitron.dev.skipInitial` over a warm store becomes cheap in fact rather than in name.
+
+Question 2 fails, on the premise and its enforcer rather than on the claim rule.
+
+**Blocking, question 2: four registered source views read two relations that every warm capture
+empties for every source, and neither hook reaches them.** The premise says a relation is covered
+when it is "source-keyed and rewritten only inside a transaction that upserts that source's
+`store_source` row". `sql_node_metadata` and `sql_node_key_column` are source-keyed and are not
+only rewritten that way. `StoreRefresh.PARTITIONED` does not list them. It lists ten `sql_`
+relations, the nine `jvm_` ones and the four `java_` ones, and these two are absent, as are
+`sql_routine` and `sql_routine_parameter`. A relation absent from that set, carrying no
+`graph_name`, falls through every exclusion in `StoreRefresh.wholesale` and is emptied by
+`clear`'s wholesale arm with a predicate-free `deleteFrom(table).execute()`, on every warm capture
+of any graph. `CatalogFactCapture` then re-inserts rows for the sources this run's census names and
+for no others. So a capture of graph A destroys graph B's rows in both relations even where A and B
+share no source at all, which is the ordinary two-modules-two-jOOQ-packages workspace and not the
+shared-package case the item's own scenario turns on. A upserts only A's sources, B's claims are
+not deleted, the reader-side pass skips B, and B's partitions stand claiming currency over rows
+that no longer exist.
+
+This is not a distant reachability argument. Four of the twenty registrations reach both relations,
+through one junction view:
+
+- `intent_node_id_instruction_live` and `intent_input_field_filter_role_live`, via
+  `intent_node_type` and `intent_inferred_node_type` into `intent_node_metadata_defect`.
+- `intent_mutation_payload_refusal_live` and `intent_mutation_payload_column_live`, via
+  `intent_input_field_carrier_role`, `intent_node_id_decode_column` and
+  `intent_resolved_node_key_column` into the same `intent_node_metadata_defect`.
+
+**The enforcer cannot see it, and the sentence that says it can is wrong about the code.** Assertion 1
+asks whether each base relation in the closure carries `graph_name` or `source_name`. Both relations
+carry `source_name`, so both pass. The item argues that this is nonetheless sufficient: "the
+assertion also catches the wholesale-cleared relations for free, since `StoreRefresh.wholesale`
+empties every base relation that is neither graph-keyed nor source-partitioned, so a registered view
+reading a relation that any run empties outright fails this assertion too." `wholesale()` does not
+compute "not source-partitioned" from any column. It subtracts a hand-maintained `Set<Table<?>>`
+constant. Source-keyed and source-partitioned are therefore two different predicates in this tree,
+and every relation on which they disagree is a registered read that assertion 1 waves through while
+a run empties it outright. Assertion 3 does not close the gap either: `sql_` is deliberately off its
+roster, because hook 2 is supposed to cover it.
+
+The shape of this is the same as rounds 1 to 3: a source-keyed read whose invalidation the rule
+misses, arriving through a different door. What is different, and worth saying plainly, is that the
+claim design is not what introduces the underlying damage. `StoreRefresh` destroys B's rows in these
+two relations today, and today's unconditional `refreshAll` merely recomputes B's four targets from
+the emptied relations rather than repairing them. The item does not have to own that defect. What it
+does have to own is that its stated premise is false over the register as it stands, and that the
+gate it offers as the premise's enforcer passes on the four registrations that falsify it. The gate
+is the item's whole answer to how the rule stays sound as registrations are added, so it has to be
+able to fail on the reads that break it.
+
+What would satisfy the finding, any of these, and the choice is the author's:
+
+- Make assertion 1 read the predicate that actually decides the clear. `StoreRefresh.PARTITIONED`
+  and `wholesale()` live in `graphitron`, the closure computation in `graphitron-model`, so this is
+  a placement question as much as an assertion one; a relation being emptied wholesale is what has
+  to fail, not a column being absent. Then say what happens to the four registrations that fail it,
+  which is likely a dependency on fixing the `PARTITIONED` omission rather than work in this item.
+- Or state the omission as a fourth thing the rule gives up, on the same terms as the hand-emptied
+  target and the cross-process window, and amend "What changes for a consumer" so the single-JVM
+  promise is one the rule keeps. That is the cheap answer, and it is defensible only if the gate
+  still names the two relations so a fifth registration reaching them is not silent.
+- Or file the `PARTITIONED` omission as its own Backlog item and depend on it, which is the honest
+  reading of what was found: `sql_routine` and `sql_routine_parameter` sit in the same hole with no
+  registered reader yet, so the next registration that names a routine walks into it.
+
+**Non-blocking, precision in hook 2's statement.** "Every rewrite of a source's partition is
+preceded, in the same transaction, by one upsert of that source's `store_source` row." Preceded is
+not what the code does in two of the three sites, and does not need to be: `StoreRefresh.clear`
+deletes the stale `jvm_` partitions before any upsert, and `clearSchemaSources` deletes the `sql_`
+partition and upserts after it. Same transaction is the property the rule needs and the property the
+tree has, so the fix is to drop "preceded".
+
+**Non-blocking, a corner in hook 1's reach.** `captureExtensions` calls `sources.record` only after
+`sink.claim(JVM_CLASS, className)` succeeds, so a source whose every class name was already claimed
+by an earlier entry in the same census gets its partition cleared by `StoreRefresh.clear` and never
+upserted. It needs a source all of whose classes are shadowed by a duplicate earlier on the
+classpath, so it is rare rather than impossible, and it is worth a sentence somewhere rather than a
+mechanism.
+
+**Verified this round,** beyond what rounds 2 and 3 list: every class the item names exists at the
+path it implies, all twenty-four of them; `meta_materialize` holds twenty rows and all twenty target
+tables carry `graph_name`; `store_materialized_partition` is absent from the schema, as a new
+relation should be; every comment the item quotes exists verbatim at the place it attributes it to,
+including `store_`'s and `meta_`'s family charters, `store_source`'s and `store_graph`'s table
+comments, `meta_family_bridge`'s foreign-key sentence, `StoreRefresh.graphScoped`'s
+ownership-scoped-by-default sentence and `ClasspathSources.upsert`'s "about to (re)write" sentence;
+`refreshAll` loops registrations outer and graphs inner, holds no transaction of its own and is
+called from `DevMojo` alone in production; `analyse` returns a count; `RefreshProgress.Event` is
+sealed over the four arms the item extends; `ViewReferences.relationsReadBy` is public and
+`MaterializeDependencies` recurses over it; the five off-cadence families are each graph-keyed and
+`java_` is keyed on `file` with neither `graph_name` nor `source_name`, so assertion 1 does fail on
+a `java_` read as claimed; `MaterializeRegistryGateTest` holds its exemptions as a named `Set.of`
+roster, which is the shape assertion 3 borrows; the cost paragraph now states R856's price list
+accurately, positions 1 to 14 at 199 seconds with 15 and 16 unmeasured and the total fenced; and
+R848, R856, R858, R859, R864 and R865 carry the statuses and shapes the item attributes to them,
+with R855 Done and its account in the changelog.
+
+Verdict: stays in Spec.
