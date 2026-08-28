@@ -1,7 +1,7 @@
 ---
 id: R876
 title: "Expensive derived reads are a modelling defect: capture writes the subtypes and omits the supertype, and materialization has been the first lever reached for instead of the last"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 1
 theme: model-cleanup
