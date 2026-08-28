@@ -1,7 +1,7 @@
 ---
 id: R867
 title: "A cold capture's refresh plans without statistics, and the penalty grows with the schema"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: model-cleanup
@@ -309,8 +309,8 @@ a tolerance to widen. `MaterializeRegistryGateTest`, `MaterializationOrderTest`,
 
 ### Phases
 
-The four phases shipped at `60e4ea8`; the retry fix below shipped after the Done-gate review. Each on
-its own full-reactor verification build.
+The four phases shipped at `60e4ea8`; the retry fix below shipped at `cc6de8f`, after the Done-gate
+review. Each on its own full-reactor verification build.
 
 1. `Materializations`: the third cadence `refreshAnalysing`, its anchor lock, its javadoc, and the
    class javadoc's cadence paragraph. Shipped.
