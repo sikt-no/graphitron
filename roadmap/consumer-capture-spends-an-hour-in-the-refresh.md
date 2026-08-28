@@ -1919,3 +1919,82 @@ Non-blocking, no response needed:
   a new test: both relations are now registrations, so `DerivedReadCostTest`'s store-derived domain
   prices each against its readers in both shapes, which is the "prefer joining it" outcome the
   bullet named.
+
+### Round 4 (2026-08-28, Spec -> Ready, reviewer session 01S5Hp1HJ3G3ddG3JWhePCuq)
+
+Verdict: withhold. One finding, on question 1, and it is one sentence rather than a design
+disagreement. The re-cut this gate is asked for is well argued and every checkable claim in it holds;
+what fails is that the body still states the opposite conclusion in one place, and that place is the
+one a Done-gate reviewer reads to find what the item admits it has not established.
+
+Question 2 passes and passes cleanly. The lever extends a shape the tree already runs twenty-two
+times rather than standing a parallel mechanism beside it; both index decisions went through the
+three gates that already govern a registration; the captured-fact rung was checked and declined on a
+seam rather than on a preference. R848, the item that asks whether the register's shape is right at
+all, declines to be a moratorium in its own words and says these two land on their own merits, so the
+twenty-first and twenty-second registrations are not in conflict with it.
+
+The re-cut's own three legs were checked at the source and all three stand. R867 exists, is In
+Review, and its "Why this goes first" section carries the reversal exactly as described: it dropped
+the three conditions that used to order it behind this item, and it names this item's remaining
+verification as one that should be re-taken after its own landing. It also exempts this item's
+mechanism from its own warning about settled-store measurements, in the terms this file claims it
+does. R875 is filed rather than promised, and it carries what this file says it carries: both
+instruments, the discharge rule (`mvn -X`, `-Dgraphitron.store.directory`, and what "reports" means
+without a completion), the two outcomes as a decision rule, and the pickup gate, with `depends-on`
+pointing at R867. The delivered code is on the tree as described:
+`ix_node_id_decode_column_use_site` with its reader-naming comment,
+`intent_input_field_carrier_role` in `MaterializeRegistryGateTest.NO_INDEX`, and `REGISTRATIONS` 22,
+`REFRESH_STAGES` 14, `DerivedReadCostTest.CELLS` 168 with the arithmetic argued in javadoc. Every
+test class, test method and symbol this file names exists under the name it gives.
+
+**Finding 1 (question 1): the Caveats section still says the proof of this item is a capture that
+finishes, which is the sentence round 3 withheld over and the claim the re-cut withdraws.** The
+first bullet of "Caveats on the figures" reads: "**No consumer-scale capture.** Nothing in that
+section is a completion on the schema this item is about. The proof of this item is still a capture
+that finishes, and no fixture figure substitutes for it." Round 3's finding 1 was that the item's own
+body named its proof as unpaid, and the revision answered it in three places, step 4, the Tests
+closing paragraph, and "What changes when this lands". This bullet is a fourth and it was not
+reached.
+
+Neither of the file's two supersession rules covers it, which is why this is a finding rather than a
+sweep the reader performs. The Implementation preamble's rule is scoped to the numbered steps, "every
+sentence *below* that treats step 1 as this item's own work or its own proof", and this bullet sits
+about two hundred and forty lines above it. The opening section's rule is scoped to sentences
+reasoning from an unobserved completion and enumerates the two places it reached, the population fact
+and the price list's inference about the tail; this bullet reasons from no completion either way, it
+asserts a proof obligation. So the sentence stands unqualified, in the section whose whole job is to
+say what the figures do not establish.
+
+That is a question-1 failure and not a tidiness one. The single decision this gate is asked for is
+whether the two registrations are this item's whole deliverable. A reader who works through the file
+finds "the two registrations, their fixture prices, and the three gates that hold them" in one
+section and "the proof of this item is still a capture that finishes" in another, and the file does
+not say which governs. On the current text a Done-gate reviewer reading the caveats for the item's
+own admissions lands on the same sentence round 3 landed on and refuses on the same ground, which is
+the loop the re-cut exists to close.
+
+What would satisfy it: make that bullet say what it now means. The caveat itself is true and worth
+keeping as a limit on the measurement section's figures, that nothing in them is a completion on the
+consumer schema and no fixture figure stands in for one; what has to go is the clause making that an
+unpaid obligation of this item rather than the question R875 carries. Left to the author rather than
+corrected here because choosing between reframing the caveat and pointing it at R875 is a decision
+about where the re-cut's boundary falls, which is the thing under review.
+
+Non-blocking, no response needed:
+
+- The title and the priority still describe the withdrawn scope. The file is titled "A
+  consumer-schema capture spends over an hour inside the materialization refresh" at priority 1, and
+  the body disclaims that outcome twice, most sharply in the Tests closing sentence: "What none of
+  that demonstrates is the outcome the title of this file describes." `roadmap/README.md` shows the
+  title and the priority and nothing else, so for the rest of this item's life the roll-up asserts
+  what the body withdraws. Not raised as blocking because the delivered scope is stated plainly in
+  the body, question 1 is answerable from it without reconstruction, and the slow-capture problem does
+  have a priority-1 owner in the roll-up, R867. Worth a thought at the next transition all the same.
+- R848 names this item as "the only route to a consumer-scale population for slice 1's second arm",
+  and its slice-1 paragraph tells its implementer to take that population "if R856 makes it
+  reachable". The re-cut moves that route to R875, and neither this file's Roadmap entries section nor
+  R875's Related section says so. R848 is In Progress with a built-in fallback ("say plainly in the
+  result if it did not"), so nothing is stranded, and the tree already has a working convention for a
+  citation of a deleted item, R848's own R849 bullet being the example. Recorded because R848's author
+  is the one who can act on it.
