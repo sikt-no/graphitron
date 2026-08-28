@@ -27,16 +27,13 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_PATH_SEGMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_FIELD;
@@ -53,13 +50,11 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_INDEX;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK_IMPORT;
@@ -74,13 +69,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RECORD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ARG_MAPPING_SIGIL;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_CONTEXT_ARG;
@@ -382,13 +374,6 @@ final class GraphitronFactCapture {
                 for (ParsedEntry entry : pairs(reference.argMapping(), directive, "condition")) {
                     int at = pair++;
                     String path = argumentPath(sink, type, field, entry);
-                    var row = sink.dsl().newRecord(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR);
-                    row.setTypeName(type);
-                    row.setFieldName(field);
-                    row.setPosition(at);
-                    row.setParamName(entry.key());
-                    row.setArgumentPath(path);
-                    sink.add(row);
                     argMappingPair(inputField ? "INPUT_FIELD_CONDITION" : "FIELD_CONDITION",
                         useSite(type, field, null, null, null), type, field, null, null, null,
                         at, entry.key(), path, directive);
@@ -423,15 +408,6 @@ final class GraphitronFactCapture {
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
                         int at = pair++;
                         String path = argumentPath(sink, type, field, entry);
-                        var pairRow = sink.dsl().newRecord(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR);
-                        pairRow.setTypeName(type);
-                        pairRow.setFieldName(field);
-                        pairRow.setOrdinal(ordinal);
-                        pairRow.setStepPosition(position);
-                        pairRow.setPosition(at);
-                        pairRow.setParamName(entry.key());
-                        pairRow.setArgumentPath(path);
-                        sink.add(pairRow);
                         argMappingPair("FIELD_REFERENCE_STEP",
                             useSite(type, field, null, ordinal, position), type, field, null,
                             ordinal, position, at, entry.key(), path, directive);
@@ -471,15 +447,6 @@ final class GraphitronFactCapture {
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
                         int at = pair++;
                         String path = argumentPath(sink, type, field, entry);
-                        var pairRow = sink.dsl().newRecord(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR);
-                        pairRow.setTypeName(type);
-                        pairRow.setFieldName(field);
-                        pairRow.setOrdinal(ordinal);
-                        pairRow.setStepPosition(position);
-                        pairRow.setPosition(at);
-                        pairRow.setParamName(entry.key());
-                        pairRow.setArgumentPath(path);
-                        sink.add(pairRow);
                         argMappingPair("REFERENCE_FOR_STEP",
                             useSite(type, field, null, ordinal, position), type, field, null,
                             ordinal, position, at, entry.key(), path, directive);
@@ -532,13 +499,6 @@ final class GraphitronFactCapture {
                 for (ParsedEntry entry : pairs(residual, directive, "service")) {
                     int at = pair++;
                     String path = argumentPath(sink, type, field, entry);
-                    var row = sink.dsl().newRecord(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR);
-                    row.setTypeName(type);
-                    row.setFieldName(field);
-                    row.setPosition(at);
-                    row.setParamName(entry.key());
-                    row.setArgumentPath(path);
-                    sink.add(row);
                     argMappingPair("SERVICE", useSite(type, field, null, null, null),
                         type, field, null, null, null, at, entry.key(), path, directive);
                 }
@@ -668,14 +628,6 @@ final class GraphitronFactCapture {
                 for (ParsedEntry entry : pairs(argMapping, directive, "argMapping")) {
                     int at = pair++;
                     String path = argumentPath(sink, type, field, entry);
-                    var row = sink.dsl().newRecord(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR);
-                    row.setTypeName(type);
-                    row.setFieldName(field);
-                    row.setOrdinal(ordinal);
-                    row.setPosition(at);
-                    row.setParamName(entry.key());
-                    row.setArgumentPath(path);
-                    sink.add(row);
                     argMappingPair("ROUTINE", useSite(type, field, null, ordinal, null),
                         type, field, null, ordinal, null, at, entry.key(), path, directive);
                 }
@@ -741,14 +693,6 @@ final class GraphitronFactCapture {
                 for (ParsedEntry entry : pairs(reference.argMapping(), directive, "condition")) {
                     int at = pair++;
                     String path = argumentPath(sink, type, field, entry);
-                    var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR);
-                    row.setTypeName(type);
-                    row.setFieldName(field);
-                    row.setArgumentName(argument);
-                    row.setPosition(at);
-                    row.setParamName(entry.key());
-                    row.setArgumentPath(path);
-                    sink.add(row);
                     argMappingPair("ARGUMENT_CONDITION", useSite(type, field, argument, null, null),
                         type, field, argument, null, null, at, entry.key(), path, directive);
                 }
@@ -784,16 +728,6 @@ final class GraphitronFactCapture {
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
                         int at = pair++;
                         String path = argumentPath(sink, type, field, entry);
-                        var pairRow = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR);
-                        pairRow.setTypeName(type);
-                        pairRow.setFieldName(field);
-                        pairRow.setArgumentName(argument);
-                        pairRow.setOrdinal(ordinal);
-                        pairRow.setStepPosition(position);
-                        pairRow.setPosition(at);
-                        pairRow.setParamName(entry.key());
-                        pairRow.setArgumentPath(path);
-                        sink.add(pairRow);
                         argMappingPair("ARGUMENT_REFERENCE_STEP",
                             useSite(type, field, argument, ordinal, position), type, field, argument,
                             ordinal, position, at, entry.key(), path, directive);
@@ -835,16 +769,6 @@ final class GraphitronFactCapture {
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
                         int at = pair++;
                         String path = argumentPath(sink, type, field, entry);
-                        var pairRow = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR);
-                        pairRow.setTypeName(type);
-                        pairRow.setFieldName(field);
-                        pairRow.setArgumentName(argument);
-                        pairRow.setOrdinal(ordinal);
-                        pairRow.setStepPosition(position);
-                        pairRow.setPosition(at);
-                        pairRow.setParamName(entry.key());
-                        pairRow.setArgumentPath(path);
-                        sink.add(pairRow);
                         argMappingPair("ARGUMENT_REFERENCE_FOR_STEP",
                             useSite(type, field, argument, ordinal, position), type, field, argument,
                             ordinal, position, at, entry.key(), path, directive);
@@ -1216,10 +1140,12 @@ final class GraphitronFactCapture {
     }
 
     /**
-     * One argMapping pair written to the shared relation beside the per-site one. The site's own
-     * relation keeps the foreign key into the directive that owns the row, which is what no single
-     * relation spanning nine parents could carry; this write is the half every site states
-     * identically, so that asking it is a scan rather than a union.
+     * One argMapping pair, written to the only relation that holds one. Every site states a pair
+     * identically, so there is nothing for a per-site relation to carry and none exists; the site
+     * is a column here instead. That leaves the reference from a pair back to the directive that
+     * spelled it unenforceable, a foreign key not being able to span the nine parents the
+     * discriminator chooses between, so this method is where the reference is kept true: the
+     * caller is inside the branch that just wrote the owning directive's own row.
      *
      * @param site the discriminator, one of the nine {@code GRAPHITRON_ARG_MAPPING_PAIR} admits
      * @param useSite the site spelled in its own grammar, total by construction and the key

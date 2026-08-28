@@ -9,7 +9,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ARG_MAPPING_SIGIL;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_UNDECODED_ARGUMENT;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,7 +54,8 @@ class SessionSigilCaptureTest {
             assertThat(sigils.get(0).getSigil()).isEqualTo("$session");
             assertThat(sigils.get(0).getPosition()).isZero();
 
-            var pairs = store.dsl().selectFrom(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR).fetch();
+            var pairs = store.dsl().selectFrom(GRAPHITRON_ARG_MAPPING_PAIR)
+                .where(GRAPHITRON_ARG_MAPPING_PAIR.SITE.eq("SERVICE")).fetch();
             assertThat(pairs).as("the residual entry keeps its ordinary pair row").hasSize(1);
             assertThat(pairs.get(0).getParamName()).isEqualTo("extra");
             assertThat(pairs.get(0).getArgumentPath()).isEqualTo("someArg");

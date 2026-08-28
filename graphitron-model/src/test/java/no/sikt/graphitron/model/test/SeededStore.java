@@ -3,33 +3,31 @@ package no.sikt.graphitron.model.test;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import org.jooq.DSLContext;
+import org.jooq.Record2;
 
 import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_PATH_SEGMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT;
@@ -42,11 +40,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT;
@@ -197,6 +192,13 @@ public final class SeededStore {
      * finished seeding, so the transcription has to be late. {@link #derive} is the line every case
      * already calls at exactly that moment.
      *
+     * <p>Beside rather than instead of is the whole of what selects a relation into this method,
+     * and the argMapping pair relation is the counterexample worth naming because it used to be
+     * here. Its sites carried nothing of their own, so the schema collapsed them into it and there
+     * is no second write left to stand in for: a case seeds that relation directly, through
+     * {@link #seedServiceArgMappingPair} and its siblings, which is both cheaper and one fewer
+     * place for a fixture to disagree with itself.
+     *
      * <p>Modelling capture rather than deriving anything, which is why it is named apart from the
      * refresh below it and why the refresh keeps the property of being an entry point production
      * also calls. A supertype is a captured fact: production writes it in the same walk that writes
@@ -253,71 +255,6 @@ public final class SeededStore {
                AND fs.field_name = f.field_name
               LEFT JOIN intent_connection_element_type ce
                 ON ce.graph_name = f.graph_name AND ce.type_name = f.named_type
-            """);
-        dsl.execute("DELETE FROM graphitron_arg_mapping_pair");
-        dsl.execute("""
-            INSERT INTO graphitron_arg_mapping_pair
-              (graph_name, site, use_site, type_name, field_name, argument_name, ordinal,
-               step_position, position, param_name, argument_path, source_name, source_line, source_column)
-            SELECT p.graph_name, 'ROUTINE',
-                   p.type_name || '.' || p.field_name || '#' || CAST(p.ordinal AS VARCHAR),
-                   p.type_name, p.field_name, NULL, p.ordinal, NULL,
-                   p.position, p.param_name, p.argument_path, d.source_name, d.source_line, d.source_column
-              FROM graphitron_routine_arg_mapping_pair p
-              JOIN graphitron_routine d ON d.graph_name = p.graph_name AND d.type_name = p.type_name
-               AND d.field_name = p.field_name AND d.ordinal = p.ordinal
-            UNION ALL
-            SELECT p.graph_name, 'SERVICE', p.type_name || '.' || p.field_name,
-                   p.type_name, p.field_name, NULL, NULL, NULL,
-                   p.position, p.param_name, p.argument_path, d.source_name, d.source_line, d.source_column
-              FROM graphitron_service_arg_mapping_pair p
-              JOIN graphitron_service d ON d.graph_name = p.graph_name AND d.type_name = p.type_name
-               AND d.field_name = p.field_name
-            UNION ALL
-            SELECT p.graph_name,
-                   CASE WHEN t.kind = 'INPUT_OBJECT' THEN 'INPUT_FIELD_CONDITION' ELSE 'FIELD_CONDITION' END,
-                   p.type_name || '.' || p.field_name,
-                   p.type_name, p.field_name, NULL, NULL, NULL,
-                   p.position, p.param_name, p.argument_path, d.source_name, d.source_line, d.source_column
-              FROM graphitron_field_condition_arg_mapping_pair p
-              JOIN graphitron_field_condition d ON d.graph_name = p.graph_name AND d.type_name = p.type_name
-               AND d.field_name = p.field_name
-              JOIN graphql_type t ON t.graph_name = p.graph_name AND t.type_name = p.type_name
-            UNION ALL
-            SELECT p.graph_name, 'ARGUMENT_CONDITION',
-                   p.type_name || '.' || p.field_name || '(' || p.argument_name || ')',
-                   p.type_name, p.field_name, p.argument_name, NULL, NULL,
-                   p.position, p.param_name, p.argument_path, d.source_name, d.source_line, d.source_column
-              FROM graphitron_argument_condition_arg_mapping_pair p
-              JOIN graphitron_argument_condition d ON d.graph_name = p.graph_name AND d.type_name = p.type_name
-               AND d.field_name = p.field_name AND d.argument_name = p.argument_name
-            UNION ALL
-            SELECT p.graph_name, 'FIELD_REFERENCE_STEP',
-                   p.type_name || '.' || p.field_name || '#' || CAST(p.ordinal AS VARCHAR)
-                     || '[' || CAST(p.step_position AS VARCHAR) || ']',
-                   p.type_name, p.field_name, NULL, p.ordinal, p.step_position,
-                   p.position, p.param_name, p.argument_path, d.source_name, d.source_line, d.source_column
-              FROM graphitron_field_reference_step_arg_mapping_pair p
-              JOIN graphitron_field_reference d ON d.graph_name = p.graph_name AND d.type_name = p.type_name
-               AND d.field_name = p.field_name AND d.ordinal = p.ordinal
-            UNION ALL
-            SELECT p.graph_name, 'ARGUMENT_REFERENCE_STEP',
-                   p.type_name || '.' || p.field_name || '(' || p.argument_name || ')#'
-                     || CAST(p.ordinal AS VARCHAR) || '[' || CAST(p.step_position AS VARCHAR) || ']',
-                   p.type_name, p.field_name, p.argument_name, p.ordinal, p.step_position,
-                   p.position, p.param_name, p.argument_path, d.source_name, d.source_line, d.source_column
-              FROM graphitron_argument_reference_step_arg_mapping_pair p
-              JOIN graphitron_argument_reference d ON d.graph_name = p.graph_name AND d.type_name = p.type_name
-               AND d.field_name = p.field_name AND d.argument_name = p.argument_name AND d.ordinal = p.ordinal
-            UNION ALL
-            SELECT p.graph_name, 'REFERENCE_FOR_STEP',
-                   p.type_name || '.' || p.field_name || '#' || CAST(p.ordinal AS VARCHAR)
-                     || '[' || CAST(p.step_position AS VARCHAR) || ']',
-                   p.type_name, p.field_name, NULL, p.ordinal, p.step_position,
-                   p.position, p.param_name, p.argument_path, d.source_name, d.source_line, d.source_column
-              FROM graphitron_reference_for_step_arg_mapping_pair p
-              JOIN graphitron_reference_for d ON d.graph_name = p.graph_name AND d.type_name = p.type_name
-               AND d.field_name = p.field_name AND d.ordinal = p.ordinal
             """);
     }
 
@@ -1071,6 +1008,146 @@ public final class SeededStore {
     // ===== argMapping pairs, one seeder per site =====
 
     /**
+     * The one relation an argMapping pair lands in, whatever site spelled it. Every seeder above
+     * ends here because the schema has one pair relation and not nine: a site that carried nothing
+     * beyond the shared pair earned no table of its own, so the site is this row's discriminator.
+     *
+     * <p>The seeders each ensure the owning directive exists before calling this, which is what
+     * keeps the reference from a pair back to its site true. The collapse gave up the foreign key
+     * that used to enforce it, a foreign key not being able to span the nine parents the
+     * discriminator chooses between, so a fixture holds the invariant the way capture does, by
+     * writing the pair inside the branch that has just established the site.
+     */
+    private static void pair(DSLContext dsl, String graphName, String site, String typeName,
+                             String fieldName, String argumentName, Integer ordinal,
+                             Integer stepPosition, int position, String paramName,
+                             String argumentPath) {
+        var location = siteLocation(dsl, graphName, site, typeName, fieldName, argumentName, ordinal);
+        dsl.insertInto(GRAPHITRON_ARG_MAPPING_PAIR)
+            .set(GRAPHITRON_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARG_MAPPING_PAIR.SITE, site)
+            .set(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE,
+                useSite(typeName, fieldName, argumentName, ordinal, stepPosition))
+            .set(GRAPHITRON_ARG_MAPPING_PAIR.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARG_MAPPING_PAIR.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARG_MAPPING_PAIR.ORDINAL, ordinal)
+            .set(GRAPHITRON_ARG_MAPPING_PAIR.STEP_POSITION, stepPosition)
+            .set(GRAPHITRON_ARG_MAPPING_PAIR.POSITION, position)
+            .set(GRAPHITRON_ARG_MAPPING_PAIR.PARAM_NAME, paramName)
+            .set(GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_PATH, argumentPath)
+            .set(GRAPHITRON_ARG_MAPPING_PAIR.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ARG_MAPPING_PAIR.SOURCE_LINE, location.value1())
+            .set(GRAPHITRON_ARG_MAPPING_PAIR.SOURCE_COLUMN, location.value2())
+            .execute();
+    }
+
+    /**
+     * Where the owning directive application was written, which is where a pair of its argMapping
+     * was written too. Read from the application rather than defaulted, because a repeatable
+     * directive's second application sits on its own line and a diagnostic about its argMapping
+     * has to point there; capture takes the same location from the same place.
+     *
+     * <p>The switch is the shape of what a foreign key could not be. One relation holds the pairs
+     * of nine kinds of site, so the site column is what says which application to ask, and the
+     * seeders above have each established that application before calling in.
+     */
+    private static Record2<Integer, Integer> siteLocation(
+            DSLContext dsl, String graphName, String site, String typeName, String fieldName,
+            String argumentName, Integer ordinal) {
+        var r = switch (site) {
+            case "ROUTINE" -> dsl
+                .select(GRAPHITRON_ROUTINE.SOURCE_LINE, GRAPHITRON_ROUTINE.SOURCE_COLUMN)
+                .from(GRAPHITRON_ROUTINE)
+                .where(GRAPHITRON_ROUTINE.GRAPH_NAME.eq(graphName),
+                    GRAPHITRON_ROUTINE.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_ROUTINE.FIELD_NAME.eq(fieldName),
+                    GRAPHITRON_ROUTINE.ORDINAL.eq(ordinal))
+                .fetchOne();
+            case "SERVICE" -> dsl
+                .select(GRAPHITRON_SERVICE.SOURCE_LINE, GRAPHITRON_SERVICE.SOURCE_COLUMN)
+                .from(GRAPHITRON_SERVICE)
+                .where(GRAPHITRON_SERVICE.GRAPH_NAME.eq(graphName),
+                    GRAPHITRON_SERVICE.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_SERVICE.FIELD_NAME.eq(fieldName))
+                .fetchOne();
+            case "FIELD_CONDITION", "INPUT_FIELD_CONDITION" -> dsl
+                .select(GRAPHITRON_FIELD_CONDITION.SOURCE_LINE,
+                    GRAPHITRON_FIELD_CONDITION.SOURCE_COLUMN)
+                .from(GRAPHITRON_FIELD_CONDITION)
+                .where(GRAPHITRON_FIELD_CONDITION.GRAPH_NAME.eq(graphName),
+                    GRAPHITRON_FIELD_CONDITION.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_FIELD_CONDITION.FIELD_NAME.eq(fieldName))
+                .fetchOne();
+            case "ARGUMENT_CONDITION" -> dsl
+                .select(GRAPHITRON_ARGUMENT_CONDITION.SOURCE_LINE,
+                    GRAPHITRON_ARGUMENT_CONDITION.SOURCE_COLUMN)
+                .from(GRAPHITRON_ARGUMENT_CONDITION)
+                .where(GRAPHITRON_ARGUMENT_CONDITION.GRAPH_NAME.eq(graphName),
+                    GRAPHITRON_ARGUMENT_CONDITION.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_ARGUMENT_CONDITION.FIELD_NAME.eq(fieldName),
+                    GRAPHITRON_ARGUMENT_CONDITION.ARGUMENT_NAME.eq(argumentName))
+                .fetchOne();
+            case "FIELD_REFERENCE_STEP" -> dsl
+                .select(GRAPHITRON_FIELD_REFERENCE.SOURCE_LINE,
+                    GRAPHITRON_FIELD_REFERENCE.SOURCE_COLUMN)
+                .from(GRAPHITRON_FIELD_REFERENCE)
+                .where(GRAPHITRON_FIELD_REFERENCE.GRAPH_NAME.eq(graphName),
+                    GRAPHITRON_FIELD_REFERENCE.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_FIELD_REFERENCE.FIELD_NAME.eq(fieldName),
+                    GRAPHITRON_FIELD_REFERENCE.ORDINAL.eq(ordinal))
+                .fetchOne();
+            case "ARGUMENT_REFERENCE_STEP" -> dsl
+                .select(GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_LINE,
+                    GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_COLUMN)
+                .from(GRAPHITRON_ARGUMENT_REFERENCE)
+                .where(GRAPHITRON_ARGUMENT_REFERENCE.GRAPH_NAME.eq(graphName),
+                    GRAPHITRON_ARGUMENT_REFERENCE.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_ARGUMENT_REFERENCE.FIELD_NAME.eq(fieldName),
+                    GRAPHITRON_ARGUMENT_REFERENCE.ARGUMENT_NAME.eq(argumentName),
+                    GRAPHITRON_ARGUMENT_REFERENCE.ORDINAL.eq(ordinal))
+                .fetchOne();
+            case "REFERENCE_FOR_STEP" -> dsl
+                .select(GRAPHITRON_REFERENCE_FOR.SOURCE_LINE,
+                    GRAPHITRON_REFERENCE_FOR.SOURCE_COLUMN)
+                .from(GRAPHITRON_REFERENCE_FOR)
+                .where(GRAPHITRON_REFERENCE_FOR.GRAPH_NAME.eq(graphName),
+                    GRAPHITRON_REFERENCE_FOR.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_REFERENCE_FOR.FIELD_NAME.eq(fieldName),
+                    GRAPHITRON_REFERENCE_FOR.ORDINAL.eq(ordinal))
+                .fetchOne();
+            default -> throw new IllegalArgumentException("no application relation for site " + site);
+        };
+        if (r == null) {
+            throw new IllegalStateException(
+                "no " + site + " application under the pair at " + typeName + "." + fieldName
+                    + "; a seeder must establish the site before writing its pairs");
+        }
+        return r;
+    }
+
+    /**
+     * The site spelled in its own grammar, which is what keys the pair relation where the
+     * decomposed columns beside it cannot, three of them being null on the sites that have no such
+     * part. Must agree with the spelling capture writes, or a fixture and a captured store would
+     * key the same site two ways.
+     */
+    private static String useSite(String typeName, String fieldName, String argumentName,
+                                  Integer ordinal, Integer stepPosition) {
+        var spelling = new StringBuilder(typeName).append('.').append(fieldName);
+        if (argumentName != null) {
+            spelling.append('(').append(argumentName).append(')');
+        }
+        if (ordinal != null) {
+            spelling.append('#').append(ordinal);
+        }
+        if (stepPosition != null) {
+            spelling.append('[').append(stepPosition).append(']');
+        }
+        return spelling.toString();
+    }
+
+    /**
      * One pair of a {@code @routine}'s {@code argMapping}, with the application under it. The
      * directive is repeatable, so the ordinal is the case's to state: it is half of what tells two
      * applications' pairs apart.
@@ -1084,15 +1161,8 @@ public final class SeededStore {
                 .and(GRAPHITRON_ROUTINE.ORDINAL.eq(ordinal)))) {
             seedRoutine(dsl, graphName, typeName, fieldName, ordinal, "Routines.someRoutine", 2);
         }
-        dsl.insertInto(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR)
-            .set(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR.ORDINAL, ordinal)
-            .set(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR.POSITION, position)
-            .set(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR.PARAM_NAME, paramName)
-            .set(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR.ARGUMENT_PATH, argumentPath)
-            .execute();
+        pair(dsl, graphName, "ROUTINE", typeName, fieldName, null, ordinal, null,
+            position, paramName, argumentPath);
     }
 
     /** One pair of a {@code @service}'s {@code argMapping}, with the application under it. */
@@ -1104,14 +1174,8 @@ public final class SeededStore {
                 .and(GRAPHITRON_SERVICE.FIELD_NAME.eq(fieldName)))) {
             seedService(dsl, graphName, typeName, fieldName, "no.example.Svc", "get");
         }
-        dsl.insertInto(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR)
-            .set(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR.TYPE_NAME, typeName)
-            .set(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR.POSITION, position)
-            .set(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR.PARAM_NAME, paramName)
-            .set(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR.ARGUMENT_PATH, argumentPath)
-            .execute();
+        pair(dsl, graphName, "SERVICE", typeName, fieldName, null, null, null,
+            position, paramName, argumentPath);
     }
 
     /**
@@ -1130,14 +1194,11 @@ public final class SeededStore {
                     .and(GRAPHITRON_FIELD_CONDITION.FIELD_NAME.eq(fieldName)))) {
             seedFieldCondition(dsl, graphName, typeName, fieldName, "no.example.Cond", "apply", false);
         }
-        dsl.insertInto(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR)
-            .set(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR.POSITION, position)
-            .set(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR.PARAM_NAME, paramName)
-            .set(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR.ARGUMENT_PATH, argumentPath)
-            .execute();
+        boolean onInput = dsl.fetchExists(GRAPHQL_TYPE, GRAPHQL_TYPE.GRAPH_NAME.eq(graphName)
+            .and(GRAPHQL_TYPE.TYPE_NAME.eq(typeName))
+            .and(GRAPHQL_TYPE.KIND.eq("INPUT_OBJECT")));
+        pair(dsl, graphName, onInput ? "INPUT_FIELD_CONDITION" : "FIELD_CONDITION",
+            typeName, fieldName, null, null, null, position, paramName, argumentPath);
     }
 
     /**
@@ -1162,15 +1223,8 @@ public final class SeededStore {
             seedArgumentCondition(dsl, graphName, typeName, fieldName, argumentName,
                 "no.example.Cond", "apply", false);
         }
-        dsl.insertInto(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR.ARGUMENT_NAME, argumentName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR.POSITION, position)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR.PARAM_NAME, paramName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR.ARGUMENT_PATH, argumentPath)
-            .execute();
+        pair(dsl, graphName, "ARGUMENT_CONDITION", typeName, fieldName, argumentName, null, null,
+            position, paramName, argumentPath);
     }
 
     /**
@@ -1192,16 +1246,8 @@ public final class SeededStore {
             seedFieldReferenceStep(dsl, graphName, typeName, fieldName, ordinal, stepPosition,
                 null, null);
         }
-        dsl.insertInto(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR.ORDINAL, ordinal)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR.STEP_POSITION, stepPosition)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR.POSITION, position)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR.PARAM_NAME, paramName)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR.ARGUMENT_PATH, argumentPath)
-            .execute();
+        pair(dsl, graphName, "FIELD_REFERENCE_STEP", typeName, fieldName, null, ordinal,
+            stepPosition, position, paramName, argumentPath);
     }
 
     /**
@@ -1247,17 +1293,8 @@ public final class SeededStore {
                 .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.POSITION, stepPosition)
                 .execute();
         }
-        dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.ARGUMENT_NAME, argumentName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.ORDINAL, ordinal)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.STEP_POSITION, stepPosition)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.POSITION, position)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.PARAM_NAME, paramName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.ARGUMENT_PATH, argumentPath)
-            .execute();
+        pair(dsl, graphName, "ARGUMENT_REFERENCE_STEP", typeName, fieldName, argumentName,
+            ordinal, stepPosition, position, paramName, argumentPath);
     }
 
     /**
@@ -1294,16 +1331,8 @@ public final class SeededStore {
                 .set(GRAPHITRON_REFERENCE_FOR_STEP.POSITION, stepPosition)
                 .execute();
         }
-        dsl.insertInto(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR)
-            .set(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR.TYPE_NAME, typeName)
-            .set(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR.ORDINAL, ordinal)
-            .set(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR.STEP_POSITION, stepPosition)
-            .set(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR.POSITION, position)
-            .set(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR.PARAM_NAME, paramName)
-            .set(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR.ARGUMENT_PATH, argumentPath)
-            .execute();
+        pair(dsl, graphName, "REFERENCE_FOR_STEP", typeName, fieldName, null, ordinal,
+            stepPosition, position, paramName, argumentPath);
     }
 
     /**

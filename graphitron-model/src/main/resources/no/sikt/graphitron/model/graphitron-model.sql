@@ -560,7 +560,6 @@ COMMENT ON COLUMN graphql_duplicate_declaration.element_kind IS 'which family''s
 COMMENT ON COLUMN graphql_duplicate_declaration.coordinate IS 'the colliding key, rendered (e.g. ''Q.title'')';
 COMMENT ON COLUMN graphql_duplicate_declaration.value_sdl IS 'the losing occurrence as written, rendered from the AST; children ride inside it, so a losing field keeps its arguments';
 
-
 -- ==== Directive definitions =======================================================
 -- The definition side of the directive surface: what a directive is, where it may sit, what
 -- arguments it declares. Capture is total over the registry, so user-authored, spec built-in,
@@ -635,7 +634,6 @@ COMMENT ON COLUMN graphql_directive_argument.description IS 'SDL description str
 COMMENT ON COLUMN graphql_directive_argument.source_name IS 'position of the formal argument in the definition';
 COMMENT ON COLUMN graphql_directive_argument.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_directive_argument.source_column IS 'source column, 1-based per the graphql-java convention';
-
 
 -- ==== Directive applications ======================================================
 -- One row per application the author wrote, one child row per argument the author passed.
@@ -891,7 +889,6 @@ COMMENT ON COLUMN graphql_directive_site.source_name IS 'the SDL file the applic
 COMMENT ON COLUMN graphql_directive_site.source_line IS 'source line of the application, 1-based';
 COMMENT ON COLUMN graphql_directive_site.source_column IS 'source column of the application, 1-based';
 
-
 -- ==== The decoded graphitron and federation inventory =============================
 -- A derivation over the transcription: every relation below is a function of the generic
 -- directive applications the graphql_ family captured, decoded into graphitron's vocabulary.
@@ -1114,25 +1111,6 @@ COMMENT ON COLUMN graphitron_field_condition_context_arg.field_name IS 'the fiel
 COMMENT ON COLUMN graphitron_field_condition_context_arg.position IS '0-based position in the contextArguments list';
 COMMENT ON COLUMN graphitron_field_condition_context_arg.name IS 'the context argument name as written';
 
-CREATE TABLE graphitron_field_condition_arg_mapping_pair (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  position      INT     NOT NULL,
-  param_name    VARCHAR NOT NULL,
-  argument_path VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, position),
-  FOREIGN KEY (graph_name, type_name, field_name)
-    REFERENCES graphitron_field_condition (graph_name, type_name, field_name)
-);
-COMMENT ON TABLE graphitron_field_condition_arg_mapping_pair IS 'An ordered pair of a field-site @condition''s argMapping. Position-keyed so an author''s duplicate parameter survives for the duplicate detection.';
-COMMENT ON COLUMN graphitron_field_condition_arg_mapping_pair.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_field_condition_arg_mapping_pair.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_field_condition_arg_mapping_pair.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_field_condition_arg_mapping_pair.position IS '0-based position within the owning list';
-COMMENT ON COLUMN graphitron_field_condition_arg_mapping_pair.param_name IS 'the Java parameter (left side)';
-COMMENT ON COLUMN graphitron_field_condition_arg_mapping_pair.argument_path IS 'the right side as written, and written is the whole of what this column claims: capture records the author''s spelling verbatim and resolves nothing. A dot opens the thing at that position, and what a thing opens into depends on what it is: an input object opens into its fields, and an ID carrying @nodeId opens into the key columns of the node type it names, so a trailing segment may be a key column rather than a field of any SDL type. Which of those a segment turned out to be is intent_argmapping_segment_binding''s answer and the key projection''s beside it; enumerating the forms here would be a second statement of a resolution those views own, and the enumeration this column carried before the key-column form existed was exactly that mistake caught late. graphitron_argument_path_segment holds the decomposition, so nothing splits this string';
-
 CREATE TABLE graphitron_argument_condition (
   graph_name    VARCHAR NOT NULL,
   type_name     VARCHAR NOT NULL,
@@ -1180,27 +1158,6 @@ COMMENT ON COLUMN graphitron_argument_condition_context_arg.field_name IS 'the f
 COMMENT ON COLUMN graphitron_argument_condition_context_arg.argument_name IS 'the argument name within the owning field';
 COMMENT ON COLUMN graphitron_argument_condition_context_arg.position IS '0-based position within the owning list';
 COMMENT ON COLUMN graphitron_argument_condition_context_arg.name IS 'the context argument name as written';
-
-CREATE TABLE graphitron_argument_condition_arg_mapping_pair (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  position      INT     NOT NULL,
-  param_name    VARCHAR NOT NULL,
-  argument_path VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, argument_name, position),
-  FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphitron_argument_condition (graph_name, type_name, field_name, argument_name)
-);
-COMMENT ON TABLE graphitron_argument_condition_arg_mapping_pair IS 'An ordered pair of an argument-site @condition''s argMapping. Position-keyed so an author''s duplicate parameter survives for the duplicate detection.';
-COMMENT ON COLUMN graphitron_argument_condition_arg_mapping_pair.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_argument_condition_arg_mapping_pair.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_argument_condition_arg_mapping_pair.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_argument_condition_arg_mapping_pair.argument_name IS 'the argument name within the owning field';
-COMMENT ON COLUMN graphitron_argument_condition_arg_mapping_pair.position IS '0-based position within the owning list';
-COMMENT ON COLUMN graphitron_argument_condition_arg_mapping_pair.param_name IS 'the Java or routine parameter (left side of the pair)';
-COMMENT ON COLUMN graphitron_argument_condition_arg_mapping_pair.argument_path IS 'the right side as written, and written is the whole of what this column claims: capture records the author''s spelling verbatim and resolves nothing. A dot opens the thing at that position, and what a thing opens into depends on what it is: an input object opens into its fields, and an ID carrying @nodeId opens into the key columns of the node type it names, so a trailing segment may be a key column rather than a field of any SDL type. Which of those a segment turned out to be is intent_argmapping_segment_binding''s answer and the key projection''s beside it; enumerating the forms here would be a second statement of a resolution those views own, and the enumeration this column carried before the key-column form existed was exactly that mistake caught late. graphitron_argument_path_segment holds the decomposition, so nothing splits this string';
 
 CREATE TABLE graphitron_field_reference (
   graph_name    VARCHAR NOT NULL,
@@ -1264,29 +1221,6 @@ COMMENT ON COLUMN graphitron_field_reference_step.table_ref_namespace_part_upper
 COMMENT ON COLUMN graphitron_field_reference_step.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 COMMENT ON COLUMN graphitron_field_reference_step.key_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint.table_schema_upper, the schema of the table holding the constraint. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 COMMENT ON COLUMN graphitron_field_reference_step.key_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s constraint_name_upper and jooq_name_upper, in that precedence. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
-
-CREATE TABLE graphitron_field_reference_step_arg_mapping_pair (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL,
-  step_position INT     NOT NULL,
-  position      INT     NOT NULL,
-  param_name    VARCHAR NOT NULL,
-  argument_path VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, ordinal, step_position, position),
-  FOREIGN KEY (graph_name, type_name, field_name, ordinal, step_position)
-    REFERENCES graphitron_field_reference_step (graph_name, type_name, field_name, ordinal, position)
-);
-COMMENT ON TABLE graphitron_field_reference_step_arg_mapping_pair IS 'An ordered pair of a step condition''s argMapping.';
-COMMENT ON COLUMN graphitron_field_reference_step_arg_mapping_pair.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_field_reference_step_arg_mapping_pair.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_field_reference_step_arg_mapping_pair.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_field_reference_step_arg_mapping_pair.ordinal IS 'the owning @reference application''s ordinal';
-COMMENT ON COLUMN graphitron_field_reference_step_arg_mapping_pair.step_position IS '0-based position of the owning step within its application''s path';
-COMMENT ON COLUMN graphitron_field_reference_step_arg_mapping_pair.position IS '0-based position within the owning list';
-COMMENT ON COLUMN graphitron_field_reference_step_arg_mapping_pair.param_name IS 'the Java or routine parameter (left side of the pair)';
-COMMENT ON COLUMN graphitron_field_reference_step_arg_mapping_pair.argument_path IS 'the right side as written, and written is the whole of what this column claims: capture records the author''s spelling verbatim and resolves nothing. A dot opens the thing at that position, and what a thing opens into depends on what it is: an input object opens into its fields, and an ID carrying @nodeId opens into the key columns of the node type it names, so a trailing segment may be a key column rather than a field of any SDL type. Which of those a segment turned out to be is intent_argmapping_segment_binding''s answer and the key projection''s beside it; enumerating the forms here would be a second statement of a resolution those views own, and the enumeration this column carried before the key-column form existed was exactly that mistake caught late. graphitron_argument_path_segment holds the decomposition, so nothing splits this string';
 
 CREATE TABLE graphitron_argument_reference (
   graph_name    VARCHAR NOT NULL,
@@ -1356,31 +1290,6 @@ COMMENT ON COLUMN graphitron_argument_reference_step.table_ref_name_part_upper I
 COMMENT ON COLUMN graphitron_argument_reference_step.key_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint.table_schema_upper, the schema of the table holding the constraint. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 COMMENT ON COLUMN graphitron_argument_reference_step.key_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s constraint_name_upper and jooq_name_upper, in that precedence. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 
-CREATE TABLE graphitron_argument_reference_step_arg_mapping_pair (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL,
-  step_position INT     NOT NULL,
-  position      INT     NOT NULL,
-  param_name    VARCHAR NOT NULL,
-  argument_path VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, argument_name, ordinal, step_position, position),
-  FOREIGN KEY (graph_name, type_name, field_name, argument_name, ordinal, step_position)
-    REFERENCES graphitron_argument_reference_step (graph_name, type_name, field_name, argument_name, ordinal, position)
-);
-COMMENT ON TABLE graphitron_argument_reference_step_arg_mapping_pair IS 'An ordered pair of an argument-site @reference step condition''s argMapping.';
-COMMENT ON COLUMN graphitron_argument_reference_step_arg_mapping_pair.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_argument_reference_step_arg_mapping_pair.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_argument_reference_step_arg_mapping_pair.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_argument_reference_step_arg_mapping_pair.argument_name IS 'the argument name within the owning field';
-COMMENT ON COLUMN graphitron_argument_reference_step_arg_mapping_pair.ordinal IS 'the owning @reference application''s ordinal';
-COMMENT ON COLUMN graphitron_argument_reference_step_arg_mapping_pair.step_position IS '0-based position of the owning step within its application''s path';
-COMMENT ON COLUMN graphitron_argument_reference_step_arg_mapping_pair.position IS '0-based position within the owning list';
-COMMENT ON COLUMN graphitron_argument_reference_step_arg_mapping_pair.param_name IS 'the Java or routine parameter (left side of the pair)';
-COMMENT ON COLUMN graphitron_argument_reference_step_arg_mapping_pair.argument_path IS 'the right side as written, and written is the whole of what this column claims: capture records the author''s spelling verbatim and resolves nothing. A dot opens the thing at that position, and what a thing opens into depends on what it is: an input object opens into its fields, and an ID carrying @nodeId opens into the key columns of the node type it names, so a trailing segment may be a key column rather than a field of any SDL type. Which of those a segment turned out to be is intent_argmapping_segment_binding''s answer and the key projection''s beside it; enumerating the forms here would be a second statement of a resolution those views own, and the enumeration this column carried before the key-column form existed was exactly that mistake caught late. graphitron_argument_path_segment holds the decomposition, so nothing splits this string';
-
 CREATE TABLE graphitron_reference_for (
   graph_name           VARCHAR NOT NULL,
   type_name            VARCHAR NOT NULL,
@@ -1445,29 +1354,6 @@ COMMENT ON COLUMN graphitron_reference_for_step.table_ref_namespace_part_upper I
 COMMENT ON COLUMN graphitron_reference_for_step.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 COMMENT ON COLUMN graphitron_reference_for_step.key_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint.table_schema_upper, the schema of the table holding the constraint. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 COMMENT ON COLUMN graphitron_reference_for_step.key_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s constraint_name_upper and jooq_name_upper, in that precedence. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
-
-CREATE TABLE graphitron_reference_for_step_arg_mapping_pair (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL,
-  step_position INT     NOT NULL,
-  position      INT     NOT NULL,
-  param_name    VARCHAR NOT NULL,
-  argument_path VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, ordinal, step_position, position),
-  FOREIGN KEY (graph_name, type_name, field_name, ordinal, step_position)
-    REFERENCES graphitron_reference_for_step (graph_name, type_name, field_name, ordinal, position)
-);
-COMMENT ON TABLE graphitron_reference_for_step_arg_mapping_pair IS 'An ordered pair of a @referenceFor step condition''s argMapping.';
-COMMENT ON COLUMN graphitron_reference_for_step_arg_mapping_pair.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_reference_for_step_arg_mapping_pair.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_reference_for_step_arg_mapping_pair.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_reference_for_step_arg_mapping_pair.ordinal IS 'the owning @referenceFor application''s ordinal';
-COMMENT ON COLUMN graphitron_reference_for_step_arg_mapping_pair.step_position IS '0-based position of the owning step within its application''s path';
-COMMENT ON COLUMN graphitron_reference_for_step_arg_mapping_pair.position IS '0-based position within the owning list';
-COMMENT ON COLUMN graphitron_reference_for_step_arg_mapping_pair.param_name IS 'the Java or routine parameter (left side of the pair)';
-COMMENT ON COLUMN graphitron_reference_for_step_arg_mapping_pair.argument_path IS 'the right side as written, and written is the whole of what this column claims: capture records the author''s spelling verbatim and resolves nothing. A dot opens the thing at that position, and what a thing opens into depends on what it is: an input object opens into its fields, and an ID carrying @nodeId opens into the key columns of the node type it names, so a trailing segment may be a key column rather than a field of any SDL type. Which of those a segment turned out to be is intent_argmapping_segment_binding''s answer and the key projection''s beside it; enumerating the forms here would be a second statement of a resolution those views own, and the enumeration this column carried before the key-column form existed was exactly that mistake caught late. graphitron_argument_path_segment holds the decomposition, so nothing splits this string';
 
 CREATE TABLE graphitron_argument_reference_for (
   graph_name           VARCHAR NOT NULL,
@@ -1539,31 +1425,6 @@ COMMENT ON COLUMN graphitron_argument_reference_for_step.table_ref_name_part_upp
 COMMENT ON COLUMN graphitron_argument_reference_for_step.key_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint.table_schema_upper, the schema of the table holding the constraint. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 COMMENT ON COLUMN graphitron_argument_reference_for_step.key_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s constraint_name_upper and jooq_name_upper, in that precedence. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 
-CREATE TABLE graphitron_argument_reference_for_step_arg_mapping_pair (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL,
-  step_position INT     NOT NULL,
-  position      INT     NOT NULL,
-  param_name    VARCHAR NOT NULL,
-  argument_path VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, argument_name, ordinal, step_position, position),
-  FOREIGN KEY (graph_name, type_name, field_name, argument_name, ordinal, step_position)
-    REFERENCES graphitron_argument_reference_for_step (graph_name, type_name, field_name, argument_name, ordinal, position)
-);
-COMMENT ON TABLE graphitron_argument_reference_for_step_arg_mapping_pair IS 'An ordered pair of an argument-site @referenceFor step condition''s argMapping. Capture is total across every SDL-legal location, so this relation is populated wherever the grammar admits a condition step even though the one coordinate consuming an argument-site application today rejects condition steps: the scoping is the validator''s, which is what lets a later widening be a validator change alone.';
-COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.argument_name IS 'the argument name within the owning field';
-COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.ordinal IS 'the owning @referenceFor application''s ordinal';
-COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.step_position IS '0-based position of the owning step within its application''s path';
-COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.position IS '0-based position within the owning list';
-COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.param_name IS 'the Java or routine parameter (left side of the pair)';
-COMMENT ON COLUMN graphitron_argument_reference_for_step_arg_mapping_pair.argument_path IS 'the right side as written, and written is the whole of what this column claims: capture records the author''s spelling verbatim and resolves nothing. A dot opens the thing at that position, and what a thing opens into depends on what it is: an input object opens into its fields, and an ID carrying @nodeId opens into the key columns of the node type it names, so a trailing segment may be a key column rather than a field of any SDL type. Which of those a segment turned out to be is intent_argmapping_segment_binding''s answer and the key projection''s beside it; enumerating the forms here would be a second statement of a resolution those views own, and the enumeration this column carried before the key-column form existed was exactly that mistake caught late. graphitron_argument_path_segment holds the decomposition, so nothing splits this string';
-
 CREATE TABLE graphitron_service (
   graph_name    VARCHAR NOT NULL,
   type_name     VARCHAR NOT NULL,
@@ -1604,24 +1465,6 @@ COMMENT ON COLUMN graphitron_service_context_arg.field_name IS 'the field name w
 COMMENT ON COLUMN graphitron_service_context_arg.position IS '0-based position within the owning list';
 COMMENT ON COLUMN graphitron_service_context_arg.name IS 'the context argument name as written';
 
-CREATE TABLE graphitron_service_arg_mapping_pair (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  position      INT     NOT NULL,
-  param_name    VARCHAR NOT NULL,
-  argument_path VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, position),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphitron_service (graph_name, type_name, field_name)
-);
-COMMENT ON TABLE graphitron_service_arg_mapping_pair IS 'An ordered pair of a @service''s argMapping, binding a Java method parameter to a GraphQL argument.';
-COMMENT ON COLUMN graphitron_service_arg_mapping_pair.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_service_arg_mapping_pair.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_service_arg_mapping_pair.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_service_arg_mapping_pair.position IS '0-based position within the owning list';
-COMMENT ON COLUMN graphitron_service_arg_mapping_pair.param_name IS 'the Java or routine parameter (left side of the pair)';
-COMMENT ON COLUMN graphitron_service_arg_mapping_pair.argument_path IS 'the right side as written, and written is the whole of what this column claims: capture records the author''s spelling verbatim and resolves nothing. A dot opens the thing at that position, and what a thing opens into depends on what it is: an input object opens into its fields, and an ID carrying @nodeId opens into the key columns of the node type it names, so a trailing segment may be a key column rather than a field of any SDL type. Which of those a segment turned out to be is intent_argmapping_segment_binding''s answer and the key projection''s beside it; enumerating the forms here would be a second statement of a resolution those views own, and the enumeration this column carried before the key-column form existed was exactly that mistake caught late. graphitron_argument_path_segment holds the decomposition, so nothing splits this string';
-
 CREATE TABLE graphitron_service_arg_mapping_sigil (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
@@ -1633,7 +1476,7 @@ CREATE TABLE graphitron_service_arg_mapping_sigil (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphitron_service (graph_name, type_name, field_name),
   CHECK (sigil IN ('$session'))
 );
-COMMENT ON TABLE graphitron_service_arg_mapping_sigil IS 'A sigil entry of a @service''s argMapping, the sibling of graphitron_service_arg_mapping_pair for entries whose right-hand side is a recognized sigil rather than an argument path. A recognized sigil is a decode decision carried as a fact, not a string left for readers to re-peek: it must not land in the pair relation (whose argument_path is a closed two-alternative statement feeding dangling-author-reference detection) and must not quarantine as graphitron_undecoded_argument (a valid literal is not malformed overflow). The lifting happens before tokenization, through the same sigil owner the build-side parse uses, so the two sides cannot drift on what a sigil is.';
+COMMENT ON TABLE graphitron_service_arg_mapping_sigil IS 'A sigil entry of a @service''s argMapping, the sibling of graphitron_arg_mapping_pair at the SERVICE site, for entries whose right-hand side is a recognized sigil rather than an argument path. It kept a relation of its own through that relation''s collapse, and on the collapse''s own rule: a sigil is not a pair, carrying a sigil where a pair carries a path, so this is a different fact rather than the same fact at a different site. A recognized sigil is a decode decision carried as a fact, not a string left for readers to re-peek: it must not land in the pair relation (whose argument_path is a closed two-alternative statement feeding dangling-author-reference detection) and must not quarantine as graphitron_undecoded_argument (a valid literal is not malformed overflow). The lifting happens before tokenization, through the same sigil owner the build-side parse uses, so the two sides cannot drift on what a sigil is.';
 COMMENT ON COLUMN graphitron_service_arg_mapping_sigil.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_service_arg_mapping_sigil.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_service_arg_mapping_sigil.field_name IS 'the field name within the owning type';
@@ -2146,27 +1989,6 @@ COMMENT ON COLUMN graphitron_routine.routine_ref_name_part_upper IS 'the upper-c
 COMMENT ON COLUMN graphitron_routine.arg_mapping IS 'the argMapping string as written; the pair child is its decode';
 COMMENT ON COLUMN graphitron_routine.column_mapping IS 'the columnMapping string as written; the pair child is its decode';
 
-CREATE TABLE graphitron_routine_arg_mapping_pair (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL,
-  position      INT     NOT NULL,
-  param_name    VARCHAR NOT NULL,
-  argument_path VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, ordinal, position),
-  FOREIGN KEY (graph_name, type_name, field_name, ordinal)
-    REFERENCES graphitron_routine (graph_name, type_name, field_name, ordinal)
-);
-COMMENT ON TABLE graphitron_routine_arg_mapping_pair IS 'An ordered pair of a @routine''s argMapping, binding a routine IN parameter to a GraphQL argument.';
-COMMENT ON COLUMN graphitron_routine_arg_mapping_pair.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_routine_arg_mapping_pair.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_routine_arg_mapping_pair.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_routine_arg_mapping_pair.ordinal IS 'the owning @routine application''s ordinal';
-COMMENT ON COLUMN graphitron_routine_arg_mapping_pair.position IS '0-based position within the owning list';
-COMMENT ON COLUMN graphitron_routine_arg_mapping_pair.param_name IS 'the Java or routine parameter (left side of the pair)';
-COMMENT ON COLUMN graphitron_routine_arg_mapping_pair.argument_path IS 'the right side as written, and written is the whole of what this column claims: capture records the author''s spelling verbatim and resolves nothing. A dot opens the thing at that position, and what a thing opens into depends on what it is: an input object opens into its fields, and an ID carrying @nodeId opens into the key columns of the node type it names, so a trailing segment may be a key column rather than a field of any SDL type. Which of those a segment turned out to be is intent_argmapping_segment_binding''s answer and the key projection''s beside it; enumerating the forms here would be a second statement of a resolution those views own, and the enumeration this column carried before the key-column form existed was exactly that mistake caught late. graphitron_argument_path_segment holds the decomposition, so nothing splits this string';
-
 CREATE TABLE graphitron_routine_column_mapping_pair (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
@@ -2409,7 +2231,6 @@ COMMENT ON COLUMN graphitron_undecoded_argument.directive_name IS 'the applied o
 COMMENT ON COLUMN graphitron_undecoded_argument.directive_argument_name IS 'the definition''s formal argument this value binds';
 COMMENT ON COLUMN graphitron_undecoded_argument.value_sdl IS 'the literal as written, rendered from the AST';
 
-
 -- ==== Macro synthesis provenance ==================================================
 -- The connection expansion's own record: which graphql_ rows it added, and the written expression
 -- where it rewrote one. Synthesized rows inherit the causing application's source position; these
@@ -2473,14 +2294,28 @@ COMMENT ON COLUMN graphitron_field_synthesis.field_name IS 'the field name withi
 COMMENT ON COLUMN graphitron_field_synthesis.macro IS 'which expansion rewrote the type expression';
 COMMENT ON COLUMN graphitron_field_synthesis.authored_type_sdl IS 'the type expression as the author wrote it, pre-expansion';
 
-
 -- ---- supertypes over the directive families ----------------------------------------
--- Where one fact is authored at several kinds of site, the family above writes one table per kind.
--- The two relations here are the facts themselves, written once by capture rather than reconstructed
--- by every reader that asks a question the sites answer uniformly. The per-site tables stay: they
--- carry what is particular to their site and they carry the foreign key into the directive that
--- owns the row, which no single relation spanning nine parents could express. What moves here is
--- the shared half, so that asking it is a scan of one table instead of a union of nine.
+-- Where one fact is authored at several kinds of site, the relations here are that fact, written
+-- once by capture rather than reconstructed by every reader that asks a question the sites answer
+-- uniformly. A union in a view is the shape this replaces, and it was never a cheap way to spell a
+-- fact: it is re-derived per reader, it forces every reader to synthesise the same key, and the
+-- query planner expands it once per path through whatever reads it.
+--
+-- Whether the per-site tables survive beside the supertype is decided by one rule, and it is the
+-- data that decides, never the constraints. A site keeps a relation of its own when it carries data
+-- the supertype cannot hold, and then the supertype holds the shared half beside it. A site whose
+-- rows are the shared half and nothing more does not: it becomes rows of the supertype, told apart
+-- by the discriminator column, and its table goes. The two are visible together in this section.
+-- graphitron_spelled_reference is the first kind, the sites that spell a reference each carrying
+-- their own directive's payload; graphitron_arg_mapping_pair is the second, having absorbed eight
+-- relations that were each exactly a site key, a position, a parameter name and a path.
+--
+-- The collapsing case gives up the foreign key each site had into the directive that owned its
+-- rows, because a foreign key cannot span nine parents chosen by a column. That is a real loss and
+-- it is not a reason to keep the table: a constraint is not data, and the reference survives as an
+-- invariant capture maintains and a test checks. Buying an enforced edge with a duplicated relation
+-- costs a second write on every producer and a choice on every reader, which is what this section
+-- exists to stop.
 
 CREATE TABLE graphitron_spelled_reference (
   graph_name           VARCHAR NOT NULL,
@@ -2547,7 +2382,7 @@ CREATE INDEX graphitron_arg_mapping_pair_site_ix
   ON graphitron_arg_mapping_pair (graph_name, site);
 CREATE INDEX graphitron_arg_mapping_pair_use_ix
   ON graphitron_arg_mapping_pair (graph_name, use_site);
-COMMENT ON TABLE graphitron_arg_mapping_pair IS 'One argMapping pair, whatever site declared it: a method parameter bound to an argument path, at the position the site lists it. Eight relations carry a pair of this shape, one per directive that can take argMapping, and every one of them holds the same three facts, differing only in the key that says which site owns the row. This relation is those three facts with a uniform key over them, so a reader asking what binds to what asks one relation rather than unioning eight and synthesising a key in every reader that needs one. The per-site tables stay and keep their foreign keys into the directives that own them; what a foreign key cannot do is span nine parents chosen by a column, which is the whole reason the shared half lives here instead of the sites being folded together. Written by capture beside each site''s own row, so this relation cannot be stale against the site it came from and needs no refresh; the shape it replaces was a nine-arm union evaluated once per reader. The site column is the discriminator and it is closed: one value per kind of site, which is what says how to read the three key columns beside it. Two of the nine share one per-site table, a field condition on an input object being a different site from one on an object and the type''s kind being what separates them, and one, the argument @referenceFor step, has a table and a coordinate the validator rejects today, so it has no rows and its value is here to keep the vocabulary total against the family rather than against the population.';
+COMMENT ON TABLE graphitron_arg_mapping_pair IS 'One argMapping pair, whatever site declared it: a method parameter bound to an argument path, at the position the site lists it. Nine kinds of site can spell a pair and every one of them states the same three facts, differing only in the key that says which site owns the row, so this is one relation with a uniform key over them rather than the eight relations it replaced. Those eight are gone rather than kept beside it, and the rule that decided it is the general one: a subtype earns a relation of its own when it carries data the supertype cannot hold, and these carried none, each being exactly a site key, a position, a parameter name and a path. What they did carry was a foreign key into the owning directive, and that is the price of the collapse, because a foreign key cannot span nine parents chosen by a column. The reference from a pair back to its site is therefore an invariant capture maintains and a test checks over a captured store rather than one the engine enforces, which is the trade this schema makes deliberately and in one direction only: a constraint is not data, so its loss does not buy a subtype a table back. Written by capture at the site it came from, so this relation cannot be stale against that site and needs no refresh; the shape it replaces was a nine-arm union with a key synthesised in every reader that needed one. The site column is the discriminator and it is closed: one value per kind of site, which is what says how to read the key columns beside it. Two of the nine were spelled by one relation before the collapse, a field condition on an input object being a different site from one on an object and the type''s kind being what separates them, and one, the argument @referenceFor step, has a coordinate the validator rejects today, so it has no rows and its value is here to keep the vocabulary total against the family rather than against the population.';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.site IS 'which kind of site declared the pair, in a closed vocabulary of nine, one per directive that can carry argMapping. The whole of what says how to read type_name, field_name, argument_name, ordinal and step_position beside it, exactly as intent_declared_type_ref.owner_kind does for its three. A reader that means one kind filters on it and owns having chosen';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.use_site IS 'the site spelled as one string, in the site''s own grammar: Type.field, Type.field(argument), Type.field#ordinal, or those with the step position appended in brackets. Total by construction, which is what lets it key this relation where the decomposed columns beside it cannot, three of them being null on the sites that have no such part. A reader joining on the parts joins the parts; this column is the key and the thing a diagnostic prints';
@@ -2562,7 +2397,6 @@ COMMENT ON COLUMN graphitron_arg_mapping_pair.argument_path IS 'the argument pat
 COMMENT ON COLUMN graphitron_arg_mapping_pair.source_name IS 'the file the owning site was written in, carried from that site so a reader of this relation needs no join back to it';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.source_line IS 'the owning site''s line, carried with the file beside it';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.source_column IS 'the owning site''s column, carried with the file beside it';
-
 
 -- ==== SQL catalog facts ===========================================================
 -- What the consumer's database declares, in SQL's vocabulary. jOOQ's generated model is the
@@ -2858,7 +2692,6 @@ COMMENT ON COLUMN sql_node_key_column.table_schema IS 'SQL schema the table live
 COMMENT ON COLUMN sql_node_key_column.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_node_key_column.position IS '0-based index in the stated array, recorded rather than reconstructed: the encoded identity depends on the declared order, so a reader that recovered the order from the table''s columns or from a key would encode different ids than the ones already issued. Dense from zero within a parent, and present only under a FIELD_ARRAY parent, both gated';
 COMMENT ON COLUMN sql_node_key_column.column_name IS 'the name the entry states, as jOOQ reports it for the field; NULL exactly when the array entry itself is null, which is a stated fact about the entry rather than an absence of one. Resolution against the table''s own columns is the derivation''s business, and it matches the reading side: case-insensitively, against the generated Java name or the SQL name';
-
 
 -- ==== JVM classpath facts =========================================================
 -- What the classfiles on the compile classpath declare, in the JVM's vocabulary: classes, the
@@ -4829,7 +4662,6 @@ COMMENT ON COLUMN intent_field_column_scope_live.table_source_name IS 'the table
 COMMENT ON COLUMN intent_field_column_scope_live.table_schema IS 'the table_schema of a row of this rule, materialized into intent_field_column_scope.table_schema, whose comment carries what the value means';
 COMMENT ON COLUMN intent_field_column_scope_live.table_name IS 'the table_name of a row of this rule, materialized into intent_field_column_scope.table_name, whose comment carries what the value means';
 
-
 CREATE VIEW intent_column_match_claim
   (graph_name, type_name, field_name, classifier, matched_name, matched_by,
    table_source_name, table_schema, table_name, column_name,
@@ -5468,8 +5300,9 @@ SELECT p.graph_name, a.named_type, e.element_class
    AND mp.class_name = p.class_name
    AND mp.method_name = p.method_name
    AND mp.descriptor = p.descriptor
-  LEFT JOIN graphitron_service_arg_mapping_pair m
+  LEFT JOIN graphitron_arg_mapping_pair m
     ON m.graph_name = p.graph_name
+   AND m.site = 'SERVICE'
    AND m.type_name = p.type_name
    AND m.field_name = p.field_name
    AND m.param_name = mp.parameter_name
@@ -7043,19 +6876,19 @@ CREATE TABLE intent_argmapping_pair (
   source_column INTEGER,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
-COMMENT ON TABLE intent_argmapping_pair IS 'Every argMapping pair any directive spells, in one shape: the seven pair relations of that family normalised onto the widest arm''s projection, with a site literal naming which one a row came from. Those relations are one shape only in their tail (position, param_name, argument_path); their use-site keys run from four columns to seven, so a reader over all of them either widens by hand or asks this. Naming it keeps the widening written once, which is the point: the arms are hand-written SELECTs over relations of differing key arity, a typo in one is exactly the drift a cross-site parity test exists to catch, and a second consumer re-spelling the union is how two readings of one population begin disagreeing. Every reader of a pair''s resolution therefore departs from here, and one needing an arm''s own extra key columns joins this relation on site plus the use-site key rather than parsing anything or re-assembling the union. Non-destructive by construction: it adds a discriminator and drops nothing, so an arm''s own relation stays where a reader of that site alone goes. The owning application''s source position is carried the same way and for the same reason: every arm reaches one by a join on its own key, all eight joins are inner (each pair relation has a foreign key onto its owner, the three step arms through their step relation), and a reader assembling that eight-way lookup for itself is exactly the drift this relation exists to prevent. It is what lets a detection over a pair''s resolution locate its message without knowing which of the seven relations the pair came from. Eight site values over seven relations, the field-condition relation being a shared coordinate whose owning type''s kind splits it into an output-field site and an input-field site with different heads and different emitters, which is how the capture side already tells those halves apart. The grain is the pair''s own with ordinal intact: @routine and @reference are repeatable and each application carries its own argMapping, so collapsing to one row per field coordinate would resolve one application''s paths and silently drop its siblings, which is the one move the nearest sibling view makes that this family must not. Materialized: this relation is a table refilled from intent_argmapping_pair_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
-COMMENT ON COLUMN intent_argmapping_pair.graph_name IS 'the owning graph''s partition, carried from every arm''s own relation';
-COMMENT ON COLUMN intent_argmapping_pair.site IS 'which SDL site spelled this pair, in a closed vocabulary of eight: ROUTINE, SERVICE, FIELD_CONDITION, INPUT_FIELD_CONDITION, ARGUMENT_CONDITION, FIELD_REFERENCE_STEP, ARGUMENT_REFERENCE_STEP, REFERENCE_FOR_STEP. Seven relations and eight values, the two condition sites sharing one. The column a consumer switches on, and the one a test pins so a case reaching an arm is a case naming it';
+COMMENT ON TABLE intent_argmapping_pair IS 'Every argMapping pair any directive spells, in one shape, with a site literal saying which kind of site spelled a row. It is now a projection of graphitron_arg_mapping_pair and nothing else, and that is the whole of the change worth recording here, because what this relation was for has moved underneath it. It existed to widen: eight per-site relations were one shape only in their tail, their use-site keys ran from four columns to seven, and a reader over all of them either widened by hand or asked this. Capture now writes the widened shape directly, the eight relations having carried nothing beyond it and having been collapsed into it, so there is no union left to state, no key to synthesise and no owning-application join to assemble. The drift this relation was built to prevent, two readers spelling one population two ways, is prevented a rung earlier and more cheaply, by there being one population. What survives unchanged is the grain and the vocabulary. The grain is the pair''s own with ordinal intact: @routine and @reference are repeatable and each application carries its own argMapping, so collapsing to one row per field coordinate would resolve one application''s paths and silently drop its siblings, which is the one move the nearest sibling view makes that this family must not. The site vocabulary is closed at nine and is total against the family rather than against the population, which graphitron_arg_mapping_pair.site states and this relation carries. Materialized: this relation is a table refilled from intent_argmapping_pair_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. That registration was priced against a source view that was an eight-arm union and is not one any more, so its reason overstates what it now buys and the register''s own set-relative pricing rule says it has to be re-taken rather than assumed; that re-pricing is owed and is not this comment''s to perform.';
+COMMENT ON COLUMN intent_argmapping_pair.graph_name IS 'the owning graph''s partition, carried from graphitron_arg_mapping_pair';
+COMMENT ON COLUMN intent_argmapping_pair.site IS 'which SDL site spelled this pair, in a closed vocabulary of nine: ROUTINE, SERVICE, FIELD_CONDITION, INPUT_FIELD_CONDITION, ARGUMENT_CONDITION, FIELD_REFERENCE_STEP, ARGUMENT_REFERENCE_STEP, REFERENCE_FOR_STEP and ARGUMENT_REFERENCE_FOR_STEP. Carried unchanged from graphitron_arg_mapping_pair.site, whose comment states why the vocabulary is total against the family and not against the population. The column a consumer switches on, and the one a test pins so a case reaching an arm is a case naming it';
 COMMENT ON COLUMN intent_argmapping_pair.use_site IS 'the consuming coordinate serialized, in intent_input_occurrence_path''s own vocabulary extended by two forms: Type.field for a field-grain site with the argument in parentheses after it, then #<ordinal> for a repeatable application and [<step>] for a step position within one. With site and position this is the relation''s grain, and it is the coordinate a rejection about a pair has to be able to name, an author told to change a definition-keyed fact needing to know which use site is asking. Serialized rather than assembled at each reader because a message needs one string and the components differ by arm; those components are columns beside it, so nothing ever parses this';
-COMMENT ON COLUMN intent_argmapping_pair.type_name IS 'the spelling site''s owning type; with the field below, the coordinate all seven relations lead with and the one graphitron_argument_path_segment anchors on';
+COMMENT ON COLUMN intent_argmapping_pair.type_name IS 'the spelling site''s owning type; with the field below, the coordinate every site leads with and the one graphitron_argument_path_segment anchors on';
 COMMENT ON COLUMN intent_argmapping_pair.field_name IS 'the spelling site''s field name within the owning type. An input field on the INPUT_FIELD_CONDITION arm, an output field on every other';
 COMMENT ON COLUMN intent_argmapping_pair.argument_name IS 'the argument the site sits on, on the two argument-grain arms (ARGUMENT_CONDITION, ARGUMENT_REFERENCE_STEP); NULL on the other six, whose sites sit on a field. Determined by site rather than independent of it, which is what makes the nullness a stated rule instead of a missing value';
 COMMENT ON COLUMN intent_argmapping_pair.ordinal IS 'the owning application''s ordinal, on the four arms whose directive is repeatable (ROUTINE and the three step sites); NULL on SERVICE and the two condition sites, which are not repeatable and carry no ordinal';
 COMMENT ON COLUMN intent_argmapping_pair.step_position IS 'the owning step''s 0-based position within its application''s path, on the three step arms; NULL on the other five, which have no step';
-COMMENT ON COLUMN intent_argmapping_pair.position IS '0-based position of the pair within its own argMapping list, carried unchanged from every arm; part of the grain, so an author''s duplicate parameter survives here as it does in the base relations';
+COMMENT ON COLUMN intent_argmapping_pair.position IS '0-based position of the pair within its own argMapping list, carried unchanged; part of the grain, so an author''s duplicate parameter survives here as it does in the captured relation';
 COMMENT ON COLUMN intent_argmapping_pair.param_name IS 'the left side of the pair: the Java or routine parameter the path binds to';
-COMMENT ON COLUMN intent_argmapping_pair.argument_path IS 'the right side as written, spelled exactly as the arm''s own relation spells it, so a pair reaches its own segment decomposition by joining graphitron_argument_path_segment on the coordinate and this column';
-COMMENT ON COLUMN intent_argmapping_pair.source_name IS 'the SDL file the owning directive application was captured from, joined from that application''s own relation rather than from the field: a rejection about a pair has to point at the argMapping the author wrote, and a repeatable directive''s second application sits on a line the field''s own position does not name. NULL where the application carries no position, on graphitron_routine.source_name''s terms. The pair itself carries no finer position, the eight owners recording the application and not the list entry, so two pairs of one application share a location and the message tells them apart by naming the entry';
+COMMENT ON COLUMN intent_argmapping_pair.argument_path IS 'the right side as written, spelled exactly as capture recorded it, so a pair reaches its own segment decomposition by joining graphitron_argument_path_segment on the coordinate and this column';
+COMMENT ON COLUMN intent_argmapping_pair.source_name IS 'the SDL file the owning directive application was captured from, read from the owning application rather than from the field: a rejection about a pair has to point at the argMapping the author wrote, and a repeatable directive''s second application sits on a line the field''s own position does not name. NULL where the application carries no position, on graphitron_routine.source_name''s terms. The pair itself carries no finer position, an owning application being recorded and not the list entry, so two pairs of one application share a location and the message tells them apart by naming the entry';
 COMMENT ON COLUMN intent_argmapping_pair.source_line IS 'source line of the owning directive application, 1-based per the graphql-java convention; NULL exactly where source_name is';
 COMMENT ON COLUMN intent_argmapping_pair.source_column IS 'source column of the owning directive application, 1-based per the graphql-java convention; NULL exactly where source_name is';
 
@@ -7849,7 +7682,6 @@ COMMENT ON COLUMN intent_condition_param_decode.method_name IS 'the condition me
 COMMENT ON COLUMN intent_condition_param_decode.node_type_name IS 'the node type the slot''s instruction resolved, carried from intent_node_id_instruction.node_type_name; what the decode is a decode of, and the type whose key columns intent_resolved_node_key_column lists';
 COMMENT ON COLUMN intent_condition_param_decode.key_arity IS 'how many key columns the node type resolved, one or more. One means the bound parameter receives the key column''s own Java type; above one means the typed jOOQ Row of the key columns in key order. Never zero: a slot whose node type resolves no key columns is not a row at all, that coordinate meeting a shipped rejection instead';
 COMMENT ON COLUMN intent_condition_param_decode.list_valued IS 'whether the slot is list-shaped in the SDL, read off the slot''s own captured declaration. The wrapping applied over the shape key_arity names, and carried rather than derived because list-ness is a fact of the slot and the arity is a fact of the node type; the two are independent and a reader needs both to name the parameter type';
-
 
 CREATE VIEW intent_node_id_decode_endpoint
   (graph_name, site, type_name, field_name, argument_name, path, use_site, node_type_name,

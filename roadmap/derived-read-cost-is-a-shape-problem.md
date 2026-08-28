@@ -314,6 +314,20 @@ In the order to attempt them:
    reader. The supertype table needs no refresh, cannot go stale, needs no registry row, and carries
    indexes for free, but those are consequences of it being a fact rather than the argument for
    writing it.
+
+   **What happens to the subtypes is decided by their data, never by their constraints.** A subtype
+   keeps a relation of its own when it carries data the supertype cannot hold, and then the two sit
+   side by side. A subtype whose rows are the shared fact and nothing more does not: it becomes rows
+   of the supertype told apart by the discriminator column, and its table goes. The first draft of
+   this item got that wrong in one direction and it is worth recording why, because the wrong answer
+   is the tempting one. Each of the eight `argMapping` pair relations carried a foreign key into the
+   directive that owned its rows, and no relation spanning nine parents chosen by a column can
+   express that, so the first slice kept all eight beside the supertype and paid for it immediately:
+   every producer that was not capture owed a second write, which is what the model-tier fixtures
+   then had to be given by hand. A foreign key is a constraint, not data. Giving one up costs an
+   enforced edge, which becomes an invariant a producer maintains and a test checks; keeping the
+   table costs a duplicated relation, a second write on every producer, and a choice on every
+   reader. The second is the larger bill, and it is paid forever.
 2. **Store the key.** If a join key exists only as an expression, put the value in a column: a
    `GENERATED ALWAYS AS` column when it is a pure function of a neighbouring column, a captured fact
    when the value arrives from outside. Then index it.
@@ -387,6 +401,27 @@ subtypes spell the reference `table_ref`; `graphitron_routine` spells the identi
 `routine_ref`. The mechanical detector misses the seventh arm for that reason alone. One fact spelled
 under two names is what happens when there is no supertype to name it once, and the supertype is where
 that gets settled.
+
+**What this slice shipped first and had to take back, recorded because the correction is the item's
+main lesson rather than a footnote to it.** It landed add-only: both supertypes written beside the
+per-site tables, all of which stayed. That was decided on the foreign keys, each pair relation having
+one into the directive that owned its rows and no nine-parent relation being able to express it. The
+bill arrived immediately. Every producer that is not capture then owed a second write, which is why
+`SeededStore` grew a transcription step, and forty-three model-tier fixtures needed it before they
+passed again. The rule on rung 1 above is what settles it and it settles it against the shipped
+shape: the eight pair relations carried no data beyond the shared pair, so they are gone and
+`graphitron_arg_mapping_pair` is the only relation that holds one. The spelled reference is the other
+side of the same rule and keeps its sites, each of those carrying its own directive's payload.
+
+Two consequences worth naming because neither was foreseen here and both are evidence for the lever
+order rather than against it. **The collapse deleted the transcription outright**, the second write
+having been the only thing it stood in for, so the fixture surface got smaller rather than larger.
+And **`intent_argmapping_pair`'s registration is now buying close to nothing**: its source view is a
+plain read of one captured table, where the reason in `meta_materialize` prices it as an eight-arm
+union expanding to fifty-five instantiations. Rung 1 landing retired a rung 5, which is what the
+ordering predicts and is the first instance of it in this item. Re-pricing that registration is owed
+and is a slice of its own, the register being priced set-relative so that dropping a member re-prices
+its neighbours; it is not folded into the slice that caused it.
 
 ### Slice 2: store the two transformed join keys as columns
 

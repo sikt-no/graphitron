@@ -21,8 +21,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_DATA_FIELD;
 import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_ROUTINE_HOP;
@@ -313,13 +313,14 @@ public final class RoutineWriteFacts {
     private static Field<List<RoutineCall.RoutineArgument>> arguments(
             IntentMutationRoutineSeat s, IntentFieldRoutineMethod rm) {
         var p = SQL_ROUTINE_PARAMETER;
-        var m = GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR;
+        var m = GRAPHITRON_ARG_MAPPING_PAIR;
         return multiset(
             select(p.JOOQ_NAME, p.BINDING_TYPE,
                 coalesce(
                     field(select(m.ARGUMENT_PATH)
                         .from(m)
-                        .where(m.GRAPH_NAME.eq(s.GRAPH_NAME), m.TYPE_NAME.eq(s.TYPE_NAME),
+                        .where(m.GRAPH_NAME.eq(s.GRAPH_NAME), m.SITE.eq("ROUTINE"),
+                            m.TYPE_NAME.eq(s.TYPE_NAME),
                             m.FIELD_NAME.eq(s.FIELD_NAME), m.ORDINAL.eq(s.ORDINAL),
                             m.PARAM_NAME.eq(p.JOOQ_NAME))
                         .orderBy(m.POSITION)
