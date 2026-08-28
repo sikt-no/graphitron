@@ -74,14 +74,17 @@ across `graphitron`, `graphitron-mcp` and `graphitron-lsp`. Re-checked on 2026-0
 39 come out.
 
 A third access form does exist and the first version of this paragraph was wrong to deny it. Main
-sources also reach relations by string, through jOOQ's `table(name("..."))`, in `Materializations`,
-`MaterializeDependencies`, `StoreCatalog` and `StoreProse`. Every such site names a `meta_*` relation
-or `store_graph`, never an `intent_` one, which is why the walk below is unaffected: those are the
-register's own machinery reading the register, not a consumer reading a derivation. But the soundness
-of the walk rests on that continuing to hold, and a string-named read is precisely the form that
-would break it silently. This makes the case for a gate over the access form stronger than a claim
-that no such form exists would have: the form is there, it is legitimate where it is used, and
-nothing stops the next author pointing it at a derived relation. Walking the view dependency graph outward from those 39, following `<target>_live`
+sources also reach relations by string, through jOOQ's `table(name(...))`, in five classes:
+`Materializations`, `MaterializeDependencies`, `StoreCatalog`, `StoreProse` and `ViewReferences`.
+Every such site resolves to a `meta_*` relation, `store_graph` or `INFORMATION_SCHEMA`, never an
+`intent_` one, which is why the walk below is unaffected: those are the register's own machinery
+reading the register, not a consumer reading a derivation. But the soundness of the walk rests on that
+continuing to hold, and a string-named read is precisely the form that would break it silently.
+
+One of the five names nothing literally. `StoreProse` builds it, `table(name(relation.toUpperCase(...)))`,
+bounded to `metaRelations(dsl)` at the call site. That is the case for a gate stated more sharply than
+"the form exists": a gate written as a grep for a literal `intent_` name would pass a computed one, so
+the check has to be on what the argument can resolve to rather than on how it is spelled. Walking the view dependency graph outward from those 39, following `<target>_live`
 wherever the walk meets a registered target that is a base table with no view definition of its own,
 gives what a read can reach. Ten registered targets fall outside it.
 
@@ -583,15 +586,28 @@ capture wrote no table for it.
 
 ### The detector
 
-Two halves, both off the DDL. A **subtype set** is three or more capture tables sharing a group of two
+Three parts, all off the DDL. A **subtype set** is three or more capture tables sharing a group of two
 or more attribute names, where an attribute is a column not in that table's own primary key and not
-provenance. A **confirmed omission** is a subtype set that some view `UNION`s three or more members
-of. `investigation-2026-08-27/tools/supertype_scan.py` is the implementation.
+provenance. A **confirmed omission** is a subtype set that some view `UNION`s three or more members of
+**and** whose shared attributes that view names. `investigation-2026-08-27/tools/supertype_scan.py` is
+the implementation.
 
-The key-versus-value split has to come from each table's own primary key and not from a list of
-key-looking names. The first version of this scan excluded `class_name` globally, because it is the
-key of `jvm_class`, and missed the largest subtype set in the schema for that reason alone. A name is
-a key in one family and a value in another.
+**Two calibration errors were made in order, and they pull opposite ways.** The key-versus-value split
+has to come from each table's own primary key and not from a list of key-looking names: the first
+version excluded `class_name` globally, because it is the key of `jvm_class`, and missed the largest
+subtype set in the schema for that reason alone. A name is a key in one family and a value in another.
+Then the attribute part was missing, and its absence invented reconstructions: membership overlaps, the
+`*_reference_step` tables carrying `table_ref` and `class_name` and `method` all three, so a view
+unioning them to answer "which method does this site name" was credited with reconstructing the
+table-or-routine reference too. The unchecked rule reported six union sites for the method-bearing set
+where three are real, and four for the table-or-routine reference where one is. Both errors were caught
+by checking the scan's output against the DDL by hand, which is what this instrument is owed every time
+it is run.
+
+**The check is name matching, not proof.** It asks whether a shared attribute appears in the view body,
+not whether it is projected from the unioned arms. That separates the sets on this schema and it is why
+a confirmed row is a reading to check rather than a verdict to inherit. Anything built as a gate on top
+of it owes a tighter check or a written exemption list.
 
 ### What it finds on today's schema
 
@@ -599,8 +615,8 @@ a key in one family and a value in another.
 |===
 | the fact nobody wrote a table for | subtypes | union sites | shared attributes
 
-| a directive site that names a Java method | 10 | 6 | `class_name`, `method`
-| a written table-or-routine reference | 6 | 4 | `table_ref` and its four split and folded halves
+| a directive site that names a Java method | 10 | 3 | `class_name`, `method`
+| a written table-or-routine reference | 6 | 1 | `table_ref` and its four split and folded halves
 | an argMapping pair | 8 | 1 | `argument_path`, `param_name`
 | a declared type reference | 3 | 2 | `referenced_class`, `variance`
 |===
@@ -613,15 +629,18 @@ across three.
 
 **The first row is what this section adds.** Ten directive tables carry `class_name` and `method`,
 because ten directives can name a Java method, and no relation says which site declares which method.
-Six views reconstruct it. The widest is `intent_argmapping_bound_parameter_type`, whose six
-`UNION ALL` arms are one query written six times: take an argMapping pair, join the directive table
-that owns the site, project `class_name` and `method`. The arms differ only in which table is joined
-and which `site` literal is filtered on.
+Three views reconstruct it: `intent_argmapping_bound_parameter_type`, whose six `UNION ALL` arms are
+one query written six times, take an argMapping pair, join the directive table that owns the site,
+project `class_name` and `method`, differing only in which table is joined and which `site` literal is
+filtered on; and `intent_condition_param_extraction` and `intent_condition_table_parameter`, doing the
+same at five arms each.
 
-**Two things section 3 got wrong by looking at cost.** It named one reconstruction of the
-table-or-routine reference and there are four, so a fix that repoints `intent_spelled_table_live`
-alone leaves three standing. And it never reached the declared type reference at all, because that one
-is cheap on this consumer's schema and a hunt driven by wall clock stops when the clock stops.
+**What section 3 missed by looking at cost, stated carefully because an earlier draft of this section
+overstated it.** Section 3 named the one reconstruction of the table-or-routine reference that exists,
+and it was right: the claim that there were four was this scan's own defect and not section 3's. What
+section 3 did miss is the declared type reference, which it never reached because that one is cheap on
+this consumer's schema and a hunt driven by wall clock stops when the clock stops, and the
+method-bearing site, which is the largest set here and has no entry in section 3 at all.
 
 **And this is the mechanism connecting the modelling defect to section 3's plan sizes.** H2 expands a
 shared subtree once per path through the dependency graph, so each independent reconstruction of one
@@ -632,7 +651,12 @@ expansion rather than slow scans, and why the fix is a table rather than an inde
 
 A shared attribute group is a candidate and not a verdict. Four `sql_*` tables share `table_schema`,
 `table_name` and `column_name` and are not subtypes of anything: they reference a column rather than
-being kinds of one. The union half separates the two, a reader wanting a supertype unioning where a
-reader wanting a reference joins. Any gate built on this needs a written exemption list for that
-reason, and for the two sets being left alone deliberately, which is the point rather than a weakness:
-it turns adding the eleventh sibling into a decision somebody records.
+being kinds of one. The union part separates those, a reader wanting a supertype unioning where a
+reader wanting a reference joins, and the attribute part separates the sets that overlap.
+
+Neither part makes a confirmed row a verdict, for the reason given above: the attribute check is name
+matching over a view body. Any gate built on this needs a written exemption list, for the `sql_*`
+reference groups, for the two sets being left alone deliberately, and for whatever the name matching
+gets wrong next. That is the point rather than a weakness: it turns adding the eleventh sibling into a
+decision somebody records, which is what nobody did while ten tables accumulated `class_name` and
+`method`.

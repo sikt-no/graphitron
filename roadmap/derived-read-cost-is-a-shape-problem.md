@@ -131,9 +131,10 @@ Stated compactly; the audit carries the tables, the method and the provenance of
   unowned by any rule; what is no longer true is that it costs hours.
 - **Four facts are written as subtype tables with no supertype table, and readers reconstruct them
   by union.** Ten tables carry `class_name` and `method` and no relation says which site declares
-  which method; six views reconstruct it. Six carry a written table-or-routine reference; four
-  reconstruct it. Eight carry an argMapping pair, three carry a declared type reference. The signature
-  is mechanical off the DDL and needs no store, which is what makes this the finite part of the item.
+  which method; three views reconstruct it. Six carry a written table-or-routine reference and one
+  view reconstructs it, eight carry an argMapping pair and one does, three carry a declared type
+  reference and two do. The signature is mechanical off the DDL and needs no store, which is what
+  makes this the finite part of the item.
 - **Two of the four cost 0.05 and 0.04 seconds to build as tables, at 313 and 108 rows, and take the
   worst plan in the stratum from 235756 lines to 89296.** Five relations that had not completed in 120
   seconds complete, with nothing materialized.
@@ -222,18 +223,19 @@ union's key shape rather than a fact withheld". A discriminator, arm-determined 
 synthesised uniform key over a closed set of subtypes is a supertype relation. It is written as a
 view because capture wrote no table for it.
 
-**The signature is mechanical, needs no store, and is therefore gate-able.** Two halves, both read
+**The signature is mechanical, needs no store, and is therefore gate-able.** Three parts, all read
 off the shipped DDL and nothing else. A **subtype set** is three or more capture tables sharing a
 group of attribute names, where an attribute is a column that is not in that table's own primary key
-and is not provenance. A **confirmed omission** is a subtype set some view `UNION`s three or more
-members of. Run over today's schema, the two halves agree on four:
+and is not provenance. A **confirmed omission** is a subtype set that some view `UNION`s three or more
+members of **and** whose shared attributes that view names, the third part being the one that stops a
+set claiming a union it has no part in. Run over today's schema:
 
 [cols="4,1,1,4"]
 |===
 | the fact nobody wrote a table for | subtypes | union sites | the shared attributes
 
-| a directive site that names a Java method | 10 | 6 | `class_name`, `method`
-| a written table-or-routine reference | 6 | 4 | `table_ref` and its four split and folded halves
+| a directive site that names a Java method | 10 | 3 | `class_name`, `method`
+| a written table-or-routine reference | 6 | 1 | `table_ref` and its four split and folded halves
 | an argMapping pair | 8 | 1 | `argument_path`, `param_name`
 | a declared type reference | 3 | 2 | `referenced_class`, `variance`
 |===
@@ -246,31 +248,50 @@ defect with no reader paying for it: a GraphQL type expression, written by `grap
 
 **The first row is the finding, and no cost-driven pass was going to reach it.** Ten directive tables
 each carry `class_name` and `method`, because ten directives can name a Java method, and there is no
-relation saying "this site declares this method on this class". Six views reconstruct it, the widest
-being `intent_argmapping_bound_parameter_type`, whose six `UNION ALL` arms are the same query six
-times: take an argMapping pair, join the directive table that owns the site, project `class_name` and
-`method`. The arms differ only in which table they join and which `site` literal they filter on. That
-view is not badly written; it is doing, once, the modelling that capture did not do, and five other
-views do it again.
+relation saying "this site declares this method on this class". Three views reconstruct it:
+`intent_argmapping_bound_parameter_type`, whose six `UNION ALL` arms are the same query six times,
+take an argMapping pair, join the directive table that owns the site, project `class_name` and
+`method`, differing only in which table is joined and which `site` literal is filtered; and
+`intent_condition_param_extraction` and `intent_condition_table_parameter`, which do the same at five
+arms each. None of the three is badly written. Each is doing, once, the modelling capture did not do,
+and there are three of them because there is nowhere to do it once.
+
+**The third part of the signature was missing until the Spec gate found it, and the correction is
+worth carrying rather than quietly applying.** Without it the first two rows read six sites and four.
+Both were inflated by the same mechanism: set membership overlaps, the `*_reference_step` tables
+carrying `table_ref` and `class_name` and `method` all three, so a view that unions them to answer
+"which method does this site name" was counted as a reconstruction of the table-or-routine reference
+as well. `intent_condition_param_extraction`, `intent_condition_table_parameter` and
+`intent_argmapping_bound_parameter_type` contain no occurrence of `table_ref` or `routine_ref` at all.
+Requiring the union's own view to name the set's attributes puts row 1 at three sites and row 2 at
+one, and leaves rows 3 and 4 where they were.
 
 **What this reframing buys that the cost framing did not.** It found the declared type reference,
 which the performance investigation never reached because that one is cheap on this consumer's schema
-and a hunt driven by wall clock stops when the clock stops. It found that the table-or-routine
-reference is reconstructed at four sites rather than the one the audit's class A named, so a fix that
-repoints only `intent_spelled_table_live` leaves three reconstructions standing. And it names the
-mechanism connecting a modelling defect to a measured cost: H2 expands a shared subtree once per path,
-so every independent reconstruction of one missing supertype is expanded independently at every reader
-above it, which is why this shows up as plan expansion rather than as slow scans.
+and a hunt driven by wall clock stops when the clock stops. It found the method-bearing site, which is
+the largest set in the schema and had no name before this. And it names the mechanism connecting a
+modelling defect to a measured cost: H2 expands a shared subtree once per path, so every independent
+reconstruction of one missing supertype is expanded independently at every reader above it, which is
+why this shows up as plan expansion rather than as slow scans.
 
-**What it does not license, and the trap that hid the biggest set.** A shared attribute group is a
-candidate and not a verdict: four `sql_*` tables share `table_schema`, `table_name` and `column_name`
-without being subtypes of anything, because they reference a column rather than being kinds of one.
-The union half separates the two, since a reader that wants a supertype unions the arms where a reader
-that wants a reference joins them. And the key-versus-value split has to be read from each table's own
-primary key rather than from a list of key-looking names. The first version of this scan excluded
-`class_name` globally, on the ground that it is the key of `jvm_class`, and so missed the ten-table set
-entirely. A name is a key in one family and a value in another, and a detector that forgets this hides
-exactly the sets where a supertype is most overdue.
+**What it does not license, and three traps the scan fell into in order.** A shared attribute group is
+a candidate and not a verdict: four `sql_*` tables share `table_schema`, `table_name` and
+`column_name` without being subtypes of anything, because they reference a column rather than being
+kinds of one. The union part separates those, since a reader that wants a supertype unions the arms
+where a reader that wants a reference joins them.
+
+The key-versus-value split has to be read from each table's own primary key rather than from a list of
+key-looking names. The first version excluded `class_name` globally, on the ground that it is the key
+of `jvm_class`, and so missed the ten-table set entirely. A name is a key in one family and a value in
+another, and a detector that forgets that hides exactly the sets where a supertype is most overdue.
+
+And a set may not claim a union on membership alone, which is the attribute part above. The two traps
+pull in opposite directions and that is the useful thing about them: the first hid a real set, the
+second invented reconstructions for sets that had none, and each was caught by asking what the arms
+actually project rather than which tables they name. Both were found by checking the scan's output
+against the DDL by hand, which is the standing rule for this instrument: a confirmed row is a reading
+to check and not a verdict to inherit, and anything built as a gate owes either a tighter check than
+name matching or a written exemption list.
 
 ## The lever order
 
@@ -341,12 +362,16 @@ empty and these two supertypes captured, it costs **0.07 seconds**. Nothing else
 two arms for that relation, and nothing is materialized in either, so the whole of that difference is
 two tables capture should have written.
 
-**The repoint is wider than the audit's class A said, and that is this slice's main correction.** The
-table-or-routine reference is unioned at four sites, not one: `intent_spelled_table_live` at six arms,
-and `intent_condition_param_extraction`, `intent_condition_table_parameter` and
-`intent_argmapping_bound_parameter_type` at three each. Repointing only the first leaves three
-reconstructions standing, and since each is expanded independently at every reader above it, the three
-left behind are where a partial fix would look like a partial result.
+**The repoint is exactly as wide as the audit's class A said, and an earlier draft of this slice
+claimed otherwise.** It said the table-or-routine reference was unioned at four sites and made
+"repointing only the first leaves three reconstructions standing" its main correction. That was an
+artefact of the detector counting union sites from set membership alone, before it required the view to
+name the set's own attributes; the three extra sites union the same tables for `class_name` and
+`method` and contain no occurrence of `table_ref` or `routine_ref`. The reference is reconstructed at
+one site, `intent_spelled_table_live`, and repointing it is the whole of this half of the slice. The
+argMapping pair is likewise one site, `intent_argmapping_pair_live` at seven arms. Nothing about the
+supertypes themselves moves; what moves is a claim about how much work repointing them is, in the
+direction of less.
 
 Two things the Spec decides here rather than the implementer. **Where the supertype lands and what its
 key is**: the subtype tables differ only in the key that says which site owns the row, so the
@@ -405,7 +430,7 @@ the DDL, and the enumeration is in the section that states it. What this slice o
 candidate, not a search.
 
 **The method-bearing directive site is the one to take here, and it is the largest of the four.** Ten
-subtypes, six reconstruction sites, and it is the only confirmed omission no slice above covers.
+subtypes, three reconstruction sites, and it is the only confirmed omission no slice above covers.
 Slice 1 takes the table-or-routine reference and the argMapping pair; this slice takes this one and
 the declared type reference.
 
@@ -414,9 +439,13 @@ the zero-materialization arm three of the residual relations, `intent_argmapping
 `intent_node_id_decode_defect` and `intent_resolved_node_key_projection`, all sit above
 `intent_argmapping_bound_parameter_type`, which is the six-arm reconstruction of this supertype, and
 all three refused a 120-second budget. They are the only residual relations that sit above an
-unrepointed reconstruction. That is a prediction this slice can be held to: repoint the six sites and
-those three should move, and if they do not, the expansion is coming from somewhere the signature does
-not name and slice 3 needs re-scoping rather than continuing.
+unrepointed reconstruction. That is a prediction this slice can be held to: repoint the three sites,
+`intent_argmapping_bound_parameter_type` at six arms and `intent_condition_param_extraction` and
+`intent_condition_table_parameter` at five each, and those three relations should move. If they do not,
+the expansion is coming from somewhere the signature does not name, and slice 3 needs re-scoping rather
+than continuing. Three sites rather than the six an earlier draft claimed makes the prediction sharper
+rather than weaker: it is now a claim about one reconstruction reached three ways, which is what a
+supertype table would collapse.
 
 The declared type reference is the cheap one on this consumer's schema, so argue it on the model and
 not on a timing. `intent_declared_type_ref` already states its own supertype shape in a comment that
@@ -568,18 +597,28 @@ What this item owes that no gate holds today:
   `everyTargetIsIndexedOrStatesWhyNot` in shape. The walk itself has been taken and its current answer
   is twelve of twenty-two unreachable; whether it ships as a gate is the deferred policy question
   above.
-- **A gate over the supertype signature, which is the one this item most owes.** Both halves of the
-  signature read off the booted store the way `MaterializeRegistryGateTest`'s axes already do:
-  the subtype sets come from grouping capture tables by shared non-key attribute names, and the
-  confirmations come from scanning view bodies for a `UNION` over three or more members of one set.
-  A gate that fails on a *new* confirmed omission is what stops this defect class being re-entered
-  the next time a directive is added, which is exactly how eight `*_arg_mapping_pair` tables
-  accumulated without anybody deciding to have eight. It needs a declared exemption list, because
-  three candidate sets are being left alone deliberately and the two `sql_*` reference groups are
-  not subtype sets at all, and an exemption that has to be written down is the point rather than a
-  weakness: it turns adding the ninth sibling into a decision somebody records.
+- **A gate over the supertype signature, which is the one this item most owes.** All three parts read
+  off the booted store the way `MaterializeRegistryGateTest`'s axes already do: subtype sets from
+  grouping capture tables by attributes outside their own primary key, confirmations from view bodies
+  carrying a `UNION` over three or more members of a set, **and the set's own attributes named by that
+  view**. The third part is not a refinement to add later. Without it the scan reported six union sites
+  where three are real and four where one is, because membership overlaps and a view unioning the
+  reference-step tables for `class_name` was credited with reconstructing `table_ref` too. A gate
+  carrying that defect would fire on a supertype the view does not reconstruct and would attribute a
+  real reconstruction to the wrong set, which is worse than no gate.
+  Even with the third part the check is name matching over a view body, not proof that the attribute is
+  projected from the unioned arms, so the gate owes either a tighter check or a declared exemption
+  list. It needs the exemption list regardless, because two candidate sets are being left alone
+  deliberately and the `sql_*` reference groups are not subtype sets at all. That is the point rather
+  than a weakness: it turns adding the eleventh sibling into a decision somebody records, which is
+  exactly what nobody did while eight `*_arg_mapping_pair` tables accumulated.
 - **A gate over the access form.** The reachability walk's soundness rests on every `intent_` read
   going through a jOOQ constant, and that is checkable mechanically where the walk's result is not.
+  One shape it has to handle, which is the case for building it rather than an obstacle to it: five
+  main-source classes reach relations by string through `table(name(...))`, and one of those sites
+  names nothing literally, `StoreProse` building the name from a variable bounded to `metaRelations`
+  at its call site. A gate that refuses a literal `intent_` name would pass a computed one, so the
+  check belongs on what the argument can be rather than on how it is spelled.
   Listed here even though the section it supports is deferred, and lower priority than the one above,
   since the walk is now evidence for a coherence argument rather than for a cost one.
 
@@ -687,12 +726,14 @@ be read as measurements.
 
 **The reachability walk rests on a claim about how consumers read the store, and the first draft
 stated that claim too strongly.** It said no raw-SQL relation name appears in any main source. A
-third access form does exist, jOOQ's `table(name("..."))`, in four classes. Every site names a
-`meta_*` relation or `store_graph`, so no `intent_` relation is reached that way and the walk stands,
-but the form is there and nothing stops it being pointed at a derived relation. The audit is
-corrected. This makes the gate over the access form more worth building rather than less, and whether
-it belongs in this item is a fair question for the gate: it is the one claim in this whole subject
-that a build could hold, and everything else here is research evidence.
+third access form does exist, jOOQ's `table(name(...))`, in five classes. Every site resolves to a
+`meta_*` relation, `store_graph` or `INFORMATION_SCHEMA`, so no `intent_` relation is reached that way
+and the walk stands, but the form is there and nothing stops it being pointed at a derived relation.
+One of the five names nothing literally, `StoreProse` building the name from a variable, which is the
+shape a grep-shaped gate cannot see. The audit is corrected. All of this makes the gate more worth
+building rather than less, and whether it belongs in this item is a fair question for the gate: it is
+the one claim in this whole subject that a build could hold, and everything else here is research
+evidence.
 
 ## Reviewer findings
 
@@ -877,6 +918,26 @@ Nothing about the defect thesis moves. Four subtype sets with no supertype still
 genuine reconstructions are still there, and the modelling argument does not depend on how many readers
 happen to be paying today, which is the item's own point.
 
+*Author's response.* Accepted in full; the finding is right and the defect was mine. Verified before
+fixing: `intent_condition_param_extraction`, `intent_condition_table_parameter` and
+`intent_argmapping_bound_parameter_type` contain no occurrence of `table_ref` or `routine_ref`, and of
+the method-bearing set's six reported sites only those same three name `class_name` or `method`. The
+scan now requires the view to name the set's own attributes as well as to union three or more of its
+members, which puts row 1 at three sites and row 2 at one and leaves rows 3 and 4 untouched.
+
+Everything the inflated numbers scoped is re-scoped. Slice 1's "main correction" is deleted rather than
+adjusted, because there was nothing to correct: the audit's class A named the one reconstruction that
+exists and was right, and the slice now says so and says the claim against it was this scan's defect.
+Slice 3's prediction is over the three sites it can actually be run against. The gate specification
+carries the attribute check as one of three parts, with the measured consequence of omitting it stated
+where an implementer will read it, and with the further limit that even the tightened check is name
+matching over a view body rather than proof that the attribute is projected from the unioned arms.
+
+The audit takes the same corrections in its section 11 table and prose, and it now records both
+calibration errors together, since they pull in opposite directions and the pair is more instructive
+than either: the first hid a real set, the second invented reconstructions for sets that had none, and
+both were caught only by checking output against the DDL by hand.
+
 **Finding 2 (small, question one). The access-form claim is off by one class and understates the case for
 the gate it argues for.** Round 1's finding on this was answered well, and the corrected claim is nearly
 right: `table(name(...))` appears in five main-source classes, not four (`StoreProse`, `StoreCatalog`,
@@ -886,6 +947,13 @@ right: `table(name(...))` appears in five main-source classes, not four (`StoreP
 `metaRelations(dsl)` at the call site. That is the form a grep-shaped gate cannot see, and it is worth a
 sentence where the gate is proposed, because a gate that only refuses a literal `intent_` name would pass a
 computed one.
+
+*Author's response.* Accepted, both halves verified. Five classes carry the form, the fifth being
+`ViewReferences`, and `StoreProse` line 61 builds the name from a variable. Corrected in the item and in
+the audit's section 2, with the resolved-to set widened to include `INFORMATION_SCHEMA`, which the
+four-class version had not accounted for either. The computed site is now a sentence on the access-form
+gate bullet rather than only a correction: the check belongs on what the argument can resolve to and not
+on how it is spelled, which is a real constraint on how that gate gets written.
 
 *Fixed in passing, per the reviewer-fix rule.* The Tests section's account of `KNOWN_NON_MONOTONIC`'s
 remaining rows was a miscount: the set holds thirteen, of which the three named leave ten, and those are
