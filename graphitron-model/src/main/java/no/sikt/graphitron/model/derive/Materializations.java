@@ -173,15 +173,12 @@ public final class Materializations {
      * refilled and analysed, the ones after it stale or empty, and the caller's stamps unwritten,
      * which is what makes the next capture reload and re-derive the partition rather than retain it.
      * A caller on this cadence therefore owes its stamps after this returns and not before.
-     */
-    public static void refreshAnalysing(DSLContext dsl, String graphName) {
-        refreshAnalysing(dsl, graphName, RefreshProgress.none());
-    }
-
-    /**
-     * {@link #refreshAnalysing(DSLContext, String)}, reporting to {@code progress} as it goes. The
-     * registration's name still precedes its statements, the anchor wait included, for the reason
-     * this class gives: a pass stuck waiting on a lock has already printed the registration waiting.
+     *
+     * <p>Reports to {@code progress} as it goes, with no silent overload beside it: the two other
+     * cadences have one because callers of theirs ask for silence, and the one caller of this asks
+     * for the lines. A registration's name still precedes its statements, the anchor wait included,
+     * for the reason this class gives, so a pass stuck on a lock has already named the registration
+     * waiting for it.
      */
     public static void refreshAnalysing(DSLContext dsl, String graphName, RefreshProgress progress) {
         List<Registration> registrations = refreshOrder(dsl).registrations();

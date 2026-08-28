@@ -1,7 +1,7 @@
 ---
 id: R867
 title: "A cold capture's refresh plans without statistics, and the penalty grows with the schema"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: model-cleanup
@@ -300,12 +300,47 @@ a tolerance to widen. `MaterializeRegistryGateTest`, `MaterializationOrderTest`,
 
 ### Phases
 
-1. `Materializations`: the third cadence, its anchor lock and lock budget, its javadoc, and the class
-   javadoc's cadence paragraph.
-2. `FactCapture.capture`: the predicate, the single branch, the stamp placement, and the two comments.
-3. The invariant test, and the `WarmStartRefreshTest` case for a run that stops between the load
-   commit and the last refresh transaction.
-4. `fact-model.adoc`.
+All four shipped at `60e4ea8`, on one verification build of the full reactor.
+
+1. `Materializations`: the third cadence `refreshAnalysing`, its anchor lock, its javadoc, and the
+   class javadoc's cadence paragraph. Shipped.
+2. `FactCapture.capture`: the predicate, the single branch, the stamp placement, and the two
+   comments. Shipped.
+3. `RefreshPrerequisiteStatisticsTest`, and the `WarmStartRefreshTest` round for a run that stops
+   part-way. Shipped.
+4. `fact-model.adoc`. Shipped.
+
+### What shipped differently from the plan above, and why
+
+Four departures, none of them changing the fix and all of them found by building it.
+
+- **The cadences differ only in what encloses one registration's statement pair, so that is the
+  parameter.** `refreshOne` takes an `Enclosure`: the two old cadences run the pair on the caller's
+  context, the new one runs it in a transaction of its own behind the anchor row. A second loop per
+  cadence was the obvious alternative and it breaks the emission-order rule the class states, which
+  cannot hold for every cadence if each cadence emits the events itself. The pair receives its
+  context from the enclosure rather than closing over one, so a cadence cannot issue its statements
+  outside the transaction it opened for them. The anchor lock therefore sits inside the enclosure,
+  which is also what keeps the registration's name ahead of the wait for the lock.
+- **The new test's population excludes targets holding no row, which was measured rather than
+  foreseen.** `ANALYZE` on an empty table records nothing, so an empty target reports unanalysed
+  forever; three registrations of the read-cost fixture read a target the `@mutation` payload
+  surface leaves empty, and without the filter they read as a defect the cadence cannot fix. The
+  filter asks per target rather than trusting the fixture size, which also corrects a claim
+  `RefreshPlanStatisticsTest` carries in passing, that twelve units is the size at which every
+  registered target holds rows.
+- **The `WarmStartRefreshTest` round does not gate the stamp placement, and says so.** No failing
+  case exists to write: every capture and every reader open refreshes every registered target for
+  its graph unconditionally, so a stale target comes back whichever side of the refresh the stamps
+  are written on. The stamps still move, because a stamp claiming rows that were never written is
+  wrong on `ClasspathSources`' own stated rule, but the invariant is a consistency requirement
+  rather than a defence against a reachable stale store, and the round is written and documented as
+  what it does hold: that a store left with facts complete, a target emptied and no stamp is brought
+  back to what a cold run produces. The round also needed a table-bound schema, that family's
+  two-type schema filling no registered target at all.
+- **One shared instrument rather than two spellings of "unanalysed".** `StoreStatistics` carries the
+  reset and the analysed reading, and `RefreshPlanStatisticsTest` now uses it instead of its own
+  copy. That is the one edit to an existing test beyond the round above.
 
 ## Already landed, so this item owes none of it
 
