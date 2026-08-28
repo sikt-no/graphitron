@@ -1,13 +1,13 @@
 ---
 id: R848
 title: "Design the materialization cut set as a whole instead of accreting it one registration at a time"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 2
 theme: model-cleanup
 depends-on: []
 created: 2026-08-26
-last-updated: 2026-08-27
+last-updated: 2026-08-28
 ---
 
 # Design the materialization cut set as a whole instead of accreting it one registration at a time
@@ -490,6 +490,38 @@ to confront.
 
 **The clause and the pin are prospective.** R856's two registrations land under the current standard,
 on a priority-1 bug, and are the first test of the rule rather than the subject of a retroactive audit.
+
+## Result
+
+**Arm A. The accretion hypothesis this item was filed on is wrong.** All twenty registrations earn
+their place, six of them by three or four orders of magnitude. The figures, the mechanism and the
+spread that changed four verdicts are in `roadmap/changelog.md` under this item's entry, which is
+where they stay when this file is deleted at Done. What a reviewer should check here is the shape of
+the argument rather than the numbers:
+
+- **2a found no zeros**, so candidate B never arose. B was defined as the registrations 2a found earn
+  nothing, removed together; there were none to remove.
+- **Candidate C was built and is decisive against itself.** Keeping only the four widest fan-out
+  shoulders saves 787 ms of refresh and costs its thirty readers at least 568 seconds, eight of them
+  refusing at the 60-second read budget so that figure is a floor. Reported as two numbers and never
+  summed, as this plan pre-committed.
+- **Four verdicts turned on the instrument, not on the register.** A single refresh measurement per
+  candidate reported four registrations saving 139 to 179 ms. Over three captures each, the baseline's
+  own refresh moves 864 to 1171 ms, and all four deltas straddle zero. The pre-committed rule's spread
+  clause decides them without being tuned to them. `intent_argument_column_scope` is the one row with
+  no measurement of its own to point at, every relation reaching it being a registered source view,
+  and it stands on the rule rather than on a found value. That is a caveat, not a clean bill.
+- **`intent_field_scope_table`, this item's own exemplar of accretion, was a correct decision.**
+  Removing it changes the refresh by less than the spread and costs its one reader about seventeen
+  seconds. It landed by an unreviewed route, which is a different complaint than the one this item
+  made, and it is the pin rather than the pricing that answers it.
+- **The pin was tested the same day it landed and it worked.** R856's two registrations could not
+  land without `9e01ccf` editing the pinned count from 20 to 22 and the pinned depth from 12 to 14.
+  Two further stages of refresh depth is exactly the growth nothing gated before.
+
+The figures stay stated against the register of twenty they were taken on. That is the set-relative
+doctrine working rather than prose going stale: a leave-one-out figure means nothing except against a
+named register, which is why the `reason` clause requires the register to be named.
 
 ## Tests
 
