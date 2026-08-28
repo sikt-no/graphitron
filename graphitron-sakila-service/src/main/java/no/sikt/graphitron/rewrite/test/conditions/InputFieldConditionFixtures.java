@@ -90,11 +90,15 @@ public final class InputFieldConditionFixtures {
      * so the generated condition only compiles if the condition glue hands it an
      * aliased {@code Address} from the correlated {@code EXISTS} rather than the root
      * {@code customer} local. Filters on the FK-target table to prove the alias is bound there:
-     * customers whose address is in district {@code Alberta}. {@code addressId} is unused (the
-     * {@code override} drops the decoded predicate); it is present so the binding shape mirrors a
-     * real consumer method that receives the decoded id alongside the table.
+     * customers whose address is in district {@code Alberta}. {@code addressId} is unused, the
+     * {@code override} suppressing the implicit key predicate; it is present so the binding shape
+     * mirrors a real consumer method that receives the key alongside the table.
+     *
+     * <p>Declared as {@code Integer} and not as the wire string, because a {@code @nodeId} slot's
+     * value is decoded before it leaves the generated glue: what arrives here is {@code Address}'s
+     * single-column key. The override suppresses the predicate, never the decode.
      */
-    public static Condition addressDistrictAlberta(Address address, String addressId) {
+    public static Condition addressDistrictAlberta(Address address, Integer addressId) {
         return address.DISTRICT.eq("Alberta");
     }
 
@@ -117,9 +121,14 @@ public final class InputFieldConditionFixtures {
      * parameter is the concrete FK-target {@link Project}, so the generated code only compiles if
      * the condition glue hands it an aliased Project from the correlated EXISTS (whose
      * correlation ANDs both composite-FK slots) rather than the project_note table. Filters notes
-     * whose project is named {@code Atlas}. {@code projectId} is unused (override drops the decode).
+     * whose project is named {@code Atlas}. {@code projectId} is unused, the {@code override}
+     * suppressing the implicit key predicate.
+     *
+     * <p>The composite half of {@link #addressDistrictAlberta}'s contract: a node type whose key
+     * spans two columns decodes to a typed jOOQ {@code Row2}, so that is what an authored parameter
+     * bound to the slot declares. The override suppresses the predicate, never the decode.
      */
-    public static Condition projectNameAtlas(Project table, String projectId) {
+    public static Condition projectNameAtlas(Project table, org.jooq.Row2<Integer, Integer> projectId) {
         return table.NAME.eq("Atlas");
     }
 
