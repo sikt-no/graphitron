@@ -103,7 +103,7 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 116;
+    private static final int READERS_IN_SCHEMA = 115;
 
     /** Views whose derivation reaches at least one registration's target. */
     private static final int READERS_WITH_CELLS = 68;

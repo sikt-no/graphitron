@@ -65,10 +65,8 @@ import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER_TYPE_REF;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD_RETURN_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
-import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT_TYPE_REF;
+import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
@@ -2289,14 +2287,16 @@ public final class SeededStore {
             .set(JVM_METHOD.RETURNS_CONDITION, false)
             .execute();
         declaredReturn.forEach((typePath, referencedClass) ->
-            dsl.insertInto(JVM_METHOD_RETURN_TYPE_REF)
-                .set(JVM_METHOD_RETURN_TYPE_REF.SOURCE_NAME, sourceName)
-                .set(JVM_METHOD_RETURN_TYPE_REF.CLASS_NAME, className)
-                .set(JVM_METHOD_RETURN_TYPE_REF.METHOD_NAME, methodName)
-                .set(JVM_METHOD_RETURN_TYPE_REF.DESCRIPTOR, descriptor)
-                .set(JVM_METHOD_RETURN_TYPE_REF.TYPE_PATH, typePath)
-                .set(JVM_METHOD_RETURN_TYPE_REF.REFERENCED_CLASS, referencedClass)
-                .set(JVM_METHOD_RETURN_TYPE_REF.VARIANCE, "NONE")
+            dsl.insertInto(JVM_DECLARED_TYPE_REF)
+                .set(JVM_DECLARED_TYPE_REF.SOURCE_NAME, sourceName)
+                .set(JVM_DECLARED_TYPE_REF.CLASS_NAME, className)
+                .set(JVM_DECLARED_TYPE_REF.OWNER_KIND, "METHOD_RETURN")
+                .set(JVM_DECLARED_TYPE_REF.OWNER_POSITION, -1)
+                .set(JVM_DECLARED_TYPE_REF.OWNER_NAME, methodName)
+                .set(JVM_DECLARED_TYPE_REF.OWNER_DESCRIPTOR, descriptor)
+                .set(JVM_DECLARED_TYPE_REF.TYPE_PATH, typePath)
+                .set(JVM_DECLARED_TYPE_REF.REFERENCED_CLASS, referencedClass)
+                .set(JVM_DECLARED_TYPE_REF.VARIANCE, "NONE")
                 .execute());
     }
 
@@ -2354,14 +2354,16 @@ public final class SeededStore {
     public static void seedReturnTypeRef(DSLContext dsl, String sourceName, String className,
                                          String methodName, String descriptor, String typePath,
                                          String referencedClass, String variance) {
-        dsl.insertInto(JVM_METHOD_RETURN_TYPE_REF)
-            .set(JVM_METHOD_RETURN_TYPE_REF.SOURCE_NAME, sourceName)
-            .set(JVM_METHOD_RETURN_TYPE_REF.CLASS_NAME, className)
-            .set(JVM_METHOD_RETURN_TYPE_REF.METHOD_NAME, methodName)
-            .set(JVM_METHOD_RETURN_TYPE_REF.DESCRIPTOR, descriptor)
-            .set(JVM_METHOD_RETURN_TYPE_REF.TYPE_PATH, typePath)
-            .set(JVM_METHOD_RETURN_TYPE_REF.REFERENCED_CLASS, referencedClass)
-            .set(JVM_METHOD_RETURN_TYPE_REF.VARIANCE, variance)
+        dsl.insertInto(JVM_DECLARED_TYPE_REF)
+            .set(JVM_DECLARED_TYPE_REF.SOURCE_NAME, sourceName)
+            .set(JVM_DECLARED_TYPE_REF.CLASS_NAME, className)
+            .set(JVM_DECLARED_TYPE_REF.OWNER_KIND, "METHOD_RETURN")
+                .set(JVM_DECLARED_TYPE_REF.OWNER_POSITION, -1)
+                .set(JVM_DECLARED_TYPE_REF.OWNER_NAME, methodName)
+            .set(JVM_DECLARED_TYPE_REF.OWNER_DESCRIPTOR, descriptor)
+            .set(JVM_DECLARED_TYPE_REF.TYPE_PATH, typePath)
+            .set(JVM_DECLARED_TYPE_REF.REFERENCED_CLASS, referencedClass)
+            .set(JVM_DECLARED_TYPE_REF.VARIANCE, variance)
             .execute();
     }
 
@@ -2405,15 +2407,16 @@ public final class SeededStore {
             .set(JVM_METHOD_PARAMETER.DECLARED_PARAMETER_TYPE, "Object")
             .execute();
         declaredType.forEach((typePath, referencedClass) ->
-            dsl.insertInto(JVM_METHOD_PARAMETER_TYPE_REF)
-                .set(JVM_METHOD_PARAMETER_TYPE_REF.SOURCE_NAME, sourceName)
-                .set(JVM_METHOD_PARAMETER_TYPE_REF.CLASS_NAME, className)
-                .set(JVM_METHOD_PARAMETER_TYPE_REF.METHOD_NAME, methodName)
-                .set(JVM_METHOD_PARAMETER_TYPE_REF.DESCRIPTOR, descriptor)
-                .set(JVM_METHOD_PARAMETER_TYPE_REF.POSITION, position)
-                .set(JVM_METHOD_PARAMETER_TYPE_REF.TYPE_PATH, typePath)
-                .set(JVM_METHOD_PARAMETER_TYPE_REF.REFERENCED_CLASS, referencedClass)
-                .set(JVM_METHOD_PARAMETER_TYPE_REF.VARIANCE, "NONE")
+            dsl.insertInto(JVM_DECLARED_TYPE_REF)
+                .set(JVM_DECLARED_TYPE_REF.SOURCE_NAME, sourceName)
+                .set(JVM_DECLARED_TYPE_REF.CLASS_NAME, className)
+                .set(JVM_DECLARED_TYPE_REF.OWNER_KIND, "METHOD_PARAMETER")
+                .set(JVM_DECLARED_TYPE_REF.OWNER_NAME, methodName)
+                .set(JVM_DECLARED_TYPE_REF.OWNER_DESCRIPTOR, descriptor)
+                .set(JVM_DECLARED_TYPE_REF.OWNER_POSITION, position)
+                .set(JVM_DECLARED_TYPE_REF.TYPE_PATH, typePath)
+                .set(JVM_DECLARED_TYPE_REF.REFERENCED_CLASS, referencedClass)
+                .set(JVM_DECLARED_TYPE_REF.VARIANCE, "NONE")
                 .execute());
     }
 
@@ -2487,13 +2490,16 @@ public final class SeededStore {
             .set(JVM_RECORD_COMPONENT.DECLARED_TYPE, "Object")
             .execute();
         declaredType.forEach((typePath, referencedClass) ->
-            dsl.insertInto(JVM_RECORD_COMPONENT_TYPE_REF)
-                .set(JVM_RECORD_COMPONENT_TYPE_REF.SOURCE_NAME, sourceName)
-                .set(JVM_RECORD_COMPONENT_TYPE_REF.CLASS_NAME, className)
-                .set(JVM_RECORD_COMPONENT_TYPE_REF.COMPONENT_NAME, componentName)
-                .set(JVM_RECORD_COMPONENT_TYPE_REF.TYPE_PATH, typePath)
-                .set(JVM_RECORD_COMPONENT_TYPE_REF.REFERENCED_CLASS, referencedClass)
-                .set(JVM_RECORD_COMPONENT_TYPE_REF.VARIANCE, "NONE")
+            dsl.insertInto(JVM_DECLARED_TYPE_REF)
+                .set(JVM_DECLARED_TYPE_REF.SOURCE_NAME, sourceName)
+                .set(JVM_DECLARED_TYPE_REF.CLASS_NAME, className)
+                .set(JVM_DECLARED_TYPE_REF.OWNER_KIND, "RECORD_COMPONENT")
+                .set(JVM_DECLARED_TYPE_REF.OWNER_DESCRIPTOR, "")
+                .set(JVM_DECLARED_TYPE_REF.OWNER_POSITION, -1)
+                .set(JVM_DECLARED_TYPE_REF.OWNER_NAME, componentName)
+                .set(JVM_DECLARED_TYPE_REF.TYPE_PATH, typePath)
+                .set(JVM_DECLARED_TYPE_REF.REFERENCED_CLASS, referencedClass)
+                .set(JVM_DECLARED_TYPE_REF.VARIANCE, "NONE")
                 .execute());
     }
 

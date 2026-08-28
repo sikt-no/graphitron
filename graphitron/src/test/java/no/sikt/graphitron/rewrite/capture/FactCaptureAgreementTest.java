@@ -93,9 +93,7 @@ import static no.sikt.graphitron.model.Tables.WALK_TYPE_BACKING_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER_TYPE_REF;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD_RETURN_TYPE_REF;
-import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT_TYPE_REF;
+import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
@@ -271,7 +269,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       apart (a name matching no catalog object, one matching a stored table rather than a
  *       callable, and a callable the generated model exposes no call surface for);
  *       {@code no.sikt.graphitron.model.intent.AccessorHopTest} binds the five relations an
- *       accessor hop is built from ({@code intent_delivery_container}, {@code intent_declared_type_ref},
+ *       accessor hop is built from ({@code intent_delivery_container}, {@code jvm_declared_type_ref},
  *       {@code intent_declared_type_element}, {@code intent_class_member_element} and
  *       {@code intent_field_accessor_hop}) to a census stated as rows in the module whose DDL
  *       declares them, one accessor per delivery shape beside the arrangements no scan of compiled
@@ -415,9 +413,7 @@ class FactCaptureAgreementTest {
             "sql_index_column", "sql_routine", "sql_routine_parameter",
             "sql_node_metadata", "sql_node_key_column",
             "jvm_class", "jvm_class_supertype", "jvm_method",
-            "jvm_method_return_type_ref", "jvm_method_parameter",
-            "jvm_method_parameter_type_ref", "jvm_record_component",
-            "jvm_record_component_type_ref",
+            "jvm_method_parameter", "jvm_record_component", "jvm_declared_type_ref",
             "jvm_scalar_type_field", "store_source", "store_stamp",
             "store_graph", "store_graph_schema_input", "store_graph_schema_extension",
             "store_graph_supergraph", "store_graph_output", "store_graph_tenant_column",
@@ -545,8 +541,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_producer_method", Arm.DERIVED);
         registrations.put("intent_field_routine_method", Arm.DERIVED);
         registrations.put("intent_delivery_container", Arm.DERIVED);
-        registrations.put("intent_declared_type_ref", Arm.DERIVED);
-        registrations.put("intent_declared_type_element", Arm.DERIVED);
+                registrations.put("intent_declared_type_element", Arm.DERIVED);
         registrations.put("intent_class_member_element", Arm.DERIVED);
         registrations.put("intent_field_accessor_hop", Arm.DERIVED);
         registrations.put("intent_type_backing_seed", Arm.DERIVED);
@@ -1834,18 +1829,21 @@ class FactCaptureAgreementTest {
             }
 
             var capturedReturns = new LinkedHashSet<String>();
-            store.dsl().selectFrom(JVM_METHOD_RETURN_TYPE_REF).fetch().forEach(row -> capturedReturns.add(
-                render(row.getClassName() + " " + row.getMethodName() + row.getDescriptor(),
-                    row.getTypePath(), row.getReferencedClass(), row.getVariance())));
+            store.dsl().selectFrom(JVM_DECLARED_TYPE_REF)
+                .where(JVM_DECLARED_TYPE_REF.OWNER_KIND.eq("METHOD_RETURN")).fetch().forEach(row -> capturedReturns.add(
+                    render(row.getClassName() + " " + row.getOwnerName() + row.getOwnerDescriptor(),
+                        row.getTypePath(), row.getReferencedClass(), row.getVariance())));
             var capturedParameters = new LinkedHashSet<String>();
-            store.dsl().selectFrom(JVM_METHOD_PARAMETER_TYPE_REF).fetch().forEach(row -> capturedParameters.add(
-                render(row.getClassName() + " " + row.getMethodName() + row.getDescriptor()
-                        + " #" + row.getPosition(),
-                    row.getTypePath(), row.getReferencedClass(), row.getVariance())));
+            store.dsl().selectFrom(JVM_DECLARED_TYPE_REF)
+                .where(JVM_DECLARED_TYPE_REF.OWNER_KIND.eq("METHOD_PARAMETER")).fetch().forEach(row -> capturedParameters.add(
+                    render(row.getClassName() + " " + row.getOwnerName() + row.getOwnerDescriptor()
+                            + " #" + row.getOwnerPosition(),
+                        row.getTypePath(), row.getReferencedClass(), row.getVariance())));
             var capturedComponents = new LinkedHashSet<String>();
-            store.dsl().selectFrom(JVM_RECORD_COMPONENT_TYPE_REF).fetch().forEach(row -> capturedComponents.add(
-                render(row.getClassName() + " " + row.getComponentName(),
-                    row.getTypePath(), row.getReferencedClass(), row.getVariance())));
+            store.dsl().selectFrom(JVM_DECLARED_TYPE_REF)
+                .where(JVM_DECLARED_TYPE_REF.OWNER_KIND.eq("RECORD_COMPONENT")).fetch().forEach(row -> capturedComponents.add(
+                    render(row.getClassName() + " " + row.getOwnerName(),
+                        row.getTypePath(), row.getReferencedClass(), row.getVariance())));
 
             assertThat(expectedReturns).as("the reactor declares return types, so this pins something")
                 .isNotEmpty();
@@ -1855,12 +1853,43 @@ class FactCaptureAgreementTest {
             assertThat(capturedParameters).isEqualTo(expectedParameters);
             assertThat(capturedComponents).isEqualTo(expectedComponents);
 
+            // The reference this relation gave up when it absorbed the three per-owner relations.
+            // Each had a foreign key into the owner holding its rows, and a foreign key cannot span
+            // three parents chosen by a column; the arrangement that would have kept two of them
+            // costs the primary key, which on a census is worth more, a duplicate row being the
+            // plausible fault here and a dangling one visible the moment anything reads it. So the
+            // edges are checked, over the reactor's own classpath, where the population is large
+            // enough for a writer bug to show.
+            record Arm(String kind, String owner) {}
+            for (Arm arm : List.of(
+                    new Arm("METHOD_RETURN",
+                        "jvm_method d WHERE d.source_name = s.source_name"
+                            + " AND d.class_name = s.class_name AND d.method_name = s.owner_name"
+                            + " AND d.descriptor = s.owner_descriptor"),
+                    new Arm("METHOD_PARAMETER",
+                        "jvm_method_parameter d WHERE d.source_name = s.source_name"
+                            + " AND d.class_name = s.class_name AND d.method_name = s.owner_name"
+                            + " AND d.descriptor = s.owner_descriptor"
+                            + " AND d.position = s.owner_position"),
+                    new Arm("RECORD_COMPONENT",
+                        "jvm_record_component d WHERE d.source_name = s.source_name"
+                            + " AND d.class_name = s.class_name"
+                            + " AND d.component_name = s.owner_name"))) {
+                assertThat(store.dsl().fetchOne(
+                        "SELECT COUNT(*) FROM jvm_declared_type_ref s WHERE s.owner_kind = ?"
+                            + " AND NOT EXISTS (SELECT 1 FROM " + arm.owner() + ")",
+                        arm.kind()).into(int.class))
+                    .as("%s positions with no census owner", arm.kind())
+                    .isZero();
+                assertThat(store.dsl().fetchOne(
+                        "SELECT COUNT(*) FROM jvm_declared_type_ref WHERE owner_kind = ?",
+                        arm.kind()).into(int.class))
+                    .as("the scan reaches the %s arm, so the check above saw something", arm.kind())
+                    .isPositive();
+            }
+
             var everyClass = store.dsl()
-                .select(JVM_METHOD_RETURN_TYPE_REF.REFERENCED_CLASS).from(JVM_METHOD_RETURN_TYPE_REF)
-                .unionAll(store.dsl().select(JVM_METHOD_PARAMETER_TYPE_REF.REFERENCED_CLASS)
-                    .from(JVM_METHOD_PARAMETER_TYPE_REF))
-                .unionAll(store.dsl().select(JVM_RECORD_COMPONENT_TYPE_REF.REFERENCED_CLASS)
-                    .from(JVM_RECORD_COMPONENT_TYPE_REF))
+                .select(JVM_DECLARED_TYPE_REF.REFERENCED_CLASS).from(JVM_DECLARED_TYPE_REF)
                 .fetch(0, String.class);
             assertThat(everyClass)
                 .as("a package-less name is what the display columns already carry; this relation"
@@ -1873,14 +1902,15 @@ class FactCaptureAgreementTest {
 
             var rootDisagreements = store.dsl()
                 .select(JVM_METHOD.CLASS_NAME, JVM_METHOD.METHOD_NAME, JVM_METHOD.RETURN_TYPE,
-                    JVM_METHOD_RETURN_TYPE_REF.REFERENCED_CLASS)
-                .from(JVM_METHOD_RETURN_TYPE_REF)
+                    JVM_DECLARED_TYPE_REF.REFERENCED_CLASS)
+                .from(JVM_DECLARED_TYPE_REF)
                 .join(JVM_METHOD)
-                .on(JVM_METHOD.SOURCE_NAME.eq(JVM_METHOD_RETURN_TYPE_REF.SOURCE_NAME))
-                .and(JVM_METHOD.CLASS_NAME.eq(JVM_METHOD_RETURN_TYPE_REF.CLASS_NAME))
-                .and(JVM_METHOD.METHOD_NAME.eq(JVM_METHOD_RETURN_TYPE_REF.METHOD_NAME))
-                .and(JVM_METHOD.DESCRIPTOR.eq(JVM_METHOD_RETURN_TYPE_REF.DESCRIPTOR))
-                .where(JVM_METHOD_RETURN_TYPE_REF.TYPE_PATH.eq(""))
+                .on(JVM_METHOD.SOURCE_NAME.eq(JVM_DECLARED_TYPE_REF.SOURCE_NAME))
+                .and(JVM_METHOD.CLASS_NAME.eq(JVM_DECLARED_TYPE_REF.CLASS_NAME))
+                .and(JVM_METHOD.METHOD_NAME.eq(JVM_DECLARED_TYPE_REF.OWNER_NAME))
+                .and(JVM_METHOD.DESCRIPTOR.eq(JVM_DECLARED_TYPE_REF.OWNER_DESCRIPTOR))
+                .where(JVM_DECLARED_TYPE_REF.OWNER_KIND.eq("METHOD_RETURN"))
+                .and(JVM_DECLARED_TYPE_REF.TYPE_PATH.eq(""))
                 .fetch()
                 .stream()
                 .filter(row -> !row.value4().substring(row.value4().lastIndexOf('.') + 1)

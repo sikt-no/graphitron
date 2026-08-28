@@ -10,7 +10,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_CLASS_MEMBER_ELEMENT;
 import static no.sikt.graphitron.model.Tables.INTENT_DECLARED_TYPE_ELEMENT;
-import static no.sikt.graphitron.model.Tables.INTENT_DECLARED_TYPE_REF;
+import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.INTENT_DELIVERY_CONTAINER;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ACCESSOR_HOP;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The registered agreement anchor for the five relations an accessor hop is built from:
  * {@code intent_delivery_container}, the classes a declared type delivers through;
- * {@code intent_declared_type_ref}, the census's declared types under one owner key;
+ * {@code jvm_declared_type_ref}, the census's declared types under one owner key;
  * {@code intent_declared_type_element}, the class a declared type delivers once the containers are
  * peeled; {@code intent_class_member_element}, that peel read at a member slot's own owner; and
  * {@code intent_field_accessor_hop}, where a field coordinate standing on a class lands.
@@ -616,19 +616,17 @@ class AccessorHopTest {
 
     /**
      * Each position as its path and the class named there, so a case states the whole
-     * decomposition. A null descriptor names the record arm, where an owner has none.
+     * decomposition. A null descriptor names the record arm, where an owner has none and the relation spells that as the empty string.
      */
     private static List<String> positions(DSLContext dsl, String className, String ownerName,
                                           String descriptor) {
-        var t = INTENT_DECLARED_TYPE_REF;
+        var t = JVM_DECLARED_TYPE_REF;
         return dsl.select(t.TYPE_PATH, t.REFERENCED_CLASS)
             .from(t)
             .where(t.CLASS_NAME.eq(className)
                 .and(t.OWNER_NAME.eq(ownerName))
-                .and(t.OWNER_POSITION.isNull())
-                .and(descriptor == null
-                    ? t.OWNER_DESCRIPTOR.isNull()
-                    : t.OWNER_DESCRIPTOR.eq(descriptor)))
+                .and(t.OWNER_POSITION.eq(-1))
+                .and(t.OWNER_DESCRIPTOR.eq(descriptor == null ? "" : descriptor)))
             .fetch(r -> r.value1() + " " + r.value2());
     }
 
@@ -640,7 +638,7 @@ class AccessorHopTest {
             .from(e)
             .where(e.CLASS_NAME.eq(className)
                 .and(e.OWNER_NAME.eq(ownerName))
-                .and(e.OWNER_POSITION.isNull())
+                .and(e.OWNER_POSITION.eq(-1))
                 .and(e.OWNER_DESCRIPTOR.eq(descriptor)))
             .fetchSingle(0, Boolean.class);
     }
@@ -653,7 +651,7 @@ class AccessorHopTest {
             .from(e)
             .where(e.CLASS_NAME.eq(className)
                 .and(e.OWNER_NAME.eq(ownerName))
-                .and(e.OWNER_POSITION.isNull())
+                .and(e.OWNER_POSITION.eq(-1))
                 .and(e.OWNER_DESCRIPTOR.eq(descriptor)))
             .fetch(r -> r.value1() + " at " + r.value2());
     }

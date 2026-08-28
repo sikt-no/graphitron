@@ -521,6 +521,36 @@ insert. It is the sole thing keeping `graphitron_service`, `graphitron_external_
 the same question the register asks about a materialized relation with no reader, and it should be
 answered on that footing rather than as a side effect of a collapse.
 
+**The declared type reference, as it landed.** The three census relations carried identical payload
+and differed only in the key naming their owner, so the rule collapses them into
+`jvm_declared_type_ref` with an `owner_kind` discriminator. Two union sites went, not one: the
+retired `intent_declared_type_ref` view, and `intent_jvm_ancestor`'s `asked` seed, which is the
+one worth noting because it sat under a recursive CTE and so was re-derived at the most expensive
+position in the schema.
+
+The design fork here was the key, and it resolved against the first answer. A collapsed table cannot
+take a primary key over the arm-determined parts, a key column not being nullable, and the two ways
+out are not both available. Coalescing the NULLs into `GENERATED ALWAYS AS` key columns works and
+H2 enforces it, but the census writes with duplicate-ignore, which jOOQ renders as a `MERGE` keyed
+on the primary key and so puts the generated columns back into the statement as binds; making that
+work would mean depending on how jOOQ renders a merge. The other way is to spell not-applicable as
+a value, and that is what shipped: the empty descriptor and the negative position, each bound to
+`owner_kind` by a check constraint in both directions, which is more than the three separate
+relations could state at all.
+
+That choice is also what settles the constraint question, and it settles it the opposite way from
+the argMapping pair. Keeping any foreign key needs a nullable descriptor so the reference is skipped
+on the record arm, and a nullable column cannot be in the key: it is the edges or uniqueness, not
+both. Uniqueness won, because a census is machine-written from classfiles where the plausible fault
+is a duplicate row, and a duplicate silently doubles every join over the largest relation in the
+store while a dangling row is visible the moment anything reads it. All three edges are checked in
+`FactCaptureAgreementTest` instead, beside the census assertions that already hold a real classpath
+scan; a hand-built fixture would not have had the population for a writer bug to show.
+
+Two incidental results. The four-step descent below this relation compared its owner key null-safely
+at every step and now compares it with plain equality. And `DerivedReadCostTest`'s pinned view count
+fell by exactly one, the union that became a table, with the priced cell count unchanged.
+
 The two unconfirmed candidates are the GraphQL type expression and the described ordinal member. Each
 is the same modelling defect with nothing currently paying for it. Record them and do not act, on the
 rule this schema applies elsewhere that a relation with no asker is inventory, and revisit each the

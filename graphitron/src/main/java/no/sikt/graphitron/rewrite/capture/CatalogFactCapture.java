@@ -34,10 +34,8 @@ import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER_TYPE_REF;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD_RETURN_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
-import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT_TYPE_REF;
+import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.JVM_SCALAR_TYPE_FIELD;
 
 /**
@@ -609,11 +607,13 @@ final class CatalogFactCapture {
                 row.setReturnsCondition(method.returnsCondition());
                 sink.add(row);
                 for (CompletionData.TypeRef ref : method.returnTypeRefs()) {
-                    var refRow = sink.dsl().newRecord(JVM_METHOD_RETURN_TYPE_REF);
+                    var refRow = sink.dsl().newRecord(JVM_DECLARED_TYPE_REF);
                     refRow.setSourceName(source);
                     refRow.setClassName(className);
-                    refRow.setMethodName(method.name());
-                    refRow.setDescriptor(descriptor);
+                    refRow.setOwnerKind("METHOD_RETURN");
+                    refRow.setOwnerName(method.name());
+                    refRow.setOwnerDescriptor(descriptor);
+                    refRow.setOwnerPosition(-1);
                     refRow.setTypePath(ref.path());
                     refRow.setReferencedClass(ref.referencedClass());
                     refRow.setVariance(ref.variance());
@@ -633,12 +633,13 @@ final class CatalogFactCapture {
                     parameterRow.setDeclaredParameterType(parameter.declaredType());
                     sink.add(parameterRow);
                     for (CompletionData.TypeRef ref : parameter.typeRefs()) {
-                        var refRow = sink.dsl().newRecord(JVM_METHOD_PARAMETER_TYPE_REF);
+                        var refRow = sink.dsl().newRecord(JVM_DECLARED_TYPE_REF);
                         refRow.setSourceName(source);
                         refRow.setClassName(className);
-                        refRow.setMethodName(method.name());
-                        refRow.setDescriptor(descriptor);
-                        refRow.setPosition(parameterPosition);
+                        refRow.setOwnerKind("METHOD_PARAMETER");
+                        refRow.setOwnerName(method.name());
+                        refRow.setOwnerDescriptor(descriptor);
+                        refRow.setOwnerPosition(parameterPosition);
                         refRow.setTypePath(ref.path());
                         refRow.setReferencedClass(ref.referencedClass());
                         refRow.setVariance(ref.variance());
@@ -662,10 +663,13 @@ final class CatalogFactCapture {
                 row.setDeclaredType(component.declaredType());
                 sink.add(row);
                 for (CompletionData.TypeRef ref : component.typeRefs()) {
-                    var refRow = sink.dsl().newRecord(JVM_RECORD_COMPONENT_TYPE_REF);
+                    var refRow = sink.dsl().newRecord(JVM_DECLARED_TYPE_REF);
                     refRow.setSourceName(source);
                     refRow.setClassName(className);
-                    refRow.setComponentName(component.name());
+                    refRow.setOwnerKind("RECORD_COMPONENT");
+                    refRow.setOwnerName(component.name());
+                    refRow.setOwnerDescriptor("");
+                    refRow.setOwnerPosition(-1);
                     refRow.setTypePath(ref.path());
                     refRow.setReferencedClass(ref.referencedClass());
                     refRow.setVariance(ref.variance());
