@@ -544,8 +544,10 @@ The gates that already govern this ground, and what each will say when the slice
   `intent_spelled_table|intent_mutation_routine_seat`, which it attributes to the unindexed named-type
   join slice 2 stores. Whether any of the three becomes removable is for the Done gate to measure and
   is not a prediction inherited from the audit, which measures plan sizes and wall clock and says
-  nothing about scan-count monotonicity. The nine rows below them are the instrument's own four-scan
-  floor and one is the node-id instruction's; no slice here touches any of them.
+  nothing about scan-count monotonicity. Of the ten rows that remain, eight are the instrument's own
+  four-scan floor on `intent_field_reference_step_hop`, one is the node-id instruction's, and one is
+  the `intent_errors_field` pair, which shares its comment with the argmapping row named above; no
+  slice here touches any of them.
 - `MaterializeRegistryGateTest` holds the index decisions on registered targets. Slice 2's index sits
   on a captured base table, outside that gate's scope, which is the gap the surviving named-type
   index item documents; take its doctrine rather than inventing one.
@@ -818,3 +820,74 @@ stood, and the 69-fold ratio is unchanged.
 *Fixed in passing, per the reviewer-fix rule.* "The two per-refused-row reader items" was a stale count:
 there is one such item, R812, which names both call sites in its own body. Corrected in the supersession
 section; nothing else in that paragraph changed.
+
+### Round 2 (2026-08-28, Spec -> Ready, reviewer session 01P2HFCFzA3YiKbaLjgXzet7)
+
+Verdict: withhold. One blocking finding on question two, one small correction beside it. Every round 1
+finding is addressed, and two of them were addressed by taking the measurement rather than by editing
+the prose, which is the better answer in both cases.
+
+*What was checked this round.* The reframing from cost to modelling is the right move and the detector
+is the reason: a defect you can state off the DDL is enumerable where a wall-clock hunt is not, and the
+item is honest about what that reframing found that the cost pass missed. The subtype-set inventory
+checks out against `graphitron-model.sql` exactly as stated: ten capture tables carry `class_name` and
+`method`, eight are `*_arg_mapping_pair`, six carry `table_ref` with `graphitron_routine` spelling the
+seventh `routine_ref`, three are `jvm_*_type_ref`, and `graphql_field`, `graphql_argument` and
+`graphql_directive_argument` share all eight of the named columns. `meta_materialize` seeds twenty-two
+registrations. `intent_argmapping_bound_parameter_type`'s `hosted` CTE is six arms differing only in the
+directive table joined and the `site` literal filtered, as described; its seventh `UNION ALL` is in the
+separate `resolved` CTE and is not one of the six. `intent_declared_type_ref` carries the comments quoted
+from it, and reads as the worked confession the item says it is. The 43.0-second re-pricing, the
+attribution arms and the store's location are in the audit's section 10, and the 6293 correction landed
+where it stood. The read-side honesty in "What changes when this lands", stating an arm that comes out
+worse than the register today, is what makes this item trustworthy on the rest.
+
+**Finding 1 (question two: what the implementer builds). The detector's union-site column is inflated
+at two of its four rows, and slice 1 is scoped by one of the inflated numbers.** The detector confirms
+an omission when a view `UNION`s three or more members of a subtype set, with no check that the set's
+shared attributes are what those arms project or join on. Membership overlaps between sets, so a view
+that unions six directive tables to reconstruct one fact is counted as a reconstruction of every set
+those tables belong to.
+
+That is not hypothetical. Slice 1 says the table-or-routine reference is reconstructed at four sites and
+makes "repointing only the first leaves three reconstructions standing" its main correction over the
+audit's class A. Grepping the three: `intent_condition_param_extraction`, `intent_condition_table_parameter`
+and `intent_argmapping_bound_parameter_type` contain no occurrence of `table_ref` or `routine_ref` at all.
+All three union those tables for `class_name` and `method`, which is row 1 of the table and slice 3's
+work. A table-or-routine-reference supertype cannot repoint any of them, so the count is one site and the
+slice's central correction dissolves. The same rule inflates row 1 the other way round: of its six union
+sites, only those same three mention `class_name` or `method`; `intent_spelled_table_live`,
+`intent_argmapping_pair_live` and `intent_condition_membership` union member tables for other facts
+entirely. Rows 3 and 4 survive the tightened rule at one and two sites.
+
+Three consequences, and the reason this blocks rather than being a note. The count that scopes slice 1 is
+wrong, and slice 1 is the slice with the strongest isolation behind it, so the item should not ship
+telling an implementer to repoint three views that cannot be repointed. Slice 3's prediction inherits the
+same arithmetic: "repoint the six sites and those three residual relations should move" is a prediction
+over three sites, which changes what a failed prediction would mean. And the gate this item says it most
+owes is specified as this detector, so it would ship the same false positives into the build, which is
+the one place they would be expensive: a gate that confirms an omission from set membership alone will
+fire on a supertype the view does not reconstruct, and attribute a real reconstruction to the wrong set.
+The fix looks small and is the author's to take: require the union's arms to project or join the set's
+shared attribute group, re-derive the union-site column under that rule, and re-scope slices 1 and 3 to
+what it gives. The audit's section 11 owes the same correction in its own table and in its "there are
+four" sentence, since the audit outlives this file and the detector script is cited from it.
+
+Nothing about the defect thesis moves. Four subtype sets with no supertype still exist off the DDL, the
+genuine reconstructions are still there, and the modelling argument does not depend on how many readers
+happen to be paying today, which is the item's own point.
+
+**Finding 2 (small, question one). The access-form claim is off by one class and understates the case for
+the gate it argues for.** Round 1's finding on this was answered well, and the corrected claim is nearly
+right: `table(name(...))` appears in five main-source classes, not four (`StoreProse`, `StoreCatalog`,
+`Materializations`, `MaterializeDependencies`, `ViewReferences`). The conclusion holds, every site names a
+`meta_*` relation, `store_graph` or `INFORMATION_SCHEMA`. But one site does not name anything literally:
+`StoreProse` builds the name from a variable, `table(name(relation.toUpperCase(Locale.ROOT)))`, bounded to
+`metaRelations(dsl)` at the call site. That is the form a grep-shaped gate cannot see, and it is worth a
+sentence where the gate is proposed, because a gate that only refuses a literal `intent_` name would pass a
+computed one.
+
+*Fixed in passing, per the reviewer-fix rule.* The Tests section's account of `KNOWN_NON_MONOTONIC`'s
+remaining rows was a miscount: the set holds thirteen, of which the three named leave ten, and those are
+eight on `intent_field_reference_step_hop` plus the node-id instruction's plus the `intent_errors_field`
+pair, which shares its comment with the argmapping row. Corrected in place.
