@@ -1,13 +1,13 @@
 ---
 id: R867
 title: "A cold capture's refresh plans without statistics, and the penalty grows with the schema"
-status: Backlog
+status: Spec
 bucket: bug
-priority: 4
+priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-27
-last-updated: 2026-08-27
+last-updated: 2026-08-28
 ---
 
 # A cold capture's refresh plans without statistics, and the penalty grows with the schema
@@ -19,8 +19,13 @@ statement a cold capture's refresh issues is planned with no selectivity on anyt
 every timing anybody has ever taken of those same statements was taken afterwards, against a settled
 store the analysis had run on.
 
-This is a filed measurement rather than a proposal. Nothing here should be picked up before the
-question in the paragraph headed "When to pick this up" is answered yes.
+**This is a stop-gap and it goes first.** What it removes is the pathological cost of a first capture
+into a fresh store, which is the case a consumer actually meets and the case no timing in this repo
+has ever been taken against. What it does not do is settle whether the `meta_materialize` registry is
+right: every registration's stated `reason` was measured on a store whose statistics were current,
+which is not the regime the pass those reasons describe runs in, so re-deriving the register is
+separate and larger work. The paragraph headed "Why this goes first" carries the ordering, which is
+the reverse of what this file recorded on 2026-08-27.
 
 ## What is measured
 
@@ -67,9 +72,10 @@ growth measured is not the larger mechanism under another name.
 
 ## A real-schema figure, taken 2026-08-27 and recorded here 2026-08-28
 
-The gate below asks for a figure from a real schema rather than from the fixture above, and one
-exists. Measured on H2 2.4.240 against a captured store from the sis consumer project, the same
-store and the same SQL with only the presence of statistics varying:
+The fixture above scales one cluster repeated, so its partitions grow while its shapes do not, and a
+figure from a real schema is what says whether the growth is the fixture's or the defect's. One
+exists. Measured on H2 2.4.240 against a captured store from the sis consumer project, the same store
+and the same SQL with only the presence of statistics varying:
 
 | refresh position | registration | fresh capture | selectivity zeroed | statistics present |
 |---|---|---|---|---|
@@ -111,60 +117,151 @@ asked about:
   statistics that left the single transaction intact, is not available. Every route into H2's
   statistics crosses a commit, and the split is forced rather than preferred.
 
-## When to pick this up
+## Why this goes first
 
-Only if all three hold. The registration that closes the larger mechanism has landed. A capture of a
-consumer-size schema still costs materially more than the same refresh on a settled store. And the
-figure comes from a real schema rather than from the fixture above, whose growth is one cluster
-repeated and whose partitions therefore grow while its shapes do not.
+This file previously ordered itself after R856 and gated itself behind three conditions, on the
+argument that landing the split mid-flight would move the regime that item's timings were taken in.
+That argument is backwards, and the reason is the same measurement it was written to protect.
 
-Absent those, this is a recorded measurement and the right action is nothing.
+Every optimisation decision the fact model has taken so far was taken in the wrong regime. A timing
+can only be taken against a settled store, so the register's twenty-two stated reasons, the read-cost
+gate's pinned counts, and every registration argued for on a measured win were all read against a
+store whose statistics were current. The pass those reasons describe is the capture refresh, which
+runs with none. That is not a caveat on those figures, it is a different regime: 69-fold on the
+measured prefix of a real consumer store, and enough on the last three positions that the pass has
+never been observed to finish. So a registration whose reason reads "measured at 49 s, worth
+registering" may be a statement about an absent `ANALYZE` rather than about the registration, and
+nobody can tell which until the refresh plans the way the readers that justified it did.
 
-**Where the three stand as of 2026-08-28.** The second and third are met by the section above: a real
-consumer store, and a cost of 6293 s against 90.8 s on the same rows. The first is close but not yet
-met. R856 went `Ready` to `In Progress` on 2026-08-28 and its first implementation commit registers
-`intent_node_id_decode_column` and `intent_input_field_carrier_role`, taking that item's refresh from
-60 ms to 6 on the sakila example schema; it is not yet at `Done`, and its verification against a
-consumer-size schema is what would answer its own second condition here.
+Moving the regime is therefore the point rather than the hazard. Landing this first means the next
+measurement anybody takes of the register, R856's remaining verification included, is taken in the
+regime the build actually runs in. Taking it second means re-taking that verification afterwards
+anyway, and meanwhile leaving a consumer-size capture at four hours and nineteen minutes.
 
-The order therefore stays R856 then this, and the reason is now about instrument rather than about
-priority: landing the split while R856 is mid-flight would change the regime every one of that
-item's timings was taken in, so its remaining verification would be read against a store whose
-statistics regime had moved under it. What has changed is that this item has its figure and will not
-need one when its turn comes.
+R856 stays a separate and larger item: its mechanism is an unregistered view re-evaluated once per
+driving row inside a correlated term, which no statistics inform, and the two are independent on the
+evidence the section above gives. It went `In Review` back to `Ready` on 2026-08-28 with its own
+proof owed. Its remaining verification against a consumer-size schema should be re-taken once this
+has landed rather than before.
 
-## What a fix would be
+The three conditions this section used to carry are dropped rather than met. Two of them were
+answered by the real-schema figure above. The third, that the larger mechanism land first, is the
+ordering this section just reversed.
+
+## The fix
 
 One transaction per registration, each committing its own target's `DELETE` and `INSERT` together and
 analysing the target it just refilled, with the facts committed ahead of the first of them. That
-reaches the population the plans turn on: a registration would plan against targets the registrations
+reaches the population the plans turn on: a registration plans against targets the registrations
 before it analysed, which is exactly the regime that reproduces the settled store's plans.
 `MaterializeDependencies` refuses a registration whose source view reads its own target and orders
-every registration after the ones whose targets it reads, so nothing would meet its own target
-unanalysed.
+every registration after the ones whose targets it reads, so nothing meets its own target unanalysed.
 
-The cheap alternative is refuted rather than merely unpriced, and that is the main thing this item
-saves whoever picks it up: committing and analysing the facts ahead of a still-single-transaction
-refresh reaches none of the seven, because the seven turn on the other population.
+Applied on one branch and not on both, which is what keeps this a stop-gap rather than a change to
+what a capture is. The split runs when **`store_graph` holds no row at capture entry**, and every
+other capture keeps today's single transaction unchanged.
 
-Three invariants the split touches, none of which may be left to the diff:
+Three things decide that predicate, and the second is the one that rules out the smaller-looking
+spellings of it:
 
-- **The emptied target.** The split is per registration rather than per refresh so that a reader
-  between two registrations sees one target current and another stale rather than an emptied
-  relation. `Materializations.refreshAll` is the precedent that a stale-beside-current pair is
-  acceptable, already issuing every `DELETE` and `INSERT` in autocommit.
+- It is the case that hurts. A store with no committed graph is a store whose every registered target
+  is empty, so every plan in the pass is chosen with no selectivity anywhere. This is the four hours
+  and nineteen minutes.
+- It is not `warm`, and it is not "no committed partition for this graph". `warm` is a store-open
+  property, and a reactor run capturing several graphs into one store has rows committed by the first
+  capture while the later ones still see `warm` false. Per-graph is worse than useless: a target with
+  no `graph_name` column is refreshed *whole* by `refreshWhole`, so a capture cold for one graph would
+  empty a target holding another graph's derived rows. "No committed graph at all" is the only reading
+  under which nothing committed can be emptied.
+- It is where the contract has nothing to protect. The one-transaction contract exists so that no
+  reader observes an emptied target. A reader of a store with no committed graph has nothing to
+  observe: readers reach a partition through `store_graph`, and there is no row. So the split is safe
+  exactly here, and the branch is not a convenience.
+
+**The cheap alternative is refuted rather than merely unpriced, and this is the main thing the item
+saves whoever implements it.** Committing the facts and analysing them ahead of a
+still-single-transaction refresh is the smallest change that could be believed to close this, and it
+closes none of the eight registrations whose plan moves, because those eight read a *registered
+target* and no statement before the refresh has written one.
+`RefreshPlanStatisticsTest.analysingTheFactsAloneReachesNoneOfThem` is that claim, already in the
+tree and already failing anyone who lands the cheap rung believing it sufficient. Analysing the facts
+is still worth doing on the split path, since it moves two further registrations onto plans of their
+own and costs 0.2 s on the sis store, but it is not what makes the fix work.
+
+### Shape
+
+- `Materializations` gains a third cadence beside `refresh` and `refreshAll`: per registration, one
+  transaction carrying that target's `DELETE` and `INSERT` together, then `ANALYZE` on the target it
+  just refilled, outside that transaction. It reuses `refreshOne`, the sequence from `refreshOrder`,
+  and the progress contract verbatim, so the event order `MaterializationProgressTest` holds needs no
+  edit. `refreshAll` is the precedent that a stale-beside-current pair of targets is acceptable,
+  already issuing every `DELETE` and `INSERT` in autocommit.
+- `FactCapture.capture` reads the predicate before it opens its transaction and branches once. On the
+  split branch the load transaction commits the facts, `Materializations.analyse` states the fact
+  tables' statistics, the new cadence runs the refresh, and `sources.commitStamps` runs in a
+  transaction of its own after it. The trailing `Materializations.analyse(dsl)` stays exactly where it
+  is on both branches, so `MaterializeRegistryGateTest`'s count contract is untouched. The other
+  branch keeps every statement it has today.
+
+### The three invariants, decided here rather than left to the diff
+
+- **The emptied target.** Answered by the predicate: there is no committed state to publish. The
+  per-registration transaction is still what the split uses, so that a killed run leaves whole
+  targets rather than one emptied relation.
 - **The concurrent same-graph writer.** `FactCapture.capture`'s javadoc names the single transaction
   as what makes a second writer of one graph serialize on the anchor row instead of interleaving
-  deletes with inserts. A per-registration transaction holds no anchor row, so the refresh
-  transactions have to take it too, or same-graph concurrency has to be argued out of scope.
+  deletes with inserts, and a per-registration transaction holds no anchor row. Two *processes* are
+  not the case: `GraphitronModelStore.fileUrl`'s javadoc records that the store takes MVStore's own
+  operating-system lock and a second process is refused as `90020` straight into the in-memory
+  fallback, so the writer this invariant protects against is inside one process. Decision: each
+  refresh transaction on the split path leads with a `SELECT ... FOR UPDATE` on the graph's
+  `store_graph` row under `ANCHOR_LOCK_MILLIS`, which is the same lead-with-the-anchor rule capture
+  already states, and a capture that cannot take it falls back to the unsplit path, which is correct
+  and merely slow. Falling back rather than interleaving is deliberate: interleaved registrations
+  would leave targets whose rows came from two runs' fact sets, and that mix is observable once both
+  runs commit.
 - **What a stamp means.** `ClasspathSources` states that a stamp is written after the rows it vouches
-  for, which puts the stamps after the last refresh transaction. Name the test in the
-  warm-reconciliation family that fails if the placement moves.
+  for, and on the split path the derived targets are written after the load's flush, so the stamps
+  move after the last refresh transaction. A run killed mid-refresh then leaves a null stamp, which no
+  refresh retains, which is the behaviour that class already documents rather than a new one.
+  `WarmStartRefreshTest.warmAndColdAgreeRelationByRelation` is the test in the warm-reconciliation
+  family that fails if the placement moves the wrong way, and the family gains a case for a run
+  killed between the load commit and the refresh.
 
-Four prose surfaces argue for today's shape and would have to move in the same pass:
-`Materializations`' class javadoc on the capture cadence, `analyse`'s javadoc on why it runs outside
-the transaction, the two comments around the refresh call in `FactCapture.capture`, and the
-ANALYZE-placement passage in `docs/architecture/explanation/fact-model.adoc`.
+### How we know it is delivered
+
+A new test beside `RefreshPlanStatisticsTest`, asserting the invariant rather than a wall clock:
+drive the new cadence on a store with every selectivity reset, with a `RefreshProgress` observer that
+reads `INFORMATION_SCHEMA.COLUMNS.SELECTIVITY` at each `RegistrationStarted`, and assert that every
+registered target the starting registration's source view reads carries analysed selectivity by then.
+That is sufficient rather than a proxy, because
+`RefreshPlanStatisticsTest.theSettledStoreIsTheTargetsAnalysedRegime` already asserts that
+targets-analysed is the settled store's plans: reaching that state before each registration is
+reaching the plans every timing in this investigation was taken against.
+
+No figure is asserted, for the reason the wall-clock guardrail item gives. `DerivedReadCostTest`'s
+pinned counts are taken on a settled store and should not move; if they do, that is a finding and not
+a tolerance to widen. `MaterializeRegistryGateTest`, `MaterializationOrderTest`,
+`MaterializationProgressTest` and `WarmStartRefreshTest` stay green.
+
+### Prose that argues for today's shape and moves in the same pass
+
+- `Materializations`' class javadoc on the two capture cadences, which becomes three.
+- `analyse`'s javadoc on why it runs outside the transaction. The rule stays true; what changes is
+  that the capture path is no longer forced to put it after the whole pass.
+- The two comments around the refresh call and the `analyse` call in `FactCapture.capture`, which
+  currently assert that today's ordering is right.
+- The ANALYZE-placement passage in `docs/architecture/explanation/fact-model.adoc`, and the paragraph
+  after it that calls this cost "not worth restructuring a capture for on its own".
+
+### Phases
+
+1. `Materializations`: the third cadence and its javadoc, plus the class javadoc's cadence paragraph.
+2. `FactCapture.capture`: the predicate, the single branch, the anchor lock and its fallback, the
+   stamp placement, and the two comments.
+3. The invariant test, and the `WarmStartRefreshTest` case for a run killed between the load commit
+   and the refresh.
+4. `fact-model.adoc`.
 
 ## Already landed, so this item owes none of it
 
