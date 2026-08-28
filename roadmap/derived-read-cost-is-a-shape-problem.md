@@ -1,7 +1,7 @@
 ---
 id: R876
 title: "Expensive derived reads are a modelling defect: capture writes the subtypes and omits the supertype, and materialization has been the first lever reached for instead of the last"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 1
 theme: model-cleanup
@@ -369,7 +369,9 @@ artefact of the detector counting union sites from set membership alone, before 
 name the set's own attributes; the three extra sites union the same tables for `class_name` and
 `method` and contain no occurrence of `table_ref` or `routine_ref`. The reference is reconstructed at
 one site, `intent_spelled_table_live`, and repointing it is the whole of this half of the slice. The
-argMapping pair is likewise one site, `intent_argmapping_pair_live` at seven arms. Nothing about the
+argMapping pair is likewise one site, `intent_argmapping_pair_live`, whose eight arms cover seven of
+the set's eight members, `graphitron_field_condition_arg_mapping_pair` twice for its two site literals
+and `graphitron_argument_reference_for_step_arg_mapping_pair` not at all. Nothing about the
 supertypes themselves moves; what moves is a claim about how much work repointing them is, in the
 direction of less.
 
@@ -959,3 +961,36 @@ on how it is spelled, which is a real constraint on how that gate gets written.
 remaining rows was a miscount: the set holds thirteen, of which the three named leave ten, and those are
 eight on `intent_field_reference_step_hop` plus the node-id instruction's plus the `intent_errors_field`
 pair, which shares its comment with the argmapping row. Corrected in place.
+
+### Round 3 (2026-08-28, Spec -> Ready, reviewer session 01P2HFCFzA3YiKbaLjgXzet7)
+
+Verdict: sign off. Both round 2 findings are resolved at the source rather than papered over, and the
+resolution of the first is better than the finding asked for: the detector grew a third part, the two
+inflated rows are re-derived under it, everything they scoped is re-scoped, and the two calibration
+errors are recorded together in the audit because they fail in opposite directions. Deleting slice 1's
+"main correction" rather than adjusting it is the right call, since there was nothing to correct.
+
+*Re-verified against `graphitron-model.sql` this round.* Of the method-bearing set's six previously
+reported sites exactly three name `class_name` or `method`: `intent_argmapping_bound_parameter_type`
+at six arms and `intent_condition_param_extraction` and `intent_condition_table_parameter` at five
+each, which is the table's new row 1 and slice 3's new prediction. `intent_spelled_table_live` is the
+only view naming `table_ref` or `routine_ref`, so row 2 is one site. Rows 3 and 4 are unchanged at one
+and two, `intent_jvm_ancestor` and `intent_declared_type_ref` being the two. Five main-source classes
+carry `table(name(...))` and `StoreProse:61` is the computed one, as the item and the audit now say.
+
+**One thing for the implementer to carry into slice 1, not a finding against the plan.** The one
+argMapping reconstruction covers seven of the set's eight members: eight arms, with
+`graphitron_field_condition_arg_mapping_pair` appearing twice for `FIELD_CONDITION` and
+`INPUT_FIELD_CONDITION`, and `graphitron_argument_reference_for_step_arg_mapping_pair` absent. That
+table's own comment says capture is total across every SDL-legal location even though today's validator
+rejects the coordinate, so the eighth member can hold rows the current view does not return. The
+supertype is over the closed set of eight; the repointed view has to keep returning 108. Those two are
+consistent only if the view keeps the eighth arm out, so the discriminator has to let a reader exclude
+it, and a supertype that silently folded it in would break the row-identity anchor in the one direction
+the anchor exists to catch. The plan already forces this through its anchor rather than leaving it open,
+which is why it is a note and not a finding. The arm count is corrected in the slice and in the audit's
+section 3 table.
+
+*Fixed in passing, per the reviewer-fix rule.* Two stale arm counts for that view: "seven arms" in
+slice 1 and "7-arm `UNION ALL`" in the audit's class A table, both now eight arms over seven of eight
+members.

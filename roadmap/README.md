@@ -14,9 +14,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R876` | Expensive derived reads are a modelling defect: capture writes the subtypes and omits the supertype, and materialization has been the first lever reached for instead of the last | Spec | 2026-08-28 | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R865` | Obtaining a fact store means running a generation, and capture welds in a refresh cadence no caller can decline | Spec | 2026-08-27 | [plan](capture-without-the-materialization-refresh.md) |
 | `R870` | The fact tier reads its consumer: capture writes a relation from the classification walk, and the comparison that relation serves never needed a store-side copy | Spec | 2026-08-28 | [plan](capture-stops-reading-the-walk.md) |
+| `R876` | Expensive derived reads are a modelling defect: capture writes the subtypes and omits the supertype, and materialization has been the first lever reached for instead of the last | Ready | 2026-08-28 | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows <sub>blocked by: [capture-moves-below-the-generator](capture-moves-below-the-generator.md), [capture-without-the-materialization-refresh](capture-without-the-materialization-refresh.md), [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-08-28 <sub>created 2026-08-27</sub> | [plan](dev-start-refreshes-the-register-twice.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R864` | Capture moves below the generator: the fact tier becomes a module boundary <sub>blocked by: [capture-stops-reading-the-walk](capture-stops-reading-the-walk.md)</sub> | Spec | 2026-08-27 | [plan](capture-moves-below-the-generator.md) |
@@ -594,7 +594,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### model-cleanup
 
-- `R876` [**Expensive derived reads are a modelling defect: capture writes the subtypes and omits the supertype, and materialization has been the first lever reached for instead of the last**](derived-read-cost-is-a-shape-problem.md) — Spec, architecture
+- `R876` [**Expensive derived reads are a modelling defect: capture writes the subtypes and omits the supertype, and materialization has been the first lever reached for instead of the last**](derived-read-cost-is-a-shape-problem.md) — Ready, architecture
 - `R870` [**The fact tier reads its consumer: capture writes a relation from the classification walk, and the comparison that relation serves never needed a store-side copy**](capture-stops-reading-the-walk.md) — Spec, architecture
 - `R864` [**Capture moves below the generator: the fact tier becomes a module boundary**](capture-moves-below-the-generator.md) — Spec, architecture, blocked by [capture-stops-reading-the-walk](capture-stops-reading-the-walk.md)
 - `R861` [**Does the carrier producer still want a registration once the duplicated condition is gone**](producer-registration-after-duplication-removal.md) — Backlog, model

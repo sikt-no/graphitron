@@ -117,7 +117,7 @@ tables:
 | grain | reconstructed by | real size
 
 | a written table or routine reference | 6-arm `UNION` over `graphitron_table`, three `*_reference_step` tables, `graphitron_mutation`, `graphitron_routine` | 313 rows
-| an argMapping pair | 7-arm `UNION ALL` over the `*_arg_mapping_pair` siblings, each joined to its owning directive table | 108 rows
+| an argMapping pair | 8-arm `UNION ALL` over seven of the eight `*_arg_mapping_pair` siblings, each joined to its owning directive table | 108 rows
 |===
 
 Neither derives anything. Both re-tag and re-union rows that were facts when capture wrote them, and
