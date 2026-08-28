@@ -21,7 +21,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R864` | Capture moves below the generator: the fact tier becomes a module boundary <sub>blocked by: [capture-stops-reading-the-walk](capture-stops-reading-the-walk.md)</sub> | Spec | 2026-08-27 | [plan](capture-moves-below-the-generator.md) |
 | `R848` | Design the materialization cut set as a whole instead of accreting it one registration at a time | In Progress | 2026-08-27 <sub>created 2026-08-26</sub> | [plan](materialization-cut-set-is-accreted-not-designed.md) |
-| `R859` | A dev pass captures the same graph twice, so every save evaluates the register twice | In Review | 2026-08-27 | [plan](dev-pass-captures-the-graph-twice.md) |
 | `R834` | A top-level @service returning a @table type reads columns off the returned record instead of refetching by key | In Review | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](root-service-table-return-skips-key-refetch.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
@@ -572,7 +571,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### dev-loop
 
-- `R859` [**A dev pass captures the same graph twice, so every save evaluates the register twice**](dev-pass-captures-the-graph-twice.md) — In Review, dx
 - `R522` [**Reconcile the emitted-code seam-pin assertion convention with the testing doc**](emitted-seam-pin-assertion-convention.md) — Backlog, tech-debt
 - `R762` [**The census stores every class member to answer questions only ever asked by name**](census-stores-members-it-reads-by-name.md) — Backlog, architecture
 - `R462` [**Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder**](nested-fetcher-outgoing-field-edges.md) — Spec, bug
