@@ -2,8 +2,10 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLFieldDefinition;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
+import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.Rejection;
@@ -119,6 +121,13 @@ final class ConditionResolver {
      * {@link CallSiteExtraction} becomes a {@link CallSiteExtraction.NestedInputField} carrying
      * the path down from {@code outerArgName} to the leaf value. Other param sources pass
      * through unchanged.
+     *
+     * <p>The parameter's own extraction rides along as the wrapper's leaf rather than being
+     * discarded for the {@link CallSiteExtraction.Direct} default: the rewrap says <em>where</em>
+     * the value is found and the leaf says what to do with it once found, so replacing the leaf
+     * would drop the transform the classifier installed (a {@code @nodeId} slot's decode, a jOOQ
+     * enum's {@code valueOf}). The three-argument constructor refuses the one non-composable shape,
+     * a {@link CallSiteExtraction.NestedInputField} leaf, which is the descent already expressed.
      */
     ConditionFilter rewrapForNested(ConditionFilter src, String outerArgName, List<String> leafPath) {
         var rewritten = new ArrayList<MethodRef.Param>();
@@ -126,13 +135,108 @@ final class ConditionResolver {
             if (p instanceof MethodRef.Param.Typed typed && p.source() instanceof ParamSource.Arg arg) {
                 rewritten.add(new MethodRef.Param.Typed(typed.name(), typed.typeName(), typed.javaType(),
                     new ParamSource.Arg(
-                        new CallSiteExtraction.NestedInputField(outerArgName, nestedPath(leafPath, arg.path())),
+                        new CallSiteExtraction.NestedInputField(outerArgName,
+                            nestedPath(leafPath, arg.path()), nestedLeaf(arg.extraction())),
                         arg.path())));
             } else {
                 rewritten.add(p);
             }
         }
         return new ConditionFilter(src.className(), src.methodName(), List.copyOf(rewritten));
+    }
+
+    /**
+     * The leaf transform a rewrap carries down. A parameter whose extraction is already a
+     * {@link CallSiteExtraction.NestedInputField} has expressed a descent of its own, which the
+     * wrapper cannot nest; that shape reaches here only from a re-rewrap, and the outer descent is
+     * the one that reads from the enclosing argument, so the inner wrapper's own leaf carries
+     * forward. A context binding stays bare: {@link ParamSource.Context} params are not rewrapped at
+     * all, so the arm exists only to state that a context leaf is never traversed to.
+     */
+    private static CallSiteExtraction nestedLeaf(CallSiteExtraction extraction) {
+        return extraction instanceof CallSiteExtraction.NestedInputField nested
+            ? nested.leaf()
+            : extraction;
+    }
+
+    /**
+     * Outcome of {@link #installNodeIdDecode}: the condition with the decode installed, or the
+     * declared-type refusal.
+     */
+    sealed interface DecodeInstall {
+        record Ok(ConditionFilter filter) implements DecodeInstall {}
+        record Rejected(Rejection rejection) implements DecodeInstall {}
+    }
+
+    /**
+     * Installs the {@code @nodeId} decode on every parameter of {@code filter} bound to the whole of
+     * {@code slotName}, and refuses a parameter whose declared Java type is not the decoded key's.
+     *
+     * <p>This is the site the contract is stated at: a {@code @nodeId} slot's value is decoded before
+     * it leaves the generated glue, so the authored method receives the typed key rather than the
+     * wire string. {@link ServiceCatalog#legacyArgExtraction} stays the declared-type rule for
+     * everything else; the override is installed here, where the slot is known to carry
+     * {@code @nodeId} and which node type it names, rather than by widening that shared static.
+     *
+     * <p>Keyed on the slot rather than on the directive site, which is what makes the rule one rule.
+     * Three sites bind the same slots and all three route through here: the slot's own
+     * {@code @condition} at an argument and at an input field, and a field-level {@code @condition}
+     * binding one of its field's {@code @nodeId} arguments. That last one shares a glue method with
+     * the implicit predicate over the same wire value, so leaving it on the declared-type rule would
+     * put two contradictory readings of one argument in one emitted method.
+     *
+     * <p>Only a bare (single-segment) binding is a whole-slot binding. A dotted
+     * {@code argMapping} path descends <em>into</em> the decoded identity to read one of its key
+     * columns, which the projection rail already serves at the column grain; leaving those alone is
+     * what keeps the two mechanisms from racing for one parameter. The one shape neither rail covers
+     * is a field-level {@code argMapping} descending to a {@code @nodeId} <em>input field</em>
+     * ({@code "p: filter.languageId"}): the path is dotted, so it is not a whole-slot binding here,
+     * and its last segment names an input field rather than a key column, so the projection rail
+     * does not claim it either. Such a parameter still receives the wire string.
+     *
+     * <p>The refusal exists because the contract's only other enforcer is the consumer's javac
+     * inside emitted glue, a failure with no line back to the SDL. It names the coordinate, the
+     * declared type and the required type, so the remedy is the message.
+     */
+    /**
+     * Whether any parameter of {@code filter} binds the whole of {@code slotName}: the same predicate
+     * {@link #installNodeIdDecode} installs on, exposed so a caller can ask the question without
+     * performing the install. A field-level {@code @condition} sees every argument of its field and
+     * binds some subset of them, so "does this condition bind that slot" is a real question there
+     * where at the slot's own directive it is answered by the directive's placement.
+     */
+    static boolean bindsWholeSlot(ConditionFilter filter, String slotName) {
+        return filter.params().stream().anyMatch(p ->
+            p.source() instanceof ParamSource.Arg arg
+                && arg.path().isHead()
+                && arg.path().headName().equals(slotName));
+    }
+
+    static DecodeInstall installNodeIdDecode(ConditionFilter filter, String coordinate, String slotName,
+                                             HelperRef.Decode decode, boolean list) {
+        TypeName required = decode.decodedKeyType(list);
+        var rewritten = new ArrayList<MethodRef.Param>();
+        for (var p : filter.params()) {
+            if (!(p instanceof MethodRef.Param.Typed typed)
+                    || !(p.source() instanceof ParamSource.Arg arg)
+                    || !arg.path().isHead()
+                    || !arg.path().headName().equals(slotName)) {
+                rewritten.add(p);
+                continue;
+            }
+            if (!typed.javaType().equals(required)) {
+                return new DecodeInstall.Rejected(Rejection.structural(
+                    coordinate + ": parameter '" + typed.name() + "' of condition method '"
+                    + filter.methodName() + "' binds a @nodeId slot, whose value is decoded"
+                    + " before it reaches your method. Declare it '" + required + "' (the decoded key"
+                    + " of node type '" + decode.nodeTypeName() + "'); it is declared '"
+                    + typed.javaType() + "'."));
+            }
+            rewritten.add(new MethodRef.Param.Typed(typed.name(), typed.typeName(), typed.javaType(),
+                new ParamSource.Arg(new CallSiteExtraction.ThrowOnMismatch(decode), arg.path())));
+        }
+        return new DecodeInstall.Ok(
+            new ConditionFilter(filter.className(), filter.methodName(), List.copyOf(rewritten)));
     }
 
     /**

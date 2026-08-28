@@ -876,14 +876,15 @@ type Query {
 
     # The override escape, the second rung of the same ladder: no route is stated and neither
     # participant can discover one, so the leaf's own @condition(override: true) takes the whole
-    # WHERE contribution. The method receives each branch's own table plus the raw wire id.
+    # WHERE contribution. The method receives each branch's own table plus the decoded key of the
+    # leaf's node type, an Integer for LanguageNode's single-column key; a malformed id, or one of
+    # another node type, fails the request before the method runs.
     #
-    # A production author decodes that id with the generated NodeIdEncoder (peekTypeId reads the
-    # discriminator without committing to a type; decode<Type> returns the typed key record). This
-    # fixture cannot: a @condition class is reflected during generation, so it compiles upstream of
-    # the code the generator emits and cannot reference it. The method therefore filters on the
-    # film_id column both participant tables carry, which proves the contract the escape promises,
-    # that the method owns the predicate and is handed the branch's own table.
+    # The author owns the predicate, not the wire format, which is what makes the escape usable at
+    # all: a @condition class is reflected during generation, so it compiles upstream of the code the
+    # generator emits and could never call NodeIdEncoder itself. The method filters on the film_id
+    # column both participant tables carry, which proves what the escape promises, that the method
+    # owns the predicate and is handed the branch's own table.
     stockByLanguageOverride(filter: LanguageStockOverrideFilter): [LanguageStock!]!
 
     # R36 item 1 fixture: composite-PK participants in connection-mode. paged_a + paged_b have
@@ -2686,7 +2687,7 @@ input LanguageStockFilter {
 input LanguageStockOverrideFilter {
     languageId: ID @nodeId(typeName: "LanguageNode") @condition(condition: {
         className: "no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures",
-        method: "stockByRawNodeId"}, override: true)
+        method: "stockByDecodedLanguageKey"}, override: true)
 }
 
 type FilmsConnection {

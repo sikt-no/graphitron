@@ -234,10 +234,18 @@ final class NodeIdLeafResolver {
         /**
          * Author-owned-predicate arm: no route from the containing table to {@code T.table()}
          * resolved, and the leaf's own {@code @condition(override: true)} has taken responsibility
-         * for the whole {@code WHERE} contribution. The generator emits no decode and no implicit
-         * predicate; the authored method receives the resolving table (each branch's own alias on a
-         * multitable consumer) plus the raw wire id and decodes it through the generated
-         * {@code NodeIdEncoder} helpers.
+         * for the whole {@code WHERE} contribution. The generator emits no implicit predicate; the
+         * authored method receives the resolving table (each branch's own alias on a multitable
+         * consumer) plus the leaf's <em>decoded</em> key.
+         *
+         * <p>The decode is the generator's on this arm as on every other, which is why the arm
+         * carries the same {@code decodeMethod} its routed siblings do. What the author owns is the
+         * predicate, not the wire format: the leaf's node type is settled before the route is
+         * attempted, so the key that reaches the method is typed by that type's key columns and a
+         * malformed or wrong-type id fails the request before the method runs. Carrying the helper
+         * here is also what makes {@code FieldBuilder}'s decode-target read total over this seal, so
+         * an all-author-owned leaf whose participants infer different node types votes in the
+         * divergence verdict instead of passing unexamined.
          *
          * <p>Produced here rather than at the two consumers so one predicate is evaluated once over
          * one pre-resolved value: a consumer cannot silently omit the ownership question, and the two
@@ -246,11 +254,14 @@ final class NodeIdLeafResolver {
          * the author <em>stated</em> and got wrong: naming a foreign key asks the build to check it.
          *
          * @param refTypeName    the resolved (or inferred) GraphQL type name of {@code T}
+         * @param decodeMethod   {@code decode<TypeName>} helper resolved on the target NodeType, the
+         *                       same reference the routed arms carry
          * @param unresolvedPath the route refusal the ownership supersedes, kept so a caller that
          *                       finds the ownership inadmissible (the mixed-contract enforcer) can
          *                       say why the route did not resolve rather than only that it did not
          */
-        record AuthorOwnedPredicate(String refTypeName, Rejection unresolvedPath) implements Resolved {}
+        record AuthorOwnedPredicate(String refTypeName, HelperRef.Decode decodeMethod,
+                                    Rejection unresolvedPath) implements Resolved {}
 
         /**
          * Rejected: the leaf cannot be classified as either shape. Carries a single fully
@@ -380,7 +391,7 @@ final class NodeIdLeafResolver {
             // left behind by a migration to override would otherwise pass silently; the shape also
             // fails today, so refusing it keeps the change monotone.
             return authorOwnedPredicate && route instanceof Route.AutoDiscover
-                ? new Resolved.AuthorOwnedPredicate(refTypeName, refused.rejection())
+                ? new Resolved.AuthorOwnedPredicate(refTypeName, decodeMethod, refused.rejection())
                 : new Resolved.Rejected(refused.rejection());
         }
         var walked = (PathResolution.Walked) walk;
@@ -735,8 +746,8 @@ final class NodeIdLeafResolver {
     private static String overrideEscape(ParticipantRef.TableBound participant) {
         return participant == null ? ""
             : ", or set @condition(override: true) on this leaf so your condition method owns the"
-                + " whole WHERE predicate (it receives each branch's own table and the raw id;"
-                + " decode it with the generated NodeIdEncoder helpers)";
+                + " whole WHERE predicate (it receives each branch's own table and the decoded key"
+                + " of the leaf's node type)";
     }
 
     /**

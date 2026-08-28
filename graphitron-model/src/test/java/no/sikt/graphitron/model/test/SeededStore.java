@@ -408,6 +408,36 @@ public final class SeededStore {
     }
 
     /**
+     * The list-shaped sibling of {@link #seedArgument}: {@code [T!]}, non-null elements inside a
+     * nullable list. The arm a case reaches for when the relation under test reads the argument's
+     * list axis, which the scalar arms above always seed as false.
+     */
+    public static void seedListArgument(DSLContext dsl, String graphName, String typeName,
+                                        String fieldName, String argumentName, String namedType) {
+        dsl.insertInto(GRAPHQL_ARGUMENT_COORDINATE)
+            .set(GRAPHQL_ARGUMENT_COORDINATE.GRAPH_NAME, graphName)
+            .set(GRAPHQL_ARGUMENT_COORDINATE.TYPE_NAME, typeName)
+            .set(GRAPHQL_ARGUMENT_COORDINATE.FIELD_NAME, fieldName)
+            .set(GRAPHQL_ARGUMENT_COORDINATE.ARGUMENT_NAME, argumentName)
+            .execute();
+        dsl.insertInto(GRAPHQL_ARGUMENT)
+            .set(GRAPHQL_ARGUMENT.GRAPH_NAME, graphName)
+            .set(GRAPHQL_ARGUMENT.TYPE_NAME, typeName)
+            .set(GRAPHQL_ARGUMENT.FIELD_NAME, fieldName)
+            .set(GRAPHQL_ARGUMENT.ARGUMENT_NAME, argumentName)
+            .set(GRAPHQL_ARGUMENT.ORDINAL, 0)
+            .set(GRAPHQL_ARGUMENT.TYPE_SDL, "[" + namedType + "!]")
+            .set(GRAPHQL_ARGUMENT.NAMED_TYPE, namedType)
+            .set(GRAPHQL_ARGUMENT.NON_NULL, false)
+            .set(GRAPHQL_ARGUMENT.IS_LIST, true)
+            .set(GRAPHQL_ARGUMENT.ITEM_NON_NULL, true)
+            .set(GRAPHQL_ARGUMENT.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHQL_ARGUMENT.SOURCE_LINE, 2)
+            .set(GRAPHQL_ARGUMENT.SOURCE_COLUMN, 3)
+            .execute();
+    }
+
+    /**
      * What a macro left behind when it rewrote a field's type expression: the field's own row now
      * carries the effective type and this one carries the type the author wrote. A relation reading
      * the authored expression joins here, so a case about that reading states both spellings and the

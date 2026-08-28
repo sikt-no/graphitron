@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FilterBinding;
+import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -215,8 +216,21 @@ public sealed interface ArgumentRef {
          * for the generator to bind, and a column slot would be dead storage.
          *
          * <p>The method receives the resolving table (each branch's own alias on a multitable
-         * consumer) plus the raw wire id, and decodes it through the generated {@code NodeIdEncoder}
-         * helpers. The compact constructor pins {@code override: true}; consumers branch on carrier
+         * consumer) plus the leaf's decoded key, typed by the node type's key columns. The decode is
+         * already installed on {@link #condition}'s own bound parameter at classification
+         * ({@code ConditionResolver.installNodeIdDecode}), so no consumer of that filter reads
+         * {@code decode} to emit the call.
+         *
+         * <p>{@code decode} is carried for the <em>other</em> reader: a field-level
+         * {@code @condition} on the consuming field may bind this same argument, and its filter is
+         * built after the arguments are classified, from the classified set alone. Every other
+         * {@code @nodeId} argument carrier exposes its decoder through its {@code extraction}; this
+         * one has no extraction slot, having no implicit predicate, so without the component the
+         * field-level install would have to special-case the one carrier that declines to say what
+         * its slot decodes. Flat rather than optional, because the carrier is {@code @nodeId}-only by
+         * construction.
+         *
+         * <p>The compact constructor pins {@code override: true}; consumers branch on carrier
          * identity rather than re-deriving it from the condition.
          */
         record ConditionOwnedArg(
@@ -224,11 +238,13 @@ public sealed interface ArgumentRef {
             String typeName,
             boolean nonNull,
             boolean list,
-            ArgConditionRef condition
+            ArgConditionRef condition,
+            HelperRef.Decode decode
         ) implements ScalarArg {
 
             public ConditionOwnedArg {
                 java.util.Objects.requireNonNull(condition, "condition");
+                java.util.Objects.requireNonNull(decode, "decode");
                 if (!condition.override()) {
                     throw new IllegalArgumentException(
                         "ArgumentRef.ScalarArg.ConditionOwnedArg '" + name

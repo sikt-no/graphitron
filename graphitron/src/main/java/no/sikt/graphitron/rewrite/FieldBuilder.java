@@ -874,12 +874,18 @@ class FieldBuilder {
      *        downstream fails on that split: the condition method's first parameter is
      *        {@code Table<?>}-shaped, so both contracts compile and the defect surfaces as a wrong
      *        {@code WHERE} on a real request. Rejecting it here is the only place it can be seen.
+     * @param authoredDivergence non-{@code null} when a divergent top-level {@code @nodeId} argument
+     *        is bound by an authored {@code @condition}. A routed leaf may dispatch, one branch per
+     *        participant decoder; an authored declaration set cannot, because non-table positions
+     *        must be identical in declared type across the set and two participants' decoded keys are
+     *        two types. See {@link #firstAuthoredDivergence}.
      */
     private record NodeIdParticipantTargets(
             Map<String, NodeIdArgPlan> plansByParticipant,
             Map<String, NodeIdArgTarget> targetsByArgName,
             Rejection nestedDivergence,
-            Rejection mixedContract) {
+            Rejection mixedContract,
+            Rejection authoredDivergence) {
 
         /** Argument names whose verdict is {@link NodeIdArgTarget.PerParticipant}. */
         Set<String> dispatchedArgNames() {
@@ -935,19 +941,65 @@ class FieldBuilder {
         });
         return new NodeIdParticipantTargets(Map.copyOf(plans), Map.copyOf(targets),
             firstNestedDivergence(nestedResolutions),
-            firstMixedContract(argResolutions, nestedResolutions));
+            firstMixedContract(argResolutions, nestedResolutions),
+            firstAuthoredDivergence(fieldDef, argResolutions));
     }
 
-    /** One participant's answer for one leaf, or {@code null} when the leaf did not resolve there. */
-    private static HelperRef.Decode decodeTargetOf(NodeIdLeafResolver.Resolved resolved) {
+    /**
+     * The authored-binding backstop on divergence: the first top-level {@code @nodeId} argument whose
+     * participants resolve pairwise distinct node types <em>and</em> which an authored
+     * {@code @condition} binds.
+     *
+     * <p>Divergence on a purely generated leaf is not an error; it is a dispatch, one branch per
+     * participant decoder, each pruning the ids it cannot decode. An authored parameter cannot take
+     * that reading. The glue decodes before the value leaves it, so the parameter's declared type is
+     * the decoded key's, and the declaration set a multitable {@code @condition} may write is
+     * constrained to differ in the table position alone: two participants decoding different node
+     * types would demand two declared types at one non-table position. The ground is that binding
+     * shape rule rather than a policy about {@code @nodeId}, which is why a routed leaf an authored
+     * condition binds refuses here too.
+     *
+     * <p>Nested-input leaves need no arm of their own: {@link #firstNestedDivergence} already rejects
+     * every divergent nested leaf, authored binding or not, because per-branch dispatch is a top-level
+     * argument capability.
+     */
+    private Rejection firstAuthoredDivergence(
+            GraphQLFieldDefinition fieldDef,
+            Map<String, SequencedMap<String, NodeIdLeafResolver.Resolved>> argResolutions) {
+        for (var entry : argResolutions.entrySet()) {
+            var byParticipant = decodesOf(entry.getValue());
+            if (Set.copyOf(byParticipant.values()).size() < 2) continue;
+            var arg = fieldDef.getArgument(entry.getKey());
+            if (arg == null || ctx.readConditionDirective(arg) == null) continue;
+            var perParticipant = byParticipant.entrySet().stream()
+                .map(e -> e.getKey() + " resolves '" + e.getValue().nodeTypeName() + "'")
+                .collect(Collectors.joining(", "));
+            return Rejection.structural(
+                "@nodeId argument '" + entry.getKey() + "': a @condition method binds this argument,"
+                + " and its value is decoded before it reaches the method, so the parameter's"
+                + " declared type is the decoded key's. The participants resolve different node types"
+                + " (" + perParticipant + "), which would be two declared types at one parameter"
+                + " position; a condition declaration set may differ in its table parameter only."
+                + " Pin one node type with @nodeId(typeName: ...), or drop the @condition so the"
+                + " generated filter dispatches per branch.");
+        }
+        return null;
+    }
+
+    /**
+     * One participant's answer for one leaf, or {@code null} when the leaf did not resolve there.
+     * Total over every arm that resolves, the author-owned one included: the author owns the
+     * predicate, never the wire format. Shared with {@link BuildContext}'s input-field coordinate so
+     * the two sites read one derivation.
+     */
+    static HelperRef.Decode decodeTargetOf(NodeIdLeafResolver.Resolved resolved) {
         return switch (resolved) {
             case NodeIdLeafResolver.Resolved.SameTable st -> st.decodeMethod();
             case NodeIdLeafResolver.Resolved.FkTarget.DirectFk direct -> direct.decodeMethod();
             case NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk translated -> translated.decodeMethod();
-            // An author-owned predicate decodes nothing the generator emits: the method holds the raw
-            // id and calls NodeIdEncoder itself. Absent here, so it neither votes in the divergence
-            // verdict nor turns into a dispatch fact.
-            case NodeIdLeafResolver.Resolved.AuthorOwnedPredicate ignored -> null;
+            // The author owns the predicate, not the wire format: the glue still decodes, so this arm
+            // answers with its decoder like any other and its leaf votes in the divergence verdict.
+            case NodeIdLeafResolver.Resolved.AuthorOwnedPredicate authorOwned -> authorOwned.decodeMethod();
             case NodeIdLeafResolver.Resolved.Rejected ignored -> null;
         };
     }
@@ -1126,6 +1178,9 @@ class FieldBuilder {
         }
         if (targets.mixedContract() != null) {
             return new ParticipantFiltersResult.Rejected(targets.mixedContract());
+        }
+        if (targets.authoredDivergence() != null) {
+            return new ParticipantFiltersResult.Rejected(targets.authoredDivergence());
         }
         var dispatchedArgNames = targets.dispatchedArgNames();
         var result = new ArrayList<ParticipantFilters>();
@@ -2067,6 +2122,23 @@ class FieldBuilder {
                 resolved = ctx.nodeIdLeafResolver().resolve(arg, name, rt,
                     plan.participant(), leafOverride(arg));
             }
+            // The slot's value is decoded before it leaves the generated glue, on every arm, so an
+            // authored @condition parameter bound to the whole slot receives the typed key rather
+            // than the wire string. Installed here, where the slot's node type is known, rather than
+            // by widening ServiceCatalog.legacyArgExtraction, which sees a declared type and no slot.
+            var slotDecode = decodeTargetOf(resolved);
+            if (slotDecode != null && argCondition.isPresent()) {
+                var install = ConditionResolver.installNodeIdDecode(argCondition.get().filter(),
+                    "@nodeId argument '" + name + "' on field '" + fieldDef.getName() + "'",
+                    name, slotDecode, list);
+                switch (install) {
+                    case ConditionResolver.DecodeInstall.Rejected r -> {
+                        return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list, r.rejection());
+                    }
+                    case ConditionResolver.DecodeInstall.Ok ok -> argCondition =
+                        Optional.of(new ArgConditionRef(ok.filter(), argCondition.get().override()));
+                }
+            }
             switch (resolved) {
                 case NodeIdLeafResolver.Resolved.Rejected r ->
                     { return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list, r.rejection()); }
@@ -2082,7 +2154,7 @@ class FieldBuilder {
                             + " argument's predicate, but the condition method could not be resolved"));
                     }
                     return new ArgumentRef.ScalarArg.ConditionOwnedArg(
-                        name, typeName, nonNull, list, argCondition.get());
+                        name, typeName, nonNull, list, argCondition.get(), slotDecode);
                 }
                 case NodeIdLeafResolver.Resolved.SameTable st -> {
                     // Same-table @nodeId arg = filter semantics (WHERE pk IN (decoded_ids) /
@@ -2401,6 +2473,50 @@ class FieldBuilder {
     }
 
     /**
+     * What one classified {@code @nodeId} argument decodes to, on which axis, and whether the
+     * classification is this branch's own rather than the field's.
+     *
+     * @param dispatched {@code true} when the participants resolved different node types for this
+     *        argument, so the branch being classified carries its own decoder and prunes ids that
+     *        belong to a sibling branch. An authored parameter cannot take that reading, which is why
+     *        the flag is carried rather than left implicit in the extraction arm.
+     */
+    private record NodeIdArgDecode(HelperRef.Decode decode, boolean list, boolean dispatched) {}
+
+    /**
+     * The {@code @nodeId} arguments among {@code refs}, by argument name, each with the decoder its
+     * classification resolved. Read by the field-level {@code @condition} install so a parameter
+     * bound to one of them receives the decoded key, the same value the argument's own
+     * {@code @condition} would receive.
+     *
+     * <p>Three carriers can hold a {@code @nodeId} argument and all three are read here: the two
+     * column-backed ones expose the decoder through their {@code extraction}, and the author-owned
+     * one, having no implicit predicate and therefore no extraction, carries it flat.
+     */
+    private static Map<String, NodeIdArgDecode> nodeIdArgDecodes(List<ArgumentRef> refs) {
+        var out = new LinkedHashMap<String, NodeIdArgDecode>();
+        for (var ref : refs) {
+            switch (ref) {
+                case ArgumentRef.ScalarArg.ColumnBackedArg cba -> {
+                    if (cba.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys keys) {
+                        out.put(cba.name(), new NodeIdArgDecode(keys.decodeMethod(), cba.list(),
+                            keys instanceof CallSiteExtraction.PruneOnMismatch));
+                    }
+                }
+                case ArgumentRef.ScalarArg.ColumnBackedReferenceArg cbr ->
+                    out.put(cbr.name(), new NodeIdArgDecode(cbr.extraction().decodeMethod(), cbr.list(),
+                        cbr.extraction() instanceof CallSiteExtraction.PruneOnMismatch));
+                // An author-owned argument on a divergent leaf never reaches here: it carries an
+                // arg-level @condition by construction, which the divergence refusal already caught.
+                case ArgumentRef.ScalarArg.ConditionOwnedArg co ->
+                    out.put(co.name(), new NodeIdArgDecode(co.decode(), co.list(), false));
+                default -> { }
+            }
+        }
+        return out;
+    }
+
+    /**
      * Runs the full filter / orderBy / pagination projection for a table-bound field, using
      * {@link #classifyArguments} output as the single source of truth about each argument:
      * one classification + one projection step. See {@code docs/argument-resolution.md}.
@@ -2417,6 +2533,40 @@ class FieldBuilder {
             case ConditionResolver.FieldConditionResult.Rejected r -> {
                 errors.add(r.rejection());
                 return new TableFieldComponents.Rejected(foldRejections(errors));
+            }
+        }
+        // A field-level @condition binds the field's own arguments, so a parameter bound to a
+        // @nodeId argument takes the same decode the argument's own condition would. Done here
+        // rather than in the resolver because the slot's node type is a classification result: the
+        // arguments are already classified at this point, and each @nodeId carrier says what it
+        // decodes.
+        if (fieldCondition != null) {
+            for (var slot : nodeIdArgDecodes(refs).entrySet()) {
+                String coordinate = "field '" + parentTypeName + "." + fieldDef.getName() + "' @condition";
+                if (slot.getValue().dispatched()
+                        && ConditionResolver.bindsWholeSlot(fieldCondition, slot.getKey())) {
+                    // The same ground as the argument-level divergence refusal, reached through the
+                    // other directive site: this branch decodes a node type of its own, so one
+                    // declared parameter type cannot serve every branch. Caught here rather than at
+                    // the target verdict because whether a field-level condition binds a given
+                    // argument is known only once its method is reflected.
+                    errors.add(Rejection.structural(coordinate + ": parameter bound to @nodeId"
+                        + " argument '" + slot.getKey() + "', whose participants resolve different"
+                        + " node types, so the decoded key this branch would pass has a different"
+                        + " type from a sibling branch's and one declaration cannot take both. Pin"
+                        + " one node type with @nodeId(typeName: ...), or drop the binding so the"
+                        + " generated filter dispatches per branch."));
+                    return new TableFieldComponents.Rejected(foldRejections(errors));
+                }
+                var install = ConditionResolver.installNodeIdDecode(fieldCondition, coordinate,
+                    slot.getKey(), slot.getValue().decode(), slot.getValue().list());
+                switch (install) {
+                    case ConditionResolver.DecodeInstall.Rejected r -> {
+                        errors.add(r.rejection());
+                        return new TableFieldComponents.Rejected(foldRejections(errors));
+                    }
+                    case ConditionResolver.DecodeInstall.Ok ok -> fieldCondition = ok.filter();
+                }
             }
         }
         if (fieldCondition != null) {

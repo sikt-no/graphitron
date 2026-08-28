@@ -76,6 +76,10 @@ class NodeIdOverrideConditionFkTargetPipelineTest {
         assertThatCode(() -> no.sikt.graphitron.rewrite.ConditionRenderTestSupport
                 .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE))
             .doesNotThrowAnyException();
+
+        // The route resolving does not change who decodes: the glue does, on this arm as on the
+        // author-owned one, and the helper it hosts is the structural trace of that.
+        assertThat(decodeHelperNames(schema, "decodeBaz")).containsOnly("decodeBazKeyOrThrow");
     }
 
     @Test
@@ -89,7 +93,7 @@ class NodeIdOverrideConditionFkTargetPipelineTest {
                 childId: String! @field(name: "child_id")
             }
             input ReorderedChildFilter {
-                parentId: ID! @nodeId(typeName: "ReorderedPkParent") @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "argConditionTypeUnique"}, override: true)
+                parentId: ID! @nodeId(typeName: "ReorderedPkParent") @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "parentIdDecodedRowCondition"}, override: true)
             }
             type Query {
                 children(filter: ReorderedChildFilter): [ReorderedChild!]!
@@ -120,5 +124,22 @@ class NodeIdOverrideConditionFkTargetPipelineTest {
         assertThatCode(() -> no.sikt.graphitron.rewrite.ConditionRenderTestSupport
                 .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE))
             .doesNotThrowAnyException();
+
+        // A composite key decodes to a typed Row, which is what the fixture's parameter declares.
+        // That the Row is what reaches the method is a body fact, proven at the compile tier where
+        // a mismatched declaration would not compile; what stands here is that the decode happens.
+        assertThat(decodeHelperNames(schema, "decodeReorderedPkParent"))
+            .containsOnly("decodeReorderedPkParentRowOrThrow");
+    }
+
+    /** The decode helpers the rendered conditions classes host, by name prefix. */
+    private static List<String> decodeHelperNames(
+            no.sikt.graphitron.rewrite.GraphitronSchema schema, String prefix) {
+        return no.sikt.graphitron.rewrite.ConditionRenderTestSupport
+            .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            .flatMap(spec -> spec.methodSpecs().stream())
+            .map(no.sikt.graphitron.javapoet.MethodSpec::name)
+            .filter(name -> name.startsWith(prefix))
+            .toList();
     }
 }

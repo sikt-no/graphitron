@@ -26,14 +26,27 @@ public final class RecordDecodeHelperRegistry {
     private final Map<ClassName, MethodSpec> helpers = new LinkedHashMap<>();
 
     /**
+     * The run's output package, which is how the emitted body reaches the generated client-error
+     * type. Carried because the failure this family raises is the one
+     * {@link CompositeDecodeHelperRegistry}'s key helpers raise: the two host on the same conditions
+     * class and read the same wire value at different grains, so one bad id fails the same way at
+     * both.
+     */
+    private final String outputPackage;
+
+    private RecordDecodeHelperRegistry(String outputPackage) {
+        this.outputPackage = outputPackage;
+    }
+
+    /**
      * Brackets construct-register-drain so a registered helper can never be silently dropped:
      * constructs a fresh registry, hands it to {@code body}, then drains every collected helper onto
      * {@code classBuilder}. A dropped drain would surface only as a dangling {@code decode<Record>(...)}
      * reference and a consumer compile error rather than a generator failure.
      */
-    public static void collectInto(TypeSpec.Builder classBuilder,
+    public static void collectInto(TypeSpec.Builder classBuilder, String outputPackage,
             java.util.function.Consumer<RecordDecodeHelperRegistry> body) {
-        var registry = new RecordDecodeHelperRegistry();
+        var registry = new RecordDecodeHelperRegistry(outputPackage);
         body.accept(registry);
         registry.helpers.values().forEach(classBuilder::addMethod);
     }
@@ -48,13 +61,13 @@ public final class RecordDecodeHelperRegistry {
      * per-type generated method name is involved, the body calling {@code decodeValues} with the type
      * id.
      */
-    public String register(ClassName encoderClass, String typeId,
+    public String register(ClassName encoderClass, String typeId, String nodeTypeName,
             java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns,
             TableRef nodeTable) {
         ClassName recordType = nodeTable.recordClass();
         String name = helperName(recordType);
         helpers.computeIfAbsent(recordType, k -> RecordDecodeFragments.decodeHelper(
-            name, encoderClass, typeId, keyColumns, nodeTable));
+            name, encoderClass, typeId, nodeTypeName, keyColumns, nodeTable, outputPackage));
         return name;
     }
 

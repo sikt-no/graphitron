@@ -147,6 +147,40 @@ class TestConditionStub {
     }
 
     /**
+     * Fixture: a {@code @condition} bound to a {@code @nodeId} slot whose node type has a
+     * single-column integer key. The parameter is the <em>decoded</em> key, which is the contract at
+     * every {@code @nodeId} coordinate: the generated glue decodes before the value reaches authored
+     * code, so a {@code String} parameter here is a build rejection rather than a wire string.
+     *
+     * <p>Named for the slot ({@code languageId}) so the identity binding applies. Type-based
+     * inference cannot serve this shape: it pairs a parameter against the slot's <em>wire</em> Java
+     * type, which for an {@code ID} is {@code String}, and the decoded key is not that.
+     */
+    public static Condition languageIdDecodedKeyCondition(org.jooq.Table<?> table, Integer languageId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Fixture: the same slot declared the way the manual used to tell an author to declare it, as the
+     * wire string. Used to pin the classify-time refusal, whose whole reason for existing is that the
+     * only other enforcer of the decoded contract is the consumer's javac inside emitted glue.
+     */
+    public static Condition languageIdWireString(org.jooq.Table<?> table, String languageId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Fixture: the composite-key half of {@link #languageIdDecodedKeyCondition}. A node type with an
+     * arity-N key decodes to a typed jOOQ {@code Row<N>}, so that is what an authored parameter
+     * bound to such a slot declares. The shape is {@code nodeidfixture.reordered_pk_parent}'s
+     * {@code (bigint, varchar, varchar)} primary key, in key order.
+     */
+    public static Condition parentIdDecodedRowCondition(
+            org.jooq.Table<?> table, org.jooq.Row3<Long, String, String> parentId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Fixture: arg-level {@code @condition} with two same-type non-Table parameters. Used
      * to assert that the inference falls back to name-based matching when type alone is not
      * sufficient to disambiguate the pairing.

@@ -3041,53 +3041,75 @@ class BuildContext {
      * on a malformed or wrong-type encoded id rather than silently dropping it to "no row matches".
      * This matches the argument-level filter leaves in {@link FieldBuilder#classifyArgument}, and
      * it is now the only failure mode the carrier admits.
+     *
+     * <p>An authored {@code @condition} on the leaf takes the same decode, installed on its bound
+     * parameter through {@link ConditionResolver#installNodeIdDecode} before the arms run. The rule
+     * is stated at the slot rather than per arm: on every one of them the value the method receives
+     * is the decoded key, so the author-owned arm and the routed arms read the same kind of local
+     * and a wire string never reaches developer code.
      */
     private InputFieldResolution inputFieldFromNodeIdResolved(
             NodeIdLeafResolver.Resolved resolved, String parentTypeName,
             GraphQLInputObjectField field, String name, String typeName,
             boolean nonNull, boolean list, TableRef resolvedTable,
             List<InputFieldConditionFailure> conditionFailures) {
-        switch (resolved) {
-            case NodeIdLeafResolver.Resolved.Rejected r -> {
-                return unresolved(field, name, r.rejection());
+        if (resolved instanceof NodeIdLeafResolver.Resolved.Rejected rejected) {
+            return unresolved(field, name, rejected.rejection());
+        }
+        // Built once, ahead of the arms, because the decode installed on it is the same on every one
+        // of them: a @nodeId slot's value is decoded before it leaves the generated glue, so an
+        // authored parameter bound to this field receives the typed key rather than the wire string.
+        Optional<ArgConditionRef> condition =
+            buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
+        if (condition.isPresent()) {
+            var install = ConditionResolver.installNodeIdDecode(condition.get().filter(),
+                "input field '" + parentTypeName + "." + name + "'", name,
+                FieldBuilder.decodeTargetOf(resolved), list);
+            switch (install) {
+                case ConditionResolver.DecodeInstall.Rejected r -> {
+                    return unresolved(field, name, r.rejection());
+                }
+                case ConditionResolver.DecodeInstall.Ok ok -> condition =
+                    Optional.of(new ArgConditionRef(ok.filter(), condition.get().override()));
             }
+        }
+        switch (resolved) {
+            case NodeIdLeafResolver.Resolved.Rejected ignored -> throw new IllegalStateException(
+                "unreachable: the rejected arm returns above, before the condition is built");
             case NodeIdLeafResolver.Resolved.AuthorOwnedPredicate ignored -> {
                 // No route resolved and the leaf's own @condition(override: true) took the
                 // predicate. Same carrier the column-miss arm mints for the same reason: the method
-                // owns the whole WHERE contribution, so there is nothing for the generator to decode
-                // or bind and the carrier records no columns. A condition build that fails here
-                // leaves the field unresolved rather than silently dropping to an unbound carrier
-                // the resolver has already ruled out.
-                Optional<ArgConditionRef> cond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
-                if (cond.isEmpty()) {
+                // owns the whole WHERE contribution, so there is no implicit predicate for the
+                // generator to bind and the carrier records no columns. The decode still happens, in
+                // the glue, and rides the condition's own bound parameter. A condition build that
+                // fails here leaves the field unresolved rather than silently dropping to an unbound
+                // carrier the resolver has already ruled out.
+                if (condition.isEmpty()) {
                     return unresolved(field, name, Rejection.structural(
                         "input field '" + parentTypeName + "." + name + "': @condition(override:"
                         + " true) owns this @nodeId leaf's predicate, but the condition method could"
                         + " not be resolved."));
                 }
                 return new InputFieldResolution.Resolved(new InputField.ConditionOwnedField(
-                    parentTypeName, name, locationOf(field), typeName, nonNull, list, cond.get()));
+                    parentTypeName, name, locationOf(field), typeName, nonNull, list, condition.get()));
             }
             case NodeIdLeafResolver.Resolved.SameTable st -> {
-                Optional<ArgConditionRef> cond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
                 // Authored input-field @nodeId filter throws on malformed/wrong-type ids.
                 var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(st.decodeMethod());
                 return new InputFieldResolution.Resolved(new InputField.ColumnBackedField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                    st.keyColumns(), cond, extraction));
+                    st.keyColumns(), condition, extraction));
             }
             case NodeIdLeafResolver.Resolved.FkTarget.DirectFk direct -> {
-                Optional<ArgConditionRef> cond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
                 // Authored input-field FK-target @nodeId filter throws on malformed/wrong-type ids.
                 var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(direct.decodeMethod());
                 return new InputFieldResolution.Resolved(new InputField.ColumnBackedReferenceField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
                     direct.keyColumns(), direct.joinPath(),
                     new FilterBinding.Local(direct.liftedSourceColumns()),
-                    direct.selfReference(), cond, extraction));
+                    direct.selfReference(), condition, extraction));
             }
             case NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk translated -> {
-                Optional<ArgConditionRef> cond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
                 var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(translated.decodeMethod());
                 // The FK targets columns other than the NodeType's key columns, so the decoded key
                 // reaches the row only through the join: a Remote binding, lowered to the correlated
@@ -3098,7 +3120,7 @@ class BuildContext {
                 return new InputFieldResolution.Resolved(new InputField.ColumnBackedReferenceField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
                     translated.keyColumns(), translated.joinPath(),
-                    new FilterBinding.Remote(), false, cond, extraction));
+                    new FilterBinding.Remote(), false, condition, extraction));
             }
         }
     }

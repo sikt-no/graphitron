@@ -31,10 +31,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code film.language_id} tuple, the inventory branch a correlated {@code EXISTS} reaching
  * {@code language} through {@code film}.
  *
- * <p>The last two tests are the other two rungs of the ladder: an id encoded for a different node
- * type is a client error rather than an empty page, and the {@code @condition(override: true)}
- * escape hands the whole predicate to the author's method, which runs once per branch against that
- * branch's own table.
+ * <p>The remaining tests are the other rungs of the ladder: an id encoded for a different node type
+ * is a client error rather than an empty page, and the {@code @condition(override: true)} escape
+ * hands the whole predicate to the author's method, which runs once per branch against that
+ * branch's own table. The escape's own decode contract is pinned beside it, at both failure shapes:
+ * the method receives the decoded key, so a value that is not an encoded id of the leaf's node type
+ * fails the request before the method runs rather than reaching it as a string to parse.
  */
 @ExecutionTier
 class MultiTableNodeIdRouteExecutionTest {
@@ -252,13 +254,17 @@ class MultiTableNodeIdRouteExecutionTest {
         // condition method's. It filters on the film_id column both participant tables carry, which
         // is a different column on each branch (film's own key, inventory's foreign key), so a
         // method handed the wrong table would return the wrong rows rather than none.
+        //
+        // The id is a real encoded LanguageNode id, supplied by the test because test code is
+        // downstream of generated code and can call NodeIdEncoder where a @condition class cannot.
+        // The glue decodes it, so the fixture's parameter is the Integer key, never the wire string.
         Map<String, Object> data = execute("""
-            { stockByLanguageOverride(filter: { languageId: "1" }) {
+            { stockByLanguageOverride(filter: { languageId: "%s" }) {
                 __typename
                 ... on StockFilm { filmId }
                 ... on StockInventory { stockFilmId }
             } }
-            """);
+            """.formatted(NodeIdEncoder.encode("LanguageNode", 1)));
         List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("stockByLanguageOverride");
 
         assertThat(rows).filteredOn(r -> "StockFilm".equals(r.get("__typename")))
@@ -269,5 +275,31 @@ class MultiTableNodeIdRouteExecutionTest {
             .as("inventory's film_id is a foreign key, so every row it returns stocks film 1")
             .isNotEmpty()
             .allSatisfy(r -> assertThat(r.get("stockFilmId")).isEqualTo(1));
+    }
+
+    @Test
+    void theOverrideEscapeStillRefusesAnIdItCannotDecode() {
+        // The other half of the same contract, and the behaviour change this coordinate carries: a
+        // plain integer used to reach the author's method as a string it had to parse itself, and
+        // the fixture answered a parse failure with a filter that matched nothing. It is now a
+        // malformed node id and fails the request, exactly as it does on the routed leaf above.
+        var result = executeRaw("""
+            { stockByLanguageOverride(filter: { languageId: "1" }) { __typename } }
+            """);
+        assertThat(result.getErrors())
+            .as("a plain key where an encoded LanguageNode id is declared")
+            .isNotEmpty();
+    }
+
+    @Test
+    void theOverrideEscapeRefusesAnIdOfAnotherNodeType() {
+        // The leaf names one node type on the override arm too, so a well-formed id of another type
+        // is a client mistake rather than a branch that quietly matches nothing.
+        var result = executeRaw("""
+            { stockByLanguageOverride(filter: { languageId: "%s" }) { __typename } }
+            """.formatted(NodeIdEncoder.encode("Film", 1)));
+        assertThat(result.getErrors())
+            .as("a Film id supplied where a LanguageNode id is declared")
+            .isNotEmpty();
     }
 }

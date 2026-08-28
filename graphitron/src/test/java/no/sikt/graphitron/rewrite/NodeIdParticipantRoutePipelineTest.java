@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
@@ -185,7 +186,7 @@ class NodeIdParticipantRoutePipelineTest {
         var schema = TestSchemaHelper.buildSchema(LANGUAGE_FILM_INVENTORY + """
             input StockFilter {
                 languageId: ID @nodeId(typeName: "Language")
-                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "argConditionTypeUnique"}, override: true)
+                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "languageIdDecodedKeyCondition"}, override: true)
             }
             type Query { stock(filter: StockFilter): [Stock!]! }
             """);
@@ -214,7 +215,7 @@ class NodeIdParticipantRoutePipelineTest {
             type Query {
                 stock(
                     languageId: ID @nodeId(typeName: "Language")
-                        @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "argConditionTypeUnique"}, override: true)
+                        @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "languageIdDecodedKeyCondition"}, override: true)
                 ): [Stock!]!
             }
             """);
@@ -281,6 +282,86 @@ class NodeIdParticipantRoutePipelineTest {
             }
             type Query { stock(filter: StockFilter): [Stock!]! }
             """)).contains("no_such_fkey");
+    }
+
+    // ===== The decoded handoff =====
+
+    /**
+     * The override escape decodes in the glue. Each branch's conditions class hosts the throw-mode
+     * decode helper for the leaf's node type, which is the structural trace of the decode the author
+     * used to be told to perform: on the shipped behaviour the arm emitted no decode at all, so the
+     * helper's presence is falsifiable rather than incidental.
+     *
+     * <p>That the authored call then receives the decoded local is a body fact, and it is proven
+     * where body facts are: the compile tier, where the sakila fixture declares an {@code Integer}
+     * parameter that only compiles if the glue passes one, and the execution tier, where a real
+     * encoded id round-trips and a plain key is refused.
+     */
+    @Test
+    void theOverrideEscapeHostsTheDecodeHelperOnEachBranch() {
+        var schema = TestSchemaHelper.buildSchema(LANGUAGE_FILM_INVENTORY + """
+            input StockFilter {
+                languageId: ID @nodeId(typeName: "Language")
+                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "languageIdDecodedKeyCondition"}, override: true)
+            }
+            type Query { stock(filter: StockFilter): [Stock!]! }
+            """);
+
+        var helperNames = ConditionRenderTestSupport
+            .renderCommittedConditions(schema, "no.example.generated").stream()
+            .flatMap(spec -> spec.methodSpecs().stream())
+            .map(MethodSpec::name)
+            .filter(name -> name.startsWith("decodeLanguage"))
+            .toList();
+        assertThat(helperNames).containsOnly("decodeLanguageKeyOrThrow");
+    }
+
+    /**
+     * The refusal that keeps the contract enforceable from the SDL. Declaring the parameter as the
+     * wire string used to be the only thing an author could write; it now names the coordinate and
+     * the type the decoded key has, rather than surfacing as a javac error inside emitted glue with
+     * no line back to the schema.
+     */
+    @Test
+    void aWireStringParameterOnADecodedSlotIsRejectedNamingTheRequiredType() {
+        String message = causeFor("""
+            input StockFilter {
+                languageId: ID @nodeId(typeName: "Language")
+                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "languageIdWireString"}, override: true)
+            }
+            type Query { stock(filter: StockFilter): [Stock!]! }
+            """);
+        assertThat(message).contains("languageIdWireString");
+        assertThat(message).contains("java.lang.Integer");
+        assertThat(message).contains("java.lang.String");
+    }
+
+    /**
+     * An authored parameter rejects where a routed leaf would dispatch. A bare {@code @nodeId}
+     * argument on a multitable root infers its node type from each participant's own table, so the
+     * branches decode different types; with no {@code @condition} that is the supported per-branch
+     * dispatch, and with one it cannot be, because the decoded keys are two Java types and a
+     * condition declaration set may differ in its table parameter only.
+     */
+    @Test
+    void aDivergentArgumentBoundByAConditionIsRejectedRatherThanDispatched() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type FilmNode implements Node @table(name: "film") @node { id: ID! @nodeId }
+            type InventoryNode implements Node @table(name: "inventory") @node { id: ID! @nodeId }
+            union Stock = FilmNode | InventoryNode
+            type Query {
+                stock(
+                    id: ID @nodeId
+                        @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "argConditionTypeUnique"}, override: true)
+                ): [Stock!]!
+            }
+            """);
+
+        var field = schema.field("Query", "stock");
+        assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        String message = ((GraphitronField.UnclassifiedField) field).reason();
+        assertThat(message).contains("FilmNode").contains("InventoryNode");
+        assertThat(message).contains("@nodeId(typeName:");
     }
 
     // ===== Aggregation =====

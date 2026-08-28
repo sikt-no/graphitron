@@ -107,11 +107,7 @@ public final class CompositeDecodeHelperRegistry {
      * the type from the same shape the helper body is built from.
      */
     public static TypeName decodedType(HelperRef.Decode decode, boolean list) {
-        int arity = decode.outputColumnShape().size();
-        TypeName elementType = arity == 1
-            ? decode.outputColumnShape().getFirst().columnType()
-            : typedRow(decode.outputColumnShape());
-        return list ? ParameterizedTypeName.get(ClassName.get(List.class), elementType) : elementType;
+        return decode.decodedKeyType(list);
     }
 
     private static String helperName(String decodeMethod, Mode mode, boolean list, int arity) {
@@ -199,42 +195,15 @@ public final class CompositeDecodeHelperRegistry {
     }
 
     /**
-     * Emits the {@link Mode#THROW} failure path for a {@code null} decode return: peek the
-     * wire value's type prefix, then throw the generated {@code GraphitronClientException} carrying
-     * a two-branch message that distinguishes structurally-malformed input from a well-formed
-     * wrong-type id. {@code peekArg} is the wire expression fed to {@code peekTypeId} (cast to
-     * {@code String} on the list path, already-{@code String} on the scalar path); {@code msgVar}
-     * is the local concatenated into the message text.
-     *
-     * <p>The second base64 walk {@code peekTypeId} performs (re-decoding what {@code decode<Type>}
-     * already discarded) is deliberate: it runs only on the error path, which is about to throw and
-     * abort the field, so the redundant decode costs nothing on the success path.
+     * The {@link Mode#THROW} failure path for a {@code null} decode return, delegated to
+     * {@link NodeIdDecodeFailure} so this family and the record-projection family raise one failure
+     * with one message. {@code peekArg} is the wire expression fed to {@code peekTypeId} (cast to
+     * {@code String} on the list path, already-{@code String} on the scalar path); {@code msgVar} is
+     * the local concatenated into the message text.
      */
     private CodeBlock decodeFailureThrow(HelperRef.Decode decode, String peekArg, String msgVar) {
-        ClassName clientException = ClassName.get(outputPackage + ".schema", "GraphitronClientException");
-        String typeName = decode.nodeTypeName();
-        return CodeBlock.builder()
-            .addStatement("$T peeked = $T.peekTypeId($L)", String.class, decode.encoderClass(), peekArg)
-            .addStatement("throw new $T($L)", clientException,
-                failureMessageExpr(decode.typeId(), typeName, msgVar))
-            .build();
-    }
-
-    /**
-     * Builds the ternary message expression. {@code peeked == null} (bad base64 / no colon) and
-     * {@code peeked.equals(expectedTypeId)} (right type prefix, wrong key arity) both read as
-     * "malformed"; any other non-null prefix is a well-formed wrong-type id and names the type it
-     * decoded to.
-     */
-    private static CodeBlock failureMessageExpr(String expectedTypeId, String typeName, String msgVar) {
-        return CodeBlock.of(
-            "peeked == null || $S.equals(peeked)\n"
-          + "    ? $S + $L + $S\n"
-          + "    : $S + $L + $S + peeked + $S",
-            expectedTypeId,
-            "Invalid node id \"", msgVar, "\" for this argument: not a valid " + typeName + " id",
-            "Invalid node id \"", msgVar, "\" for this argument: decodes to type \"",
-            "\", expected a " + typeName + " id");
+        return NodeIdDecodeFailure.throwStatement(outputPackage, decode.encoderClass(),
+            decode.typeId(), decode.nodeTypeName(), peekArg, msgVar);
     }
 
     /**

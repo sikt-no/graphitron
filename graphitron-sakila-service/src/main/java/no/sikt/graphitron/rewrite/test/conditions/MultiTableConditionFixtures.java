@@ -42,26 +42,27 @@ public final class MultiTableConditionFixtures {
     /**
      * The {@code @nodeId} override escape: no route from either participant's table to the node
      * type's table resolves, so this method owns the whole {@code WHERE} contribution and is handed
-     * each branch's own table plus the <em>raw</em> wire id, undecoded.
+     * each branch's own table plus the leaf's <em>decoded</em> key.
      *
-     * <p>A production author decodes that id with the generated {@code NodeIdEncoder}
-     * ({@code peekTypeId} reads the discriminator without committing to a type,
-     * {@code decode<Type>} returns the typed key record). A {@code @condition} class cannot: it is
-     * reflected during generation, so it compiles upstream of the code the generator emits. This
-     * fixture therefore treats the id as the plain integer the test supplies and filters on the
-     * {@code film_id} column both {@code film} and {@code inventory} carry, which is enough to prove
-     * what the escape promises: the method fires per branch, against that branch's own table, with
-     * no implicit predicate of the generator's beside it.
+     * <p>What the author owns here is the predicate, not the wire format. The generated glue decodes
+     * before the value reaches this method, which is what makes the parameter an {@code Integer}:
+     * {@code LanguageNode}'s key is the single column {@code language.language_id}. A malformed id,
+     * or one encoded for another node type, fails the request before this body runs, so there is no
+     * parse to guard. That matters because a {@code @condition} class is reflected during generation
+     * and compiles upstream of the code the generator emits, so it could never call
+     * {@code NodeIdEncoder} itself.
+     *
+     * <p>The body filters on the {@code film_id} column both {@code film} and {@code inventory}
+     * carry, which is a different column on each branch, so a method handed the wrong table returns
+     * the wrong rows. That is what the escape promises and what this proves: the method fires per
+     * branch, against that branch's own table, with no implicit predicate of the generator's beside
+     * it.
      */
-    public static Condition stockByRawNodeId(Table<?> table, String languageId) {
+    public static Condition stockByDecodedLanguageKey(Table<?> table, Integer languageId) {
         if (languageId == null) {
             return DSL.noCondition();
         }
-        try {
-            return table.field(DSL.name("film_id"), Integer.class).eq(Integer.valueOf(languageId));
-        } catch (NumberFormatException e) {
-            return DSL.falseCondition();
-        }
+        return table.field(DSL.name("film_id"), Integer.class).eq(languageId);
     }
 
     /**

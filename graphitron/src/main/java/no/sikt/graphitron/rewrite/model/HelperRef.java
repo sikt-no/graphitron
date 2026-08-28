@@ -106,5 +106,34 @@ public sealed interface HelperRef {
             }
             return ParameterizedTypeName.get(recordN, typeArgs);
         }
+
+        /**
+         * The Java type a <em>decoded key</em> of this node type takes where a call site binds one:
+         * the single key column's type at arity 1, the typed {@code Row<N><T1..TN>} above, wrapped in
+         * {@code List} on the list axis. Distinct from {@link #returnType()}, which is the raw
+         * {@code Record<N>} the generated {@code decode<TypeName>} hands back before projection.
+         *
+         * <p>One home rather than two. The emitter declaring the local reads it, and so does the
+         * classifier checking an authored {@code @condition} parameter's declared type against the
+         * key it will receive; a second derivation would let the check pass a shape the emitter does
+         * not produce.
+         */
+        public TypeName decodedKeyType(boolean list) {
+            int n = outputColumnShape.size();
+            TypeName element;
+            if (n == 1) {
+                element = outputColumnShape.getFirst().columnType();
+            } else {
+                ClassName rowN = ClassName.get("org.jooq", "Row" + n);
+                TypeName[] typeArgs = new TypeName[n];
+                for (int i = 0; i < n; i++) {
+                    typeArgs[i] = outputColumnShape.get(i).columnType();
+                }
+                element = ParameterizedTypeName.get(rowN, typeArgs);
+            }
+            return list
+                ? ParameterizedTypeName.get(ClassName.get("java.util", "List"), element)
+                : element;
+        }
     }
 }

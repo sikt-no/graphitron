@@ -119,7 +119,7 @@ default Validator getValidator(DataFetchingEnvironment env) {
 
 == `NodeIdEncoder` utility
 
-Emitted by `NodeIdEncoderClassGenerator` into `<outputPackage>.schema` only when at least one type carries `@node`. Static, non-extendable encode/decode helpers for Relay global IDs:
+Emitted by `NodeIdEncoderClassGenerator` into `<outputPackage>.util`, unconditionally: the class ships on every run, and a schema with no `@node` type simply gets no per-type helpers on it. Static, non-extendable encode/decode helpers for Relay global IDs:
 
 [source,java]
 ----
@@ -128,6 +128,11 @@ public final class NodeIdEncoder {
     public static String encode(String typeId, Object... values);
 
     public static String peekTypeId(String base64Id);
+
+    public static String[] decodeValues(String expectedTypeId, String base64Id);
+
+    public static void requireColumnAgreement(
+        String conflictLabel, DataType<?> type, Object a, Object b);
 
     // Per-Node helpers, one pair per @node type:
     public static String  encode<TypeName>(T1 v1, ..., TN vN);
@@ -149,6 +154,13 @@ For each `@node`-decorated type the generator emits two static helpers named aft
 * `decode<TypeName>(String base64Id)` -- returns a jOOQ `RecordN<T1, ..., TN>` typed against the bound table's PK columns, or `null` uniformly on malformed input or a typeId mismatch. Carrier consumers wrap that null through the matching `CallSiteExtraction.NodeIdDecodeKeys.*` arm.
 
 `peekTypeId(base64Id)` reads the typeId off the wire string without decoding the rest. `Query.node(id:)` uses this to dispatch to the right `@node` type's table; a non-typed reader can call it the same way.
+
+=== Untyped helpers
+
+Two more helpers are public because generated code in other packages calls them, and they are documented here because a consumer reading generated sources will meet them:
+
+* `decodeValues(expectedTypeId, base64Id)` -- the raw unpack behind every per-Node `decode<TypeName>`: the key values as a `String[]`, or `null` when the input is malformed or carries another typeId. Use it only where you genuinely have no typed target; the per-Node helper gives you the same values already coerced to the column types.
+* `requireColumnAgreement(conflictLabel, type, a, b)` -- the value-agreement check the write path emits when two input fields land on one column. It coerces both values through the destination column's `DataType` and throws a `GraphqlErrorException` naming `conflictLabel` when they disagree.
 
 === Why a final class with private constructor
 

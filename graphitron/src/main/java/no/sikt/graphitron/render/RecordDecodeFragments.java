@@ -57,6 +57,30 @@ public final class RecordDecodeFragments {
     }
 
     /**
+     * The same body with the client-error failure the key helpers raise, for a host that can reach
+     * the generated error type and knows what to call the node type.
+     *
+     * <p>The two failure forms are a parameter rather than a fork inside the body because they
+     * differ in what the host can reach, not in what the decode means. A conditions class hosting an
+     * {@code argMapping} key-column projection sits beside {@link CompositeDecodeHelperRegistry}'s
+     * key helpers reading the same wire value at a different grain, so one bad id has to fail
+     * identically at both or a client learns that one spelling of a filter validates its ids and
+     * another does not. A {@code <Type>Fetchers} class hosting an input-bean member decode is a
+     * different consumer at a different boundary and keeps the plain form above.
+     *
+     * @param outputPackage the run's output package, which is how the generated client-error type is
+     *                      reached
+     * @param nodeTypeName  the node type as the failure message names it to the client
+     */
+    public static MethodSpec decodeHelper(String name, ClassName encoderClass, String typeId,
+            String nodeTypeName, java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns,
+            TableRef nodeTable, String outputPackage) {
+        return decodeHelper(name, encoderClass, typeId, keyColumns, nodeTable,
+            NodeIdDecodeFailure.throwStatement(outputPackage, encoderClass, typeId, nodeTypeName,
+                "nodeId", "nodeId"));
+    }
+
+    /**
      * The same body from the facts themselves rather than from a model reference, which is what a
      * store-sourced caller has: the encoder class it minted from its own configuration, the wire type
      * id and key column list off a command row, and the node table beside them. The overload above
@@ -72,6 +96,21 @@ public final class RecordDecodeFragments {
     public static MethodSpec decodeHelper(String name, ClassName encoderClass, String typeId,
             java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns,
             TableRef nodeTable) {
+        return decodeHelper(name, encoderClass, typeId, keyColumns, nodeTable,
+            CodeBlock.builder()
+                .addStatement("throw $T.newErrorException().message($S).build()", GRAPHQL_ERROR,
+                    "Decoded NodeId did not match the expected type for this argument")
+                .build());
+    }
+
+    /**
+     * The shared body, with the mismatch failure supplied. Both public forms above route through
+     * here, so the decode, the arity check and the positional load have one spelling and only the
+     * throw differs.
+     */
+    private static MethodSpec decodeHelper(String name, ClassName encoderClass, String typeId,
+            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns,
+            TableRef nodeTable, CodeBlock mismatchThrow) {
         ClassName recordType = nodeTable.recordClass();
         int arity = keyColumns.size();
         var body = MethodSpec.methodBuilder(name)
@@ -84,8 +123,7 @@ public final class RecordDecodeFragments {
             .addStatement("$T values = $T.decodeValues($S, nodeId)",
                 String[].class, encoderClass, typeId)
             .beginControlFlow("if (values == null || values.length != $L)", arity)
-            .addStatement("throw $T.newErrorException().message($S).build()", GRAPHQL_ERROR,
-                "Decoded NodeId did not match the expected type for this argument")
+            .addCode(mismatchThrow)
             .endControlFlow()
             .addStatement("$T decoded = new $T()", recordType, recordType);
         var fields = CodeBlock.builder();

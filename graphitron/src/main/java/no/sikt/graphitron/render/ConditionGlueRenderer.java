@@ -85,14 +85,14 @@ public final class ConditionGlueRenderer {
         for (var entry : byOwner.entrySet()) {
             var classBuilder = TypeSpec.classBuilder(entry.getKey().simpleName()).addModifiers(Modifier.PUBLIC);
             CompositeDecodeHelperRegistry.collectInto(classBuilder, outputPackage, registry ->
-                RecordDecodeHelperRegistry.collectInto(classBuilder, decodes ->
+                RecordDecodeHelperRegistry.collectInto(classBuilder, outputPackage, decodes ->
                 RequestContextHelper.collectInto(classBuilder, outputPackage, contextHelper -> {
                     // One projection host per class: the relation is the graph's, and reaching a decode
                     // registers its body here, so a called helper cannot go un-emitted.
                     var keyHost = new ProjectedKeyHost(keyProjections,
                         projection -> decodes.register(NodeIdEncoderRef.of(outputPackage),
-                            projection.typeId(), projection.keyColumns(),
-                            projection.nodeTable()));
+                            projection.typeId(), projection.nodeTypeName(),
+                            projection.keyColumns(), projection.nodeTable()));
                     for (var row : entry.getValue()) {
                         boolean takesEnv = row.readsRequestContext();
                         classBuilder.addMethod(buildGlueMethod(
@@ -433,13 +433,30 @@ public final class ConditionGlueRenderer {
     private static TypeName localType(CallParam param) {
         var decode = decodeLeafOf(param.extraction());
         if (decode != null) {
-            return CompositeDecodeHelperRegistry.decodedType(decode.decodeMethod(), param.list());
+            return CompositeDecodeHelperRegistry.decodedType(decode.decodeMethod(), decodesList(param));
         }
         if (!param.list() && param.javaType() instanceof ParameterizedTypeName full) {
             return full;
         }
         ClassName raw = ClassName.bestGuess(WireMapChain.rawComponent(param.typeName()));
         return param.list() ? ParameterizedTypeName.get(LIST, raw) : raw;
+    }
+
+    /**
+     * Whether a decoding binding's local is list-shaped. A generated column term carries the axis on
+     * {@link CallParam#list()}; an authored condition parameter does not, its {@code CallParam} being
+     * minted from a reflected signature where list-ness lives in the declared Java type. Reading both
+     * is what lets one decode arm serve the implicit predicate and the authored call on one slot.
+     *
+     * <p>Sound rather than a guess: an authored parameter bound to a {@code @nodeId} slot is admitted
+     * at classification only when its declared type is exactly the decoded key's
+     * ({@code ConditionResolver.installNodeIdDecode}), so it is a {@code List<…>} precisely where the
+     * slot is list-shaped.
+     */
+    private static boolean decodesList(CallParam param) {
+        return param.list()
+            || (param.javaType() instanceof ParameterizedTypeName parameterized
+                && parameterized.rawType().equals(LIST));
     }
 
     private static CallSiteExtraction.NodeIdDecodeKeys decodeLeafOf(CallSiteExtraction extraction) {
@@ -471,7 +488,7 @@ public final class ConditionGlueRenderer {
                 : CodeBlock.of("$T.val(args.get($S), table.$L.getDataType()).getValue()",
                     DSL, param.name(), jc.columnJavaName());
             case CallSiteExtraction.NodeIdDecodeKeys nidk ->
-                decodeCall(registry, nidk, param.list(), CodeBlock.of("args.get($S)", param.name()));
+                decodeCall(registry, nidk, decodesList(param), CodeBlock.of("args.get($S)", param.name()));
             case CallSiteExtraction.NestedInputField nif ->
                 nestedExtraction(nif, param, liftLocals, registry, keys);
             // Request context is not in the args map: the local reads through the class's own
@@ -542,8 +559,17 @@ public final class ConditionGlueRenderer {
         }
 
         if (nif.leaf() instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
-            return decodeCall(registry, nidk, param.list(),
+            return decodeCall(registry, nidk, decodesList(param),
                 WireMapChain.of(root, nif.path(), null, lifted));
+        }
+        if (nif.leaf() instanceof CallSiteExtraction.EnumValueOf ev) {
+            // The nested twin of the top-level enum arm. Reachable since the rewrap composes the
+            // parameter's own extraction onto the descent rather than defaulting the leaf: before
+            // that, an enum-typed parameter at a nested input-field condition arrived as Direct and
+            // the fall-through below cast a wire String to the enum type.
+            var enumClass = ClassName.bestGuess(ev.enumClassName());
+            return CodeBlock.of("($L) instanceof $T enumWire ? $T.valueOf(enumWire) : null",
+                WireMapChain.of(root, nif.path(), null, lifted), String.class, enumClass);
         }
         if (nif.leaf() instanceof CallSiteExtraction.JooqConvert jc) {
             CodeBlock chain = WireMapChain.of(root, nif.path(), null, lifted);
