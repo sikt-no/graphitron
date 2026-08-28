@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 4
 theme: codegen-correctness
-depends-on: [condition-method-overload-selection]
+depends-on: []
 created: 2026-08-13
 last-updated: 2026-08-19
 ---
@@ -33,8 +33,18 @@ needs defining per arm, and per slot within the two-table arm, before a check ca
 emitted signature is rendered from, plus a parameterised `Table<R>` layer against the record type);
 this item's work is deciding what each slot's expected table is, not inventing the comparison.
 
-The anchor definition is now fixed by the R675 spec (`roadmap/condition-method-overload-selection.md`,
-"Anchor definition handed to R647"): per emit-site arm and per slot, with the multitable arm anchoring
-each participant's table per branch. Under R675's overload admission, the check here becomes per-anchor
-applicability across the admitted declaration set (at least one declaration whose table slot accepts
-that anchor), with most-specific selection left to javac.
+The anchor definition is fixed, and it is stated by provenance per slot rather than as a per-coordinate
+list, because not every anchor comes from the method signature. An anchor is the table the emitter will
+pass in that slot, wherever that table was resolved. The provenances: the coordinate's table for the
+single-table arms; each participant's table per branch for the multitable arm; for a path-step
+`{condition:}` hop, the hop's origin and the declared or slot-2-resolved target; and for a condition on
+an FK-derived hop, reached through `validateWhereFilterParamTables` (the second caller of
+`validateConditionParamTables`), the `synthesizeFkJoin`-resolved `originTable` and `targetTable`, which
+the method signature never sees.
+
+Overload admission has since shipped, so a `@condition` name may denote a set of declarations that agree
+on the binding shape and differ only in their table slots. The check here is therefore per-anchor
+applicability across that set: at least one declaration whose table slot accepts the anchor, with
+most-specific selection left to the consumer's javac. The slot already carries its decided catalog
+answer (`ParamSource.Table.TableSlot`), so the comparison is a `denotesSameTableAs` scan over the
+admitted tables rather than a type-name decode.
