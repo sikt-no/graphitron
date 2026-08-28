@@ -289,8 +289,8 @@ id, because the ids become gaps and the audit's section 8 carries what each esta
   superseded rather than repaired.
 - The DDL performance-claims item, now a systematic consequence rather than a single catch.
 
-**Not dissolved, and why.** The two per-refused-row reader items are caller-side loops in Java, not
-store shapes, and neither is touched by anything here. The `graphql_field` named-type index item
+**Not dissolved, and why.** The per-refused-row reader item is a caller-side loop in Java, at two
+call sites the item names itself, not a store shape, and nothing here touches it. The `graphql_field` named-type index item
 carries the doctrine for indexing a captured base table, which rung 1 needs rather than replaces. The
 `meta_relation_reference` item is a measured, self-contained fix. The view-read census and bridge
 closure is a gate, and the layer violation above is live evidence for it. The build wall-clock
@@ -318,3 +318,86 @@ relation name anywhere in main sources. That was verified by grep. If a third ac
 one arrives later, the walk under-reports reachability and the 95.4% figure moves. A gate over the
 access form would make the claim durable rather than point-in-time, and whether that is worth building
 is a fair question for the Spec gate.
+
+## Reviewer findings
+
+### Round 1 (2026-08-28, Spec -> Ready, reviewer session 01P2HFCFzA3YiKbaLjgXzet7)
+
+Verdict: withhold. Two blocking findings on question one, one on question two, one traceability
+finding, one figure to reconcile.
+
+*What was checked and holds.* Every test symbol the item names exists under the name it gives:
+`DerivedReadCostTest` and its `KNOWN_NON_MONOTONIC` set, `MaterializeRegistryGateTest` and
+`everyTargetIsIndexedOrStatesWhyNot`, `FactSchemaGateTest.everyRelationLeadsWithItsPartitionDimension`.
+So do the DDL objects the two key slices land on: `jvm_method`, `graphql_field.named_type`,
+`graphitron_field_synthesis`, and the schema's thirty-five existing `GENERATED ALWAYS AS` columns, the
+count the audit cites. Section 1's table sums to 15477.19 against its stated 15477.1, the ten
+unreachable positions to 14759.5 as stated, and positions 14 to 18 to 15382.5 as stated, so the pass
+arithmetic is internally sound. Each surviving item the supersession section says is untouched exists and is untouched; the four
+citation redirects landed and read correctly. The dissolution itself is well argued and the decision to
+file the evidence as a dated audit rather than in a file that dies at Done is right, and worth keeping
+whatever happens to the findings below. The diagnosis, that a comparison between "evaluate" and "store"
+cannot report that a third option was better, is the strongest thing in the item and I am not disputing
+any of it.
+
+**Finding 1 (question one: is the stated outcome reachable). "What changes when this lands" promises a
+capture in the tens of seconds, and no slice in this item is measured against the positions that carry
+99.4% of the pass.** Section 1 puts 15382.5 s in positions 14 to 18. Four of those five are in the
+unreachable subgraph, so the only lever the item names over them is the registration precondition, which
+this file explicitly defers. The reachable ten carry 717.6 s, so perfect success on every non-deferred
+slice leaves over four hours on the audit's own store, and on the shipped DDL leaves the predicted 7126 s
+of which the item's own section 4 citation says over 98.7% is positions 17 and 18. Slices 1 to 5 name
+`intent_spelled_table`, `intent_argmapping_pair`, `intent_carrier_data_field`, the accessor hop and the
+named-type sites; none of them is a payload or filter-role position, and nothing in the audit measures a
+grain fix against one. There may well be a real claim here, that cutting expansion at the two grains cuts
+the refresh of the unreachable views too, since section 3 shows five timed-out relations completing with
+nothing materialized. But the item does not make that claim, and it is the whole distance between the
+promised outcome and the slices. Resolve it one of three ways: state and evidence the claim that the
+grain and key fixes reach positions 14 to 18; or restate what changes when this lands as what the slices
+actually deliver, with the hours left to the deferred question; or pull the deferred slice into the item.
+The third is now open in a way it was not when the item was drafted: the stated blocker, that R848 should
+not be adjudicated while in review, cleared when R848 reached Done on 2026-08-28.
+
+**Finding 2 (question one: viability). Slice 0 gates the design of everything below it and runs against an
+artifact this repository does not contain, with no stated way for an implementer session to obtain it.**
+"Nothing below is designed until they are answered", and both determinations are reads "against the kept
+2026-08-27 store". The audit says only that the store file is kept, 99 MB, with a SHA-256 recorded
+alongside it; where it is kept, and by whom, is nowhere in either document. Meanwhile the item's own
+"Not in this item" section establishes that no session working from this repository can take a fresh
+consumer capture. Taken together, an implementer picking this up may be unable to start, which is a
+viability question rather than a detail. Say where the store lives and how a session gets at it; or state
+that slice 0 belongs to the session that holds it and cannot be handed off, and what the item does if that
+session is not available. A reproduction recipe good enough to re-take the capture elsewhere would settle
+it, but the item argues that is out of reach, so the location is the answer that is left.
+
+**Finding 3 (question two: architecture fit). The lever order contradicts the one in
+`docs/architecture/explanation/fact-model.adoc`, and no slice amends that page.** The page orders three
+rungs: a captured fact top, a registration middle, and "a rewrite is the last rung, because it usually
+changes nothing the planner cares about". This item orders five, with rewrite fourth and registration last
+behind a new reader precondition. That is a doctrine change, not the gloss the item gives it ("the top rung
+was never actually tried, so the ordering was doctrine rather than practice"): it demotes the middle rung
+below the one the page calls last, and it adds two rungs the page does not have. The item is right on the
+merits as far as the evidence goes, but if it lands as written the tree carries two orderings and the one a
+contributor finds first is the page. Name the page edit as a slice and say whether the precondition sentence
+goes in with it or waits for the deferred policy question, or say why the page stands as written. Related:
+the item's own claim that the page "already states a hierarchy" should be narrowed to which part of it
+survives.
+
+**Finding 4 (traceability). "The audit predicts four named regressions in `KNOWN_NON_MONOTONIC` become
+removable" is a prediction the audit does not contain.** Neither the audit nor this file mentions
+monotonicity or that set anywhere else, and the four pairs are not named. A reader can guess at them from
+the two grains, the set's rows on `intent_argmapping_pair` and the two on `intent_spelled_table`, but a
+guess is not what the Tests section should hand an implementer, and the count is a figure the Done gate
+would be checked against. Name the four pairs in the item, or drop the count and keep the direction.
+
+**Finding 5 (figure to reconcile, minor). The audit's two readings of positions 1 to 16 disagree by about
+30 seconds.** Section 4 states 6293 s cold against 90.8 s analysed, from which the 69-fold ratio comes.
+Section 1's table sums to 6262.6 s over the same sixteen positions, which is where this item's "removes
+about 6172 seconds" comes from (6262.6 minus 90.8), so the item is consistent with the table and the audit
+is not consistent with itself. Half a percent changes no conclusion, but the audit is the artifact that
+outlives every file citing it, and a figure a later reader cannot reconcile is exactly what an audit is for
+avoiding. Say which reading is the pass and where the other came from.
+
+*Fixed in passing, per the reviewer-fix rule.* "The two per-refused-row reader items" was a stale count:
+there is one such item, R812, which names both call sites in its own body. Corrected in the supersession
+section; nothing else in that paragraph changed.
