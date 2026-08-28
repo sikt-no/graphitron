@@ -1160,6 +1160,7 @@ type OccupantLookupMissingAddress @error(handlers: [{
     path: [String!]!
     message: String!
 }
+union OccupantLookupError = OccupantLookupMissingAddress
 
 # R873 execution-tier fixture, Pojo arm: the reporter's exact shape from
 # sikt-no/graphitron#526 — a @service Pojo payload with typed hub accessors, carrying a
@@ -1172,7 +1173,7 @@ type OccupantLookupMissingAddress @error(handlers: [{
 type OccupantsWithErrorsPayload {
     firstOccupant: AddressOccupant @field(name: "address")
     occupants: [AddressOccupant!] @field(name: "addresses")
-    errors: [OccupantLookupMissingAddress]
+    errors: [OccupantLookupError]
 }
 
 # R873 execution-tier fixture, record arm: the same shape backed by the jOOQ record itself (the
@@ -1182,7 +1183,7 @@ type OccupantsWithErrorsPayload {
 type AddressOccupantsRecordPayload {
     occupant: AddressOccupant
     occupantsConnection: [AddressOccupant!] @asConnection(defaultFirstValue: 5)
-    errors: [OccupantLookupMissingAddress]
+    errors: [OccupantLookupError]
 }
 
 # R110 Story 1 fixture: third-party-style DTO whose backing class carries the customer's

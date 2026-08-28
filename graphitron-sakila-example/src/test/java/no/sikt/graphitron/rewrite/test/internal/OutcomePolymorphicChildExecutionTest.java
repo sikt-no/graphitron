@@ -88,7 +88,7 @@ class OutcomePolymorphicChildExecutionTest {
                   ... on Staff    { staffId firstName }
                   ... on Customer { customerId firstName }
                 }
-                errors { message }
+                errors { ... on OccupantLookupMissingAddress { message } }
               }
             }
             """);
@@ -124,7 +124,7 @@ class OutcomePolymorphicChildExecutionTest {
             { occupantsWithErrors(addressId: 999) {
                 firstOccupant { __typename }
                 occupants { __typename }
-                errors { message }
+                errors { ... on OccupantLookupMissingAddress { message } }
               }
             }
             """);
@@ -161,7 +161,7 @@ class OutcomePolymorphicChildExecutionTest {
                     ... on Customer { customerId }
                   }
                 }
-                errors { message }
+                errors { ... on OccupantLookupMissingAddress { message } }
               }
             }
             """);
@@ -190,7 +190,7 @@ class OutcomePolymorphicChildExecutionTest {
             { occupantsRecordWithErrors(addressId: 999) {
                 occupant { __typename }
                 occupantsConnection { totalCount }
-                errors { message }
+                errors { ... on OccupantLookupMissingAddress { message } }
               }
             }
             """);
