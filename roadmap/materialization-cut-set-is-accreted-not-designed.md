@@ -523,6 +523,13 @@ The figures stay stated against the register of twenty they were taken on. That 
 doctrine working rather than prose going stale: a leave-one-out figure means nothing except against a
 named register, which is why the `reason` clause requires the register to be named.
 
+**The consumer-scale population was not reached, and the decision is conditional on sakila.** R856,
+the only route to it, had not delivered a finishable capture on its schema while this item was in
+flight, so the fallback slice 1 stated applies: every figure and both verdicts above hold on the
+sakila population, per this plan's own risk statement, and the candidate C trade would need re-taking
+on a population whose refresh axis weighs orders of magnitude more before anyone acts on it there.
+The pin and the reason doctrine are population-independent and stand regardless.
+
 ## Tests
 
 Slices 1 and 2 are measurements and their output is figures. This plan does not invent a harness to
@@ -763,3 +770,10 @@ stating plainly that the consumer-scale population was not reached and why, and 
 plan's own risk wording. If the consumer-scale arm was in fact attempted, state what happened instead.
 No code moves, no figure is retaken, and the pin and doctrine are population-independent and stand as
 shipped.
+
+**Resolution (2026-08-28, reviewer session 01WajEgSkL8dc4owJXtVbyui, at the user's direction).** The
+user ruled the finding a nit not worth an author round-trip and directed the reviewer to apply the
+disclosure and sign off. The two paragraphs now stand in the Result section above and in the changelog
+entry, stating what this round asked for and nothing more; they restate facts this round already
+verified against the tree rather than adding authorial content. Verdict on the gate: sign off, In
+Review -> Done.
