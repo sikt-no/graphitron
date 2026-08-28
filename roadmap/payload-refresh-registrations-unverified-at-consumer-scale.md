@@ -5,7 +5,7 @@ status: Backlog
 bucket: bug
 priority: 2
 theme: model-cleanup
-depends-on: [cold-refresh-plans-without-statistics]
+depends-on: []
 created: 2026-08-28
 last-updated: 2026-08-28
 ---

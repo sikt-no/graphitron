@@ -8,11 +8,10 @@ import java.util.stream.IntStream;
  * proportion to schema size. Two do not, measured rather than assumed:
  * {@code intent_mutation_payload_key_membership} and {@code intent_mutation_payload_refusal} are
  * empty at every size, their rules reading a {@code @mutation} payload surface this schema holds
- * fixed. A
- * gate over this fixture that needs a populated target should establish it per target, as
- * {@code RefreshPrerequisiteStatisticsTest} does, rather than read the property here as universal. A gate over empty relations measures its instrument's floor and
- * reports a number, which is the failure mode {@link DerivedReadCostTest}'s own history records
- * three separate times.
+ * fixed. A gate over this fixture that needs a populated target should establish it per target, as
+ * {@code RefreshPrerequisiteStatisticsTest} does, rather than read the property here as universal.
+ * A gate over empty relations measures its instrument's floor and reports a number, which is the
+ * failure mode {@link DerivedReadCostTest}'s own history records three separate times.
  *
  * <p>Shared rather than copied for the reason the size note below gives: what this schema populates
  * is a fact about the register as it stands, re-established every time a registration is added, and
