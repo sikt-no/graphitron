@@ -26,11 +26,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
-| `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Ready | 2026-08-28 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R860` | The LSP trace test rebinds JVM-global state while the module's other classes run beside it | Ready | 2026-08-27 | [plan](lsp-trace-double-close-count-unscoped.md) |
+| `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | In Progress | 2026-08-28 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-27 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -469,7 +469,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### interface-union
 
-- `R675` [**@condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible**](condition-method-overload-selection.md) — Ready, architecture
+- `R675` [**@condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible**](condition-method-overload-selection.md) — In Progress, architecture
 - `R869` [**An argument-level @condition that fails to resolve is dropped silently on a multitable field**](multitable-arg-condition-rejection-dropped.md) — Backlog, architecture
 - `R487` [**Batched multi-table polymorphic child fields: support parent-holds-FK correlation**](batched-polymorphic-parent-holds-fk-correlation.md) — Backlog, architecture
 - `R854` [**LSP argMapping completions and diagnostics answer the bindable-target question from the census with no per-directive reservation**](lsp-argmapping-bindable-target-projection.md) — Backlog, architecture

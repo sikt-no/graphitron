@@ -1,7 +1,7 @@
 ---
 id: R675
 title: "@condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: interface-union
@@ -141,12 +141,13 @@ Three details the implementation settled that the plan left to the implementer, 
 - R647's actual assignability check (this item defines the anchor; that item builds the check).
 - A structural enforcer for the single-resolution-point invariant (named in the Tests deliverable).
 - Path-step rejection fidelity: `resolveConditionRef` discarding typed reflection rejections predates this item and stays; the set-aware target resolution renders through the existing unresolved-target message path.
+- Argument-level rejection fidelity on a multitable field: an argument-level `@condition` whose reference fails to resolve is dropped silently on the per-participant lowering path, which reproduces with a method name that does not exist and so predates admission. Filed as `multitable-arg-condition-rejection-dropped`; it is a question about where an argument-coordinate rejection is read, not about which declarations one name may denote.
 - The `@nodeId` half of issue 525 (R676, its own item, since shipped).
 - Relaying the outcome to the reporter on issue 525 happens when this ships, but the issue reply itself is not a gate for Done.
 
 ## Acceptance
 
-- The reporter's per-participant overload set classifies, compiles, and dispatches per branch on a multitable interface or union filter; a shape-disagreeing set rejects with the typed `AmbiguousMethod` at the argument-, field-, and input-field coordinates, message rendered from candidate-signature data and carrying the axis of disagreement (the path-step coordinate keeps its caller-authored message; see out of scope). A set agreeing on shape but disagreeing on the path-step target slot rejects through the unresolved-target path.
+- The reporter's per-participant overload set classifies, compiles, and dispatches per branch on a multitable interface or union filter; a shape-disagreeing set rejects with the typed `AmbiguousMethod` at the field- and input-field coordinates, message rendered from candidate-signature data and carrying the axis of disagreement (the path-step coordinate keeps its caller-authored message, and the argument-level coordinate on a multitable field drops the rejection for a pre-existing reason of its own; see out of scope and the Implementation notes). A set agreeing on shape but disagreeing on the path-step target slot rejects through the unresolved-target path.
 - Non-`@condition` overload rejections keep their arm and code; their message may improve (signatures instead of arities) but their admission behaviour is unchanged.
 - The single-method inference defect is closed: a table parameter named after a field argument no longer suppresses type-based inference, pinned by its own pipeline case.
 - The four documentation coordinates are reconciled with the admission rule, and the how-to presents both pure forms plus the mixed set's trade-off, including the null-probe failure mode and the `DSL.noCondition()` escape.
