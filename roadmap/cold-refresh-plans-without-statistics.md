@@ -184,49 +184,93 @@ still-single-transaction refresh is the smallest change that could be believed t
 closes none of the eight registrations whose plan moves, because those eight read a *registered
 target* and no statement before the refresh has written one.
 `RefreshPlanStatisticsTest.analysingTheFactsAloneReachesNoneOfThem` is that claim, already in the
-tree and already failing anyone who lands the cheap rung believing it sufficient. Analysing the facts
-is still worth doing on the split path, since it moves two further registrations onto plans of their
-own and costs 0.2 s on the sis store, but it is not what makes the fix work.
+tree and already failing anyone who lands the cheap rung believing it sufficient.
+
+**And the split path does not analyse the base fact tables at all, which is a decision rather than an
+omission.** Three things settle it. `Materializations.analyse` covers the registered targets and
+nothing else, by a measured decision its own javadoc records against the broader form, which on the
+read-cost fixture left one reader dearer than the targeted form did; so reaching the facts would mean
+minting a second scope beside a scope that was measured, and a stop-gap does not get to make that
+call untested. The facts' statistics are measured to move two registrations onto plans *of their own*
+rather than onto better ones, which `RefreshPlanStatisticsTest` states as a second finding and not as
+a win. And at the only place on the split path such a call could sit, between the load commit and the
+first refresh transaction, every target is still empty, so an `analyse` there would record nothing
+even about the population it does cover, by this item's own first engine fact. Whether the base fact
+tables deserve statistics is a real open question and it belongs with the register re-derivation,
+which is where a measurement that could answer it will be taken. The figure this item does pay is on
+the other population: an `ANALYZE` over the registered targets on the sis store costs 0.2 s, and that
+is the whole cost of the per-registration analysis the split path adds.
 
 ### Shape
 
 - `Materializations` gains a third cadence beside `refresh` and `refreshAll`: per registration, one
   transaction carrying that target's `DELETE` and `INSERT` together, then `ANALYZE` on the target it
-  just refilled, outside that transaction. It reuses `refreshOne`, the sequence from `refreshOrder`,
-  and the progress contract verbatim, so the event order `MaterializationProgressTest` holds needs no
-  edit. `refreshAll` is the precedent that a stale-beside-current pair of targets is acceptable,
-  already issuing every `DELETE` and `INSERT` in autocommit.
+  just refilled, outside that transaction. Each transaction leads with the anchor lock the
+  concurrent-writer invariant below decides, this being the code that opens them. It reuses
+  `refreshOne`, the sequence from `refreshOrder`, and the progress contract verbatim, so the event
+  order `MaterializationProgressTest` holds needs no edit. `refreshAll` is the precedent that a
+  stale-beside-current pair of targets is acceptable, already issuing every `DELETE` and `INSERT` in
+  autocommit.
 - `FactCapture.capture` reads the predicate before it opens its transaction and branches once. On the
-  split branch the load transaction commits the facts, `Materializations.analyse` states the fact
-  tables' statistics, the new cadence runs the refresh, and `sources.commitStamps` runs in a
-  transaction of its own after it. The trailing `Materializations.analyse(dsl)` stays exactly where it
-  is on both branches, so `MaterializeRegistryGateTest`'s count contract is untouched. The other
-  branch keeps every statement it has today.
+  split branch the load transaction commits the facts and the anchor row, the new cadence runs the
+  refresh, and `sources.commitStamps` runs in a transaction of its own after it. Four statements'
+  worth of change, and no new method beyond the cadence above. The trailing
+  `Materializations.analyse(dsl)` stays exactly where it is on both branches, so
+  `MaterializeRegistryGateTest`'s count contract is untouched, and on the split branch it is the
+  idempotent restatement of what the pass already analysed. The other branch keeps every statement it
+  has today.
 
 ### The three invariants, decided here rather than left to the diff
 
-- **The emptied target.** Answered by the predicate: there is no committed state to publish. The
-  per-registration transaction is still what the split uses, so that a killed run leaves whole
-  targets rather than one emptied relation.
+- **The emptied target.** Answered by the predicate for the thing the contract protects: there is no
+  committed state to empty. What the split branch does publish, and today's capture cannot, is a
+  window in which `store_graph` holds the graph while its targets are still incomplete. That is not a
+  state new to the store. It is what `refreshAll` produces on every reader open, issuing every
+  `DELETE` and `INSERT` in autocommit with no transaction at all over a `store_graph` that already
+  names the graph, and a reader that opens this store mid-split calls exactly that. So the window is
+  the reader cadence's existing exposure arriving on the capture cadence, on a store that came into
+  existence a moment ago.
 - **The concurrent same-graph writer.** `FactCapture.capture`'s javadoc names the single transaction
   as what makes a second writer of one graph serialize on the anchor row instead of interleaving
-  deletes with inserts, and a per-registration transaction holds no anchor row. Two *processes* are
-  not the case: `GraphitronModelStore.fileUrl`'s javadoc records that the store takes MVStore's own
+  deletes with inserts, and a per-registration transaction holds no anchor row. Three facts narrow
+  the case before a decision is needed. Two *processes* are not it:
+  `GraphitronModelStore.fileUrl`'s javadoc records that the store takes MVStore's own
   operating-system lock and a second process is refused as `90020` straight into the in-memory
-  fallback, so the writer this invariant protects against is inside one process. Decision: each
-  refresh transaction on the split path leads with a `SELECT ... FOR UPDATE` on the graph's
-  `store_graph` row under `ANCHOR_LOCK_MILLIS`, which is the same lead-with-the-anchor rule capture
-  already states, and a capture that cannot take it falls back to the unsplit path, which is correct
-  and merely slow. Falling back rather than interleaving is deliberate: interleaved registrations
-  would leave targets whose rows came from two runs' fact sets, and that mix is observable once both
-  runs commit.
+  fallback, so the writer is inside one process. A same-graph capture that starts *before* this one's
+  load commits is excluded already, by the anchor upsert that leads the load transaction and whose
+  `ANCHOR_LOCK_MILLIS` budget exists to demote the loser to memory rather than let it wait. What the
+  split leaves is one case: a same-graph capture starting *after* this one's load commits, which
+  therefore sees a populated `store_graph`, takes the unsplit path, and whose single transaction can
+  overlap this one's remaining refresh transactions on one graph's partition.
+
+  Decision, in statements rather than in a path name. Each refresh transaction on the split path
+  leads with `SELECT ... FOR UPDATE` on the graph's `store_graph` row, under the store's ordinary
+  `GraphitronModelStore.FILE_LOCK_MILLIS` budget and deliberately not under `ANCHOR_LOCK_MILLIS`: the
+  fail-fast budget is for the row a capture leads with, where nothing has been done yet and waiting
+  buys nothing, and here the load is committed and the whole refresh sits in front of the lock, which
+  is the case `FILE_LOCK_MILLIS`'s own javadoc is written for. There is no fallback. The previous
+  revision said such a capture "falls back to the unsplit path", and that path is one transaction
+  spanning load and refresh, so it cannot be entered from a state where the load has committed; the
+  sentence named an unreachable branch. A lock this cannot take inside that budget raises
+  `DataAccessException` from a refresh statement, which is what any statement in today's refresh can
+  raise, so it needs no handling of its own and gets none.
+
+  **What a run that stops mid-refresh leaves behind**, stated once here because the invariant below
+  and the new test are both written against it, and identical whether the run was killed, refused the
+  lock, or failed on any other statement: the facts and the anchor row committed, the targets
+  refreshed up to the registration that stopped and stale or empty after it, and no stamp, the stamps
+  being the last thing the split path writes. The next capture reads a null stamp, does not retain the
+  partition, and reloads and re-derives it. That is the recovery `ClasspathSources` already documents
+  for a part-way run, reached by a new route.
 - **What a stamp means.** `ClasspathSources` states that a stamp is written after the rows it vouches
   for, and on the split path the derived targets are written after the load's flush, so the stamps
-  move after the last refresh transaction. A run killed mid-refresh then leaves a null stamp, which no
-  refresh retains, which is the behaviour that class already documents rather than a new one.
+  move after the last refresh transaction. That placement is what makes the paragraph above true: move
+  the stamps back ahead of the refresh and a run that stops mid-refresh leaves a stamp vouching for
+  targets it never filled, which the next capture retains.
   `WarmStartRefreshTest.warmAndColdAgreeRelationByRelation` is the test in the warm-reconciliation
-  family that fails if the placement moves the wrong way, and the family gains a case for a run
-  killed between the load commit and the refresh.
+  family that fails if the placement moves the wrong way, and the family gains a case for a run that
+  stops between the load commit and the last refresh transaction: the next capture over that store
+  must produce the rows a cold run would, relation by relation.
 
 ### How we know it is delivered
 
@@ -256,11 +300,11 @@ a tolerance to widen. `MaterializeRegistryGateTest`, `MaterializationOrderTest`,
 
 ### Phases
 
-1. `Materializations`: the third cadence and its javadoc, plus the class javadoc's cadence paragraph.
-2. `FactCapture.capture`: the predicate, the single branch, the anchor lock and its fallback, the
-   stamp placement, and the two comments.
-3. The invariant test, and the `WarmStartRefreshTest` case for a run killed between the load commit
-   and the refresh.
+1. `Materializations`: the third cadence, its anchor lock and lock budget, its javadoc, and the class
+   javadoc's cadence paragraph.
+2. `FactCapture.capture`: the predicate, the single branch, the stamp placement, and the two comments.
+3. The invariant test, and the `WarmStartRefreshTest` case for a run that stops between the load
+   commit and the last refresh transaction.
 4. `fact-model.adoc`.
 
 ## Already landed, so this item owes none of it
@@ -316,6 +360,17 @@ targets, and is the obvious reference), how it squares with the whole-database m
 declines on, and which phase carries it. Or drop the fact-side analysis from the split branch and say
 so, since the item is explicit that it is not what makes the fix work.
 
+> *Author response, revision 1.* Accepted, and taken the second way: the split branch analyses no
+> base fact table, and the paragraph after the cheap-alternative refutation now says so with the
+> reasons. The finding is right on all three counts, and the third one is the decisive one, since it
+> means the sentence was not merely naming the wrong method but placing a call where nothing it could
+> cover holds a row yet. Minting a second scope beside a scope `analyse`'s javadoc records a
+> measurement for is not a call a stop-gap gets to make, especially when the facts' measured effect is
+> two registrations on *different* plans rather than better ones. The 0.2 s figure is re-attributed to
+> where it was taken, the registered targets, which is the cost the split path actually pays. Whether
+> the fact tables deserve statistics is left named as an open question for the register re-derivation,
+> which is where a measurement able to answer it will be taken.
+
 **Blocking, question 2: the anchor-lock fallback is not reachable at the moment it applies.** The
 concurrent-writer invariant decides that "each refresh transaction on the split path leads with a
 `SELECT ... FOR UPDATE` on the graph's `store_graph` row under `ANCHOR_LOCK_MILLIS` ... and a capture
@@ -338,8 +393,37 @@ path name, and state what a run killed in it leaves behind, so the invariant bel
 is unreachable in practice and the lock is a belt-and-braces assertion, saying that is also an answer,
 but then the invariant should say what happens when the assertion fires.
 
+> *Author response, revision 1.* Accepted; the fallback is deleted rather than reassigned, and the
+> invariant is rewritten around what the finding exposed. There is no fallback: a refused lock raises
+> `DataAccessException` from a refresh statement, which is what any statement in today's refresh can
+> raise, so it needs no path of its own. The lock budget moves off `ANCHOR_LOCK_MILLIS` to the store's
+> ordinary `FILE_LOCK_MILLIS` in the same pass, because the fail-fast budget is for the row a capture
+> leads with, where waiting buys nothing, and this lock has a committed load behind it and the whole
+> refresh in front of it, which is the case the ordinary budget's javadoc is written for.
+>
+> Working the finding also narrowed what the lock is for. The same-graph writer that starts before
+> this one's load commits is already excluded by the anchor upsert leading the load transaction, so the
+> only case the split opens is a capture starting *after* that commit, which sees a populated
+> `store_graph`, takes the unsplit path, and can overlap the remaining refresh transactions. And the
+> exposure the finding pointed at is not really concurrency: the split branch publishes a window in
+> which the graph is in `store_graph` while its targets are incomplete, whether or not a second writer
+> exists. That is now stated under the emptied-target invariant, with the argument that it is the
+> exposure `refreshAll` already produces on every reader open in autocommit rather than a new one.
+>
+> What a run that stops mid-refresh leaves behind is stated once, in statements, and is the same for a
+> kill, a refused lock, and any other statement failure: facts and anchor row committed, targets
+> refreshed up to the registration that stopped, no stamp. The stamp invariant now says why its
+> placement is what makes that recovery work, and the `WarmStartRefreshTest` case is written against
+> that state rather than against a kill point.
+
 **Non-blocking.** All twenty-two registered targets carry a `graph_name` column today, so
 `refreshWhole` is not reachable from the current register and the second bullet of the predicate
 argument is a claim about a shape the mechanism permits rather than one the register exhibits. The
 argument is still the right one to make, and the bullet is right that per-graph is the wrong reading;
 worth knowing only because it means the hazard it rules out has no live instance to test against.
+
+> *Author response, revision 1.* Noted and left as it stands. The bullet is about what the mechanism
+> permits rather than what the register exhibits, and the day a graph-free target is registered is the
+> day the per-graph reading would silently empty another graph's rows, which is exactly when nobody
+> would be re-reading this argument. Recorded here rather than moved into the bullet, so the bullet
+> does not read as describing a live case.
