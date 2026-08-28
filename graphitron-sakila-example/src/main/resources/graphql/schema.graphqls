@@ -646,6 +646,19 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.AddressOccupantCarrierService",
             method: "byId"
         })
+    # R873 fixtures: polymorphic children beside a WrapperArm errors field, on both parent
+    # backings (Pojo hub accessor / bare AddressRecord). addressId 999 throws the mapped
+    # exception, flipping the payload to the Outcome.ErrorList arm.
+    occupantsWithErrors(addressId: Int!): OccupantsWithErrorsPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.OccupantsWithErrorsService",
+            method: "byAddressId"
+        })
+    occupantsRecordWithErrors(addressId: Int!): AddressOccupantsRecordPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.OccupantsWithErrorsService",
+            method: "addressById"
+        })
     # R503 mixed-source nested type fixture (producer edge). Returns a POJO carrying FilmBlurb, so
     # FilmBlurb binds class-backed through the parent accessor while also nesting off @table Film.
     filmBlurbHolder(filmId: Int!): FilmBlurbHolder
@@ -1136,6 +1149,40 @@ type CreateFilmsPayload {
 # of this type's generated fetcher is the R366 assertion.
 type OccupantsBatchPayload {
     occupants: [AddressOccupant!]! @field(name: "addresses")
+}
+
+# R873 fixture: the error type for the polymorphic-child-under-Outcome payloads below. GENERIC
+# handler matched by exception class name, following the FilmReviewError convention.
+type OccupantLookupMissingAddress @error(handlers: [{
+        handler: GENERIC,
+        className: "no.sikt.graphitron.rewrite.test.services.OccupantLookupMissingAddressException"
+    }]) {
+    path: [String!]!
+    message: String!
+}
+
+# R873 execution-tier fixture, Pojo arm: the reporter's exact shape from
+# sikt-no/graphitron#526 — a @service Pojo payload with typed hub accessors, carrying a
+# single-valued polymorphic child (address(), accessor arity ONE), a batched list polymorphic
+# child (addresses(), arity MANY, the loadMany dispatch), and a WrapperArm errors field. The
+# children receive an Outcome as env.getSource(), so both deliveries must narrow
+# Outcome.Success and read the hub off success.value(): the success arm resolves the occupants,
+# the error arm renders the children null while the sibling errors field renders the error
+# list. Success-projection fields are nullable per the outcome-type invariant.
+type OccupantsWithErrorsPayload {
+    firstOccupant: AddressOccupant @field(name: "address")
+    occupants: [AddressOccupant!] @field(name: "addresses")
+    errors: [OccupantLookupMissingAddress]
+}
+
+# R873 execution-tier fixture, record arm: the same shape backed by the jOOQ record itself (the
+# @service producer returns AddressRecord, a JooqTableRecordType), covering the KeyLift.FkColumns
+# lift under the wrapper: a single-valued polymorphic child plus an @asConnection child, success
+# and error arms. This is the parent backing the Pojo fixture above cannot reach.
+type AddressOccupantsRecordPayload {
+    occupant: AddressOccupant
+    occupantsConnection: [AddressOccupant!] @asConnection(defaultFirstValue: 5)
+    errors: [OccupantLookupMissingAddress]
 }
 
 # R110 Story 1 fixture: third-party-style DTO whose backing class carries the customer's
