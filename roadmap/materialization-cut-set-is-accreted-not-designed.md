@@ -728,3 +728,38 @@ Renumbering follows from the inserted step, so the two order rationales now read
 unchanged and still targets the silent failure, which the correction leaves in place as the dropping
 case. Nothing else in the plan body moved, and the round 1 response note above is left at its original
 numbering as the record of that round.
+
+### Round 3 (2026-08-28, In Review -> Done, reviewer session 01WajEgSkL8dc4owJXtVbyui)
+
+Verdict: withhold. One finding, and it is prose in two places rather than code. Everything else
+passes both gate questions: the four-step mechanism shipped as the approved spec states it
+(`CandidateCutSet`), the establishing check exists and asserts exactly the transitive re-derivation
+the risk section demanded plus an identity control (`CandidateCutSetTest`), the pin landed in
+`MaterializeRegistryGateTest` with `RefreshStages` computing the depth, it demonstrably fired the same
+day (`9e01ccf` had to edit 20 to 22 and 12 to 14 to land R856's registrations), the reason doctrine
+and the set-relative clauses are in the DDL, the millisecond table is in `roadmap/changelog.md`, and
+all 920 `graphitron-model` tests pass on trunk. The verification details are in this round's commit
+message.
+
+**The result generalises from sakila without the disclosure this plan pre-committed to.** Slice 1
+says: take the consumer-scale population if R856 makes it reachable "and say plainly in the result if
+it did not, rather than generalising from sakila". The Risks section says it harder: "If slice 1
+reaches only sakila, slice 3's decision is explicitly conditional on that population. What it must not
+do is generalise silently." R856 has not made that population reachable, its item sitting back at Spec
+with its capture still never observed to finish, so the disclosure clause is the one that applies. It
+was not paid: the Result section above contains no population sentence at all, the changelog entry's
+only mention is the "On the sakila example population" qualifier on the figures table, and both
+headline conclusions ("all twenty registrations earn their place", candidate C decisive against
+itself) read as unconditional. Neither implementation commit message states it either. This bears on
+question 3, the change the spec approved being a decision stated as conditional, and on question 4,
+because the population is not a caveat of taste here: the item's own motivating case is a consumer
+capture that spends an hour inside the refresh, a population where the refresh axis weighs roughly
+three orders of magnitude more than on sakila, and the C verdict's refresh-versus-read trade could
+land elsewhere on it.
+
+What would satisfy the finding: a sentence or two in the Result section and in the changelog entry,
+stating plainly that the consumer-scale population was not reached and why, and that the decision
+(the twenty stand, C refused) is made on the sakila population and holds conditionally on it, per this
+plan's own risk wording. If the consumer-scale arm was in fact attempted, state what happened instead.
+No code moves, no figure is retaken, and the pin and doctrine are population-independent and stand as
+shipped.
