@@ -32,7 +32,7 @@ the reverse of what this file recorded on 2026-08-27.
 `RefreshPlanStatisticsTest` holds three claims, over one store captured from the read-cost gate's
 twelve-unit fixture with the same rows and the same declared indexes under every regime.
 
-Seven of the twenty registrations plan differently cold than with the registered targets analysed.
+Eight of the twenty-two registrations plan differently cold than with the registered targets analysed.
 One mechanism, seen plainly on `intent_node_id_decode_hop_column_live`'s read of
 `intent_field_reference_step_hop`: with statistics H2 seeks `IX_FIELD_REFERENCE_STEP_HOP_STEP` on
 seven columns, and without them it seeks `CONSTRAINT_INDEX_98` on `graph_name` alone, which is a scan
@@ -41,9 +41,9 @@ half as many distinct values as its table has rows, which reads a partition colu
 selective, so the one-column seek prices as though it were nearly exact.
 
 The statistics they turn on belong to the *registered targets*, which the refresh itself writes,
-rather than to the base fact tables. Analysing the fact tables alone reaches none of the seven and
+rather than to the base fact tables. Analysing the fact tables alone reaches none of the eight and
 moves two further registrations onto plans of their own; analysing the targets alone reproduces the
-settled store's plans on all twenty.
+settled store's plans on all twenty-two.
 
 And the penalty is not a constant. One whole `Materializations.refresh` against a populated store,
 cold and then with the targets analysed, twice each and the second run reported:
@@ -268,3 +268,78 @@ a tolerance to widen. `MaterializeRegistryGateTest`, `MaterializationOrderTest`,
 `RefreshPlanStatisticsTest` asserts the three claims. The engine behaviour behind them, and the
 instrument correction that a plain `EXPLAIN` renders the unmasked form of a view's inner query and so
 is not the plan that runs, are recorded in `docs/architecture/explanation/fact-model.adoc`.
+
+## Reviewer findings
+
+### Round 1: Spec -> Ready, revisions requested
+
+Reviewer session `session_01TbLMaJoBnnDRxdfJnRU5LT`, 2026-08-28.
+
+Question 1 is answered well. What changes for a consumer is legible without reading the phase list: a
+first capture into a fresh store stops planning every refresh statement against a store with no
+selectivity anywhere, which on the sis capture is the difference between four hours and nineteen
+minutes and something in the minutes. The measurement half is unusually strong, the two engine facts
+close the escapes they are aimed at, and the reversal argument in "Why this goes first" is sound: a
+regime nobody has ever measured in is not a caveat on the register's reasons, and moving it first is
+cheaper than re-taking every figure afterwards. Every symbol, test class and test method the spec
+names exists under the name given, `MaterializeDependencies`' refusal and ordering guarantees are as
+described, `analyse`'s return value is what `MaterializeRegistryGateTest` pins, and
+`GraphitronModelStore.fileUrl`'s `90020` claim is in the javadoc as quoted. The stale
+seven-of-twenty count is corrected to eight of twenty-two in this commit, matching
+`PLAN_DEPENDS_ON_STATISTICS` and the fact-model page.
+
+Two findings block, both on question 2.
+
+**Blocking, question 2: `Materializations.analyse` cannot state the fact tables' statistics, so the
+split branch as written contains a step that does nothing and the step it means needs a method that
+does not exist.** The Shape section says that on the split branch "the load transaction commits the
+facts, `Materializations.analyse` states the fact tables' statistics, the new cadence runs the
+refresh". `analyse` analyses the registered targets and only those, and its javadoc records a
+measured decision against the broader form: "Scoped to the registered targets rather than the whole
+database, for a measured reason and not only a modest one ... on the same fixture it left one reader
+dearer than the targeted form did." `RefreshPlanStatisticsTest`'s own reference-leg javadoc says the
+same, that `analyse` "covers the registered targets and nothing else".
+
+Called where the Shape puts it, the targets are still empty, and this item's own first engine fact is
+that `ANALYZE` on an empty table records nothing. So the sentence describes a no-op, while the prose
+under "The cheap alternative is refuted" claims a benefit from it that is real ("it moves two further
+registrations onto plans of their own and costs 0.2 s on the sis store") and reachable only through
+code no phase provides. An implementer has to invent the surface: a second entry point beside
+`analyse`, or a scope argument on it, and either way a decision about which base tables it covers
+that has to be reconciled with the measurement `analyse`'s javadoc already carries against covering
+them all. That is a design fork in a section headed "decided here rather than left to the diff", and
+it is the kind that gets settled silently in a diff nobody reviews as a draft.
+
+What would satisfy it: name what actually analyses the facts, where it lives, what it covers (the
+`facts` regime in `RefreshPlanStatisticsTest` computes exactly this set, base tables minus registered
+targets, and is the obvious reference), how it squares with the whole-database measurement `analyse`
+declines on, and which phase carries it. Or drop the fact-side analysis from the split branch and say
+so, since the item is explicit that it is not what makes the fix work.
+
+**Blocking, question 2: the anchor-lock fallback is not reachable at the moment it applies.** The
+concurrent-writer invariant decides that "each refresh transaction on the split path leads with a
+`SELECT ... FOR UPDATE` on the graph's `store_graph` row under `ANCHOR_LOCK_MILLIS` ... and a capture
+that cannot take it falls back to the unsplit path, which is correct and merely slow." By the time
+the first refresh transaction runs, the split branch has already committed the load. The unsplit path
+is one transaction spanning load and refresh; it cannot be entered from a state where the load is
+committed, so there is nothing to fall back to under that name.
+
+The nearest implementable readings differ in observable behaviour, which is why this is not a
+wording matter. Running the whole refresh in one transaction over already-committed facts is not
+today's unsplit path: a run killed inside it leaves committed facts with stale or empty targets, which
+is a state today's capture cannot produce and which interacts with the stamp-placement invariant
+directly below it and with the `WarmStartRefreshTest` case phase 3 adds. Failing the capture outright
+is the other reading and is not "merely slow". Taking the lock once for the whole pass rather than per
+transaction is a third, and changes what the per-registration split buys.
+
+What would satisfy it: say which of those the fallback is, in terms of statements rather than of a
+path name, and state what a run killed in it leaves behind, so the invariant below it and the new
+`WarmStartRefreshTest` case are written against a decided answer. If the answer is that the fallback
+is unreachable in practice and the lock is a belt-and-braces assertion, saying that is also an answer,
+but then the invariant should say what happens when the assertion fires.
+
+**Non-blocking.** All twenty-two registered targets carry a `graph_name` column today, so
+`refreshWhole` is not reachable from the current register and the second bullet of the predicate
+argument is a claim about a shape the mechanism permits rather than one the register exhibits. The
+argument is still the right one to make, and the bullet is right that per-graph is the wrong reading;
+worth knowing only because it means the hazard it rules out has no live instance to test against.
