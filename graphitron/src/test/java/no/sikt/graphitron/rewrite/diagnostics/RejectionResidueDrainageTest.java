@@ -67,6 +67,7 @@ class RejectionResidueDrainageTest {
         "ErrorChannelWalkerError.NonNullableErrorsField", "ErrorChannelWalkerError.ChannelRuleViolation",
         "ErrorChannelWalkerError.HandlerSourceAccessorMissing",
         "WireCoercionError.Assignability", "WireCoercionError.EnumConstantDivergence",
+        "WireCoercionError.NodeIdDecodedType",
         "ServiceCarrierShapeError.ProducerArrivalMismatch",
         "ServiceCarrierShapeError.DataFieldArrivalConflict",
         "PivotError.NonNullSlot", "PivotError.NonScalarSlot", "PivotError.DivergentSlotType",

@@ -9,6 +9,7 @@ import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.rewrite.model.WireCoercionError;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -169,6 +170,20 @@ final class ConditionResolver {
     }
 
     /**
+     * Whether any parameter of {@code filter} binds the whole of {@code slotName}: the same predicate
+     * {@link #installNodeIdDecode} installs on, exposed so a caller can ask the question without
+     * performing the install. A field-level {@code @condition} sees every argument of its field and
+     * binds some subset of them, so "does this condition bind that slot" is a real question there
+     * where at the slot's own directive it is answered by the directive's placement.
+     */
+    static boolean bindsWholeSlot(ConditionFilter filter, String slotName) {
+        return filter.params().stream().anyMatch(p ->
+            p.source() instanceof ParamSource.Arg arg
+                && arg.path().isHead()
+                && arg.path().headName().equals(slotName));
+    }
+
+    /**
      * Installs the {@code @nodeId} decode on every parameter of {@code filter} bound to the whole of
      * {@code slotName}, and refuses a parameter whose declared Java type is not the decoded key's.
      *
@@ -198,20 +213,6 @@ final class ConditionResolver {
      * inside emitted glue, a failure with no line back to the SDL. It names the coordinate, the
      * declared type and the required type, so the remedy is the message.
      */
-    /**
-     * Whether any parameter of {@code filter} binds the whole of {@code slotName}: the same predicate
-     * {@link #installNodeIdDecode} installs on, exposed so a caller can ask the question without
-     * performing the install. A field-level {@code @condition} sees every argument of its field and
-     * binds some subset of them, so "does this condition bind that slot" is a real question there
-     * where at the slot's own directive it is answered by the directive's placement.
-     */
-    static boolean bindsWholeSlot(ConditionFilter filter, String slotName) {
-        return filter.params().stream().anyMatch(p ->
-            p.source() instanceof ParamSource.Arg arg
-                && arg.path().isHead()
-                && arg.path().headName().equals(slotName));
-    }
-
     static DecodeInstall installNodeIdDecode(ConditionFilter filter, String coordinate, String slotName,
                                              HelperRef.Decode decode, boolean list) {
         TypeName required = decode.decodedKeyType(list);
@@ -225,12 +226,16 @@ final class ConditionResolver {
                 continue;
             }
             if (!typed.javaType().equals(required)) {
-                return new DecodeInstall.Rejected(Rejection.structural(
+                // Typed rather than prose, and in the wire-coercion family rather than beside it:
+                // this is that family's comparison run one transform later, the declared type
+                // against what the generator hands the call site rather than against what
+                // graphql-java delivers. Exact equality, the same discipline
+                // WireCoercionResolver.checkScalar applies, so no second assignability derivation
+                // grows here.
+                return new DecodeInstall.Rejected(new WireCoercionError.NodeIdDecodedType(
+                    decode.nodeTypeName(), required.toString(), typed.javaType().toString(),
                     coordinate + ": parameter '" + typed.name() + "' of condition method '"
-                    + filter.methodName() + "' binds a @nodeId slot, whose value is decoded"
-                    + " before it reaches your method. Declare it '" + required + "' (the decoded key"
-                    + " of node type '" + decode.nodeTypeName() + "'); it is declared '"
-                    + typed.javaType() + "'."));
+                        + filter.methodName() + "'"));
             }
             rewritten.add(new MethodRef.Param.Typed(typed.name(), typed.typeName(), typed.javaType(),
                 new ParamSource.Arg(new CallSiteExtraction.ThrowOnMismatch(decode), arg.path())));

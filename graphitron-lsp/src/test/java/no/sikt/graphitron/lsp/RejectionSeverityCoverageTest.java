@@ -469,6 +469,12 @@ class RejectionSeverityCoverageTest {
                 "com.example.jooq.enums.MpaaRating", List.of("PG_13"), List.of("G", "PG", "R"),
                 "input-bean field 'rating' of method 'createFilm'");
         }
+        if (permit == no.sikt.graphitron.rewrite.model.WireCoercionError.NodeIdDecodedType.class) {
+            return new no.sikt.graphitron.rewrite.model.WireCoercionError.NodeIdDecodedType(
+                "Language", "java.lang.Integer", "java.lang.String",
+                "@nodeId argument 'languageId' on field 'films': parameter 'languageId' of"
+                    + " condition method 'byLanguage'");
+        }
         // ServiceCarrierShapeError sub-seal of AuthorError. One sample per arm;
         // Diagnostics.compute's switch on Rejection.AuthorError catches them uniformly (Error
         // severity), and lspCodeOf forwards each arm's stable graphitron.service-carrier-shape.* code.

@@ -17,11 +17,15 @@ import java.util.stream.Collectors;
  * confirms the coercion output is assignable to the declared type before emitting
  * {@link CallSiteExtraction.Direct}; a mismatch surfaces here instead.
  *
- * <p>Two arms on two distinct axes: {@link Assignability} is a class-assignability check
+ * <p>Three arms on three distinct axes. {@link Assignability} is a class-assignability check
  * (the coercion class does not equal the declared Java type); {@link EnumConstantDivergence} is
  * a constant-name-set membership check (the declared type is the enum, but an SDL value name has
  * no matching Java constant), a sibling arm rather than a second axis folded into
- * {@link Assignability}.
+ * {@link Assignability}; and {@link NodeIdDecodedType} is the same class comparison run against a
+ * value the generator <em>transforms</em> before the call site sees it, so what the declared type
+ * must equal is the decode's output rather than graphql-java's. The three share this family because
+ * they share the failure they prevent: an emitted call that compiles at the consumer and is wrong
+ * about what the value at that position actually is.
  *
  * <p>Sibling to {@link ServiceMethodCallError} / {@link ReflectionError} / {@link UpdateRowsError}
  * / {@link DeleteRowsError} / {@link ErrorChannelWalkerError}: each typed arm carries the
@@ -33,7 +37,8 @@ import java.util.stream.Collectors;
  */
 public sealed interface WireCoercionError extends Rejection.AuthorError permits
     WireCoercionError.Assignability,
-    WireCoercionError.EnumConstantDivergence
+    WireCoercionError.EnumConstantDivergence,
+    WireCoercionError.NodeIdDecodedType
 {
     /** LSP wire code under the {@code graphitron.wire-coercion.} namespace. */
     String lspCode();
@@ -95,5 +100,37 @@ public sealed interface WireCoercionError extends Rejection.AuthorError permits
         private static String quoteJoin(List<String> names) {
             return names.stream().map(n -> "'" + n + "'").collect(Collectors.joining(", "));
         }
+    }
+
+    /**
+     * An authored parameter bound to a {@code @nodeId} slot declares a type that is not the decoded
+     * key's. A {@code @nodeId} slot's value is decoded before it leaves the generated glue, so the
+     * value at that parameter position is the node type's key, typed by its key columns: the key
+     * column's own Java type at arity 1, a jOOQ {@code Row<N>} above, wrapped in {@code List} on a
+     * list-shaped slot.
+     *
+     * <p>The sibling of {@link Assignability} on the transformed axis. There the declared type is
+     * compared against what graphql-java delivers; here the generator has already turned that wire
+     * value into something else, so the comparison is against the decode's output and the remedy is
+     * a different type rather than a different scalar. Without this arm the only enforcer is the
+     * consumer's javac inside emitted glue, a failure with no line back to the SDL.
+     *
+     * @param nodeTypeName the node type the slot names, so the message can say whose key this is
+     * @param decodedType  the fully-qualified type the parameter must declare
+     * @param declaredType the fully-qualified type it declares
+     * @param site         where the binding is, naming both the slot and the method
+     */
+    record NodeIdDecodedType(
+        String nodeTypeName,
+        String decodedType,
+        String declaredType,
+        String site
+    ) implements WireCoercionError {
+        @Override public String message() {
+            return site + ": the value at this parameter is decoded before your method runs, so it"
+                + " is the key of node type '" + nodeTypeName + "', not the wire id. Declare the"
+                + " parameter as '" + decodedType + "'; it is declared '" + declaredType + "'";
+        }
+        @Override public String lspCode() { return "graphitron.wire-coercion.nodeid-decoded-type"; }
     }
 }
