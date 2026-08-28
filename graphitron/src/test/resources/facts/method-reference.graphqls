@@ -1,0 +1,59 @@
+# Every Java method the graph's directives name, once per site that names it. Eleven kinds of site
+# can name one and every one states the same two facts, the class and the method, so this relation
+# is those two facts under one key rather than ten relations a reader has to union. Three views and
+# one Java reader were each writing that union out by hand before it existed.
+
+# The two condition sites are told apart by the owning type's kind, not by the relation they live
+# in: both are rows of graphitron_field_condition, and site is what splits them.
+type Film @table(name: "film") {
+  title: String
+}
+
+input FilmFilter {
+  title: String @condition(condition: {
+    className: "no.sikt.graphitron.rewrite.generators.TestFilmService",
+    method: "inputFieldCondition"})
+}
+
+type Language @table(name: "language") {
+  name: String
+  films: [Film!]! @condition(condition: {
+    className: "no.sikt.graphitron.rewrite.generators.TestFilmService",
+    method: "fieldCondition"})
+}
+
+# A path element of a @reference names a method too, and it is as much a naming of that class as a
+# @service is. The use_site carries the application's ordinal and the step's position, which is what
+# lets two steps of one path be two rows.
+type City @table(name: "city") {
+  name: String
+  films: [Film!]! @reference(path: [
+    {table: "film", condition: {
+      className: "no.sikt.graphitron.rewrite.generators.TestFilmService",
+      method: "stepCondition"}}])
+}
+
+# A @sourceRow has no relation of its own. It carried the class, the method and nothing else, so it
+# is rows of this relation told apart by the discriminator, which is the whole of the rule that
+# decides whether a site keeps a table.
+extend type Query {
+  languages: [Language!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.generators.TestFilmService",
+    method: "getFilms"})
+  cities: [City!]!
+}
+
+extend type Film {
+  language: Language @sourceRow(
+    className: "no.sikt.graphitron.rewrite.generators.TestFilmService",
+    method: "sourceRow")
+}
+
+extend schema @assertContains(relation: "graphitron_method_reference", rows: """
+  site,                  use_site,          type_name, field_name, ordinal, step_position, class_name,                                              method
+  SERVICE,               Query.languages,   Query,     languages,  ,        ,              no.sikt.graphitron.rewrite.generators.TestFilmService,   getFilms
+  FIELD_CONDITION,       Language.films,    Language,  films,      ,        ,              no.sikt.graphitron.rewrite.generators.TestFilmService,   fieldCondition
+  INPUT_FIELD_CONDITION, FilmFilter.title,  FilmFilter, title,     ,        ,              no.sikt.graphitron.rewrite.generators.TestFilmService,   inputFieldCondition
+  FIELD_REFERENCE_STEP,  City.films#0[0],   City,      films,      0,       0,             no.sikt.graphitron.rewrite.generators.TestFilmService,   stepCondition
+  SOURCE_ROW,            Film.language,     Film,      language,   ,        ,              no.sikt.graphitron.rewrite.generators.TestFilmService,   sourceRow
+  """)

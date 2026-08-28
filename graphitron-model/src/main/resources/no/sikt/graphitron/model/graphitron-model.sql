@@ -1508,27 +1508,6 @@ COMMENT ON COLUMN graphitron_external_field.class_name IS 'the fully-qualified J
 COMMENT ON COLUMN graphitron_external_field.method IS 'the Java method name as written';
 COMMENT ON COLUMN graphitron_external_field.arg_mapping IS 'the argMapping string as written; the pair child is its decode';
 
-CREATE TABLE graphitron_source_row (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  class_name    VARCHAR NOT NULL,
-  method        VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
-);
-COMMENT ON TABLE graphitron_source_row IS '@sourceRow on a field: the parent-side key producer, a join key on a join-resolved field and a batch key on an @service one. Flat arguments by declaration, not an ExternalCodeReference.';
-COMMENT ON COLUMN graphitron_source_row.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_source_row.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_source_row.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_source_row.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_source_row.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_source_row.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_source_row.class_name IS 'the lifter class as written';
-COMMENT ON COLUMN graphitron_source_row.method IS 'the static lifter method name as written';
 
 CREATE TABLE graphitron_connection (
   graph_name          VARCHAR NOT NULL,
@@ -2397,6 +2376,45 @@ COMMENT ON COLUMN graphitron_arg_mapping_pair.argument_path IS 'the argument pat
 COMMENT ON COLUMN graphitron_arg_mapping_pair.source_name IS 'the file the owning site was written in, carried from that site so a reader of this relation needs no join back to it';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.source_line IS 'the owning site''s line, carried with the file beside it';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.source_column IS 'the owning site''s column, carried with the file beside it';
+
+CREATE TABLE graphitron_method_reference (
+  graph_name    VARCHAR NOT NULL,
+  site          VARCHAR NOT NULL,
+  use_site      VARCHAR NOT NULL,
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR,
+  argument_name VARCHAR,
+  ordinal       INT,
+  step_position INT,
+  class_name    VARCHAR NOT NULL,
+  method        VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (graph_name, site, use_site),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (site IN ('ENUM', 'SERVICE', 'EXTERNAL_FIELD', 'SOURCE_ROW',
+                  'FIELD_CONDITION', 'INPUT_FIELD_CONDITION', 'ARGUMENT_CONDITION',
+                  'FIELD_REFERENCE_STEP', 'ARGUMENT_REFERENCE_STEP',
+                  'REFERENCE_FOR_STEP', 'ARGUMENT_REFERENCE_FOR_STEP'))
+);
+CREATE INDEX graphitron_method_reference_method_ix
+  ON graphitron_method_reference (graph_name, class_name, method);
+COMMENT ON TABLE graphitron_method_reference IS 'A Java method named by a directive: the class and the method as the author spelled them, at the site that spelled them. Eleven kinds of site can name one and every one of them states the same two facts, so this is those two facts with a uniform key over them, which is what lets a reader asking what methods a graph names scan one relation instead of unioning ten and synthesising a key in each. Three readers were doing exactly that, at six arms, five and five, and each of the three had written the union out by hand. Keyed on the site and its own spelling, deliberately the same key graphitron_arg_mapping_pair carries: a pair and the method it binds into are two facts about one site, so a reader holding a pair reaches its method by joining the key it already has rather than by switching on the site to pick a relation. That is the whole of what the six-arm reconstruction was. A pair at the ROUTINE site names a database routine and no Java method, so it has no row here and an inner join drops it; the absence of a row is what used to be six site literals. Nine of the ten relations that spell a method keep their own tables, on the rule the section above states: each carries data this relation cannot hold, an override flag at the two condition sites, a table or key reference at the four step sites, a declaration coordinate at the enum, an authored argMapping string at three. The tenth, the source row, carried nothing beyond what is here and became rows of this relation; SOURCE_ROW is its site value. What this relation does not claim is that the method exists: it records what an author wrote, and whether the classpath census has a matching signature is a resolution the intent layer states, which is why nothing here joins jvm_method and why a name that resolves to nothing is a row rather than a silence.';
+COMMENT ON COLUMN graphitron_method_reference.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_method_reference.site IS 'which kind of site named the method, in a closed vocabulary of eleven, one per directive spelling that can carry a class and a method. The whole of what says how to read type_name, field_name, argument_name, ordinal and step_position beside it, on graphitron_arg_mapping_pair.site''s terms. A reader that means one kind filters on it and owns having chosen; a reader that means the condition family filters on the six condition spellings, which is the filter three intent views spell';
+COMMENT ON COLUMN graphitron_method_reference.use_site IS 'the site spelled as one string, in the site''s own grammar and in exactly the spelling graphitron_arg_mapping_pair.use_site uses, so the two relations join on a key neither has to translate: Type.field, Type.field(argument), Type.field#ordinal, or those with the step position appended in brackets. The enum site is the one form that relation has no counterpart for, its coordinate being a type, so its spelling is the bare type name. Total by construction, which is what lets it key this relation where the decomposed columns beside it cannot';
+COMMENT ON COLUMN graphitron_method_reference.type_name IS 'the type owning the coordinate the site sits on; the whole coordinate at the ENUM site, whose directive sits on a type rather than within one';
+COMMENT ON COLUMN graphitron_method_reference.field_name IS 'the field owning the coordinate the site sits on; NULL exactly at the ENUM site, determined by site rather than independent of it, which is what makes the nullness a stated rule instead of a missing value';
+COMMENT ON COLUMN graphitron_method_reference.argument_name IS 'the argument the site sits on, at the two argument-grain sites; NULL at the other nine, whose sites sit on a field or a type. Determined by site';
+COMMENT ON COLUMN graphitron_method_reference.ordinal IS 'the owning application''s ordinal, at the four step sites whose directive is repeatable; NULL elsewhere. Determined by site';
+COMMENT ON COLUMN graphitron_method_reference.step_position IS 'the owning step''s 0-based position within its application''s path, at the four step sites; NULL elsewhere. Determined by site';
+COMMENT ON COLUMN graphitron_method_reference.class_name IS 'the class as the author wrote it, fully qualified, verbatim and unresolved; the spelling intent_condition_method_route.class_name and intent_condition_param_extraction.class_name both carry';
+COMMENT ON COLUMN graphitron_method_reference.method IS 'the method name as the author wrote it. A name and not a signature: an overload is told apart by the descriptor the classpath census keys on, which is a fact about the classpath rather than about what was written here, so resolving a name to one signature is the intent layer''s and never this relation''s';
+COMMENT ON COLUMN graphitron_method_reference.source_name IS 'the SDL file the owning directive application was captured from; NULL where the application carries no position, on graphitron_routine.source_name''s terms';
+COMMENT ON COLUMN graphitron_method_reference.source_line IS 'the owning application''s line, 1-based per the graphql-java convention; NULL exactly where source_name is';
+COMMENT ON COLUMN graphitron_method_reference.source_column IS 'the owning application''s column, 1-based per the graphql-java convention; NULL exactly where source_name is';
+COMMENT ON INDEX graphitron_method_reference_method_ix IS 'Serves the method-keyed departure the condition family makes: the two five-arm reconstructions this relation replaced both project distinct class and method over the six condition sites and then join the classpath census on that pair, so the pair is what they group and probe by. The site key has the primary key and needs nothing else.';
 
 -- ==== SQL catalog facts ===========================================================
 -- What the consumer's database declares, in SQL's vocabulary. jOOQ's generated model is the
@@ -3791,25 +3809,10 @@ CREATE VIEW intent_condition_param_extraction
    extraction_kind, candidates) AS
 WITH
 named (graph_name, class_name, method) AS (
-  SELECT graph_name, class_name, method
-    FROM graphitron_field_condition
-   WHERE class_name IS NOT NULL AND method IS NOT NULL
-   UNION
-  SELECT graph_name, class_name, method
-    FROM graphitron_argument_condition
-   WHERE class_name IS NOT NULL AND method IS NOT NULL
-   UNION
-  SELECT graph_name, class_name, method
-    FROM graphitron_field_reference_step
-   WHERE class_name IS NOT NULL AND method IS NOT NULL
-   UNION
-  SELECT graph_name, class_name, method
-    FROM graphitron_argument_reference_step
-   WHERE class_name IS NOT NULL AND method IS NOT NULL
-   UNION
-  SELECT graph_name, class_name, method
-    FROM graphitron_reference_for_step
-   WHERE class_name IS NOT NULL AND method IS NOT NULL
+  SELECT DISTINCT graph_name, class_name, method
+    FROM graphitron_method_reference
+   WHERE site IN ('FIELD_CONDITION', 'INPUT_FIELD_CONDITION', 'ARGUMENT_CONDITION',
+                  'FIELD_REFERENCE_STEP', 'ARGUMENT_REFERENCE_STEP', 'REFERENCE_FOR_STEP')
 ),
 resolved (graph_name, class_name, method_name, descriptor, position, param_name, java_type,
           extraction_kind) AS (
@@ -3835,7 +3838,7 @@ SELECT r.graph_name, r.class_name, r.method_name, r.descriptor, r.position, r.pa
        CAST(COUNT(*) OVER (PARTITION BY r.graph_name, r.class_name, r.method_name,
                                         r.descriptor, r.position) AS INT)
   FROM resolved r;
-COMMENT ON VIEW intent_condition_param_extraction IS 'The extraction a value bound to a condition method''s parameter takes by that parameter''s declared type alone: an enum gets ENUM_VALUE_OF and everything else gets DIRECT. The standing rule rather than the last word, and the distinction is load-bearing since a bound parameter can be exempted from it: a parameter bound to a slot carrying @nodeId receives that slot''s decoded node key instead, which intent_condition_param_decode states beside this, use-keyed and in the override shape, so presence there means the exemption applies and absence means this rule stands. A reader wanting what a given bound parameter actually receives consults both, in that order. The vocabulary below is this rule''s and not the arm''s, and the reason it could not be stated before is intent_java_enum_class''s second arm, a condition parameter typed as a generated enum being exactly the class the classpath census excludes. The @condition call surface and not the @service one, which is a different rule with a different answer: that path runs a wire-coercion check that can reject and an enum-constant parity check that can reject, and this one cannot reject at all, having no dimensional channel to surface a refusal through. So a reader must not carry an answer from here to a @service parameter, and the population below is what keeps that from being an accident. That population is every parameter of a method a @condition names anywhere in the graph, the five spellings of the directive folded into one: at a field, at an input field, at an argument, and at a path element of a @reference or a @referenceFor. Method-keyed and not site-keyed, because the rule stated here does not vary by site: a declared type is a fact of the signature, so the same signature written at two sites is one row here, which is intent_condition_method_route''s shape for the same reason. What does vary by site is the decode override beside it, and that is why the override is a use-keyed relation rather than a column widening this one: a method-keyed row cannot say that one of two sites naming this signature binds a @nodeId slot and the other does not, and a row that tried would have to pick one site''s answer for both. It is also what keeps a site fact out of a method-keyed relation, the path-element sites having no GraphQL slots in scope and therefore no bound value parameters at all; that is a fact about the site, so it prunes at the site and not here. Nothing here claims the parameter is bound. Which of a method''s parameters receives an argument, which receives the source table and which receives a context value is decided per directive application from the slots and the context keys in scope, so it is a site-keyed relation and lands with its own consumer, exactly as jvm_method_parameter''s own comment defers it. This states what the extraction would be, for every parameter, and a reader that knows the role applies it to the parameters that have one. The type is read as the census decomposed it, jvm_method_parameter_type_ref at the empty type path, and that reading is what makes the two rules agree on the awkward shapes rather than by coincidence. The live rule asks Class.forName of the declared type''s own spelling, so a parameterised type, an array, a primitive and a type variable all fail to load and all fall to Direct. The decomposition answers each of them the same way: a parameterised type names its raw head at the root, which is not an enum since no enum is generic; an array names nothing at the root, its component being the next step down; and a primitive and a type variable name nothing at all. Hence the LEFT JOIN, which keeps a parameter that names no class as a DIRECT row rather than dropping it, absence of a class being a fact about the parameter and not a reason to stop describing it. The silences are intent_java_enum_class''s, and they fall in one direction: a nested or package-private enum has no census row, so a parameter typed as one reads DIRECT here where the generator, resolving through its codegen loader, emits the enum decode. That is the classpath scan''s disclosed rule rather than a shortfall of this relation, and it is the same silence intent_condition_method_route_defect names CLASS_NOT_IN_CENSUS. A generated enum is no longer in that set, which is what this increment bought. Overloads are rows, kept apart by the descriptor the census keys on, so a reader holding only a class and a method name either finds one descriptor or picks between them the way the generator does, by name and arity; the descriptor is here so that picking is possible rather than silent.';
+COMMENT ON VIEW intent_condition_param_extraction IS 'The extraction a value bound to a condition method''s parameter takes by that parameter''s declared type alone: an enum gets ENUM_VALUE_OF and everything else gets DIRECT. The standing rule rather than the last word, and the distinction is load-bearing since a bound parameter can be exempted from it: a parameter bound to a slot carrying @nodeId receives that slot''s decoded node key instead, which intent_condition_param_decode states beside this, use-keyed and in the override shape, so presence there means the exemption applies and absence means this rule stands. A reader wanting what a given bound parameter actually receives consults both, in that order. The vocabulary below is this rule''s and not the arm''s, and the reason it could not be stated before is intent_java_enum_class''s second arm, a condition parameter typed as a generated enum being exactly the class the classpath census excludes. The @condition call surface and not the @service one, which is a different rule with a different answer: that path runs a wire-coercion check that can reject and an enum-constant parity check that can reject, and this one cannot reject at all, having no dimensional channel to surface a refusal through. So a reader must not carry an answer from here to a @service parameter, and the population below is what keeps that from being an accident. That population is every parameter of a method a @condition names anywhere in the graph, the five spellings of the directive folded into one: at a field, at an input field, at an argument, and at a path element of a @reference or a @referenceFor. Folded by graphitron_method_reference rather than here, which is the correction this relation took: the five spellings were five arms of a union written out in this view and again in intent_condition_table_parameter beside it, so one population was spelled twice and either copy could drift from the other. A filter on that relation''s site column is what both now spell, and it is a filter rather than a union because the sites are rows. Method-keyed and not site-keyed, because the rule stated here does not vary by site: a declared type is a fact of the signature, so the same signature written at two sites is one row here, which is intent_condition_method_route''s shape for the same reason. What does vary by site is the decode override beside it, and that is why the override is a use-keyed relation rather than a column widening this one: a method-keyed row cannot say that one of two sites naming this signature binds a @nodeId slot and the other does not, and a row that tried would have to pick one site''s answer for both. It is also what keeps a site fact out of a method-keyed relation, the path-element sites having no GraphQL slots in scope and therefore no bound value parameters at all; that is a fact about the site, so it prunes at the site and not here. Nothing here claims the parameter is bound. Which of a method''s parameters receives an argument, which receives the source table and which receives a context value is decided per directive application from the slots and the context keys in scope, so it is a site-keyed relation and lands with its own consumer, exactly as jvm_method_parameter''s own comment defers it. This states what the extraction would be, for every parameter, and a reader that knows the role applies it to the parameters that have one. The type is read as the census decomposed it, jvm_method_parameter_type_ref at the empty type path, and that reading is what makes the two rules agree on the awkward shapes rather than by coincidence. The live rule asks Class.forName of the declared type''s own spelling, so a parameterised type, an array, a primitive and a type variable all fail to load and all fall to Direct. The decomposition answers each of them the same way: a parameterised type names its raw head at the root, which is not an enum since no enum is generic; an array names nothing at the root, its component being the next step down; and a primitive and a type variable name nothing at all. Hence the LEFT JOIN, which keeps a parameter that names no class as a DIRECT row rather than dropping it, absence of a class being a fact about the parameter and not a reason to stop describing it. The silences are intent_java_enum_class''s, and they fall in one direction: a nested or package-private enum has no census row, so a parameter typed as one reads DIRECT here where the generator, resolving through its codegen loader, emits the enum decode. That is the classpath scan''s disclosed rule rather than a shortfall of this relation, and it is the same silence intent_condition_method_route_defect names CLASS_NOT_IN_CENSUS. A generated enum is no longer in that set, which is what this increment bought. Overloads are rows, kept apart by the descriptor the census keys on, so a reader holding only a class and a method name either finds one descriptor or picks between them the way the generator does, by name and arity; the descriptor is here so that picking is possible rather than silent.';
 COMMENT ON COLUMN intent_condition_param_extraction.graph_name IS 'the owning graph''s partition, carried from whichever directive named the pair; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN intent_condition_param_extraction.class_name IS 'the condition class as the author wrote it, fully qualified; the same spelling intent_condition_method_route.class_name carries';
 COMMENT ON COLUMN intent_condition_param_extraction.method_name IS 'the condition method name as the author wrote it, which is also the census column it matched. Spelled method_name and not method, as jvm_method spells it, because the descriptor beside it makes this row a statement about one signature where the route relation''s method column is a statement about a name';
@@ -3850,25 +3853,10 @@ CREATE VIEW intent_condition_table_parameter
   (graph_name, class_name, method_name, descriptor, position) AS
 WITH
 named (graph_name, class_name, method) AS (
-  SELECT graph_name, class_name, method
-    FROM graphitron_field_condition
-   WHERE class_name IS NOT NULL AND method IS NOT NULL
-   UNION
-  SELECT graph_name, class_name, method
-    FROM graphitron_argument_condition
-   WHERE class_name IS NOT NULL AND method IS NOT NULL
-   UNION
-  SELECT graph_name, class_name, method
-    FROM graphitron_field_reference_step
-   WHERE class_name IS NOT NULL AND method IS NOT NULL
-   UNION
-  SELECT graph_name, class_name, method
-    FROM graphitron_argument_reference_step
-   WHERE class_name IS NOT NULL AND method IS NOT NULL
-   UNION
-  SELECT graph_name, class_name, method
-    FROM graphitron_reference_for_step
-   WHERE class_name IS NOT NULL AND method IS NOT NULL
+  SELECT DISTINCT graph_name, class_name, method
+    FROM graphitron_method_reference
+   WHERE site IN ('FIELD_CONDITION', 'INPUT_FIELD_CONDITION', 'ARGUMENT_CONDITION',
+                  'FIELD_REFERENCE_STEP', 'ARGUMENT_REFERENCE_STEP', 'REFERENCE_FOR_STEP')
 ),
 declared (graph_name, class_name, method_name, descriptor, position, java_type) AS (
   SELECT DISTINCT n.graph_name, n.class_name, n.method, tr.descriptor, tr.position,
@@ -3890,7 +3878,7 @@ SELECT d.graph_name, d.class_name, d.method_name, d.descriptor, d.position
                  JOIN sql_table t
                    ON t.source_name = g.source_name AND t.class_fqn = d.java_type
                 WHERE g.graph_name = d.graph_name);
-COMMENT ON VIEW intent_condition_table_parameter IS 'Which of a condition method''s parameters receive the source table. The first of the three roles a condition parameter can play, and the one that is a fact about the method alone: the generator decides it by the parameter''s declared type and never consults the site, where the other two, an argument and a context value, are decided from the slots and the context keys in scope at each directive application. So this relation is method-keyed like intent_condition_param_extraction beside it, and the two site-keyed roles land with their own consumers rather than being forced into this grain. Membership is the whole fact and there are no columns beyond the key. What the parameter is named and what its declared type is are already stated at this exact key by intent_condition_param_extraction, which is total over a method''s positions, so repeating either here would be one fact in two places; a reader wanting them joins. Absence within a signature means the parameter takes something other than the table, and absence of every position of a signature means the method declares no table parameter at all, which the generator refuses outright. That refusal is the consumer''s to state, not this relation''s: it is a fact about a method the schema named, and phrasing it here would need a defect vocabulary for a population of one. The type test is two arms because a jOOQ table reaches the store two ways and neither census subsumes the other, which is intent_java_enum_class''s shape for the same reason. A generated table class is in the catalog and nowhere else, the classpath scan excluding that package, so sql_table.class_fqn answers for it and the closure cannot; anything else an author writes is a census class, so intent_jvm_ancestor answers for it and the catalog cannot. The closure arm carries the bare jOOQ table interface for free, that relation being reflexive, and it is the arm that admits an author''s own table supertype and jOOQ''s own TableImpl, which is the whole of what the live rule''s Table.class.isAssignableFrom admits beyond a generated class. The test is not lifted to a relation of its own even though @externalField asks the same question of its own parameter, because the relation it would be is intent_jvm_ancestor unioned with one join, and that union is the reader''s sentence rather than a rule: what is worth stating once is the closure, and it is. Read at the empty type path, so a parameterised Table<FilmRecord> is admitted at its raw head exactly as the live rule reads it, and a parameter naming no class at all draws no row here rather than a false one. The silence is the classpath census''s own and it falls in one direction: a table supertype an author declared on a nested or package-private class has no census row, so a parameter typed as one is absent here where the generator, resolving through its codegen loader, passes it the alias. That is the same silence intent_condition_method_route_defect names CLASS_NOT_IN_CENSUS.';
+COMMENT ON VIEW intent_condition_table_parameter IS 'Which of a condition method''s parameters receive the source table. The first of the three roles a condition parameter can play, and the one that is a fact about the method alone: the generator decides it by the parameter''s declared type and never consults the site, where the other two, an argument and a context value, are decided from the slots and the context keys in scope at each directive application. So this relation is method-keyed like intent_condition_param_extraction beside it, and the two site-keyed roles land with their own consumers rather than being forced into this grain. Membership is the whole fact and there are no columns beyond the key. The population is the one intent_condition_param_extraction states, read the same way: a filter on graphitron_method_reference.site over the six values the five @condition spellings occupy, where both views used to write that union out arm by arm and could drift from each other doing it. What the parameter is named and what its declared type is are already stated at this exact key by intent_condition_param_extraction, which is total over a method''s positions, so repeating either here would be one fact in two places; a reader wanting them joins. Absence within a signature means the parameter takes something other than the table, and absence of every position of a signature means the method declares no table parameter at all, which the generator refuses outright. That refusal is the consumer''s to state, not this relation''s: it is a fact about a method the schema named, and phrasing it here would need a defect vocabulary for a population of one. The type test is two arms because a jOOQ table reaches the store two ways and neither census subsumes the other, which is intent_java_enum_class''s shape for the same reason. A generated table class is in the catalog and nowhere else, the classpath scan excluding that package, so sql_table.class_fqn answers for it and the closure cannot; anything else an author writes is a census class, so intent_jvm_ancestor answers for it and the catalog cannot. The closure arm carries the bare jOOQ table interface for free, that relation being reflexive, and it is the arm that admits an author''s own table supertype and jOOQ''s own TableImpl, which is the whole of what the live rule''s Table.class.isAssignableFrom admits beyond a generated class. The test is not lifted to a relation of its own even though @externalField asks the same question of its own parameter, because the relation it would be is intent_jvm_ancestor unioned with one join, and that union is the reader''s sentence rather than a rule: what is worth stating once is the closure, and it is. Read at the empty type path, so a parameterised Table<FilmRecord> is admitted at its raw head exactly as the live rule reads it, and a parameter naming no class at all draws no row here rather than a false one. The silence is the classpath census''s own and it falls in one direction: a table supertype an author declared on a nested or package-private class has no census row, so a parameter typed as one is absent here where the generator, resolving through its codegen loader, passes it the alias. That is the same silence intent_condition_method_route_defect names CLASS_NOT_IN_CENSUS.';
 COMMENT ON COLUMN intent_condition_table_parameter.graph_name IS 'the owning graph''s partition, carried from whichever directive named the pair; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN intent_condition_table_parameter.class_name IS 'the condition class as the author wrote it, fully qualified; the same spelling intent_condition_param_extraction.class_name carries';
 COMMENT ON COLUMN intent_condition_table_parameter.method_name IS 'the condition method name as the author wrote it, which is also the census column it matched';
@@ -6899,50 +6887,10 @@ COMMENT ON INDEX ix_argmapping_pair_use_site IS 'Serves the use-site coordinate 
 CREATE VIEW intent_argmapping_bound_parameter_type
   (graph_name, site, use_site, position, param_name, java_type, candidates) AS
 WITH hosted (graph_name, site, use_site, position, param_name, class_name, method) AS (
-  SELECT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, d.class_name, d.method
+  SELECT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, mr.class_name, mr.method
     FROM intent_argmapping_pair ap
-    JOIN graphitron_service d
-      ON d.graph_name = ap.graph_name AND d.type_name = ap.type_name
-     AND d.field_name = ap.field_name
-   WHERE ap.site = 'SERVICE'
-   UNION ALL
-  SELECT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, d.class_name, d.method
-    FROM intent_argmapping_pair ap
-    JOIN graphitron_field_condition d
-      ON d.graph_name = ap.graph_name AND d.type_name = ap.type_name
-     AND d.field_name = ap.field_name
-   WHERE ap.site IN ('FIELD_CONDITION', 'INPUT_FIELD_CONDITION')
-   UNION ALL
-  SELECT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, d.class_name, d.method
-    FROM intent_argmapping_pair ap
-    JOIN graphitron_argument_condition d
-      ON d.graph_name = ap.graph_name AND d.type_name = ap.type_name
-     AND d.field_name = ap.field_name AND d.argument_name = ap.argument_name
-   WHERE ap.site = 'ARGUMENT_CONDITION'
-   UNION ALL
-  SELECT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, d.class_name, d.method
-    FROM intent_argmapping_pair ap
-    JOIN graphitron_field_reference_step d
-      ON d.graph_name = ap.graph_name AND d.type_name = ap.type_name
-     AND d.field_name = ap.field_name AND d.ordinal = ap.ordinal
-     AND d.position = ap.step_position
-   WHERE ap.site = 'FIELD_REFERENCE_STEP'
-   UNION ALL
-  SELECT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, d.class_name, d.method
-    FROM intent_argmapping_pair ap
-    JOIN graphitron_argument_reference_step d
-      ON d.graph_name = ap.graph_name AND d.type_name = ap.type_name
-     AND d.field_name = ap.field_name AND d.argument_name = ap.argument_name
-     AND d.ordinal = ap.ordinal AND d.position = ap.step_position
-   WHERE ap.site = 'ARGUMENT_REFERENCE_STEP'
-   UNION ALL
-  SELECT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, d.class_name, d.method
-    FROM intent_argmapping_pair ap
-    JOIN graphitron_reference_for_step d
-      ON d.graph_name = ap.graph_name AND d.type_name = ap.type_name
-     AND d.field_name = ap.field_name AND d.ordinal = ap.ordinal
-     AND d.position = ap.step_position
-   WHERE ap.site = 'REFERENCE_FOR_STEP'
+    JOIN graphitron_method_reference mr
+      ON mr.graph_name = ap.graph_name AND mr.site = ap.site AND mr.use_site = ap.use_site
 ),
 resolved (graph_name, site, use_site, position, param_name, java_type) AS (
   SELECT DISTINCT h.graph_name, h.site, h.use_site, h.position, h.param_name, tr.referenced_class
@@ -6973,7 +6921,7 @@ resolved (graph_name, site, use_site, position, param_name, java_type) AS (
 SELECT r.graph_name, r.site, r.use_site, r.position, r.param_name, r.java_type,
        CAST(COUNT(*) OVER (PARTITION BY r.graph_name, r.site, r.use_site, r.position) AS INT)
   FROM resolved r;
-COMMENT ON VIEW intent_argmapping_bound_parameter_type IS 'The Java type the left side of an argMapping pair denotes: what the value the path resolves has to be assignable to. The missing half of every type question about this family, and the reason one existed to be missing is that the two populations answering it are unrelated relations. A @routine parameter is a position on a generated Routines method and its type comes from the catalog census, while every other site''s parameter is a position on an authored Java method and its type comes from the classpath census; a reader wanting "the type of the parameter this pair binds" had to know which of the two to ask, and therefore had to switch on site, which is the switch this relation performs once. One row per pair whose parameter resolves, at intent_argmapping_pair''s own grain, so it joins that relation and everything derived from it on site, use_site and position with no reshaping. Eight arms over that vocabulary, and the split is not the pair view''s: seven of them resolve an authored (class, method) pair the same way and differ only in which owner relation carries it, which is why they share one CTE and one join onto the classpath census; the routine arm is the eighth and reaches sql_routine_parameter through intent_field_routine_method instead. Matching is by parameter name on both sides, which is the same match the generator itself makes and inherits the same dependency: a consumer compiling without -parameters has no names to match, so a pair resolves nothing here and every reader sees that as absence. One vocabulary on both arms, and reaching it is the reason the classpath arm joins one relation further than it looks like it needs to. The catalog arm''s binding type is fully qualified, while jvm_method_parameter.parameter_type drops the package by design; comparing the two would never match, and the mismatch would look exactly like a genuine type disagreement. So the classpath arm takes the root of the parameter''s declared-type decomposition instead, jvm_method_parameter_type_ref at the empty type_path, whose referenced_class is the qualified binary name. That relation has no row where the position names no class, so a primitive parameter resolves nothing here rather than resolving int: honest, and worth stating, since an author binding a key column to an int parameter gets the gate standing aside rather than a rejection. Absence is therefore four facts and this relation distinguishes none of them: the reference resolved no method, the method declares no parameter of that name, names were not compiled in, or the parameter''s type names no class. That is deliberate, each being a condition other relations already state or reject, and it is what keeps this relation one answer rather than a verdict; what a reader does where the answer is missing is the reader''s own decision, and the projection''s own comment argues its choice. What it must not do is decide the reading, which is why candidates is a column: an overloaded method or a class declared by two classpath entries resolves two rows, and a reader requiring one type requires candidates = 1 rather than picking. DISTINCT within each arm collapses the ordinary duplicate, one method reached through two graph sources naming the same type, so candidates above one means the types genuinely differ. No assignability rule lives here and none should: this states one type per pair and comparing it to another is the asking reader''s predicate, the widenings worth admitting being a use-site question rather than a fact about a parameter.';
+COMMENT ON VIEW intent_argmapping_bound_parameter_type IS 'The Java type the left side of an argMapping pair denotes: what the value the path resolves has to be assignable to. The missing half of every type question about this family, and the reason one existed to be missing is that the two populations answering it are unrelated relations. A @routine parameter is a position on a generated Routines method and its type comes from the catalog census, while every other site''s parameter is a position on an authored Java method and its type comes from the classpath census; a reader wanting "the type of the parameter this pair binds" had to know which of the two to ask, and therefore had to switch on site, which is the switch this relation performs once. One row per pair whose parameter resolves, at intent_argmapping_pair''s own grain, so it joins that relation and everything derived from it on site, use_site and position with no reshaping. Two arms over that vocabulary, and the split is not the pair view''s: one resolves an authored (class, method) pair against the classpath census, and the routine arm is the other and reaches sql_routine_parameter through intent_field_routine_method instead. It was eight arms until graphitron_method_reference existed, seven of them resolving an authored pair the same way and differing only in which owner relation carried it. Those seven were one join all along, and what made them seven was that the class and the method were spelled in seven places instead of one; the reconstruction is now a join on the site key the pair relation already carries. A ROUTINE pair names a database routine and no Java method, so it draws no row from that relation and the inner join drops it, which is what the seven site literals used to do by enumeration. Matching is by parameter name on both sides, which is the same match the generator itself makes and inherits the same dependency: a consumer compiling without -parameters has no names to match, so a pair resolves nothing here and every reader sees that as absence. One vocabulary on both arms, and reaching it is the reason the classpath arm joins one relation further than it looks like it needs to. The catalog arm''s binding type is fully qualified, while jvm_method_parameter.parameter_type drops the package by design; comparing the two would never match, and the mismatch would look exactly like a genuine type disagreement. So the classpath arm takes the root of the parameter''s declared-type decomposition instead, jvm_method_parameter_type_ref at the empty type_path, whose referenced_class is the qualified binary name. That relation has no row where the position names no class, so a primitive parameter resolves nothing here rather than resolving int: honest, and worth stating, since an author binding a key column to an int parameter gets the gate standing aside rather than a rejection. Absence is therefore four facts and this relation distinguishes none of them: the reference resolved no method, the method declares no parameter of that name, names were not compiled in, or the parameter''s type names no class. That is deliberate, each being a condition other relations already state or reject, and it is what keeps this relation one answer rather than a verdict; what a reader does where the answer is missing is the reader''s own decision, and the projection''s own comment argues its choice. What it must not do is decide the reading, which is why candidates is a column: an overloaded method or a class declared by two classpath entries resolves two rows, and a reader requiring one type requires candidates = 1 rather than picking. DISTINCT within each arm collapses the ordinary duplicate, one method reached through two graph sources naming the same type, so candidates above one means the types genuinely differ. No assignability rule lives here and none should: this states one type per pair and comparing it to another is the asking reader''s predicate, the widenings worth admitting being a use-site question rather than a fact about a parameter.';
 COMMENT ON COLUMN intent_argmapping_bound_parameter_type.graph_name IS 'the owning graph''s partition, carried from the pair relation';
 COMMENT ON COLUMN intent_argmapping_bound_parameter_type.site IS 'which SDL site spelled the pair, in intent_argmapping_pair''s closed vocabulary of eight; with the use-site key and the position this is the grain, and it is what decided which of the two censuses answered';
 COMMENT ON COLUMN intent_argmapping_bound_parameter_type.use_site IS 'the consuming coordinate, serialized as intent_argmapping_pair serializes it; carried rather than re-spelled, which is why the arms here join that relation instead of the eight owner relations directly';

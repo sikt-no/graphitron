@@ -11,18 +11,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SOURCE_ROW;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
@@ -159,99 +154,28 @@ public final class BindingUsages {
     }
 
     /**
-     * The nine class-naming relations as one statement. The condition and reference-step families
-     * are here because a class named inside a {@code @reference} path is as much a use of it as one
-     * named by {@code @service}; the definition surface routes those through its service half for
-     * the same reason.
+     * Every site that names a class, as one scan. It used to be the nine class-naming relations
+     * unioned by hand, three of the arms joining back to the owning application only to reach its
+     * source position; the store now writes that fact once, positioned, so this is a scan of
+     * {@code graphitron_method_reference} with the class predicate on it.
+     *
+     * <p>The population widened slightly in the move and in the direction of correctness. The
+     * hand-written union had nine arms against eleven sites, and the two it omitted were the
+     * argument-site {@code @referenceFor} step, which the validator rejects today so no store has
+     * one, and nothing else: the two condition sites share a relation, so both were always covered.
+     * A class named inside a {@code @reference} path is as much a use of it as one named by
+     * {@code @service}, which is why every site counts here and why the definition surface routes
+     * those through its service half.
      */
     private static Result<Record3<String, Integer, Integer>> classSites(
         StoreHandle store, String fqn, String method
     ) {
-        String graph = store.graphName();
+        var m = GRAPHITRON_METHOD_REFERENCE;
         return store.dsl()
-            .select(GRAPHITRON_SERVICE.SOURCE_NAME, GRAPHITRON_SERVICE.SOURCE_LINE,
-                GRAPHITRON_SERVICE.SOURCE_COLUMN)
-            .from(GRAPHITRON_SERVICE)
-            .where(GRAPHITRON_SERVICE.GRAPH_NAME.eq(graph))
-            .and(named(GRAPHITRON_SERVICE.CLASS_NAME, GRAPHITRON_SERVICE.METHOD, fqn, method))
-            .unionAll(store.dsl()
-                .select(GRAPHITRON_EXTERNAL_FIELD.SOURCE_NAME, GRAPHITRON_EXTERNAL_FIELD.SOURCE_LINE,
-                    GRAPHITRON_EXTERNAL_FIELD.SOURCE_COLUMN)
-                .from(GRAPHITRON_EXTERNAL_FIELD)
-                .where(GRAPHITRON_EXTERNAL_FIELD.GRAPH_NAME.eq(graph))
-                .and(named(GRAPHITRON_EXTERNAL_FIELD.CLASS_NAME, GRAPHITRON_EXTERNAL_FIELD.METHOD,
-                    fqn, method)))
-            .unionAll(store.dsl()
-                .select(GRAPHITRON_ENUM.SOURCE_NAME, GRAPHITRON_ENUM.SOURCE_LINE,
-                    GRAPHITRON_ENUM.SOURCE_COLUMN)
-                .from(GRAPHITRON_ENUM)
-                .where(GRAPHITRON_ENUM.GRAPH_NAME.eq(graph))
-                .and(named(GRAPHITRON_ENUM.CLASS_NAME, GRAPHITRON_ENUM.METHOD, fqn, method)))
-            .unionAll(store.dsl()
-                .select(GRAPHITRON_SOURCE_ROW.SOURCE_NAME, GRAPHITRON_SOURCE_ROW.SOURCE_LINE,
-                    GRAPHITRON_SOURCE_ROW.SOURCE_COLUMN)
-                .from(GRAPHITRON_SOURCE_ROW)
-                .where(GRAPHITRON_SOURCE_ROW.GRAPH_NAME.eq(graph))
-                .and(named(GRAPHITRON_SOURCE_ROW.CLASS_NAME, GRAPHITRON_SOURCE_ROW.METHOD,
-                    fqn, method)))
-            .unionAll(store.dsl()
-                .select(GRAPHITRON_FIELD_CONDITION.SOURCE_NAME, GRAPHITRON_FIELD_CONDITION.SOURCE_LINE,
-                    GRAPHITRON_FIELD_CONDITION.SOURCE_COLUMN)
-                .from(GRAPHITRON_FIELD_CONDITION)
-                .where(GRAPHITRON_FIELD_CONDITION.GRAPH_NAME.eq(graph))
-                .and(named(GRAPHITRON_FIELD_CONDITION.CLASS_NAME, GRAPHITRON_FIELD_CONDITION.METHOD,
-                    fqn, method)))
-            .unionAll(store.dsl()
-                .select(GRAPHITRON_ARGUMENT_CONDITION.SOURCE_NAME,
-                    GRAPHITRON_ARGUMENT_CONDITION.SOURCE_LINE,
-                    GRAPHITRON_ARGUMENT_CONDITION.SOURCE_COLUMN)
-                .from(GRAPHITRON_ARGUMENT_CONDITION)
-                .where(GRAPHITRON_ARGUMENT_CONDITION.GRAPH_NAME.eq(graph))
-                .and(named(GRAPHITRON_ARGUMENT_CONDITION.CLASS_NAME,
-                    GRAPHITRON_ARGUMENT_CONDITION.METHOD, fqn, method)))
-            .unionAll(store.dsl()
-                .select(GRAPHITRON_FIELD_REFERENCE.SOURCE_NAME, GRAPHITRON_FIELD_REFERENCE.SOURCE_LINE,
-                    GRAPHITRON_FIELD_REFERENCE.SOURCE_COLUMN)
-                .from(GRAPHITRON_FIELD_REFERENCE_STEP)
-                .join(GRAPHITRON_FIELD_REFERENCE)
-                .on(GRAPHITRON_FIELD_REFERENCE.GRAPH_NAME.eq(GRAPHITRON_FIELD_REFERENCE_STEP.GRAPH_NAME))
-                .and(GRAPHITRON_FIELD_REFERENCE.TYPE_NAME.eq(GRAPHITRON_FIELD_REFERENCE_STEP.TYPE_NAME))
-                .and(GRAPHITRON_FIELD_REFERENCE.FIELD_NAME.eq(GRAPHITRON_FIELD_REFERENCE_STEP.FIELD_NAME))
-                .and(GRAPHITRON_FIELD_REFERENCE.ORDINAL.eq(GRAPHITRON_FIELD_REFERENCE_STEP.ORDINAL))
-                .where(GRAPHITRON_FIELD_REFERENCE_STEP.GRAPH_NAME.eq(graph))
-                .and(named(GRAPHITRON_FIELD_REFERENCE_STEP.CLASS_NAME,
-                    GRAPHITRON_FIELD_REFERENCE_STEP.METHOD, fqn, method)))
-            .unionAll(store.dsl()
-                .select(GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_NAME,
-                    GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_LINE,
-                    GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_COLUMN)
-                .from(GRAPHITRON_ARGUMENT_REFERENCE_STEP)
-                .join(GRAPHITRON_ARGUMENT_REFERENCE)
-                .on(GRAPHITRON_ARGUMENT_REFERENCE.GRAPH_NAME
-                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP.GRAPH_NAME))
-                .and(GRAPHITRON_ARGUMENT_REFERENCE.TYPE_NAME
-                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TYPE_NAME))
-                .and(GRAPHITRON_ARGUMENT_REFERENCE.FIELD_NAME
-                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP.FIELD_NAME))
-                .and(GRAPHITRON_ARGUMENT_REFERENCE.ARGUMENT_NAME
-                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ARGUMENT_NAME))
-                .and(GRAPHITRON_ARGUMENT_REFERENCE.ORDINAL
-                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ORDINAL))
-                .where(GRAPHITRON_ARGUMENT_REFERENCE_STEP.GRAPH_NAME.eq(graph))
-                .and(named(GRAPHITRON_ARGUMENT_REFERENCE_STEP.CLASS_NAME,
-                    GRAPHITRON_ARGUMENT_REFERENCE_STEP.METHOD, fqn, method)))
-            .unionAll(store.dsl()
-                .select(GRAPHITRON_REFERENCE_FOR.SOURCE_NAME, GRAPHITRON_REFERENCE_FOR.SOURCE_LINE,
-                    GRAPHITRON_REFERENCE_FOR.SOURCE_COLUMN)
-                .from(GRAPHITRON_REFERENCE_FOR_STEP)
-                .join(GRAPHITRON_REFERENCE_FOR)
-                .on(GRAPHITRON_REFERENCE_FOR.GRAPH_NAME.eq(GRAPHITRON_REFERENCE_FOR_STEP.GRAPH_NAME))
-                .and(GRAPHITRON_REFERENCE_FOR.TYPE_NAME.eq(GRAPHITRON_REFERENCE_FOR_STEP.TYPE_NAME))
-                .and(GRAPHITRON_REFERENCE_FOR.FIELD_NAME.eq(GRAPHITRON_REFERENCE_FOR_STEP.FIELD_NAME))
-                .and(GRAPHITRON_REFERENCE_FOR.ORDINAL.eq(GRAPHITRON_REFERENCE_FOR_STEP.ORDINAL))
-                .where(GRAPHITRON_REFERENCE_FOR_STEP.GRAPH_NAME.eq(graph))
-                .and(named(GRAPHITRON_REFERENCE_FOR_STEP.CLASS_NAME,
-                    GRAPHITRON_REFERENCE_FOR_STEP.METHOD, fqn, method)))
+            .select(m.SOURCE_NAME, m.SOURCE_LINE, m.SOURCE_COLUMN)
+            .from(m)
+            .where(m.GRAPH_NAME.eq(store.graphName()))
+            .and(named(m.CLASS_NAME, m.METHOD, fqn, method))
             .fetch();
     }
 

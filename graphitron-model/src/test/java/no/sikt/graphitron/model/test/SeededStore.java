@@ -185,7 +185,7 @@ public final class SeededStore {
     }
 
     /**
-     * Fills the two relations capture writes beside a site rather than instead of it, from the site
+     * Fills the three relations capture writes beside a site rather than instead of it, from the site
      * rows a case seeded. Stands in for capture's second write, and lives here rather than in the
      * seed helpers for a reason about when it can run: capture knows a spelling is authored at the
      * moment it reads the directive, and a fixture only knows which sites exist once the case has
@@ -198,6 +198,11 @@ public final class SeededStore {
      * is no second write left to stand in for: a case seeds that relation directly, through
      * {@link #seedServiceArgMappingPair} and its siblings, which is both cheaper and one fewer
      * place for a fixture to disagree with itself.
+     *
+     * <p>The method reference is the mixed case and shows both halves at once. Nine of its sites
+     * keep relations of their own and are transcribed from them below; the tenth, the source row,
+     * carried nothing beyond the shared fact, so it has no relation to transcribe from and a case
+     * meaning that site writes {@code graphitron_method_reference} itself.
      *
      * <p>Modelling capture rather than deriving anything, which is why it is named apart from the
      * refresh below it and why the refresh keeps the property of being an entry point production
@@ -255,6 +260,91 @@ public final class SeededStore {
                AND fs.field_name = f.field_name
               LEFT JOIN intent_connection_element_type ce
                 ON ce.graph_name = f.graph_name AND ce.type_name = f.named_type
+            """);
+        dsl.execute("DELETE FROM graphitron_method_reference");
+        dsl.execute("""
+            INSERT INTO graphitron_method_reference
+              (graph_name, site, use_site, type_name, field_name, argument_name, ordinal,
+               step_position, class_name, method, source_name, source_line, source_column)
+            SELECT graph_name, 'ENUM', type_name, type_name, NULL, NULL, NULL, NULL,
+                   class_name, method, source_name, source_line, source_column
+              FROM graphitron_enum
+             WHERE class_name IS NOT NULL AND method IS NOT NULL
+            UNION ALL
+            SELECT graph_name, 'SERVICE', type_name || '.' || field_name,
+                   type_name, field_name, NULL, NULL, NULL,
+                   class_name, method, source_name, source_line, source_column
+              FROM graphitron_service
+             WHERE class_name IS NOT NULL AND method IS NOT NULL
+            UNION ALL
+            SELECT graph_name, 'EXTERNAL_FIELD', type_name || '.' || field_name,
+                   type_name, field_name, NULL, NULL, NULL,
+                   class_name, method, source_name, source_line, source_column
+              FROM graphitron_external_field
+             WHERE class_name IS NOT NULL AND method IS NOT NULL
+            UNION ALL
+            SELECT c.graph_name,
+                   CASE WHEN t.kind = 'INPUT_OBJECT' THEN 'INPUT_FIELD_CONDITION'
+                        ELSE 'FIELD_CONDITION' END,
+                   c.type_name || '.' || c.field_name,
+                   c.type_name, c.field_name, NULL, NULL, NULL,
+                   c.class_name, c.method, c.source_name, c.source_line, c.source_column
+              FROM graphitron_field_condition c
+              JOIN graphql_type t ON t.graph_name = c.graph_name AND t.type_name = c.type_name
+             WHERE c.class_name IS NOT NULL AND c.method IS NOT NULL
+            UNION ALL
+            SELECT graph_name, 'ARGUMENT_CONDITION',
+                   type_name || '.' || field_name || '(' || argument_name || ')',
+                   type_name, field_name, argument_name, NULL, NULL,
+                   class_name, method, source_name, source_line, source_column
+              FROM graphitron_argument_condition
+             WHERE class_name IS NOT NULL AND method IS NOT NULL
+            UNION ALL
+            SELECT s.graph_name, 'FIELD_REFERENCE_STEP',
+                   s.type_name || '.' || s.field_name || '#' || CAST(s.ordinal AS VARCHAR)
+                     || '[' || CAST(s.position AS VARCHAR) || ']',
+                   s.type_name, s.field_name, NULL, s.ordinal, s.position,
+                   s.class_name, s.method, d.source_name, d.source_line, d.source_column
+              FROM graphitron_field_reference_step s
+              JOIN graphitron_field_reference d
+                ON d.graph_name = s.graph_name AND d.type_name = s.type_name
+               AND d.field_name = s.field_name AND d.ordinal = s.ordinal
+             WHERE s.class_name IS NOT NULL AND s.method IS NOT NULL
+            UNION ALL
+            SELECT s.graph_name, 'ARGUMENT_REFERENCE_STEP',
+                   s.type_name || '.' || s.field_name || '(' || s.argument_name || ')#'
+                     || CAST(s.ordinal AS VARCHAR) || '[' || CAST(s.position AS VARCHAR) || ']',
+                   s.type_name, s.field_name, s.argument_name, s.ordinal, s.position,
+                   s.class_name, s.method, d.source_name, d.source_line, d.source_column
+              FROM graphitron_argument_reference_step s
+              JOIN graphitron_argument_reference d
+                ON d.graph_name = s.graph_name AND d.type_name = s.type_name
+               AND d.field_name = s.field_name AND d.argument_name = s.argument_name
+               AND d.ordinal = s.ordinal
+             WHERE s.class_name IS NOT NULL AND s.method IS NOT NULL
+            UNION ALL
+            SELECT s.graph_name, 'REFERENCE_FOR_STEP',
+                   s.type_name || '.' || s.field_name || '#' || CAST(s.ordinal AS VARCHAR)
+                     || '[' || CAST(s.position AS VARCHAR) || ']',
+                   s.type_name, s.field_name, NULL, s.ordinal, s.position,
+                   s.class_name, s.method, d.source_name, d.source_line, d.source_column
+              FROM graphitron_reference_for_step s
+              JOIN graphitron_reference_for d
+                ON d.graph_name = s.graph_name AND d.type_name = s.type_name
+               AND d.field_name = s.field_name AND d.ordinal = s.ordinal
+             WHERE s.class_name IS NOT NULL AND s.method IS NOT NULL
+            UNION ALL
+            SELECT s.graph_name, 'ARGUMENT_REFERENCE_FOR_STEP',
+                   s.type_name || '.' || s.field_name || '(' || s.argument_name || ')#'
+                     || CAST(s.ordinal AS VARCHAR) || '[' || CAST(s.position AS VARCHAR) || ']',
+                   s.type_name, s.field_name, s.argument_name, s.ordinal, s.position,
+                   s.class_name, s.method, d.source_name, d.source_line, d.source_column
+              FROM graphitron_argument_reference_for_step s
+              JOIN graphitron_argument_reference_for d
+                ON d.graph_name = s.graph_name AND d.type_name = s.type_name
+               AND d.field_name = s.field_name AND d.argument_name = s.argument_name
+               AND d.ordinal = s.ordinal
+             WHERE s.class_name IS NOT NULL AND s.method IS NOT NULL
             """);
     }
 

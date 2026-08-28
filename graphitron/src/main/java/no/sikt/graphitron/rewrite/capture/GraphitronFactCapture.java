@@ -58,6 +58,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_INDEX;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK_IMPORT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MULTITABLE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
@@ -76,7 +77,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ARG_MAPPING_SIGIL;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_CONTEXT_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SOURCE_ROW;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT;
@@ -206,6 +206,8 @@ final class GraphitronFactCapture {
                 record.setMethod(reference.method());
                 record.setArgMapping(reference.argMapping());
                 sink.add(record);
+                methodReference("ENUM", type, type, null, null, null, null,
+                    reference.className(), reference.method(), directive);
             }
             case "record" -> {
                 if (!sink.claim(GRAPHITRON_RECORD, type)) return;
@@ -359,6 +361,9 @@ final class GraphitronFactCapture {
                 record.setArgMapping(reference.argMapping());
                 record.setOverride(bool(directive, "override"));
                 sink.add(record);
+                methodReference(inputField ? "INPUT_FIELD_CONDITION" : "FIELD_CONDITION",
+                    useSite(type, field, null, null, null), type, field, null, null, null,
+                    reference.className(), reference.method(), directive);
                 int position = 0;
                 for (Value<?> context : list(directive, "contextArguments")) {
                     String name = stringOf(context, directive, "contextArguments");
@@ -404,6 +409,9 @@ final class GraphitronFactCapture {
                     row.setMethod(step.method());
                     row.setArgMapping(step.argMapping());
                     sink.add(row);
+                    methodReference("FIELD_REFERENCE_STEP", useSite(type, field, null, ordinal, position), type, field, null,
+                        ordinal, position,
+                        step.className(), step.method(), directive);
                     int pair = 0;
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
                         int at = pair++;
@@ -443,6 +451,9 @@ final class GraphitronFactCapture {
                     row.setMethod(step.method());
                     row.setArgMapping(step.argMapping());
                     sink.add(row);
+                    methodReference("REFERENCE_FOR_STEP", useSite(type, field, null, ordinal, position), type, field, null,
+                        ordinal, position,
+                        step.className(), step.method(), directive);
                     int pair = 0;
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
                         int at = pair++;
@@ -465,6 +476,9 @@ final class GraphitronFactCapture {
                 record.setMethod(reference.method());
                 record.setArgMapping(reference.argMapping());
                 sink.add(record);
+                methodReference("SERVICE", useSite(type, field, null, null, null),
+                    type, field, null, null, null,
+                    reference.className(), reference.method(), directive);
                 int position = 0;
                 for (Value<?> context : list(directive, "contextArguments")) {
                     String name = stringOf(context, directive, "contextArguments");
@@ -514,19 +528,18 @@ final class GraphitronFactCapture {
                 record.setMethod(reference.method());
                 record.setArgMapping(reference.argMapping());
                 sink.add(record);
+                methodReference("EXTERNAL_FIELD", useSite(type, field, null, null, null),
+                    type, field, null, null, null,
+                    reference.className(), reference.method(), directive);
             }
             case "sourceRow" -> {
-                if (!sink.claim(GRAPHITRON_SOURCE_ROW, type, field)) return;
-                String className = string(directive, "className");
-                String method = string(directive, "method");
-                if (className == null || method == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_SOURCE_ROW);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                record.setClassName(className);
-                record.setMethod(method);
-                sink.add(record);
+                // No relation of its own: this site carried the class and the method and nothing
+                // else, so it is rows of the shared relation rather than a table beside it.
+                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE, "SOURCE_ROW",
+                        useSite(type, field, null, null, null))) return;
+                methodReference("SOURCE_ROW", useSite(type, field, null, null, null),
+                    type, field, null, null, null,
+                    string(directive, "className"), string(directive, "method"), directive);
             }
             case "asConnection" -> {
                 if (!sink.claim(GRAPHITRON_CONNECTION, type, field)) return;
@@ -677,6 +690,9 @@ final class GraphitronFactCapture {
                 record.setArgMapping(reference.argMapping());
                 record.setOverride(bool(directive, "override"));
                 sink.add(record);
+                methodReference("ARGUMENT_CONDITION", useSite(type, field, argument, null, null),
+                    type, field, argument, null, null,
+                    reference.className(), reference.method(), directive);
                 int position = 0;
                 for (Value<?> context : list(directive, "contextArguments")) {
                     String name = stringOf(context, directive, "contextArguments");
@@ -724,6 +740,9 @@ final class GraphitronFactCapture {
                     row.setMethod(step.method());
                     row.setArgMapping(step.argMapping());
                     sink.add(row);
+                    methodReference("ARGUMENT_REFERENCE_STEP", useSite(type, field, argument, ordinal, position), type, field, argument,
+                        ordinal, position,
+                        step.className(), step.method(), directive);
                     int pair = 0;
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
                         int at = pair++;
@@ -765,6 +784,9 @@ final class GraphitronFactCapture {
                     row.setMethod(step.method());
                     row.setArgMapping(step.argMapping());
                     sink.add(row);
+                    methodReference("ARGUMENT_REFERENCE_FOR_STEP", useSite(type, field, argument, ordinal, position), type, field, argument,
+                        ordinal, position,
+                        step.className(), step.method(), directive);
                     int pair = 0;
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
                         int at = pair++;
@@ -1165,6 +1187,39 @@ final class GraphitronFactCapture {
         row.setPosition(position);
         row.setParamName(paramName);
         row.setArgumentPath(argumentPath);
+        position(directive, row::setSourceName, row::setSourceLine, row::setSourceColumn);
+        sink.add(row);
+    }
+
+    /**
+     * One Java method a directive named, written to the only relation that holds one. The site is a
+     * column rather than a relation, so what three intent views were assembling by hand, a union
+     * over ten tables projecting the class and the method out of each, is a scan here.
+     *
+     * <p>Keyed on the same site spelling {@link #argMappingPair} writes, which is what makes a
+     * pair and the method it binds into joinable on a key both already carry. A site whose class or
+     * method the author left unwritten draws no row: the columns are not nullable, and the readers
+     * this replaces all filtered those out before doing anything else, so an absent row states what
+     * their {@code IS NOT NULL} did.
+     *
+     * @param site the discriminator, one of the eleven {@code GRAPHITRON_METHOD_REFERENCE} admits
+     */
+    private void methodReference(String site, String useSite, String type, String field,
+                                 String argument, Integer ordinal, Integer stepPosition,
+                                 String className, String method, Directive directive) {
+        if (className == null || method == null) {
+            return;
+        }
+        var row = sink.dsl().newRecord(GRAPHITRON_METHOD_REFERENCE);
+        row.setSite(site);
+        row.setUseSite(useSite);
+        row.setTypeName(type);
+        row.setFieldName(field);
+        row.setArgumentName(argument);
+        row.setOrdinal(ordinal);
+        row.setStepPosition(stepPosition);
+        row.setClassName(className);
+        row.setMethod(method);
         position(directive, row::setSourceName, row::setSourceLine, row::setSourceColumn);
         sink.add(row);
     }

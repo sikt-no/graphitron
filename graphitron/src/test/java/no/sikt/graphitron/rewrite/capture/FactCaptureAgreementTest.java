@@ -382,7 +382,7 @@ class FactCaptureAgreementTest {
             "graphitron_argument_reference_for", "graphitron_argument_reference_for_step",
             "graphitron_service", "graphitron_service_context_arg",
             "graphitron_service_arg_mapping_sigil",
-            "graphitron_external_field", "graphitron_source_row", "graphitron_connection", "graphitron_facet",
+            "graphitron_external_field", "graphitron_connection", "graphitron_facet",
             "graphitron_order_by", "graphitron_order", "graphitron_order_field", "graphitron_index",
             "graphitron_default_order", "graphitron_default_order_field", "graphitron_mutation",
             "graphitron_error", "graphitron_error_handler", "graphitron_node", "graphitron_node_key_column",
@@ -395,11 +395,14 @@ class FactCaptureAgreementTest {
             "graphitron_link_import", "graphitron_multitable_reference", "graphitron_record",
             "graphitron_undecoded_argument", "graphitron_type_declaration_synthesis",
             "graphitron_field_synthesis",
-            // The two supertypes ride the arm of the sites that spell them. The spelled reference
-            // is written in the same walk as the per-site row it sits beside, so a coordinate the
-            // walk claims contributes to both; the pair relation has no per-site row left to sit
-            // beside, having absorbed the eight, and is written in that same walk instead.
+            // The three supertypes ride the arm of the sites that spell them. The spelled reference
+            // and the method reference are written in the same walk as the per-site row they sit
+            // beside, so a coordinate the walk claims contributes to both; the pair relation has no
+            // per-site row left to sit beside, having absorbed the eight, and the method reference
+            // has none at the source-row site for the same reason, both being written in that same
+            // walk regardless.
             "graphitron_spelled_reference", "graphitron_arg_mapping_pair",
+            "graphitron_method_reference",
             // Written beside the field row in the same walk, so the field coordinate's claim
             // covers it exactly as it covers the field's own attributes.
             "graphitron_field_navigation")) {

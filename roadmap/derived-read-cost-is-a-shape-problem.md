@@ -490,6 +490,37 @@ reads as a specification for the table it should have been: a discriminator over
 uniform key, and arm-determined NULLs the comment is at pains to say are key shape rather than facts
 withheld.
 
+**What this slice found that the signature could not.** The detector reads the DDL, so it sees a
+reconstruction only where a view body writes one. `BindingUsages.classSites` in `graphitron-lsp` was
+the same reconstruction written in Java: nine of the eleven sites unioned by hand, three of the arms
+joining back to the owning application only to reach its source position, about a hundred lines of
+it. Nothing in the DDL names it and no gate would have. It is now a scan of the supertype with the
+class predicate on it, and the move fixed a defect nobody had reported: the hand-written union
+omitted the argument-site `@referenceFor` step, so a class named there would not have been found.
+That site has no rows today because the validator rejects the coordinate, which is exactly why the
+omission could sit there unnoticed.
+
+The lesson is about the instrument rather than about this reader. A supertype is missing wherever a
+fact is reconstructed, and a reconstruction can be written in any language the repo uses; a detector
+that only reads SQL will under-report, and the number it reports should not be quoted as a total.
+The `graphitron_source_row` decision came out of the same gap in the other direction: it is not a
+reconstruction site at all, it is a subtype whose rows were the shared fact and nothing more, which
+membership in the set says and no union site would have shown.
+
+**What the rule decided, per subtype.** Nine of the ten keep their relations because each carries
+data this supertype cannot hold: an `override` flag at the two condition sites, a table or key
+reference at the four step sites, a declaration coordinate at the enum, an authored `argMapping`
+string at three. The tenth, `graphitron_source_row`, was exactly the shared fact and is gone;
+`SOURCE_ROW` is a value of the discriminator.
+
+One finding this slice turned up and did not act on, because it changes the answer above rather than
+following from it. The authored `argMapping` string is captured on nine relations and read by
+nothing: no view, no Java, no test, the only occurrences being the writer copying it into its own
+insert. It is the sole thing keeping `graphitron_service`, `graphitron_external_field` and
+`graphitron_enum` from collapsing too. Whether a captured column with no asker is worth keeping is
+the same question the register asks about a materialized relation with no reader, and it should be
+answered on that footing rather than as a side effect of a collapse.
+
 The two unconfirmed candidates are the GraphQL type expression and the described ordinal member. Each
 is the same modelling defect with nothing currently paying for it. Record them and do not act, on the
 rule this schema applies elsewhere that a relation with no asker is inventory, and revisit each the
