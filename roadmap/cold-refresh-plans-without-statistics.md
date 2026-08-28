@@ -1,7 +1,7 @@
 ---
 id: R867
 title: "A cold capture's refresh plans without statistics, and the penalty grows with the schema"
-status: In Review
+status: Ready
 bucket: bug
 priority: 1
 theme: model-cleanup
@@ -462,3 +462,65 @@ worth knowing only because it means the hazard it rules out has no live instance
 > day the per-graph reading would silently empty another graph's rows, which is exactly when nobody
 > would be re-reading this argument. Recorded here rather than moved into the bullet, so the bullet
 > does not read as describing a live case.
+
+### Round 2: In Review -> Done, rework requested
+
+Reviewer session `session_01TbLMaJoBnnDRxdfJnRU5LT`, 2026-08-28.
+
+The implementation is close and the shape is right. `refreshAnalysing` is the cadence the spec
+decided, the `Enclosure` parameter is a better answer than the spec's own sketch (the emission-order
+rule stays at one site, and the statement pair cannot escape the transaction opened for it because it
+receives its context rather than closing over one), and `RefreshPrerequisiteStatisticsTest` asserts
+the invariant with a control leg that makes the claim non-vacuous. All four departures are honest,
+and the third one, downgrading what the `WarmStartRefreshTest` round holds, is right on the code:
+every capture and every reader open refreshes every registered target for its graph unconditionally,
+so a stale target does come back either way, and saying so beats writing a round that pretends
+otherwise. `mvn install -Plocal-db` is green on this tree.
+
+One finding blocks, and one is bookkeeping.
+
+**Blocking: the split path breaks `captureWithRetry`, in exactly the case the retry exists for, and
+turns its diagnostic into a false accusation.** `captureWithRetry` passes `store.warm()` to both
+attempts. That is a store-open property, a field fixed when the store opened, and it was a sound
+stand-in for "this store holds rows this run must reconcile" only because a capture used to be
+all-or-nothing: attempt one rolled back, so attempt two really did meet the store attempt one found.
+The split path breaks that coupling. Its load transaction commits the facts, the anchor row and the
+hand-written derivations before `refreshAnalysing` runs, so a `DataAccessException` out of the
+refresh leaves them committed. The retry then re-enters `capture` with `warm` still false, skips
+`StoreRefresh.prepare`, and re-inserts a partition that is already there.
+
+Reproduced rather than argued. A capture into a fresh persisted store followed by a second
+`capture(dsl, false, ...)` against the same store fails on the second:
+
+    org.jooq.exception.IntegrityConstraintViolationException:
+    insert into "PUBLIC"."GRAPHQL_DIRECTIVE" ...
+    Unique index or primary key violation: PRIMARY_KEY_D1C ON PUBLIC.GRAPHQL_DIRECTIVE(GRAPH_NAME, DIRECTIVE_NAME)
+
+That is a `DataAccessException` and not a lock timeout, so `captureWithRetry` takes it as the second
+failure and logs "failed twice in a row; this looks like a deterministic capture bug rather than a
+concurrency casualty, and warm start will stay unavailable for this graph until it is fixed". Both
+halves of that sentence are now wrong on the split path: the second failure is the retry colliding
+with its own first attempt, not evidence about the capture, and the run that provoked it may have
+been the transient casualty the retry was written to absorb. `captureWithRetry`'s own javadoc names a
+deadlock as "exactly the transient casualty the retry was written for", and a deadlock out of
+`refreshAnalysing` keeps its retry by cause, so this is the intended path rather than a corner.
+
+The consequence is bounded and worth stating so the fix is scoped rather than feared: the store
+self-heals, the next run opening warm with null stamps and reloading the partition, and no generated
+output is wrong. What is lost is the retry on the one path this item introduces, plus a warn line
+that fingers a bug that is not there.
+
+What would satisfy it: make the reconcile decision follow the store's state rather than the open, so
+that an attempt meeting a committed partition reconciles it. The predicate this item already computes
+is the same fact from the other side, and the item's own invariant section is where the answer
+belongs, since "what a run that stops mid-refresh leaves behind" is stated there and this is the
+first thing that reads it. A case in the retry's own family, beside
+`PersistentStoreTest.aHeldAnchorRowGivesUpFast`, would hold it.
+
+**Non-blocking, bookkeeping: a departure claims a correction that did not ship.** The second
+departure says the population filter "also corrects a claim `RefreshPlanStatisticsTest` carries in
+passing, that twelve units is the size at which every registered target holds rows". That claim is
+still in the tree, on that test's `UNITS` javadoc, and the new test's own filter is the evidence
+against it: three registrations read a target the `@mutation` payload surface leaves empty. Either
+correct the javadoc or drop the clause from the departure; leaving both is a record that says a thing
+was done and a tree that says it was not.
