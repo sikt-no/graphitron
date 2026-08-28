@@ -7825,46 +7825,48 @@ COMMENT ON COLUMN intent_node_id_instruction.source_name IS 'the SDL file the in
 COMMENT ON COLUMN intent_node_id_instruction.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN intent_node_id_instruction.source_column IS 'source column, 1-based per the graphql-java convention';
 
+CREATE INDEX ix_node_id_instruction_coordinate ON intent_node_id_instruction
+  (graph_name, site, type_name, field_name);
+COMMENT ON INDEX ix_node_id_instruction_coordinate IS 'Serves the slot coordinate a reader joining this table by site holds: intent_condition_param_decode, whose two arms probe an ARGUMENT and an INPUT_FIELD row from the captured @condition beside it. The materialization is what makes the index necessary rather than an optimisation: the rule stated as a view is evaluated restricted, H2 pushing a probe''s equality down into the union arms, and a table is scanned whole unless a key lets the probe reach its rows. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the reader costs 9787 scans without this index and 2426 with it, against 2923 for the same reader over the unregistered rule, so the index is what turns a registration that cost that reader more into one that costs it less. Site leads the coordinate because every probe fixes it: a reader binds a value from an argument or from an input field and never from both, so the discriminator is a constant per arm rather than a column compared. Not UNIQUE and not the grain: an input field''s use sites are several per coordinate, the occurrence path telling them apart, and that path is deliberately not in the key because no reader probes by it.';
+
 CREATE VIEW intent_condition_param_decode
   (graph_name, site, type_name, field_name, argument_name, path, use_site,
    class_name, method_name, node_type_name, key_arity, list_valued) AS
 WITH
-at_slot (graph_name, site, type_name, field_name, argument_name,
-         class_name, method, list_valued) AS (
-  SELECT c.graph_name, 'ARGUMENT', c.type_name, c.field_name, c.argument_name,
-         c.class_name, c.method, a.is_list
-    FROM graphitron_argument_condition c
-    JOIN graphql_argument a
-      ON a.graph_name = c.graph_name AND a.type_name = c.type_name
-     AND a.field_name = c.field_name AND a.argument_name = c.argument_name
-   WHERE c.class_name IS NOT NULL AND c.method IS NOT NULL
-   UNION ALL
-  SELECT c.graph_name, 'INPUT_FIELD', c.type_name, c.field_name, CAST(NULL AS VARCHAR),
-         c.class_name, c.method, f.is_list
-    FROM graphitron_field_condition c
-    JOIN graphql_type t
-      ON t.graph_name = c.graph_name AND t.type_name = c.type_name
-     AND t.kind = 'INPUT_OBJECT'
-    JOIN graphql_field f
-      ON f.graph_name = c.graph_name AND f.type_name = c.type_name
-     AND f.field_name = c.field_name
-   WHERE c.class_name IS NOT NULL AND c.method IS NOT NULL
-),
 key_shape (graph_name, type_name, arity) AS (
   SELECT graph_name, type_name, CAST(COUNT(*) AS INT)
     FROM intent_resolved_node_key_column
    GROUP BY graph_name, type_name
 )
-SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
-       c.class_name, c.method, i.node_type_name, k.arity, c.list_valued
-  FROM intent_node_id_instruction i
-  JOIN at_slot c
-    ON c.graph_name = i.graph_name AND c.site = i.site
-   AND c.type_name = i.type_name AND c.field_name = i.field_name
-   AND (c.argument_name = i.argument_name
-        OR (c.argument_name IS NULL AND i.argument_name IS NULL))
+SELECT i.graph_name, 'ARGUMENT', i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
+       c.class_name, c.method, i.node_type_name, k.arity, a.is_list
+  FROM graphitron_argument_condition c
+  JOIN graphql_argument a
+    ON a.graph_name = c.graph_name AND a.type_name = c.type_name
+   AND a.field_name = c.field_name AND a.argument_name = c.argument_name
+  JOIN intent_node_id_instruction i
+    ON i.graph_name = c.graph_name AND i.site = 'ARGUMENT'
+   AND i.type_name = c.type_name AND i.field_name = c.field_name
+   AND i.argument_name = c.argument_name
   JOIN key_shape k
-    ON k.graph_name = i.graph_name AND k.type_name = i.node_type_name;
+    ON k.graph_name = i.graph_name AND k.type_name = i.node_type_name
+ WHERE c.class_name IS NOT NULL AND c.method IS NOT NULL
+ UNION ALL
+SELECT i.graph_name, 'INPUT_FIELD', i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
+       c.class_name, c.method, i.node_type_name, k.arity, f.is_list
+  FROM graphitron_field_condition c
+  JOIN graphql_type t
+    ON t.graph_name = c.graph_name AND t.type_name = c.type_name
+   AND t.kind = 'INPUT_OBJECT'
+  JOIN graphql_field f
+    ON f.graph_name = c.graph_name AND f.type_name = c.type_name
+   AND f.field_name = c.field_name
+  JOIN intent_node_id_instruction i
+    ON i.graph_name = c.graph_name AND i.site = 'INPUT_FIELD'
+   AND i.type_name = c.type_name AND i.field_name = c.field_name
+  JOIN key_shape k
+    ON k.graph_name = i.graph_name AND k.type_name = i.node_type_name
+ WHERE c.class_name IS NOT NULL AND c.method IS NOT NULL;
 COMMENT ON VIEW intent_condition_param_decode IS 'Where a @condition parameter bound to a slot is exempted from the declared-type extraction rule and receives the slot''s decoded node key instead, and what shape that key has. The override half of a pair: intent_condition_param_extraction states the standing rule by declared type, this states the exception, and presence here is the whole of what says the exception applies. Absence is not a silence; it is the assertion that the declared-type rule stands at that coordinate, which is the shape the fact model uses wherever a rule has an exception rather than a variant. The population is every slot carrying the @nodeId instruction whose own @condition names a class and a method, at the two slot sites a value is bound from: an argument, and an input field. The two sites read different captured relations because the directive is captured at different coordinates, an argument condition at the three-part coordinate and an input-field condition at the shared field coordinate told apart by the owning type''s kind, and they are one relation here because they are one rule. Use-keyed, and that is the point of it being separate: the rule the extraction relation states is a fact of a signature and the same signature written at two sites is one row there, while this is a fact of a site, so one method named by a @nodeId-bound slot at one coordinate and a plain scalar at another is one row here and not two answers on one method-keyed row. The key it carries is intent_node_id_instruction''s own, so a reader holding a use site joins straight across; the instruction relation''s multiplicity is inherited whole, one row per consuming coordinate for an input field and one row for an argument. What this relation does not say is which of the method''s parameters receives the decoded key. That is the binding question the fact model defers everywhere: which parameter takes an argument, which takes the source table and which takes a context value is decided per directive application from the slots and the context keys in scope, and jvm_method_parameter''s own comment defers it for the same reason. A reader that has resolved the binding for itself, which the editor and the validator both have, reads the shape here and needs nothing further; a reader that has not cannot get it from this relation and must not read the row as naming a parameter. The shape is stated as an arity and a list flag rather than as a Java type, because the type is the generator''s composition of two facts a reader already has: the key columns'' own types, at intent_resolved_node_key_column''s grain, and the wrapping this relation names. An arity of one means the key column''s own type, above one means the typed jOOQ Row of the key columns in key order, and list_valued wraps either. Spelling the composed type here would be a second statement of a convention that lives in generated code, and it would go stale against a column type change this relation cannot see. Population boundary, since a hole reads as an exemption that does not apply: a slot whose node type resolves no key columns has no row, the arity join being what excludes it, and that coordinate already meets a shipped rejection naming the type rather than needing a row here to be silent about. A parameter reached by a dotted argMapping into the key columns of the same slot is a different mechanism at a different grain, the projection rail''s, and is not this relation''s exemption; the two do not overlap because a dotted binding is not a whole-slot binding.';
 COMMENT ON COLUMN intent_condition_param_decode.graph_name IS 'the owning graph''s partition, carried from the instruction the row is about; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN intent_condition_param_decode.site IS 'which SDL site carries the slot, in a closed vocabulary of two: ARGUMENT and INPUT_FIELD. Narrower than intent_node_id_instruction.site''s three by construction, an output field binding no value into a condition method; the column every other column''s nullness is determined by, on that relation''s terms';

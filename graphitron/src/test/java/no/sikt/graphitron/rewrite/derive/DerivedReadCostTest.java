@@ -103,10 +103,10 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 115;
+    private static final int READERS_IN_SCHEMA = 116;
 
     /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 67;
+    private static final int READERS_WITH_CELLS = 68;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -139,8 +139,13 @@ class DerivedReadCostTest {
      * {@link #READERS_WITH_CELLS} moved, which is the arithmetic worth stating rather than the four:
      * a registration replaces one view in this domain with another, the rule keeping its cells under
      * the {@code _live} name.
+     *
+     * <p>{@code intent_condition_param_decode} took it from 168 to 171, the plain case: a new view
+     * that reaches three registrations and displaces none, so the figure moves by exactly the cells
+     * it adds. Both reader figures moved by one beside it, which is what a new view looks like when
+     * it registers nothing.
      */
-    private static final int CELLS = 168;
+    private static final int CELLS = 171;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -381,6 +386,22 @@ class DerivedReadCostTest {
      * So a new large pair here is a question about the target's index before it is a question about
      * the registration.
      *
+     * <p>The pair that question was asked of and did not fully answer is
+     * {@code intent_node_id_instruction|intent_condition_param_decode}, and the figures are worth
+     * keeping because they show what an index on a materialized target can and cannot buy. That
+     * reader is the first to probe the instruction table rather than drive from it, seeking one row
+     * per captured {@code @condition} by site and coordinate, and unindexed it cost 9787 scans
+     * against 2923 over the unregistered rule. The index on the coordinate it holds took it to 3451,
+     * closing 6336 of the 6864-scan gap; widening that index to the argument name the ARGUMENT arm
+     * also joins bought nothing, the seek already being selective. What the remaining 528 scans are
+     * is the part no index reaches: the rule is a union whose arms are keyed by site, so a probe
+     * fixing the site to a constant lets H2 evaluate one arm and skip the other outright, and the
+     * table those arms were refilled into holds both sites' rows in one heap where the constant is a
+     * filter rather than a pruned branch. That is the registration's own trade rather than a defect
+     * in the reader or a shape somebody chose, which is why the pair stays here after the lever
+     * landed instead of the lever being reverted: 528 scans is what the reader pays for a refresh
+     * that evaluates the rule once per capture instead of once per read.
+     *
      * <p>A trio left a second way, which is worth knowing because nothing was measured to send it.
      * Three readers of {@code intent_node_id_instruction} stood here charged to
      * {@code intent_argument_scope_table}: the encode, the decode slot, and the decode defect above
@@ -429,6 +450,9 @@ class DerivedReadCostTest {
         // carrier target and the cell does not exist to be non-monotonic in. The column
         // relation names the reference walk on a second path of its own and keeps its cell.
         "intent_field_reference_step_hop|intent_mutation_payload_column_live",
+        // A registered target's rule prunes by site where its table cannot, and an index closes
+        // most but not all of the gap; measured above.
+        "intent_node_id_instruction|intent_condition_param_decode",
         // Three readers reached through the navigation relation stood here and have gone, and how
         // they went is the second kind of departure this set records: a lever landed, rather than
         // the fixture moving under them. They were the counter-against-clock case, stating the

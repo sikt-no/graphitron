@@ -122,6 +122,18 @@ class MaterializeRegistryGateTest {
      * which is the failure mode a roster of measured declines has: the readers, not the figures,
      * are what a row is really pinned to.
      *
+     * <p>A second row went the same way, and it is the kind that paragraph predicted rather than the
+     * kind it described. {@code intent_node_id_instruction} sat here with no measurement at all: its
+     * readers each named the target in their own driving {@code FROM} and joined outward from it, so
+     * nothing probed in and no coordinate existed for an index to serve. {@code
+     * intent_condition_param_decode} is a reader that does probe in, seeking one row per captured
+     * {@code @condition} by site and coordinate, and the registration cost it more than the rule it
+     * replaced for exactly the reason the target had no index: a view is evaluated restricted and a
+     * table without a key is scanned whole. The index on the coordinate that reader holds took it
+     * from 9787 scans to 2426, against 2923 over the unregistered rule, so a pair
+     * {@code DerivedReadCostTest} would have carried never appeared. The row was falsified by a new
+     * reader, which is what its own argument said would falsify it.
+     *
      * <p>The rows that remain:
      *
      * <ul>
@@ -158,15 +170,6 @@ class MaterializeRegistryGateTest {
      *   than the table, so H2 reads the table whole in both. Worth revisiting where a reader
      *   probes it from a population larger than the table itself, which is the shape that would
      *   change the answer.</li>
-     *   <li>{@code intent_node_id_instruction}: no index shape is a candidate, so there is nothing
-     *   to measure. Its three readers are {@code intent_node_id_decode_endpoint},
-     *   {@code intent_node_id_decode_slot} and {@code intent_node_id_encode}, and each names the
-     *   target in its own driving {@code FROM} and joins outward from it; the slot reaches it
-     *   through a local alias that is itself the driving side of both its union arms. Nothing
-     *   probes in, so there is no coordinate an index could serve. That follows from what the
-     *   relation is rather than from a shape somebody chose: it is the population those three
-     *   views each partition, and a reader whose grain is one row per instruction drives from the
-     *   instructions.</li>
      *   <li>{@code intent_mutation_payload_column}: its one reader reads it whole. The matched-key
      *   relation collects the columns a payload contributes as a {@code DISTINCT} over every row of
      *   this target and then joins the candidate keys onto that, so there is no probe for an index
@@ -220,7 +223,6 @@ class MaterializeRegistryGateTest {
         "intent_input_field_carrier_role",
         "intent_errors_field",
         "intent_carrier_data_field",
-        "intent_node_id_instruction",
         "intent_input_field_resolving_table",
         "intent_mutation_payload_column",
         "intent_mutation_write_payload",
