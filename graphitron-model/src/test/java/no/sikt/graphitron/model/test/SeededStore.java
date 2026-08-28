@@ -185,7 +185,121 @@ public final class SeededStore {
      * did.
      */
     public static void derive(DSLContext dsl) {
+        transcribeSupertypes(dsl);
         Materializations.refreshAll(dsl);
+    }
+
+    /**
+     * Fills the two relations capture writes beside a site rather than instead of it, from the site
+     * rows a case seeded. Stands in for capture's second write, and lives here rather than in the
+     * seed helpers for a reason about when it can run: capture knows a spelling is authored at the
+     * moment it reads the directive, and a fixture only knows which sites exist once the case has
+     * finished seeding, so the transcription has to be late. {@link #derive} is the line every case
+     * already calls at exactly that moment.
+     *
+     * <p>Modelling capture rather than deriving anything, which is why it is named apart from the
+     * refresh below it and why the refresh keeps the property of being an entry point production
+     * also calls. A supertype is a captured fact: production writes it in the same walk that writes
+     * the site, and nothing in the schema derives it, so a store whose sites were seeded by hand has
+     * to be given it by hand too.
+     *
+     * <p>Idempotent by rewriting rather than by merging, because {@link #derive} is documented as
+     * safe to call unconditionally and a case that seeds a second graph after a first read would
+     * otherwise leave the first graph's rows behind a stale copy of themselves.
+     */
+    public static void transcribeSupertypes(DSLContext dsl) {
+        dsl.execute("DELETE FROM graphitron_spelled_reference");
+        dsl.execute("""
+            INSERT INTO graphitron_spelled_reference (graph_name, spelling, namespace_part, name_part)
+            SELECT graph_name, spelling, namespace_part, name_part FROM (
+              SELECT graph_name, COALESCE(table_ref, type_name) AS spelling,
+                     table_ref_namespace_part AS namespace_part,
+                     COALESCE(table_ref_name_part, type_name) AS name_part
+                FROM graphitron_table
+              UNION
+              SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
+                FROM graphitron_field_reference_step WHERE table_ref IS NOT NULL
+              UNION
+              SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
+                FROM graphitron_argument_reference_step WHERE table_ref IS NOT NULL
+              UNION
+              SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
+                FROM graphitron_reference_for_step WHERE table_ref IS NOT NULL
+              UNION
+              SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
+                FROM graphitron_argument_reference_for_step WHERE table_ref IS NOT NULL
+              UNION
+              SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
+                FROM graphitron_mutation WHERE table_ref IS NOT NULL
+              UNION
+              SELECT graph_name, routine_ref, routine_ref_namespace_part, routine_ref_name_part
+                FROM graphitron_routine) spellings
+            """);
+        dsl.execute("DELETE FROM graphitron_arg_mapping_pair");
+        dsl.execute("""
+            INSERT INTO graphitron_arg_mapping_pair
+              (graph_name, site, use_site, type_name, field_name, argument_name, ordinal,
+               step_position, position, param_name, argument_path, source_name, source_line, source_column)
+            SELECT p.graph_name, 'ROUTINE',
+                   p.type_name || '.' || p.field_name || '#' || CAST(p.ordinal AS VARCHAR),
+                   p.type_name, p.field_name, NULL, p.ordinal, NULL,
+                   p.position, p.param_name, p.argument_path, d.source_name, d.source_line, d.source_column
+              FROM graphitron_routine_arg_mapping_pair p
+              JOIN graphitron_routine d ON d.graph_name = p.graph_name AND d.type_name = p.type_name
+               AND d.field_name = p.field_name AND d.ordinal = p.ordinal
+            UNION ALL
+            SELECT p.graph_name, 'SERVICE', p.type_name || '.' || p.field_name,
+                   p.type_name, p.field_name, NULL, NULL, NULL,
+                   p.position, p.param_name, p.argument_path, d.source_name, d.source_line, d.source_column
+              FROM graphitron_service_arg_mapping_pair p
+              JOIN graphitron_service d ON d.graph_name = p.graph_name AND d.type_name = p.type_name
+               AND d.field_name = p.field_name
+            UNION ALL
+            SELECT p.graph_name,
+                   CASE WHEN t.kind = 'INPUT_OBJECT' THEN 'INPUT_FIELD_CONDITION' ELSE 'FIELD_CONDITION' END,
+                   p.type_name || '.' || p.field_name,
+                   p.type_name, p.field_name, NULL, NULL, NULL,
+                   p.position, p.param_name, p.argument_path, d.source_name, d.source_line, d.source_column
+              FROM graphitron_field_condition_arg_mapping_pair p
+              JOIN graphitron_field_condition d ON d.graph_name = p.graph_name AND d.type_name = p.type_name
+               AND d.field_name = p.field_name
+              JOIN graphql_type t ON t.graph_name = p.graph_name AND t.type_name = p.type_name
+            UNION ALL
+            SELECT p.graph_name, 'ARGUMENT_CONDITION',
+                   p.type_name || '.' || p.field_name || '(' || p.argument_name || ')',
+                   p.type_name, p.field_name, p.argument_name, NULL, NULL,
+                   p.position, p.param_name, p.argument_path, d.source_name, d.source_line, d.source_column
+              FROM graphitron_argument_condition_arg_mapping_pair p
+              JOIN graphitron_argument_condition d ON d.graph_name = p.graph_name AND d.type_name = p.type_name
+               AND d.field_name = p.field_name AND d.argument_name = p.argument_name
+            UNION ALL
+            SELECT p.graph_name, 'FIELD_REFERENCE_STEP',
+                   p.type_name || '.' || p.field_name || '#' || CAST(p.ordinal AS VARCHAR)
+                     || '[' || CAST(p.step_position AS VARCHAR) || ']',
+                   p.type_name, p.field_name, NULL, p.ordinal, p.step_position,
+                   p.position, p.param_name, p.argument_path, d.source_name, d.source_line, d.source_column
+              FROM graphitron_field_reference_step_arg_mapping_pair p
+              JOIN graphitron_field_reference d ON d.graph_name = p.graph_name AND d.type_name = p.type_name
+               AND d.field_name = p.field_name AND d.ordinal = p.ordinal
+            UNION ALL
+            SELECT p.graph_name, 'ARGUMENT_REFERENCE_STEP',
+                   p.type_name || '.' || p.field_name || '(' || p.argument_name || ')#'
+                     || CAST(p.ordinal AS VARCHAR) || '[' || CAST(p.step_position AS VARCHAR) || ']',
+                   p.type_name, p.field_name, p.argument_name, p.ordinal, p.step_position,
+                   p.position, p.param_name, p.argument_path, d.source_name, d.source_line, d.source_column
+              FROM graphitron_argument_reference_step_arg_mapping_pair p
+              JOIN graphitron_argument_reference d ON d.graph_name = p.graph_name AND d.type_name = p.type_name
+               AND d.field_name = p.field_name AND d.argument_name = p.argument_name AND d.ordinal = p.ordinal
+            UNION ALL
+            SELECT p.graph_name, 'REFERENCE_FOR_STEP',
+                   p.type_name || '.' || p.field_name || '#' || CAST(p.ordinal AS VARCHAR)
+                     || '[' || CAST(p.step_position AS VARCHAR) || ']',
+                   p.type_name, p.field_name, NULL, p.ordinal, p.step_position,
+                   p.position, p.param_name, p.argument_path, d.source_name, d.source_line, d.source_column
+              FROM graphitron_reference_for_step_arg_mapping_pair p
+              JOIN graphitron_reference_for d ON d.graph_name = p.graph_name AND d.type_name = p.type_name
+               AND d.field_name = p.field_name AND d.ordinal = p.ordinal
+            """);
     }
 
     // ===== Anchors =====

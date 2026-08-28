@@ -2474,6 +2474,76 @@ COMMENT ON COLUMN graphitron_field_synthesis.macro IS 'which expansion rewrote t
 COMMENT ON COLUMN graphitron_field_synthesis.authored_type_sdl IS 'the type expression as the author wrote it, pre-expansion';
 
 
+-- ---- supertypes over the directive families ----------------------------------------
+-- Where one fact is authored at several kinds of site, the family above writes one table per kind.
+-- The two relations here are the facts themselves, written once by capture rather than reconstructed
+-- by every reader that asks a question the sites answer uniformly. The per-site tables stay: they
+-- carry what is particular to their site and they carry the foreign key into the directive that
+-- owns the row, which no single relation spanning nine parents could express. What moves here is
+-- the shared half, so that asking it is a scan of one table instead of a union of nine.
+
+CREATE TABLE graphitron_spelled_reference (
+  graph_name           VARCHAR NOT NULL,
+  spelling             VARCHAR NOT NULL,
+  namespace_part       VARCHAR,
+  name_part            VARCHAR NOT NULL,
+  namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(namespace_part)),
+  name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(name_part)),
+  PRIMARY KEY (graph_name, spelling),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+CREATE INDEX graphitron_spelled_reference_name_ix
+  ON graphitron_spelled_reference (graph_name, name_part_upper);
+COMMENT ON TABLE graphitron_spelled_reference IS 'Every table or routine name this graph authors anywhere, once per distinct spelling: the fact underneath @table(name:), a @reference path element''s table, its argument-site and @referenceFor siblings, @mutation''s delete target and @routine(name:). Seven relations carry a spelling of this shape and none of them is the spelling; each is a site that wrote one, keyed by where it was written. Keyed by the spelling itself and by nothing else, on the terms intent_spelled_table already argues: the resolution does not vary by site, so a spelling written at five coordinates is one fact and one row here, and a reader asking what a name resolves to never has to say which directive wrote it. That is why this relation carries no site discriminator where graphitron_arg_mapping_pair carries one; the difference between them is whether the shared question has a per-site answer, and here it does not. Arrives already split, capture writing the namespace half and the name half beside the value, so a reader matches on stored folded columns rather than on a fold computed per candidate row. The namespace half is null on an unqualified spelling, which matches on its name half alone. Written by capture at the moment each site is read, deduplicated there rather than by a reader: the same spelling authored twice is one row, and the primary key is what says so. graphitron_routine spells its own site''s column routine_ref where the other six spell theirs table_ref; the two are the same fact and this relation is where that is settled, a name having only one spelling once there is a relation to hold it.';
+COMMENT ON COLUMN graphitron_spelled_reference.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_spelled_reference.spelling IS 'the name exactly as the author wrote it, qualifier and all; with the graph the whole key, one row per distinct spelling however many sites wrote it';
+COMMENT ON COLUMN graphitron_spelled_reference.namespace_part IS 'the qualifier half of the spelling as written, null on an unqualified name; a null here is the author having written no qualifier and never a qualifier withheld';
+COMMENT ON COLUMN graphitron_spelled_reference.name_part IS 'the name half of the spelling as written, which is the whole spelling on an unqualified name';
+COMMENT ON COLUMN graphitron_spelled_reference.namespace_part_upper IS 'the case-folded namespace half, computed by the database; the column a catalog match compares against, so neither side of that comparison is a fold evaluated per row';
+COMMENT ON COLUMN graphitron_spelled_reference.name_part_upper IS 'the case-folded name half, computed by the database; the leading column of this relation''s index because a catalog match binds it first';
+
+CREATE TABLE graphitron_arg_mapping_pair (
+  graph_name    VARCHAR NOT NULL,
+  site          VARCHAR NOT NULL,
+  use_site      VARCHAR NOT NULL,
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  argument_name VARCHAR,
+  ordinal       INT,
+  step_position INT,
+  position      INT     NOT NULL,
+  param_name    VARCHAR NOT NULL,
+  argument_path VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (graph_name, site, use_site, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (site IN ('ROUTINE', 'SERVICE', 'FIELD_CONDITION', 'INPUT_FIELD_CONDITION',
+                  'ARGUMENT_CONDITION', 'FIELD_REFERENCE_STEP', 'ARGUMENT_REFERENCE_STEP',
+                  'REFERENCE_FOR_STEP', 'ARGUMENT_REFERENCE_FOR_STEP'))
+);
+CREATE INDEX graphitron_arg_mapping_pair_site_ix
+  ON graphitron_arg_mapping_pair (graph_name, site);
+CREATE INDEX graphitron_arg_mapping_pair_use_ix
+  ON graphitron_arg_mapping_pair (graph_name, use_site);
+COMMENT ON TABLE graphitron_arg_mapping_pair IS 'One argMapping pair, whatever site declared it: a method parameter bound to an argument path, at the position the site lists it. Eight relations carry a pair of this shape, one per directive that can take argMapping, and every one of them holds the same three facts, differing only in the key that says which site owns the row. This relation is those three facts with a uniform key over them, so a reader asking what binds to what asks one relation rather than unioning eight and synthesising a key in every reader that needs one. The per-site tables stay and keep their foreign keys into the directives that own them; what a foreign key cannot do is span nine parents chosen by a column, which is the whole reason the shared half lives here instead of the sites being folded together. Written by capture beside each site''s own row, so this relation cannot be stale against the site it came from and needs no refresh; the shape it replaces was a nine-arm union evaluated once per reader. The site column is the discriminator and it is closed: one value per kind of site, which is what says how to read the three key columns beside it. Two of the nine share one per-site table, a field condition on an input object being a different site from one on an object and the type''s kind being what separates them, and one, the argument @referenceFor step, has a table and a coordinate the validator rejects today, so it has no rows and its value is here to keep the vocabulary total against the family rather than against the population.';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.site IS 'which kind of site declared the pair, in a closed vocabulary of nine, one per directive that can carry argMapping. The whole of what says how to read type_name, field_name, argument_name, ordinal and step_position beside it, exactly as intent_declared_type_ref.owner_kind does for its three. A reader that means one kind filters on it and owns having chosen';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.use_site IS 'the site spelled as one string, in the site''s own grammar: Type.field, Type.field(argument), Type.field#ordinal, or those with the step position appended in brackets. Total by construction, which is what lets it key this relation where the decomposed columns beside it cannot, three of them being null on the sites that have no such part. A reader joining on the parts joins the parts; this column is the key and the thing a diagnostic prints';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.type_name IS 'the type owning the coordinate the site sits on';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.field_name IS 'the field owning the coordinate the site sits on';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.argument_name IS 'the argument the site sits on, null exactly on the sites that sit on a field rather than an argument. Determined entirely by site, the discriminator''s key shape rather than a fact withheld';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.ordinal IS 'which application of a repeatable directive the site is, null exactly on the sites that are not repeatable. Determined entirely by site, as argument_name is';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.step_position IS 'the path element''s position within its reference, null exactly on the sites that are not a path element. Determined entirely by site, as the two above are';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.position IS 'the pair''s own position in the site''s argMapping list, completing the key. Positional because argMapping is a list and the parameter it binds is identified by where it stands';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.param_name IS 'the method parameter name the pair binds';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.argument_path IS 'the argument path the parameter is bound to, as written';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.source_name IS 'the file the owning site was written in, carried from that site so a reader of this relation needs no join back to it';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.source_line IS 'the owning site''s line, carried with the file beside it';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.source_column IS 'the owning site''s column, carried with the file beside it';
+
+
 -- ==== SQL catalog facts ===========================================================
 -- What the consumer's database declares, in SQL's vocabulary. jOOQ's generated model is the
 -- reader, not the owner: reading INFORMATION_SCHEMA directly instead would leave every relation
@@ -3376,34 +3446,7 @@ SELECT graph_name, spelling, table_source_name, table_schema, table_name, candid
   FROM (SELECT s.graph_name, s.spelling, st.source_name AS table_source_name,
                st.table_schema, st.table_name,
                CAST(COUNT(*) OVER (PARTITION BY s.graph_name, s.spelling) AS INT) AS candidates
-          FROM (SELECT graph_name, COALESCE(table_ref, type_name) AS spelling,
-                       table_ref_namespace_part_upper AS namespace_part_upper,
-                       COALESCE(table_ref_name_part_upper, type_name_upper) AS name_part_upper
-                  FROM graphitron_table
-                 UNION
-                SELECT graph_name, table_ref,
-                       table_ref_namespace_part_upper, table_ref_name_part_upper
-                  FROM graphitron_field_reference_step
-                 WHERE table_ref IS NOT NULL
-                 UNION
-                SELECT graph_name, table_ref,
-                       table_ref_namespace_part_upper, table_ref_name_part_upper
-                  FROM graphitron_argument_reference_step
-                 WHERE table_ref IS NOT NULL
-                 UNION
-                SELECT graph_name, table_ref,
-                       table_ref_namespace_part_upper, table_ref_name_part_upper
-                  FROM graphitron_reference_for_step
-                 WHERE table_ref IS NOT NULL
-                 UNION
-                SELECT graph_name, table_ref,
-                       table_ref_namespace_part_upper, table_ref_name_part_upper
-                  FROM graphitron_mutation
-                 WHERE table_ref IS NOT NULL
-                 UNION
-                SELECT graph_name, routine_ref,
-                       routine_ref_namespace_part_upper, routine_ref_name_part_upper
-                  FROM graphitron_routine) s
+          FROM graphitron_spelled_reference s
           JOIN store_graph_source m ON m.graph_name = s.graph_name
           JOIN sql_table st ON st.source_name = m.source_name
            AND st.table_name_upper = s.name_part_upper
@@ -6954,93 +6997,9 @@ COMMENT ON COLUMN intent_input_field_column_match.source_column IS 'source colum
 CREATE VIEW intent_argmapping_pair_live
   (graph_name, site, use_site, type_name, field_name, argument_name, ordinal, step_position,
    position, param_name, argument_path, source_name, source_line, source_column) AS
-SELECT p.graph_name, 'ROUTINE',
-       p.type_name || '.' || p.field_name || '#' || CAST(p.ordinal AS VARCHAR),
-       p.type_name, p.field_name, CAST(NULL AS VARCHAR), p.ordinal, CAST(NULL AS INT),
-       p.position, p.param_name, p.argument_path,
-       d.source_name, d.source_line, d.source_column
-  FROM graphitron_routine_arg_mapping_pair p
-  JOIN graphitron_routine d
-    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
-   AND d.field_name = p.field_name AND d.ordinal = p.ordinal
- UNION ALL
-SELECT p.graph_name, 'SERVICE',
-       p.type_name || '.' || p.field_name,
-       p.type_name, p.field_name, NULL, NULL, NULL,
-       p.position, p.param_name, p.argument_path,
-       d.source_name, d.source_line, d.source_column
-  FROM graphitron_service_arg_mapping_pair p
-  JOIN graphitron_service d
-    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
-   AND d.field_name = p.field_name
- UNION ALL
-SELECT p.graph_name, 'FIELD_CONDITION',
-       p.type_name || '.' || p.field_name,
-       p.type_name, p.field_name, NULL, NULL, NULL,
-       p.position, p.param_name, p.argument_path,
-       d.source_name, d.source_line, d.source_column
-  FROM graphitron_field_condition_arg_mapping_pair p
-  JOIN graphitron_field_condition d
-    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
-   AND d.field_name = p.field_name
-  JOIN graphql_type t ON t.graph_name = p.graph_name AND t.type_name = p.type_name
- WHERE t.kind <> 'INPUT_OBJECT'
- UNION ALL
-SELECT p.graph_name, 'INPUT_FIELD_CONDITION',
-       p.type_name || '.' || p.field_name,
-       p.type_name, p.field_name, NULL, NULL, NULL,
-       p.position, p.param_name, p.argument_path,
-       d.source_name, d.source_line, d.source_column
-  FROM graphitron_field_condition_arg_mapping_pair p
-  JOIN graphitron_field_condition d
-    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
-   AND d.field_name = p.field_name
-  JOIN graphql_type t ON t.graph_name = p.graph_name AND t.type_name = p.type_name
- WHERE t.kind = 'INPUT_OBJECT'
- UNION ALL
-SELECT p.graph_name, 'ARGUMENT_CONDITION',
-       p.type_name || '.' || p.field_name || '(' || p.argument_name || ')',
-       p.type_name, p.field_name, p.argument_name, NULL, NULL,
-       p.position, p.param_name, p.argument_path,
-       d.source_name, d.source_line, d.source_column
-  FROM graphitron_argument_condition_arg_mapping_pair p
-  JOIN graphitron_argument_condition d
-    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
-   AND d.field_name = p.field_name AND d.argument_name = p.argument_name
- UNION ALL
-SELECT p.graph_name, 'FIELD_REFERENCE_STEP',
-       p.type_name || '.' || p.field_name || '#' || CAST(p.ordinal AS VARCHAR)
-         || '[' || CAST(p.step_position AS VARCHAR) || ']',
-       p.type_name, p.field_name, NULL, p.ordinal, p.step_position,
-       p.position, p.param_name, p.argument_path,
-       d.source_name, d.source_line, d.source_column
-  FROM graphitron_field_reference_step_arg_mapping_pair p
-  JOIN graphitron_field_reference d
-    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
-   AND d.field_name = p.field_name AND d.ordinal = p.ordinal
- UNION ALL
-SELECT p.graph_name, 'ARGUMENT_REFERENCE_STEP',
-       p.type_name || '.' || p.field_name || '(' || p.argument_name || ')#'
-         || CAST(p.ordinal AS VARCHAR) || '[' || CAST(p.step_position AS VARCHAR) || ']',
-       p.type_name, p.field_name, p.argument_name, p.ordinal, p.step_position,
-       p.position, p.param_name, p.argument_path,
-       d.source_name, d.source_line, d.source_column
-  FROM graphitron_argument_reference_step_arg_mapping_pair p
-  JOIN graphitron_argument_reference d
-    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
-   AND d.field_name = p.field_name AND d.argument_name = p.argument_name
-   AND d.ordinal = p.ordinal
- UNION ALL
-SELECT p.graph_name, 'REFERENCE_FOR_STEP',
-       p.type_name || '.' || p.field_name || '#' || CAST(p.ordinal AS VARCHAR)
-         || '[' || CAST(p.step_position AS VARCHAR) || ']',
-       p.type_name, p.field_name, NULL, p.ordinal, p.step_position,
-       p.position, p.param_name, p.argument_path,
-       d.source_name, d.source_line, d.source_column
-  FROM graphitron_reference_for_step_arg_mapping_pair p
-  JOIN graphitron_reference_for d
-    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
-   AND d.field_name = p.field_name AND d.ordinal = p.ordinal;
+SELECT graph_name, site, use_site, type_name, field_name, argument_name, ordinal, step_position,
+       position, param_name, argument_path, source_name, source_line, source_column
+  FROM graphitron_arg_mapping_pair;
 COMMENT ON VIEW intent_argmapping_pair_live IS 'This states the rule and is evaluated on demand. The canonical name intent_argmapping_pair beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_argmapping_pair.';
 COMMENT ON COLUMN intent_argmapping_pair_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_argmapping_pair.graph_name, whose comment carries what the value means';
 COMMENT ON COLUMN intent_argmapping_pair_live.site IS 'the site of a row of this rule, materialized into intent_argmapping_pair.site, whose comment carries what the value means';

@@ -16,6 +16,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
@@ -96,7 +97,25 @@ final class FactWrites {
         writers.put(SQL_COLUMN, FactWrites::sqlColumn);
         writers.put(SQL_ENUM_BINDING, FactWrites::sqlEnumBinding);
         writers.put(GRAPHITRON_ARGUMENT_PATH_SEGMENT, FactWrites::graphitronArgumentPathSegment);
+        writers.put(GRAPHITRON_SPELLED_REFERENCE, FactWrites::graphitronSpelledReference);
         return writers;
+    }
+
+    private static void graphitronSpelledReference(DSLContext dsl, List<TableRecord<?>> rows) {
+        var t = GRAPHITRON_SPELLED_REFERENCE;
+        var batch = dsl.batch(dsl.insertInto(t)
+                .columns(t.GRAPH_NAME,
+                         t.SPELLING,
+                         t.NAMESPACE_PART,
+                         t.NAME_PART)
+                .values(markers(4)));
+        for (TableRecord<?> row : rows) {
+            batch = batch.bind(row.get(t.GRAPH_NAME),
+                               row.get(t.SPELLING),
+                               row.get(t.NAMESPACE_PART),
+                               row.get(t.NAME_PART));
+        }
+        batch.execute();
     }
 
     private static void graphitronTable(DSLContext dsl, List<TableRecord<?>> rows) {

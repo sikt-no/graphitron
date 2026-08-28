@@ -627,7 +627,7 @@ public final class SdlFactCapture {
             setOwnPosition(field.getSourceLocation(), record::setSourceLine, record::setSourceColumn);
             sink.add(record);
 
-            captureFieldDirectives(site.typeName(), name, field.getDirectives());
+            captureFieldDirectives(site.typeName(), name, field.getDirectives(), false);
             captureArguments(site.typeName(), name, field.getInputValueDefinitions(), ordinals);
         }
     }
@@ -663,7 +663,7 @@ public final class SdlFactCapture {
             setOwnPosition(field.getSourceLocation(), record::setSourceLine, record::setSourceColumn);
             sink.add(record);
 
-            captureFieldDirectives(site.typeName(), name, field.getDirectives());
+            captureFieldDirectives(site.typeName(), name, field.getDirectives(), true);
         }
     }
 
@@ -735,11 +735,12 @@ public final class SdlFactCapture {
         }
     }
 
-    private void captureFieldDirectives(String typeName, String fieldName, List<Directive> directives) {
+    private void captureFieldDirectives(String typeName, String fieldName,
+                                        List<Directive> directives, boolean inputField) {
         var ordinals = new LinkedHashMap<String, Integer>();
         for (Directive directive : directives) {
             int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
-            decode.captureFieldDirective(typeName, fieldName, directive, ordinal);
+            decode.captureFieldDirective(typeName, fieldName, directive, ordinal, inputField);
             if (!sink.claim(GRAPHQL_FIELD_DIRECTIVE, typeName, fieldName, directive.getName(), ordinal)) {
                 quarantine("DIRECTIVE_APPLICATION",
                     typeName + "." + fieldName + " @" + directive.getName(), directive);

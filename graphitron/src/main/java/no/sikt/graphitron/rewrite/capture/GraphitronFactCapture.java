@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_PATH_SEGMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR;
@@ -80,6 +81,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ARG_MAPPING_SIGIL;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_CONTEXT_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SOURCE_ROW;
@@ -180,8 +182,14 @@ final class GraphitronFactCapture {
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
-                qualified(string(directive, "name"), record::setTableRef,
+                String written = string(directive, "name");
+                qualified(written, record::setTableRef,
                     record::setTableRefNamespacePart, record::setTableRefNamePart);
+                // The site records what the author wrote, which on a bare @table is nothing; the
+                // spelling it resolves against is the type's own name, and that is the fact the
+                // supertype holds. Split rather than passed through spelledReference because this
+                // is the one site whose spelling is not the value it stores.
+                spelling(written == null ? type : written);
                 sink.add(record);
             }
             case "scalarType" -> {
@@ -327,7 +335,14 @@ final class GraphitronFactCapture {
 
     // ---------------------------------------------------------------- field-level
 
-    void captureFieldDirective(String type, String field, Directive directive, int ordinal) {
+    /**
+     * @param inputField whether the coordinate is a field of an INPUT_OBJECT rather than of an
+     *     object or interface. Carried in because a condition on an input field is a different
+     *     argMapping site from one on an object field, and the type's kind is what separates them;
+     *     the walk knows which of the two it is descending and nothing at this depth does
+     */
+    void captureFieldDirective(String type, String field, Directive directive, int ordinal,
+                               boolean inputField) {
         switch (directive.getName()) {
             case "field" -> {
                 if (!sink.claim(GRAPHITRON_FIELD_BINDING, type, field)) return;
@@ -365,13 +380,18 @@ final class GraphitronFactCapture {
                 }
                 int pair = 0;
                 for (ParsedEntry entry : pairs(reference.argMapping(), directive, "condition")) {
+                    int at = pair++;
+                    String path = argumentPath(sink, type, field, entry);
                     var row = sink.dsl().newRecord(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR);
                     row.setTypeName(type);
                     row.setFieldName(field);
-                    row.setPosition(pair++);
+                    row.setPosition(at);
                     row.setParamName(entry.key());
-                    row.setArgumentPath(argumentPath(sink, type, field, entry));
+                    row.setArgumentPath(path);
                     sink.add(row);
+                    argMappingPair(inputField ? "INPUT_FIELD_CONDITION" : "FIELD_CONDITION",
+                        useSite(type, field, null, null, null), type, field, null, null, null,
+                        at, entry.key(), path, directive);
                 }
             }
             case "reference" -> {
@@ -391,7 +411,7 @@ final class GraphitronFactCapture {
                     row.setFieldName(field);
                     row.setOrdinal(ordinal);
                     row.setPosition(position);
-                    qualified(step.table(), row::setTableRef,
+                    spelledReference(step.table(), row::setTableRef,
                         row::setTableRefNamespacePart, row::setTableRefNamePart);
                     qualified(step.key(), row::setKeyRef,
                         row::setKeyRefNamespacePart, row::setKeyRefNamePart);
@@ -401,15 +421,20 @@ final class GraphitronFactCapture {
                     sink.add(row);
                     int pair = 0;
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
+                        int at = pair++;
+                        String path = argumentPath(sink, type, field, entry);
                         var pairRow = sink.dsl().newRecord(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR);
                         pairRow.setTypeName(type);
                         pairRow.setFieldName(field);
                         pairRow.setOrdinal(ordinal);
                         pairRow.setStepPosition(position);
-                        pairRow.setPosition(pair++);
+                        pairRow.setPosition(at);
                         pairRow.setParamName(entry.key());
-                        pairRow.setArgumentPath(argumentPath(sink, type, field, entry));
+                        pairRow.setArgumentPath(path);
                         sink.add(pairRow);
+                        argMappingPair("FIELD_REFERENCE_STEP",
+                            useSite(type, field, null, ordinal, position), type, field, null,
+                            ordinal, position, at, entry.key(), path, directive);
                     }
                     position++;
                 }
@@ -434,7 +459,7 @@ final class GraphitronFactCapture {
                     row.setFieldName(field);
                     row.setOrdinal(ordinal);
                     row.setPosition(position);
-                    qualified(step.table(), row::setTableRef,
+                    spelledReference(step.table(), row::setTableRef,
                         row::setTableRefNamespacePart, row::setTableRefNamePart);
                     qualified(step.key(), row::setKeyRef,
                         row::setKeyRefNamespacePart, row::setKeyRefNamePart);
@@ -444,15 +469,20 @@ final class GraphitronFactCapture {
                     sink.add(row);
                     int pair = 0;
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
+                        int at = pair++;
+                        String path = argumentPath(sink, type, field, entry);
                         var pairRow = sink.dsl().newRecord(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR);
                         pairRow.setTypeName(type);
                         pairRow.setFieldName(field);
                         pairRow.setOrdinal(ordinal);
                         pairRow.setStepPosition(position);
-                        pairRow.setPosition(pair++);
+                        pairRow.setPosition(at);
                         pairRow.setParamName(entry.key());
-                        pairRow.setArgumentPath(argumentPath(sink, type, field, entry));
+                        pairRow.setArgumentPath(path);
                         sink.add(pairRow);
+                        argMappingPair("REFERENCE_FOR_STEP",
+                            useSite(type, field, null, ordinal, position), type, field, null,
+                            ordinal, position, at, entry.key(), path, directive);
                     }
                     position++;
                 }
@@ -500,13 +530,17 @@ final class GraphitronFactCapture {
                 }
                 int pair = 0;
                 for (ParsedEntry entry : pairs(residual, directive, "service")) {
+                    int at = pair++;
+                    String path = argumentPath(sink, type, field, entry);
                     var row = sink.dsl().newRecord(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR);
                     row.setTypeName(type);
                     row.setFieldName(field);
-                    row.setPosition(pair++);
+                    row.setPosition(at);
                     row.setParamName(entry.key());
-                    row.setArgumentPath(argumentPath(sink, type, field, entry));
+                    row.setArgumentPath(path);
                     sink.add(row);
+                    argMappingPair("SERVICE", useSite(type, field, null, null, null),
+                        type, field, null, null, null, at, entry.key(), path, directive);
                 }
             }
             case "externalField" -> {
@@ -568,7 +602,7 @@ final class GraphitronFactCapture {
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
                 record.setOperation(operation);
                 record.setMultiRow(bool(directive, "multiRow"));
-                qualified(string(directive, "table"), record::setTableRef,
+                spelledReference(string(directive, "table"), record::setTableRef,
                     record::setTableRefNamespacePart, record::setTableRefNamePart);
                 sink.add(record);
             }
@@ -625,21 +659,25 @@ final class GraphitronFactCapture {
                 record.setFieldName(field);
                 record.setOrdinal(ordinal);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                qualified(name, record::setRoutineRef,
+                spelledReference(name, record::setRoutineRef,
                     record::setRoutineRefNamespacePart, record::setRoutineRefNamePart);
                 record.setArgMapping(argMapping);
                 record.setColumnMapping(columnMapping);
                 sink.add(record);
                 int pair = 0;
                 for (ParsedEntry entry : pairs(argMapping, directive, "argMapping")) {
+                    int at = pair++;
+                    String path = argumentPath(sink, type, field, entry);
                     var row = sink.dsl().newRecord(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setOrdinal(ordinal);
-                    row.setPosition(pair++);
+                    row.setPosition(at);
                     row.setParamName(entry.key());
-                    row.setArgumentPath(argumentPath(sink, type, field, entry));
+                    row.setArgumentPath(path);
                     sink.add(row);
+                    argMappingPair("ROUTINE", useSite(type, field, null, ordinal, null),
+                        type, field, null, ordinal, null, at, entry.key(), path, directive);
                 }
                 int column = 0;
                 for (ParsedEntry entry : pairs(columnMapping, directive, "columnMapping")) {
@@ -701,14 +739,18 @@ final class GraphitronFactCapture {
                 }
                 int pair = 0;
                 for (ParsedEntry entry : pairs(reference.argMapping(), directive, "condition")) {
+                    int at = pair++;
+                    String path = argumentPath(sink, type, field, entry);
                     var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setArgumentName(argument);
-                    row.setPosition(pair++);
+                    row.setPosition(at);
                     row.setParamName(entry.key());
-                    row.setArgumentPath(argumentPath(sink, type, field, entry));
+                    row.setArgumentPath(path);
                     sink.add(row);
+                    argMappingPair("ARGUMENT_CONDITION", useSite(type, field, argument, null, null),
+                        type, field, argument, null, null, at, entry.key(), path, directive);
                 }
             }
             case "reference" -> {
@@ -730,7 +772,7 @@ final class GraphitronFactCapture {
                     row.setArgumentName(argument);
                     row.setOrdinal(ordinal);
                     row.setPosition(position);
-                    qualified(step.table(), row::setTableRef,
+                    spelledReference(step.table(), row::setTableRef,
                         row::setTableRefNamespacePart, row::setTableRefNamePart);
                     qualified(step.key(), row::setKeyRef,
                         row::setKeyRefNamespacePart, row::setKeyRefNamePart);
@@ -740,16 +782,21 @@ final class GraphitronFactCapture {
                     sink.add(row);
                     int pair = 0;
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
+                        int at = pair++;
+                        String path = argumentPath(sink, type, field, entry);
                         var pairRow = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR);
                         pairRow.setTypeName(type);
                         pairRow.setFieldName(field);
                         pairRow.setArgumentName(argument);
                         pairRow.setOrdinal(ordinal);
                         pairRow.setStepPosition(position);
-                        pairRow.setPosition(pair++);
+                        pairRow.setPosition(at);
                         pairRow.setParamName(entry.key());
-                        pairRow.setArgumentPath(argumentPath(sink, type, field, entry));
+                        pairRow.setArgumentPath(path);
                         sink.add(pairRow);
+                        argMappingPair("ARGUMENT_REFERENCE_STEP",
+                            useSite(type, field, argument, ordinal, position), type, field, argument,
+                            ordinal, position, at, entry.key(), path, directive);
                     }
                     position++;
                 }
@@ -776,7 +823,7 @@ final class GraphitronFactCapture {
                     row.setArgumentName(argument);
                     row.setOrdinal(ordinal);
                     row.setPosition(position);
-                    qualified(step.table(), row::setTableRef,
+                    spelledReference(step.table(), row::setTableRef,
                         row::setTableRefNamespacePart, row::setTableRefNamePart);
                     qualified(step.key(), row::setKeyRef,
                         row::setKeyRefNamespacePart, row::setKeyRefNamePart);
@@ -786,16 +833,21 @@ final class GraphitronFactCapture {
                     sink.add(row);
                     int pair = 0;
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
+                        int at = pair++;
+                        String path = argumentPath(sink, type, field, entry);
                         var pairRow = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR);
                         pairRow.setTypeName(type);
                         pairRow.setFieldName(field);
                         pairRow.setArgumentName(argument);
                         pairRow.setOrdinal(ordinal);
                         pairRow.setStepPosition(position);
-                        pairRow.setPosition(pair++);
+                        pairRow.setPosition(at);
                         pairRow.setParamName(entry.key());
-                        pairRow.setArgumentPath(argumentPath(sink, type, field, entry));
+                        pairRow.setArgumentPath(path);
                         sink.add(pairRow);
+                        argMappingPair("ARGUMENT_REFERENCE_FOR_STEP",
+                            useSite(type, field, argument, ordinal, position), type, field, argument,
+                            ordinal, position, at, entry.key(), path, directive);
                     }
                     position++;
                 }
@@ -1095,6 +1147,100 @@ final class GraphitronFactCapture {
         value.accept(written);
         namespacePart.accept(QualifiedNameGrammar.namespacePart(written));
         namePart.accept(QualifiedNameGrammar.namePart(written));
+    }
+
+    /**
+     * A qualifiable reference that names a table or a routine, written to its own site's relation
+     * and to {@link no.sikt.graphitron.model.Tables#GRAPHITRON_SPELLED_REFERENCE} beside it. The
+     * second write is what makes the spelling a fact rather than something a reader reconstructs by
+     * unioning the seven relations that carry one; the first is unchanged, each site still recording
+     * where its own spelling was written.
+     *
+     * <p>Not {@link #qualified} itself, and the difference is the subject rather than the shape: a
+     * key reference splits by the same grammar and names a constraint, which is a different fact
+     * with no supertype of its own. A site calling the wrong one of these two would put constraint
+     * names in the catalog-resolution relation, so they are named apart.
+     *
+     * <p>Deduplicated through {@link FactSink#claim}, because the same spelling authored at five
+     * coordinates is one row: the relation is keyed by the spelling and the primary key is what says
+     * a second write of it is the same fact and not a second one.
+     */
+    private void spelledReference(String written, Consumer<String> value,
+                                  Consumer<String> namespacePart, Consumer<String> namePart) {
+        qualified(written, value, namespacePart, namePart);
+        spelling(written);
+    }
+
+    /**
+     * One spelling into {@link no.sikt.graphitron.model.Tables#GRAPHITRON_SPELLED_REFERENCE},
+     * deduplicated through {@link FactSink#claim} because the same spelling authored at five
+     * coordinates is one row: the relation is keyed by the spelling and the primary key is what says
+     * a second write of it is the same fact and not a second one.
+     *
+     * <p>Takes the spelling rather than the site's stored value, which are the same string at every
+     * site but one. A bare {@code @table} stores nothing, the author having written no name, and
+     * resolves against the type's own name; that fallback is a spelling the catalog is matched
+     * against, so it belongs here even though no column holds it.
+     */
+    private void spelling(String written) {
+        if (written == null || !sink.claim(GRAPHITRON_SPELLED_REFERENCE, written)) {
+            return;
+        }
+        var row = sink.dsl().newRecord(GRAPHITRON_SPELLED_REFERENCE);
+        row.setSpelling(written);
+        row.setNamespacePart(QualifiedNameGrammar.namespacePart(written));
+        row.setNamePart(QualifiedNameGrammar.namePart(written));
+        sink.add(row);
+    }
+
+    /**
+     * The site spelled in its own grammar, which is what keys the shared relation: the coordinate,
+     * then the argument in parentheses where the site sits on one, then the directive application
+     * after a hash where the directive repeats, then the path element's position in brackets where
+     * the site is one. Every site's spelling is some prefix of that, so one builder produces all
+     * nine and no site can spell its own key differently from the rest.
+     */
+    private static String useSite(String type, String field, String argument,
+                                  Integer ordinal, Integer stepPosition) {
+        var spelling = new StringBuilder(type).append('.').append(field);
+        if (argument != null) {
+            spelling.append('(').append(argument).append(')');
+        }
+        if (ordinal != null) {
+            spelling.append('#').append(ordinal);
+        }
+        if (stepPosition != null) {
+            spelling.append('[').append(stepPosition).append(']');
+        }
+        return spelling.toString();
+    }
+
+    /**
+     * One argMapping pair written to the shared relation beside the per-site one. The site's own
+     * relation keeps the foreign key into the directive that owns the row, which is what no single
+     * relation spanning nine parents could carry; this write is the half every site states
+     * identically, so that asking it is a scan rather than a union.
+     *
+     * @param site the discriminator, one of the nine {@code GRAPHITRON_ARG_MAPPING_PAIR} admits
+     * @param useSite the site spelled in its own grammar, total by construction and the key
+     */
+    private void argMappingPair(String site, String useSite, String type, String field,
+                                String argument, Integer ordinal, Integer stepPosition,
+                                int position, String paramName, String argumentPath,
+                                Directive directive) {
+        var row = sink.dsl().newRecord(GRAPHITRON_ARG_MAPPING_PAIR);
+        row.setSite(site);
+        row.setUseSite(useSite);
+        row.setTypeName(type);
+        row.setFieldName(field);
+        row.setArgumentName(argument);
+        row.setOrdinal(ordinal);
+        row.setStepPosition(stepPosition);
+        row.setPosition(position);
+        row.setParamName(paramName);
+        row.setArgumentPath(argumentPath);
+        position(directive, row::setSourceName, row::setSourceLine, row::setSourceColumn);
+        sink.add(row);
     }
 
     /**
