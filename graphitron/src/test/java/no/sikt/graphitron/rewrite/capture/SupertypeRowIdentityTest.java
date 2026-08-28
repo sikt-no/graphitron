@@ -24,6 +24,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the change can introduce: a supertype capture fills differently from the union it replaces returns
  * the same shape and different rows, and every reader above it is quietly wrong rather than broken.
  *
+ * <p>Covers the two supertypes only. The stored bean property slice 2 adds is anchored by
+ * {@code ClassMemberSlotScanTest}, which was already pinning the rule's output row by row against a
+ * real compiler's census, including the two spellings of one property and the leading-acronym case;
+ * a second anchor here would be a weaker copy of it against a fixture with no accessors in reach.
+ *
  * <p>The anchor is the union itself, written out below as the SQL it was, rather than a row count or
  * a golden file. A count agrees by accident; a golden file is a second thing to maintain and says
  * nothing about which row moved. The union cannot drift away from what it is anchoring because it is

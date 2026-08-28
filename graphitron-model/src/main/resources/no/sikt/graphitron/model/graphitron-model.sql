@@ -2887,15 +2887,25 @@ CREATE TABLE jvm_method (
   return_type       VARCHAR NOT NULL,
   declared_return_type VARCHAR NOT NULL,
   returns_condition BOOLEAN NOT NULL,
+  bean_property     VARCHAR GENERATED ALWAYS AS (
+    CASE WHEN LEFT(method_name, 3) = 'get' AND LENGTH(method_name) > 3
+              AND SUBSTRING(method_name, 4, 1) <> LOWER(SUBSTRING(method_name, 4, 1))
+         THEN LOWER(SUBSTRING(method_name, 4, 1)) || SUBSTRING(method_name, 5)
+         WHEN LEFT(method_name, 2) = 'is' AND LENGTH(method_name) > 2
+              AND SUBSTRING(method_name, 3, 1) <> LOWER(SUBSTRING(method_name, 3, 1))
+         THEN LOWER(SUBSTRING(method_name, 3, 1)) || SUBSTRING(method_name, 4)
+    END),
   PRIMARY KEY (source_name, class_name, method_name, descriptor),
   FOREIGN KEY (source_name, class_name) REFERENCES jvm_class (source_name, class_name)
 );
+CREATE INDEX jvm_method_bean_property_ix ON jvm_method (source_name, bean_property);
 COMMENT ON TABLE jvm_method IS 'A public method exists on a class in the census. Filtered: public and non-synthetic, constructors and class initializers excluded. The method''s types are carried in both forms, erased and declared, because neither is a function of the other: erasure maps a type variable to its bound, which the declared form does not name, and the declared form names a container''s element type, which the erasure does not. A surface testing a type''s identity reads the erasure and one spelling a signature for an author reads the declared form.';
 COMMENT ON COLUMN jvm_method.source_name IS 'the owning class''s classpath entry, as on jvm_class; the key''s leading dimension';
 COMMENT ON COLUMN jvm_method.class_name IS 'the fully-qualified Java class name as written';
 COMMENT ON COLUMN jvm_method.method_name IS 'the method name; not a key on its own, overloads share it';
 COMMENT ON COLUMN jvm_method.descriptor IS 'raw JVM descriptor; the overload discriminator that keeps this key natural';
 COMMENT ON COLUMN jvm_method.return_type IS 'erased source-form return type: what the JVM descriptor carries, package dropped. The form a check on a type''s identity compares against';
+COMMENT ON COLUMN jvm_method.bean_property IS 'the property name this method offers an SDL author, or null where the method is not an accessor: get or is followed by an upper-case letter, with that letter lowered and the prefix dropped. Computed by the database because it is a pure function of the column beside it, which is what makes it a stored value an index can serve rather than an expression evaluated once per candidate row. That distinction is the whole reason the column exists: the rule was spelled inline in intent_class_member_slot and joined against by intent_field_accessor_hop, and a join key computed inside a view is a key no index can answer, so the hop nested-loops over the census. Stored and indexed, the same hop returns the same rows in under two seconds where it did not complete in two minutes. Null is not-an-accessor and never an accessor whose name is unknown; the rule''s own terms are on intent_class_member_slot, which still owns what a slot is and reads this column rather than restating it. No return type is consulted, so a method named isTitle returning a String offers title exactly as the rule always said';
 COMMENT ON COLUMN jvm_method.declared_return_type IS 'the return type as the source declared it, package dropped and type arguments kept (List<Film>, Field<String>, T). Read from the classfile Signature attribute, and equal to return_type wherever the compiler emitted no attribute, which it does only where erasure loses nothing. Never NULL and never coalesced by a reader: whether a classfile stored the declared form separately is an encoding detail, not a fact about the method, so the census answers the question once. This is the column an accessor walk follows, a container''s element type being exactly what the erasure drops';
 COMMENT ON COLUMN jvm_method.returns_condition IS 'matched on the un-erased org.jooq.Condition descriptor, so a consumer''s own Condition type does not false-match';
 
@@ -5142,20 +5152,12 @@ SELECT rc.source_name, rc.class_name, 'RECORD_COMPONENT',
  WHERE c.class_kind = 'RECORD'
 UNION ALL
 SELECT m.source_name, m.class_name, 'BEAN_ACCESSOR',
-       LOWER(SUBSTRING(m.method_name, pfx.prefix_chars + 1, 1))
-         || SUBSTRING(m.method_name, pfx.prefix_chars + 2),
-       m.declared_return_type, m.method_name
+       m.bean_property, m.declared_return_type, m.method_name
   FROM jvm_method m
   JOIN jvm_class c
     ON c.source_name = m.source_name AND c.class_name = m.class_name
-  JOIN (SELECT 'get' AS spelling, 3 AS prefix_chars
-        UNION ALL
-        SELECT 'is', 2) pfx
-    ON LEFT(m.method_name, pfx.prefix_chars) = pfx.spelling
  WHERE c.class_kind <> 'RECORD'
-   AND LENGTH(m.method_name) > pfx.prefix_chars
-   AND SUBSTRING(m.method_name, pfx.prefix_chars + 1, 1)
-         <> LOWER(SUBSTRING(m.method_name, pfx.prefix_chars + 1, 1))
+   AND m.bean_property IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM jvm_method_parameter p
                     WHERE p.source_name = m.source_name
                       AND p.class_name = m.class_name
