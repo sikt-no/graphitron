@@ -12,10 +12,10 @@ last-updated: 2026-08-27
 
 # Capture moves below the generator: the fact tier becomes a module boundary
 
-> **Citation redirect, 2026-08-28.** The R856 citations below name an item dissolved into R876; the
-> figures it carried are in `roadmap/audits/2026-08-28-derived-read-cost-premise.md`. R848 is
-> unaffected. The 59-second registration this item cites is `intent_carrier_data_field`, priced at
-> 50.9 s on the audit's consumer-schema capture.
+> **Citation redirect, 2026-08-28, discharged.** The R856 citations this item carried have been
+> rewritten in place against `roadmap/audits/2026-08-28-derived-read-cost-premise.md`, which is where
+> the dissolved item's figures live, and the register question this item left open is repointed at
+> R876. Nothing below cites a dissolved item.
 
 R682 states the destination in one sentence: capture writes facts, planners read facts and produce
 commands, emitters render commands, and validation is questions asked of the facts. Each tier reads
@@ -203,18 +203,23 @@ not want on top of one it did (which is R857).
 **One fact this does not license, and it needs stating so nobody plans on it.** "The generator does
 not need refreshing" is true of the *call* and not yet of the *rows*. Three registered targets are
 read from main sources today: `RoutineWriteFacts` in `plan` reads `intent_carrier_data_field`, which
-is one of the two most expensive registrations in R856's consumer-schema price list at 59 seconds;
+the derived-read-cost audit prices at 50.9 seconds on its consumer-schema capture;
 `ArgmappingProjectionDefects` reads `intent_argmapping_pair`; `StoreNodeTables` reads
 `intent_resolved_type_binding`. A generating run depends on those rows being current and gets that
 from its own capture.
 
 Whether it would be cheaper for those three reads to go to the `_live` views and for the register to
-exist only for interactive readers is a real question with a real prize, since a consumer capture
-would stop paying a register that serves the editor. It is also a measurement rather than an
-argument: the registrations exist because H2 inlines a view at every naming and eliminates no common
-subexpression, and that cost lands inside a single read as much as across many. R848 owns that
-measurement. This item makes the cadence expressible; it does not decide what any consumer should
-ask for.
+exist only for interactive readers was left here as an open question pointed at R848. **That pointer
+is stale twice over and the question has moved rather than closed.** R848 reached Done on 2026-08-28
+having priced the register as a set. R876 now owns the question, and reframes it past the form this
+item posed: its target is not a smaller register but a store that materializes nothing, on the
+ground that an expensive derived read is usually a missing supertype or an expression-only join key
+rather than an inherently costly rule. It also reports the arm that matters to the sentence above,
+that emptying the register today costs the consumer read set more than keeping it, so nothing
+licenses repointing those three reads at `_live` on this item's say-so.
+
+What survives here is only the boundary claim, and it is unaffected by any of that: this item makes
+the cadence expressible, and does not decide what any consumer should ask for.
 
 ## The corpus
 
@@ -241,6 +246,16 @@ item.
 
 R682 is not blocked by this. The leaf zoo dissolves above the line either way; this item decides
 where the line is, not what is left standing on the far side of it.
+
+**R876 is the item to sequence against, not R682.** Its slices 1 and 3 have capture write supertype
+tables it does not write today, which lands new code in exactly the packages this item relocates,
+and its slice 2 adds a generated column and a captured fact. None of that conflicts in substance:
+this item moves files without changing what any of them does, so a supertype written before the move
+crosses with everything else, and one written after is written in its new home. It conflicts in
+mechanics, and the resolution is ordering rather than coordination. R876 is priority 1 with a
+measured argument behind it and this item is priority 2, so the expectation is that R876's slices
+land first and this move carries them. An implementer starting this move while a supertype slice is
+in flight should say so rather than rebase through it.
 
 ## Decisions this spec makes
 

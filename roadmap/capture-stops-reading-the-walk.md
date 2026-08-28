@@ -61,10 +61,10 @@ reads "compare in memory" as permission to write one has built the thing the hea
 **The claim that does die is the one about reach.** The header's case for store-side storage is that
 two relations "diff over any corpus a run touches". Nothing does that. `TypeBackingShadowTest` is
 four hand-written schemas, and no other test and no view compares the pair. The capability is paid
-for on every capture and never exercised. R865's survey is the sharper version of the same point:
-of fifteen store files a real consumer schema left on disk, every one held zero graphs and zero
-fields, so on the corpus where a corpus-wide diff would actually pay, the store it would need is the
-thing that cannot be produced.
+for on every capture and never exercised, and it has now had its opportunity: a consumer-scale
+capture exists and is the measurement instrument the 2026-08-28 derived-read-cost audit works from,
+and no walk-against-derivation diff has been run over it. A differential nobody runs at the one
+scale that would make it informative is storage, not an instrument.
 
 ## What execution tests do and do not cover
 
@@ -121,6 +121,12 @@ left for whoever notices.
 charter of `rejection_` already ties its own lifetime to the clock `walk_` keeps." After this item
 that clock does not exist. Both the page and `rejection_`'s own DDL charter need repointing at the
 walk itself, which is what the clock was always about.
+
+**Both edits share a file with R876's slice 5,** which amends the same page's lever order and
+restates its top rung. The paragraphs do not overlap: R876 works the lever hierarchy, this item works
+the oracle corollary and the strata buckets. Whoever lands second should read the other's edit rather
+than assume a clean merge, since the top rung R876 restates argues from cost and the corollary this
+item rewrites is the page's worked example of the same argument.
 
 ## Retired vocabulary
 
