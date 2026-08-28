@@ -1069,3 +1069,129 @@ R848, R856, R858, R859, R864 and R865 carry the statuses and shapes the item att
 with R855 Done and its account in the changelog.
 
 Verdict: stays in Spec.
+
+### Round 5: Spec -> Ready, revisions requested
+
+Revision 2 answers round 4, and the two halves it turned on both check out. `StoreRefresh.wholesale()`
+really does subtract a hand-maintained `Set<Table<?>>` rather than compute a column predicate, so
+source-keyed and source-partitioned are two predicates and assertion 1 is the only one of the four
+that can tell them apart; and it really is `private static`, so the visibility widening the item now
+owns is a change the gate cannot be written without. The dependency on R872 is the right call rather
+than the cheap one, and the arithmetic behind it is tighter than the item claims for itself: computed
+over the closure of all twenty registered source views, the intersection with `wholesale()` is
+exactly `{sql_node_metadata, sql_node_key_column}` and nothing else, and `wholesale()`'s whole base
+relation set is exactly R872's four. So "it goes green exactly when R872 lands" is not a hope, it is
+the arithmetic, and it holds under either reading of the closure discussed below.
+
+Question 1 passes. Stated without the phase list: a `graphitron:dev` start currently re-derives the
+entire materialization register a second time, after its own capture already filled it, and pays one
+further evaluation per extra graph a shared workspace store holds; after this lands a start over a
+store whose partitions are already filled derives none of it, so the language server and MCP ports
+bind a full register pass sooner and generated output is unchanged. Clear, consumer-visible, and
+reachable in this tree.
+
+Question 2 fails, on the enforcer and on one sentence of the premise. This is not round 4 again: the
+claim rule is sound, and what is wrong is that the closure the gate ranges over is specified as one
+thing while the assertions only hold over another.
+
+**Blocking, question 2: the closure is specified to stop at base tables, but seventeen of the twenty
+registered source views read another registration's target table, which is a base table. Under the
+specified closure assertion 3 is red today on eight of the twenty, and the premise sentence has no
+arm that covers a registration target at all.**
+
+The specified reach is unambiguous. `MaterializeDependencies`'s own javadoc states its walk: "A read
+of an unregistered view recurses into that view's definition, a read of a registered target becomes a
+row saying the target's registration refreshes first, and base tables end the walk." The item asks for
+"the same recursion stopped at base tables instead". A registration target is a base table, so it ends
+the walk and is a member of the closure.
+
+That makes registration targets the closure's most common member class rather than a corner:
+seventeen of the twenty registered views reach at least one, `intent_spelled_table` and
+`intent_resolved_type_binding` appearing in six and seven closures respectively. Two consequences,
+and the second is the one that matters more.
+
+*Assertion 3 is red on eight registrations.* It asks that "a registered view whose closure contains a
+source-keyed relation also reads `store_graph_source`". Eight registered views contain a source-keyed
+relation in the specified closure and do not name `store_graph_source` anywhere in their view chain,
+because the membership scoping happened one registration upstream and the source-keyed coordinate
+reaches them through a target table that carries `graph_name` and `source_name` together. The eight,
+with the source-keyed relations each reaches:
+`intent_resolved_type_binding_live` (`sql_table`), `intent_argument_column_match_live` (`sql_column`),
+`intent_carrier_data_field_live` (`sql_table`), `intent_input_field_filter_role_live` (`sql_column`
+plus R872's two), `intent_mutation_payload_refusal_live` and `intent_mutation_payload_column_live`
+(`sql_column`, `sql_constraint_column`, `sql_primary_key`, plus R872's two),
+`intent_mutation_payload_key_membership_live` and `intent_mutation_write_destination_live`
+(`sql_constraint`, `sql_constraint_column`, `sql_primary_key`). The cheapest one to read is
+`intent_mutation_payload_key_membership_live`, whose whole body names three relations:
+`intent_mutation_matched_key`, `intent_mutation_payload_column` and `sql_constraint_column`. The item
+flags assertion 1 as red until R872 and says nothing about assertion 3, and the Tests section puts
+assertions 2 to 4 in `MaterializeRegistryGateTest` with no case marked red, so an implementer writing
+the gate as specified meets eight failures the plan does not predict and has to decide on the spot
+what the assertion was for. That is the redesigning-as-you-go this gate decides against.
+
+*The premise sentence condemns the design it is stating.* Coverage is defined as "graph-keyed and
+rewritten only inside a capture transaction of that graph, or ... source-partitioned", with the
+closing sentence that "a relation that is neither, or one written on a cadence no capture owns, serves
+stale rows under this rule and does so silently". A registration target is graph-keyed and is *not*
+rewritten only inside a capture transaction: `refreshAll` rewrites it on the reader cadence, which is
+precisely a cadence no capture owns. So read literally, the premise says seventeen of the twenty
+registered views serve stale rows silently. They do not, and the item already carries the argument for
+why in a different section: invalidation is per graph rather than per registration, so a prerequisite
+and its dependent lose their claims together, and the pass refills prerequisites first. But that
+argument is stated as a property of the rule rather than as a coverage arm of the premise, so the
+premise as written is false over the register both today and after R872 lands, and the gate has no
+assertion that would notice.
+
+**A shape that satisfies both, offered rather than chosen.** Stop the recursion at base relations that
+are *not* registration targets, and continue through a target into its own source view. Computed that
+way over the twenty registrations, all four assertions land exactly where the item says they do:
+assertion 1 red on `sql_node_metadata` and `sql_node_key_column` alone, assertions 2, 3 and 4 green.
+The reason it works is the one the item would have to write and I should not: a target's rows are
+whatever its own source view computed, so currency for a target delegates to that view's closure
+rather than to a writer of its own, which is the same delegation the refresh order already performs
+when it refills prerequisites first. Under that reach the premise needs no new arm either, a
+registration target no longer being a closure member. What the revision has to be explicit about is
+that this is a third walk rather than the one `MaterializeDependencies` runs: that walk stops at a
+registered target and emits an edge, and this one passes through it, so "the same recursion stopped at
+base tables" is not the sentence that describes it.
+
+Whether to take that shape, or to keep the specified closure and give assertion 3 a second admissible
+witness plus the premise a fourth coverage arm, is the author's call. Either way what a revision needs
+is that the closure's treatment of a registration target is stated once and explicitly, that assertion
+3's predicate is one that holds over the register as it stands, and that the premise's coverage
+definition accounts for the class of relation seventeen of the twenty registered views actually read.
+
+**Non-blocking, and only worth a sentence if the author agrees.** If R872 adds its four relations to
+`PARTITIONED`, `wholesale()`'s base-relation set becomes empty, every remaining base table being
+graph-keyed, `meta_`-prefixed, source-partitioned or one of the three named `store_` exemptions. That
+is R872's business and not this item's, but it bears on assertion 1's standing afterwards: an
+intersection with an empty set cannot fail, so the assertion goes from red to vacuously green and
+stays a live instrument only for a relation added later without a partition. Worth knowing when the
+Tests section says the failure message should read as the same failure for a fifth registration
+walking into the hole.
+
+**Verified this round,** beyond what rounds 2 to 4 list, so a revision need not re-argue any of it:
+`StoreRefresh.PARTITIONED` holds twenty-three relations, ten `sql_`, nine `jvm_` and four `java_`, with
+`sql_node_metadata`, `sql_node_key_column`, `sql_routine` and `sql_routine_parameter` the four of the
+fourteen `sql_` tables absent from it; `wholesale()` is `private static` and subtracts that set;
+`clear` deletes the stale `jvm_` partitions before any upsert and issues the wholesale arm as
+`deleteFrom(table).execute()`; exactly four of the twenty registrations reach `sql_node_metadata` and
+`sql_node_key_column`, and they are the four the item names; `meta_materialize` holds twenty rows;
+assertion 2's violation set and assertion 4's are both empty today, and the five off-cadence families
+are each graph-keyed with `java_` carrying neither key column; `ViewReferences.relationsReadBy` is
+public and takes `(DSLContext, String)`; `refreshAll` loops registrations outer and graphs inner,
+holds no transaction, calls `analyse` inline, and returns void where `analyse` returns a count;
+`refresh` does not loop graphs; `RefreshProgress.Event` is sealed over `PassStarted`,
+`RegistrationStarted`, `RegistrationFinished` and `PassFinished(long nanos)`; `FactSchemaGateTest` is
+in `StoreRefresh`'s own package, is `@UnitTier`, and already imports `Materializations`,
+`MaterializeDependencies`, `SQL_NODE_METADATA` and `SQL_NODE_KEY_COLUMN`; `store_materialized_partition`
+and `Materializations.invalidate` are both absent from the tree; `store_graph_source` is a base table;
+`GraphQLRewriteGenerator` carries one `runPipeline` body reaching `captureAndRead` once with every
+public entry point running it, so the pass count is two; `DevMojo` calls `refreshAll` once and reaches
+`buildOutputQuietly` on `skipInitial`; `StoreReaper.sweep` retains the live directory plus the others
+up to a retention count; `sql_node_metadata`'s table comment carries the "refreshed in the same
+clearing round by the same walk" and "cut one refresh unit in half" sentences verbatim; and R864,
+R865 and R872 exist under the slugs `depends-on` names, at `Spec`, `Spec` and `Backlog`, with R855,
+R858 and R859's item files gone as Done.
+
+Verdict: stays in Spec.
