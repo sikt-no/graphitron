@@ -53,13 +53,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p><b>Instrument: the executed plan, not the explained one.</b> {@code EXPLAIN} without
  * {@code ANALYZE} is the tempting instrument, since it needs no execution, and on this schema it is
  * not faithful. H2 optimizes a view's inner query per set of index conditions, at execution, and a
- * bare {@code EXPLAIN} renders the unmasked form; measured here, it reports three of the seven
- * registrations below and silently agrees on the other four, whose rows visited move by factors of
- * three to eight. {@code EXPLAIN ANALYZE} renders what ran.
+ * bare {@code EXPLAIN} renders the unmasked form; measured here, it reported three of the seven
+ * registrations then in the set below and silently agreed on the other four, whose rows visited move
+ * by factors of three to eight. {@code EXPLAIN ANALYZE} renders what ran.
  *
  * <p><b>And the whole plan text, minus {@code scanCount}, rather than a reduction of it.</b> A
  * hand-rolled reduction to the relation order and the index names was tried first and is the reason
- * the paragraph above can name a number: it missed four of the seven, because the difference lives
+ * the paragraph above can name a number: it missed four of those seven, because the difference lives
  * in the seek conditions and not in which index is named. The failing shape is one index used two
  * ways, and dropping the conditions drops exactly the evidence. {@code scanCount} is the one
  * rendering that varies with statistics by construction, being a count of rows visited, so it is the
@@ -122,6 +122,15 @@ class RefreshPlanStatisticsTest {
      * 103 milliseconds against 29. No number here is asserted, for {@code DerivedReadCostTest}'s
      * reason: a tier that must not fail for being slow cannot hold a figure.
      *
+     * <p>An eighth row joined the set when {@code intent_input_field_carrier_role} was registered,
+     * and it is the mechanism above arriving on a new statement rather than a new mechanism: that
+     * rule reads {@code intent_input_field_filter_role} and {@code intent_node_id_decode_column},
+     * both registered targets, so the plan it gets turns on statistics the refresh itself has to
+     * have written. A registration whose source view reads another registration's target is the
+     * shape that joins this set, which is worth stating because both registrations landed in the
+     * same increment and only one of them joined: the decode column rule reads the hop column
+     * target and plans identically either way.
+     *
      * <p>What the figures do <em>not</em> say is what this costs a schema of consumer size. Nothing
      * in this repo captures one, and the ratios above are taken over a twelve-unit fixture whose
      * whole point is that it understates: a per-driving-row cost is linear in driving rows, and the
@@ -129,6 +138,7 @@ class RefreshPlanStatisticsTest {
      */
     private static final Set<String> PLAN_DEPENDS_ON_STATISTICS = Set.of(
         "intent_field_column_scope_live",
+        "intent_input_field_carrier_role_live",
         "intent_field_scope_table_live",
         "intent_input_field_filter_role_live",
         "intent_mutation_payload_column_live",

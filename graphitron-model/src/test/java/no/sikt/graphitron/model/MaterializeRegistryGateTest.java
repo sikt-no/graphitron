@@ -71,14 +71,25 @@ class MaterializeRegistryGateTest {
      * commit that argues for something else, which is exactly how it last moved. {@link #NO_INDEX}
      * is the model: a figure that has to be edited deliberately, not a ceiling nobody may exceed.
      */
-    private static final int REGISTRATIONS = 20;
+    private static final int REGISTRATIONS = 22;
 
     /**
      * Stages the refresh takes, the register's depth.
      *
+     * <p>Twelve until {@code intent_node_id_decode_column} and {@code intent_input_field_carrier_role}
+     * were registered, a stage each, and both for the same reason rather than because the register
+     * grew: each already sat on the chain from {@code intent_node_id_decode_hop_column} to the two
+     * mutation payload views as an unregistered intermediate the reachability walk saw straight
+     * through, and registering one turns a link the walk was passing over into a stage the refresh
+     * has to wait for. The chain is now the hop column, the decode column, the carrier role and the
+     * payload views where it was the hop column and the payload views. Depth bought a fall in cost
+     * rather than a rise, which is the point {@link #REGISTRATIONS}' note makes in the abstract and
+     * this pair makes concretely: the payload column refresh statement fell about thirtyfold on the
+     * schema those two registrations were measured against.
+     *
      * @see #REGISTRATIONS
      */
-    private static final int REFRESH_STAGES = 12;
+    private static final int REFRESH_STAGES = 14;
 
     /**
      * The registered targets carrying no index, each with the argument that says why. A roster
@@ -171,6 +182,28 @@ class MaterializeRegistryGateTest {
      *   serve. An index was declared here first, on the assumption that the matched key sought it,
      *   and removed when the rewrite that made that relation one pass removed the seek along with
      *   the join.</li>
+     *   <li>{@code intent_input_field_carrier_role}: the row where the counter and the clock
+     *   disagree and the clock decides. Both readers are the mutation payload views and both join
+     *   this target on the whole six-column grain from inside an inlined common table expression, so
+     *   unlike the two scope targets above there is a coordinate an index could serve, and the
+     *   roster's structural route is unavailable. Four shapes were measured against a store captured
+     *   from the sakila example schema with statistics current on both sides, in rows visited by the
+     *   payload column relation and the payload refusal: with no index 4286 / 2163; on the grain
+     *   3101 / 790; on the grain with {@code carrier_role} appended 3101 / 787; on
+     *   {@code (graph_name, type_name, field_name)} 3101 / 790; on
+     *   {@code (graph_name, carrier_role)} 4286 / 811. By that counter three of the four are a
+     *   large improvement. The clocks are what refuse them: the payload column is 25/24/23
+     *   milliseconds with no index and 22/22/23 on the grain, inside its own spread, while the
+     *   refusal goes the wrong way and consistently, 13/11/11 with none against 21/23/22 on the
+     *   grain, 30/18/20 with the role appended and 24/23/20 on the field coordinate. A third of the
+     *   rows visited for twice the time is this file's own most-repeated lesson arriving again, and
+     *   the mechanism is the target's size: it holds ninety-five rows here, so the seek an index
+     *   installs costs more than the scan it replaces. What would change the answer is a driving
+     *   side larger than the target, which is the same shape {@code intent_argument_column_match}'s
+     *   row above names, and on a consumer schema both sides grow. Nothing here is the hazard the
+     *   register met on {@code intent_field_scope_table}, where an unindexed target was worse than
+     *   the view it replaced: this target unindexed takes its expensive reader from 85 milliseconds
+     *   to 25.</li>
      *   <li>{@code intent_mutation_payload_key_membership}: five namings and none of them probes in.
      *   Two arms of {@code intent_mutation_write_refusal} drive from this target and
      *   {@code intent_mutation_write_destination} names it three times, twice as a set it collects
@@ -184,6 +217,7 @@ class MaterializeRegistryGateTest {
         "intent_field_column_scope",
         "intent_argument_column_scope",
         "intent_argument_column_match",
+        "intent_input_field_carrier_role",
         "intent_errors_field",
         "intent_carrier_data_field",
         "intent_node_id_instruction",

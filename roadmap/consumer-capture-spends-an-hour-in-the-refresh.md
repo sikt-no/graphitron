@@ -1,7 +1,7 @@
 ---
 id: R856
 title: "A consumer-schema capture spends over an hour inside the materialization refresh"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: model-cleanup
@@ -689,6 +689,114 @@ it is a risk: the dependency walk parses this view today, reaching it from
 `intent_mutation_payload_column_live`, and `ViewReferences` handles recursive CTEs explicitly, so
 nothing in the register's machinery meets a new shape here.
 
+## What the first registration bought
+
+`intent_node_id_decode_column` is registered, which is item 3 of the sequence in Implementation, and
+this section is the measurement that admits it rather than a restatement of the case for it. Taken
+against a store captured from the sakila example schema, 302 types and 928 fields, result reuse off,
+three runs apiece, each read through a reader minted for it so no session answers from a resolution
+it already holds. The two columns are the same store with the rule evaluated on demand and with its
+rows stored, which is the comparison `UnregisteredRelation` exists to make:
+
+[cols="3,2,2"]
+|===
+| relation | rule on demand | rows stored
+
+| `intent_mutation_payload_column_live` | 851 / 826 / 827 ms | 78 / 77 / 79 ms
+| `intent_mutation_payload_refusal_live` | 69 / 73 / 82 ms | 12 / 10 / 11 ms
+| `intent_input_field_carrier_role` | 63 / 63 / 66 ms | 6 / 5 / 6 ms
+| `intent_node_id_decode_column` itself | 63 / 64 / 60 ms | 1 / 0 / 1 ms
+| `intent_node_id_decode` | 966 / 961 / 959 ms | 911 / 929 / 931 ms
+|===
+
+Every reader improves and none is worse, which is the claim a registration makes and the one
+`DerivedReadCostTest` holds. The refresh this installs is one evaluation of the source view per
+graph, 60 / 57 / 60 ms on the same store, so the registration costs about a fourteenth of what a
+single read of the payload column rule was paying and buys back ten times that on it.
+
+**Read the ratios against the earlier tables rather than beside them.** The measurement section above
+prices the same statements on the same schema at 1075.8 ms and 61.4 ms, where this table has 851 and
+69 for the unregistered shape; the two were taken on trees a fortnight apart with concurrent work in
+between, and the shape of the finding, not the figure, is what carries across. What is comparable
+within this table is its own two columns, which were taken minutes apart on one store.
+
+**The index is declared, on the shape this item named first, and the alternative it warned about is
+the worse one.** Four shapes were measured on that store with statistics current on both sides, in
+rows visited by the three readers that move at all (the payload column relation, the payload refusal,
+the carrier role): no index 19069 / 9257 / 1236; `(graph_name, site, use_site)` 17847 / 8993 / 1148;
+`(graph_name, use_site)` the same three as that; `(graph_name, site, use_site, position)` the same
+three again, so the position buys nothing; and `(graph_name, site, path)`, the spelling the probe used
+to carry, 18593 / 9155 / 1202, worse on every one of the three. The reason it is worse is the second
+reader this item predicted would decide it: `path` is null on the argument site and does not serve
+`landing`'s `GROUP BY (graph_name, use_site)` as an ordered input, so the shape that reads on the
+family's declared key is also the shape that serves two readers rather than one. The probe's third
+conjunct moved to `d.use_site = a.path` in the same change, and the two column comments that call
+`path` not-a-join-key stay true rather than needing the move this item's step 3b put on the other
+branch.
+
+**What the index does not do here is move a clock.** The target is ninety rows on this fixture and H2
+reads it whole either way, which is the reading `intent_argument_column_match`'s roster row takes of
+the same situation at its own population. The declaration is claimed on the scans and on the second
+reader, and the population that would make it a clock is a consumer schema, where the driving side
+grows with the mutation payload surface and the target with the node-id surface. Recorded here
+because a future reader meeting a flat clock beside a declared index should meet the reason too.
+
+**Item 4 was put to the same measurement rather than inherited from the pair having been proposed
+together, and it passes.** The question step 4 asks is whether the first registration leaves either
+suspect expensive, and the honest way to answer it is to register the carrier and toggle it, which is
+what "What the second registration bought" below records. The short answer is that the first
+registration made one evaluation of the carrier view cheap, 63 ms to 6, and did not remove the
+per-driving-row multiplier over it, which is what this item's own reasoning predicted: what remains
+after item 3 is 85 ms on the payload column relation, and the carrier registration takes it to 27.
+
+## What the second registration bought
+
+`intent_input_field_carrier_role` is registered too, which is item 4, and it was priced on its own
+rather than on the pair's figures: the store below already has `intent_node_id_decode_column`
+registered, so what this table shows is what the carrier registration adds on top of the first one
+and not what the two are worth together. Same schema, same method, three runs apiece:
+
+[cols="3,2,2"]
+|===
+| relation | carrier on demand | carrier's rows stored
+
+| `intent_mutation_payload_column_live` | 85 / 91 / 81 ms | 23 / 23 / 35 ms
+| `intent_mutation_payload_refusal_live` | 15 / 14 / 14 ms | 10 / 9 / 12 ms
+| the carrier's own read | 6 / 6 / 8 ms | 1 / 0 / 0 ms
+| `intent_mutation_matched_key` | 26 / 26 / 27 ms | 27 / 28 ms past a first-run outlier
+|===
+
+The refresh is one evaluation of the source view per graph, 8 / 7 / 6 ms, so this registration costs
+about a tenth of one read of the relation it is bought for. Taking the two registrations in order is
+what makes these numbers mean anything, and it is worth saying what the order established rather than
+only that it was followed: the first registration took one evaluation of the carrier rule from 63 ms
+to 6 and left the multiplier over it where it was. A rule that is expensive and a rule that is
+evaluated many times are different faults with different levers, and only the second is a
+registration's to fix; had both landed together, the 851-to-23 would have been one number with no way
+to say which half of it either registration bought.
+
+**The index is declined, on a measurement, and the roster carries it.** Four shapes over both readers
+with statistics current on both sides. By rows visited three of them are a large improvement: the
+payload column relation and the payload refusal are 4286 / 2163 with no index, 3101 / 790 on the
+six-column grain, 3101 / 787 with `carrier_role` appended and 3101 / 790 on the field coordinate
+alone, with `(graph_name, carrier_role)` reaching 4286 / 811. The clocks refuse all four. The payload
+column stays inside its own spread, 25/24/23 against 22/22/23 on the grain, and the refusal goes the
+wrong way and consistently: 13/11/11 with no index against 21/23/22 on the grain, 30/18/20 with the
+role appended and 24/23/20 on the field coordinate. A third of the rows visited for twice the time is
+this investigation's own most-repeated lesson arriving once more, and the mechanism is size: the
+target is ninety-five rows here, so the seek costs more than the scan it replaces. What would change
+that is a driving side larger than the target, which is the consumer schema and is not something this
+fixture can stand up. Nothing here is the hazard step 3b warned about from
+`intent_field_scope_table`, where registering without an index was worse than not registering: this
+target unindexed takes its expensive reader from 85 ms to 25.
+
+**What the two registrations are worth together, said once and kept separate from the two tables
+above.** On this schema the payload column relation goes from 851 ms with both rules evaluated on
+demand to about 27 with both registered, against a combined refresh of about 67 ms per graph. That is
+a fixture figure and this item's caveats apply to it in full: it is not a consumer-scale capture, it
+licenses no exponent, and the fixture holds the mutation payload surface fixed at three, which is the
+term the consumer schema grows.
+
 ## Implementation
 
 Numbered because each step's result decides the next and the intermediate states are observable.
@@ -722,6 +830,26 @@ was decided when; the sequence for the work that remains is:
    than on the pair having been proposed together.
 5. Step 1 again against the fix, which is step 4 below and is still the proof of this item.
 6. Step 5 below, unchanged.
+
+**Where the work stands, and the one item of it nobody in this repository can do.** Items 3 and 4 have
+landed, in that order and priced one at a time, and the two sections below carry their measurements.
+Items 2 and 5 are both step 1, and step 1 needs the machine that holds the consumer schema; no session
+working from this repository alone can take it, which is why step 1's own text calls it a step rather
+than a test. So item 2 is owed and unpaid, and this is said plainly rather than left to be inferred
+from a silence: both registrations landed without anybody knowing whether the failure still reproduces
+on the DDL the tree ships.
+
+What licenses that ordering is narrower than the decision rule item 2 was written to be, and it is
+worth stating as the exception it is rather than as a reading of the rule. Both registrations are
+measured on their own figures; every reader of the first improves and none is worse; the register's
+own gates admit both, and the read-cost gate did more than admit them, four of its recorded
+regressions leaving and none arriving. If the capture item 2 asks for turns out to complete, neither
+registration becomes wrong: they stand as improvements to the register, argued in their own `reason`
+rows on their own numbers, and this item's remaining work is step 5 alone, which is the outcome that
+branch already names. What the ordering costs is the thing item 2 was there to buy, and it is a real
+cost: nobody yet knows whether these two registrations are the fix for the hour or an improvement
+that leaves it standing. Only step 1 answers that, and it is the next thing anybody should do with
+this item.
 
 **Why the capture keeps its place ahead of the registrations, rather than the fixture prices standing
 in for it.** The prices establish that those two refresh statements are expensive and that the

@@ -130,8 +130,17 @@ class DerivedReadCostTest {
      * for, {@code intent_mutation_write_agreement}, reaches exactly one registration because the walk
      * stops at the target it reads. A registration whose rule is read only through the relation being
      * registered is the case that moves this figure least.
+     *
+     * <p>Registering {@code intent_node_id_decode_column} took it from 178 to 174, a fall of four on
+     * net, and it is the drop-is-not-blindness case again: that relation sits under three readers and
+     * over the whole node-id decode family, so every reader that reached the hop-column, instruction
+     * and reference-step registrations through it now stops at its target, while the registration and
+     * its {@code _live} view put cells of their own back. Neither {@link #READERS_IN_SCHEMA} nor
+     * {@link #READERS_WITH_CELLS} moved, which is the arithmetic worth stating rather than the four:
+     * a registration replaces one view in this domain with another, the rule keeping its cells under
+     * the {@code _live} name.
      */
-    private static final int CELLS = 178;
+    private static final int CELLS = 168;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -403,31 +412,38 @@ class DerivedReadCostTest {
         "intent_field_reference_step_hop|intent_input_field_column_scope",
         "intent_field_reference_step_hop|intent_input_field_column_match",
         "intent_field_reference_step_hop|intent_input_field_filter_role_live",
-        "intent_field_reference_step_hop|intent_input_field_carrier_role",
+        // Named for the rule rather than the relation since the carrier was registered: the
+        // rule keeps its cells under the _live name and the canonical name is a table the walk
+        // stops at.
+        "intent_field_reference_step_hop|intent_input_field_carrier_role_live",
         // The same floor reached through the input-field reference walk, which the decode's hop
         // child took up when the input-field path stopped being unwalkable.
         "intent_field_reference_step_hop|intent_node_id_decode_hop",
         "intent_field_reference_step_hop|intent_node_id_decode_hop_column_live",
         // The same floor again, reached because the write-payload family reads the input-field
         // one: twelve scans out of fifty-nine thousand on the refusal, thirty-six out of two
-        // hundred thousand on the two above it; measured above.
-        "intent_field_reference_step_hop|intent_mutation_payload_refusal_live",
+        // hundred thousand on the two above it; measured above. The refusal stood beside the
+        // column relation here and left when the carrier was registered, and it is the
+        // stopped-reaching kind of departure rather than the got-cheaper kind: that view
+        // reached this rung only through the carrier rule, so the walk now stops at the
+        // carrier target and the cell does not exist to be non-monotonic in. The column
+        // relation names the reference walk on a second path of its own and keeps its cell.
         "intent_field_reference_step_hop|intent_mutation_payload_column_live",
-        // Three readers reached through the navigation relation, where the counter and the clock
-        // disagree outright. Stating the navigated type as a relation rather than as an inline
-        // expression is what put them here: H2 pushes an expression down into the type binding's
-        // probe and cannot push a projected column, so under the new plan the registered binding
-        // is scanned where the view it replaced was evaluated restricted. An index on the binding
-        // closed that for the two scope relations directly above these readers and did not close
-        // it here. What says these three are the counter's artefact and not a cost is the clock,
-        // measured on a store captured from the sakila example schema, before against after: the
-        // carrier role 14 ms against 14, the payload column 157 against 154, the payload refusal
-        // 8 against 9. Nothing moved. The relation the readers actually pay for did: the
-        // participant scope table went 52 ms to 63, and it is not in this set, which is the
-        // ordering worth noticing.
-        "intent_resolved_type_binding|intent_input_field_carrier_role",
-        "intent_resolved_type_binding|intent_mutation_payload_column_live",
-        "intent_resolved_type_binding|intent_mutation_payload_refusal_live",
+        // Three readers reached through the navigation relation stood here and have gone, and how
+        // they went is the second kind of departure this set records: a lever landed, rather than
+        // the fixture moving under them. They were the counter-against-clock case, stating the
+        // navigated type as a relation rather than as an inline expression having put them here
+        // (H2 pushes an expression down into the type binding's probe and cannot push a projected
+        // column, so under that plan the registered binding was scanned where the view it replaced
+        // was evaluated restricted), and the clock said so: on a store captured from the sakila
+        // example schema the carrier role was 14 ms against 14, the payload column 157 against 154
+        // and the payload refusal 8 against 9. An index on the binding closed it for the two scope
+        // relations above these readers and not for these. Registering
+        // intent_node_id_decode_column is what closed it here, and it did so by removing the rows
+        // rather than by moving the plan: all three readers reach the binding through that relation,
+        // which they now read as a table, so the derivation that was scanning the binding per
+        // driving row is evaluated once per refresh instead. The registration removed these three
+        // and added no pair of its own.
         // The same rung, reached by the one relation in the write family that still expands the
         // scope family: the write payload's own rule, which is now a registration's source view
         // and so is reached here rather than by everything above it. Six pairs stood beside this
@@ -439,7 +455,12 @@ class DerivedReadCostTest {
         // refusal and the write destination each used to expand the scope family on their way to
         // an answer, and each now reads a table for the same fact, so the rung is no longer on
         // their path and they hold no cell against it to be non-monotonic in.
-        "intent_mutation_write_payload|intent_mutation_payload_column_live",
+        // That pair has gone, and it is the got-cheaper kind. Registering the carrier rule took
+        // the payload column statement from about 85 milliseconds to about 25 on a store
+        // captured from the sakila example schema, and the plan that costs less also visits
+        // fewer rows through the write payload than the unregistered shape does, so the
+        // direction this gate asserts is satisfied without any row here. Recorded rather than
+        // silently deleted for this set's own convention: a lever landed.
         // The two reference-step walks over the field-site hop, which joined this set when that
         // hop gained its condition arm, and the clearest case in it for reading the counter as a
         // row count. Both are 188 scans dearer registered (795 against 607 on the walk, 3272
