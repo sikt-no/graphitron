@@ -102,16 +102,14 @@ class OutcomePolymorphicChildExecutionTest {
             .containsEntry("staffId", 1)
             .containsEntry("firstName", "Mike");
         var occupants = (List<Map<String, Object>>) payload.get("occupants");
+        // Order-insensitive: the batched list arm carries no cross-participant ORDER BY (the
+        // connection arm owns cursor ordering), so only membership is contractual.
         assertThat(occupants)
             .as("batched list child delivers both occupants of address 3 on the success arm")
-            .hasSize(2);
-        assertThat(occupants.get(0))
-            .containsEntry("__typename", "Staff")
-            .containsEntry("staffId", 1);
-        assertThat(occupants.get(1))
-            .containsEntry("__typename", "Customer")
-            .containsEntry("customerId", 3)
-            .containsEntry("firstName", "Linda");
+            .extracting(o -> o.get("__typename"), o -> o.get("firstName"))
+            .containsExactlyInAnyOrder(
+                org.assertj.core.groups.Tuple.tuple("Staff", "Mike"),
+                org.assertj.core.groups.Tuple.tuple("Customer", "Linda"));
         assertThat(payload.get("errors"))
             .as("no error on the success arm")
             .isNull();
