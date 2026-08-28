@@ -1,7 +1,7 @@
 ---
 id: R867
 title: "A cold capture's refresh plans without statistics, and the penalty grows with the schema"
-status: Spec
+status: Ready
 bucket: bug
 priority: 1
 theme: model-cleanup
@@ -111,7 +111,7 @@ asked about:
 - `ANALYZE` on an empty table records nothing. Selectivity stays at H2's unanalysed default of 50 on
   every column, and a later fill does not revisit it. This is a second and sharper reason the cheap
   rung fails: quite apart from reaching the wrong population, an analysis placed before the refresh
-  runs against twenty empty tables and states nothing about any of them.
+  runs against twenty-two empty tables and states nothing about any of them.
 - `ALTER TABLE ... ALTER COLUMN ... SELECTIVITY n` commits, verified the same way `ANALYZE` was. So
   stating the figure by hand instead of calling `ANALYZE`, which would be the one route to
   statistics that left the single transaction intact, is not available. Every route into H2's
