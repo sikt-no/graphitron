@@ -49,6 +49,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_DUPLICATE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NAVIGATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE_ARG;
@@ -115,6 +116,9 @@ public final class SdlFactCapture {
      */
     private final Map<String, ElementOrdinals> ordinalsByType = new LinkedHashMap<>();
 
+    /** {@link #connectionElementByType()}'s answer, computed on first ask and held. */
+    private Map<String, String> connectionElements;
+
     private final MacroCapture macros;
 
     private final ClasspathSources sources;
@@ -143,7 +147,8 @@ public final class SdlFactCapture {
         this.registry = registry;
         this.coordinates = new SdlCoordinates(sink);
         this.decode = new GraphitronFactCapture(sink);
-        this.macros = new MacroCapture(sink, coordinates, registry);
+        this.macros = new MacroCapture(sink, coordinates, registry,
+            named -> connectionElementByType().get(named));
         this.sources = sources;
         this.attribution = attribution;
         this.refusedSources = refusedSources;
@@ -615,8 +620,10 @@ public final class SdlFactCapture {
             record.setDeclarationColumn(site.location().getColumn());
             // The expansion's result, not the expression the field was written with: a macro that
             // rewrites a field's type expression records the written form in its own provenance
-            // relation, which is the only place that form survives.
-            var wrapping = Wrapping.of(macros.expandedFieldType(site.typeName(), field));
+            // relation, which is the only place that form survives. Called once and held, the call
+            // being what writes that provenance row.
+            Type<?> expanded = macros.expandedFieldType(site.typeName(), field);
+            var wrapping = Wrapping.of(expanded);
             record.setTypeSdl(wrapping.typeSdl());
             record.setNamedType(wrapping.namedType());
             record.setNonNull(wrapping.nonNull());
@@ -627,6 +634,7 @@ public final class SdlFactCapture {
             setOwnPosition(field.getSourceLocation(), record::setSourceLine, record::setSourceColumn);
             sink.add(record);
 
+            captureNavigation(site.typeName(), name, field.getType(), expanded);
             captureFieldDirectives(site.typeName(), name, field.getDirectives(), false);
             captureArguments(site.typeName(), name, field.getInputValueDefinitions(), ordinals);
         }
@@ -663,6 +671,7 @@ public final class SdlFactCapture {
             setOwnPosition(field.getSourceLocation(), record::setSourceLine, record::setSourceColumn);
             sink.add(record);
 
+            captureNavigation(site.typeName(), name, field.getType(), field.getType());
             captureFieldDirectives(site.typeName(), name, field.getDirectives(), true);
         }
     }
@@ -859,6 +868,91 @@ public final class SdlFactCapture {
                 ? described.getDescription()
                 : null;
         }
+    }
+
+    /**
+     * Which type each connection type delivers, by the structural shape rather than by a name: an
+     * OBJECT carrying an {@code edges} field whose named type is an OBJECT carrying a {@code node}
+     * field delivers that node's named type. The middle rung of
+     * {@link no.sikt.graphitron.model.Tables#GRAPHITRON_FIELD_NAVIGATION}, and the one that makes
+     * navigation a question about the SDL rather than about a field's own row.
+     *
+     * <p>Built from {@link #sitesByType()} and not from the registry's base definitions, so a
+     * connection assembled across a type extension is seen exactly as this class already sees it
+     * when writing the type and field rows the old view compared against. Computed once per capture
+     * and held, because every field of the graph asks it.
+     */
+    private Map<String, String> connectionElementByType() {
+        if (connectionElements != null) {
+            return connectionElements;
+        }
+        var fieldsByType = new LinkedHashMap<String, Map<String, String>>();
+        var objectTypes = new LinkedHashSet<String>();
+        for (var entry : sitesByType().entrySet()) {
+            var named = new LinkedHashMap<String, String>();
+            for (Site site : entry.getValue()) {
+                if (!"OBJECT".equals(site.kind())) {
+                    continue;
+                }
+                objectTypes.add(entry.getKey());
+                if (site.definition() instanceof ObjectTypeDefinition object) {
+                    for (FieldDefinition field : object.getFieldDefinitions()) {
+                        named.putIfAbsent(field.getName(), Wrapping.of(field.getType()).namedType());
+                    }
+                }
+            }
+            fieldsByType.put(entry.getKey(), named);
+        }
+        var elements = new LinkedHashMap<String, String>();
+        for (String typeName : objectTypes) {
+            String edges = fieldsByType.getOrDefault(typeName, Map.of()).get("edges");
+            if (edges == null || !objectTypes.contains(edges)) {
+                continue;
+            }
+            String node = fieldsByType.getOrDefault(edges, Map.of()).get("node");
+            if (node != null) {
+                elements.put(typeName, node);
+            }
+        }
+        connectionElements = elements;
+        return connectionElements;
+    }
+
+    /**
+     * One field's navigation row: which type the field's own generated SQL navigates as, and which
+     * of the three rungs said so. Written beside the field's own row because all three rungs are
+     * readings of the SDL and this class is what reads it; the top rung in particular is the type
+     * expression before a macro rewrote it, which nothing downstream of capture can recover.
+     *
+     * @param authored the type the author wrote, which differs from {@code expanded} exactly where
+     *     a macro rewrote it and is the top rung when it does
+     * @param expanded the type after expansion, whose named type is the field's own and the rung of
+     *     last resort
+     */
+    private void captureNavigation(String typeName, String fieldName,
+                                   Type<?> authored, Type<?> expanded) {
+        String named = Wrapping.of(expanded).namedType();
+        String basis;
+        String navigated;
+        if (authored != expanded) {
+            basis = "AUTHORED_EXPRESSION";
+            navigated = Wrapping.of(authored).namedType();
+        } else {
+            String element = connectionElementByType().get(named);
+            if (element != null) {
+                basis = "CONNECTION_ELEMENT";
+                navigated = element;
+            } else {
+                basis = "NAMED_TYPE";
+                navigated = named;
+            }
+        }
+        var row = sink.dsl().newRecord(GRAPHITRON_FIELD_NAVIGATION);
+        row.setTypeName(typeName);
+        row.setFieldName(fieldName);
+        row.setBasis(basis);
+        row.setNavigatedTypeName(navigated);
+        sink.add(row);
     }
 
     /**

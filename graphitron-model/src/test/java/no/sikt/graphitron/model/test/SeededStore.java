@@ -235,6 +235,25 @@ public final class SeededStore {
               SELECT graph_name, routine_ref, routine_ref_namespace_part, routine_ref_name_part
                 FROM graphitron_routine) spellings
             """);
+        dsl.execute("DELETE FROM graphitron_field_navigation");
+        dsl.execute("""
+            INSERT INTO graphitron_field_navigation
+              (graph_name, type_name, field_name, basis, navigated_type_name)
+            SELECT f.graph_name, f.type_name, f.field_name,
+                   CASE WHEN fs.field_name IS NOT NULL THEN 'AUTHORED_EXPRESSION'
+                        WHEN ce.type_name IS NOT NULL THEN 'CONNECTION_ELEMENT'
+                        ELSE 'NAMED_TYPE' END,
+                   COALESCE(
+                     REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''), '!', ''),
+                     ce.element_type_name,
+                     f.named_type)
+              FROM graphql_field f
+              LEFT JOIN graphitron_field_synthesis fs
+                ON fs.graph_name = f.graph_name AND fs.type_name = f.type_name
+               AND fs.field_name = f.field_name
+              LEFT JOIN intent_connection_element_type ce
+                ON ce.graph_name = f.graph_name AND ce.type_name = f.named_type
+            """);
         dsl.execute("DELETE FROM graphitron_arg_mapping_pair");
         dsl.execute("""
             INSERT INTO graphitron_arg_mapping_pair

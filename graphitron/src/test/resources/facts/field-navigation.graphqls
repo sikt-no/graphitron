@@ -1,0 +1,41 @@
+# Which type each field's generated SQL navigates as, and which of the three rungs said so. The
+# whole point of the relation is that the answer is often not the type the field's signature names,
+# so the example is three fields that disagree with their signatures in three different ways and one
+# that does not.
+
+type Film @table(name: "film") { title: String }
+
+# The top rung. @asConnection rewrote this field's type from a list of Film to a synthesised
+# connection, so the field's own named type is now the wrapper and the expression the author wrote
+# is the only place the element survives. Nothing downstream of capture can recover it.
+extend type Query { films: [Film!]! @asConnection }
+
+# The middle rung. The author declared the wrapper rather than asking for one, so no expression
+# survives anywhere; what says this field delivers a Film is the structural edges-then-node shape of
+# the type it names.
+extend type Query { pages: FilmPage }
+type FilmPage { edges: [FilmPageEdge!]! pageInfo: PageInfo }
+type FilmPageEdge { node: Film cursor: String }
+type PageInfo { hasNextPage: Boolean }
+
+# The bottom rung, and the reason the relation is total: a field that returns what it says it
+# returns still navigates as something, so a reader joins this relation rather than left-joining it.
+extend type Query { firstFilm: Film }
+
+extend schema @assertContains(relation: "graphitron_field_navigation", rows: """
+  type_name, field_name, basis,               navigated_type_name
+  Query,     films,      AUTHORED_EXPRESSION, Film
+  Query,     pages,      CONNECTION_ELEMENT,  Film
+  Query,     firstFilm,  NAMED_TYPE,          Film
+  Query,     ping,       NAMED_TYPE,          String
+  Film,      title,      NAMED_TYPE,          String
+  """)
+
+# The wrapper the macro minted is made of fields too, and they navigate on the same rungs as any
+# other. Stated because a relation total over the graph's fields includes the generator's own, and a
+# reader meeting an unfamiliar type name here should find it accounted for rather than wonder.
+extend schema @assertContains(relation: "graphitron_field_navigation", rows: """
+  type_name,             field_name, basis,      navigated_type_name
+  QueryFilmsConnection,  nodes,      NAMED_TYPE, Film
+  QueryFilmsEdge,        node,       NAMED_TYPE, Film
+  """)

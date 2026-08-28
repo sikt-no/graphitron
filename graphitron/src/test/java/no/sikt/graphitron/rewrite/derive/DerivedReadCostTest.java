@@ -536,14 +536,14 @@ class DerivedReadCostTest {
      * a relation made non-terminating by construction rather than by being slow, because a cell that
      * is merely slow could stop being so on a faster machine.
      */
-    private static final Set<String> KNOWN_EXHAUSTED = Set.of(
-        // The membership fold read with the type binding unregistered. The fold reaches that
-        // binding through the field-grain scope table, which now reads intent_field_navigated_type
-        // rather than spelling the type expression itself, and with the binding a view the whole
-        // chain is re-evaluated per contributing coordinate. Exhaustion here is evidence for the
-        // registration rather than against it: the cheap side is the registered one, and this
-        // gate only fails when the registered side is the expensive one.
-        "intent_resolved_type_binding|intent_condition_membership");
+    // Empty, and it was not always. The membership fold read with the type binding unregistered
+    // used to exhaust its budget: the fold reaches that binding through the field-grain scope
+    // table, and with the binding a view the whole chain was re-evaluated per contributing
+    // coordinate. It answers now, because intent_field_navigated_type stopped being a resolution
+    // the chain re-derives and became a column read off a captured fact, which is one shared
+    // subtree the engine no longer expands once per path to it. A cell leaving this set is the
+    // direction the set is expected to move; one arriving is a reader that got dearer.
+    private static final Set<String> KNOWN_EXHAUSTED = Set.of();
 
     @TempDir
     static Path tmp;

@@ -1,0 +1,38 @@
+# One argMapping pair, whatever site declared it. Eight relations carry a pair of this shape, one per
+# directive that can take argMapping, and every one holds the same three facts and differs only in
+# the key saying which site owns the row. This relation is those facts with a uniform key over them.
+
+type Film @table(name: "film") { title: String }
+
+# A condition on a field of an object, which is one site.
+type Language @table(name: "language") {
+  name: String
+  films: [Film!]! @condition(condition: {
+    className: "no.sikt.graphitron.rewrite.generators.TestFilmService",
+    method: "argCondition", argMapping: "cityNames: name"})
+}
+
+# A condition on a field of an input object, which is a different site from the one above and is
+# separated by the owning type's kind alone. Capture is what knows the kind, so the discriminator is
+# complete when the row is written rather than recovered by a reader joining back to the type.
+input FilmFilter {
+  title: String @condition(condition: {
+    className: "no.sikt.graphitron.rewrite.generators.TestFilmService",
+    method: "argCondition", argMapping: "cityNames: title"})
+}
+
+# A service, whose use_site has no argument and no ordinal, so two of the decomposed key columns are
+# null on it. That is the discriminator's key shape and not a fact withheld, which is why use_site
+# rather than those columns is what keys the relation.
+extend type Query {
+  languages: [Language!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.generators.TestFilmService",
+    method: "getFilmsMapped", argMapping: "titles: name"})
+}
+
+extend schema @assertContains(relation: "graphitron_arg_mapping_pair", rows: """
+  site,                  use_site,        position, param_name, argument_path
+  FIELD_CONDITION,       Language.films,  0,        cityNames,  name
+  INPUT_FIELD_CONDITION, FilmFilter.title, 0,       cityNames,  title
+  SERVICE,               Query.languages, 0,        titles,     name
+  """)

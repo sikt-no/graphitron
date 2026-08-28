@@ -58,6 +58,28 @@ public final class CorpusExpectations {
     /** The directive a document applies to the schema to state an expectation. */
     public static final String DIRECTIVE = "expectEquals";
 
+    /**
+     * The subset directive's name. Where {@link #DIRECTIVE} says these are the relation's rows,
+     * this one says these are among them, which is the difference between a document that owns a
+     * relation's whole population and one that has something to say about part of it.
+     *
+     * <p>Both are needed and neither subsumes the other. Set equality is the stronger claim and the
+     * one that catches a coordinate that silently starts producing a row, so a document about a
+     * sparse relation should keep it. It is unusable on a relation that is total by design: one row
+     * per field of the graph means every document restating the prelude's own fields, which buries
+     * the row the document is actually about and freezes the prelude. Containment is what lets such
+     * a relation be asserted at all.
+     */
+    public static final String CONTAINS_DIRECTIVE = "assertContains";
+
+    /** What a block claims about the relation: all of its rows, or some of them. */
+    public enum Mode {
+        /** The relation's rows are exactly the declared ones. */
+        EQUALS,
+        /** The declared rows are among the relation's, which may hold others. */
+        CONTAINS
+    }
+
     /** The column every expectation carries and no document spells: the document's own identity. */
     public static final String GRAPH_COLUMN = "graph_name";
 
@@ -95,7 +117,14 @@ public final class CorpusExpectations {
      * than thrown on, so the well-formedness floor reports it as the defect it is.
      */
     public record Block(String graph, String relation, List<String> columns, List<List<String>> rows,
-                        List<String> raggedLines) {}
+                        List<String> raggedLines, Mode mode) {
+
+        /** A block in the equality mode, which is what every caller predating containment wants. */
+        public Block(String graph, String relation, List<String> columns, List<List<String>> rows,
+                     List<String> raggedLines) {
+            this(graph, relation, columns, rows, raggedLines, Mode.EQUALS);
+        }
+    }
 
     /**
      * One divergence between a document's expectation and its graph's rows, which is the failure
@@ -117,13 +146,19 @@ public final class CorpusExpectations {
         }
     }
 
-    /** Every {@code @expectEquals} application in the store, in graph and application order. */
+    /**
+     * Every assertion application in the store, in graph and application order. Both directives, and
+     * the application's own directive name is what carries the mode: two applications of different
+     * directives on one schema are two blocks making two different claims, and the name is the only
+     * thing that distinguishes them once they are rows.
+     */
     public static List<Block> blocks(DSLContext dsl) {
         var arguments = dsl
             .select(DSL.field(id("d", "graph_name"), String.class),
                 DSL.field(id("d", "ordinal"), Integer.class),
                 DSL.field(id("a", "directive_argument_name"), String.class),
-                DSL.field(id("a", "value_sdl"), String.class))
+                DSL.field(id("a", "value_sdl"), String.class),
+                DSL.field(id("d", "directive_name"), String.class))
             .from(DSL.table(id("graphql_schema_directive")).as("D"))
             .join(DSL.table(id("graphql_schema_directive_arg")).as("A"))
             .on(DSL.field(id("a", "graph_name"), String.class)
@@ -132,15 +167,16 @@ public final class CorpusExpectations {
                 .eq(DSL.field(id("d", "directive_name"), String.class)))
             .and(DSL.field(id("a", "ordinal"), Integer.class)
                 .eq(DSL.field(id("d", "ordinal"), Integer.class)))
-            .where(DSL.field(id("d", "directive_name"), String.class).eq(DIRECTIVE))
+            .where(DSL.field(id("d", "directive_name"), String.class).in(DIRECTIVE, CONTAINS_DIRECTIVE))
             .orderBy(DSL.field(id("d", "graph_name")), DSL.field(id("d", "ordinal")))
             .fetch();
 
-        record Application(String graph, int ordinal) {}
+        record Application(String graph, int ordinal, String directive) {}
         var byApplication = new LinkedHashMap<Application, Map<String, String>>();
         for (var row : arguments) {
             byApplication
-                .computeIfAbsent(new Application(row.value1(), row.value2()), k -> new LinkedHashMap<>())
+                .computeIfAbsent(new Application(row.value1(), row.value2(), row.value5()),
+                    k -> new LinkedHashMap<>())
                 .put(row.value3(), text(row.value4()));
         }
 
@@ -153,7 +189,11 @@ public final class CorpusExpectations {
                     + DIRECTIVE + " without both arguments, which the directive's own signature "
                     + "makes impossible: " + entry.getValue().keySet());
             }
-            blocks.add(decode(dsl, entry.getKey().graph(), relation.strip(), csv));
+            var block = decode(dsl, entry.getKey().graph(), relation.strip(), csv);
+            blocks.add(CONTAINS_DIRECTIVE.equals(entry.getKey().directive())
+                ? new Block(block.graph(), block.relation(), block.columns(), block.rows(),
+                    block.raggedLines(), Mode.CONTAINS)
+                : block);
         }
         return List.copyOf(blocks);
     }
@@ -184,6 +224,13 @@ public final class CorpusExpectations {
                     stringArgument(directive, "relation").strip(),
                     stringArgument(directive, "rows")));
             }
+            for (var directive : extension.getDirectives(CONTAINS_DIRECTIVE)) {
+                var block = decode(csvReader, graph,
+                    stringArgument(directive, "relation").strip(),
+                    stringArgument(directive, "rows"));
+                blocks.add(new Block(block.graph(), block.relation(), block.columns(), block.rows(),
+                    block.raggedLines(), Mode.CONTAINS));
+            }
         }
         return List.copyOf(blocks);
     }
@@ -203,22 +250,25 @@ public final class CorpusExpectations {
      * relation and column list. An empty list is agreement.
      */
     public static List<Divergence> divergences(DSLContext dsl, List<Block> blocks) {
-        record Group(String relation, List<String> columns) {}
+        // Grouped by mode as well as by relation and columns, because the two modes are two
+        // different questions about one relation and folding them would let a containment block
+        // widen an equality block's declared set.
+        record Group(String relation, List<String> columns, Mode mode) {}
         var grouped = new LinkedHashMap<Group, List<Block>>();
         for (Block block : blocks) {
-            grouped.computeIfAbsent(new Group(block.relation(), block.columns()), k -> new ArrayList<>())
-                .add(block);
+            grouped.computeIfAbsent(new Group(block.relation(), block.columns(), block.mode()),
+                k -> new ArrayList<>()).add(block);
         }
         var divergences = new ArrayList<Divergence>();
         for (var entry : grouped.entrySet()) {
             divergences.addAll(compare(dsl, entry.getKey().relation(), entry.getKey().columns(),
-                entry.getValue()));
+                entry.getKey().mode(), entry.getValue()));
         }
         return List.copyOf(divergences);
     }
 
     private static List<Divergence> compare(DSLContext dsl, String relation, List<String> columns,
-                                            List<Block> blocks) {
+                                            Mode mode, List<Block> blocks) {
         var graphs = new LinkedHashSet<String>();
         var expectedRows = new LinkedHashSet<List<String>>();
         for (Block block : blocks) {
@@ -258,13 +308,17 @@ public final class CorpusExpectations {
                 .fetch()
                 .forEach(row -> divergences.add(divergence(relation, row, Divergence.Side.NOT_PRODUCED)));
 
-            dsl.select(producedFields)
-                .from(produced)
-                .where(DSL.field(id("produced", GRAPH_COLUMN), String.class).in(graphs))
-                .andNotExists(dsl.selectOne().from(expected).where(match(producedFields, expectedFields)))
-                .fetch()
-                .forEach(row -> divergences.add(divergence(relation, row, Divergence.Side.NOT_DECLARED)));
-        } else {
+            if (mode == Mode.EQUALS) {
+                dsl.select(producedFields)
+                    .from(produced)
+                    .where(DSL.field(id("produced", GRAPH_COLUMN), String.class).in(graphs))
+                    .andNotExists(dsl.selectOne().from(expected)
+                        .where(match(producedFields, expectedFields)))
+                    .fetch()
+                    .forEach(row ->
+                        divergences.add(divergence(relation, row, Divergence.Side.NOT_DECLARED)));
+            }
+        } else if (mode == Mode.EQUALS) {
             dsl.select(producedFields)
                 .from(produced)
                 .where(DSL.field(id("produced", GRAPH_COLUMN), String.class).in(graphs))

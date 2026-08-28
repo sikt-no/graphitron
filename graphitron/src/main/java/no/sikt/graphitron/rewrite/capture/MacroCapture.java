@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NAVIGATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DECLARATION_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
@@ -83,11 +84,21 @@ final class MacroCapture {
     private final SdlCoordinates coordinates;
     private final TypeDefinitionRegistry registry;
 
-    MacroCapture(FactSink sink, SdlCoordinates coordinates, TypeDefinitionRegistry registry) {
+    /**
+     * @param connectionElement what a type name delivers if it is a connection, or null if it is
+     *     not. A minted field's navigation is resolved on the same rungs an authored field's is,
+     *     and this is the middle one; owned by {@link SdlFactCapture} because it is a reading of
+     *     the whole SDL and minting sees one carrier at a time
+     */
+    MacroCapture(FactSink sink, SdlCoordinates coordinates, TypeDefinitionRegistry registry,
+                 java.util.function.Function<String, String> connectionElement) {
         this.sink = sink;
         this.coordinates = coordinates;
         this.registry = registry;
+        this.connectionElement = connectionElement;
     }
+
+    private final java.util.function.Function<String, String> connectionElement;
 
     /** Carriers found during the walk, minted after it so a type's own rows are never interleaved. */
     private final List<Carrier> carriers = new ArrayList<>();
@@ -334,6 +345,19 @@ final class MacroCapture {
             record.setItemNonNull(wrapping.itemNonNull());
             record.setDescription(description);
             sink.add(record);
+
+            // A minted field navigates like any other, and the relation is total over graphql_field,
+            // so the rows minted here need theirs as much as the authored ones do. No authored
+            // expression exists for a field the generator wrote, so the top rung cannot fire and the
+            // other two are resolved exactly as they are for an authored field.
+            String named = wrapping.namedType();
+            String element = connectionElement.apply(named);
+            var navigation = sink.dsl().newRecord(GRAPHITRON_FIELD_NAVIGATION);
+            navigation.setTypeName(typeName);
+            navigation.setFieldName(fieldName);
+            navigation.setBasis(element != null ? "CONNECTION_ELEMENT" : "NAMED_TYPE");
+            navigation.setNavigatedTypeName(element != null ? element : named);
+            sink.add(navigation);
         }
     }
 

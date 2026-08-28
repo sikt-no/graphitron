@@ -1,0 +1,29 @@
+# Every table or routine name the graph authors, once per distinct spelling. Seven relations carry a
+# spelling of this shape, one per directive that can name a table, and none of them is the spelling:
+# each is a site, keyed by where the name was written. This relation is the name.
+
+# Two sites, one spelling. @table names film here and a @reference path element names it again
+# below, and the two are one fact and one row: the relation is keyed by the spelling because the
+# resolution does not vary by which directive wrote it.
+type Film @table(name: "film") { title: String }
+type Language @table(name: "language") {
+  name: String
+  films: [Film!]! @reference(path: [{table: "film"}])
+}
+
+# A bare @table, which stores nothing in its own site's table_ref and resolves against the type's own
+# name. The spelling is a fact even where no column on the site holds it.
+type Actor @table { firstName: String @field(name: "first_name") }
+
+# @mutation's delete target is a spelling of the same shape, and so is @routine(name:), which is why
+# graphitron_routine spelling its own column routine_ref changes nothing about the fact.
+extend type Mutation { dropFilm(id: ID!): Film @mutation(type: DELETE, table: "film") }
+
+extend type Query { films: [Film!]! }
+
+extend schema @assertContains(relation: "graphitron_spelled_reference", rows: """
+  spelling, namespace_part, name_part
+  film,     ,               film
+  language, ,               language
+  Actor,    ,               Actor
+  """)

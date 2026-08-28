@@ -402,7 +402,10 @@ class FactCaptureAgreementTest {
             // The two supertypes ride the same arm as the sites they are written beside: each is
             // written in the same walk that writes the per-site row, so a coordinate the walk
             // claims contributes to both and the containment claim transfers unchanged.
-            "graphitron_spelled_reference", "graphitron_arg_mapping_pair")) {
+            "graphitron_spelled_reference", "graphitron_arg_mapping_pair",
+            // Written beside the field row in the same walk, so the field coordinate's claim
+            // covers it exactly as it covers the field's own attributes.
+            "graphitron_field_navigation")) {
             registrations.put(relation, Arm.CONTAINMENT);
         }
         for (String relation : List.of(

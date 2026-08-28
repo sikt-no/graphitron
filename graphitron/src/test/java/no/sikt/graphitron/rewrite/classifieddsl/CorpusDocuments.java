@@ -10,6 +10,8 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -58,9 +60,27 @@ public final class CorpusDocuments {
     /** The document suffix. */
     static final String SUFFIX = ".graphqls";
 
-    private static final List<Path> FOLDER_CANDIDATES = List.of(
-        Path.of("graphitron", "src", "test", "resources", "corpus"),
-        Path.of("src", "test", "resources", "corpus"));
+    /**
+     * One folder of documents in this format, and the reason the loader takes a parameter at all.
+     * The classification corpus renders into an author-facing page and its documents carry a
+     * verdict, which is a semantics a document about the store's own shape has no business
+     * inheriting; a second folder gets the format and the assertion directives without it. What is
+     * shared is exactly the mechanism, so an addition to it reaches both.
+     *
+     * @param name the folder under {@code src/test/resources}
+     * @param minDocuments the floor on its size, since a folder that stops resolving reads as empty
+     *     and passes every sweep over it
+     */
+    public record Folder(String name, int minDocuments) {
+
+        List<Path> candidates() {
+            return List.of(Path.of("graphitron", "src", "test", "resources", name),
+                Path.of("src", "test", "resources", name));
+        }
+    }
+
+    /** The spec-by-example corpus: documents carrying a classification verdict. */
+    public static final Folder CORPUS = new Folder("corpus", MIN_DOCUMENTS);
 
     /**
      * One corpus document: its id (the filename without the suffix), the type-system half every
@@ -76,26 +96,30 @@ public final class CorpusDocuments {
         }
     }
 
-    private static List<Document> documents;
-    private static String prelude;
+    private static final Map<String, List<Document>> documentsByFolder = new HashMap<>();
+    private static final Map<String, String> preludeByFolder = new HashMap<>();
 
     /** The corpus documents, ordered by id. */
-    public static synchronized List<Document> documents() {
-        if (documents == null) {
+    public static List<Document> documents() {
+        return documents(CORPUS);
+    }
+
+    /** One folder's documents, ordered by id. */
+    public static synchronized List<Document> documents(Folder folder) {
+        return documentsByFolder.computeIfAbsent(folder.name(), ignored -> {
             var loaded = new ArrayList<Document>();
-            Path folder = folder();
-            for (Path file : documentFiles()) {
+            Path path = folder(folder);
+            for (Path file : documentFiles(folder)) {
                 String name = file.getFileName().toString();
                 loaded.add(split(name.substring(0, name.length() - SUFFIX.length()), read(file)));
             }
-            if (loaded.size() < MIN_DOCUMENTS) {
-                throw new AssertionError("the corpus folder " + folder.toAbsolutePath() + " holds "
-                    + loaded.size() + " documents, below the floor of " + MIN_DOCUMENTS
-                    + "; a corpus that reads as empty passes every sweep over it");
+            if (loaded.size() < folder.minDocuments()) {
+                throw new AssertionError("the folder " + path.toAbsolutePath() + " holds "
+                    + loaded.size() + " documents, below the floor of " + folder.minDocuments()
+                    + "; a folder that reads as empty passes every sweep over it");
             }
-            documents = List.copyOf(loaded);
-        }
-        return documents;
+            return List.copyOf(loaded);
+        });
     }
 
     /** The documents carrying a projection operation, ordered by id. */
@@ -104,25 +128,38 @@ public final class CorpusDocuments {
     }
 
     /** The prelude document's text, prepended to every document's SDL before classification. */
-    public static synchronized String prelude() {
-        if (prelude == null) {
-            prelude = read(folder().resolve(PRELUDE_DOCUMENT));
-        }
-        return prelude;
+    public static String prelude() {
+        return prelude(CORPUS);
+    }
+
+    /** One folder's prelude text. */
+    public static synchronized String prelude(Folder folder) {
+        return preludeByFolder.computeIfAbsent(folder.name(),
+            ignored -> read(folder(folder).resolve(PRELUDE_DOCUMENT)));
     }
 
     /** The corpus folder, resolved against the working directory the test run happens to use. */
     public static Path folder() {
-        return FOLDER_CANDIDATES.stream()
+        return folder(CORPUS);
+    }
+
+    /** One folder, resolved against the working directory the test run happens to use. */
+    public static Path folder(Folder folder) {
+        return folder.candidates().stream()
             .filter(Files::isDirectory)
             .findFirst()
-            .orElseThrow(() -> new AssertionError(
-                "could not locate the corpus folder from working dir " + Path.of("").toAbsolutePath()));
+            .orElseThrow(() -> new AssertionError("could not locate the " + folder.name()
+                + " folder from working dir " + Path.of("").toAbsolutePath()));
     }
 
     /** The document files the loader admits: every {@code *.graphqls} but the prelude, sorted by name. */
     static List<Path> documentFiles() {
-        try (Stream<Path> files = Files.list(folder())) {
+        return documentFiles(CORPUS);
+    }
+
+    /** One folder's document files. */
+    static List<Path> documentFiles(Folder folder) {
+        try (Stream<Path> files = Files.list(folder(folder))) {
             return files
                 .filter(Files::isRegularFile)
                 .filter(p -> p.getFileName().toString().endsWith(SUFFIX))

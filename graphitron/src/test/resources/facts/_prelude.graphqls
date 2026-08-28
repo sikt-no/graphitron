@@ -1,0 +1,19 @@
+# The fact examples' prelude: the assertion directives and the smallest schema a document can be
+# captured against. Prepended to every document by CorpusDocuments.prelude(FACTS).
+#
+# A neighbour of the corpus folder and deliberately not part of it. A corpus document carries a
+# classification verdict, renders into an author-facing page, and is read as a statement about what
+# graphitron generates; a document here is about the shape of the store itself, which is a
+# contributor's concern and no author's. Sharing the folder would put store plumbing on that page
+# and make every fact example look like a claim about generated code. What the two share is the
+# mechanism and nothing else: the same loader, the same directives, the same comparison.
+#
+# The prelude is minimal on purpose. The corpus prelude declares the classification enums and a
+# CorpusAnchor bound to a table, because a verdict needs something to be a verdict about. A fact
+# example needs a query root and no more, so what a document contains is what the example is about
+# and a reader can hold the whole population in their head.
+
+directive @expectEquals(relation: String!, rows: String!) repeatable on SCHEMA
+directive @assertContains(relation: String!, rows: String!) repeatable on SCHEMA
+
+type Query { ping: String }
