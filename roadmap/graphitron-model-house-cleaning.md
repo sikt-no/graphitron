@@ -198,6 +198,21 @@ front of it.
 So declaring grain as data is not only a documentation change. It is the check that would have made
 those twenty visible as modelling defects before each became a materialization decision.
 
+### `meta_owner`
+
+One row per fact gatherer, keyed on its name, and each row names the Java class that is the gatherer.
+Naming the class is what stops this from becoming a second vocabulary: the compiler and the Javadoc
+reference gate already hold a `{@link}` to a class that exists, so an owner roster that points at
+`SdlFactCapture` cannot quietly outlive it. Columns: the name, the class, the corpus it reads, and
+the order it runs in.
+
+**The last owner is a real gatherer and not a null.** The derivation gatherer runs after every corpus
+gatherer has finished, which is the earliest point at which a rule crossing families has all its
+inputs. It owns the `intent_` relations, and it owns materializing the grain tables the views and the
+queries above it stand on. That is what `meta_materialize` becomes: not a mechanism of its own
+standing outside the ownership rule, but one owner's refresh plan, the same kind of thing any other
+gatherer would hold for its own family.
+
 ### `meta_grain`
 
 One row per grain, keyed on its name. Columns: the name; a one-sentence statement of what one
@@ -209,8 +224,7 @@ in, constrained to the corpora the store actually reads.
 One row per relation, keyed on the relation name, covering views as well as tables.
 
 - `grain_name`, a foreign key into `meta_grain`.
-- `owner`, the gatherer responsible for the relation's rows, or the value that says no single
-  gatherer owns them.
+- `owner`, a foreign key into `meta_owner`. NOT NULL, because everything has an owner.
 - `grain_text`, the one sentence saying what one row is. Length-checked.
 - `example`, one example row stated concretely. NOT NULL and length-checked.
 - `rationale`, everything the comment currently says from its second sentence onward. Not
@@ -218,10 +232,10 @@ One row per relation, keyed on the relation name, covering views as well as tabl
 
 **The owner column is where this meets the ownership rule on the fact model page.** That page states
 that a view reading one family belongs to that family and is owned by that family's gatherer, and
-that a relation no single gatherer owns is what `intent_` is for. It also states, in its own
-enforcement line, that nothing checks this. The `owner` column is what makes it checkable: a relation
-whose owner is the value for unowned, but whose captured facts all sit in one family, is the
-misfiling the rule names, and that is a query rather than a review.
+that a rule whose facts cross families is owned by the gatherer that runs last. It also states, in its
+own enforcement line, that nothing checks this. The `owner` column is what makes it checkable: a
+relation owned by the last gatherer whose captured facts all sit in one family is the misfiling the
+rule names, and that is a query rather than a review.
 
 **Owner and grain must agree about the corpus, which is a second free check.** A gatherer reads one
 corpus and a grain lives in one corpus, so a relation whose grain is a catalog grain and whose owner
@@ -289,25 +303,37 @@ one would either block the migration or force 66628 words of triage before anyth
 - `meta_relation.grain_text` equals the relation's comment's first sentence, so the two homes cannot
   drift and a SQL client is never told something the pages do not say.
 - Every `meta_relation.grain_name` resolves, by the foreign key.
-- Owner and grain agree about the corpus.
+- Owner and grain agree about the corpus, which is a join once `meta_owner` carries it.
+- Every `meta_owner` row names a Java class that exists, held by the Javadoc reference gate the
+  build already runs.
 - The lengths, by `CHECK` constraints in the DDL rather than by tests, which is the point: a `CHECK`
   fires when the schema is applied, at every store boot, and cannot be skipped or disabled.
 
-### Three things for a reviewer to press on
+### Everything has a grain, including the views
 
-**Is `owner` a checked value list or its own roster relation?** A `meta_gatherer` relation would let
-the corpus check above be a join rather than a convention, and the ownership rule will want somewhere
-to say which gatherer holds which transaction. Against it: a third relation before anybody has used
-the second.
+All 107 `intent_` views declare a grain and an owner, the same as any table. None of them has a key to
+derive one from, so each is a modelling decision rather than a transcription, and that is the bulk of
+the work in this item. It is also the point of it: a rule that cannot say what one of its rows is
+about is the defect being looked for, and the only way to find out which ones cannot is to make all of
+them try.
 
-**Should views declare a grain at all, or only tables?** Every one of the 107 `intent_` views would
-need one, none of them has a key to derive it from, and this is where the genuine thinking is. The
-argument for including them is that a rule with no statable grain is the defect this item is about.
-The argument against is that it turns a mechanical migration into 107 modelling decisions.
+### What a reviewer should press on
 
-**What happens to the twenty unkeyed targets?** This plan requires them to state a grain, not to
-become keyable. A reviewer should decide whether stating a conditional grain in prose is acceptable
-or whether that is the defect being papered over.
+**The twenty unkeyed targets.** This plan requires them to state a grain, not to become keyable. Under
+the model above they are the last gatherer's materializations, and what that gatherer should be
+building is grain tables, meaning tables keyed on the thing a row is about. Twenty keyless copies of
+view bodies are not that. So a reviewer should decide whether a stated but unkeyable grain is an
+acceptable answer here, or whether it is exactly the defect this item exists to surface and each of
+those twenty owes a real grain before it owes a registration.
+
+**The size of the view half.** 107 modelling decisions is not a slice. A reviewer should say whether
+this lands in one pass or whether the tables go first and the views follow per family, and if the
+latter, what stops the second half from never happening.
+
+**Whether `rationale` should exist at all.** It is proposed as a migration device, uncapped and
+ratcheted down. The alternative is that the 66628 words go straight to `docs/architecture/` or are
+deleted, and the item takes the triage cost up front rather than carrying a column that might become
+permanent.
 
 ## Two cautions for whoever picks this up
 
