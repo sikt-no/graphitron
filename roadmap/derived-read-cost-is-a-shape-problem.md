@@ -638,6 +638,73 @@ the connection term is consulted. Whether any field can carry `@asConnection` an
 nullable list of a polymorphic type is open. The term was repointed rather than removed, a guard on
 an unsettled hypothesis being worth more than the line it costs.
 
+### Slice 4a: the polymorphic membership capture writes, and the window it removes
+
+Absorbed into this item rather than filed separately, on the grounds that it is the same defect one
+family lower and splitting it would have let the shape spread while a second item waited for review.
+
+**What the digging found.** `intent_errors_field_live` cost 5.5 seconds to answer a question about
+820 rows, and none of it was the directive read slice 4 repointed. The whole figure was
+`intent_poly_member`, a two-arm union view whose interface arm ranked its `position` with
+`ROW_NUMBER() OVER (PARTITION BY graph_name, interface_name ...)`. A window sees its whole partition
+whatever the outer correlation says, so every correlated probe re-ranked all 552 rows of the
+implements relation; only 150 driving rows ever reached that probe, which is about 35 milliseconds
+per row to look up membership in a relation smaller than most fixtures. The decomposition, on the
+consumer store with the register emptied: through the view as it shipped, 5319 ms; the same union
+with the window replaced by a constant, 549 ms; the union arm alone off its base table, 86 ms; the
+interface arm alone, 535 ms; as a plain indexed table, 28 ms.
+
+**The fix is rung 1 and the ordinal is the whole of it.** The window ordered by four columns capture
+already wrote, so a sort at capture time reproduces it exactly: zero interface rows differ, and the
+ordering key has no ties, so the sort is total. Nothing was being computed at read time that capture
+could not have written once. Why capture declined is visible in the two writers, which sat ten lines
+apart and were otherwise near-identical: a union declares its members in one place, so a running
+counter in the loop works, while an interface's implementors are declared apart from it and apart
+from each other, so the first of them is not known until the last site is read. The order is settled
+now in one pass after the walk, and the two relations are one captured `graphql_poly_member` with a
+`container_kind` discriminator, on the same rule this item applied to the argMapping pair: neither
+carried data the other's shape could not hold, and which end of the edge the document spells is
+provenance rather than data.
+
+**Where it is captured, which was a fork worth stating.** The created-schema stage is the easiest
+place to ask graphql-java what implements an interface, and it is the wrong place to write this. Two
+reasons, both checkable. `graphql_` is the complete-transcription family, and the created-schema
+stage is conditional on assembly: its established convention is `if (schema == null) return;`, which
+is right for an `intent_` derivation and wrong for a transcription, since an editor asking who
+implements this interface needs the answer most while the schema is broken. And the registry walk is
+already complete for literal membership, walking every site of every type including extensions, so
+the assembled schema adds no row it misses and would substitute graphql-java's registration order,
+which this schema's own comment already calls neither source order nor documented.
+
+**What it is worth**, all row-identical, compared row by row and not by count, on the 2026-08-27
+capture rebuilt on this DDL:
+
+[cols="4,2,2"]
+|===
+| relation | before | after
+
+| `intent_poly_member` | reconstructed | 18 ms, 820 rows
+| `intent_errors_field_live` | 5524 ms | 193 ms
+| `intent_errors_field_member` | 4207 ms | 6 ms
+| `intent_inferred_node_type` | 462 ms | 382 ms
+|===
+
+`intent_field_participant_scope_table` is the honest caveat: it is the third reader, it costs 75
+seconds, and this buys it about 7%. Its cost is its own and belongs to a different question.
+
+**A gate row deleted rather than added.** `DerivedReadCostTest` holds `KNOWN_NON_MONOTONIC` with
+equality both ways, so a pair that stops being a regression is a failure until somebody removes it.
+`intent_errors_field|intent_errors_field_member` stopped, and the reason is a third shape worth
+naming beside the two that comment already carries: a pair can leave this set because something
+neither of its relations mentions stopped being a reconstruction.
+
+**One defect surfaced and deliberately not fixed.** The two arms do not share a base: a union's
+members are numbered from zero, an interface's implementors from one, in one `position` column. The
+window hid it. Nothing reads the absolute value, every consumer reading only the order, which is why
+it survived unnoticed; but the mapping-constant fingerprint digests a handler list in this order, so
+rebasing is a change to emitted names rather than a tidy-up. Preserved exactly, stated on the column
+and in capture, and owed as its own decision.
+
 ### Slice 5: amend the lever order on the fact-model page
 
 The ordering above contradicts the one in `docs/architecture/explanation/fact-model.adoc`, and until
