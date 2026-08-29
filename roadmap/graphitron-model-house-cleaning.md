@@ -18,16 +18,16 @@ a fact the store already holds.
 
 ## The measurements
 
-Taken over the 2563 `COMMENT ON` statements in `graphitron-model.sql`.
+Taken over the 2564 `COMMENT ON` statements in `graphitron-model.sql`.
 
 **The first sentence is fine.** A relation comment's opening sentence is its grain statement, and
-`GrainSentence` already extracts it as one. Those run a median of 9 words. One of 276 is longer than
-40 words. Whatever is wrong here, it is not the opening line.
+`GrainSentence` already extracts it as one. Those run a median of 20 words. Eleven of 276 are longer
+than 40 words. Whatever is wrong here, it is not the opening line.
 
 **The rest is not.** Relation comments run a median of 117 words, a 90th percentile of 630, and a
 maximum of 1431. The eight longest are between 900 and 1431 words each.
 
-**There are almost no examples.** Four comments out of 2563 contain the words "for example" or "e.g.".
+**There are almost no examples.** Four comments out of 2564 contain the words "for example" or "e.g.".
 
 **Length does not track difficulty.** Comparing each relation's comment length against the size of
 the statement it expands into, the correlation is weak, and the exceptions break it open.
@@ -69,9 +69,9 @@ nothing stops them. That is the cause. It is worth stating plainly because it de
 is: not better intentions, but a constraint that is present while the writing happens.
 
 **The grain sentence is the control case, and it settles this.** The same models, writing about the
-same relations, in the same file, produce a 9-word median where a convention and an extractor
-(`GrainSentence`) treat the first sentence as a thing with a job, and a 117-word median from the
-second sentence onward where nothing does. Same author, same subject, an order of magnitude apart,
+same relations, in the same file, produce a 20-word median where a convention and an extractor
+(`GrainSentence`) treat the first sentence as a thing with a job, and a 98-word median from the
+second sentence onward where nothing does. Same author, same subject, a factor of five apart,
 and the only difference is whether something was watching.
 
 That also rules out the more flattering explanation, which an earlier draft of this item gave and
@@ -80,11 +80,11 @@ an author has nowhere durable to put a week of reasoning. If that were the press
 the first sentence too, and it does not. It would also produce writing that is misplaced but
 compact, where what is actually there is diffuse. Rationale does belong in `docs/architecture/`
 rather than in a relation comment, and that is worth doing, but it is a separate correction and not
-the reason this file is 119530 words of comment.
+the reason this file is 119640 words of comment.
 
 ## The scale, since the fix has to be proportionate
 
-The file carries 119530 words across 2563 comments. 66628 of those words are on the 276 relations;
+The file carries 119640 words across 2564 comments. 66628 of those words are on the 276 relations;
 the rest are on columns and indexes. 115 relation comments are over 200 words, 90 are over 300, 61
 are over 400, and 30 are over 600.
 
@@ -178,7 +178,7 @@ tables in the schema, 141 declare a primary key and those keys fall into a short
 | 3 | `source_name, table_schema, table_name` | a database table
 |===
 
-Twelve key shapes cover 57% of the tables. The tail is long, 76 distinct shapes in all, and part of
+Twelve key shapes cover 74 of the 141 keyed tables. The tail is long, 75 distinct shapes in all, and part of
 that tail is the problem rather than the domain: a shape used once may be a genuine grain or may be a
 relation that never decided what it was about.
 
@@ -375,4 +375,47 @@ several of them are the only place a rejected shape is written down. They move; 
 **The grain sentences are already good.** This item is not a rewrite of every comment in the store.
 The opening sentences work and the mechanism that extracts them works. What needs doing starts at the
 second sentence.
+
+## Reviewer findings
+
+### Round 1 (2026-08-29, Spec -> Ready, reviewer session 01B469aK1VEBNCFp568SP4zF)
+
+Verdict: withhold. Two findings, both on question one, both cheap to resolve. Everything else
+checks out against the tree: the headline finding (the twenty unkeyed tables are exactly the twenty
+`meta_materialize` targets, both directions), the key-shape head, the family counts, every named
+class and gate method, the fact-model page's ownership rule and its "not mechanically enforced"
+line, the six `table_ref` relations plus `graphitron_routine`'s `routine_ref`, the ten union pairs,
+and the `owner_kind` precedent. The goal is well communicated, the plan is reachable, and the design
+extends the existing `meta_` pattern rather than standing a mechanism beside it. Stale counts in the
+measurement sections were corrected in this commit rather than raised as findings; the corrected
+grain-sentence figures (20-word median, eleven over 40 words, measured with `GrainSentence`'s own
+terminator rule) weaken the "order of magnitude" phrasing but not the control-case argument, which
+survives at a factor of five.
+
+**Finding 1 (question one). The pending state and the `meta_relation` column contract contradict
+each other as written.** The `### meta_relation` section declares `example` and `rationale` NOT NULL
+and length-checked. "What stops the second half from never happening" makes a pending row legal,
+with the `CHECK` constraints conditional on a state the column list does not carry. A NOT NULL
+column admits no pending row unless not-applicable is spelled as a value, which is the `owner_kind`
+precedent this spec itself cites, but the spec never says which design it intends: nullable columns
+whose `CHECK` ties non-null to the declared state, or spelled pending values under NOT NULL. The
+implementer builds a different DDL depending on the answer. Say which, and add the state column to
+the column list. The same reconciliation owes a sentence on the gates: the echo gate (comment equals
+`grain_text` and `example` joined) cannot hold while a pending relation still carries its old
+multi-sentence comment, and the Gates bullet's weaker "grain_text equals the comment's first
+sentence" is the form that holds during migration. State which gate binds in which state, or slice
+one fails on every relation slice one has not reached.
+
+**Finding 2 (question one). The owner-grain corpus agreement gate, as specified, flags legitimate
+rows.** "Owner and grain must agree about the corpus" reads as an equality join, but the relations
+owned by the last gatherer sit at grains that live in captured corpora: `intent_field_scope_table`
+is at the field grain, an SDL-corpus grain, and its owner is the derivation gatherer. Blanket
+equality flags every such row. The rule that matches the section's own example (a catalog grain
+owned by the SDL gatherer is a cross-corpus read) is directional: a corpus gatherer may own only
+relations whose grain lives in its corpus, and the last gatherer is exempt because crossing is its
+job. State the rule in that form. Two smaller danglers in the same area: what
+`meta_owner.corpus` holds for the derivation gatherer, which reads no corpus, and whether the
+store_/meta_ owner settled in the third slice also gets an exemption or a corpus of its own. The
+first needs an answer before `meta_owner`'s DDL is writable; the second can stay a question for the
+slice, but say so.
 
