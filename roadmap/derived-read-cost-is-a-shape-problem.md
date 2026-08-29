@@ -1357,6 +1357,32 @@ decision about whether the argument coordinate and the field coordinate are two 
 which is a modelling question per pair and not a sweep. What the gate changes is that they are now
 counted, and an eleventh cannot join them without somebody editing a roster.
 
+### Slice 10: a correction to the ownership rule this item published
+
+Slice 8 said `intent_` is the family of rules whose facts no single gatherer owns. That is wrong, and
+the modelling done for the house-cleaning item found it. **Every relation has an owner.** A rule
+reading one family is owned by that family's gatherer, and a rule whose facts cross families is owned
+by a derivation gatherer that runs after every corpus gatherer has finished, because that is the
+earliest moment its inputs are all complete. The single-family criterion is unchanged; what changes is
+what `intent_` is, from an absence of ownership to an owner that runs last.
+
+**The correction matters because of what it does to `meta_materialize`.** If the crossing rules had no
+owner, then a register scheduling their refreshes has to be a mechanism of its own, standing outside
+the ownership rule and answerable to nobody, which is exactly how it reads today and exactly the
+problem this item opened with. Under an owner that runs last it is not a mechanism at all. It is that
+gatherer's refresh plan, the same kind of thing any other gatherer would hold for its own family, and
+the question stops being whether a registration should exist and becomes whether it is the right
+thing for the last gatherer to materialize.
+
+**Which makes this item's own headline finding read differently.** The twenty relations with no
+declared primary key are exactly the twenty registered targets. If materialization is a gatherer
+building the tables its views stand on, then what it builds should be grain tables, meaning keyed on
+the thing a row is about. Twenty keyless copies of view bodies is not that. So the register is not
+only too large, it is materializing the wrong shape, and the fix is not per registration.
+
+Corrected in both durable places, the fact model page's ownership section and the `intent_` family's
+charter row.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
