@@ -1460,6 +1460,50 @@ where the claim that there is no such thing as an unkeyable grain will actually 
 adds one caution for the rest of them: a key is a statement about the model and not automatically an
 improvement to a plan, so keying a target is not a licence to drop what was indexed beside it.
 
+### Slice 12: the twenty, measured rather than argued
+
+Slice 11 keyed the smallest of the twenty and found it free. That says nothing about the other
+nineteen, so this slice asks all twenty the same two questions against the kept consumer capture with
+every target refreshed: does any column hold a null, and are the rows distinct at all. Both are
+one statement per relation and neither needs an opinion.
+
+**Sixteen of the twenty hold no null in any column.** Every column count equals the row count, over
+data from a real consumer schema. Whatever made these relations look like they had a conditional
+grain, it was not conditional in anything they actually produced.
+
+**Eighteen of the twenty have wholly distinct rows.** So for eighteen, some key exists, at worst the
+full column list, and the work is finding the smallest one rather than inventing a shape.
+
+**Two of the twenty contain duplicate rows, and that is the finding.**
+`intent_node_id_decode_column` holds 1559 rows of which 1114 are distinct, and
+`intent_node_id_decode_hop_column` holds 1078 of which 1009 are. Not near-duplicates: exact repeats.
+One row of the hop column, an input field's hop at position zero mapping a column to itself, appears
+nine times, and 41 groups repeat at all. Neither rule carries a `DISTINCT` and both are unchanged
+since the arm was built, so this is current rather than archaeology.
+
+A relation with duplicate rows has no key by construction, so these two are the only members of the
+twenty that genuinely cannot state a grain today. They are also the two where it costs most: a
+duplicate in a materialized target multiplies every join above it, so a reader paying nine times for
+one fact is paying for a fan-out in a rule rather than for anything it asked.
+
+**Where the nulls are, they are the site discriminator.** Only four relations hold any, and in three
+of them the nulls sit in `argument_name` and `path`: null for a field-site row, populated for an
+argument-site one. That is the same one-fact-at-two-coordinates shape the supertype gate counts ten
+of, arriving here as an unkeyable column instead of as a union. Each of those three already carries a
+`site` discriminator, so the ingredients for a key are present and only the not-applicable spelling is
+missing, which is the shape slice 3 already shipped once.
+
+**What this measurement is worth, stated precisely because uniqueness measured once is not
+uniqueness.** One consumer schema, one capture. A key that holds on this data is a candidate and not
+a proven constraint, and the honest form is what slice 11 did: derive the key from the rule's sources
+and let the pipeline tier's fixtures try to break it. The negative result carries further than the
+positive one. Duplicate rows here are proof that no key exists, on this data, today, and no further
+schema can rescue that.
+
+So the amended thesis has its first real test and comes out ahead of where it stood: of twenty
+relations that looked like they had no grain, eighteen have one available and two have a defect that
+is not about grain at all but about a rule that fans out and never says `DISTINCT`.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
