@@ -7,7 +7,7 @@ priority: 2
 theme: model-cleanup
 depends-on: []
 created: 2026-08-29
-last-updated: 2026-08-29
+last-updated: 2026-08-30
 ---
 
 # The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation
@@ -223,12 +223,26 @@ in, constrained to the corpora the store actually reads.
 
 One row per relation, keyed on the relation name, covering views as well as tables.
 
+- `state`, either declared or pending. NOT NULL. Pending means nobody has reached this relation yet.
 - `grain_name`, a foreign key into `meta_grain`.
-- `owner`, a foreign key into `meta_owner`. NOT NULL, because everything has an owner.
-- `grain_text`, the one sentence saying what one row is. Length-checked.
-- `example`, one example row stated concretely. NOT NULL and length-checked.
-- `rationale`, why this relation exists. NOT NULL and length-checked, with a larger allowance than
-  the two above. Not a place to put the old comment tails; see below.
+- `owner`, a foreign key into `meta_owner`.
+- `grain_text`, the one sentence saying what one row is.
+- `example`, one example row stated concretely.
+- `rationale`, why this relation exists, with a larger length allowance than the two above. Not a
+  place to put the old comment tails; see below.
+
+**The four content columns are nullable and the `CHECK` constraints tie them to the state**, both
+ways: a declared row must have all four, and a pending row must have none of them. Nullable rather
+than a spelled pending value, which is the other design this spec has a precedent for and the wrong
+one here. A spelled value would need a `meta_grain` row named pending and a `meta_owner` row to match,
+which puts a transitional artefact permanently into two rosters whose whole job is to say what this
+store is about. The `owner_kind` precedent is for an absence that is part of the model and never goes
+away; this absence is a work queue.
+
+**The state column stays after the migration rather than being dropped, and earns its keep.** Once
+the pending count reaches zero the ratchet pins zero, so a new relation cannot arrive pending without
+moving a number somebody has to edit. That is the same property the rest of this item is after: a
+relation joining the store becomes a decision recorded rather than a row appearing.
 
 **The owner column is where this meets the ownership rule on the fact model page.** That page states
 that a view reading one family belongs to that family and is owned by that family's gatherer, and
@@ -308,10 +322,21 @@ why it exists at all.
 
 - Every relation in `INFORMATION_SCHEMA` has a `meta_relation` row and every row names a relation
   that exists. Equality both ways.
-- `meta_relation.grain_text` equals the relation's comment's first sentence, so the two homes cannot
-  drift and a SQL client is never told something the pages do not say.
+- A declared row's relation comment equals its `grain_text` and `example` joined, so the two homes
+  cannot drift and a SQL client is never told something the pages do not say. **Only declared rows.**
+  A pending relation still carries its old multi-sentence comment and has no `grain_text` to compare
+  it against, so no prose gate binds on it at all; there is no weaker intermediate form to specify,
+  because the state that would need one carries nothing to check.
 - Every `meta_relation.grain_name` resolves, by the foreign key.
-- Owner and grain agree about the corpus, which is a join once `meta_owner` carries it.
+- **Owner and grain agree about the corpus, directionally.** A corpus gatherer may own only relations
+  whose grain lives in the corpus it reads. The rule is not an equality join in both directions:
+  relations owned by the last gatherer sit at grains that live in captured corpora, so
+  `intent_field_scope_table` is at an SDL-corpus grain with the derivation gatherer as its owner, and
+  blanket equality would flag every crossing rule in the store. The exemption falls out of the data
+  rather than being a case in the gate: `meta_owner.corpus` is nullable and is null exactly for a
+  gatherer that reads no corpus, so the gate is "a row whose owner names a corpus must have a grain in
+  that corpus" and says nothing about the rest. The derivation gatherer's corpus is therefore null,
+  which is what makes it the owner that may cross.
 - Every `meta_owner` row names a Java class that exists, held by the Javadoc reference gate the
   build already runs.
 - The lengths, by `CHECK` constraints in the DDL rather than by tests, which is the point: a `CHECK`
@@ -354,7 +379,7 @@ rather than hard, and it is done in family order rather than in one pass:
 | `java_`, `javac_`, `lint_`, `walk_`, `rejection_`, `build_warning_` | 12 | 0 | 0 | small and mostly scaffolding; settles how a family with a retirement clock declares an owner
 | `graphql_` | 27 | 1 | 0 | the first large family, and the one whose grains the key shapes already state most clearly
 | `graphitron_` | 61 | 0 | 0 | the largest table family, same gatherer as `graphql_`, so the owner is already settled by the time it starts
-| `store_`, `meta_`, and the prefixless `diagnostic` | 15 | 7 | 0 | the store describing itself and the run; their owner is neither a corpus gatherer nor the last one, which is a question these three settle
+| `store_`, `meta_`, and the prefixless `diagnostic` | 15 | 7 | 0 | the store describing itself and the run; their owner is neither a corpus gatherer nor the last one, and whether it takes a corpus of its own or a null like the derivation gatherer is left open for this slice deliberately, since the answer depends on what these relations turn out to be about
 | `intent_` | 25 | 107 | 20 | last, and it is half the work: no keys to derive a grain from, and the twenty owe one
 |===
 
@@ -419,3 +444,31 @@ store_/meta_ owner settled in the third slice also gets an exemption or a corpus
 first needs an answer before `meta_owner`'s DDL is writable; the second can stay a question for the
 slice, but say so.
 
+### Author response to round 1 (2026-08-30)
+
+Both findings accepted and resolved in the spec above; neither needed a design argued from scratch,
+which is what makes them worth recording as findings rather than as edits.
+
+**Finding 1.** The column contract now says nullable with the `CHECK` constraints tying all four
+content columns to the state, both ways, and `state` is in the column list. Nullable rather than a
+spelled pending value, and the spec says why: a spelled value would need a `meta_grain` row and a
+`meta_owner` row named pending, which puts a work queue permanently into two rosters that exist to
+say what the store is about. The `owner_kind` precedent is for an absence that is part of the model,
+and this absence is not. On the gates, the reconciliation is simpler than the finding assumed: a
+pending row carries no `grain_text`, so no prose gate binds on it and there is no weaker intermediate
+form to specify. Only declared rows are held to the echo.
+
+**Finding 2.** The corpus rule is now stated directionally, and the exemption falls out of the data
+rather than sitting as a case in the gate: `meta_owner.corpus` is nullable, null exactly for a
+gatherer that reads no corpus, so the gate reads "a row whose owner names a corpus must have a grain
+in that corpus" and is silent about the rest. That answers the first dangler, the derivation
+gatherer's corpus is null, and it is what makes it the owner that may cross. The second dangler is
+now explicit in the family table rather than implied: whether the `store_`/`meta_` owner takes a
+corpus of its own or a null is left to that slice, because the answer depends on what those relations
+turn out to be about.
+
+**One correction accepted with thanks rather than argued.** The grain-sentence figures in this item
+were measured with a hand-rolled sentence split over the escaped comment text rather than with
+`GrainSentence`'s own terminator rule over the unescaped text. The reviewer's remeasurement is the
+right one: a 20-word median and eleven of 276 over forty words, which makes the control-case gap a
+factor of five rather than an order of magnitude. The argument stands and was overstated.
