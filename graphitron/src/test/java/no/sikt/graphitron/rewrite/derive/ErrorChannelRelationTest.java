@@ -173,6 +173,35 @@ class ErrorChannelRelationTest {
     }
 
     /**
+     * An {@code @asConnection} field is not a channel however error-shaped it is authored.
+     *
+     * <p>This pins the outcome and not the rule that produces it, which is worth saying because the
+     * relation carries a term that looks like the rule and is not reached here. The macro rewrites
+     * the field before capture writes it: what lands in {@code graphql_field} is a single-valued
+     * {@code CreateFilmPayloadErrorsConnection}, so the shape conditions exclude it twice over
+     * before the connection term is consulted. Mutating that term to name the wrong relation leaves
+     * this case green. Whether any field can carry {@code @asConnection} and still read as a
+     * nullable list of a polymorphic type, which is what the term is there to catch, is open; no
+     * shape found here produces one.
+     */
+    @Test
+    void anAsConnectionFieldIsNotAChannel() {
+        var sdl = ERRORS + """
+            type Film @table(name: "film") { title: String }
+            type CreateFilmPayload {
+                film: Film
+                errors: [WriteError] @asConnection
+            }
+            type Query { films: [Film] }
+            type Mutation {
+                createFilm: CreateFilmPayload
+                    @service(service: {className: "com.example.FilmService", method: "create"})
+            }
+            """;
+        withCapturedStore(sdl, dsl -> assertThat(errorsFields(dsl)).isEmpty());
+    }
+
+    /**
      * A type nothing produces has its errors field named here exactly as a payload's does. The
      * relation is shaped by the field and not by the producer, which is what lets one relation
      * answer both the carrier scan's question and the channel's.

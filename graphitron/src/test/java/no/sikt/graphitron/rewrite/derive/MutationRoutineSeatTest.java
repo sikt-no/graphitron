@@ -144,6 +144,50 @@ class MutationRoutineSeatTest {
                 "Mutation.rentFilm CHAIN READ_SURFACE_ON_WRITE Rental"));
     }
 
+    /**
+     * The same refusal at the argument site. A {@code @condition} on an argument of the write field
+     * is the same read surface as one on the field, and the verdict is asked of
+     * {@link no.sikt.graphitron.model.Tables#GRAPHITRON_ARGUMENT_CONDITION} rather than of the
+     * directive application, so a reading pointed at the field-site relation would miss it.
+     */
+    @Test
+    void aConditionOnAWriteArgumentIsAReadSurfaceToo() {
+        withCapturedStore(RENTAL + """
+            type Mutation {
+              rentFilm(
+                inventoryId: Int! @condition(condition: {
+                  className: "no.sikt.graphitron.rewrite.TestConditionStub",
+                  method: "lifterFieldCondition"
+                }),
+                customerId: Int!
+              ): [Rental!]!
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+                @reference(path: [{table: "rental"}])
+            }
+            """, dsl -> assertThat(seats(dsl)).containsExactly(
+                "Mutation.rentFilm CHAIN READ_SURFACE_ON_WRITE Rental"));
+    }
+
+    /**
+     * An ordering is a read surface on the same terms as a filter, and {@code @orderBy} has only
+     * the argument site to sit on, so the verdict reads
+     * {@link no.sikt.graphitron.model.Tables#GRAPHITRON_ORDER_BY}. This is the arm that used to
+     * ride the same name list as the argument condition and now has a relation of its own.
+     */
+    @Test
+    void anOrderByOnAWriteArgumentIsAReadSurfaceToo() {
+        withCapturedStore(RENTAL + """
+            enum RentalSortField { RENTAL_ID @order(fields: [{name: "rental_id"}]) }
+            input RentalOrder { field: RentalSortField! }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!, order: RentalOrder @orderBy): [Rental!]!
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+                @reference(path: [{table: "rental"}])
+            }
+            """, dsl -> assertThat(seats(dsl)).containsExactly(
+                "Mutation.rentFilm CHAIN READ_SURFACE_ON_WRITE Rental"));
+    }
+
     // ===== The chain seat's own refusals =====
 
     /**

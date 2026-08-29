@@ -7,6 +7,8 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.net.URISyntaxException;
@@ -299,6 +301,50 @@ class CarrierDataFieldTest {
                     @service(service: {className: "com.example.FilmService", method: "create"})
             }
             """;
+        withCapturedStore(sdl, dsl -> assertThat(carriers(dsl)).isEmpty());
+    }
+
+    /**
+     * The rest of the forbidden set, one case per directive. Each names a fetcher contract of its
+     * own, so a payload whose data field carries one is not a carrier and the whole payload drops.
+     *
+     * <p>Every spelling here is answered by the decoded relation the directive writes rather than by
+     * the application row, so a probe pointed at the wrong relation passes the arm and admits the
+     * payload. That is what this case is for: the arms were one name list against
+     * {@code graphql_field_directive} and are now one probe each, and a list of strings is checked
+     * by nothing where a relation name is checked by the compiler.
+     *
+     * <p>{@code @notGenerated} and {@code @splitQuery} have cases of their own, the first because it
+     * is the one member with no decoded relation to ask and the second because it is the one the
+     * families disagree about. {@code @lookupKey} is on the arm list and has no case because it
+     * cannot reach this population at all: it is declared on ARGUMENT_DEFINITION and
+     * INPUT_FIELD_DEFINITION, and a payload is an output object.
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {
+        "@service(service: {className: \"com.example.FilmService\", method: \"create\"})",
+        "@reference(path: [{table: \"film\"}])",
+        "@externalField(reference: {className: \"com.example.FilmService\", method: \"create\"})",
+        "@condition(condition: {className: \"no.sikt.graphitron.rewrite.TestConditionStub\","
+            + " method: \"lifterFieldCondition\"})",
+        "@defaultOrder(primaryKey: true)",
+        "@multitableReference",
+        "@sourceRow(className: \"com.example.FilmService\", method: \"create\")",
+        "@asConnection",
+    })
+    void aDataChannelDirectiveDropsThePayload(String directive) {
+        var sdl = ERRORS + """
+            type Film @table(name: "film") { title: String }
+            type CreateFilmPayload {
+                film: Film %s
+                errors: [WriteError]
+            }
+            type Query { films: [Film] }
+            type Mutation {
+                createFilm: CreateFilmPayload
+                    @service(service: {className: "com.example.FilmService", method: "create"})
+            }
+            """.formatted(directive);
         withCapturedStore(sdl, dsl -> assertThat(carriers(dsl)).isEmpty());
     }
 

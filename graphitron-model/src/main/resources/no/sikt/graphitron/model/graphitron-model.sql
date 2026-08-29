@@ -5342,10 +5342,9 @@ SELECT f.graph_name, f.type_name, f.field_name, f.ordinal, f.named_type, nt.kind
     ON nt.graph_name = f.graph_name AND nt.type_name = f.named_type
    AND nt.kind IN ('UNION', 'INTERFACE')
  WHERE f.is_list AND NOT f.non_null
-   AND NOT EXISTS (SELECT 1 FROM graphql_field_directive ac
+   AND NOT EXISTS (SELECT 1 FROM graphitron_connection ac
                     WHERE ac.graph_name = f.graph_name AND ac.type_name = f.type_name
-                      AND ac.field_name = f.field_name
-                      AND ac.directive_name = 'asConnection')
+                      AND ac.field_name = f.field_name)
    AND EXISTS (SELECT 1 FROM intent_poly_member m
                 WHERE m.graph_name = f.graph_name AND m.container_name = f.named_type)
    AND NOT EXISTS (SELECT 1 FROM intent_poly_member m
@@ -5409,7 +5408,7 @@ producer_type (graph_name, payload_type_name) AS (
   SELECT DISTINCT graph_name, payload_type_name FROM producer
 ),
 -- Named exactly once, by the join below. The three disqualification arms deliberately stand on
--- graphql_field and graphql_field_directive directly rather than on this CTE: H2 inlines a CTE
+-- graphql_field and the decoded relations directly rather than on this CTE: H2 inlines a CTE
 -- afresh at every naming and a window sees its whole partition whatever the outer correlation
 -- says, so an arm correlated into this relation would re-evaluate the window over every driving
 -- row where the same arm against the base table is a prunable probe.
@@ -5451,16 +5450,69 @@ SELECT p.graph_name, d.type_name, d.field_name, p.family, d.element_kind, d.data
                                        WHERE tb.graph_name = u.graph_name
                                          AND tb.type_name = u.named_type
                                          AND tb.declared_via = 'BACKING_CLOSURE'))
-   AND NOT EXISTS (SELECT 1 FROM graphql_field_directive fd
-                    WHERE fd.graph_name = d.graph_name AND fd.type_name = d.type_name
-                      AND fd.directive_name IN ('service', 'sourceRow', 'reference', 'asConnection',
-                            'splitQuery', 'externalField', 'condition', 'lookupKey', 'notGenerated',
-                            'defaultOrder', 'orderBy', 'multitableReference')
-                      AND NOT (fd.directive_name = 'splitQuery' AND p.family = 'SERVICE')
+   -- Does any field of this payload carry a reading that routes it out of the carrier mold?
+   -- Asked of the decoded family, one probe per relation, rather than of a name list matched
+   -- against graphql_field_directive. The question is a semantic one and the decode is where the
+   -- semantics are, so a directive this generator learns to read arrives here as a relation name
+   -- the schema declares rather than as a string nothing can check, which is what let the name
+   -- list carry @orderBy: that directive is ARGUMENT_DEFINITION only, so no application of it
+   -- ever reached a field row, and nothing said so. @notGenerated is the one name with no
+   -- decoded relation to ask, not being a graphitron directive at all, so it stays an SDL read
+   -- for the reason the authored-claim views are ones. The probe correlates on the field
+   -- coordinate rather than on a directive row, so a field carrying two of these disqualifies
+   -- once, and the errors-channel exclusion is asked once per field instead of once per
+   -- application.
+   AND NOT EXISTS (SELECT 1 FROM graphql_field g
+                    WHERE g.graph_name = d.graph_name AND g.type_name = d.type_name
                       AND NOT EXISTS (SELECT 1 FROM intent_errors_field e
-                                       WHERE e.graph_name = fd.graph_name
-                                         AND e.type_name = fd.type_name
-                                         AND e.field_name = fd.field_name))
+                                       WHERE e.graph_name = g.graph_name
+                                         AND e.type_name = g.type_name
+                                         AND e.field_name = g.field_name)
+                      AND (EXISTS (SELECT 1 FROM graphitron_service x
+                                    WHERE x.graph_name = g.graph_name
+                                      AND x.type_name = g.type_name
+                                      AND x.field_name = g.field_name)
+                        OR EXISTS (SELECT 1 FROM graphitron_field_reference x
+                                    WHERE x.graph_name = g.graph_name
+                                      AND x.type_name = g.type_name
+                                      AND x.field_name = g.field_name)
+                        OR EXISTS (SELECT 1 FROM graphitron_connection x
+                                    WHERE x.graph_name = g.graph_name
+                                      AND x.type_name = g.type_name
+                                      AND x.field_name = g.field_name)
+                        OR EXISTS (SELECT 1 FROM graphitron_external_field x
+                                    WHERE x.graph_name = g.graph_name
+                                      AND x.type_name = g.type_name
+                                      AND x.field_name = g.field_name)
+                        OR EXISTS (SELECT 1 FROM graphitron_field_condition x
+                                    WHERE x.graph_name = g.graph_name
+                                      AND x.type_name = g.type_name
+                                      AND x.field_name = g.field_name)
+                        OR EXISTS (SELECT 1 FROM graphitron_field_lookup_key x
+                                    WHERE x.graph_name = g.graph_name
+                                      AND x.type_name = g.type_name
+                                      AND x.field_name = g.field_name)
+                        OR EXISTS (SELECT 1 FROM graphitron_default_order x
+                                    WHERE x.graph_name = g.graph_name
+                                      AND x.type_name = g.type_name
+                                      AND x.field_name = g.field_name)
+                        OR EXISTS (SELECT 1 FROM graphitron_multitable_reference x
+                                    WHERE x.graph_name = g.graph_name
+                                      AND x.type_name = g.type_name
+                                      AND x.field_name = g.field_name)
+                        OR EXISTS (SELECT 1 FROM graphitron_method_reference x
+                                    WHERE x.graph_name = g.graph_name AND x.site = 'SOURCE_ROW'
+                                      AND x.use_site = g.type_name || '.' || g.field_name)
+                        OR (p.family <> 'SERVICE'
+                            AND EXISTS (SELECT 1 FROM graphitron_split_query x
+                                         WHERE x.graph_name = g.graph_name
+                                           AND x.type_name = g.type_name
+                                           AND x.field_name = g.field_name))
+                        OR EXISTS (SELECT 1 FROM graphql_field_directive ng
+                                    WHERE ng.graph_name = g.graph_name
+                                      AND ng.type_name = g.type_name
+                                      AND ng.field_name = g.field_name
+                                      AND ng.directive_name = 'notGenerated')))
    AND NOT EXISTS (SELECT 1 FROM graphql_field u
                     WHERE u.graph_name = d.graph_name AND u.type_name = d.type_name
                       AND u.named_type = 'ID'
@@ -6001,13 +6053,15 @@ SELECT s.graph_name, s.type_name, s.field_name, s.ordinal, s.seat,
                               OR (fr.source_line = s.source_line
                                   AND fr.source_column < s.source_column)))
            THEN 'CHAIN_HEAD_NOT_ROUTINE'
-         WHEN EXISTS (SELECT 1 FROM graphql_field_directive d
-                       WHERE d.graph_name = s.graph_name AND d.type_name = s.type_name
-                         AND d.field_name = s.field_name AND d.directive_name = 'condition')
-           OR EXISTS (SELECT 1 FROM graphql_argument_directive ad
-                       WHERE ad.graph_name = s.graph_name AND ad.type_name = s.type_name
-                         AND ad.field_name = s.field_name
-                         AND ad.directive_name IN ('condition', 'orderBy'))
+         WHEN EXISTS (SELECT 1 FROM graphitron_field_condition fc
+                       WHERE fc.graph_name = s.graph_name AND fc.type_name = s.type_name
+                         AND fc.field_name = s.field_name)
+           OR EXISTS (SELECT 1 FROM graphitron_argument_condition ac
+                       WHERE ac.graph_name = s.graph_name AND ac.type_name = s.type_name
+                         AND ac.field_name = s.field_name)
+           OR EXISTS (SELECT 1 FROM graphitron_order_by ob
+                       WHERE ob.graph_name = s.graph_name AND ob.type_name = s.type_name
+                         AND ob.field_name = s.field_name)
            THEN 'READ_SURFACE_ON_WRITE'
          WHEN s.seat = 'CHAIN' THEN
            CASE
