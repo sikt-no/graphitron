@@ -1299,6 +1299,64 @@ It deliberately carries no counts: an unguarded census rots silently, which that
 sections above where this one now sits. The figures live here, in the slice above, where they are
 dated and where their instrument is named, and they are expected to go stale as the rules move.
 
+### Slice 9: the supertype-signature gate, and the tranche it found
+
+`SupertypeSignatureGateTest` in `graphitron-model` now holds the signature this item has been
+describing, read off a booted store the way the register gate's axes are. Three assertions: the set
+roster, the reconstruction roster, and the claim that no set of three or more members is
+reconstructed anywhere. The first two are pinned by equality in both directions.
+
+**The exemption list the plan asked for turned out to be a rule.** Grouping capture tables by the
+columns outside their own primary key reports two large groups that are not subtype sets at all: the
+thirteen relations whose entire shared payload is where the row was read from, and the eight
+coordinate relations with no payload whatever. Both fall out on one line rather than by name: a set's
+payload must be non-empty and must hold at least one column that is not provenance. Sharing only your
+provenance is sharing nothing. That leaves eleven sets, every one of them a real group of relations
+saying the same thing under different keys, and no relation had to be excused by hand.
+
+**The threshold moved from three members to two, and that is where the finding is.** Three was the
+right number for a scan with provenance still in the payload, because at two the noise swamps
+everything. With provenance ruled out, two is honest, and at two this schema has **ten reconstruction
+sites** that the plan's own threshold could not see. Every one of them has the same shape: an
+argument-site relation unioned with its field-site twin, because an author may write the same
+directive at either coordinate and no relation says so once.
+
+[cols="4,4"]
+|===
+| the view that reconstructs | the twins it unions
+
+| `intent_argument_filter_role` | argument and field `@condition`
+| `intent_input_occurrence_override` | argument and field `@condition`
+| `intent_condition_method_route` | argument and field reference step
+| `intent_condition_method_route_defect` | argument and field reference step
+| `intent_condition_param_decode` | argument and field `@condition`
+| `intent_field_demand_rule` | external field and service
+| `intent_field_exemption_rule` | external field and service
+| `intent_field_producer_reference` | external field and service
+| `intent_node_id_instruction_live` | argument and field `@nodeId`
+| `intent_resolved_node_key_column` | constraint column and node key column
+|===
+
+**At three or more the answer is zero, and that is this item's four repoints stated as a build
+claim.** Every wide reconstruction the signature can see is gone, which is what slices 1 and 3 were
+for, and the assertion is empty rather than a roster so that one cannot come back quietly.
+
+**Both halves were mutation-tested rather than trusted.** A view unioning three reference-step
+relations and naming `table_ref` fails the wide-reconstruction assertion and the reconstruction
+roster; a table added with the node-id payload under a different key fails the set roster. Each fired
+on the assertion it should and on no other.
+
+**What the gate does not claim.** Confirming a site is name matching over a stored definition, not
+proof that the set's column is projected from the unioned arms, which is why the roster is pinned
+rather than merely counted: the pin is what makes a wrong reading somebody's to correct rather than
+the gate's to hide. Membership comes from `ViewReferences` rather than from text, so an alias sharing
+a relation's name is not counted as a read of it.
+
+**The ten are not this slice's to fix.** They are the same defect one grain down, and each is a
+decision about whether the argument coordinate and the field coordinate are two sites of one fact,
+which is a modelling question per pair and not a sweep. What the gate changes is that they are now
+counted, and an eleventh cannot join them without somebody editing a roster.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
@@ -1381,7 +1439,10 @@ What this item owes that no gate holds today:
   `everyTargetIsIndexedOrStatesWhyNot` in shape. The walk itself has been taken and its current answer
   is twelve of twenty-two unreachable; whether it ships as a gate is the deferred policy question
   above.
-- **A gate over the supertype signature, which is the one this item most owes.** All three parts read
+- **A gate over the supertype signature, which is the one this item most owes.** Landed as
+  `SupertypeSignatureGateTest`; slice 9 records what it found and where it departed from the design
+  below, which is that the exemption list became a rule about provenance and the member threshold
+  came down from three to two. The design as specified: all three parts read
   off the booted store the way `MaterializeRegistryGateTest`'s axes already do: subtype sets from
   grouping capture tables by attributes outside their own primary key, confirmations from view bodies
   carrying a `UNION` over three or more members of a set, **and the set's own attributes named by that
