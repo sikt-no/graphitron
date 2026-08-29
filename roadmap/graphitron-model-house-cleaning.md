@@ -64,26 +64,48 @@ The store has worked examples of the result:
 
 ## Why the transcripts ended up in the DDL
 
-This is an incentive, not a habit, and naming it matters because the fix has to remove the incentive
-rather than ask people to try harder.
+Almost every line of this file was written by a Claude model, and Claude models elaborate when
+nothing stops them. That is the cause. It is worth stating plainly because it decides what the fix
+is: not better intentions, but a constraint that is present while the writing happens.
 
-A roadmap item is deleted when it reaches Done. An author who has just spent a week establishing why
-a shape is right has nowhere durable to record that reasoning except the relation comment, because
-the item that holds it is scheduled for deletion. So the comment absorbs the argument. The
-architecture docs under `docs/architecture/` are the durable home for rationale and are not being
-used for it.
+**The grain sentence is the control case, and it settles this.** The same models, writing about the
+same relations, in the same file, produce a 9-word median where a convention and an extractor
+(`GrainSentence`) treat the first sentence as a thing with a job, and a 117-word median from the
+second sentence onward where nothing does. Same author, same subject, an order of magnitude apart,
+and the only difference is whether something was watching.
+
+That also rules out the more flattering explanation, which an earlier draft of this item gave and
+which is wrong. It said the comments absorb rationale because a roadmap item is deleted at Done and
+an author has nowhere durable to put a week of reasoning. If that were the pressure it would bear on
+the first sentence too, and it does not. It would also produce writing that is misplaced but
+compact, where what is actually there is diffuse. Rationale does belong in `docs/architecture/`
+rather than in a relation comment, and that is worth doing, but it is a separate correction and not
+the reason this file is 119530 words of comment.
+
+## The scale, since the fix has to be proportionate
+
+The file carries 119530 words across 2563 comments. 66628 of those words are on the 276 relations;
+the rest are on columns and indexes. 115 relation comments are over 200 words, 90 are over 300, 61
+are over 400, and 30 are over 600.
 
 ## What finishing this would look like
 
 Not decided here. A Backlog item states the problem. Sketched only so the next reader knows the
 shape:
 
+- **A constraint that is present while the writing happens**, which is where the leverage is. Two
+  kinds. A prompt: a rule in `CLAUDE.md` about this file specifically, since the writing-style
+  section there governs prose and says nothing about relation comments. And a gate, which is what
+  makes the prompt stick, because a rule nothing checks is a rule that decays.
+- **A ratchet rather than a rewrite**, on the pattern this repo already uses for read cost. Pin the
+  total and the maximum, both of which can only fall: a relation comment may not exceed the longest
+  one that exists today, and the file's total may not exceed today's. Neither forbids a necessary
+  paragraph; both forbid a new essay. The starting values are in the section above.
 - A relation comment defines the row and gives one example of one, before it argues anything.
+  "Carries an example" is checkable and today's answer is 4 of 2563.
 - Rationale, measurements and rejected alternatives move to `docs/architecture/`, which outlives the
-  item that produced them.
+  item that produced them. Worth doing on its own merits; not the cause of the sprawl.
 - Names inside one subtype set agree with each other.
-- Whatever survives is gated, on the pattern the model tier already uses: "carries an example" is
-  checkable, and today's answer is 4 of 2563.
 
 ## Two cautions for whoever picks this up
 
