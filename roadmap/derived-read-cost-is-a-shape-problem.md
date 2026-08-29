@@ -1504,6 +1504,51 @@ So the amended thesis has its first real test and comes out ahead of where it st
 relations that looked like they had no grain, eighteen have one available and two have a defect that
 is not about grain at all but about a rule that fans out and never says `DISTINCT`.
 
+### Slice 13: what the duplicate rows actually are
+
+Slice 12 found duplicate rows in two targets and called the cause a rule that fans out and never says
+`DISTINCT`. That was wrong, and the real cause makes `DISTINCT` the wrong fix rather than the missing
+one.
+
+**The duplicates are information loss, not repetition.** `intent_node_id_decode_hop_column` joins
+`intent_node_id_decode_hop` to the foreign key column pairs and projects the column names while
+dropping the constraint and the tables it came from. At the worked coordinate, a filter input over
+person roles, the hop relation legitimately holds nine rows: nine foreign keys from nine different
+role tables, all pointing at the same role table. Every one of them maps the same two column names.
+So nine distinct facts arrive at the projection and nine identical rows leave it. Adding `DISTINCT`
+would collapse nine real hops into one and hand any reader that wanted to know which table it was
+hopping from a single arbitrary answer.
+
+**The inflation is larger than the row counts suggested, because it multiplies per coordinate.** At
+that coordinate `intent_node_id_decode_column` holds 162 rows of which 2 are distinct. Six other
+coordinates behave the same way, 64 against 4, 40 against 5, 28 against 7.
+
+**And it reaches a stated value that is simply false.** `intent_node_id_decode.arity` is
+`COUNT(*) OVER (PARTITION BY graph_name, use_site)` over that relation, so the node identity at that
+coordinate is described as having 162 key columns where it has 2.
+
+**Two things bound how bad this is, and both are worth stating precisely rather than leaving to
+relief.** No main source reads that column: `intent_node_id_decode` is named in javadoc and by tests,
+and the generator consumes the relation's `destination` rather than its `arity`, so nothing emitted
+today carries the wrong number. And `destination` itself survives, because it is
+`lifted = positions` and the duplication inflates both sides proportionally at all seven coordinates,
+every row there carrying a non-null lifted column.
+
+That second one is an accident and should be read as one. Nothing in the rule makes the inflation
+proportional. One duplicated row with a null lifted column at any of those coordinates flips
+`destination` from own-table to target-table columns, and that value is consumed. The defect is
+therefore one differing row away from being visible in emitted output, and it has been sitting in a
+materialized target.
+
+**The fix is a grain decision and not a repair, which is why this slice stops here.** Either the
+relation's grain is the column mapping, in which case the nine hops genuinely are one row and the
+rule should say so where the collapse happens rather than at the top; or its grain includes which
+foreign key was walked, in which case the distinguishing columns belong in the projection and every
+reader above inherits a wider relation. The first is right if a consumer only ever needs the columns
+to decode; the second is right if any consumer needs to know which branch of a polymorphic filter it
+is on. Neither is decidable from the read-cost evidence this item carries, and guessing would
+either delete facts or widen four relations on a hunch.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
