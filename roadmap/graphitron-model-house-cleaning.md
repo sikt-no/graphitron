@@ -107,6 +107,46 @@ shape:
   item that produced them. Worth doing on its own merits; not the cause of the sprawl.
 - Names inside one subtype set agree with each other.
 
+## The candidate direction: documentation as data, not as comments
+
+Move relation documentation out of `COMMENT ON` and into a `meta_` relation with columns. The store
+already has the shape for it and this would not be a new mechanism.
+
+**What it buys that a word cap cannot.** A comment is one blob, so every constraint over it is a
+constraint over the whole thing at once, and the only property a blob has is its length. A relation
+has columns, and each column can be constrained separately. That is what makes "define the row and
+give an example of one before you argue anything" expressible at all: `grain` and `example` become
+NOT NULL columns with their own length checks, and rationale becomes a column that is allowed to be
+long or is not there at all. No cap over a blob can say that, which is why the cap invites the same
+sprawl written more tersely.
+
+**A `CHECK` is a stronger instrument than a test here.** It fires when the schema is applied, which
+is at every store boot in every test, and cannot be skipped, disabled or forgotten. That is the
+property the section above says is missing: a constraint present while the writing happens rather
+than a verdict afterwards.
+
+**Three things it does not buy, because they already exist.** Coverage is already gated:
+`FactSchemaGateTest.commentCoverageIsTotal` reads `INFORMATION_SCHEMA` and fails on any relation or
+column with no comment, so a test comparing the catalog against a meta relation is the same check
+relocated, not a new one. The documentation pages already read both sources:
+`SchemaReferencePages` renders per-object prose from the `COMMENT ON` text beside the `meta_family`
+rows and interpolates both verbatim. And `StoreProse` already treats comment bodies and `meta_`
+character values as one corpus, deliberately total over character-typed values so that "a later prose
+column joins the corpus by existing rather than by being remembered". The seam this proposal needs
+was built.
+
+**The split worth considering rather than a wholesale move.** Keep `COMMENT ON` carrying the grain
+sentence and nothing else, and move everything from the second sentence onward into the meta
+relation. Three reasons. The grain sentences are the part that already works, so moving them buys
+nothing and risks something. A comment is what a SQL client shows inline, and a store whose relations
+describe themselves to `\d+` is worth keeping. And the split is exactly where the measurements say
+the problem starts, which makes the migration mechanical: truncate each comment at its first
+sentence, and the remainder is the meta row's first draft.
+
+**What it does not fix.** The `meta_` rows are inserted by the same DDL file, so the file does not
+get smaller and the author is still writing in the same place. The gain is the shape and the
+enforcement, not the location. Anyone selling this as "the DDL gets shorter" has misread it.
+
 ## Two cautions for whoever picks this up
 
 **Do not delete the arguments.** They are the record of decisions that cost real work to reach, and
