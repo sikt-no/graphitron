@@ -779,9 +779,36 @@ register is doing real work and the reduction available is per relation.
 
 **The next candidate, named but not taken.** `intent_errors_field` costs 10 ms as a view now where
 it cost 5.5 seconds before slice 4a, so its registration is priced on a shape that no longer exists.
-It is not retired here because the honest test is to demote that one relation with the rest of the
-register intact, and inferring it from the emptied arm is the same mistake the correction above
-records.
+It was not retired on that figure, because the honest test is to demote that one relation with the
+rest of the register intact; the paragraph below reports that test, which refused it.
+
+**The second candidate was measured and refused, and the way it failed is the finding.**
+`intent_errors_field` stays registered. Slice 4a took its refresh from the audit's 5.6 seconds to
+0.21 seconds, so the registration is now nearly free to hold; the question was whether it still buys
+anything. Demoting exactly that one relation, with the other twenty kept, moves its one registered
+reader's refresh from 2.12 s to 2.24 s. So retiring it would save 0.21 s and cost 0.12 s, which is a
+wash rather than a win, and nothing about the relation argues for the churn.
+
+The pass totals for the two arms are 47.28 s and 48.81 s, and that difference should not be read as
+the cost of the demotion. Most of it is `intent_input_field_filter_role` at 20.54 s against 22.68 s,
+and that relation does not name `intent_errors_field` anywhere; `intent_node_id_instruction` moved
+the other way by about the same fraction. A few per cent either way across a forty-seven second pass
+is what one reading of this harness is worth, which is worth knowing before quoting any single
+position from it.
+
+**What this refutes is a method, not a relation, and it had already misled this item once today.**
+The arm with the register emptied says `intent_errors_field` costs 10 ms as a view, and that is true
+and useless: on that arm every relation is a view, the carrier costs 25 seconds, and a 10 ms probe
+inside it is unmeasurable. With the register intact the carrier's refresh is 2.1 seconds and the
+same probe is a visible fraction of it. **The emptied arm prices the register as a set and cannot
+price a member of it.** Pricing one registration means demoting exactly one, which is the only
+reading that answers the question the register's own reasons ask.
+
+That is the same inference that produced the correction recorded against slice 4 above, arriving a
+second time from the other direction: there a cheap-looking fix upstream was predicted to move an
+expensive figure downstream, here an expensive-looking figure downstream was read as licence to drop
+something upstream. Both are the set-relative pricing rule being ignored, and the rule is in the
+register's own charter rather than being new here.
 
 ### Slice 5: amend the lever order on the fact-model page
 
