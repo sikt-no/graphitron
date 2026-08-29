@@ -122,11 +122,14 @@ charter of `rejection_` already ties its own lifetime to the clock `walk_` keeps
 that clock does not exist. Both the page and `rejection_`'s own DDL charter need repointing at the
 walk itself, which is what the clock was always about.
 
-**Both edits share a file with R876's slice 5,** which amends the same page's lever order and
-restates its top rung. The paragraphs do not overlap: R876 works the lever hierarchy, this item works
-the oracle corollary and the strata buckets. Whoever lands second should read the other's edit rather
-than assume a clean merge, since the top rung R876 restates argues from cost and the corollary this
-item rewrites is the page's worked example of the same argument.
+**Both edits share a file with R876's slice 5,** which has landed: it amended the same page's lever
+order and restated its top rung. The paragraphs do not overlap, R876 having worked the lever
+hierarchy where this item works the oracle corollary and the strata buckets, but read the landed edit
+before writing this one rather than assuming a clean merge. The reason the note was here still
+applies with its polarity reversed: the top rung no longer argues from cost, it argues that a rule
+reconstructing what capture could have written is a modelling defect whichever way the timings come
+out, and the corollary this item rewrites is the page's worked example of the argument that rung used
+to make.
 
 ## Retired vocabulary
 

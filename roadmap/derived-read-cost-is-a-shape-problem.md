@@ -731,6 +731,35 @@ gate holds it, the page is ahead of the tree; if the page ships without it, the 
 without the thing that gives it teeth. The recommendation is to ship it as a rule with the reachable
 count beside it, which is what the page does elsewhere for rules it states before they are enforced.
 
+**Landed, and the four edits are the four the section named.** The lever order paragraph is now four
+paragraphs, one per rung, in the order this item argues rather than the one the page carried.
+
+The top rung is restated as a modelling argument. It used to read "because it has no refresh to pay
+for at all", which is true and is not the reason: a rule that reconstructs what capture could have
+written is a defect in the model whether or not any reader is currently slow, and argued from cost
+the rung cannot tell an author to write the supertype for a relation nothing is waiting on. The
+cheapness is stated as the consequence it is.
+
+The index rung is added, with the finding that motivated adding it: a registered target is a table,
+a table is what an index can sit on, so a registration has been delivering an index silently and a
+figure this page attributes to materialization may be an index nobody priced separately. The page's
+own reference-step hop measurement, half index and half statistics, is the worked case and is left
+where it was rather than repeated.
+
+The registration rung moves below the rewrite rung, on the argument that it is the only one of the
+four that adds work rather than removing it, and it picks up the reader precondition: it is the only
+rung bought on behalf of readers rather than of the model, so a target no consumer reaches is a
+refresh paid every capture for nobody.
+
+Neither of the two paragraphs this slice was told to leave alone was touched: the deepest-common-
+reader rule and the materialized-view prohibition stand as written.
+
+One edit outside the four, in another item rather than on the page. `roadmap/capture-stops-reading-
+the-walk.md` carries a coordination note warning whoever lands second to read the other's edit,
+whose reason was that the top rung "argues from cost". That is now the opposite of what the page
+says, and a stale warning about a shared file is worse than none, so the note is repointed at the
+landed state.
+
 ### Slice 6: re-measure the performance claims written into DDL comments
 
 Every claim in the store's relation comments was taken in the regime the audit's section 4 describes,
