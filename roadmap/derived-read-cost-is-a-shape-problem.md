@@ -112,11 +112,35 @@ implying the signature explains everything.
 
 **So the honest status is under-implemented, not refuted.** Four confirmed supertype omissions exist;
 the arm above fixes two of them and leaves the largest untouched. The outcome this item owes is
-therefore stated as a target and a test: **no relation in the consumer read set refuses a 120-second
+therefore stated as a target and a test: **no relation in the consumer read set refuses a five-second
 budget with nothing materialized**, which is what makes `mvn graphitron:validate` and
 `mvn graphitron:dev` usable on that schema and lets `graphitron:dev` reach its language-server and MCP
 binds. If the four supertypes and two keys land and that is still false, the remaining registrations
 have earned themselves an argument they have never yet had to make.
+
+**The budget is five seconds, and every measurement in this item was taken against a hundred and
+twenty.** The figures below are left as they were taken, because a measurement is a record and not a
+claim about what is acceptable; what changes is the line they are judged against, and the line moves
+by two orders of magnitude. Two consequences, both derivable from figures already here rather than
+needing a new arm.
+
+**The register as it ships does not meet this budget either.** The audit's read pass over the 39
+relations a consumer names records one relation refusing outright and seven more between 7.1 and 32.6
+seconds. So at least eight of thirty-nine refuse five seconds with all the registrations in place,
+against one of thirty-nine at a hundred and twenty. That is the strongest form of this item's premise
+yet stated and it is not this item's own measurement: the register was already failing the standard,
+and reading its arm as the winning one was an artefact of where the line was drawn.
+
+**And on the emptied arm, three of the twenty registered targets answer inside five seconds.**
+`intent_resolved_type_binding` and `intent_spelled_table` inside a second,
+`intent_field_reference_step_hop` at 1.5. The three that answered between 25 and 117 seconds move from
+successes to failures, which sharpens rather than weakens what the table below says: those three were
+never evidence that a rule is fine unregistered, they were evidence that it can be made to finish.
+
+**A five-second budget also makes the measurement cheap, which is worth saying out loud.** A sweep
+whose failures each cost two minutes is a job to schedule; one whose failures cost five seconds is a
+job to run inline. The exception is a relation that cannot be planned, where the budget does not
+apply at all and the cost is whatever the planner spends before it gives up.
 
 Nothing a reader asks the store changes: the same relations, the same rows, under the same names.
 
@@ -323,6 +347,139 @@ actually project rather than which tables they name. Both were found by checking
 against the DDL by hand, which is the standing rule for this instrument: a confirmed row is a reading
 to check and not a verdict to inherit, and anything built as a gate owes either a tighter check than
 name matching or a written exemption list.
+
+## What the register is cutting: the size of the statement the planner has to hold
+
+The store's own notes already record that H2 inlines a view at every naming and performs no
+common-subexpression elimination, so a rule named twice inside another rule is evaluated twice. What
+that fact does at the scale of this schema had never been counted, and counting it changes what the
+register looks like it is for.
+
+**The quantity, and it needs no captured store.** Give every base table one unit. Give every rule one
+unit plus, for each relation name it spells, that relation's own count multiplied by the number of
+times it spells it. The result is the size of the fully inlined statement the parser and the planner
+have to build before any row is read, and it is a function of the DDL alone, so any session can
+compute it from the file in this repository with no store, no capture and no consumer.
+
+**On the register as it ships, nothing is large.** The biggest number any relation in the schema
+reaches is 963, at `intent_argmapping_projection_defect`. Every registered target is a table, and a
+table costs one, so each registration truncates the tree at that name.
+
+**With the register emptied, the same schema reaches 2739455.** The relation that gets there,
+`intent_mutation_write_agreement`, is not registered and never has been: it is an ordinary view that
+names `intent_mutation_write_destination` twice, and that target's rule expands to 1369722 on its
+own. The twenty registered targets, with the register emptied, in order, beside what a
+`SELECT count(*)` over each one does on that arm against the kept 2026-08-27 consumer store, one JVM
+per statement with a 120-second budget:
+
+[cols="4,2,3"]
+|===
+| registered target | inlined size, register emptied | `count(*)` on the emptied arm
+
+| `intent_mutation_write_destination` | 1369722 | no plan: heap exhausted after 144 s
+| `intent_mutation_payload_key_membership` | 456350 | no plan: heap exhausted after 154 s
+| `intent_mutation_payload_column` | 174786 | planned, over the 120 s budget
+| `intent_mutation_payload_refusal` | 106107 | planned, over budget
+| `intent_input_field_carrier_role` | 41227 | planned, over budget
+| `intent_node_id_decode_column` | 14773 | planned, over budget
+| `intent_input_field_filter_role` | 10592 | planned, over budget
+| `intent_node_id_decode_hop_column` | 5359 | planned, over budget
+| `intent_node_id_instruction` | 3115 | planned, over budget
+| `intent_argument_column_match` | 1414 | planned, over budget
+| `intent_argument_column_scope` | 1409 | planned, over budget
+| `intent_mutation_write_payload` | 661 | planned, over budget
+| `intent_input_field_resolving_table` | 660 | 1804 rows in 117 s
+| `intent_argument_scope_table` | 657 | 967 rows in 101 s
+| `intent_field_scope_table` | 655 | planned, over budget
+| `intent_field_column_scope` | 362 | planned, over budget
+| `intent_carrier_data_field` | 318 | 151 rows in 25 s
+| `intent_resolved_type_binding` | 79 | answered inside a second
+| `intent_field_reference_step_hop` | 45 | 12817 rows in 1.5 s
+| `intent_spelled_table` | 4 | answered inside a second
+|===
+
+**Eighteen of the twenty cannot answer a row count in two minutes, and two cannot be asked.** That
+is the defect list this item said the emptied arm would produce, and it is now complete rather than
+partial. Three caveats on how it was taken, none of which move the shape. The arm is the kept
+2026-08-27 store rebuilt on the DDL as it stood before this item's two retirements, with the seven
+tables that capture predates transcribed in, so it is a schema of this item's making and not a
+consumer's. Each statement ran in its own JVM, so none of them warmed the page cache for the next,
+which makes these slower than the same statements taken in one session and is why the two failures
+that are not timeouts are reported as heap rather than as time. And a `count(*)` is an upper bound on
+what a consumer pays, used here only to compare arms.
+
+**So the register's first effect is not that it saves evaluation time. It is that it stops the
+statement from growing.** That is a different claim from the one the register's own reasons make,
+and it is the one that explains the failures at the top of that table.
+
+**Most of what the register protects is not registered.** With the register emptied, thirty-eight
+relations sit above the 963 the whole schema lives under today. Twenty of those are the registered
+targets and their rules, one pair each. The other thirteen are ordinary views nothing has ever
+registered, and the largest relation in the schema on that arm is one of them. They are plannable
+today only because a table sits between them and the rules underneath. So a registration is not
+bought for its own target's sake, it is bought for whatever stands above it, and the register's own
+reasons, which argue each row on its target and its named readers, are arguing about the wrong end
+when the cost is structural.
+
+**Two relations cannot be planned at all, and the evidence is that no row is involved.** On the arm
+with the register emptied, `intent_mutation_write_destination` and
+`intent_mutation_payload_key_membership` both exhaust a four-gigabyte heap, after 144 and 154 seconds,
+with stacks that are entirely `Parser` and `TableFilter.getBestPlanItem` frames and contain no
+execution frame at all. The failure therefore precedes any row being read and is a property of the
+schema rather than of the data in it.
+
+**Which also corrects how the earlier arms were counted.** `SET QUERY_TIMEOUT` bounds execution, so a
+statement that never finishes planning is never bounded by it. The relations that refused a
+120-second budget on the earlier arms were two different failures read as one: some planned and then
+ran out of budget, which is a cost, and some never reached execution, which is not a cost but an
+inability. Only the first kind is a candidate for being made faster.
+
+**What the quantity predicts, and what it does not.** It predicts plannability and nothing else. On
+the emptied arm `intent_field_column_scope` is 362 and refuses a 120-second budget in execution,
+while `intent_carrier_data_field` is 318 and answers in 25 seconds: the same expansion regime, and
+the difference is the data. Above roughly two hundred thousand the planner dies; between there and a
+few hundred a plan gets built and may still be slow; below a thousand the statement is the size the
+schema already lives with today. Anyone reading this table for execution cost is reading it for
+something it does not measure.
+
+**Seven cuts get the whole schema back to where it already is, and all seven are registrations
+today.** Treating a name as resolving to stored rows rather than to a rule is a cut. Cutting
+greedily, worst-first, seven bring the emptied schema's largest statement to 993, against the 963 it
+lives at with the register in place: `intent_field_scope_table`, `intent_mutation_payload_column`,
+`intent_mutation_payload_refusal`, `intent_node_id_instruction`, `intent_field_reference_step_hop`,
+`intent_resolved_type_binding` and `intent_node_id_decode_column`, in that order and with the first
+worth more than the other six together. Going strictly under 963 takes an eighth, and the eighth is
+`intent_node_type`, which is not registered and never has been. Greedy, so this is an upper bound on
+the minimum rather than the minimum.
+
+**The thirteen registrations outside that set contribute nothing to plannability.** Whatever each of
+them buys, it is not the planner's ability to build a plan, and each is therefore answerable on
+execution cost alone, which is the argument the register's own reasons make and the only one left to
+them.
+
+**A cut is not the same thing as a registration, and that is this item's point.** A cut is any way
+the name comes to stand for stored rows. Capture writing the fact is a cut, an index is not a cut but
+makes one affordable, and a registration is the cut that pays a refresh for the privilege. The list
+above is therefore not a list of registrations to keep. It is the ranked list of facts the capture
+model has to take responsibility for, and it is the first time this item has been able to state that
+list in an order rather than as a principle.
+
+**Taken through the store's own walk, not through a text scan.** The counts above come from
+`ViewReferences`, which parses each stored view definition with jOOQ's parser and returns one entry
+per reference, with aliases and common table expression names normalized away. That class already
+exists for the refresh ordering and its javadoc already states the mechanism this section measures,
+that H2 inlines a view at every naming and eliminates no common subexpression; what had not been done
+is to compound it through the graph. A naive count of textual namings over the DDL was run first and
+agrees with it to the digit on this schema, which says only that no alias or column name here
+collides with a relation name. The parser walk is the one to build anything further on.
+
+**What this measurement is and is not.** It counts namings, so it is a model of what H2 does with a
+view rather than a measurement of what H2 does. Its warrant is that it ranks the observed failures
+correctly, with both unplannable relations at the top and every relation the schema plans today far
+below. It should be read as an ordering, not as a size in bytes. `ViewReferences` also records
+whether a reference sits in a correlated or a recursive position, which multiplies evaluations rather
+than expansion, and this count deliberately ignores that: the quantity here is how large the
+statement gets, not how many times it runs.
 
 ## The lever order
 
@@ -917,11 +1074,51 @@ whose reason was that the top rung "argues from cost". That is now the opposite 
 says, and a stale warning about a shared file is worse than none, so the note is repointed at the
 landed state.
 
-### Slice 6: re-measure the performance claims written into DDL comments
+### Slice 6: the census of performance claims written into the DDL
 
-Every claim in the store's relation comments was taken in the regime the audit's section 4 describes,
-and several steer the next author away from a shape. Census which comments make a re-checkable claim
-at all before deciding whether any of them should become rows a gate can read.
+The slice asked which comments make a re-checkable claim at all, before deciding whether any should
+become rows a gate can read. The file carries 2564 `COMMENT ON` statements. They divide into four
+classes and only one of them has gone stale.
+
+**Thirteen comments carry a numeric measurement, twenty-four claims between them, and twelve of the
+thirteen name the fixture they were taken on.** Five name the read-cost gate's twelve-unit fixture
+and seven name a store captured from the sakila example schema. Both are reproducible from this
+repository, so every one of those claims can be re-taken by any session with no consumer capture and
+no kept store. That is the property that matters and it is the reason none of them needs a gate: a
+claim that names its own instrument is already checkable, and the read-cost gate runs the same
+fixture on every build.
+
+**One measurement does not name its instrument.** `intent_facet_binding`'s comment says its reader
+went from 659 scans to 7779 "on a fixture of 144 applications" without saying which fixture, and it
+is the only measurement in the file that cannot be re-taken from its own text. It is also the file's
+only argument for a deliberate non-registration, so it is the one worth repairing first if any of
+this class is repaired.
+
+**Twenty comments carry a `Materialized:` state claim, and that class is exactly in sync.** The
+roster of relations whose comment says it is a table refilled on the capture cadence is precisely the
+twenty rows of `meta_materialize`, which is what it should be, and the two retirements this item made
+took their claims with them. Nothing to do.
+
+**One comment states the wrong kind for its relation.** `COMMENT ON VIEW intent_field_scope_table`
+names a table. H2 resolves the object by name whichever keyword is used, and the rendered reference
+pages take a relation's kind from the booted catalog rather than from the comment's keyword, so
+nothing observable is wrong; the file simply says something false about itself. Corrected here.
+
+**The stale class is not in the comments at all. It is in the register's own reasons.** Eighteen of
+the twenty rows of `meta_materialize` open with "Priced against the register of twenty". The two that
+do not are the payload registrations that landed 2026-08-28. The count is right again and the set is
+not: the twenty those eighteen reasons were priced against contained the two registrations this item
+has since retired and did not contain the two that landed. So the number reads as current while
+naming a set that no longer exists, which is worse than reading as out of date.
+
+**They cannot be repaired one at a time, by this item's own rule.** A register-relative measurement
+prices the register as a set and says nothing about a member of it in a different set. Re-taking
+eighteen arms is the only thing that would make eighteen such sentences true, and this item's target
+is a register with no members, so those arms would price a thing being deleted. What the reasons owe
+is therefore not a re-measurement but a correction of what they claim: an arm identified by the date
+it was taken rather than by a count that silently changes meaning. That edit is eighteen authored
+sentences in the DDL and is left as a decision rather than taken here, because whether it is worth
+making depends on how many of the eighteen survive.
 
 ### Deferred: the registration precondition
 
