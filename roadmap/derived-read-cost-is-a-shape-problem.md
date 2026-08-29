@@ -1120,6 +1120,110 @@ it was taken rather than by a count that silently changes meaning. That edit is 
 sentences in the DDL and is left as a decision rather than taken here, because whether it is worth
 making depends on how many of the eighteen survive.
 
+### Slice 7: the single-family census, which is the top rung stated as a test
+
+**The criterion, and it is a modelling test rather than a cost one.** An `intent_` rule that reads
+relations from only one family is a derivation that should have happened at capture, and its rows
+belong in that family as a captured table. `graphql_` and `graphitron_` count as one family here:
+both are what the author wrote, one as the SDL parses and one as its directives decode, and a rule
+that crosses between them has not crossed anything. `store_graph_source` is the spine every relation
+joins for its graph and counts as neutral. This is the fact-model page's top rung restated as
+something a census can apply: the page argues that reconstructing what capture could have written is
+a defect whether or not a reader is slow, and this says how to recognise one.
+
+**How the census reads a rule.** Through `ViewReferences`, the same jOOQ-parser walk the expansion
+count uses, taking each rule's references and expanding through every `intent_` relation it names
+until only non-`intent_` relations are left. A materialized target is read as its rule, so a
+registration does not hide a family crossing underneath it. What comes back is the set of captured
+facts the rule ultimately stands on, and the criterion is a question about that set.
+
+**Of the 107 `intent_` rules with a body, twenty-five stand on one family.** Seventeen on the authored
+family, four on `sql_` alone and four on `jvm_` alone. The remaining eighty-two cross at least two.
+The full signature census:
+
+[cols="2,5"]
+|===
+| rules | the families their captured facts sit in
+
+| 40 | authored, `sql_`, `jvm_` and a hand-written `intent_` table
+| 21 | authored, `sql_` and `jvm_`
+| 17 | authored only
+| 8 | authored and `sql_`
+| 6 | authored and a hand-written `intent_` table
+| 4 | `jvm_` only
+| 4 | `sql_` only
+| 4 | authored and `jvm_`
+| 1 | `jvm_` and `sql_`
+| 1 | authored, `sql_` and a hand-written `intent_` table
+| 1 | nothing at all
+|===
+
+**Three of the seventeen are the criterion already applied, which is what makes it more than a
+proposal.** `intent_poly_member` and `intent_argmapping_pair` became projections of
+`graphql_poly_member` and `graphitron_arg_mapping_pair` in this item's slices 4a and 4b, and
+`intent_field_navigated_type` is a projection of `graphitron_field_navigation` from before it. Each
+is now a view over exactly one captured table, which is what a rule looks like after the criterion
+has been applied to it. The census finds them without being told, so it is recognising the shape
+rather than being fitted to it.
+
+**The remaining fourteen, in the order their readers make them worth taking:**
+
+[cols="4,1,1,5"]
+|===
+| rule | readers | size | the authored facts it stands on
+
+| `intent_errors_field` | 4 | 9 | connection, error, field, poly member, type
+| `intent_authored_field_claim` | 4 | 23 | eleven, across lookup keys, external fields, node id, mutation, routine, service
+| `intent_field_payload_producer` | 3 | 10 | mutation, routine, service, field, root operation
+| `intent_field_demand_rule` | 2 | 14 | eight, across error, external field, mutation, service, table
+| `intent_field_producer_reference` | 2 | 3 | external field, service
+| `intent_authored_claim_conflict` | 2 | 33 | fifteen, the widest in the set
+| `intent_field_exemption_rule` | 2 | 26 | nine, the exemption side of the demand rule
+| `intent_type_demand` | 1 | 49 | nine, the type-grain twin of the field rule
+| `intent_type_exemption` | 1 | 3 | type
+| `intent_connection_element_type` | 1 | 5 | field, type
+| `intent_facet_binding` | 1 | 9 | facet, binding, condition, node id, reference, field, type
+| `intent_authored_type_claim` | 1 | 7 | error, table, type directive
+| `intent_errors_field_member` | 0 | 12 | connection, error, field, poly member, type
+| `intent_connection_facet` | 0 | 12 | facet and the field-shape family
+|===
+
+The four standing on `sql_` alone are `intent_foreign_key_column_pair`, `intent_name_matched_key_pair`,
+`intent_node_metadata_defect` and `intent_table_key_candidate`, all of them questions about the
+catalog that the catalog census could answer as it walks. The four on `jvm_` alone are
+`intent_class_member_element`, `intent_class_member_slot`, `intent_declared_type_element` and
+`intent_jvm_ancestor`, the same argument one family over.
+
+**Six more stand on the authored family plus a hand-written `intent_` table, and those tables are the
+second finding.** `intent_input_occurrence_path`, `intent_input_occurrence_path_step` and
+`intent_type_domain` are captured tables filled by a hand-written derivation rather than by the
+materializer, so a rule standing on one of them plus authored facts has not actually crossed a
+family: it has crossed a filing mistake. Those three are captured facts sitting in the derived
+family, and under this criterion they belong in the family whose facts they were derived from. That
+raises the count from twenty-five to thirty-one, and it raises a question this item should not answer
+alone, because moving a captured table between families renames it at every reader.
+
+**What the criterion does not do, said plainly.** It does not fix the cost. The eight cut points the
+expansion count ranks are all multi-family except one: `intent_field_scope_table`, the three mutation
+payload rules, `intent_node_id_instruction`, `intent_node_id_decode_column`,
+`intent_field_reference_step_hop` and `intent_resolved_type_binding` each stand on authored facts and
+the catalog and the classpath together, so none of them is a captured fact waiting to be written. The
+exception is `intent_node_type`, the eighth cut, which stands on the authored family and `sql_` and
+nothing else. So the criterion and the expansion ranking are two different questions that meet in one
+place, and taking the twenty-five would leave the plannability cliff exactly where it is.
+
+**The tier where they do meet is the near miss: authored plus exactly one catalog family.** Twelve
+rules sit there, and they are the shape the write destination has, where capture could write the
+authored half and leave a single join to the catalog. `intent_spelled_table` is one of them and is a
+registration, four units wide and named by ten rules. `intent_node_type` is another, named by seven.
+`intent_bound_table` is a third, named by seven. The others are `intent_federation_key`,
+`intent_field_accessor_hop`, `intent_field_chain_start`, `intent_field_producer_method`,
+`intent_field_routine_method`, `intent_inferred_node_type`, `intent_producer_cardinality_conflict`,
+`intent_synthesized_federation_key` and `intent_type_backing_seed`.
+
+**One rule reads nothing.** `intent_delivery_container` names no relation at all, so it is a stated
+set rather than a derivation and the criterion does not apply to it.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
