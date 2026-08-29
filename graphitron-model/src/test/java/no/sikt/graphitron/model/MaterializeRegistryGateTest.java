@@ -71,7 +71,7 @@ class MaterializeRegistryGateTest {
      * commit that argues for something else, which is exactly how it last moved. {@link #NO_INDEX}
      * is the model: a figure that has to be edited deliberately, not a ceiling nobody may exceed.
      */
-    private static final int REGISTRATIONS = 22;
+    private static final int REGISTRATIONS = 21;
 
     /**
      * Stages the refresh takes, the register's depth.

@@ -615,18 +615,29 @@ relation name is checked by the compiler and a string in an `IN` list is checked
 nested term is a correlated probe, and both restatements are worse rather than better: pointing the
 three probes at a join-shaped statement of the same rule takes the carrier from 26.2 s to 46.9 s,
 and restating them as anti-joins in the carrier itself takes it to 64.3 s. H2 pushes the correlation
-into a table and cannot push it into either of those, so the register is buying exactly what it
-looks like it is buying here. This is the one place in the item so far where a registration is
-load-bearing on its own read figures.
+into a table and cannot push it into either of those.
+
+**That conclusion was right and the reason given for it was wrong, and the correction is slice 4a's.**
+Two restatements being worse does not make the term expensive, and this passage read it as though it
+did. Slice 4a removed 5.5 seconds from `intent_errors_field_live` and the carrier moved from 26.2 s
+to 25.2 s on the same arm: about one second of the twenty-six was the errors probe. So the probe was
+cheap in its correlated form all along, H2 pruning it, and the two failed rewrites were failures of
+those rewrites rather than evidence about the term they replaced. The paragraph below inherits the
+error and is corrected with it. What follows for the register is the opposite of what this said:
+demoting `intent_errors_field` costs its readers close to nothing now, so the registration is a
+candidate for retirement rather than the one load-bearing case in the item.
 
 **What the arm turned up that belongs to a different question.** `intent_errors_field_live` costs
 5.5 seconds and none of it is the directive read. Its two correlated probes into `intent_poly_member`
 are the whole figure: the same population answered by one grouped pass costs 13 ms, the shape
-conditions cost 85 ms, and the view stated as a join returns the same 149 rows in 653 ms. So the
-26 second carrier figure is three inlined evaluations of that, and the class A defect is inside
-`intent_errors_field_live` rather than anywhere this slice touched. Not folded in here, because a
-correlated-probe rewrite is not a repoint and the relation it would change is a registered target
-whose registration this slice has just argued for.
+conditions cost 85 ms, and the view stated as a join returns the same 149 rows in 653 ms. The class A
+defect is therefore inside `intent_errors_field_live` rather than anywhere this slice touched, and
+that part stands. What does not is the sentence this paragraph originally drew from it, that the
+26 second carrier figure was three inlined evaluations of the same thing: it was not, and slice 4a
+measured the difference at about one second. Two relations were expensive for two unrelated reasons
+and sharing a probe made them look like one reason, which is the inference to distrust the next time
+a fix upstream is predicted from a figure downstream. Not folded in here, because a correlated-probe
+rewrite is not a repoint.
 
 **A test that pins the outcome and not the rule, said out loud.** Eleven cases were added across the
 three repointed relations, and mutating the schema kills two of the three arms they cover: dropping
@@ -704,6 +715,73 @@ window hid it. Nothing reads the absolute value, every consumer reading only the
 it survived unnoticed; but the mapping-constant fingerprint digests a handler list in this order, so
 rebasing is a change to emitted names rather than a tidy-up. Preserved exactly, stated on the column
 and in capture, and owed as its own decision.
+
+### Slice 4b: the first registration retired, and the census that found it
+
+The register held twenty-two, not the twenty its own reasons are priced against. Two questions were
+put to all of them: which are reachable from what a consumer names, and which rules have become
+cheap enough that the registration buys nothing.
+
+**Reachable, walked from the relations main sources name and following view bodies: seven of
+twenty-two.** The audit's walk said ten of twenty-two reachable and this one says seven, and the
+disagreement is not settled here; the number is offered as a second reading rather than a
+correction, and nothing in this slice is decided on it. What the item already says about the
+unreachable ones still holds: they are work under construction, and their registrations may be right
+the moment their readers land.
+
+**One rule is a projection of a single relation with no window, union or probe.**
+`intent_argmapping_pair_live` is `SELECT` fourteen columns `FROM graphitron_arg_mapping_pair`, which
+is what slice 1 left behind when capture started writing the widened shape. Materializing it copied
+rows into rows: a reader naming it fifty-five times read one table fifty-five times whichever shape
+it had, and the reason still in the register was counting those namings against an eight-arm union
+that no longer existed.
+
+**The index made it plainer than the timings did.** The registration carried
+`ix_argmapping_pair_use_site` on the graph, the site, the use site and the position. That is
+`graphitron_arg_mapping_pair`'s primary key, the same four columns in the same order, so the table
+underneath was better keyed than the copy of it. A registration that buys neither an evaluation nor
+an index is a refresh paid every capture for nothing. This is the fact-model page's newly stated
+index rung read from the other side: that page now warns that a registration may be delivering an
+index nobody priced, and here it was delivering one that already existed a relation down.
+
+**Retired, measured with the rest of the register intact.** Five relations, identical row counts
+either way:
+
+[cols="4,2,2"]
+|===
+| reader | registered | retired
+
+| `intent_argmapping_bound_parameter_type` | 92 ms | 87 ms
+| `intent_argmapping_segment_binding` | 95 ms | 79 ms
+| `intent_argmapping_projection_defect` | 7905 ms | 8255 ms
+| `intent_node_id_decode_slot` | 295 ms | 213 ms
+| `intent_argmapping_pair` | 0 ms | 0 ms
+|===
+
+Three readers fall, one rises four per cent on an eight-second query, and the refresh is gone. The
+relation keeps its name and its column comments as a view, so no reader moved. Whether an `intent_`
+relation whose rule is a projection of one `graphitron_` table belongs in that family at all is a
+separate question this slice does not take: the charter says rows there are computed and never
+captured, and these are captured.
+
+**Three gates made the retirement say its own name**, which is the property worth recording about
+them. `MaterializeRegistryGateTest` pins the count. `DerivedReadCostTest` pins the domain and the
+cells, and both moved: nine cells go because a registration takes its whole column out of the
+matrix, the readers-with-cells figure falls by two, and the schema's view count does not move at all
+because a retirement deletes a `_live` view and a table and puts the rule back under the canonical
+name. And its `KNOWN_NON_MONOTONIC` set lost a second row today, this time because the registration
+it named stopped existing.
+
+**What the census says about reducing further: not wholesale.** On the arm with the register
+emptied, six of the first twelve targets do not answer inside a hundred and twenty seconds,
+`intent_argument_scope_table` taking 101 s and `intent_input_field_resolving_table` 117 s. The
+register is doing real work and the reduction available is per relation.
+
+**The next candidate, named but not taken.** `intent_errors_field` costs 10 ms as a view now where
+it cost 5.5 seconds before slice 4a, so its registration is priced on a shape that no longer exists.
+It is not retired here because the honest test is to demote that one relation with the rest of the
+register intact, and inferring it from the emptied arm is the same mistake the correction above
+records.
 
 ### Slice 5: amend the lever order on the fact-model page
 

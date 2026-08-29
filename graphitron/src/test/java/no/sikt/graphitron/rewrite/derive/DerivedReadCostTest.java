@@ -106,7 +106,7 @@ class DerivedReadCostTest {
     private static final int READERS_IN_SCHEMA = 115;
 
     /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 68;
+    private static final int READERS_WITH_CELLS = 66;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -144,8 +144,18 @@ class DerivedReadCostTest {
      * that reaches three registrations and displaces none, so the figure moves by exactly the cells
      * it adds. Both reader figures moved by one beside it, which is what a new view looks like when
      * it registers nothing.
+     *
+     * <p>Retiring {@code intent_argmapping_pair}'s registration took it from 171 to 162, the first
+     * fall here a registration leaving rather than arriving has produced. Nine cells go because a
+     * registration takes its whole column out of the matrix, one cell per relation that reached it.
+     * The two reader figures behave differently from each other and neither the way an arrival
+     * does. {@link #READERS_IN_SCHEMA} does not move at all, because a retirement deletes a
+     * {@code _live} view and its target table and puts the rule back under the canonical name, which
+     * is one view out and one view in. {@link #READERS_WITH_CELLS} falls by two, those being the two
+     * relations whose only reach into the register was through this target. Read that as the shape
+     * of a retirement here, and note it is not the arithmetic of an arrival run backwards.
      */
-    private static final int CELLS = 171;
+    private static final int CELLS = 162;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -419,8 +429,12 @@ class DerivedReadCostTest {
      * about the registration it was charged to.
      */
     private static final Set<String> KNOWN_NON_MONOTONIC = Set.of(
-        // The pruning an inlined body offered and a table cannot; measured index-free above.
-        "intent_argmapping_pair|intent_argmapping_bound_parameter_type",
+        // intent_argmapping_pair|intent_argmapping_bound_parameter_type stood here on the pruning an
+        // inlined body offered and a table cannot. It left with the registration itself: the rule
+        // had become a projection of one captured table, so materializing it copied rows into rows,
+        // and the index that came with it was that table's primary key spelled again. A pair also
+        // leaves this set when the registration it names stops existing, which is the outcome the
+        // set is here to make somebody notice.
         // intent_errors_field|intent_errors_field_member stood here on the same attribution and
         // left when the relation underneath both of them stopped being reconstructed. What it was
         // really charged to was intent_poly_member: a two-arm union whose interface arm ranked its
