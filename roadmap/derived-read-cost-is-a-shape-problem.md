@@ -1283,6 +1283,22 @@ into a family should retire a row from the register rather than merely rename a 
 **One rule reads nothing.** `intent_delivery_container` names no relation at all, so it is a stated
 set rather than a derivation and the criterion does not apply to it.
 
+### Slice 8: the rule moves to the fact-model page, the figures stay here
+
+An item is deleted when it reaches Done, so anything in this file that a later contributor needs is
+in the wrong place. The ownership rule is that kind of thing, so it now has a section of its own on
+`docs/architecture/explanation/fact-model.adoc`, beside the strata it is a second axis to: what
+ownership is, why filing a rule in a family gives its gatherer refresh authority and takes it out of
+`meta_materialize`'s remit, what `intent_` therefore means, where to cut a rule that crosses, the two
+places the shape already exists in the store, and the per-gatherer transaction control that is its
+one real prerequisite.
+
+**The split between the two documents is deliberate and follows that page's own discipline.** The
+page carries the rule and the check that would close it, and states that the check is not a gate yet.
+It deliberately carries no counts: an unguarded census rots silently, which that page warns about two
+sections above where this one now sits. The figures live here, in the slice above, where they are
+dated and where their instrument is named, and they are expected to go stale as the rules move.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
