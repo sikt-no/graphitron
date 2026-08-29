@@ -32,6 +32,37 @@ outlives this file.
 
 ## What changes when this lands
 
+**The target is a register that is empty, and that is a statement about the model rather than about
+performance.** At the data volume the ninety-ninth percentile of consumers carries, nothing in this
+schema should need materializing at all. The register exists because the store ran without
+statistics and therefore without a working cost-based planner, and materializing was how a rule that
+the planner could not cost was made to finish. The planner works now. What is left in the register is
+the crutch, and every registration still standing is a claim that the capture model cannot carry one
+of its own queries honestly.
+
+That sets the burden the other way from how the register's own reasons read. A registration does not
+have to be shown wasteful before it goes; it has to be shown necessary, and necessary means the rule
+underneath it is correctly modelled and still cannot be planned. Where it cannot, the answer is
+capture writing the fact, an index on a stored column, or a rewrite, which is the lever order the
+fact-model page now carries. Retiring a registration is therefore not the last step of this item, it
+is how each defect underneath one gets exposed.
+
+**Two costs of holding one, and the second is why break-even is not a reason to keep.** The first is
+the refresh, per capture, which is what the reasons in the register price. The second is that a
+materialized target is a table with statistics of its own, so every planner decision above it bottoms
+out there and the rule underneath becomes invisible to the planner and to anyone reading a plan. The
+item has a worked case of exactly that: `intent_errors_field`'s real cost was a window function one
+relation below it, five and a half seconds of it, and it sat unseen behind the registration until the
+register was emptied to look. A registration that is not paying for itself is not neutral. It is a
+blindfold over whatever is underneath it.
+
+**So the arm with the register emptied is a defect detector and not a research arm.** A relation that
+does not answer there is not an expensive rule that earns its registration; it is a modelling defect
+with a registration in front of it. On the arm taken 2026-08-29, `intent_argument_scope_table` takes
+101 seconds and `intent_input_field_resolving_table` 117. Those are the next two questions this item
+has, and they are questions about capture rather than about the register.
+
+
 **The refresh is not the cost any more, and this item no longer claims it.** The first draft promised
 a capture in the tens of seconds against four hours and nineteen minutes. That gap closed on the tree
 while the item sat at Spec, and the audit's new section 10 measures it: the same store, rebuilt on
@@ -809,6 +840,27 @@ second time from the other direction: there a cheap-looking fix upstream was pre
 expensive figure downstream, here an expensive-looking figure downstream was read as licence to drop
 something upstream. Both are the set-relative pricing rule being ignored, and the rule is in the
 register's own charter rather than being new here.
+**Retired after all, and the arithmetic that first said otherwise was wrong.** The two figures add
+rather than offset: holding the registration costs its own 0.21 s refresh *and* leaves its reader's
+refresh at 2.12 s, for 2.33 s; demoting it costs 2.24 s and nothing else. Demoting is cheaper. The
+earlier reading here subtracted one from the other and called the result a wash, which it is not.
+
+The margin is inside this harness's noise either way, so the clock does not decide it. What decides
+it is the second cost of holding a registration, which no timing of the registered arm can show and
+which this relation is the item's own worked case of: a materialized target is a table with
+statistics of its own, so the planner bottoms out there and the rule underneath is invisible to it
+and to anyone reading a plan. This relation's real cost was a window function in `intent_poly_member`
+and it sat unseen behind this registration until the register was emptied to look for it. The
+registration was not neutral while it broke even. It was a blindfold.
+
+The target carried no index at all, so unlike the argmapping retirement there was not even an index
+to weigh. `MaterializeRegistryGateTest`'s no-index roster loses the row that argued the absence, and
+the register stands at twenty.
+
+**What the two retirements together say about the pinned figures.** The read-cost domain fell by nine
+cells for the first and three for the second. A registration's weight there is how many relations
+reach it, not what its refresh costs and not what its rule looks like, which is worth knowing before
+reading either figure as a size.
 
 ### Slice 5: amend the lever order on the fact-model page
 

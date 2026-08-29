@@ -71,7 +71,7 @@ class MaterializeRegistryGateTest {
      * commit that argues for something else, which is exactly how it last moved. {@link #NO_INDEX}
      * is the model: a figure that has to be edited deliberately, not a ceiling nobody may exceed.
      */
-    private static final int REGISTRATIONS = 21;
+    private static final int REGISTRATIONS = 20;
 
     /**
      * Stages the refresh takes, the register's depth.
@@ -140,13 +140,6 @@ class MaterializeRegistryGateTest {
      *   <li>{@code intent_field_column_scope}: on the field coordinate its three readers join,
      *   with or without {@code basis}, it takes {@code intent_field_reference_discovery} from 148
      *   scans to 246 and returns 59 elsewhere. Nothing to weigh.</li>
-     *   <li>{@code intent_errors_field}: on the coordinate its two probing readers join (graph,
-     *   type and field, the carrier scan's {@code NOT EXISTS} and the error channel's join with
-     *   its correlated minimum), no reader improves: the three cheap readers move within the
-     *   instrument's noise, and the two dear ones get worse, {@code intent_carrier_routine_hop}
-     *   from 3876 scans to 8136 and {@code intent_mutation_routine_seat} from 28857 to 33117,
-     *   the planner preferring a seek into a relation of a dozen rows over the plan it picks
-     *   unaided. Nothing to weigh.</li>
      *   <li>{@code intent_carrier_data_field}: on the two coordinates its readers spell (the
      *   error channel's graph, type and family; the sigil surface's graph, type and field), no
      *   reader moves at all, to the scan: the seat, the hop, the error channel and the whole
@@ -221,7 +214,6 @@ class MaterializeRegistryGateTest {
         "intent_argument_column_scope",
         "intent_argument_column_match",
         "intent_input_field_carrier_role",
-        "intent_errors_field",
         "intent_carrier_data_field",
         "intent_input_field_resolving_table",
         "intent_mutation_payload_column",

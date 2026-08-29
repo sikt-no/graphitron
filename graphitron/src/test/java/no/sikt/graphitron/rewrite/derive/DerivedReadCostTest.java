@@ -106,7 +106,7 @@ class DerivedReadCostTest {
     private static final int READERS_IN_SCHEMA = 115;
 
     /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 66;
+    private static final int READERS_WITH_CELLS = 65;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -154,8 +154,14 @@ class DerivedReadCostTest {
      * is one view out and one view in. {@link #READERS_WITH_CELLS} falls by two, those being the two
      * relations whose only reach into the register was through this target. Read that as the shape
      * of a retirement here, and note it is not the arithmetic of an arrival run backwards.
+     *
+     * <p>Retiring {@code intent_errors_field}'s took it from 162 to 159, three cells against the
+     * first retirement's nine, and the two figures together are the point: a registration's weight
+     * in this domain is how many relations reach it, not what its refresh costs or what its rule
+     * looks like. Retirements will keep arriving while this item runs, so read these two entries as
+     * the shape rather than as a list to extend one paragraph at a time.
      */
-    private static final int CELLS = 162;
+    private static final int CELLS = 159;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
