@@ -1120,16 +1120,58 @@ it was taken rather than by a count that silently changes meaning. That edit is 
 sentences in the DDL and is left as a decision rather than taken here, because whether it is worth
 making depends on how many of the eighteen survive.
 
-### Slice 7: the single-family census, which is the top rung stated as a test
+### Slice 7: the single-family census, and what `intent_` is actually for
 
-**The criterion, and it is a modelling test rather than a cost one.** An `intent_` rule that reads
-relations from only one family is a derivation that should have happened at capture, and its rows
-belong in that family as a captured table. `graphql_` and `graphitron_` count as one family here:
-both are what the author wrote, one as the SDL parses and one as its directives decode, and a rule
-that crosses between them has not crossed anything. `store_graph_source` is the spine every relation
-joins for its graph and counts as neutral. This is the fact-model page's top rung restated as
-something a census can apply: the page argues that reconstructing what capture could have written is
-a defect whether or not a reader is slow, and this says how to recognise one.
+**The criterion is about membership and ownership, not about form.** A view that reads relations from
+only one family is a view *of that family*. It is not an `intent_` view, and the fix is not to
+flatten it into something capture writes row by row. Capture sees its corpus as a stream and writes
+what it has in hand; a view sees the corpus whole. Those are different powers and the second one is
+worth keeping. What is wrong with these rules is where they are filed, and the first draft of this
+slice got that wrong: it said they should become captured tables, which throws away the capability
+the view form has and answers a question nobody asked.
+
+**Filed in a family means owned by that family's gatherer, and that is where the leverage is.** A
+gatherer knows when its own family is complete, so it knows the refresh, and a relation whose refresh
+is known can be materialized, denormalized, indexed or left a view entirely at its owner's
+discretion. None of that needs a row in `meta_materialize`, which exists to schedule refreshes for
+rules that have no owner to schedule them. So a rule that moves into a family does not get converted
+into anything. It leaves this item's question.
+
+**Which gives `intent_` a definition it has not had.** Not "derived", which describes how the rows
+arose and separates nothing, but *a rule whose facts no single gatherer owns*, whose refresh depends
+on more than one family being complete. That is a property a census can decide, and the census below
+is the decision. The target for the register follows from it and is sharper than "empty": a register
+holding only the rules that genuinely cross.
+
+**`graphql_` and `graphitron_` are one family because they are one gatherer.** Treating them together
+is not a convenience. `GraphitronFactCapture` is a field of `SdlFactCapture`, constructed by it and
+writing through the same sink, so the SDL walk and the directive decode are one traversal of one
+corpus with one owner. `store_graph_source` is the spine every relation joins for its graph and
+counts as neutral. This is the fact-model page's top rung restated as something a census can apply:
+the page argues that reconstructing what capture could have written is a defect whether or not a
+reader is slow, and this says how to recognise one.
+
+**Three things in the tree say the shape already exists and is only unevenly applied.**
+
+`graphql_directive_site` is a `graphql_` view already, and it is this item's own defect class solved
+the way this slice describes: a supertype UNIONing the five directive-site tables over schema, type,
+field, argument and enum-value sites, filed in the family rather than in `intent_`. One precedent,
+and the right one.
+
+`ClassificationDomainCapture` is a gatherer-owned derivation already. Its javadoc calls it the SDL
+gatherer's rooted traversal, last stage, and it writes `intent_type_domain` inside the capture
+transaction. So a gatherer deriving a fact and owning its refresh is not a new mechanism; it is an
+existing one whose output is filed under `intent_`, which is exactly the misfiling this criterion
+names.
+
+Transaction control is the part that genuinely is not there. `FactCapture` opens one transaction and
+runs every gatherer inside it, configuration then SDL then catalog then the classification
+derivation, so no gatherer can commit its own family and refresh its own relations against current
+statistics. H2 commits the current transaction as a side effect of `ANALYZE`, which is why. The tree
+already carves out one exception for exactly this: a store holding no graph commits its facts and
+refreshes outside the transaction so the refresh can be planned against statistics it has. What this
+criterion asks for is that exception promoted to the normal shape, one boundary per gatherer, and
+that is a real change with a real precedent rather than a new idea.
 
 **How the census reads a rule.** Through `ViewReferences`, the same jOOQ-parser walk the expansion
 count uses, taking each rule's references and expanding through every `intent_` relation it names
@@ -1158,13 +1200,14 @@ The full signature census:
 | 1 | nothing at all
 |===
 
-**Three of the seventeen are the criterion already applied, which is what makes it more than a
+**Three of the seventeen are the criterion half applied, which is what makes it more than a
 proposal.** `intent_poly_member` and `intent_argmapping_pair` became projections of
 `graphql_poly_member` and `graphitron_arg_mapping_pair` in this item's slices 4a and 4b, and
-`intent_field_navigated_type` is a projection of `graphitron_field_navigation` from before it. Each
-is now a view over exactly one captured table, which is what a rule looks like after the criterion
-has been applied to it. The census finds them without being told, so it is recognising the shape
-rather than being fitted to it.
+`intent_field_navigated_type` is a projection of `graphitron_field_navigation` from before it. The
+census finds all three without being told, so it is recognising a shape rather than being fitted to
+one. Half applied because each still carries an `intent_` name over a single family's fact: the
+membership question was answered and the filing question was not, which is precisely the distinction
+this slice's first draft missed.
 
 **The remaining fourteen, in the order their readers make them worth taking:**
 
@@ -1213,13 +1256,29 @@ nothing else. So the criterion and the expansion ranking are two different quest
 place, and taking the twenty-five would leave the plannability cliff exactly where it is.
 
 **The tier where they do meet is the near miss: authored plus exactly one catalog family.** Twelve
-rules sit there, and they are the shape the write destination has, where capture could write the
-authored half and leave a single join to the catalog. `intent_spelled_table` is one of them and is a
-registration, four units wide and named by ten rules. `intent_node_type` is another, named by seven.
+rules sit there. `intent_spelled_table` is one of them and is a registration, four units wide and
+named by ten rules. `intent_node_type` is another, named by seven, and is the eighth cut.
 `intent_bound_table` is a third, named by seven. The others are `intent_federation_key`,
 `intent_field_accessor_hop`, `intent_field_chain_start`, `intent_field_producer_method`,
 `intent_field_routine_method`, `intent_inferred_node_type`, `intent_producer_cardinality_conflict`,
 `intent_synthesized_federation_key` and `intent_type_backing_seed`.
+
+**And that tier is what the criterion is for once it is read as a rule about where to cut.** A rule
+that crosses is not thereby excused: it is a rule with a single-family part inside it that has not
+been separated out. The mutation write destination is the worked case. Its intended destination is
+authored, knowable while the SDL gatherer traverses, and the only thing it lacks is the jOOQ table,
+which is one join. Under this criterion the answer is not to capture the whole relation. It is to
+push the authored part down into the authored family, where its own gatherer owns it and may
+materialize it if it wants, and leave `intent_` holding the join and nothing else. Applied that way
+the criterion does not move twenty-five rules out of `intent_` and stop. It shrinks most of the
+remaining eighty-two to whatever part of them genuinely crosses, which is a much smaller thing than
+each of them is now, and none of it requires deleting a rule anybody reads.
+
+**So the order of work this slice argues for is the opposite of its own reader ranking.** The
+twenty-five are the cheap, safe demonstration that filing and ownership can move at all, and they buy
+no speed. The twelve are where the two questions meet, and `intent_spelled_table` is the smallest
+thing in that tier that is also a registration, which makes it the first case where moving a rule
+into a family should retire a row from the register rather than merely rename a relation.
 
 **One rule reads nothing.** `intent_delivery_container` names no relation at all, so it is a stated
 set rather than a derivation and the criterion does not apply to it.
