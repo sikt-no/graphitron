@@ -47,6 +47,38 @@ capture writing the fact, an index on a stored column, or a rewrite, which is th
 fact-model page now carries. Retiring a registration is therefore not the last step of this item, it
 is how each defect underneath one gets exposed.
 
+**Amended, and the amendment is sharper than what it replaces.** "The register should trend to
+empty" was the right instinct with the wrong subject. Two things established since make it precise.
+The first is that the register is not a mechanism standing on its own: every relation has an owner,
+and the crossing rules are owned by a gatherer that runs after every corpus gatherer, so
+`meta_materialize` is that owner's refresh plan rather than an institution to be abolished. The
+second is a fact about this schema that no argument was needed to find.
+
+**Every registered target is a relation with no primary key, and every relation with no primary key
+is a registered target. Twenty and twenty, both directions, no exceptions.** That is not a
+correlation to be interpreted, it is the same set counted two ways. A relation with no key is a
+relation that has not said what one of its rows is about: one row per this, except when that, in
+which case per something else. That is what makes it unkeyable, and unkeyable is what makes it
+unindexable, and unindexable is what left materialization as the only lever anybody could reach.
+
+So the question this item has been asking each registration, whether it is necessary, was asking too
+late. **A registration is what a relation with no grain gets given.** The prior question is why the
+relation has no grain, and there is no such thing as an unkeyable grain, only modelling that has not
+been finished. The tree already carries the proof rather than the assertion: slice 3 collapsed three
+census relations into one, hit exactly this wall because a key column cannot be nullable, and shipped
+a spelled not-applicable bound to the discriminator by check constraints in both directions. That
+relation is keyed today and states more about itself than the three separate ones could.
+
+**Which also says what the last gatherer should be materializing, and it is not what it materializes
+now.** If that gatherer's job is to build the tables the views and queries above it stand on, then
+what it builds should be grain tables, keyed on what a row is about. Twenty keyless copies of view
+bodies are not grain tables. The register is not only larger than it should be, it is the wrong
+shape, and that is not a defect any single retirement can reach.
+
+**None of this retires the emptied arm or the lever order below.** They are unchanged and still say
+what they said. What changes is the order of the questions: grain first, then whether a lever is
+needed at all.
+
 **Two costs of holding one, and the second is why break-even is not a reason to keep.** The first is
 the refresh, per capture, which is what the reasons in the register price. The second is that a
 materialized target is a table with statistics of its own, so every planner decision above it bottoms
@@ -1382,6 +1414,51 @@ only too large, it is materializing the wrong shape, and the fix is not per regi
 
 Corrected in both durable places, the fact model page's ownership section and the `intent_` family's
 charter row.
+
+### Slice 11: the first registered target gets a grain, and an assumption is refused
+
+The amendment above says a registration is what a relation with no grain gets given. This slice tests
+that on the smallest of the twenty, and the result is smaller than the claim needed it to be, which
+is worth saying first: `intent_spelled_table` did not need remodelling. It needed a key nobody had
+written.
+
+**Every column of its natural key was already NOT NULL at source.** The rule resolves an author's
+table spelling against the catalog: `graphitron_spelled_reference` is keyed on the graph and the
+spelling and both are NOT NULL there, and the three columns naming the matched table come from
+`sql_table`'s own primary key through an inner join. So the grain, one author spelling resolved to
+one catalog table, was expressible as a key the whole time. It is one now, and **it holds against
+every fixture in the pipeline tier**, 4091 tests with nothing else changed.
+
+**Then an assumption was made and the gates refused it, which is the more useful half of this
+slice.** The relation's declared index, `ix_spelled_table_spelling`, is on the graph and the spelling,
+a strict prefix of the new key, and every one of the nine namings across seven view bodies probes on
+exactly those two columns. So it reads as redundant and it was removed, together with a change to
+`MaterializeRegistryGateTest` so a target stating its grain as a key would count as indexed.
+
+Two gates fired on that. `DerivedReadCostTest` lost a pinned regression pair, which is an improvement
+and only fails because that set is pinned both ways. `RefreshPlanStatisticsTest` was the real
+finding: three refresh statements, `intent_carrier_data_field_live`,
+`intent_node_id_decode_column_live` and `intent_resolved_type_binding_live`, moved into needing the
+registered targets' statistics in order to plan, which is precisely the cold-capture exposure that
+test exists to bound.
+
+**Attributed by separating the two changes rather than by reasoning about them.** With the key added
+and the index kept, both gates pass unchanged and nothing moves. So the key alone is free, and every
+effect above came from removing the index. A narrow non-unique index is not the same offer to the
+planner as the leading columns of a wide unique one, whatever the column lists have in common.
+
+**So the index stays and the gate change goes back.** Making the gate treat a key as an index was
+justified by the claim that the key's own index serves any prefix probe, and that claim had just been
+measured false on this relation. Encoding it into a gate immediately afterwards would have shipped a
+refuted premise as a rule. The relation's comment now records the measurement instead, so the next
+author who notices the apparent redundancy finds out why it is still there.
+
+**What this slice does and does not show.** It shows that at least part of the twenty is not a
+modelling problem at all: a relation whose grain was expressible and merely unstated, keyed at the
+cost of one line. It says nothing yet about the ones whose grain is genuinely conditional, which is
+where the claim that there is no such thing as an unkeyable grain will actually be tested. And it
+adds one caution for the rest of them: a key is a statement about the model and not automatically an
+improvement to a plan, so keying a target is not a licence to drop what was indexed beside it.
 
 ### Deferred: the registration precondition
 
