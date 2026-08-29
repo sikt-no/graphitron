@@ -1,7 +1,7 @@
 ---
 id: R877
 title: "The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 2
 theme: model-cleanup
@@ -102,7 +102,7 @@ shape:
   one that exists today, and the file's total may not exceed today's. Neither forbids a necessary
   paragraph; both forbid a new essay. The starting values are in the section above.
 - A relation comment defines the row and gives one example of one, before it argues anything.
-  "Carries an example" is checkable and today's answer is 4 of 2563.
+  "Carries an example" is checkable and today's answer is 4 of 2564.
 - Rationale, measurements and rejected alternatives move to `docs/architecture/`, which outlives the
   item that produced them. Worth doing on its own merits; not the cause of the sprawl.
 - Names inside one subtype set agree with each other.
@@ -231,8 +231,8 @@ One row per relation, keyed on the relation name, covering views as well as tabl
 - `rationale`, why this relation exists, with a larger length allowance than the two above. Not a
   place to put the old comment tails; see below.
 
-**The four content columns are nullable and the `CHECK` constraints tie them to the state**, both
-ways: a declared row must have all four, and a pending row must have none of them. Nullable rather
+**The five content columns are nullable and the `CHECK` constraints tie them to the state**, both
+ways: a declared row must have all five, and a pending row must have none of them. Nullable rather
 than a spelled pending value, which is the other design this spec has a precedent for and the wrong
 one here. A spelled value would need a `meta_grain` row named pending and a `meta_owner` row to match,
 which puts a transitional artefact permanently into two rosters whose whole job is to say what this
@@ -472,3 +472,20 @@ were measured with a hand-rolled sentence split over the escaped comment text ra
 `GrainSentence`'s own terminator rule over the unescaped text. The reviewer's remeasurement is the
 right one: a 20-word median and eleven of 276 over forty words, which makes the control-case gap a
 factor of five rather than an order of magnitude. The argument stands and was overstated.
+
+### Round 2 (2026-08-30, Spec -> Ready, reviewer session 01B469aK1VEBNCFp568SP4zF)
+
+Verdict: sign off. Both round-1 findings are resolved in the plan body, and each resolution is
+stronger than what the finding asked for. On finding 1, nullable-with-two-way-CHECK beats the
+spelled-pending alternative for exactly the reason the response gives: a spelled value would plant a
+work-queue row in two rosters whose job is to describe the model, where the `owner_kind` precedent
+covers absences that are part of the model. The gate reconciliation dissolves the intermediate form
+the finding assumed was needed, since a pending row carries nothing for a prose gate to bind on, and
+the state column earning a permanent job (the ratchet pinning zero afterwards) closes the "arrives
+pending forever" hole without a new mechanism. On finding 2, deriving the exemption from a nullable
+`meta_owner.corpus` makes the gate one directional join with no named exception, which is the better
+shape, and the store_/meta_ owner question is now explicitly parked with its slice in the family
+table. Two counts corrected in passing in this commit: the content-column paragraph said four where
+the list above it carries five (`grain_name`, `owner`, `grain_text`, `example`, `rationale`; the
+two-way CHECK's intent was unambiguous either way), and one leftover 2563 from the measurement
+correction in round 1.
