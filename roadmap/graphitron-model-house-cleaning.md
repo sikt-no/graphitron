@@ -227,8 +227,8 @@ One row per relation, keyed on the relation name, covering views as well as tabl
 - `owner`, a foreign key into `meta_owner`. NOT NULL, because everything has an owner.
 - `grain_text`, the one sentence saying what one row is. Length-checked.
 - `example`, one example row stated concretely. NOT NULL and length-checked.
-- `rationale`, everything the comment currently says from its second sentence onward. Not
-  length-checked at first, for the migration reason below.
+- `rationale`, why this relation exists. NOT NULL and length-checked, with a larger allowance than
+  the two above. Not a place to put the old comment tails; see below.
 
 **The owner column is where this meets the ownership rule on the fact model page.** That page states
 that a view reading one family belongs to that family and is owned by that family's gatherer, and
@@ -292,9 +292,17 @@ relation.
 `example` cannot be migrated because there is almost nothing to migrate: four comments in the file
 contain the words "for example". Filling it is the real work and it is per relation.
 
-`rationale` starts uncapped and carries a ratchet on its total that can only fall, so material leaves
-for `docs/architecture/` or is deleted, relation by relation, without a flag day. Capping it on day
-one would either block the migration or force 66628 words of triage before anything lands.
+**`rationale` is not where the old comment tails go, and this is the decision that gives the slog its
+point.** It holds why the relation exists, which is a paragraph, and it is required. A relation whose
+reason for existing cannot be written is a relation that probably should not exist, so the field is
+the question that gets asked 276 times rather than a box that gets filled. The material currently
+sitting from the second sentence onward is mostly not that: it is measurements, shapes that were
+tried, and arguments with earlier authors. Those go to `docs/architecture/` where rationale lives, or
+they go, and the relation's own row carries the reason and not the transcript.
+
+That makes the migration a decision per relation rather than a copy, which is slower and is the
+whole value. 276 relations, each asked what it is about, who owns it, what one row looks like, and
+why it exists at all.
 
 ### Gates
 
@@ -317,23 +325,47 @@ the work in this item. It is also the point of it: a rule that cannot say what o
 about is the defect being looked for, and the only way to find out which ones cannot is to make all of
 them try.
 
-### What a reviewer should press on
+### There is no unkeyable grain
 
-**The twenty unkeyed targets.** This plan requires them to state a grain, not to become keyable. Under
-the model above they are the last gatherer's materializations, and what that gatherer should be
-building is grain tables, meaning tables keyed on the thing a row is about. Twenty keyless copies of
-view bodies are not that. So a reviewer should decide whether a stated but unkeyable grain is an
-acceptable answer here, or whether it is exactly the defect this item exists to surface and each of
-those twenty owes a real grain before it owes a registration.
+The twenty relations with no primary key do not get to state a conditional grain in prose and stop
+there. A grain that cannot be keyed is bad modelling rather than a hard case, and each of the twenty
+owes a real key before it owes a registration.
 
-**The size of the view half.** 107 modelling decisions is not a slice. A reviewer should say whether
-this lands in one pass or whether the tables go first and the views follow per family, and if the
-latter, what stops the second half from never happening.
+**The tree already contains the proof that this is achievable rather than a slogan.** The declared
+type reference collapsed three census relations into one with an `owner_kind` discriminator, and hit
+exactly this wall: a collapsed table cannot key on the arm-determined parts because a key column
+cannot be nullable. The answer that shipped was to spell not-applicable as a value, the empty
+descriptor and the negative position, each bound to `owner_kind` by a check constraint in both
+directions. That relation is keyed today and states more about itself than the three separate ones
+could. Whatever the remaining twenty need will look like that: a discriminator, a spelled
+not-applicable, or a split into the two relations the conditional grain was hiding.
 
-**Whether `rationale` should exist at all.** It is proposed as a migration device, uncapped and
-ratcheted down. The alternative is that the 66628 words go straight to `docs/architecture/` or are
-deleted, and the item takes the triage cost up front rather than carrying a column that might become
-permanent.
+### The work, family by family
+
+276 relations. Each is asked the same four questions and each is one decision, so the item is long
+rather than hard, and it is done in family order rather than in one pass:
+
+[cols="2,1,1,1,4"]
+|===
+| family | tables | views | unkeyed | why here in the order
+
+| `sql_` | 14 | 0 | 0 | one corpus, one gatherer, every relation keyed: proves the three new relations end to end at the smallest scale
+| `jvm_` | 7 | 0 | 0 | the same shape one corpus over, and the second owner
+| `java_`, `javac_`, `lint_`, `walk_`, `rejection_`, `build_warning_` | 12 | 0 | 0 | small and mostly scaffolding; settles how a family with a retirement clock declares an owner
+| `graphql_` | 27 | 1 | 0 | the first large family, and the one whose grains the key shapes already state most clearly
+| `graphitron_` | 61 | 0 | 0 | the largest table family, same gatherer as `graphql_`, so the owner is already settled by the time it starts
+| `store_`, `meta_`, and the prefixless `diagnostic` | 15 | 7 | 0 | the store describing itself and the run; their owner is neither a corpus gatherer nor the last one, which is a question these three settle
+| `intent_` | 25 | 107 | 20 | last, and it is half the work: no keys to derive a grain from, and the twenty owe one
+|===
+
+**What stops the second half from never happening**, since a family-by-family plan invites exactly
+that. `meta_relation` covers every relation from the first slice onward, and a relation nobody has
+reached yet carries a row whose state says so. The `CHECK` constraints on grain, example and
+rationale are conditional on that state, so a pending row is legal and an incomplete declared row is
+not. The count of pending rows is pinned by equality and can only fall, which is the ratchet this
+repo already uses for read cost: the number is in a test somebody has to edit, so a family that
+stalls is visible in a diff rather than in nobody's memory. The item is not done while a pending row
+survives.
 
 ## Two cautions for whoever picks this up
 
