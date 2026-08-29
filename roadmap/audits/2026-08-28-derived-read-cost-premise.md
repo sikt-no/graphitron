@@ -238,6 +238,21 @@ that did *not* extract, so a claim view has to see the raw SDL by construction. 
 `@notGenerated` is not a graphitron directive at all, so there is nothing for capture to have
 extracted and the SDL read is the only correct source. That leaves three views re-deriving.
 
+**Correction, 2026-08-29, from the repoint this section prompted.** The identical-answer half of the
+claim above holds and was re-checked row by row rather than by count: with all three views repointed,
+every one of the twenty-two registered targets and `intent_mutation_routine_seat` return exactly the
+rows they returned before, on this store rebuilt on the shipping DDL. The cost half does not
+transfer. Reading the question off the smaller tables is not faster here: on the shipping register
+the carrier scan costs 1.6 s before the repoint and 1.6 s after, and with the register emptied it
+costs 26.2 s before and 27.5 s after, a difference inside the noise of a single reading. The
+twelve-name `IN` list was never the expensive term. What this section measured as expensive is the
+`intent_errors_field` probe nested inside it, three inlined evaluations of a rule that itself spends
+5.5 of its 5.5 seconds on two correlated probes into `intent_poly_member`; the same population
+answered by one grouped pass costs 13 ms. So the defect this section named is real, the layer
+argument for fixing it stands on its own terms, and a reader should not expect wall clock from it.
+The class A defect in this neighbourhood is inside `intent_errors_field_live`, one relation below
+where this section pointed.
+
 ## 6. Hypotheses refuted, including this investigation's own
 
 Recorded so nobody re-runs them.

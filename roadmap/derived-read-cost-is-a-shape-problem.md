@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-08-28
+last-updated: 2026-08-29
 ---
 
 # Expensive derived reads are a modelling defect: capture writes the subtypes and omits the supertype, and materialization has been the first lever reached for instead of the last
@@ -580,6 +580,63 @@ demoting the register turns one probe into a full re-evaluation per row. Repoint
 question at the semantic family does not touch it. Whether it wants restating as a join, or wants
 `intent_errors_field` to stay a table, is a decision this slice should take explicitly rather than
 discover.
+
+**What this slice shipped, and what the measurement said it is worth.** All three views now ask the
+decoded family. `intent_errors_field_live` reads `graphitron_connection` for the connection
+exclusion. `intent_mutation_routine_seat` reads `graphitron_field_condition`,
+`graphitron_argument_condition` and `graphitron_order_by` for the read-surface verdict, which splits
+one two-name list across the two relations that hold the two facts. And the carrier scan's
+twelve-name list becomes ten probes into the decoded relations plus one SDL probe for
+`@notGenerated`, correlated on the field coordinate rather than on a directive application, so the
+errors-channel exclusion inside it is asked once per field instead of once per application. No
+`intent_` view now asks the syntax-near family a semantic question; the three SDL reads that remain
+are the two authored-claim views and `@notGenerated`, which the audit's section 5 already argued are
+not defects.
+
+**Row identity holds exactly, on the consumer store rather than on a fixture.** The 2026-08-27
+capture was rebuilt on the shipping DDL by the audit's own method, with the five relations the store
+predates transcribed in from their pre-collapse siblings. The rebuild reproduces all twenty-two of
+the audit's registered row counts position for position, which is what says the transcription is
+faithful rather than merely non-empty. Against that store the repoint changes nothing: zero rows
+differ on every one of the twenty-two registered targets and on `intent_mutation_routine_seat`,
+compared row by row and not by count.
+
+**It is worth nothing in wall clock, and the item should stop implying otherwise.** On the shipping
+register the three views cost 5.7 s, 1.6 s and 0.1 s before and 5.7 s, 1.6 s and 0.1 s after. The
+35.3 second figure this section attributed to the carrier scan is real and is not this arm: with the
+register emptied the carrier costs 26.2 s here, and repointing the directive question moves it to
+27.5 s, which is inside the noise of a single reading. The slice is a layering fix. That is worth
+having, and the reason is the one the arm itself demonstrates rather than a principle: the
+twelve-name list carried `@orderBy`, a directive declared `on ARGUMENT_DEFINITION` and therefore
+incapable of ever matching a row of `graphql_field_directive`, and nothing could have said so. A
+relation name is checked by the compiler and a string in an `IN` list is checked by nobody.
+
+**The decision this slice owed, taken on the evidence.** `intent_errors_field` stays a table. The
+nested term is a correlated probe, and both restatements are worse rather than better: pointing the
+three probes at a join-shaped statement of the same rule takes the carrier from 26.2 s to 46.9 s,
+and restating them as anti-joins in the carrier itself takes it to 64.3 s. H2 pushes the correlation
+into a table and cannot push it into either of those, so the register is buying exactly what it
+looks like it is buying here. This is the one place in the item so far where a registration is
+load-bearing on its own read figures.
+
+**What the arm turned up that belongs to a different question.** `intent_errors_field_live` costs
+5.5 seconds and none of it is the directive read. Its two correlated probes into `intent_poly_member`
+are the whole figure: the same population answered by one grouped pass costs 13 ms, the shape
+conditions cost 85 ms, and the view stated as a join returns the same 149 rows in 653 ms. So the
+26 second carrier figure is three inlined evaluations of that, and the class A defect is inside
+`intent_errors_field_live` rather than anywhere this slice touched. Not folded in here, because a
+correlated-probe rewrite is not a repoint and the relation it would change is a registered target
+whose registration this slice has just argued for.
+
+**A test that pins the outcome and not the rule, said out loud.** Eleven cases were added across the
+three repointed relations, and mutating the schema kills two of the three arms they cover: dropping
+the `@service` probe fails the carrier case, dropping the `@orderBy` probe fails the seat case. The
+connection exclusion survives its mutation, and the reason is worth recording rather than papering
+over: the macro rewrites an `@asConnection` field before capture writes it, so what reaches
+`graphql_field` is a single-valued Connection and the shape conditions exclude it twice over before
+the connection term is consulted. Whether any field can carry `@asConnection` and still read as a
+nullable list of a polymorphic type is open. The term was repointed rather than removed, a guard on
+an unsettled hypothesis being worth more than the line it costs.
 
 ### Slice 5: amend the lever order on the fact-model page
 
