@@ -50,13 +50,12 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
@@ -1767,15 +1766,25 @@ public final class SeededStore {
     public static void seedImplements(DSLContext dsl, String graphName, String typeName,
                                       String interfaceName) {
         seedDeclaredType(dsl, graphName, typeName, "OBJECT");
-        dsl.insertInto(GRAPHQL_IMPLEMENTS)
-            .set(GRAPHQL_IMPLEMENTS.GRAPH_NAME, graphName)
-            .set(GRAPHQL_IMPLEMENTS.TYPE_NAME, typeName)
-            .set(GRAPHQL_IMPLEMENTS.INTERFACE_NAME, interfaceName)
-            .set(GRAPHQL_IMPLEMENTS.DECLARATION_LINE, SEED_LINE)
-            .set(GRAPHQL_IMPLEMENTS.DECLARATION_COLUMN, SEED_COLUMN)
-            .set(GRAPHQL_IMPLEMENTS.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHQL_IMPLEMENTS.SOURCE_LINE, 2)
-            .set(GRAPHQL_IMPLEMENTS.SOURCE_COLUMN, 3)
+        // Numbered from one in the order the case states its implementors, which is what capture's
+        // own pass produces for a schema whose implementors are written in that order. A fixture
+        // has no second file to interleave, so seeding order is source order.
+        int position = 1 + dsl.fetchCount(GRAPHQL_POLY_MEMBER,
+            GRAPHQL_POLY_MEMBER.GRAPH_NAME.eq(graphName)
+                .and(GRAPHQL_POLY_MEMBER.CONTAINER_NAME.eq(interfaceName))
+                .and(GRAPHQL_POLY_MEMBER.CONTAINER_KIND.eq("INTERFACE")));
+        dsl.insertInto(GRAPHQL_POLY_MEMBER)
+            .set(GRAPHQL_POLY_MEMBER.GRAPH_NAME, graphName)
+            .set(GRAPHQL_POLY_MEMBER.CONTAINER_KIND, "INTERFACE")
+            .set(GRAPHQL_POLY_MEMBER.CONTAINER_NAME, interfaceName)
+            .set(GRAPHQL_POLY_MEMBER.MEMBER_TYPE_NAME, typeName)
+            .set(GRAPHQL_POLY_MEMBER.POSITION, position)
+            .set(GRAPHQL_POLY_MEMBER.DECLARED_ON, typeName)
+            .set(GRAPHQL_POLY_MEMBER.DECLARATION_LINE, SEED_LINE)
+            .set(GRAPHQL_POLY_MEMBER.DECLARATION_COLUMN, SEED_COLUMN)
+            .set(GRAPHQL_POLY_MEMBER.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHQL_POLY_MEMBER.SOURCE_LINE, 2)
+            .set(GRAPHQL_POLY_MEMBER.SOURCE_COLUMN, 3)
             .execute();
     }
 
@@ -1788,16 +1797,18 @@ public final class SeededStore {
     public static void seedUnionMember(DSLContext dsl, String graphName, String unionName,
                                        String memberTypeName, int ordinal) {
         seedDeclaredType(dsl, graphName, unionName, "UNION");
-        dsl.insertInto(GRAPHQL_UNION_MEMBER)
-            .set(GRAPHQL_UNION_MEMBER.GRAPH_NAME, graphName)
-            .set(GRAPHQL_UNION_MEMBER.UNION_NAME, unionName)
-            .set(GRAPHQL_UNION_MEMBER.MEMBER_TYPE_NAME, memberTypeName)
-            .set(GRAPHQL_UNION_MEMBER.ORDINAL, ordinal)
-            .set(GRAPHQL_UNION_MEMBER.DECLARATION_LINE, SEED_LINE)
-            .set(GRAPHQL_UNION_MEMBER.DECLARATION_COLUMN, SEED_COLUMN)
-            .set(GRAPHQL_UNION_MEMBER.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHQL_UNION_MEMBER.SOURCE_LINE, 2)
-            .set(GRAPHQL_UNION_MEMBER.SOURCE_COLUMN, 3)
+        dsl.insertInto(GRAPHQL_POLY_MEMBER)
+            .set(GRAPHQL_POLY_MEMBER.GRAPH_NAME, graphName)
+            .set(GRAPHQL_POLY_MEMBER.CONTAINER_KIND, "UNION")
+            .set(GRAPHQL_POLY_MEMBER.CONTAINER_NAME, unionName)
+            .set(GRAPHQL_POLY_MEMBER.MEMBER_TYPE_NAME, memberTypeName)
+            .set(GRAPHQL_POLY_MEMBER.POSITION, ordinal)
+            .set(GRAPHQL_POLY_MEMBER.DECLARED_ON, unionName)
+            .set(GRAPHQL_POLY_MEMBER.DECLARATION_LINE, SEED_LINE)
+            .set(GRAPHQL_POLY_MEMBER.DECLARATION_COLUMN, SEED_COLUMN)
+            .set(GRAPHQL_POLY_MEMBER.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHQL_POLY_MEMBER.SOURCE_LINE, 2)
+            .set(GRAPHQL_POLY_MEMBER.SOURCE_COLUMN, 3)
             .execute();
     }
 

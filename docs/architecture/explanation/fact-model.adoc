@@ -219,7 +219,7 @@ The four anchors and what hangs off each:
 
 | type
 | `graphql_type_coordinate`
-| `graphql_type` (kind and description), `graphql_type_declaration` (every declaration site), `graphql_union_member`, `graphql_implements`, `graphql_type_directive`, the type-keyed `graphitron_` decodes, `intent_type_domain`, `intent_type_backing_class`
+| `graphql_type` (kind and description), `graphql_type_declaration` (every declaration site), `graphql_poly_member`, `graphql_type_directive`, the type-keyed `graphitron_` decodes, `intent_type_domain`, `intent_type_backing_class`
 
 | field
 | `graphql_field_coordinate`

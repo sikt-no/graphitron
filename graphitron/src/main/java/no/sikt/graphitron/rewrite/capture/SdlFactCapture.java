@@ -31,6 +31,8 @@ import no.sikt.graphitron.rewrite.schema.input.TagLinkSynthesiser;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -53,7 +55,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NAVIGATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE_ARG;
@@ -61,7 +62,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 
 /**
  * The SDL capture load: one walk over the {@link TypeDefinitionRegistry} filling the {@code graphql_}
@@ -194,6 +195,7 @@ public final class SdlFactCapture {
         captureDirectiveDefinitions();
         captureSchema();
         captureTypes();
+        writePolyMembers();
         macros.expand();
         captureSources();
         return new Expansions(macros.synthesizedEdges());
@@ -543,24 +545,39 @@ public final class SdlFactCapture {
     /** The declaration site an element hangs off: the monomorphic contributed-by reference. */
     record SiteRef(String typeName, SourceLocation location) {}
 
+    /**
+     * One membership the document spelled, held until every site has been read.
+     *
+     * <p>Buffered rather than written where it is found, because one of the two arms cannot state
+     * its own order yet: a union lists its members in one place and numbers them as the walk passes,
+     * while an interface's implementors are declared apart from it and apart from each other, so the
+     * first of them is not known until the last site is read. The claim and the quarantine stay at
+     * the site, which is where a duplicate is a fact about a document and where the offending node
+     * is in hand; only the row waits.
+     *
+     * @param position the union arm's authored ordinal, null on the interface arm, which
+     *        {@link #writePolyMembers()} settles
+     */
+    private record PolyMemberSite(String containerKind, String containerName, String memberTypeName,
+                                  Integer position, String declaredOn, SourceLocation declaration,
+                                  SourceLocation own) {}
+
+    private final List<PolyMemberSite> polyMembers = new ArrayList<>();
+
     private void captureImplements(SiteRef site, List<?> interfaces) {
         // graphql-java declares these lists over the raw Type; an implements entry and a union
         // member are always a bare TypeName, so the element type is narrowed here instead.
         for (Object element : interfaces) {
             TypeName type = (TypeName) element;
             String name = type.getName();
-            if (!sink.claim(GRAPHQL_IMPLEMENTS, site.typeName(), name)) {
+            // Keyed container-first, which is the relation's key and the reverse of how this arm
+            // spells it: one interface named twice by one type is the duplicate to catch.
+            if (!sink.claim(GRAPHQL_POLY_MEMBER, name, site.typeName())) {
                 quarantine("IMPLEMENTS", site.typeName() + " implements " + name, type);
                 continue;
             }
-            var record = sink.dsl().newRecord(GRAPHQL_IMPLEMENTS);
-            record.setTypeName(site.typeName());
-            record.setInterfaceName(name);
-            record.setDeclarationLine(site.location().getLine());
-            record.setDeclarationColumn(site.location().getColumn());
-            record.setSourceName(site.location().getSourceName());
-            setOwnPosition(type.getSourceLocation(), record::setSourceLine, record::setSourceColumn);
-            sink.add(record);
+            polyMembers.add(new PolyMemberSite("INTERFACE", name, site.typeName(), null,
+                site.typeName(), site.location(), type.getSourceLocation()));
         }
     }
 
@@ -568,18 +585,60 @@ public final class SdlFactCapture {
         for (Object element : members) {
             TypeName type = (TypeName) element;
             String name = type.getName();
-            if (!sink.claim(GRAPHQL_UNION_MEMBER, site.typeName(), name)) {
+            if (!sink.claim(GRAPHQL_POLY_MEMBER, site.typeName(), name)) {
                 quarantine("UNION_MEMBER", site.typeName() + " = " + name, type);
                 continue;
             }
-            var record = sink.dsl().newRecord(GRAPHQL_UNION_MEMBER);
-            record.setUnionName(site.typeName());
-            record.setMemberTypeName(name);
-            record.setOrdinal(ordinals.unionMember++);
-            record.setDeclarationLine(site.location().getLine());
-            record.setDeclarationColumn(site.location().getColumn());
-            record.setSourceName(site.location().getSourceName());
-            setOwnPosition(type.getSourceLocation(), record::setSourceLine, record::setSourceColumn);
+            polyMembers.add(new PolyMemberSite("UNION", site.typeName(), name,
+                ordinals.unionMember++, site.typeName(), site.location(),
+                type.getSourceLocation()));
+        }
+    }
+
+    /**
+     * Writes every membership, settling the interface arm's order first.
+     *
+     * <p>Source order is what the column means, so the sort is over the coordinate each row already
+     * carries: the declaring site's file, then its line and column, then the implementing type's
+     * name as the tie-break no two rows of one container reach. This is the pass the schema used to
+     * do at read time with a window over the whole partition, which no correlated probe can prune
+     * and which therefore ran once per driving row per reader.
+     *
+     * <p>The two arms do not agree on where the order starts, the union numbering from zero and this
+     * pass from one. That is inherited and is preserved deliberately: no consumer reads the absolute
+     * value, but the mapping-constant fingerprint digests a list in this order, so rebasing is a
+     * change to emitted names rather than a tidy-up.
+     */
+    private void writePolyMembers() {
+        var byContainer = new LinkedHashMap<String, List<PolyMemberSite>>();
+        for (PolyMemberSite member : polyMembers) {
+            if (member.position() == null) {
+                byContainer.computeIfAbsent(member.containerName(), k -> new ArrayList<>()).add(member);
+            }
+        }
+        var settled = new HashMap<PolyMemberSite, Integer>();
+        for (List<PolyMemberSite> members : byContainer.values()) {
+            members.sort(Comparator
+                .comparing((PolyMemberSite m) -> m.declaration().getSourceName(),
+                    Comparator.nullsFirst(Comparator.naturalOrder()))
+                .thenComparingInt(m -> m.declaration().getLine())
+                .thenComparingInt(m -> m.declaration().getColumn())
+                .thenComparing(PolyMemberSite::memberTypeName));
+            for (int i = 0; i < members.size(); i++) {
+                settled.put(members.get(i), i + 1);
+            }
+        }
+        for (PolyMemberSite member : polyMembers) {
+            var record = sink.dsl().newRecord(GRAPHQL_POLY_MEMBER);
+            record.setContainerKind(member.containerKind());
+            record.setContainerName(member.containerName());
+            record.setMemberTypeName(member.memberTypeName());
+            record.setPosition(member.position() != null ? member.position() : settled.get(member));
+            record.setDeclaredOn(member.declaredOn());
+            record.setDeclarationLine(member.declaration().getLine());
+            record.setDeclarationColumn(member.declaration().getColumn());
+            record.setSourceName(member.declaration().getSourceName());
+            setOwnPosition(member.own(), record::setSourceLine, record::setSourceColumn);
             sink.add(record);
         }
     }

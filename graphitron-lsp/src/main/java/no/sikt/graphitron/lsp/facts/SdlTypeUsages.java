@@ -8,23 +8,23 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 
 /**
  * Every SDL site that uses a type name: the population behind find-references, and the reverse of
  * the lookup {@link SdlDeclarations} makes. That one asks where a type is declared and answers with
  * one site; this asks who uses it and answers with as many as the schema has.
  *
- * <p>Four relations carry the uses, and one row of the answer means one site in one of them: a
- * field or an argument whose {@code named_type} is this type, an {@code implements} naming it, or a
- * union member. They are read as one statement rather than four, because one request is one
- * statement and an interactive read pays for every round trip it makes; the arms union because they
- * are the same grain, a position in a schema file, differing only in which relation recorded it.
+ * <p>Three relations carry the uses, and one row of the answer means one site in one of them: a
+ * field or an argument whose {@code named_type} is this type, or a polymorphic membership naming
+ * it, which is one relation covering both an {@code implements} clause and a union member. They are
+ * read as one statement rather than three, because one request is one statement and an interactive
+ * read pays for every round trip it makes; the arms union because they are the same grain, a
+ * position in a schema file, differing only in which relation recorded it.
  *
  * <p>What a result points at differs by arm, and the difference is the relations' rather than this
- * reader's. {@code graphql_implements} and {@code graphql_union_member} position the type token
+ * reader's. {@code graphql_poly_member} positions the type token
  * itself, so a result lands on the name the author would rename. {@code graphql_field} and
  * {@code graphql_argument} position the member's own declaration, so a result lands at the start of
  * {@code films: [Film!]!} rather than on the {@code Film} inside it. Both are the site, at the
@@ -68,17 +68,18 @@ public final class SdlTypeUsages {
                 .where(GRAPHQL_ARGUMENT.GRAPH_NAME.eq(graph))
                 .and(GRAPHQL_ARGUMENT.NAMED_TYPE.eq(typeName)))
             .unionAll(store.dsl()
-                .select(GRAPHQL_IMPLEMENTS.SOURCE_NAME, GRAPHQL_IMPLEMENTS.SOURCE_LINE,
-                    GRAPHQL_IMPLEMENTS.SOURCE_COLUMN)
-                .from(GRAPHQL_IMPLEMENTS)
-                .where(GRAPHQL_IMPLEMENTS.GRAPH_NAME.eq(graph))
-                .and(GRAPHQL_IMPLEMENTS.INTERFACE_NAME.eq(typeName)))
-            .unionAll(store.dsl()
-                .select(GRAPHQL_UNION_MEMBER.SOURCE_NAME, GRAPHQL_UNION_MEMBER.SOURCE_LINE,
-                    GRAPHQL_UNION_MEMBER.SOURCE_COLUMN)
-                .from(GRAPHQL_UNION_MEMBER)
-                .where(GRAPHQL_UNION_MEMBER.GRAPH_NAME.eq(graph))
-                .and(GRAPHQL_UNION_MEMBER.MEMBER_TYPE_NAME.eq(typeName)))
+                .select(GRAPHQL_POLY_MEMBER.SOURCE_NAME, GRAPHQL_POLY_MEMBER.SOURCE_LINE,
+                    GRAPHQL_POLY_MEMBER.SOURCE_COLUMN)
+                .from(GRAPHQL_POLY_MEMBER)
+                .where(GRAPHQL_POLY_MEMBER.GRAPH_NAME.eq(graph))
+                // Whichever end of the membership the document did not declare is the end that
+                // names this type, and that is the token a rename would touch. One arm covers both
+                // because the store holds one relation; the two names swap roles by kind, so both
+                // are tested rather than one.
+                .and(GRAPHQL_POLY_MEMBER.CONTAINER_NAME.eq(typeName)
+                    .and(GRAPHQL_POLY_MEMBER.CONTAINER_KIND.eq("INTERFACE"))
+                    .or(GRAPHQL_POLY_MEMBER.MEMBER_TYPE_NAME.eq(typeName)
+                        .and(GRAPHQL_POLY_MEMBER.CONTAINER_KIND.eq("UNION")))))
             .fetch();
 
         var sites = new ArrayList<Location>(uses.size());

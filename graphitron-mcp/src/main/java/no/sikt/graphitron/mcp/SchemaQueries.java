@@ -6,6 +6,7 @@ import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.Record1;
+import org.jooq.OrderField;
 import org.jooq.Records;
 
 import java.util.ArrayList;
@@ -20,10 +21,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_CONFLICT;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_REJECTION;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
@@ -578,13 +578,7 @@ final class SchemaQueries {
      * mechanism by which slot answered says more than one list with a provenance column on every row.
      */
     private static Field<List<String>> unionMembers() {
-        return multiset(
-            select(GRAPHQL_UNION_MEMBER.MEMBER_TYPE_NAME)
-                .from(GRAPHQL_UNION_MEMBER)
-                .where(GRAPHQL_UNION_MEMBER.GRAPH_NAME.eq(GRAPHQL_TYPE.GRAPH_NAME)
-                    .and(GRAPHQL_UNION_MEMBER.UNION_NAME.eq(GRAPHQL_TYPE.TYPE_NAME)))
-                .orderBy(GRAPHQL_UNION_MEMBER.ORDINAL.asc()))
-            .convertFrom(r -> r.map(Record1::value1));
+        return members("UNION", GRAPHQL_POLY_MEMBER.POSITION.asc());
     }
 
     /**
@@ -595,12 +589,26 @@ final class SchemaQueries {
      * of an interface is who its participants are.
      */
     private static Field<List<String>> implementors() {
+        return members("INTERFACE", GRAPHQL_POLY_MEMBER.MEMBER_TYPE_NAME.asc());
+    }
+
+    /**
+     * What the container in hand holds, in the order this projection wants it. One method for both
+     * abstract kinds because the store holds one relation for both: what a union lists and what an
+     * interface is named by are the same edge read from the same rows, and only the ordering each
+     * projection promises differs.
+     *
+     * @param order what to sort by; the union's own authored position, or the implementor's name,
+     *        each being what the projection above it documents
+     */
+    private static Field<List<String>> members(String containerKind, OrderField<?> order) {
         return multiset(
-            select(GRAPHQL_IMPLEMENTS.TYPE_NAME)
-                .from(GRAPHQL_IMPLEMENTS)
-                .where(GRAPHQL_IMPLEMENTS.GRAPH_NAME.eq(GRAPHQL_TYPE.GRAPH_NAME)
-                    .and(GRAPHQL_IMPLEMENTS.INTERFACE_NAME.eq(GRAPHQL_TYPE.TYPE_NAME)))
-                .orderBy(GRAPHQL_IMPLEMENTS.TYPE_NAME.asc()))
+            select(GRAPHQL_POLY_MEMBER.MEMBER_TYPE_NAME)
+                .from(GRAPHQL_POLY_MEMBER)
+                .where(GRAPHQL_POLY_MEMBER.GRAPH_NAME.eq(GRAPHQL_TYPE.GRAPH_NAME)
+                    .and(GRAPHQL_POLY_MEMBER.CONTAINER_NAME.eq(GRAPHQL_TYPE.TYPE_NAME))
+                    .and(GRAPHQL_POLY_MEMBER.CONTAINER_KIND.eq(containerKind)))
+                .orderBy(order))
             .convertFrom(r -> r.map(Record1::value1));
     }
 

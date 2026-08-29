@@ -31,7 +31,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.rewrite.CapturedStore.withCapturedStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -199,11 +199,12 @@ class SdlCoordinateCensusTest {
                     + "continues the base field's sequence rather than restarting at 0")
                 .containsExactly("film.title=0", "film.limit=1", "films.match=2");
 
-            assertThat(dsl.select(GRAPHQL_UNION_MEMBER.MEMBER_TYPE_NAME, GRAPHQL_UNION_MEMBER.ORDINAL)
-                .from(GRAPHQL_UNION_MEMBER)
-                .where(GRAPHQL_UNION_MEMBER.GRAPH_NAME.eq(CapturedStore.GRAPH))
-                .and(GRAPHQL_UNION_MEMBER.UNION_NAME.eq("Screen"))
-                .orderBy(GRAPHQL_UNION_MEMBER.ORDINAL)
+            assertThat(dsl.select(GRAPHQL_POLY_MEMBER.MEMBER_TYPE_NAME, GRAPHQL_POLY_MEMBER.POSITION)
+                .from(GRAPHQL_POLY_MEMBER)
+                .where(GRAPHQL_POLY_MEMBER.GRAPH_NAME.eq(CapturedStore.GRAPH))
+                .and(GRAPHQL_POLY_MEMBER.CONTAINER_NAME.eq("Screen"))
+                .and(GRAPHQL_POLY_MEMBER.CONTAINER_KIND.eq("UNION"))
+                .orderBy(GRAPHQL_POLY_MEMBER.POSITION)
                 .fetch(r -> r.value1() + "=" + r.value2()))
                 .as("the base union's members come first though its extension is written above it")
                 .containsExactly("Film=0", "Poster=1", "Trailer=2");

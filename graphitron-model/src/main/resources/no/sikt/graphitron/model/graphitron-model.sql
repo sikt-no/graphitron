@@ -468,55 +468,40 @@ COMMENT ON COLUMN graphql_enum_value.source_name IS 'NOT NULL for the same reaso
 COMMENT ON COLUMN graphql_enum_value.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_enum_value.source_column IS 'source column, 1-based per the graphql-java convention';
 
-CREATE TABLE graphql_union_member (
+CREATE TABLE graphql_poly_member (
   graph_name          VARCHAR NOT NULL,
-  union_name          VARCHAR NOT NULL,
+  container_kind      VARCHAR NOT NULL,
+  container_name      VARCHAR NOT NULL,
   member_type_name    VARCHAR NOT NULL,
-  ordinal             INT     NOT NULL,
+  position            INT     NOT NULL,
+  declared_on         VARCHAR NOT NULL,
   declaration_line    INT     NOT NULL,
   declaration_column  INT     NOT NULL,
   source_name         VARCHAR NOT NULL,
   source_line         INT,
   source_column       INT,
-  PRIMARY KEY (graph_name, union_name, member_type_name),
-  FOREIGN KEY (graph_name, union_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
-  FOREIGN KEY (graph_name, union_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+  PRIMARY KEY (graph_name, container_name, member_type_name),
+  FOREIGN KEY (graph_name, declared_on) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, declared_on, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column),
+  CHECK (container_kind IN ('UNION', 'INTERFACE')),
+  CHECK (declared_on = CASE WHEN container_kind = 'UNION' THEN container_name
+                            ELSE member_type_name END)
 );
-COMMENT ON TABLE graphql_union_member IS 'A union lists a member type.';
-COMMENT ON COLUMN graphql_union_member.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_union_member.union_name IS 'the UNION type listing the member';
-COMMENT ON COLUMN graphql_union_member.member_type_name IS 'the member type as the union spelled it; author-spelled, no FK';
-COMMENT ON COLUMN graphql_union_member.ordinal IS 'position in the effective member list';
-COMMENT ON COLUMN graphql_union_member.declaration_line IS 'the contributing site, as on graphql_field';
-COMMENT ON COLUMN graphql_union_member.declaration_column IS 'column of the contributing declaration site, the site key''s fourth part';
-COMMENT ON COLUMN graphql_union_member.source_name IS 'position of the member token itself; NOT NULL as on graphql_field';
-COMMENT ON COLUMN graphql_union_member.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_union_member.source_column IS 'source column, 1-based per the graphql-java convention';
-
-CREATE TABLE graphql_implements (
-  graph_name          VARCHAR NOT NULL,
-  type_name           VARCHAR NOT NULL,
-  interface_name      VARCHAR NOT NULL,
-  declaration_line    INT     NOT NULL,
-  declaration_column  INT     NOT NULL,
-  source_name         VARCHAR NOT NULL,
-  source_line         INT,
-  source_column       INT,
-  PRIMARY KEY (graph_name, type_name, interface_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
-);
-COMMENT ON TABLE graphql_implements IS 'A type declares that it implements an interface. Stored in declaration direction; today''s model keeps only the inverted interface-to-participants list and reads this edge live off graphql-java.';
-COMMENT ON COLUMN graphql_implements.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_implements.type_name IS 'the implementing OBJECT or INTERFACE';
-COMMENT ON COLUMN graphql_implements.interface_name IS 'the interface as the implementing type spelled it; author-spelled, no FK';
-COMMENT ON COLUMN graphql_implements.declaration_line IS 'the contributing site, as on graphql_field';
-COMMENT ON COLUMN graphql_implements.declaration_column IS 'column of the contributing declaration site, the site key''s fourth part';
-COMMENT ON COLUMN graphql_implements.source_name IS 'position of the interface token itself; NOT NULL as on graphql_field';
-COMMENT ON COLUMN graphql_implements.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_implements.source_column IS 'source column, 1-based per the graphql-java convention';
+CREATE INDEX graphql_poly_member_container_ix
+  ON graphql_poly_member (graph_name, container_name);
+COMMENT ON TABLE graphql_poly_member IS 'What a polymorphic container holds: one row per member of a union and per implementor of an interface. One relation and not two, because the two sites carry the same columns and differ only in which end of the edge the document spells the membership on, which is a discriminator value rather than data; a union names its members and an implementing type names its interface, and a reader asking what a container holds should not have to know which. That the SDL spells them at opposite ends is what declared_on carries, and it is the only column the collapse needed: the declaration coordinate points into the union''s own declaration on one arm and into the implementing type''s on the other, so the site reference stays engine-checked rather than becoming a foreign key no discriminator can serve. Captured rather than derived, and captured from the document rather than from an assembled schema: this family transcribes what any SDL reader could produce, so a schema that fails to validate must still answer here, which is exactly when an editor asking who implements this interface most needs one. Position is source order on both arms and is written here rather than ranked by a reader, which is the whole point of the column: a union declares its members in one place and capture numbers them as it walks, while an interface''s implementors are declared apart from it and apart from each other, so their order is settled in one pass after every site has been read. What that replaced was a window function in a view body, re-evaluated over every partition at every correlated probe; an ordering a reader recomputes per probe is a fact capture declined to write.';
+COMMENT ON COLUMN graphql_poly_member.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_poly_member.container_kind IS 'which polymorphic form the container is, a closed two-value domain: UNION, INTERFACE. The discriminator, and also which end of the edge the document spelled: a UNION row was written from the container''s declaration, an INTERFACE row from the member''s';
+COMMENT ON COLUMN graphql_poly_member.container_name IS 'the union or interface holding the member. Author-spelled and unanchored on the INTERFACE arm, where the implementing type names it and may name one no document declares; on the UNION arm it is the declaring type and declared_on carries its anchor';
+COMMENT ON COLUMN graphql_poly_member.member_type_name IS 'the member type or implementor. Author-spelled and unanchored on the UNION arm, where the union names it and may name one no document declares; on the INTERFACE arm it is the declaring type and declared_on carries its anchor';
+COMMENT ON COLUMN graphql_poly_member.position IS 'source order within the container. The two arms do not share a base and this is inherited rather than intended: a union''s members are numbered from 0 by the walk that reads them, an interface''s implementors from 1 by the pass that orders them. Nothing reads the absolute value today, every consumer reading the order alone, which is why the disagreement survived a window function without being noticed; rebasing is a separate change because the mapping-constant fingerprint digests a list in this order';
+COMMENT ON COLUMN graphql_poly_member.declared_on IS 'the type that declared this membership: the container on a UNION row, the member on an INTERFACE row. The anchored end, and the only one: both foreign keys hang off this column, because which end a document anchors is what the two arms disagree about and a key cannot be conditional. The other end is a name an author wrote and may resolve to nothing, which is the rule both collapsed relations already applied and which the collapse would have lost had it keyed the container. Redundant against the discriminator and the two names, and stored anyway so the keys have a column to name; the check constraint beside it is what keeps the redundancy honest';
+COMMENT ON COLUMN graphql_poly_member.declaration_line IS 'the contributing site, as on graphql_field';
+COMMENT ON COLUMN graphql_poly_member.declaration_column IS 'column of the contributing declaration site, the site key''s fourth part';
+COMMENT ON COLUMN graphql_poly_member.source_name IS 'position of the member or interface token itself; NOT NULL as on graphql_field';
+COMMENT ON COLUMN graphql_poly_member.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_poly_member.source_column IS 'source column, 1-based per the graphql-java convention';
 
 CREATE TABLE graphql_root_operation (
   graph_name    VARCHAR NOT NULL,
@@ -3515,9 +3500,9 @@ SELECT b.graph_name, b.type_name, b.table_source_name, b.table_schema, b.table_n
     ON m.source_name = b.table_source_name AND m.table_schema = b.table_schema
    AND m.table_name = b.table_name
  WHERE b.candidates = 1
-   AND EXISTS (SELECT 1 FROM graphql_implements i
-                WHERE i.graph_name = b.graph_name AND i.type_name = b.type_name
-                  AND i.interface_name = 'Node')
+   AND EXISTS (SELECT 1 FROM graphql_poly_member i
+                WHERE i.graph_name = b.graph_name AND i.member_type_name = b.type_name
+                  AND i.container_name = 'Node' AND i.container_kind = 'INTERFACE')
    AND NOT EXISTS (SELECT 1 FROM intent_node_metadata_defect d
                     WHERE d.source_name = m.source_name
                       AND d.table_schema = m.table_schema
@@ -4335,15 +4320,9 @@ COMMENT ON COLUMN intent_resolved_type_binding_live.candidates IS 'the candidate
 
 CREATE VIEW intent_poly_member
   (graph_name, container_name, container_kind, member_type_name, position) AS
-SELECT graph_name, union_name, 'UNION', member_type_name, ordinal
-  FROM graphql_union_member
- UNION ALL
-SELECT i.graph_name, i.interface_name, 'INTERFACE', i.type_name,
-       CAST(ROW_NUMBER() OVER (PARTITION BY i.graph_name, i.interface_name
-                               ORDER BY i.source_name, i.declaration_line, i.declaration_column,
-                                        i.type_name) AS INT)
-  FROM graphql_implements i;
-COMMENT ON VIEW intent_poly_member IS 'What a polymorphic container holds: one row per member of a union and per implementor of an interface, in an order the container can state. Two populations that answer the same question and neither a special case of the other, so they are separate base tables and this is where they meet, on intent_type_backing''s terms. The container axis is what makes them one relation: a reader asking what a field''s named type resolves to when that type is not an object asks about members, and whether the SDL spelled the membership on the container (a union) or on the member (an implements clause) is the base tables'' business, not the reader''s. Position is stated on both arms and means source order on both, but it is authored on only one of them: a union declares its members in one place and graphql_union_member records that ordinal, while an interface''s implementors are declared apart from it and apart from each other, so the position here is derived from where each implementor is written. That derivation is this relation''s and not the SDL''s, which matters to exactly one reader, the mapping-constant fingerprint, whose digest is over an ordered handler list; the walk''s own order for the interface arm is graphql-java''s registration order, which is neither source order nor documented, so an implementor arm''s digest computed from these rows may differ from the walk''s. A source order is the defensible one to state and the disagreement is the walk''s to lose, but nothing has adjudicated that yet and a reader minting a suffix from these rows should know it is choosing.';
+SELECT graph_name, container_name, container_kind, member_type_name, position
+  FROM graphql_poly_member;
+COMMENT ON VIEW intent_poly_member IS 'What a polymorphic container holds, read at the grain a derivation asks it: a scan of graphql_poly_member under the intent_ family''s names. The two populations this used to union are one captured relation now, so nothing is reconstructed here and the relation survives as the name three derivations already spell rather than as a rule. What it once carried and no longer needs to: the interface arm''s position was ranked by a window function over the whole partition, which a correlated probe cannot prune, so every reader paid to re-rank every implementor of every interface on every driving row. Capture writes that order now, and the note the old body owed its readers moves to the column that holds it. One reading of these rows is still a choice rather than a fact, and it is the mapping-constant fingerprint''s: its digest is over a handler list in this order, source order, where the legacy walk''s own order for the interface arm is graphql-java''s registration order, which is neither source order nor documented. Source order is the defensible one and the disagreement is the walk''s to lose, but nothing has adjudicated it and a reader minting a suffix from these rows should know it is choosing.';
 COMMENT ON COLUMN intent_poly_member.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN intent_poly_member.container_name IS 'the polymorphic type holding the member: the union on one arm, the interface on the other';
 COMMENT ON COLUMN intent_poly_member.container_kind IS 'which population answered, a closed two-value domain: UNION for a member listed on a union declaration, INTERFACE for a type whose implements clause names the container. Provenance, and the axis a reader filters on when it means one of them';

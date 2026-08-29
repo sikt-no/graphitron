@@ -421,7 +421,16 @@ class DerivedReadCostTest {
     private static final Set<String> KNOWN_NON_MONOTONIC = Set.of(
         // The pruning an inlined body offered and a table cannot; measured index-free above.
         "intent_argmapping_pair|intent_argmapping_bound_parameter_type",
-        "intent_errors_field|intent_errors_field_member",
+        // intent_errors_field|intent_errors_field_member stood here on the same attribution and
+        // left when the relation underneath both of them stopped being reconstructed. What it was
+        // really charged to was intent_poly_member: a two-arm union whose interface arm ranked its
+        // position with a window over the whole partition, which an outer predicate cannot prune,
+        // so the registered shape visited every implementor of every interface however narrow the
+        // question. Capture writes that order now and the union is one captured relation, so the
+        // pair is monotonic without anything about the registration changing. That is a third shape
+        // to check when a row leaves this set, beside the two the paragraph above names: a pair can
+        // stop being a regression because something neither of its relations mentions stopped being
+        // a reconstruction.
         // The unindexed named-type join; the lever is filed on the roadmap, measured above.
         // Two of these four left when the type binding gained an index on the key its readers
         // hold, along with the scope table's own cell below: the carrier's two readers stopped
