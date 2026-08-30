@@ -1908,13 +1908,67 @@ authored directive binding, an identity name match, and whatever survives of the
 type-unique inferences that R219 proposes to collapse into one rule. This slice does not settle that
 vocabulary. It settles that the relation is total and that provenance is a column on it.
 
-**It belongs to capture rather than to derivation, and the family charter is what says so.** Expanded
-to captured relations the head rule reaches `graphitron_arg_mapping_pair`,
-`graphitron_argument_path_segment` and `graphql_argument`. The charter counts `graphql_` and
-`graphitron_` as one family because they are one gatherer, so this rule crosses nothing, and a rule
-that crosses nothing belongs to its own family rather than to `intent_`. Its gatherer knows when its
-own corpus is complete, so it may store the rule with no `meta_materialize` row at all. The cheapest
-fix and the correct placement are the same move, which is not usually true and is worth not wasting.
+**It stays in `intent_`, and an earlier draft of this slice got that wrong in a way worth keeping.**
+That draft expanded the head rule, found it reaches only `graphitron_arg_mapping_pair`,
+`graphitron_argument_path_segment` and `graphql_argument`, counted `graphql_` and `graphitron_` as
+one family because they are one gatherer, and concluded the rule crosses nothing and therefore
+belongs to capture, where it could be stored with no `meta_materialize` row. The arithmetic was right
+about the head and wrong about the relation. The head is not what has to become total. What has to
+become total is one row per parameter of every call, and knowing what parameters a call *has* means
+reading the classpath census for a service method and the catalog for a routine. The relation
+therefore spans the SDL, `jvm_` and `sql_`, which is three families and exactly what `intent_` is
+for: a rule whose facts cross is owned by the gatherer that runs after all of them.
+
+**Which relocates the question rather than answering it, and the relocated question is the better
+one.** If this must be a crossing rule, it cannot be made cheap by moving it. It can only be made
+cheap by the families underneath it handing up facts it can build on. So the thing to ask each base
+is not whether it holds the rows, which they all do, but whether it holds them in a shape a crossing
+rule can use.
+
+**Asked that way, one base is failing far worse than the rest.** Counting instantiations of each
+captured relation inside a single plan of `intent_node_id_decode`:
+
+[cols="4,2,2"]
+|===
+| relation | instantiations in one plan | rows
+
+| `graphitron_argument_path_segment` | 106 | 202
+| `graphitron_arg_mapping_pair` | 84 | 108
+| `intent_input_occurrence_path_step` | 38 | 3526
+| `sql_node_metadata` | 26 | -
+| `graphql_argument` | 26 | -
+| `sql_routine_parameter`, `jvm_method_parameter` | 4 each | -
+|===
+
+The parameter censuses, the thing an argMapping actually binds to, are read four times each. The
+authored path's segment list is read a hundred and six times. Whatever is wrong here is not that the
+upper layers reach too far into the lower ones. It is that they reach into one of them over and over
+for something it could have said once.
+
+**What that base withholds is the shape of its own decomposition.** Capture takes an argMapping path,
+splits it into segments and stores one row per segment with a position. It knows the length at the
+moment it writes them. It stores neither the length, nor which segment is last, nor how many follow
+any given one. So every rule above it rebuilds those by self-join: a correlated `COUNT(*)` over
+segments past this position for the trailing count, an anti-join on `position + 1` for the last one,
+an equality on `position = 0` for the first. Three questions about an ordered list of at most a few
+elements, asked of a 202-row table a hundred times per statement, each one an anti-join and each
+anti-join doubling the statement that contains it.
+
+**And the second withheld fact is a correspondence, which the schema already admits it is missing.**
+The same descent is decomposed twice in this schema: once as the authored path's segments by
+position, and once as the input type's occurrence path by ordinal. Nothing states their
+correspondence, so the two rules that need it align the decompositions inline with a `NOT EXISTS`
+containing a `NOT EXISTS`, which is where the occurrence-path step relation's 38 instantiations come
+from. `intent_node_id_decode_slot`'s own comment names this as the gap behind its stated limitation,
+calling it "a reconciliation between two decompositions of one descent rather than a join". A
+correspondence with no name is being recomputed as nested negation.
+
+**So the answer is that the bases hold the right rows and hand up the wrong facts.** The parameter
+censuses are fine and barely read. The path decomposition is read a hundred times for three facts
+its own writer knew and discarded, and the correspondence between two decompositions is read as a
+double negation because nobody has stated it as a relation. Neither is fixed by making the argMapping
+relation total, and both have to be fixed before totality is affordable, which reorders this item's
+own plan: the base facts first, the total relation on top of them.
 
 **Four questions this slice does not answer.**
 
@@ -1930,10 +1984,18 @@ fix and the correct placement are the same move, which is not usually true and i
   beside it. The decode slot's comment already names it as an unstated reconciliation between two
   decompositions of one descent.
 
-**What would show it landed.** The by-name arm disappears from both readers that spell it, the pair
-table's instantiation count in the node-id decode plan falls from 84 toward the low single digits,
-and the correlated anti-join in `intent_node_id_decode` has a keyed relation to probe instead of a
-rule to inline. Slice 15 holds the before figures.
+**What would show it landed.** Three instantiation counts in one plan of `intent_node_id_decode`,
+against the 106, 84 and 38 slice 16 measured: the path segment list read a handful of times rather
+than a hundred, the pair table in the low single digits, and the occurrence-path step relation
+likewise once the correspondence has a name. Behind those, the by-name arm gone from both readers
+that spell it and the correlated anti-join probing a keyed relation instead of inlining a rule.
+Slice 15 holds the before figures for the timings.
+
+**And the order the work has to go in, which slice 16 changed.** The base facts first, because the
+total relation is a crossing rule and a crossing rule cannot be made cheap by relocating it: the
+path decomposition states its own shape, the correspondence between the two decompositions gets a
+name, and only then is one row per parameter of every call affordable to state. Doing it the other
+way round would build the total relation on the same hundred-fold read and measure no better.
 
 **A word on the word pair.** The relation is named for a pair because it replaced eight relations
 each spelling one, and the name records that collapse rather than the grain. If the grain is the
