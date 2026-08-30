@@ -94,8 +94,19 @@ where one branch contributes several constraints, still unkeyed.
 ## The decision this needs: answered
 
 The item asked whether a multi-table node id decode is one decode shared by every branch or one per
-branch, and left it for whoever owns node id decoding. The tree already answers, in three places, and
-all three say one per branch.
+branch, and left it for whoever owns node id decoding. The tree already answers, in four places, and
+all four say one per branch.
+
+**The relation the departure is resolved from declares the branch as part of its grain.**
+`intent_argument_scope_table` now carries a primary key on the argument coordinate *and the table*,
+and its comment says why in terms this item could have been written from: "a field whose named type
+is a multi-table polymorphic container is rooted in one table per branch, so each of its arguments
+binds against each of those tables and each pair is a predicate the generator emits. One row per
+argument is therefore the ordinary case and not the rule, and a reader that assumed it would silently
+take one branch of a coordinate that has several." That is the defect this item reports, stated one
+rung up and about the same branches, and "each pair is a predicate the generator emits" is the answer
+to the question the item deferred to whoever owns node id decoding. The decode family is precisely a
+reader that assumed one row per coordinate.
 
 **The endpoint relation states it as its own grain.** Its comment: "such a slot has one endpoint pair
 per branch and the decode is stated once per branch, which is what the resolver does with it." The
