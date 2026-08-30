@@ -17,7 +17,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R865` | Obtaining a fact store means running a generation, and capture welds in a refresh cadence no caller can decline | Spec | 2026-08-27 | [plan](capture-without-the-materialization-refresh.md) |
 | `R870` | The fact tier reads its consumer: capture writes a relation from the classification walk, and the comparison that relation serves never needed a store-side copy | Spec | 2026-08-28 | [plan](capture-stops-reading-the-walk.md) |
 | `R876` | Expensive derived reads are a modelling defect: capture writes the subtypes and omits the supertype, and materialization has been the first lever reached for instead of the last | In Progress | 2026-08-29 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
-| `R878` | The node id decode hop column drops the foreign key it walked, so nine distinct hops become nine identical rows and arity states a false number | In Review | 2026-08-30 | [plan](node-id-decode-hop-column-grain.md) |
 | `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows <sub>blocked by: [capture-moves-below-the-generator](capture-moves-below-the-generator.md), [capture-without-the-materialization-refresh](capture-without-the-materialization-refresh.md), [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-08-28 <sub>created 2026-08-27</sub> | [plan](dev-start-refreshes-the-register-twice.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R864` | Capture moves below the generator: the fact tier becomes a module boundary <sub>blocked by: [capture-stops-reading-the-walk](capture-stops-reading-the-walk.md)</sub> | Spec | 2026-08-27 | [plan](capture-moves-below-the-generator.md) |
@@ -574,7 +573,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### codegen-correctness
 
-- `R878` [**The node id decode hop column drops the foreign key it walked, so nine distinct hops become nine identical rows and arity states a false number**](node-id-decode-hop-column-grain.md) — In Review, bug
 - `R873` [**Polymorphic child fields under an Outcome payload never emit the wrapper arm-unwrap**](outcome-payload-polymorphic-child-arm-unwrap.md) — In Review, bug
 - `R756` [**The orphan sweep never visits four subpackages the generator emits into**](orphan-sweep-misses-emitted-subpackages.md) — Backlog, correctness
 - `R663` [**@defaultOrder on a @splitQuery child list is dropped at emit**](split-query-child-list-drops-default-order.md) — Ready, bug

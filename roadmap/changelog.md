@@ -4,6 +4,73 @@ next-id: R879
 
 # Rewrite Changelog
 
+- R878 (`364ec15` the delivery, `707975d` the rework; filed `8e3bc2f`, Backlog -> Spec `124f046`, a
+  fourth witness added to the Spec `ef13de0`, Spec -> Ready `a565567`, Ready -> In Progress
+  `505d2b0`, In Progress -> In Review `364ec15`, In Review -> Ready `0fed9e8`; Done gate in this
+  commit): every relation below `intent_node_id_decode_endpoint` keyed on the consuming coordinate
+  alone, which is the endpoint's key with the branch removed. A slot whose consuming field returns a
+  multi-table polymorphic container has one endpoint pair per branch, so where several branches
+  joined on foreign keys pairing the same column names their rows were indistinguishable:
+  `intent_node_id_decode_hop_column` held one row once per branch and every count above it read the
+  repeats as separate facts. On the capture the item was filed from, a filter over person roles whose
+  nine foreign keys from nine role tables all pair `INSTITUSJONSNR_EIER` and `ROLLEKODE`,
+  `intent_node_id_decode_column` held 162 rows of which 2 were distinct and
+  `intent_node_id_decode.arity` described a two-column node identity as having 162.
+  `DISTINCT` was the wrong fix and that is the whole of why this is a grain change: the nine rows are
+  nine different facts, so collapsing them at the top deletes eight real hops.
+  Three columns, `origin_source_name` / `origin_schema` / `origin_table`, carry the endpoint's
+  departure down through the hop, the hop column, the key column and the decode. They are in the
+  predicates as well as the projections, which is where the correctness is: the hop's
+  `last_position` window partitions by the branch so one branch's terminal is not reported for
+  another's chain, the recursive `lifted` term chains only within one branch, the `LEFT JOIN lifted`
+  matches the endpoint's own departure, and both windows in `intent_node_id_decode` partition by it
+  so `arity` states the node key's real width. The slot arm departs no table and carries three NULLs.
+  The cross-branch hazard was the one claim the spec took from the shape of the SQL rather than from
+  a capture, and the fixture confirms it rather than assuming it: with the branch predicate removed,
+  `klasserolle` lifts `emne_code` and `emnerolle` lifts `klasse_code`, columns of tables neither ever
+  departed. That is a route no branch declares, a wrong row rather than a copy of a right one, so no
+  collapse above could have recovered from it.
+  Two deviations from the approved plan, both improvements and both argued rather than taken quietly.
+  The mutation payload join landed as an invariant guard rather than as the ninefold multiplication
+  fix the spec predicted: that relation's own comment already carried the argument that a write
+  payload has no branch, the participant arm's precondition contradicting each of the three write
+  rungs, and the implementation found that argument standing. The guard is taken anyway on an
+  asymmetry the comment now states, a missing payload column being loud where a per-branch duplicate
+  would be silent. And `ix_node_id_decode_column_use_site` was deleted rather than widened: both jobs
+  it was bought for dissolved, the payload probe's predicate gaining three columns it does not carry
+  and the carrier's grouping going from two columns to five, so no reader improves at either fixture
+  size and the one that loses loses proportionally more as the schema grows. The covering shape was
+  measured beside it and ties everywhere, so nothing is deferred; `MaterializeRegistryGateTest`'s
+  `NO_INDEX` roster caught the deletion by failing and now carries the figures.
+  `ix_node_id_decode_hop_column_step` gained the three columns and keeps its place.
+  Coverage is `NodeIdDecodeBranchTest`, six cases on two seeded fixtures: the per-branch hop-column
+  pairing, the per-branch lift, the per-branch decode row with the key's real arity, the per-branch
+  carrier role, the absence of duplicate rows in both relations, and the two-hop walk staying inside
+  its branch. A green build was compatible with the branches still being collapsed, every other
+  fixture in the tree being single-branch, so those two fixtures are what shows the item delivered;
+  the reviewer re-established that by stripping the branch predicates and watching four of the six
+  fail. The one reading a consumer can observe is the carrier role's, whose `local` flag is now a
+  statement about the branch whose row it is rather than a verdict computed over every branch's rows
+  together.
+  Round 1 of the Done gate withheld on the item's own subject one rung down: two column comments of
+  `intent_node_id_decode_hop_column` still stated the superseded key while the new `origin_*` comment
+  beside them stated the new one, so the relation the item is named for contradicted itself in four
+  adjacent lines and a reader taking `use_site` at its word would have reproduced the defect. The
+  rework fixed both and, taking it as a class, found a third the round had not named:
+  `intent_node_id_decode_endpoint.path` claimed the coordinate was the key and that the children
+  carried it, and the first half was wrong before this item started. That relation's prose is what
+  the spec quoted as evidence the tree already knew this grain, while its key statement denied it,
+  which is how the children came to be written without the branch at all.
+  Nothing emitted moved. No main source reads `intent_node_id_decode` or either child, the family's
+  only main-source reader being `NodeIdDecodeDefects` over `intent_node_id_decode_defect`, which sits
+  on the untouched slot relation, so the whole change is inside the fact model and the cost of
+  widening the key was never lower. Deliberately out and filed separately at pickup: the
+  argument-site authored path's missing departure predicate, where `intent_node_id_decode_hop`'s `tg`
+  join resolves the same hops for every branch of a polymorphic argument scope while the input-field
+  arm beside it restricts on the resolving table. Independent-session In Review -> Done review at
+  round 2; full reactor green under `mvn install -Plocal-db`, 14/14 modules, run by the reviewer on
+  the pushed tree at both rounds.
+
 - R848 (`c6f627e` the harness, its establishing check and the shape pin, `c9df163` the store-boot
   budget it spent; the item file arrived in `b6b0ca1`, Backlog -> Spec `3f124ee`, Spec review round 1
   `bebc770` and its revision `6f80a63`, review round 2 `b27f4df` and its revision `808955e`, Spec ->
