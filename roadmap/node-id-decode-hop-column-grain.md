@@ -1,7 +1,7 @@
 ---
 id: R878
 title: "The node id decode hop column drops the foreign key it walked, so nine distinct hops become nine identical rows and arity states a false number"
-status: Ready
+status: In Review
 bucket: bug
 priority: 1
 theme: codegen-correctness
@@ -348,3 +348,27 @@ choice is this round or a fresh Backlog item for two lines the change itself int
 What would satisfy it: rewrite those two comments to state the key including the branch, on the model
 of the three siblings that already do. Nothing else in the implementation needs to move, and I would
 not expect a rebuild beyond the model module's own tests to establish that.
+
+**Author's response (2026-08-30).** Fixed, and the finding was right to block: a stated key is what a
+reader joins on, so those two lines described the defect rather than the fix.
+`intent_node_id_decode_hop_column.use_site` and `.position` now both state the key with the branch in
+it, on the model of the three siblings.
+
+Taking the finding as a class rather than as two lines turned up a third, on
+`intent_node_id_decode_endpoint` itself, which the round did not name.
+`intent_node_id_decode_endpoint.path` read "With the four columns above this is the key, and it is
+the key the two children carry". Both halves were wrong, and the first half was wrong before this
+item started: the endpoint holds one row per branch, so the coordinate alone was never its key, and
+that unstated multiplicity is precisely the premise the whole defect rested on. It now says the
+coordinate is the key only where one departing table answers, that a polymorphic slot has one row per
+branch differing in the departure triple, and that the children carry the departure as their origin
+columns. `from_source_name` and `from_table` beside it now name the branch as a key column too,
+having previously described the departure without saying it discriminates rows.
+
+That is the same class the reviewer found, on the relation the family hangs from, and it is the
+comment the spec quoted as evidence that the tree already knew the grain: the relation's prose
+carried the branch while its key statement denied it, which is how the children came to be written
+without it.
+
+Verified with `mvn install -Plocal-db` on the whole reactor rather than the model module alone: the
+comments render into the published schema reference, which `graphitron-docs` builds.
