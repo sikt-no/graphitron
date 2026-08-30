@@ -2189,6 +2189,74 @@ absence. Absence has no index. Make the relation total with provenance as a colu
 becomes an equality on a stored value, which is the one change that attacks the inner factor. The
 outer factor, the correlated evaluation, is a separate fix and the two compose.
 
+### Slice 18: the candidate is keyed by its path and carries its parent
+
+The right-hand side of an argMapping selects from a candidate set, and the candidates form a tree:
+each one is identified by the path that reaches it, and each one below a root has a parent candidate,
+the path one segment shorter. That is the whole of the shape, and everything the two consumers need
+falls out of it. Completing a partially typed path is a probe for the candidates whose parent is the
+prefix. Validating a written path is a probe for a candidate with that key. Asking whether a segment
+is the last is asking whether its candidate has children. None of the three is a walk.
+
+**It also removes the alignment rather than optimising it.** An argMapping's right side is a path and
+a candidate is keyed by its path, so the selection is a foreign key. Nothing has to reconcile a
+positional segment list against an ordinal step list, because there is one decomposition and both
+sides name it the same way. The nested negation slice 16 measured, and the positional walk slice 17
+made smaller without making faster, are both consequences of the two decompositions being unrelated,
+and both go when they are the same relation.
+
+**The relation that looked like it already was this one is not, and the gap is the interesting
+part.** `intent_input_occurrence_path` is keyed by graph and path, prefix-closed, and holds the
+descent through input-object-typed fields. Measured against the same capture: 528 arguments exist,
+406 of them have a root row there, and 3027 rows in total of which 406 are roots and 2621 are descent
+steps. **So 122 arguments are candidates that relation does not hold**, because it admits an argument
+only when the argument's named type is an input object, and an argument of a scalar type is a
+perfectly legal right-hand side under the specification's single-slot form. A bare name with no dots
+is what an entry without `argMapping` binds to implicitly, so the missing 122 are not an edge case,
+they are the common case.
+
+**Which explains why the argMapping rules walk positions instead of joining.** They cannot join the
+occurrence path for the head, because for 122 of 528 arguments there is no row to join to. The
+positional segment walk and the alignment by double negation are what a rule does when the relation
+it wants covers a different population than the one it has. The defect is not that somebody chose the
+harder query; it is that no relation held the candidates.
+
+**Shape, stated so the next slice can build it.** Take a worked path: `input.nodeId.COLUMN_A`. It is
+one candidate. Its parent is `input.nodeId`, whose parent is `input`, which is a root. Each of the
+three has a type, and **the type is what says what the candidate opens into**: `input` is an input
+object so it opens into fields, `input.nodeId` is an `ID` carrying `@nodeId` so it opens into the
+node type's key columns, and `COLUMN_A` is a column so it opens into nothing. That is why one
+relation covers a descent whose opening rule changes at every level: the levels differ but the row
+shape does not, and the discriminator is a fact the candidate already carries about itself rather
+than a rule the reader has to apply.
+
+So: one row per candidate, keyed by the site coordinate and the path as an author writes it, carrying
+the parent path (null at a root, a foreign key back to this relation otherwise), the segment name
+that selects it, and its type. The coordinate is part of the key because the path is the authored
+dot-form and `input` means a different thing on a different field. Roots are every argument in scope
+at a site, plus the input field itself where an input-field-level condition sits on one.
+
+**Which makes the right-hand side a foreign key in the literal sense.** The candidate's path and the
+argMapping's `argument_path` are the same string under the same coordinate, so a written path either
+matches a candidate row or does not, and that is the whole of validity. The positional segment child
+disappears into the parent chain: what was `position` is depth along the parents, what was "how many
+follow" is how many descendants remain, and what was an alignment between two decompositions is one
+relation read twice.
+
+**Where it lives, and what it is allowed to cost.** The candidate rule reads arguments and input
+fields from the SDL and key columns from the `@node` claim, which is one gatherer, so the relation
+belongs to that family and needs no `meta_materialize` row. It has to be stored rather than stated as
+a view for the reason its neighbour already is: cyclic input nesting is legal GraphQL and has no safe
+recursive form in an H2 view, and `intent_input_occurrence_path` is the precedent, a table written by
+a capture-cadence derivation writer under the charter's other clause.
+
+**Staging, forced by an unrelated defect.** The key-column kind depends on the `@node` claim, and
+slice 16 measured that claim as almost never made: 2 of 2294 resolved key-column entries come from
+the SDL, covering one node type of 249, with the rest defaulted from the jOOQ metadata constant. A
+candidate relation whose key-column arm reads only the SDL claim would be very nearly empty. So the
+argument and input-field kinds come first and the key-column kind waits on capture writing `@node`'s
+effective claim, which is the same fix this item already owes one directive over.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
