@@ -2333,6 +2333,8 @@ CREATE TABLE graphitron_arg_mapping_pair (
   position      INT     NOT NULL,
   param_name    VARCHAR NOT NULL,
   argument_path VARCHAR NOT NULL,
+  head_segment  VARCHAR NOT NULL,
+  head_kind     VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
   source_line   INT,
   source_column INT,
@@ -2340,7 +2342,10 @@ CREATE TABLE graphitron_arg_mapping_pair (
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   CHECK (site IN ('ROUTINE', 'SERVICE', 'FIELD_CONDITION', 'INPUT_FIELD_CONDITION',
                   'ARGUMENT_CONDITION', 'FIELD_REFERENCE_STEP', 'ARGUMENT_REFERENCE_STEP',
-                  'REFERENCE_FOR_STEP', 'ARGUMENT_REFERENCE_FOR_STEP'))
+                  'REFERENCE_FOR_STEP', 'ARGUMENT_REFERENCE_FOR_STEP')),
+  CHECK (head_kind IN ('ARGUMENT', 'INPUT_FIELD')),
+  CHECK (head_kind = CASE WHEN site = 'INPUT_FIELD_CONDITION' THEN 'INPUT_FIELD'
+                          ELSE 'ARGUMENT' END)
 );
 CREATE INDEX graphitron_arg_mapping_pair_site_ix
   ON graphitron_arg_mapping_pair (graph_name, site);
@@ -2358,6 +2363,8 @@ COMMENT ON COLUMN graphitron_arg_mapping_pair.step_position IS 'the path element
 COMMENT ON COLUMN graphitron_arg_mapping_pair.position IS 'the pair''s own position in the site''s argMapping list, completing the key. Positional because argMapping is a list and the parameter it binds is identified by where it stands';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.param_name IS 'the method parameter name the pair binds';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.argument_path IS 'the argument path the parameter is bound to, as written';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.head_segment IS 'the first segment of argument_path, which is the slot the path enters at. A function of the path text and written here because the writer has already split it: every reader needs the head and no reader may split a string, so the alternative is a positional join back into the segment child at position zero, repeated once per reader. What the head must name to be valid is the specification''s question and this column does not answer it: an invalid head is written here as spelled and refused by the relation that names invalid selections. Distinguishing what was selected from whether the selection resolves is the same separation the schema keeps everywhere else between a resolution and a rejection';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.head_kind IS 'what kind of slot the head names, ARGUMENT or INPUT_FIELD, which follows from the site alone: an input-field-level condition enters at the input field it sits on and every other site enters at an argument. Stored rather than recomputed because it is a function of a stored column and a check constraint keeps the two in step, so a reader switching on it cannot disagree with a reader switching on the site. Not a claim about whether the named slot exists';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.source_name IS 'the file the owning site was written in, carried from that site so a reader of this relation needs no join back to it';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.source_line IS 'the owning site''s line, carried with the file beside it';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.source_column IS 'the owning site''s column, carried with the file beside it';
@@ -6785,9 +6792,11 @@ COMMENT ON COLUMN intent_input_field_column_match.source_column IS 'source colum
 
 CREATE VIEW intent_argmapping_pair
   (graph_name, site, use_site, type_name, field_name, argument_name, ordinal, step_position,
-   position, param_name, argument_path, source_name, source_line, source_column) AS
+   position, param_name, argument_path, head_segment, head_kind,
+   source_name, source_line, source_column) AS
 SELECT graph_name, site, use_site, type_name, field_name, argument_name, ordinal, step_position,
-       position, param_name, argument_path, source_name, source_line, source_column
+       position, param_name, argument_path, head_segment, head_kind,
+       source_name, source_line, source_column
   FROM graphitron_arg_mapping_pair;
 COMMENT ON VIEW intent_argmapping_pair IS 'Every argMapping pair any directive spells, in one shape, with a site literal saying which kind of site spelled a row. A projection of graphitron_arg_mapping_pair and nothing else, which is what it became when capture started writing the widened shape: it existed to widen eight per-site relations whose use-site keys ran from four columns to seven, and those eight are gone. No union to state, no key to synthesise, no owning-application join to assemble. The drift it was built to prevent, two readers spelling one population two ways, is prevented a rung earlier by there being one population. What survives unchanged is the grain and the vocabulary. The grain is the pair''s own with ordinal intact: @routine and @reference are repeatable and each application carries its own argMapping, so collapsing to one row per field coordinate would resolve one application''s paths and silently drop its siblings, which is the one move the nearest sibling view makes that this family must not. The site vocabulary is closed at nine and is total against the family rather than against the population, which graphitron_arg_mapping_pair.site states and this relation carries. Not materialized, and the registration it used to carry was retired rather than re-priced. Two facts decided it. The rule is a projection of one table, so materializing it copied rows into rows and a reader naming it fifty-five times read one table fifty-five times either way, which is what the retired reason was counting when the rule was still an eight-arm union. And the index that came with the registration, on the graph, the site, the use site and the position, is those four columns in that order, which is graphitron_arg_mapping_pair''s primary key: the table underneath was better keyed than the copy of it. A registration that buys neither an evaluation nor an index is a refresh paid every capture for nothing.';
 COMMENT ON COLUMN intent_argmapping_pair.graph_name IS 'the owning graph''s partition, carried from graphitron_arg_mapping_pair';
@@ -6801,6 +6810,8 @@ COMMENT ON COLUMN intent_argmapping_pair.step_position IS 'the owning step''s 0-
 COMMENT ON COLUMN intent_argmapping_pair.position IS '0-based position of the pair within its own argMapping list, carried unchanged; part of the grain, so an author''s duplicate parameter survives here as it does in the captured relation';
 COMMENT ON COLUMN intent_argmapping_pair.param_name IS 'the left side of the pair: the Java or routine parameter the path binds to';
 COMMENT ON COLUMN intent_argmapping_pair.argument_path IS 'the right side as written, spelled exactly as capture recorded it, so a pair reaches its own segment decomposition by joining graphitron_argument_path_segment on the coordinate and this column';
+COMMENT ON COLUMN intent_argmapping_pair.head_segment IS 'the slot the right side enters at, carried from the captured pair. A reader wanting the head reads this column rather than joining the segment child at position zero, which is what several of them used to do independently. Says nothing about whether the head names a slot that exists';
+COMMENT ON COLUMN intent_argmapping_pair.head_kind IS 'whether the head names an argument or an input field, carried from the captured pair, where it follows from the site and a check constraint keeps the two in step';
 COMMENT ON COLUMN intent_argmapping_pair.source_name IS 'the SDL file the owning directive application was captured from, read from the owning application rather than from the field: a rejection about a pair has to point at the argMapping the author wrote, and a repeatable directive''s second application sits on a line the field''s own position does not name. NULL where the application carries no position, on graphitron_routine.source_name''s terms. The pair itself carries no finer position, an owning application being recorded and not the list entry, so two pairs of one application share a location and the message tells them apart by naming the entry';
 COMMENT ON COLUMN intent_argmapping_pair.source_line IS 'source line of the owning directive application, 1-based per the graphql-java convention; NULL exactly where source_name is';
 COMMENT ON COLUMN intent_argmapping_pair.source_column IS 'source column of the owning directive application, 1-based per the graphql-java convention; NULL exactly where source_name is';
@@ -6858,34 +6869,22 @@ CREATE VIEW intent_argmapping_segment_binding
 WITH headed (graph_name, site, use_site, type_name, field_name, position, argument_path,
              head, head_kind) AS (
   SELECT ap.graph_name, ap.site, ap.use_site, ap.type_name, ap.field_name, ap.position,
-         ap.argument_path, h.segment_name, 'ARGUMENT'
+         ap.argument_path, ap.head_segment, ap.head_kind
     FROM intent_argmapping_pair ap
-    JOIN graphitron_argument_path_segment h
-      ON h.graph_name = ap.graph_name AND h.type_name = ap.type_name
-     AND h.field_name = ap.field_name AND h.argument_path = ap.argument_path
-     AND h.position = 0
-    JOIN graphql_argument a
-      ON a.graph_name = ap.graph_name AND a.type_name = ap.type_name
-     AND a.field_name = ap.field_name AND a.argument_name = h.segment_name
    WHERE ap.site IN ('ROUTINE', 'SERVICE', 'FIELD_CONDITION')
+     AND EXISTS (SELECT 1 FROM graphql_argument a
+                  WHERE a.graph_name = ap.graph_name AND a.type_name = ap.type_name
+                    AND a.field_name = ap.field_name AND a.argument_name = ap.head_segment)
    UNION ALL
   SELECT ap.graph_name, ap.site, ap.use_site, ap.type_name, ap.field_name, ap.position,
-         ap.argument_path, h.segment_name, 'ARGUMENT'
+         ap.argument_path, ap.head_segment, ap.head_kind
     FROM intent_argmapping_pair ap
-    JOIN graphitron_argument_path_segment h
-      ON h.graph_name = ap.graph_name AND h.type_name = ap.type_name
-     AND h.field_name = ap.field_name AND h.argument_path = ap.argument_path
-     AND h.position = 0
-   WHERE ap.site = 'ARGUMENT_CONDITION' AND h.segment_name = ap.argument_name
+   WHERE ap.site = 'ARGUMENT_CONDITION' AND ap.head_segment = ap.argument_name
    UNION ALL
   SELECT ap.graph_name, ap.site, ap.use_site, ap.type_name, ap.field_name, ap.position,
-         ap.argument_path, h.segment_name, 'INPUT_FIELD'
+         ap.argument_path, ap.head_segment, ap.head_kind
     FROM intent_argmapping_pair ap
-    JOIN graphitron_argument_path_segment h
-      ON h.graph_name = ap.graph_name AND h.type_name = ap.type_name
-     AND h.field_name = ap.field_name AND h.argument_path = ap.argument_path
-     AND h.position = 0
-   WHERE ap.site = 'INPUT_FIELD_CONDITION' AND h.segment_name = ap.field_name
+   WHERE ap.site = 'INPUT_FIELD_CONDITION' AND ap.head_segment = ap.field_name
 )
 SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
        0, h.head, 'ARGUMENT', h.type_name, h.field_name, h.head

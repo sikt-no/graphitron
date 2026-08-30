@@ -2113,6 +2113,52 @@ argMapping, the qualifier is doing no work and invites exactly the layered readi
 something assembles pairs into a mapping. Renaming is not the substance here and should not be taken
 for it, but it should not survive the change either.
 
+### Slice 17: the head becomes a captured column, and a third of the schema's read cost goes with it
+
+Slice 16 named the fact and this slice writes it. `graphitron_arg_mapping_pair` gains two columns,
+`head_segment` and `head_kind`, and the capture writer fills them where it already had both: the head
+is the first segment of a path it has just split, and the kind follows from the site alone. A check
+constraint ties the kind to the site so the two cannot drift, and neither column claims the head
+resolves.
+
+**The rule that was re-deriving them now reads them.** `intent_argmapping_segment_binding`'s `headed`
+common table expression was three arms, each joining the pair relation to the segment child at
+position zero and one of them to `graphql_argument` besides. It is three arms over the pair alone
+now. Two of them are column comparisons with no join at all, an argument-level condition's head
+having to equal its own argument name and an input-field-level condition's its own field name, and
+only the first still joins, because what it checks is that the head names a declared argument.
+
+**The separation the specification asks for is what made this possible.** The manual's rules for the
+right-hand side are a candidate set, a selection over it and a refusal when the selection misses.
+The old rule fused all three: the head was resolved and validated in one union, so the resolution
+could not be stored because the validation needed relations the resolution did not. Splitting them
+puts the selection where it belongs, on the pair, as spelled, and leaves the refusal to the rule that
+already performs it. Nothing about which paths are legal changed.
+
+**Measured on the same arm, against the same consumer capture, with the register untouched:**
+
+[cols="4,2,2"]
+|===
+| | before | after
+
+| `intent_node_id_decode` | 159.3 s | 83.8 s
+| the whole 112-relation workload | 270.8 s | 171.1 s
+| refresh pass | 42.4 s | 40.7 s
+|===
+
+**And the instantiation counts say the cut is structural rather than lucky.** Inside one plan of
+`intent_node_id_decode`, the authored path's segment list falls from 106 instantiations to 34, and
+the plan's total relation references from 818 to 674. The pair table barely moves, 84 to 80, which is
+the expected shape: the head came off the pair, so the pair is still read, and what stopped being
+read a hundred times is the child that had to be walked to position zero to find it.
+
+**What this does not do, stated so the next slice starts honestly.** The decode relation still costs
+83.8 seconds and is still the dearest thing in the schema by a factor of three. The correlated
+anti-join is untouched, so its rule still runs once per driving row; the remaining 34 segment reads
+are the trailing-segment count and the alignment against the occurrence path, which are the two facts
+slice 16 named and this slice did not write. A third of the schema's read cost came off one column
+pair that capture already had in hand.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and

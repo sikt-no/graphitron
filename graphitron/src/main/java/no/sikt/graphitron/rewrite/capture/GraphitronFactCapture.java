@@ -1187,6 +1187,14 @@ final class GraphitronFactCapture {
         row.setPosition(position);
         row.setParamName(paramName);
         row.setArgumentPath(argumentPath);
+        // The head and its kind are what the path enters at, and both are known here: the head is
+        // the first segment of a path this writer has already split, and the kind follows from the
+        // site alone. Writing them is what lets a reader ask which slot a pair enters at without
+        // joining the segment child at position zero, which several of them were each doing on
+        // their own. Neither column asserts the head resolves; that is the refusal relation's.
+        int dot = argumentPath.indexOf('.');
+        row.setHeadSegment(dot < 0 ? argumentPath : argumentPath.substring(0, dot));
+        row.setHeadKind("INPUT_FIELD_CONDITION".equals(site) ? "INPUT_FIELD" : "ARGUMENT");
         position(directive, row::setSourceName, row::setSourceLine, row::setSourceColumn);
         sink.add(row);
     }
