@@ -1,13 +1,13 @@
 ---
 id: R878
 title: "The node id decode hop column drops the foreign key it walked, so nine distinct hops become nine identical rows and arity states a false number"
-status: Spec
+status: Ready
 bucket: bug
 priority: 1
 theme: codegen-correctness
 depends-on: []
 created: 2026-08-30
-last-updated: 2026-08-29
+last-updated: 2026-08-30
 ---
 
 # The node id decode hop column drops the foreign key it walked, so nine distinct hops become nine identical rows and arity states a false number
