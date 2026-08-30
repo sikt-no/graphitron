@@ -4504,6 +4504,7 @@ CREATE TABLE intent_field_column_scope (
   table_source_name VARCHAR NOT NULL,
   table_schema      VARCHAR NOT NULL,
   table_name        VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
 
@@ -5551,6 +5552,7 @@ CREATE TABLE intent_field_scope_table (
   table_source_name VARCHAR NOT NULL,
   table_schema      VARCHAR NOT NULL,
   table_name        VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, table_source_name, table_schema, table_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
 
@@ -5645,14 +5647,16 @@ COMMENT ON COLUMN intent_argument_scope_table_live.table_schema IS 'the table_sc
 COMMENT ON COLUMN intent_argument_scope_table_live.table_name IS 'the table_name of a row of this rule, materialized into intent_argument_scope_table.table_name, whose comment carries what the value means';
 
 CREATE TABLE intent_argument_scope_table (
-  graph_name        VARCHAR,
-  type_name         VARCHAR,
-  field_name        VARCHAR,
-  argument_name     VARCHAR,
-  basis             VARCHAR,
-  table_source_name VARCHAR,
-  table_schema      VARCHAR,
-  table_name        VARCHAR,
+  graph_name        VARCHAR NOT NULL,
+  type_name         VARCHAR NOT NULL,
+  field_name        VARCHAR NOT NULL,
+  argument_name     VARCHAR NOT NULL,
+  basis             VARCHAR NOT NULL,
+  table_source_name VARCHAR NOT NULL,
+  table_schema      VARCHAR NOT NULL,
+  table_name        VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, argument_name,
+               table_source_name, table_schema, table_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
 COMMENT ON TABLE intent_argument_scope_table IS 'Which table an argument''s column-shaped content binds against: the table a predicate built from this argument correlates on, and the table a @nodeId or @reference path departs from. The field''s scope fanned out over the field''s arguments and nothing else: the rule is intent_field_scope_table''s, which is where the two ranked rungs, the disjoint participant arm and every demand any of them makes are documented, and this relation adds only the argument key. The argument and the table together are the grain, because the relation it fans out is keyed that way: a field whose named type is a multi-table polymorphic container is rooted in one table per branch, so each of its arguments binds against each of those tables and each pair is a predicate the generator emits. One row per argument is therefore the ordinary case and not the rule, and a reader that assumed it would silently take one branch of a coordinate that has several. It exists as its own relation because that key is what four readers join on and because a predicate is emitted per argument, so the fan-out is the shape every consumer here wants; it does not exist because an argument''s scope is a different question from its field''s. It was once spelled the other way round, the whole rule stated here and evaluated once per argument, and the fold over the condition membership is what found that: a @condition on a field with no arguments has a table to filter and no argument to carry it, so the rule had to be stated at the grain it was always about before anything could read it there. Nothing here says the argument''s content is column-shaped: this relation answers where it would bind if it is, and which arguments carry such content is each consumer''s own question. Materialized: this relation is a table refilled from intent_argument_scope_table_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in intent_field_scope_table; these rows are the fan-out of what it computed for each captured graph.';
@@ -5667,7 +5671,7 @@ COMMENT ON COLUMN intent_argument_scope_table.table_name IS 'the scope table''s 
 
 CREATE INDEX ix_argument_scope_table_coordinate ON intent_argument_scope_table
   (graph_name, type_name, field_name, argument_name);
-COMMENT ON INDEX ix_argument_scope_table_coordinate IS 'Serves the argument coordinate its three readers all join on: intent_node_id_instruction in three arms, intent_node_id_decode_endpoint, and intent_argument_reference_step_target, which adds the resolved table''s own three columns after these four. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the five indexes this file declares against none of them: intent_node_id_decode_endpoint costs 5439 scans without them and 3120 with them, intent_node_id_decode_hop 5824 against 3293, intent_argument_reference_step_target 114 against 8. The last of those three is this index alone and the first two are shared with the spelling index above, both readers reaching a spelling as well as an argument coordinate. Not UNIQUE and not the grain: basis discriminates two rows this key cannot tell apart, an argument whose scope is its own field''s binding and one whose scope a reference path fixed.';
+COMMENT ON INDEX ix_argument_scope_table_coordinate IS 'Serves the argument coordinate its three readers all join on: intent_node_id_instruction in three arms, intent_node_id_decode_endpoint, and intent_argument_reference_step_target, which adds the resolved table''s own three columns after these four. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the five indexes this file declares against none of them: intent_node_id_decode_endpoint costs 5439 scans without them and 3120 with them, intent_node_id_decode_hop 5824 against 3293, intent_argument_reference_step_target 114 against 8. The last of those three is this index alone and the first two are shared with the spelling index above, both readers reaching a spelling as well as an argument coordinate. Not UNIQUE, because it is a prefix of the grain rather than the whole of it: a coordinate carries one row per table its field''s statement is rooted in, one where a single table answers and one per branch under a polymorphic root. What separates those rows is the table, not basis, which is a function of the coordinate and the table both here and on the relation this fans out; an earlier version of this note said basis was the discriminator and named a pair of values that belong to intent_argument_column_scope''s vocabulary rather than to this one.';
 
 CREATE VIEW intent_argument_reference_step_target
   (graph_name, type_name, field_name, argument_name, ordinal, position, via, key_matched_by,
@@ -5742,6 +5746,8 @@ CREATE TABLE intent_argument_column_scope (
   table_source_name VARCHAR NOT NULL,
   table_schema      VARCHAR NOT NULL,
   table_name        VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, argument_name,
+               table_source_name, table_schema, table_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
 

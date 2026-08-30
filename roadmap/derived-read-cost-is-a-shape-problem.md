@@ -69,6 +69,10 @@ census relations into one, hit exactly this wall because a key column cannot be 
 a spelled not-applicable bound to the discriminator by check constraints in both directions. That
 relation is keyed today and states more about itself than the three separate ones could.
 
+**The coincidence has since been broken on purpose, which is the point of having recorded it.** Five
+of the twenty carry a primary key as of slice 14, so the two sets no longer coincide and the sentence
+above describes where this item started rather than the schema today.
+
 **Which also says what the last gatherer should be materializing, and it is not what it materializes
 now.** If that gatherer's job is to build the tables the views and queries above it stand on, then
 what it builds should be grain tables, keyed on what a row is about. Twenty keyless copies of view
@@ -1548,6 +1552,85 @@ reader above inherits a wider relation. The first is right if a consumer only ev
 to decode; the second is right if any consumer needs to know which branch of a polymorphic filter it
 is on. Neither is decidable from the read-cost evidence this item carries, and guessing would
 either delete facts or widen four relations on a hunch.
+
+### Slice 14: four more grains, and one key measured and refused
+
+Slice 11 keyed the smallest of the twenty and slice 12 showed eighteen of them have a key available.
+This slice takes the next tranche, the five relations that answer where a coordinate's SQL is rooted,
+and it is worth reporting as two results rather than one, because four of them shipped and the fifth
+was measured and held back.
+
+**The four keys, each derived from its own rule rather than from the data.** The measurement against
+the kept consumer capture agrees in every case, and is the check rather than the argument.
+
+- `intent_field_scope_table`, keyed on the field coordinate and the table. Each of the three ranked
+  rungs yields at most one row per coordinate and the ranks are distinct, so the ranked half is
+  unique on the coordinate alone; the participant arm is `DISTINCT` on the table and its precondition
+  is that the named type binds no table, which is what the upper rung requires it to have. The
+  relation's own column comment already said this key was the grain. `basis` is a function of it: no
+  coordinate in 2618 rows carries two of them.
+- `intent_argument_scope_table`, keyed on the argument coordinate and the table. The rule is
+  `graphql_argument` joined to the relation above on the field coordinate, so its key is that
+  relation's key with the argument added.
+- `intent_field_column_scope`, keyed on the field coordinate alone. Three arms, pairwise disjoint by
+  their own guards: the path arm requires reference steps and the other two exclude them, and those
+  two are split on whether the named type is an object or a leaf. Each arm yields one row per
+  coordinate. The one-row-per-site property this gives was already stated in prose on a sibling
+  relation's comment as something readers stand on; it is a constraint now.
+- `intent_argument_column_scope`, keyed on the argument coordinate and the table, the two arms
+  disjoint on the same reference-step guard.
+
+**One of the four also fixes a declaration defect.** `intent_argument_scope_table` declared all eight
+of its columns nullable while its rule cannot produce a null in any of them, and the capture holds
+none. They are `NOT NULL` now.
+
+**Attribution, by five arms differing in one key each, because slice 11's lesson was that a key is a
+statement about the model and not automatically an improvement to a plan.** Three of the four move
+neither gate: `intent_field_scope_table`, `intent_field_column_scope` and `intent_argument_column_scope`
+each leave `DerivedReadCostTest` and `RefreshPlanStatisticsTest` exactly as they were. They are free,
+which is the expected result and the reason to check rather than assume.
+
+**The fourth closes three pinned regressions, and closes them the right way round.** All three
+readers charged to `intent_argument_scope_table` get cheaper on the registered side while the
+unregistered baseline does not move, in scans: the argument reference walk 187 to 9 against a
+baseline of 9, the decode hop 1294 to 1116 against 1122, that hop's column child 1387 to 1209 against
+1215. Two of the three now cost less registered than unregistered and the third ties. Nothing was
+restructured and no index was added beside the target; the coordinate index it already carried is a
+prefix of the new key and stays. **So the registration was never what made those readers dearer than
+the rule they replaced. The target having no grain to probe on was.** That is this item's thesis
+arriving as three deleted rows in a ratchet rather than as an argument.
+
+**The fifth key was measured, works, and is not being taken.** `intent_resolved_type_binding` is
+unique on the graph, the type and the table by construction, its rule being a `UNION` over exactly
+those columns with `candidates` a window count over the result. Declaring it empties three more rows
+from the read-cost gate and two from the refresh-statistics gate. It is refused because of why those
+rows would leave. The registered figures barely move (3451 against 3451 on the condition parameter
+decode, 795 to 735 on the field reference walk, 2572 to 2512 on the field column scope rule) while
+the unregistered baselines collapse: 2923 to 4059, 607 to **32997**, 2384 to **34774**. The pairs
+would leave without any reader getting cheaper, which is the gate getting weaker rather than the
+schema getting better, and the same gate's own note warns about exactly that on its other axis.
+
+**The mechanism is the wide unique index and not the primary key, which was worth separating.** An
+arm declaring the identical five columns as a `UNIQUE` constraint instead reproduces every figure
+above to the scan. So this is not H2 reorganising a table's storage around its primary key; it is the
+planner given a new index it can choose, inside an inlined rule, choosing fifty times worse. That
+lands on the same axis as this item's expansion measurements: the statements where it happens are the
+unregistered arms, which is where the inlined statement is largest, and a planner picking badly in a
+statement it can barely hold is the failure mode those numbers predict. Naming it is as far as the
+read-cost evidence here reaches, and taking the key belongs after somebody has answered why, not
+before.
+
+**One stale claim corrected on the way.** The comment on `ix_argument_scope_table_coordinate` said
+the index is not unique because `basis` discriminates two rows the coordinate cannot tell apart, and
+named a pair of values that belong to `intent_argument_column_scope`'s vocabulary rather than to that
+relation's. What the coordinate cannot tell apart is two tables, under a polymorphic root; `basis` is
+a function of the coordinate and the table both there and on the relation it fans out from.
+
+**Where the twenty stand after this slice.** Five keyed, of which four were free and one closed three
+regressions; fifteen unkeyed, of which thirteen have a key available on slice 12's measurement and
+two hold duplicate rows and are a filed defect rather than a grain question. The claim that a
+registration is what a relation with no grain gets given has now been tested on a quarter of them and
+has not needed an exception.
 
 ### Deferred: the registration precondition
 

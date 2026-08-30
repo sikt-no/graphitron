@@ -433,6 +433,31 @@ class DerivedReadCostTest {
      * registration deletes rows here: a pair that leaves because its reader got cheaper and a pair
      * that leaves because its reader stopped reaching are different facts, and only the first is
      * about the registration it was charged to.
+     *
+     * <p>A third trio left a third way, and it is the one this set was built to see. The three
+     * readers charged to {@code intent_argument_scope_table} left when that target was given a
+     * primary key, which is the whole of the change: no reader was restructured, no index was added
+     * beside the target, and the coordinate index it already carried is a prefix of the key rather
+     * than a replacement for it. Registered against unregistered, in scans: the argument reference
+     * walk 187 against 9 before and 9 against 9 after, the decode hop 1294 against 1122 before and
+     * 1116 after, that hop's column child 1387 against 1215 before and 1209 after. Two of the three
+     * now cost less registered than unregistered and the third ties, with the unregistered side
+     * unmoved in all three. So the reader got cheaper, in the first of the two senses above, and what
+     * made it dearer than the rule it replaced was the target having no grain for a probe to seek on.
+     * The general form is worth carrying to the next pair that appears here: a registered target
+     * that is dearer than its own rule is a question about the target's key before it is a question
+     * about the registration, and this file's older note about indexes says the weaker half of that.
+     *
+     * <p>One key was measured and deliberately not taken, because it would have emptied three more
+     * rows here for the wrong reason. A key on {@code intent_resolved_type_binding} leaves all three
+     * of its readers' registered figures where they are or slightly below (3451 against 3451 on the
+     * condition parameter decode, 735 from 795 on the field reference walk, 2512 from 2572 on the
+     * field column scope rule) while the unregistered baselines collapse: 2923 to 4059, 607 to 32997,
+     * 2384 to 34774. The pairs would leave this set without any reader getting cheaper, which is this
+     * gate quietly getting weaker in exactly the way {@link #theCellsThatCouldNotBeComparedAreExactlyTheOnesRecorded}
+     * guards against on the other axis. A wide unique index changing an inlined rule's plan by fifty
+     * times is its own question and is not answered here; until it is, the three rows stay and state
+     * something true.
      */
     private static final Set<String> KNOWN_NON_MONOTONIC = Set.of(
         // intent_argmapping_pair|intent_argmapping_bound_parameter_type stood here on the pruning an
@@ -530,28 +555,21 @@ class DerivedReadCostTest {
         // the gap is the walk's namings against the registered target, which that arm never
         // touched, so the pair survives on the mechanism it was always charged to rather than on
         // a coincidence of totals.
-        "intent_field_reference_step_hop|intent_field_reference_step_target",
-        "intent_field_reference_step_hop|intent_field_column_scope_live",
-        // The same arm reaching the argument-site walk, where it is the argument scope table's
-        // registration that pays. Three cells, and here the clock agrees with the counter rather
-        // than contradicting it: the walk 187 scans and 29 milliseconds registered against 9 and
-        // 16, the decode hop 1294 and 34 against 1122 and 26, its column child 1387 and 35
-        // against 1215 and 25. Absolute differences of milliseconds on a twelve-unit fixture, and
-        // the registration they are charged to is the one its own registry reason prices at
-        // seventy milliseconds per naming across five namings, so the trade stands; what moved is
-        // the plan the argument hop's fourth arm produces, not what any relation computes.
         //
-        // Worth reading with the fixture in hand before treating any of these five as work. This
+        // Worth reading with the fixture in hand before treating either of these two as work. This
         // gate's store is captured with no classpath census, so no condition method's signature
-        // resolves in it and the arm these five cells appeared with holds no rows at any unit
+        // resolves in it and the arm these two cells appeared with holds no rows at any unit
         // count. What they price is therefore a plan and not a population, which is the state the
         // input-surface note above records answering the other way: there the fixture could hold
         // the rows and grew to, and three cells went monotonic. Populating this arm needs the
         // census on this fixture's capture, which changes what every jvm-reading relation in the
         // domain measures, so it is a question about this gate rather than about this arm.
-        "intent_argument_scope_table|intent_argument_reference_step_target",
-        "intent_argument_scope_table|intent_node_id_decode_hop",
-        "intent_argument_scope_table|intent_node_id_decode_hop_column_live");
+        //
+        // Three argument-site cells stood beside these two, charged to intent_argument_scope_table,
+        // and left when that target was keyed. The class note above carries their figures and what
+        // their leaving means for the next pair that appears here.
+        "intent_field_reference_step_hop|intent_field_reference_step_target",
+        "intent_field_reference_step_hop|intent_field_column_scope_live");
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather
