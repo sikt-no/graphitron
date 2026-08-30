@@ -880,6 +880,40 @@ COMMENT ON COLUMN graphql_directive_site.source_column IS 'source column of the 
 
 -- The dotted paths this family stores as written, decomposed once each. Every relation below
 -- whose right-hand side is an argument path shares this one decode, so it leads the family.
+CREATE TABLE graphitron_argmapping_candidate (
+  graph_name    VARCHAR NOT NULL,
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  argument_name VARCHAR NOT NULL,
+  path          VARCHAR NOT NULL,
+  parent_path   VARCHAR,
+  element_name  VARCHAR NOT NULL,
+  named_type    VARCHAR NOT NULL,
+  depth         INT     NOT NULL,
+  closes_cycle  BOOLEAN NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, argument_name, path),
+  FOREIGN KEY (graph_name, type_name, field_name, argument_name)
+    REFERENCES graphql_argument_coordinate (graph_name, type_name, field_name, argument_name),
+  FOREIGN KEY (graph_name, type_name, field_name, argument_name, parent_path)
+    REFERENCES graphitron_argmapping_candidate
+      (graph_name, type_name, field_name, argument_name, path),
+  CHECK ((parent_path IS NULL) = (depth = 0))
+);
+CREATE INDEX graphitron_argmapping_candidate_parent_ix
+  ON graphitron_argmapping_candidate
+     (graph_name, type_name, field_name, argument_name, parent_path);
+COMMENT ON TABLE graphitron_argmapping_candidate IS 'What an argMapping right-hand side may name, one row per candidate, arranged as a tree. The right side of an argMapping selects from a set of candidates and the specification states the rules that set follows: a head naming a slot in scope at the site, each later segment naming something the value at that depth opens into, and a build error where a segment names neither. This relation is that set, stated once, so a reader asks whether a written path exists rather than re-deriving what could have been written. A candidate is rooted at a field, so the field coordinate leads the key; the argument is the next key column rather than the head of a string, because a field may declare several and each is its own subtree; and the path below the argument completes it, empty at the root. Both the parent and this candidate''s own element name are stored, so the path column is identity and nothing else and no reader parses it, on intent_input_occurrence_path_step''s rule for the same reason. What opens below a candidate follows from its type rather than from a rule the reader applies: an input object opens into its fields and everything else opens into nothing, which is what makes one relation cover a descent whose opening rule changes by level. A root exists for every argument, scalar or input object alike, because a bare name with no dots is a legal selection and is what an entry with no argMapping binds to implicitly; the neighbouring occurrence-path relation admits only the input-object-typed arguments and is therefore a different population, which is why the argMapping rules could not join to it and walked positions instead. Written by a capture-cadence derivation writer rather than stated as a view, on intent_input_occurrence_path''s terms: the descent is recursive and a view has no safe recursive form over it. Cyclic input nesting is recorded rather than avoided: the element that closes a cycle is nameable, so it gets a row like any other and carries a marker saying what it is, and nothing below it is written. That is what keeps the tree finite without making absence carry a message, which is this schema''s standing rule: a reader that finds no children under a candidate can tell a leaf from a cycle by reading a column instead of guessing, and the refusal an author needs to see is a query over these rows rather than a special case somebody has to remember. Two populations are deliberately absent so far and neither is an oversight: the key columns an ID carrying @nodeId opens into, which wait on the @node claim being captured effectively rather than defaulted per read, and the input-field-level condition''s own site, which needs no new shape because the input field it sits on is already a candidate here.';
+COMMENT ON COLUMN graphitron_argmapping_candidate.graph_name IS 'the owning graph''s partition, anchored through the argument coordinate; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_argmapping_candidate.type_name IS 'the type owning the field this candidate is rooted at';
+COMMENT ON COLUMN graphitron_argmapping_candidate.field_name IS 'the field this candidate is rooted at; a candidate means nothing apart from the field whose argMapping could name it, which is why the field coordinate leads the key rather than sitting beside it';
+COMMENT ON COLUMN graphitron_argmapping_candidate.argument_name IS 'the argument this candidate descends from, a key column of its own rather than the first segment of the path: a field may declare several arguments and each is a separate subtree, and splitting it out is what lets a scalar argument have a root row like any other';
+COMMENT ON COLUMN graphitron_argmapping_candidate.path IS 'the dot-path below the argument, empty at the root, spelled exactly as an author writes it after the first dot. Identity and nothing else: the parent and the element name beside it answer every question a reader could otherwise have parsed this for. An argMapping''s own right side splits along this relation''s key, its head being the argument and its remainder this column, so a written selection either matches a row here or does not';
+COMMENT ON COLUMN graphitron_argmapping_candidate.parent_path IS 'the path one segment shorter, NULL at the root; a foreign key back to this relation, which is what makes the candidates a tree rather than a list. Completing a partially written path is a probe on this column, and how many segments remain below a candidate is a question about its descendants rather than a count over a positional decomposition';
+COMMENT ON COLUMN graphitron_argmapping_candidate.element_name IS 'what an author writes at this step: the argument name at a root and the input field''s name below one. Stored rather than recovered from the path because no reader may split a string, the rule graphitron_argument_path_segment''s writer already states from the other side';
+COMMENT ON COLUMN graphitron_argmapping_candidate.named_type IS 'the type of the value at this candidate, unwrapped of list and non-null. The whole of what says whether anything opens below: a candidate whose type is an input object has children and every other candidate is a leaf, so a reader needs no separate kind column and no rule of its own';
+COMMENT ON COLUMN graphitron_argmapping_candidate.depth IS 'how many segments below the argument this candidate sits, zero at the root; carried because the writer expands one depth at a time and because a reader asking for the roots of a subtree should not have to test a column for NULL';
+COMMENT ON COLUMN graphitron_argmapping_candidate.closes_cycle IS 'whether this candidate''s type already stands above it on its own ancestry, which is what makes it the element that closes a cycle. Such a candidate is nameable and so has a row, and nothing below it does, so this column is the difference between a leaf and a stopping point and a reader never has to infer one from the absence of children. Cyclic input nesting is not supported yet and the refusal an author sees is stated over these rows: a true here is where the candidate set stops, and saying so is what keeps the deferral visible instead of silent';
+
 CREATE TABLE graphitron_argument_path_segment (
   graph_name    VARCHAR NOT NULL,
   type_name     VARCHAR NOT NULL,

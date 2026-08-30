@@ -555,6 +555,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_type_exemption", Arm.DERIVED);
         registrations.put("intent_resolved_field_demand", Arm.DERIVED);
         registrations.put("intent_resolved_type_demand", Arm.DERIVED);
+        registrations.put("graphitron_argmapping_candidate", Arm.DERIVED);
         registrations.put("intent_input_occurrence_path", Arm.DERIVED);
         registrations.put("intent_input_occurrence_path_step", Arm.DERIVED);
         registrations.put("intent_input_occurrence_descent_order", Arm.DERIVED);

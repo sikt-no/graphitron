@@ -2282,6 +2282,45 @@ candidate relation whose key-column arm reads only the SDL claim would be very n
 argument and input-field kinds come first and the key-column kind waits on capture writing `@node`'s
 effective claim, which is the same fix this item already owes one directive over.
 
+### Slice 19: the candidate relation exists
+
+`graphitron_argmapping_candidate` holds what an argMapping right-hand side may name, one row per
+candidate, keyed by the field coordinate, the argument and the path below it, with the parent path a
+foreign key back to itself. Each row carries its own element name and its type. A capture-cadence
+writer fills it beside the occurrence-path writer it is modelled on, for that relation's reason: the
+descent is recursive and a view has no safe recursive form over it.
+
+**Seeded from every argument, which is the whole difference from the relation beside it.** The test
+that would fail if this were quietly re-derived from `intent_input_occurrence_path` is the first one:
+a field declaring an input-object argument and a scalar one yields two roots here and one there. A
+bare name with no dots is a legal right-hand side and is what an entry with no `argMapping` binds to
+implicitly, so the scalar argument is a candidate; the neighbour admits only arguments that descend,
+and that population mismatch is why the argMapping rules could not join to it.
+
+**The cycle is a row rather than an absence.** Cyclic input nesting is legal GraphQL and does reach
+capture, which runs before anything classifies, so an assumption that the classifier has already
+refused such a schema is false and two existing fixtures proved it within minutes of being written.
+The element that closes a cycle is nameable, so it gets a row and carries a marker saying what it
+is, and nothing below it is written. Marking it rather than merely stopping is the point: a candidate
+with no children is otherwise ambiguous between a leaf and a stopping point, and a relation whose
+absences carry meaning is the shape this item exists to remove. The marker also pays for itself
+twice, because the next pass's guard reads the column instead of walking the ancestry again, and
+because the refusal an author needs to see for the unsupported case is now a query over these rows
+rather than a special case somebody has to remember.
+
+**One price this shape pays, recorded because it is the only one.** A candidate carries its parent
+and not its ancestors, so the writer recovers the ancestry with one join per level to decide the
+marker. That is bounded by the same pass bound as the expansion, and it buys a single relation where
+the neighbour needs a path table and a step child to get the same test cheaply.
+
+**Nothing reads it yet.** The rewiring is the next slice: the remaining segment reads and the
+alignment by double negation in `intent_argmapping_segment_binding` and
+`intent_argmapping_binding_leaf` become joins to this tree, and `graphitron_argument_path_segment`
+retires when nothing names it. Two populations stay out until their own dependencies land, and
+neither is an oversight: the key columns an `@nodeId` opens into wait on `@node`'s effective claim
+being captured rather than defaulted per read, and nothing about the input-field-level condition's
+own site is missing, because the input field it sits on is already a candidate here.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
