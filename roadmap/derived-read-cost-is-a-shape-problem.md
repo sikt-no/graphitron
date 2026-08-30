@@ -2244,11 +2244,14 @@ is the whole of what the occurrence path relation is missing: its 406 roots are 
 named type is an input object, and the 122 it omits are the scalars, which open into nothing and are
 still perfectly good candidates because a bare name with no dots is a legal selection.
 
-**One root does not fit that description and is an open question rather than an oversight.** An
-input-field-level `@condition` sits on an input field, and the specification says its head may name
-that field rather than an argument of the enclosing field. Whether such a root is spelled as a
-degenerate argument, given its own kind, or keyed differently is for the next slice; the shape above
-is stated for the argument case, which is every other site.
+**The input-field-level site looked like an exception to this and is not.** Such a `@condition` sits
+on an input field rather than on the field, and the specification lets its head name that input field
+itself. The coordinates and the key do not change for it: the input field it sits on is already a
+candidate in this tree, reached from the enclosing field through its argument, so the site has a
+candidate key like any other position and its head names a candidate under the same four leading
+columns. What varies between sites is which node in the tree the directive stands at, and that is a
+fact about the site, not a second shape for the candidate. No degenerate root, no extra kind, no
+alternative key.
 
 **Which makes the right-hand side a foreign key in the literal sense, and slice 17 already cut it
 at the join.** The head column that slice added to the pair is the argument half of this key, and
