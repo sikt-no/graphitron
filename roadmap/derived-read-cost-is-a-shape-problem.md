@@ -2238,8 +2238,14 @@ the worked example decomposes as the field coordinate, `input`, and then `nodeId
 `nodeId.COLUMN_A` beneath it. The parent is the same coordinate and argument with the path one
 segment shorter, null where the path is empty.
 
-Each row also carries the segment name that selects it and its type, the type being what says
-whether anything opens below. **A root exists for every argument, scalar or input type alike**, which
+Each row also carries its own element name, the thing an author writes at this step, and its type,
+the type being what says whether anything opens below. **The name is stored beside the parent and not
+left to be recovered from the key**, on the rule this schema already holds elsewhere: an occurrence
+path is its own identity and its step child carries the same data relationally so that no consumer
+parses the serialized key, and the writer that splits an argMapping path records the split because no
+reader may split a string. With the parent and the element name both present, the path column is
+identity and nothing else: every question about a candidate is answered by a column or by following
+the parent, and no rule performs string surgery to ask it. **A root exists for every argument, scalar or input type alike**, which
 is the whole of what the occurrence path relation is missing: its 406 roots are the arguments whose
 named type is an input object, and the 122 it omits are the scalars, which open into nothing and are
 still perfectly good candidates because a bare name with no dots is a legal selection.
