@@ -1,7 +1,7 @@
 ---
 id: R878
 title: "The node id decode hop column drops the foreign key it walked, so nine distinct hops become nine identical rows and arity states a false number"
-status: In Review
+status: Ready
 bucket: bug
 priority: 1
 theme: codegen-correctness
@@ -278,3 +278,73 @@ deciding what an argument-site `@reference` means when the scope resolves severa
 question about the reference walk rather than about this family's grain, and it is reachable only
 through a shape no fixture in the tree has. File it as its own Backlog item at pickup rather than
 folding it in here.
+
+## Reviewer findings
+
+### Round 1 (2026-08-30, In Review -> Done, reviewer session 014r2o88dHiYCSdbDmtftxY4)
+
+Verdict: withhold, on one narrow finding against question three. Everything else this gate asks is
+answered, and answered well: the rule change is correct, it is the change the spec approved, the two
+deviations from the spec are both improvements and both argued in the open, and question four has a
+better answer than the spec asked for.
+
+What I verified. The full `mvn install -Plocal-db` is green on the pushed tree, independently of the
+implementer's run. Every predicate the correctness rests on is in place and reads correctly: the
+hop's `last_position` window partitions by the branch, the recursive `lifted` term carries the
+branch forward and joins only within it, the `LEFT JOIN lifted` matches the endpoint's own
+departure, and both windows in `intent_node_id_decode` partition by it. The three SQL readers of
+`intent_node_id_decode_column` and the two of `intent_node_id_decode_hop_column` are the only ones
+in the file and all five were updated; no Java main source reads either, so the widened key reaches
+no emitted output, as the item claims. The deleted index's name survives nowhere but in this item's
+own prose.
+
+Question four I checked by breaking it rather than by reading it. With the branch predicate removed
+from the recursive term and the lift join, `NodeIdDecodeBranchTest` fails four of its six cases:
+`arity` reads 6 where the node key is two columns wide, the decode column relation holds twelve rows
+beyond its own distinct content, and the chained fixture has `klasserolle` lifting `emne_code` and
+`emnerolle` lifting `klasse_code`, which is the cross-branch route the spec predicted from the shape
+of the SQL and could not then demonstrate. That hazard is now a fact rather than an argument, and it
+is the strongest thing in this change: a wrong row no collapse above could have recovered from,
+which is what retires `DISTINCT` on correctness rather than on taste.
+
+The two deviations are both sound. The mutation payload join landing as an invariant guard rather
+than as the multiplication fix the spec predicted is the right call and the honest one: the
+relation's own comment already carried the argument that a write payload has no branch, the spec's
+paragraph was written without it, and the implementer found that, said so, and took the guard anyway
+on an asymmetry between a loud failure and a silent one. Deleting `ix_node_id_decode_column_use_site`
+rather than widening it is exactly what the spec's own instruction asked for, measured at two sizes,
+with the covering shape measured beside it so nothing is left implied.
+
+**Finding 1 (question three: the implementation is the change the spec approved).
+`intent_node_id_decode_hop_column` now states its own key three ways in four adjacent lines, and two
+of the three omit the branch.**
+
+The whole of this item is that the branch is part of this family's grain. On the relation the item
+is named for, the new `origin_source_name` comment says so: "with the graph, the use site, the
+position and the pair position it completes this relation's key". The two comments either side of it
+still state the superseded key:
+
+* `intent_node_id_decode_hop_column.use_site`: "with the graph, the position and the pair position,
+  the key".
+* `intent_node_id_decode_hop_column.position`: "with the pair position beside it, the use site and
+  the graph, this is the key".
+
+Both were correct before this change and are contradicted by it. The equivalent comments were
+updated everywhere else in the family, which is what makes this an omission rather than a position:
+`intent_node_id_decode_hop.use_site` now reads "with the graph, the branch above and the position
+below, the whole of this relation's key", `intent_node_id_decode_column.use_site` reads "with the
+graph, the branch and the position, the key", `intent_node_id_decode.use_site` reads "with the graph
+and the branch below, this relation's key", and this relation's own table comment carries the branch
+as a key column at length. One relation, and only this one, was missed.
+
+Why this blocks rather than being noted in passing. In this model a relation's stated key is the
+model: it is what a reader joins on and what the sibling architecture item means by a relation
+having said what one of its rows is about. A reader who takes `use_site` at its word joins on
+`(graph_name, use_site, position, pair_position)` and reproduces the defect this item exists to fix,
+one rung up. These comments also render into the published schema reference, so the contradiction
+ships. And the item file is deleted at Done, so a non-blocking note here has nowhere to live: the
+choice is this round or a fresh Backlog item for two lines the change itself introduced.
+
+What would satisfy it: rewrite those two comments to state the key including the branch, on the model
+of the three siblings that already do. Nothing else in the implementation needs to move, and I would
+not expect a rebuild beyond the model module's own tests to establish that.
