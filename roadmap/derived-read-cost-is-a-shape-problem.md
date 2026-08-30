@@ -1834,6 +1834,113 @@ from a reported 1.1 s to 520 ms and `intent_argmapping_binding_leaf` from about 
 Nothing above a few seconds moved. Any figure in earlier slices below about two seconds that came
 from this bench should be read as containing a JVM start.
 
+### Slice 16: the base named, and what capture should have been writing
+
+Slice 15 ended at `intent_argmapping_binding_leaf` and called it the base that cannot carry the load.
+That was one layer short. Under it is a fact with no name, and under that is the reason the fact has
+no name.
+
+**The unnamed fact is not a relation. It is two columns of `graphitron_arg_mapping_pair`.** The
+`headed` CTE inside `intent_argmapping_segment_binding` resolves each argMapping pair's path head,
+the segment at position 0 of its own `argument_path`, together with whether that head enters at an
+argument or at an input field. Measured against the capture: 108 rows, 108 distinct on
+`(graph_name, site, use_site, position)`, 108 pairs in the table, no nulls, two values of the kind.
+Total and unique on the pair table's own primary key, so it adds no grain at all. The kind is a
+function of `site` alone, `INPUT_FIELD_CONDITION` giving one value and the other eight the other.
+
+**A fact at the pair's own grain, computable from the pair, currently exists only as a CTE.** Which
+means it has no key, no index, and no single evaluation. Counting how many times the pair table is
+instantiated in one plan gives the price:
+
+[cols="5,2"]
+|===
+| relation | instantiations of `graphitron_arg_mapping_pair`
+
+| the `headed` rule alone | 6
+| `intent_argmapping_segment_binding`, which names it four times | 24
+| `intent_argmapping_binding_leaf`, which names that twice | 48
+| `intent_node_id_decode` | 84
+|===
+
+Each layer names the one below twice, once to drive and once to test whether a next one exists, and
+H2 inlines both. The decode then runs its 84-instantiation plan once per driving row, 1167 of them,
+which is on the order of 98000 evaluations of the head rule for one read.
+
+**Storing the layer above was measured and is the wrong fix.** Materializing
+`intent_argmapping_segment_binding` as a table and repointing the chain takes the decode from 168.8 s
+to 114.4 s. Real, and proportional rather than structural, because the 1167 correlated evaluations
+survive it. Naming the fact a layer lower attacks the multiplier instead of the multiplicand, which
+is the difference between this item's lever order and the one it replaced.
+
+**And the reason the head has no name is the larger finding.** An argMapping names which method
+parameter an argument's value reaches. **The grain of that is the pair, so an argMapping pair is just
+an argMapping, and every argument of every service call has exactly one.** Some are authored with the
+directive and the rest follow from rules the generator already applies. The relation is total on a
+coordinate the store already keys.
+
+**What capture writes is not a smaller version of that relation. It is one of its two populations.**
+On the measured consumer, 34 rows against 66 service arguments. The other half is left implicit, and
+an implicit population can only be reached by naming what is absent, which is why every reader that
+wants the whole thing unions an arm carrying a correlated `NOT EXISTS` against what capture did
+write. Absence does not join, and an anti-join is what doubles a statement at every layer. The
+multiplication in the table above is that decision compounding four times.
+
+**The schema already says this in its own words, in two places.**
+`intent_node_id_decode_slot`'s comment defines its two carriers as an authored pair and "the producer
+method declaring a parameter of the root argument's own name with no pair on that parameter", and
+states plainly that "the absence of a pair on the parameter is what makes the two disjoint". The same
+comment records a hole in the seam: a path descending into an argument to bind one input field below
+it is seen by neither arm, so such an input field is read as binding a predicate. That is a
+correctness gap living exactly where the relation stops being total, and it closes when the relation
+is total.
+
+**The by-name inference is spelled inline in at least two readers**, `intent_node_id_decode_slot` and
+`intent_argmapping_bound_parameter_type`, each as an arm plus an anti-join. There is no relation named
+for the result, so nothing can join to it and each reader pays to rebuild it. That is the same
+supertype omission this item opened on, arriving at the relation it costs the most.
+
+## What this item now takes on
+
+**Capture writes one row per parameter of every call, carrying how it was bound.** Provenance is not
+decoration: it is what lets a reader take the whole relation and filter, rather than reconstruct the
+whole from one half. The vocabulary the retiring Java walk already uses is the starting point, an
+authored directive binding, an identity name match, and whatever survives of the arity-unique and
+type-unique inferences that R219 proposes to collapse into one rule. This slice does not settle that
+vocabulary. It settles that the relation is total and that provenance is a column on it.
+
+**It belongs to capture rather than to derivation, and the family charter is what says so.** Expanded
+to captured relations the head rule reaches `graphitron_arg_mapping_pair`,
+`graphitron_argument_path_segment` and `graphql_argument`. The charter counts `graphql_` and
+`graphitron_` as one family because they are one gatherer, so this rule crosses nothing, and a rule
+that crosses nothing belongs to its own family rather than to `intent_`. Its gatherer knows when its
+own corpus is complete, so it may store the rule with no `meta_materialize` row at all. The cheapest
+fix and the correct placement are the same move, which is not usually true and is worth not wasting.
+
+**Four questions this slice does not answer.**
+
+- **Totality across the nine sites.** The claim is stated for service calls. The `site` vocabulary is
+  closed at nine and four of them carry rows on the capture measured here. Whether each site's
+  population is total in the same sense has to be settled per site rather than assumed from one.
+- **Where the inference runs.** Capture writing the inferred rows moves inference below the
+  generator, which is the axis R864 already occupies. If inference stays in the generator the store's
+  relation cannot be total and this reduces to naming the head.
+- **Provenance vocabulary.** Settle jointly with R218 and R219, which hold the same distinction in
+  the Java model being retired. Nothing here should encode a branch boundary R219 removes.
+- **The documented hole.** Whether closing the input-field-under-an-argument case belongs here or
+  beside it. The decode slot's comment already names it as an unstated reconciliation between two
+  decompositions of one descent.
+
+**What would show it landed.** The by-name arm disappears from both readers that spell it, the pair
+table's instantiation count in the node-id decode plan falls from 84 toward the low single digits,
+and the correlated anti-join in `intent_node_id_decode` has a keyed relation to probe instead of a
+rule to inline. Slice 15 holds the before figures.
+
+**A word on the word pair.** The relation is named for a pair because it replaced eight relations
+each spelling one, and the name records that collapse rather than the grain. If the grain is the
+argMapping, the qualifier is doing no work and invites exactly the layered reading above it, where
+something assembles pairs into a mapping. Renaming is not the substance here and should not be taken
+for it, but it should not survive the change either.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
