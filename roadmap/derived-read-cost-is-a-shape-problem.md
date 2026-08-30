@@ -2035,6 +2035,44 @@ measured, 106 for the authored segment list and 38 for the occurrence step relat
 consequences of the two decompositions being unrelated; a foreign key between them is what removes
 the alignment rather than optimising it.
 
+**There is a specification of the right-hand side, and it already says candidates, selection and
+invalidity.** The manual states it once, under "Binding a parameter to a nested input field" on the
+`@service` page, and both the `@routine` page and the custom-conditions how-to cross-reference it
+rather than restating it. Its rules are exactly the model this slice has been reaching for: the head
+segment must name a slot in scope at the directive's site, each subsequent segment must name
+something the value at that depth opens into, a path may be any depth, reading is null-safe, and a
+bare name with no dots is the single-slot form and is what an entry with no `argMapping` binds to
+implicitly. It even names the failure: a head naming nothing in scope is a build error listing the
+slots that are, and a later segment naming neither an input field nor a key column is a build error
+naming what it looked in.
+
+**Two things open, and the specification is explicit that nothing else does.** An input object opens
+into its fields. An `ID` carrying `@nodeId(typeName:)` opens into the key columns of the node type it
+names, so the segment after it names a key column rather than a field of any SDL type. That second
+arm matters for where the relation lives: validating it means reading the catalog's node key columns,
+1262 rows on the measured capture, which is `sql_`. So the candidate space is a union of one arm
+wholly inside the SDL gatherer and one arm that crosses, and the charter's own cut applies to it: the
+input descent belongs to that family and what stays in `intent_` is the join to the catalog.
+
+**The left-hand side has no such single statement, and what is written is behind the code.** Three
+pages each say that unmentioned parameters bind to a GraphQL argument of the same name and that an
+empty `argMapping` is identity. None of them mentions the two further inference branches the
+retiring Java walk applies, the arity-unique and type-unique matches that R218 names and R219
+proposes to collapse. So the documented rule set is explicit binding plus identity, and the
+implemented rule set is explicit binding plus identity plus two inferences. Whichever is right, the
+store cannot hold a total relation with a provenance column until that is settled, because the
+vocabulary of the column is the rule set.
+
+**And the store models none of the candidate space.** Two relations in the schema carry the word
+candidate for this walk and both are keyed to a path somebody already wrote.
+`intent_argmapping_key_column_candidate` is a view over `intent_argmapping_binding_leaf`, so it
+enumerates candidates for the trailing segment of an authored path and holds no rows at all on this
+capture. The input-object arm has no candidate relation whatever; `intent_input_occurrence_path`
+describes the same descent and is keyed and prefix-closed, but it is framed as the occurrences that
+exist rather than as what a position opens into, and nothing reads it for this purpose. A
+specification that defines a candidate set, a selection over it and a rejection when the selection
+misses, against a store that models only selections that were made.
+
 **And the order the work has to go in, which slice 16 changed.** The base facts first, because the
 total relation is a crossing rule and a crossing rule cannot be made cheap by relocating it: the
 path decomposition states its own shape, the correspondence between the two decompositions gets a
