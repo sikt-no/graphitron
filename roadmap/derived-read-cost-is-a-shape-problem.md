@@ -1632,6 +1632,208 @@ two hold duplicate rows and are a filed defect rather than a grain question. The
 registration is what a relation with no grain gets given has now been tested on a quarter of them and
 has not needed an exception.
 
+**Corrected: the reason given for refusing the fifth key was the weaker of the two available, and
+naming the stronger one changes what the refusal is evidence of.** It was refused above because the
+pairs would leave the gate without any reader getting cheaper, which reads as gate hygiene. The
+stronger reason is that the arm those numbers collapsed on is the one this item is trying to reach. A
+store with an empty register is a store where every one of these rules is a view, so the unregistered
+column is not a control, it is the destination. A key that leaves the registered figure flat and
+takes the view path from 607 to 32997 is not a neutral change measured against a convenient baseline.
+It is a fifty-fold regression on the only arm that survives this item. The refusal was right and the
+finding underneath it is larger than the paragraph above claimed.
+
+### Slice 15: the register priced honestly, and the base that cannot carry the load
+
+The four slices above ask each registered target for its grain, which is worth doing and is not the
+goal. They also drifted into reading `DerivedReadCostTest`'s two arms as a scoreboard, and that
+reading is wrong in a way worth stating before any more measurement is taken on it.
+
+**The registered arm wins that comparison by construction, so winning it means nothing.** It is a
+table with statistics and a declared index, against the same rule inlined at every naming with no
+common subexpression eliminated between the copies. Nothing about the fact model has to be good for
+the table to be cheaper, and a registration that only proves it can beat its own inlined rule has
+proved the thing every registration in the register could prove on the day it was written. That gate
+was built as a defect detector, and it detects one thing: a registration losing to its own rule,
+which is a registration buying nothing. A cell where it wins is not a result.
+
+**The goal is that the register is empty, and the question every relation has to answer is an
+absolute one.** Not "is the table faster than the view", which it is, but "is the rule fast enough
+that nothing needs to stand in front of it". That is a question about the fact model, and the item
+has already answered it yes at one relation by fixing the model underneath rather than by pricing an
+arm. Where a rule is not fast enough, the levers are the ones the fact-model page now ranks: capture
+writing the fact, an index on a stored column, a rewrite. A registration is the lever of last resort
+and the register is the record of it having been reached for first.
+
+**Which puts the keying work in its right place, smaller than the last four slices implied and still
+worth having.** A primary key on a materialization target does not survive the target's dissolution:
+retire the registration and the table goes, and the key with it. Keying does not move a relation
+toward an empty register. What it does is force the relation to say what one of its rows is about,
+and that statement is what makes the next question answerable, because it is what exposes a column
+sitting at a different grain from the key it is stored beside. The relation priced below carries
+exactly such a column, `candidates`, an arity over the spelling that sits above the key the whole row
+is stored at, and it was slice 11's key that made the mismatch visible. That column turns out not to
+be what the relation costs, which is worth stating in the same breath: knowing the grain is what let
+the question be asked, and the answer to it was no.
+
+**First, a defect in this item's own harness, which has to be stated before any figure below is
+read.** The bench that prices a registration builds a store from the DDL, copies a real consumer's
+captured facts in, refreshes the registered targets and then times a workload. It refreshed them in
+the order the register's `INSERT` lists them, and that is not a dependency order: a target on today's
+register is listed second while a target its own rule reads is listed last. On a cold store that
+fills the earlier one from the later one's empty table. The effect was not marginal. **In every
+registered arm this item has taken, eighteen of the twenty-two targets held zero rows**,
+`intent_spelled_table` among them, and `intent_field_reference_step_hop` held 742 rows where a
+faithful arm gives it 12817.
+
+So every figure in this item taken from a registered arm was measured on a store where most of the
+relations being priced were empty, and the two retirement timings in slice 4b are the load-bearing
+ones. Neither retirement turns on them. The argmapping retirement was argued on the registration's
+index being column-for-column its own source table's primary key and the rule being a bare
+projection, which is a structural fact no timing enters; the errors-field retirement was argued on a
+registration being a blindfold over the rule beneath it, likewise. **The milliseconds quoted beside
+both are void and should not be cited again.**
+
+**The shipping refresh does not have this defect**, which was checked rather than assumed: the
+gatherer orders itself out of the derived refresh edges that a boot-time routine populates from the
+stored view definitions, and a gate pins that order against a fixture built so an unordered refresh
+fails it. The bench had no such routine because it builds its store from the DDL alone. It now
+refreshes to a fixed point instead and reports the passes that took, and both arms below converged in
+four.
+
+**What the defect does not reach is the evidence this item actually rests on.** The census of the
+twenty on the emptied arm, the inlined-statement sizes, the two relations that exhaust a heap inside
+the planner and the seven cuts that bring the schema back under its current largest statement were
+all taken with the register emptied, where nothing is materialized and no refresh runs at all. Refresh
+order cannot touch them.
+
+**The register, priced honestly for the first time.** Twenty registrations, a real consumer's facts,
+every target holding the rows its rule actually produces, and a workload of one `count(*)` per
+`intent_` relation, 112 of them. Taken against the schema as it stands after the decode family was
+given its branch grain, so these are current rather than this slice's first reading:
+
+[cols="4,2,2"]
+|===
+| arm | refresh pass | workload
+
+| all twenty registered | 42.4 s | 270.8 s
+| `intent_spelled_table` demoted, other nineteen kept | 71.8 s | 429.5 s
+|===
+
+**The demotion costs 29 seconds of refresh and 159 of workload, and that penalty is the point of
+taking it.** The registration's own reason predicted removing it alone would make the refresh about
+twice as dear and the readers about half again as dear; measured, 1.69 and 1.59, so the reason is
+accurate and this is the first time one has been tested against a faithful arm. Accurate is not the
+same as sufficient. A penalty on demotion is what a registration is for, and reading it as a verdict
+would end the investigation exactly where it should begin. The useful question is which relation the
+penalty lands on and what underneath that relation cannot carry the load.
+
+**It lands on one relation, and that relation is expensive before anything is demoted.** Of the 270.8
+seconds the fully registered arm spends, **159.3 are `intent_node_id_decode`**. The second dearest is
+27.5 and 97 of the 112 answer inside a second. That relation has never been registered and no item
+has proposed registering it, so this is not a cost the register is holding back; it is what the
+schema costs today with every registration in place. Its own comment already says as much, calling it
+the deepest derived read in the schema and warning a reader never to take it correlated per row. The
+figure here is what that warning is worth in seconds.
+
+**And it is where the demotion's penalty went, almost exactly.** Demoting `intent_spelled_table` adds
+158.7 seconds of workload, of which 157.1 are `intent_node_id_decode` and `intent_node_id_encode`. No
+other relation of the 112 moves by more than three seconds and one moves the other way. So the
+registration that reads as protecting thirty-two readers is, on this consumer's data, protecting two
+of them, from a defect that has nothing to do with resolving a table spelling.
+
+**Taken apart, the relation says exactly what is wrong with it.** Every statement below ran in one
+warm session, so these are H2's own per-statement times with no JVM start in them:
+
+[cols="5,2,2"]
+|===
+| statement | rows | time
+
+| the registered `intent_node_id_decode_column` table, counted | 1167 | 4 ms
+| `intent_argmapping_binding_leaf`, counted | 108 | 52 ms
+| `intent_resolved_node_key_shape`, counted | 635 | 268 ms
+| `intent_node_id_decode_slot`, counted | 48 | 520 ms
+| the first arm's projection deduplicated, anti-join removed | 351 | 4 ms
+| the whole relation | 351 | 156.9 s
+|===
+
+**Four milliseconds against a hundred and fifty-seven seconds.** Every input is cheap, the
+deduplication is free, and the `NOT EXISTS` beside them is the entire cost. What that clause does is
+ask a 48-row relation a membership question once per driving row.
+
+**The cost is linear in driving rows, which two independent readings agree on.** Moving the
+anti-join after the deduplication takes the driving set from 1167 rows to 330 and the time from
+140.1 s to 40.4 s: a ratio of 3.47 against the row ratio of 3.54. And the branch grain that landed on
+the decode family while this slice was being measured is the same experiment run by someone else:
+it took `intent_node_id_decode_column` from 1559 rows to 1167 and the relation from 198.1 s to
+159.3 s, tracking the row count rather than anything about the new columns. Three other rewrites were
+tried against the clause before this one and none of them made H2 evaluate the slot relation once: a
+`LEFT JOIN` against a `SELECT DISTINCT` was no better than the original, a `GROUP BY` derived table
+that H2 need not inline landed on the same figure as simply reordering, and computing the surviving
+use sites first and joining them back cost more than three times the original because the chain then
+got inlined twice.
+
+**So this is not a query that can be written better, which sends the question down rather than
+sideways.** Rewriting is the third lever on the fact-model page and it has now been tried properly and
+refused. If the clause cannot be made to run fewer times, what has to change is what one run costs,
+and that is a question about the relation underneath rather than about the statement above.
+
+**One run is a 350-node plan, and the descent from there ends at a single relation.** Counting plan
+references, the same expansion measure this item takes on statement size:
+
+[cols="5,2,2"]
+|===
+| relation | plan references | rows
+
+| `intent_node_id_decode` | 818 | 351
+| `intent_node_id_decode_slot` | 350 | 48
+| `intent_argmapping_binding_leaf` | 293 | 108
+| `intent_resolved_node_key_shape` | 111 | 635
+| `intent_argmapping_segment_binding` | 96 | 202
+| `intent_argmapping_bound_parameter_type` | 27 | 108
+| `intent_field_producer_method` | 9 | 97
+| `intent_argmapping_pair` | 2 | 108
+| `intent_input_occurrence_path` | 1 | 3027
+| `intent_node_id_decode_column`, `intent_spelled_table` | 1 each | 1167, 313
+|===
+
+**Two hundred and ninety-three of the slot rule's three hundred and fifty plan references are one
+relation, and that relation has 108 rows.** `intent_argmapping_binding_leaf` is the base that cannot
+carry the load. It answers in 52 milliseconds when asked once, so nothing about reading it is slow;
+what it costs is being stated at all, and every layer above inherits that. The slot rule adds
+fifty-seven references to it, the decode rule adds the anti-join, and the anti-join is what makes the
+whole chain run 1167 times. A 108-row relation reached through a 293-node plan is not a query-shape
+problem and no index on it would help, because the cost is not in reading a table. It is in there
+being no table to read.
+
+**These counts are unchanged by the branch grain**, which is worth stating because that change landed
+in the middle of this measurement and moved every timing on the page. It took the decode family's
+duplicate rows out and the plan sizes did not move at all: 818, 350 and 293 before and after. The
+expansion is a property of how the rules are stated and the row counts are a property of the data,
+and this item has been treating them as one thing in places.
+
+**Read the other way, the table is a check on this item's own two retirements.**
+`intent_argmapping_pair`, demoted from the register in slice 4b, costs two plan references. That
+retirement was argued structurally, on the registration's index duplicating its source table's
+primary key and the rule being a bare projection, and the structure is exactly what the number says:
+the demoted relation is as good as the table it was copying. The starved timings quoted beside it
+were void and the decision they were attached to was right anyway.
+
+**So the foundation work this item has been circling has a first address.** Not the twenty
+registrations and not the relation that dominates the workload, but the 108-row relation three layers
+under it. What that relation costs to state, why stating it takes 293 plan nodes, and which of the
+levers applies to it are the next slice. The dissolution question comes back afterwards and on better
+ground: shore this up and the 159-second relation moves, and the reason `intent_spelled_table` is
+still registered moves with it, since 157 of the 159 seconds its demotion costs are spent inside the
+same chain.
+
+**A note on how these were measured, because it changed the numbers.** Every probe before this
+paragraph's table was a fresh JVM per statement, and H2's start-up is around six hundred
+milliseconds, which is most of what a sub-second reading contains. Batching a session's worth of
+statements into one invocation and reading H2's own per-statement times took `intent_node_id_decode_slot`
+from a reported 1.1 s to 520 ms and `intent_argmapping_binding_leaf` from about a second to 52 ms.
+Nothing above a few seconds moved. Any figure in earlier slices below about two seconds that came
+from this bench should be read as containing a JVM start.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
