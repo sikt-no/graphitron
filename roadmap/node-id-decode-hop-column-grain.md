@@ -1,7 +1,7 @@
 ---
 id: R878
 title: "The node id decode hop column drops the foreign key it walked, so nine distinct hops become nine identical rows and arity states a false number"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: codegen-correctness
@@ -39,7 +39,7 @@ nine rows arrive as nine identical output rows. On the same capture:
 |===
 
 Per coordinate the multiplication is much larger than those totals suggest. At the coordinate above,
-`intent_node_id_decode_column` holds 162 rows of which 2 are distinct. Six other coordinates are the
+`intent_node_id_decode_column` holds 162 rows of which 2 are distinct. Five other coordinates are the
 same shape: 64 against 4, 40 against 5, 28 against 7, 8 against 2, 6 against 3.
 
 ## What it currently breaks
