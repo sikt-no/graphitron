@@ -2135,29 +2135,59 @@ could not be stored because the validation needed relations the resolution did n
 puts the selection where it belongs, on the pair, as spelled, and leaves the refusal to the rule that
 already performs it. Nothing about which paths are legal changed.
 
-**Measured on the same arm, against the same consumer capture, with the register untouched:**
+**The first published reading of this slice was taken on a starved arm and is withdrawn.** The bench
+copies base facts from a capture that predates these two columns, and because they are `NOT NULL` the
+copy of `graphitron_arg_mapping_pair` failed outright, leaving the arm with no argMapping pairs at
+all. Every relation in the chain measured zero rows and the decode looked half as expensive because
+half of it was empty. The figures that reading produced, 83.8 s and a 171.1 s workload, are void. The
+bench now backfills the two columns during the copy, deriving them as capture does.
 
-[cols="4,2,2"]
+**Re-measured correctly, the change buys no time at all.** Three readings of `intent_node_id_decode`
+on each arm, the two arms run under identical contention so the comparison is fair even though both
+are inflated:
+
+[cols="3,4"]
 |===
-| | before | after
+| arm | `intent_node_id_decode`, three readings
 
-| `intent_node_id_decode` | 159.3 s | 83.8 s
-| the whole 112-relation workload | 270.8 s | 171.1 s
-| refresh pass | 42.4 s | 40.7 s
+| before this slice | 152.6 s, 158.8 s, 158.3 s
+| after this slice | 155.0 s, 160.8 s, 159.9 s
 |===
 
-**And the instantiation counts say the cut is structural rather than lucky.** Inside one plan of
-`intent_node_id_decode`, the authored path's segment list falls from 106 instantiations to 34, and
-the plan's total relation references from 818 to 674. The pair table barely moves, 84 to 80, which is
-the expected shape: the head came off the pair, so the pair is still read, and what stopped being
-read a hundred times is the child that had to be walked to position zero to find it.
+Marginally slower, which is to say indistinguishable. The workload totals agree: 270.8 s before and
+274.2 s after. Row counts are identical everywhere along the chain, 108 pairs, 202 segment bindings,
+108 leaves, 48 slots, 351 decodes, so the rewrite is behaviour-preserving and simply does not pay.
 
-**What this does not do, stated so the next slice starts honestly.** The decode relation still costs
-83.8 seconds and is still the dearest thing in the schema by a factor of three. The correlated
-anti-join is untouched, so its rule still runs once per driving row; the remaining 34 segment reads
-are the trailing-segment count and the alignment against the occurrence path, which are the two facts
-slice 16 named and this slice did not write. A third of the schema's read cost came off one column
-pair that capture already had in hand.
+**What the change did buy is structural and deterministic.** Inside one plan of
+`intent_node_id_decode` the authored segment list falls from 106 instantiations to 34 and the plan's
+total relation references from 818 to 674. Those numbers are properties of the schema, reproducible
+exactly, and unaffected by the noise above.
+
+**Which re-teaches this item its own lesson, from the wrong end.** Slice 4's census already said the
+expansion count predicts plannability and nothing else, and that anyone reading it for execution cost
+is reading it for something it does not measure. This slice removed 72 plan nodes out of 818 and
+timed the result expecting a saving, and the nodes it removed were index probes into a 202-row table,
+which were never what the statement was spending its time on. Making a statement smaller and making
+it faster are different projects. The head still belongs on the pair, because a fact at the pair's
+grain that four readers re-derive is a modelling defect whatever it costs, and because the total
+relation this item is heading for needs it. It is a modelling step with no measured speedup, and
+recording it as anything else would have been the third starved figure this item has published.
+
+**What is actually slow, measured rather than inferred.** Two multiplied together. The outer factor
+is the correlated anti-join in `intent_node_id_decode`, which evaluates the slot rule once per
+driving row, 1167 of them. The inner factor is inside that rule and is not the path walk at all:
+ranking the scans of one slot evaluation, the largest by a factor of two and a half is 11772 index
+scans of `graphitron_arg_mapping_pair` under a predicate that binds only the graph. That is the
+by-name inference's `NOT EXISTS`, asking of each producer-method parameter whether any pair claims
+it, and because the pair relation is keyed by site and use site and position, a probe by parameter
+name has no index to use and reads the graph's whole partition. A hundred and eight rows read a
+hundred and nine times, inside a rule run eleven hundred and sixty-seven times.
+
+**So the thing this item has been circling is also the thing the clock is on.** The by-name arm exists
+because capture writes one of the argMapping relation's two populations and the other is defined by
+absence. Absence has no index. Make the relation total with provenance as a column and that anti-join
+becomes an equality on a stored value, which is the one change that attacks the inner factor. The
+outer factor, the correlated evaluation, is a separate fix and the two compose.
 
 ### Deferred: the registration precondition
 
