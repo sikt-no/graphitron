@@ -1991,6 +1991,50 @@ likewise once the correspondence has a name. Behind those, the by-name arm gone 
 that spell it and the correlated anti-join probing a keyed relation instead of inlining a rule.
 Slice 15 holds the before figures for the timings.
 
+**The two sides of an argMapping resolve against different families, and only one of them has been
+modelled.** An argMapping has a left side and a right side. The left names a parameter and resolves
+against the service or routine being called, which is the classpath census or the catalog. The right
+names a path and resolves against the SDL, descending through input-object-typed fields, so it can
+carry several segments. The relation the store holds today keys both halves to the same row and
+decomposes only the right one, into positioned segments that reference nothing on the SDL side. That
+is why the alignment above exists at all: the right side was stored as its own decomposition of a
+descent the SDL already describes.
+
+**The descent the SDL already describes is stored, keyed, and prefix-closed.**
+`intent_input_occurrence_path` is a table keyed on the graph and the serialized path, with
+`intent_input_occurrence_path_step` its ordinal-keyed decomposition, both with foreign keys into the
+GraphQL coordinate relations. On the measured capture that is 3027 paths and 3526 steps at a maximum
+depth of four. Its comment claims every prefix of a path is itself a row and the claim holds: zero
+paths of depth two or more are missing their parent. It carries no `meta_materialize` row and does
+not need one, being stored under the charter's other clause, that no view could express the rule,
+because cyclic input nesting is legal GraphQL and has no safe recursive form in a view.
+
+**So the relation the editor needs for this already exists and the editor does not read it.**
+`ArgMappingCompletions` resolves the left side against the store, selecting parameter names from
+`jvm_method_parameter` for the sibling method the directive targets. For the right side it reads the
+parse tree instead, offers the enclosing field's argument names, and then stops: it returns nothing
+as soon as the token contains a dot, under a comment saying that dot-path expansion into nested input
+fields is not modelled and a flat list would mislead. The traversal completion this needs is
+therefore not merely slow, it is absent, and the reason recorded in the code is the absence of a
+model rather than a cost.
+
+**Which is also the answer to why this cannot be a capture-cadence materialization of the
+argMapping.** The editor is navigating a path the author has not finished typing and will not save
+mid-navigation, so nothing keyed to an authored argMapping can answer it. Nothing has to be. The
+input surface being traversed is a function of the saved SDL, which does not change between
+keystrokes inside a directive string, and every legal prefix of every path is already a row in a
+keyed table. Completing a partial path is an index probe for the rows one step longer than the
+prefix. The unsaved thing is the path, and the path is what the author is choosing, not what has to
+be looked up.
+
+**That makes one change serve both readers, which is the argument for doing it here.** If an
+argMapping's right side resolves to an occurrence path, carrying its key rather than a parallel
+segment list, the generator gets a join where it currently has two decompositions aligned by nested
+negation, and the editor gets a traversal it can probe by prefix. The instantiation counts slice 16
+measured, 106 for the authored segment list and 38 for the occurrence step relation, are both
+consequences of the two decompositions being unrelated; a foreign key between them is what removes
+the alignment rather than optimising it.
+
 **And the order the work has to go in, which slice 16 changed.** The base facts first, because the
 total relation is a crossing rule and a crossing rule cannot be made cheap by relocating it: the
 path decomposition states its own shape, the correspondence between the two decompositions gets a
