@@ -2230,15 +2230,31 @@ relation covers a descent whose opening rule changes at every level: the levels 
 shape does not, and the discriminator is a fact the candidate already carries about itself rather
 than a rule the reader has to apply.
 
-So: one row per candidate, keyed by the site coordinate and the path as an author writes it, carrying
-the parent path (null at a root, a foreign key back to this relation otherwise), the segment name
-that selects it, and its type. The coordinate is part of the key because the path is the authored
-dot-form and `input` means a different thing on a different field. Roots are every argument in scope
-at a site, plus the input field itself where an input-field-level condition sits on one.
+**The key is the field coordinate, then the argument, then the descent below it.** A candidate is
+rooted at a field, so the graph, the type and the field lead the key of every row. The argument is
+the next column rather than the first segment of a string: a field may declare several and each is
+its own subtree. Below that sits the path an author writes under the argument, empty at the root, so
+the worked example decomposes as the field coordinate, `input`, and then `nodeId` and
+`nodeId.COLUMN_A` beneath it. The parent is the same coordinate and argument with the path one
+segment shorter, null where the path is empty.
 
-**Which makes the right-hand side a foreign key in the literal sense.** The candidate's path and the
-argMapping's `argument_path` are the same string under the same coordinate, so a written path either
-matches a candidate row or does not, and that is the whole of validity. The positional segment child
+Each row also carries the segment name that selects it and its type, the type being what says
+whether anything opens below. **A root exists for every argument, scalar or input type alike**, which
+is the whole of what the occurrence path relation is missing: its 406 roots are the arguments whose
+named type is an input object, and the 122 it omits are the scalars, which open into nothing and are
+still perfectly good candidates because a bare name with no dots is a legal selection.
+
+**One root does not fit that description and is an open question rather than an oversight.** An
+input-field-level `@condition` sits on an input field, and the specification says its head may name
+that field rather than an argument of the enclosing field. Whether such a root is spelled as a
+degenerate argument, given its own kind, or keyed differently is for the next slice; the shape above
+is stated for the argument case, which is every other site.
+
+**Which makes the right-hand side a foreign key in the literal sense, and slice 17 already cut it
+at the join.** The head column that slice added to the pair is the argument half of this key, and
+what follows the first dot is the path half, so an authored right-hand side splits exactly along the
+candidate's key columns. A written path either matches a candidate row or does not, and that is the
+whole of validity. The positional segment child
 disappears into the parent chain: what was `position` is depth along the parents, what was "how many
 follow" is how many descendants remain, and what was an alignment between two decompositions is one
 relation read twice.
