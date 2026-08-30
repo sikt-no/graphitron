@@ -1130,6 +1130,10 @@ public final class SeededStore {
                     : argumentPath.substring(0, argumentPath.indexOf('.')))
             .set(GRAPHITRON_ARG_MAPPING_PAIR.HEAD_KIND,
                 "INPUT_FIELD_CONDITION".equals(site) ? "INPUT_FIELD" : "ARGUMENT")
+            .set(GRAPHITRON_ARG_MAPPING_PAIR.CANDIDATE_ORIGIN,
+                "INPUT_FIELD_CONDITION".equals(site)
+                    ? typeName + "." + head(argumentPath)
+                    : typeName + "." + fieldName + "(" + head(argumentPath) + ")")
             .set(GRAPHITRON_ARG_MAPPING_PAIR.CANDIDATE_PATH,
                 argumentPath.indexOf('.') < 0 ? ""
                     : argumentPath.substring(argumentPath.indexOf('.') + 1))
@@ -1137,6 +1141,12 @@ public final class SeededStore {
             .set(GRAPHITRON_ARG_MAPPING_PAIR.SOURCE_LINE, location.value1())
             .set(GRAPHITRON_ARG_MAPPING_PAIR.SOURCE_COLUMN, location.value2())
             .execute();
+    }
+
+    /** The head of a written path, which is the element the origin's spelling names. */
+    private static String head(String argumentPath) {
+        int dot = argumentPath.indexOf('.');
+        return dot < 0 ? argumentPath : argumentPath.substring(0, dot);
     }
 
     /**

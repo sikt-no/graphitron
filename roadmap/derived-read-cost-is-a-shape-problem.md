@@ -2356,11 +2356,63 @@ pair's remainder is relative to the site, so matching them means either construc
 path in a reader or walking a segment at a time. The observed remainders are one segment, where the
 walk is one join, but the general case is not bounded by that.
 
-**So the argument-rooted arm is ready and the type-local arm is a decision.** Recorded here rather
-than resolved, because the last three times this item guessed at a coordinate question it guessed
-wrong, and because the choice has consequences beyond this relation: whether a pair on an
-input-field-level site should carry the site's occurrence instead of its type-local coordinate is a
-question about what capture writes, not about how a rule reads.
+**That framing was wrong, and the correction dissolves the fan-out rather than routing around it.**
+There are two perspectives, not one relation with an awkward case. From the field grain a path is
+rooted at a query field and enters through one of its arguments. From the input-field grain a path is
+written relative to the coordinate a directive sits on, and **nothing about the enclosing position
+can change what follows**: an input field opens into whatever its own type opens into, so all 127
+occurrences of the worst case offer the same candidates. Keying that grain by the coordinate rather
+than by the occurrence is therefore both smaller and correct, and it turns the resolution back into a
+probe of one key. The fan-out was never in the model; it was in a resolution that walked a relative
+path through an absolute tree for no reason.
+
+**Checked against the data, the two perspectives share one rule.** In every pair the written path
+begins by naming the site's own position: all 2 argument-level pairs have `head_segment` equal to
+their argument, all 4 input-field-level pairs have it equal to their field, and field-level pairs
+begin with an argument of the field. So resolution is origin plus path in all three cases, and the
+only thing that varies is which position the origin is.
+
+### Slice 21: one relation, two origins, and a gate that refused the easy answer
+
+The candidate relation now holds both grains: `graphitron_argmapping_candidate`, keyed by the graph,
+a spelled origin and the path below it, with the origin discriminated as `ARGUMENT` or `INPUT_FIELD`.
+An argMapping pair carries `candidate_origin` and `candidate_path`, so every site kind resolves by a
+single primary-key probe and none of them walks, aligns or fans out.
+
+**Two relations were built first and a gate refused them, which is the useful part.**
+`SupertypeSignatureGateTest` scans capture tables for groups sharing a payload under different keys
+and pins the roster of such groups. A field-grain candidate relation and an input-field-grain one are
+exactly that, and the gate said so within a minute of the second table existing. Its roster is not a
+list of blessed pairs: the javadoc calls each entry "a supertype the schema has not declared", a
+decision somebody has taken or owes, and every existing two-member entry is an argument-site relation
+beside its field-site twin. Adding a row would have meant this item, whose whole thesis is that those
+twins are the defect, minting a fresh one and recording it as known.
+
+**So the schema's own answer was taken instead.** `graphitron_arg_mapping_pair` already solves this
+shape: nine kinds of site in one relation, a `site` discriminator, and a `use_site` spelling that is
+total by construction "which is what lets it key this relation where the decomposed columns beside it
+cannot, three of them being null on the sites that have no such part". The candidate relation is that
+pattern applied to two origins rather than nine sites. The origin is spelled in the same coordinate
+grammar, `Type.field(argument)` where a path is rooted at a field and `Type.field` where it is
+relative to an input field; the decomposed columns sit beside it with the argument nullable by kind
+and gated to that kind.
+
+**Two smaller things the build insisted on, both of them right.** The parent link cascades on delete,
+because capture clears a graph's partition in one statement and ordering that delete by depth would
+have made every clearing site know this relation's shape. And a test fixture's helper landed between
+a javadoc and its method, which `-Werror` caught as a comment attached to nothing; worth recording
+only because it is the second time this session a mechanical edit has been placed correctly by
+pattern and wrongly by position.
+
+**Four tests pin what the relation claims.** That every argument is a root whatever its type, which
+is the population the occurrence-path relation does not hold. That a nested candidate carries its
+parent, its element name and its type. That the element closing a cycle keeps its row and says so.
+And that an input field is one origin however many arguments reach it, which is the assertion that
+would fail if the fan-out crept back in.
+
+**Still nothing reads it.** The rewiring is next and is now a small change rather than an open
+question: `intent_argmapping_binding_leaf` becomes a probe of this relation from the pair's two new
+columns, and `intent_argmapping_segment_binding`, which nothing else reads, retires with it.
 
 ### Deferred: the registration precondition
 

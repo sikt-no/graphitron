@@ -1195,6 +1195,12 @@ final class GraphitronFactCapture {
         int dot = argumentPath.indexOf('.');
         row.setHeadSegment(dot < 0 ? argumentPath : argumentPath.substring(0, dot));
         row.setCandidatePath(dot < 0 ? "" : argumentPath.substring(dot + 1));
+        // The position the right side is written from, spelled as the candidate relation spells it:
+        // the field coordinate with the head as its argument where the head names one, and the
+        // input field coordinate the head names where it does not.
+        row.setCandidateOrigin("INPUT_FIELD_CONDITION".equals(site)
+            ? type + "." + row.getHeadSegment()
+            : type + "." + field + "(" + row.getHeadSegment() + ")");
         row.setHeadKind("INPUT_FIELD_CONDITION".equals(site) ? "INPUT_FIELD" : "ARGUMENT");
         position(directive, row::setSourceName, row::setSourceLine, row::setSourceColumn);
         sink.add(row);
