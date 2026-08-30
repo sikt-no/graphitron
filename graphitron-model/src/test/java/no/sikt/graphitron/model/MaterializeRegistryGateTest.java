@@ -200,6 +200,22 @@ class MaterializeRegistryGateTest {
      *   register met on {@code intent_field_scope_table}, where an unindexed target was worse than
      *   the view it replaced: this target unindexed takes its expensive reader from 85 milliseconds
      *   to 25.</li>
+     *   <li>{@code intent_node_id_decode_column}: an index stood here and was deleted when the
+     *   branch entered this target's key, both of the jobs it was bought for having dissolved in the
+     *   same change. It was {@code (graph_name, site, use_site)}, serving the payload column
+     *   relation's probe and the carrier role's grouping as an ordered input. The probe now carries
+     *   the three branch columns as well and the carrier now groups on five, so that key is a prefix
+     *   of both rather than a cover of either. Re-measured on the read-cost gate's fixture with
+     *   statistics current, in rows visited, with the index against without: the carrier role 472
+     *   against 424 at twelve units and 1804 against 1612 at forty-eight, the payload column
+     *   relation 1284 against 1283 and 4848 against 4847 at those two sizes, the payload refusal and
+     *   the key membership identical at both. No reader improves at either size and the one that
+     *   loses loses proportionally more as the schema grows, which is the shape of a seek that costs
+     *   more than the scan it replaces and keeps costing more as the target grows. The repair that
+     *   suggests itself, the same key with the three branch columns appended so it covers both
+     *   readers again, was measured beside the other two and ties the narrow shape on every reader
+     *   at both sizes, so it is not a fix being deferred. This row is the sibling of the carrier
+     *   role's above and reaches the same verdict by the counter rather than against it.</li>
      *   <li>{@code intent_mutation_payload_key_membership}: five namings and none of them probes in.
      *   Two arms of {@code intent_mutation_write_refusal} drive from this target and
      *   {@code intent_mutation_write_destination} names it three times, twice as a set it collects
@@ -217,6 +233,7 @@ class MaterializeRegistryGateTest {
         "intent_carrier_data_field",
         "intent_input_field_resolving_table",
         "intent_mutation_payload_column",
+        "intent_node_id_decode_column",
         "intent_mutation_write_payload",
         "intent_mutation_payload_key_membership");
 

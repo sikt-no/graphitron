@@ -1,7 +1,7 @@
 ---
 id: R878
 title: "The node id decode hop column drops the foreign key it walked, so nine distinct hops become nine identical rows and arity states a false number"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: codegen-correctness
@@ -144,102 +144,98 @@ So: **the grain includes the branch.** `intent_node_id_decode_hop_column` and
 
 ## Implementation
 
-All of it is `graphitron-model/src/main/resources/no/sikt/graphitron/model/graphitron-model.sql`
-unless stated.
+Shipped. All of it in `graphitron-model/src/main/resources/no/sikt/graphitron/model/graphitron-model.sql`
+except the roster row, which is in `MaterializeRegistryGateTest`.
 
-**The discriminator's spelling.** Three columns, `origin_source_name`, `origin_schema`,
-`origin_table`, carried from `intent_node_id_decode_endpoint`'s `from_*` triple. Named apart from
-`from_*` because on `intent_node_id_decode_hop` both exist and mean different things: `from_*` is the
-step's own departure, `origin_*` is the decode's, and they agree exactly at position 0. Not
-serialized into one string the way `use_site` is: `use_site` earns that by collapsing five columns
-two of which are nullable by site, and this triple is three non-null columns the neighbouring
-relations already spell in parts.
+**The discriminator.** Three columns, `origin_source_name`, `origin_schema`, `origin_table`, carried
+from `intent_node_id_decode_endpoint`'s `from_*` triple, through `intent_node_id_decode_hop`,
+`intent_node_id_decode_hop_column`, `intent_node_id_decode_column` and `intent_node_id_decode`. Named
+apart from `from_*` because on the hop both exist and mean different things: `from_*` is the step's
+own departure, `origin_*` is the decode's, and they agree exactly at position 0.
 
-**`intent_node_id_decode_hop`.** Add the three columns, taken from `e.from_*` in the inner `walked`
-subquery and projected out. Add them to the `last_position` window's `PARTITION BY`, which today
-takes the greatest position across all branches and would otherwise report one branch's terminal for
-another's chain.
+Carried into the predicates as well as the projections, which is where the correctness is: the hop's
+`last_position` window partitions by the branch, the recursive `lifted` term chains only within one
+branch, the `LEFT JOIN lifted` matches the endpoint's own departure, and both windows in
+`intent_node_id_decode` partition by it. On the slot arm the three are NULL, a slot departing no
+table.
 
-**`intent_node_id_decode_hop_column_live`** and the table it fills. Add the three columns, carried
-from `h`. This is the projection the item is named for and the smallest of the changes.
+**Two downstream readers.** `intent_input_field_carrier_role_live` groups its `landing` aggregate by
+the branch and joins on it, so its `local` flag is now a statement about the branch whose row it is.
+`intent_mutation_payload_column_live`'s `NODE_ID` arm joins the decode on the write table as well as
+the path.
 
-**`intent_node_id_decode_column_live`** and the table it fills. Carry the triple through the `lifted`
-CTE, add it to the recursive term's join so a step can only chain within its own branch, add it to
-the `LEFT JOIN lifted` predicate matched against `e.from_*`, and project it. This is the change that
-retires the cross-branch chaining above.
+That second one landed as an invariant guard rather than as the fix the spec described, and the
+relation's own comment is why. It already argued that the join needed no departure guard, because a
+write payload cannot have a branch: the participant arm's precondition is that the field's named type
+binds no table and carries no resolving `@mutation(table:)` spelling, and each write rung contradicts
+one. That argument holds and the ninefold multiplication the spec predicted here does not occur. The
+guard is taken anyway because the two failure modes are not symmetric: unguarded, a second branch
+would be one payload column per branch and silent; guarded, a decode departing somewhere the payload
+does not write is no payload column at all, which is loud. The comment now says that instead of
+saying no guard is needed.
 
-**`intent_node_id_decode`.** Partition both windows by the triple beside `(graph_name, use_site)`, so
-`positions` and `lifted` are counted per branch and `arity` states the node key's real width. Project
-the triple. The slot arm has no departing table, a slot being reached at the root of the use site, so
-its three values are NULL, determined by destination in the sense the nullable-by-kind discipline
-allows; the column comments say so. The existing `SELECT DISTINCT` stays and now collapses the key
-positions of one branch rather than the branches of one coordinate.
+**Indexes: one re-argued, one deleted.** `ix_node_id_decode_hop_column_step` gained the three branch
+columns and keeps its place. Measured on the read-cost gate's fixture in rows visited by
+`intent_node_id_decode_column_live`: 3306 with against 3450 without at twelve units, 39054 against
+41358 at forty-eight. The gain grows with the schema. The three new columns tie exactly with the
+narrow shape at both sizes, no coordinate in that fixture departing more than one table, so they are
+claimed on being conjuncts of the join rather than on a figure, and the comment says so.
 
-**`intent_input_field_carrier_role_live`.** Its `landing` term groups over `(graph_name, use_site)`
-and its `decoded` term is already per branch. Add the triple to the group and to the join. The
-reading this fixes rather than changes: the relation's `local` flag becomes a statement about the
-branch whose row it is, which is what a per-branch grain claims it already was. A slot whose branches
-disagree, one lifting to local columns and another not, now gets `CROSS_TABLE_FK` on the one and
-`REMOTE` on the other instead of one verdict for both. That is the intended answer and it needs
-saying out loud in the relation's comment, because it is the only behaviour change in this item that
-a downstream reader can observe.
+`ix_node_id_decode_column_use_site` was deleted. Both jobs it was bought for dissolved in this
+change: the payload probe's predicate gained the three branch columns and the carrier's grouping went
+from two columns to five, so `(graph_name, site, use_site)` is a prefix of both rather than a cover of
+either. With the index against without, in rows visited: the carrier role 472 against 424 at twelve
+units and 1804 against 1612 at forty-eight, the payload column relation 1284 against 1283 and 4848
+against 4847, the payload refusal and the key membership identical at both sizes. No reader improves
+at either size and the one that loses loses proportionally more as the schema grows. The obvious
+repair, the same key with the branch appended so it covers both readers again, was measured beside
+the other two and ties the narrow shape on every reader at both sizes, so it is not a fix being
+deferred. The registration row in `meta_materialize` and the `NO_INDEX` roster in
+`MaterializeRegistryGateTest` both carry the figures and the reason.
 
-**`intent_mutation_payload_column_live`.** Its `NODE_ID` arm joins `intent_node_id_decode_column` on
-`(graph_name, site, use_site)`, so today it emits one payload column row per duplicate, which at the
-worked coordinate is a ninefold multiplication of the payload columns. It has no branch of its own to
-join on: an admitted occurrence is a coordinate, not a branch. Restrict the join to the branch the
-occurrence's carrier role resolved, which the `admitted` term already carries as
-`write_source_name` / `write_schema` / `write_table`. State in its comment that the payload column
-population is per occurrence and that the branch is what selects which decode answers for it.
-
-**Indexes.** `ix_node_id_decode_hop_column_step` is `(graph_name, use_site, position)` and serves the
-recursive join, whose predicate gains three columns; extend it to
-`(graph_name, use_site, origin_source_name, origin_schema, origin_table, position)` and re-argue the
-comment against the read-cost gate's figures rather than carrying the old ones forward.
-`ix_node_id_decode_column_use_site` is `(graph_name, site, use_site)` and serves the payload probe
-and the carrier's grouping; both gain the branch, so measure the extended shape against the current
-one on the gate's fixture and keep whichever wins, recording the figures either way. Neither index
-comment may keep a measurement it no longer stands on.
-
-**The materialize roster.** Three of the five relations touched are registered targets
-(`intent_node_id_decode_hop_column`, `intent_node_id_decode_column`,
-`intent_input_field_carrier_role`) and a fourth reads them at refresh
-(`intent_mutation_payload_column`). The registration rows in `meta_materialize` carry measurements
-that this change invalidates by shrinking the target populations; re-take them on the same fixture
-and update the prose. The refresh order does not change, no new dependency edge being introduced.
+**The registration measurements stand.** The spec expected the millisecond figures on the
+`meta_materialize` rows to move, the target populations shrinking. They do not, and the reason is
+checkable: those figures were taken against the sakila example schema, whose only unions are error
+unions with no table-bound members and whose one interface, `Signal`, carries `@table` on the
+container, which is exactly the participant arm's exclusion. That schema therefore has no branch to
+collapse and its populations are unchanged, so re-taking the figures would reproduce them. Only the
+index paragraph on the `intent_node_id_decode_column` row needed rewriting, and it was re-measured.
 
 ## Tests
 
-**The guard that makes this stay fixed.** A `graphitron-model` intent test asserting that
-`intent_node_id_decode_hop_column` and `intent_node_id_decode_column` hold no duplicate rows on a
-seeded store: `COUNT(*)` equals `COUNT(*)` over the distinct projection, per relation. This is the
-check that would have failed on the day the defect landed, and it is cheap enough to keep. State it
-as a property of these two relations rather than as a roster over all twenty; the sibling item that
-measured the other eighteen found they need no such guard, and a roster would claim otherwise.
+Shipped as `NodeIdDecodeBranchTest` in `graphitron-model`, six cases on two fixtures.
 
-**The polymorphic branch fixture.** A seeded fixture with one slot whose scope resolves several
-tables, each declaring its own foreign key to the node type's table, all joining on the same column
-names. That is the worked case reduced to the smallest catalog that reproduces it. Assertions: the
-hop column relation holds one row per branch per key position, `intent_node_id_decode` holds one row
-per branch with `arity` equal to the node key's real width, and `intent_input_field_carrier_role`
-holds one row per branch.
+**The polymorphic branch fixture.** A union of three role tables, each declaring its own foreign key
+to the node type's table, all three pairing the same two column names: the worked case reduced to the
+smallest catalog that carries it. Before the fix it reproduced the defect exactly in miniature,
+`intent_node_id_decode_column` holding eighteen rows of which two were distinct and
+`intent_node_id_decode_hop_column` six of which two were. Three cases stand on it: each branch
+contributes its own hop-column pairing, each lands its own key positions once, and neither relation
+holds a duplicate row, and each branch is its own decode row carrying the node key's real arity of
+two, which is the column the item is named for and which read eighteen before.
 
-**The cross-branch chaining fixture.** The `INPUT_FIELD` authored-path shape named above: a
-polymorphic slot with a two-hop `@reference` where the branches' first hops arrive at different
-tables whose second-hop departing columns share a name. Assert that each branch's lift follows its
-own route. Author this fixture first: it is the one claim in this spec taken from the shape of the
-SQL rather than from a capture, and if it turns out unreachable the spec's correctness argument
-needs re-stating on the carrier-role evidence alone, which stands on its own but is a weaker case
-for touching `intent_node_id_decode_column`'s recursive term.
+**The cross-branch chaining fixture.** The `INPUT_FIELD` authored-path shape, two branches whose one
+authored path resolves against whichever table the branch departs, arriving at intermediate tables
+that share the column name their second hop departs. This was the spec's one claim taken from the
+shape of the SQL rather than from a capture, and it is confirmed: with the branch predicate removed
+from the recursive term and the lift join, `klasserolle` lifts `emne_code`, a column of a table it
+never departed. A route no branch declares, so no collapse above could have recovered from it.
 
-**Existing tests to expect movement in.** `NodeIdDecodeColumnTest`, `NodeIdDecodeDestinationTest`,
-`NodeIdDecodeReachTest`, `MaterializeRegistryGateTest` (roster columns and measurements),
-`FactCaptureAgreementTest`, `DerivedReadCostTest` and `RefreshPlanStatisticsTest` (figures).
-`FamilyRosterGateTest` and `CommentRenderabilityGateTest` will hold the new columns to the comment
-conventions.
+The carrier role's per-branch answer is asserted on this fixture too, that being the one reading
+downstream of the family a consumer can observe: both branches lift to a column of their own table
+and each is told `CROSS_TABLE_FK` on its own row, where the shared landing aggregate used to hand
+every branch one verdict computed over all of them.
 
-**Not a demonstration.** A green build is compatible with the branches still being collapsed, every
-current fixture being single-branch. The two fixtures above are what shows the item delivered.
+**Not a demonstration.** A green build was compatible with the branches still being collapsed, every
+other fixture in the tree being single-branch. Both fixtures were confirmed to fail on the
+unfixed rule before being asserted against the fixed one.
+
+**What moved elsewhere: nothing.** The spec expected movement in `NodeIdDecodeColumnTest`,
+`NodeIdDecodeDestinationTest`, `NodeIdDecodeReachTest`, `FactCaptureAgreementTest`,
+`DerivedReadCostTest` and `RefreshPlanStatisticsTest`. None moved, for the same reason the sakila
+figures did not: every fixture those tests run is single-branch, so the widened key partitions rows
+that were already one per partition. `MaterializeRegistryGateTest` moved as predicted, and by
+failing rather than by drifting: its index roster caught the deleted index and demanded a row.
 
 ## Risks
 
@@ -248,15 +244,21 @@ it is a per-branch answer replacing a mixed one. Where branches agree, which is 
 tree today, nothing moves. Where they disagree the new answer is the correct one and the old one was
 a coin flip over row counts. Named here so the Done gate looks for it rather than discovering it.
 
-**The index re-argument may not pay.** Both index comments are long, measured arguments, and a wider
-key can lose on a fixture this size. The instruction above is to measure and record, not to widen on
-principle; an index that no longer earns its place is deleted with its reason, not kept with a stale
-comment.
+**The index re-argument did not pay, and the index went.** Recorded above with its figures. What is
+left open is the one thing the measurement cannot settle: every figure here comes from the read-cost
+gate's scaled fixture at two sizes, and the deleted index's original argument rested partly on a
+sakila capture and partly on an expectation about a consumer schema, where both sides of the payload
+probe grow. The mechanism that removed its value is structural rather than population-dependent, a
+three-column key being a prefix of a six-column predicate whatever the row count, which is why the
+deletion is claimed on the mechanism with the figures as corroboration rather than the other way
+round. A consumer schema that made the probe expensive again would want the six-column shape, which
+is measured, named and ties today.
 
-**Cost is lowest now.** No main source reads `intent_node_id_decode` or either child; the family's
-only main-source reader is `NodeIdDecodeDefects`, over `intent_node_id_decode_defect`, which sits on
-`intent_node_id_decode_slot` and is untouched here. Every consumer added before this lands is one
-more site that has to be re-read against a widened key.
+**Cost was lowest now, and this is what it cost.** No main source reads `intent_node_id_decode` or
+either child; the family's only main-source reader is `NodeIdDecodeDefects`, over
+`intent_node_id_decode_defect`, which sits on `intent_node_id_decode_slot` and is untouched. So the
+widened key reached no emitted output and no generated resolver, and the whole change is inside the
+fact model.
 
 ## Reproducing
 
