@@ -2048,11 +2048,39 @@ naming what it looked in.
 
 **Two things open, and the specification is explicit that nothing else does.** An input object opens
 into its fields. An `ID` carrying `@nodeId(typeName:)` opens into the key columns of the node type it
-names, so the segment after it names a key column rather than a field of any SDL type. That second
-arm matters for where the relation lives: validating it means reading the catalog's node key columns,
-1262 rows on the measured capture, which is `sql_`. So the candidate space is a union of one arm
-wholly inside the SDL gatherer and one arm that crosses, and the charter's own cut applies to it: the
-input descent belongs to that family and what stays in `intent_` is the join to the catalog.
+names, so the segment after it names a key column rather than a field of any SDL type.
+
+**A draft of this slice read the second arm as crossing into the catalog and was wrong twice.** It
+said validating that arm means reading the catalog's node key columns, naming `sql_node_key_column`
+and its 1262 rows. That relation is not the catalog: its own comment says it holds the key-columns
+constant *as stated*, that the constant may spell a column the table does not have, and that whether
+an entry resolves is a defect relation's question. It is a claim read off a generated class. The
+catalog proper enters only through a third arm that never fires here. And the deeper error was
+supposing the argMapping site should validate at all. What an `@nodeId` opens into is what `@node`
+claims; whether the claim holds against the catalog is `@node`'s question, owned by
+`intent_node_metadata_defect`, and answering it at the `@nodeId` site puts a resolution where a match
+belongs.
+
+**The rule as written does resolve, and that is where the crossing enters.**
+`intent_argmapping_key_column_candidate` reads `intent_resolved_node_key_column`, which is a
+three-tier precedence union under a `DENSE_RANK`: the `@node` directive's own claim first, the jOOQ
+metadata constant second behind a resolved type binding and a defect anti-join, the catalog's primary
+key third. That is why a plan of `intent_node_id_decode` instantiates `sql_node_metadata` 26 times
+and `sql_node_key_column` 10.
+
+**And the tiers say the same thing about `@node` that this item has been saying about `argMapping`.**
+Of 2294 resolved entries, 2 are the SDL's own claim, covering one node type of 249. The other 2292
+come from the metadata constant, and the catalog tier never wins. So the effective key-column claim
+is almost entirely a default the store computes rather than a fact anybody captured, and every reader
+that needs it re-derives the precedence union. Authored subset captured, effective set recomputed:
+the same defect, one directive over.
+
+**Which repairs the family answer rather than abandoning it.** If capture wrote `@node`'s effective
+claim, defaulting from the constant where the SDL does not pin it, the argMapping right-hand side
+would match a claim rather than resolve one, both of its opening kinds would sit in the SDL
+gatherer's own family, and the candidate space would be a `graphitron_` fact throughout. The
+crossing in the rule today is a consequence of the missing capture, not a property of the
+specification.
 
 **The left-hand side has no such single statement, and what is written is behind the code.** Three
 pages each say that unmentioned parameters bind to a GraphQL argument of the same name and that an
