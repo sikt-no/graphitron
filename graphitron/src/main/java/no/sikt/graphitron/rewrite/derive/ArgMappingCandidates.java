@@ -10,7 +10,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import no.sikt.graphitron.model.tables.GraphitronArgmappingCandidate;
 import org.jooq.Condition;
-import org.jooq.Record10;
+import org.jooq.Record11;
 import org.jooq.SelectJoinStep;
 
 import static org.jooq.impl.DSL.concat;
@@ -88,12 +88,13 @@ public final class ArgMappingCandidates {
     private static void seed(DSLContext dsl, String graphName) {
         var c = GRAPHITRON_ARGMAPPING_CANDIDATE;
         dsl.insertInto(c, c.GRAPH_NAME, c.TYPE_NAME, c.FIELD_NAME, c.ARGUMENT_NAME,
-                c.PATH, c.PARENT_PATH, c.ELEMENT_NAME, c.NAMED_TYPE, c.DEPTH, c.CLOSES_CYCLE)
+                c.PATH, c.PARENT_PATH, c.ELEMENT_NAME, c.NAMED_TYPE, c.IS_LIST, c.DEPTH,
+                c.CLOSES_CYCLE)
             .select(dsl.select(GRAPHQL_ARGUMENT.GRAPH_NAME, GRAPHQL_ARGUMENT.TYPE_NAME,
                     GRAPHQL_ARGUMENT.FIELD_NAME, GRAPHQL_ARGUMENT.ARGUMENT_NAME,
                     val(""), inline((String) null),
-                    GRAPHQL_ARGUMENT.ARGUMENT_NAME, GRAPHQL_ARGUMENT.NAMED_TYPE, val(0),
-                    val(false))
+                    GRAPHQL_ARGUMENT.ARGUMENT_NAME, GRAPHQL_ARGUMENT.NAMED_TYPE,
+                    GRAPHQL_ARGUMENT.IS_LIST, val(0), val(false))
                 .from(GRAPHQL_ARGUMENT)
                 .where(GRAPHQL_ARGUMENT.GRAPH_NAME.eq(graphName)))
             .execute();
@@ -122,13 +123,13 @@ public final class ArgMappingCandidates {
             closesCycle = closesCycle.or(GRAPHQL_FIELD.NAMED_TYPE.eq(ancestor.NAMED_TYPE));
         }
 
-        SelectJoinStep<Record10<String, String, String, String, String, String, String,
-            String, Integer, Boolean>> from = dsl.select(
+        SelectJoinStep<Record11<String, String, String, String, String, String, String,
+            String, Boolean, Integer, Boolean>> from = dsl.select(
                 c.GRAPH_NAME, c.TYPE_NAME, c.FIELD_NAME, c.ARGUMENT_NAME,
                 when(c.DEPTH.eq(0), GRAPHQL_FIELD.FIELD_NAME)
                     .otherwise(concat(c.PATH, val("."), GRAPHQL_FIELD.FIELD_NAME)),
-                c.PATH, GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.NAMED_TYPE, val(depth + 1),
-                field(closesCycle))
+                c.PATH, GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.NAMED_TYPE, GRAPHQL_FIELD.IS_LIST,
+                val(depth + 1), field(closesCycle))
             .from(c)
             .join(GRAPHQL_TYPE).on(GRAPHQL_TYPE.GRAPH_NAME.eq(c.GRAPH_NAME)
                 .and(GRAPHQL_TYPE.TYPE_NAME.eq(c.NAMED_TYPE))
@@ -147,7 +148,8 @@ public final class ArgMappingCandidates {
         }
 
         return dsl.insertInto(c, c.GRAPH_NAME, c.TYPE_NAME, c.FIELD_NAME, c.ARGUMENT_NAME,
-                c.PATH, c.PARENT_PATH, c.ELEMENT_NAME, c.NAMED_TYPE, c.DEPTH, c.CLOSES_CYCLE)
+                c.PATH, c.PARENT_PATH, c.ELEMENT_NAME, c.NAMED_TYPE, c.IS_LIST, c.DEPTH,
+                c.CLOSES_CYCLE)
             .select(from.where(c.GRAPH_NAME.eq(graphName)).and(c.DEPTH.eq(depth))
                 .and(c.CLOSES_CYCLE.isFalse()))
             .execute();

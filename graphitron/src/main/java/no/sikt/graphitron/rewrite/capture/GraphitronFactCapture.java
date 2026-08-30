@@ -1194,6 +1194,7 @@ final class GraphitronFactCapture {
         // their own. Neither column asserts the head resolves; that is the refusal relation's.
         int dot = argumentPath.indexOf('.');
         row.setHeadSegment(dot < 0 ? argumentPath : argumentPath.substring(0, dot));
+        row.setCandidatePath(dot < 0 ? "" : argumentPath.substring(dot + 1));
         row.setHeadKind("INPUT_FIELD_CONDITION".equals(site) ? "INPUT_FIELD" : "ARGUMENT");
         position(directive, row::setSourceName, row::setSourceLine, row::setSourceColumn);
         sink.add(row);

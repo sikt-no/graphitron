@@ -889,6 +889,7 @@ CREATE TABLE graphitron_argmapping_candidate (
   parent_path   VARCHAR,
   element_name  VARCHAR NOT NULL,
   named_type    VARCHAR NOT NULL,
+  is_list       BOOLEAN NOT NULL,
   depth         INT     NOT NULL,
   closes_cycle  BOOLEAN NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, argument_name, path),
@@ -911,6 +912,7 @@ COMMENT ON COLUMN graphitron_argmapping_candidate.path IS 'the dot-path below th
 COMMENT ON COLUMN graphitron_argmapping_candidate.parent_path IS 'the path one segment shorter, NULL at the root; a foreign key back to this relation, which is what makes the candidates a tree rather than a list. Completing a partially written path is a probe on this column, and how many segments remain below a candidate is a question about its descendants rather than a count over a positional decomposition';
 COMMENT ON COLUMN graphitron_argmapping_candidate.element_name IS 'what an author writes at this step: the argument name at a root and the input field''s name below one. Stored rather than recovered from the path because no reader may split a string, the rule graphitron_argument_path_segment''s writer already states from the other side';
 COMMENT ON COLUMN graphitron_argmapping_candidate.named_type IS 'the type of the value at this candidate, unwrapped of list and non-null. The whole of what says whether anything opens below: a candidate whose type is an input object has children and every other candidate is a leaf, so a reader needs no separate kind column and no rule of its own';
+COMMENT ON COLUMN graphitron_argmapping_candidate.is_list IS 'whether the value at this candidate is a list, carried from the argument or input field it stands for. A consumer binding a parameter to this candidate needs the arity as much as the type, and reading it here is what keeps such a consumer from joining back to the SDL relation the writer already read';
 COMMENT ON COLUMN graphitron_argmapping_candidate.depth IS 'how many segments below the argument this candidate sits, zero at the root; carried because the writer expands one depth at a time and because a reader asking for the roots of a subtree should not have to test a column for NULL';
 COMMENT ON COLUMN graphitron_argmapping_candidate.closes_cycle IS 'whether this candidate''s type already stands above it on its own ancestry, which is what makes it the element that closes a cycle. Such a candidate is nameable and so has a row, and nothing below it does, so this column is the difference between a leaf and a stopping point and a reader never has to infer one from the absence of children. Cyclic input nesting is not supported yet and the refusal an author sees is stated over these rows: a true here is where the candidate set stops, and saying so is what keeps the deferral visible instead of silent';
 
@@ -2367,8 +2369,9 @@ CREATE TABLE graphitron_arg_mapping_pair (
   position      INT     NOT NULL,
   param_name    VARCHAR NOT NULL,
   argument_path VARCHAR NOT NULL,
-  head_segment  VARCHAR NOT NULL,
-  head_kind     VARCHAR NOT NULL,
+  head_segment   VARCHAR NOT NULL,
+  head_kind      VARCHAR NOT NULL,
+  candidate_path VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
   source_line   INT,
   source_column INT,
@@ -2398,6 +2401,7 @@ COMMENT ON COLUMN graphitron_arg_mapping_pair.position IS 'the pair''s own posit
 COMMENT ON COLUMN graphitron_arg_mapping_pair.param_name IS 'the method parameter name the pair binds';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.argument_path IS 'the argument path the parameter is bound to, as written';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.head_segment IS 'the first segment of argument_path, which is the slot the path enters at. A function of the path text and written here because the writer has already split it: every reader needs the head and no reader may split a string, so the alternative is a positional join back into the segment child at position zero, repeated once per reader. What the head must name to be valid is the specification''s question and this column does not answer it: an invalid head is written here as spelled and refused by the relation that names invalid selections. Distinguishing what was selected from whether the selection resolves is the same separation the schema keeps everywhere else between a resolution and a rejection';
+COMMENT ON COLUMN graphitron_arg_mapping_pair.candidate_path IS 'the written path below the head, empty where the right side is a bare name; the other half of what this pair selects. Together with head_segment it is a candidate''s key under this pair''s own coordinate, so a reader asks whether the selection resolves by probing graphitron_argmapping_candidate rather than by walking a positional decomposition. Written by capture because it is a split of a string and no reader may split one, on head_segment''s terms. Says nothing about whether a candidate with that key exists: a selection that resolves and a selection that misses are both spelled here and only the probe tells them apart';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.head_kind IS 'what kind of slot the head names, ARGUMENT or INPUT_FIELD, which follows from the site alone: an input-field-level condition enters at the input field it sits on and every other site enters at an argument. Stored rather than recomputed because it is a function of a stored column and a check constraint keeps the two in step, so a reader switching on it cannot disagree with a reader switching on the site. Not a claim about whether the named slot exists';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.source_name IS 'the file the owning site was written in, carried from that site so a reader of this relation needs no join back to it';
 COMMENT ON COLUMN graphitron_arg_mapping_pair.source_line IS 'the owning site''s line, carried with the file beside it';

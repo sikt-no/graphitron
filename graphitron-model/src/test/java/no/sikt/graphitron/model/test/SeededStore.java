@@ -1130,6 +1130,9 @@ public final class SeededStore {
                     : argumentPath.substring(0, argumentPath.indexOf('.')))
             .set(GRAPHITRON_ARG_MAPPING_PAIR.HEAD_KIND,
                 "INPUT_FIELD_CONDITION".equals(site) ? "INPUT_FIELD" : "ARGUMENT")
+            .set(GRAPHITRON_ARG_MAPPING_PAIR.CANDIDATE_PATH,
+                argumentPath.indexOf('.') < 0 ? ""
+                    : argumentPath.substring(argumentPath.indexOf('.') + 1))
             .set(GRAPHITRON_ARG_MAPPING_PAIR.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHITRON_ARG_MAPPING_PAIR.SOURCE_LINE, location.value1())
             .set(GRAPHITRON_ARG_MAPPING_PAIR.SOURCE_COLUMN, location.value2())

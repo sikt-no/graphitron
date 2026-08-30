@@ -2321,6 +2321,47 @@ neither is an oversight: the key columns an `@nodeId` opens into wait on `@node`
 being captured rather than defaulted per read, and nothing about the input-field-level condition's
 own site is missing, because the input field it sits on is already a candidate here.
 
+### Slice 20: the selection is spelled as a candidate key, and the fan-out the rewiring runs into
+
+Two columns, so that a written right-hand side and a candidate can be compared without either side
+walking. The pair gains `candidate_path`, the written path below the head, which with the
+`head_segment` slice 17 added is a candidate's key under the pair's own coordinate. The candidate
+gains `is_list`, because the leaf relation reports arity beside type and a consumer that had to join
+back to the SDL for it would be re-reading what the writer already read. Both are splits of a string
+that capture performs and no reader may.
+
+**What that was meant to unlock, and did for most of the population.** `intent_argmapping_binding_leaf`
+is read by eight relations; `intent_argmapping_segment_binding` is read by nothing except the leaf,
+twice, once to drive it and once to ask whether a next segment exists. So expressing the leaf as a
+probe of the candidate tree retires the segment relation outright, and for a pair whose head is an
+argument the probe is exactly that: the pair's coordinate, its head and its `candidate_path` are a
+candidate's primary key.
+
+**The input-field-level condition is not that, and the reason is a fan-out rather than a key
+mismatch.** Such a pair is keyed on the input object type and the input field the condition sits on,
+with a null argument: on the measured capture,
+`StudieprogramStudieretningerFilterInput.terminfilter` with a path of `terminfilter.arstall`. That
+coordinate is type-local. The candidate tree is keyed by the query field coordinate and the argument
+the path descends from, and one input field occurs under every argument that reaches it, so the
+pair's coordinate resolves not to one candidate but to all of its occurrences. That is what the two
+arms of the existing rule are doing with the occurrence path relation, and it is why they read as
+alignment: they are resolving a type-local site into path-keyed positions.
+
+**The candidate keys do not change for it, which is the part worth being precise about.** The input
+field is a candidate at each of its occurrences and needs no new shape. What the rewiring needs is
+the mapping from a type-local site to those occurrences, which is a join on the parent's type and the
+element name, and then the pair's remaining path has to descend from each match. Descending from a
+match is where it stops being free: a candidate's path is absolute under its argument while the
+pair's remainder is relative to the site, so matching them means either constructing the absolute
+path in a reader or walking a segment at a time. The observed remainders are one segment, where the
+walk is one join, but the general case is not bounded by that.
+
+**So the argument-rooted arm is ready and the type-local arm is a decision.** Recorded here rather
+than resolved, because the last three times this item guessed at a coordinate question it guessed
+wrong, and because the choice has consequences beyond this relation: whether a pair on an
+input-field-level site should carry the site's occurrence instead of its type-local coordinate is a
+question about what capture writes, not about how a rule reads.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
