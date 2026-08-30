@@ -1,7 +1,7 @@
 ---
 id: R877
 title: "The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation"
-status: Ready
+status: In Progress
 bucket: cleanup
 priority: 2
 theme: model-cleanup
@@ -149,9 +149,13 @@ enforcement, not the location. Anyone selling this as "the DDL gets shorter" has
 
 ## The plan: grain and owner become declared data
 
-Two new relations in the `meta_` family. `meta_grain` rosters the grains this store knows about.
-`meta_relation` gives every relation in the schema a row saying which grain it is at, who owns it,
-what one of its rows is, and one example of one.
+Six new relations in the `meta_` family, every column NOT NULL. `meta_corpus` rosters the corpora
+the store reads. `meta_gatherer` rosters the fact gatherers, with `meta_gatherer_corpus` saying
+which corpora each one reads and `meta_gatherer_dependency` saying whose rows it may read.
+`meta_grain` rosters the grains this store knows about. `meta_relation` gives a relation a row
+saying which grain it is at, who owns it, what one of its rows is, and one example of one; a
+relation nobody has reached yet has no row, and the census closes over that absence rather than
+over a spelled pending state.
 
 ### What a grain is
 
@@ -198,18 +202,37 @@ front of it.
 So declaring grain as data is not only a documentation change. It is the check that would have made
 those twenty visible as modelling defects before each became a materialization decision.
 
-### `meta_owner`
+### `meta_gatherer`, `meta_corpus`, and the two junctions
 
 One row per fact gatherer, keyed on its name, and each row names the Java class that is the gatherer.
-Naming the class is what stops this from becoming a second vocabulary: the compiler and the Javadoc
-reference gate already hold a `{@link}` to a class that exists, so an owner roster that points at
-`SdlFactCapture` cannot quietly outlive it. Columns: the name, the class, the corpus it reads, and
-the order it runs in.
+Naming the class is what stops this from becoming a second vocabulary: a gate loads each named class,
+so a roster that points at `SdlFactCapture` cannot quietly outlive it. Columns: the name and the
+class, nothing else. Named `meta_gatherer` rather than `meta_owner` because the store's naming
+discipline names a relation for what its rows are, never for their role, and a gatherer is a gatherer
+whether or not anything points at it; "owner" survives as the role-named foreign-key column on
+`meta_relation`, the same way `meta_family_bridge` names its prefix columns for their roles. Not
+`meta_crawler` either: the tree uses "crawler" consistently for the corpus-reading transcription
+passes and "gatherer" for the ownership concept, and the derivation gatherer crawls nothing.
 
-**The last owner is a real gatherer and not a null.** The derivation gatherer runs after every corpus
-gatherer has finished, which is the earliest point at which a rule crossing families has all its
-inputs. It owns the `intent_` relations, and it owns materializing the grain tables the views and the
-queries above it stand on. That is what `meta_materialize` becomes: not a mechanism of its own
+What a gatherer reads lives in two junction relations rather than in columns, because both facts are
+set-valued and absence is a fact worth stating as no row rather than as NULL. `meta_gatherer_corpus`
+says which corpora a gatherer reads: `CatalogFactCapture` reads two (the jOOQ catalog and the
+declared classpath), the derivation gatherer reads none, and a scalar column could state neither. A
+crawler is precisely a gatherer with at least one corpus row, which makes this junction the store's
+definition of a word the fact model page already leans on. `meta_gatherer_dependency` says whose rows
+a gatherer may read, declared rather than derived: the corpus gatherers carry no edges, which states
+their mutual independence, and the derivation gatherer depends on every one of them, which is what
+"runs last" means once it stops being a position. There is no run-order column: the order gatherers
+run in is `FactCapture.capture`'s statement order, a fact of the code this model would only
+transcribe, and an ordinal would flatten "these are independent" into a total order the model does
+not have. The dependency roster drives no execution; it is a declaration a gate holds the views to.
+`meta_corpus` itself is the tiny roster both junctions and `meta_grain` key into: the corpus name and
+a one-sentence definition.
+
+**The last owner is a real gatherer with no corpus rows.** The derivation gatherer runs after every
+corpus gatherer has finished, which is the earliest point at which a rule crossing families has all
+its inputs. It owns the `intent_` relations, and it owns materializing the grain tables the views and
+the queries above it stand on. That is what `meta_materialize` becomes: not a mechanism of its own
 standing outside the ownership rule, but one owner's refresh plan, the same kind of thing any other
 gatherer would hold for its own family.
 
@@ -217,45 +240,54 @@ gatherer would hold for its own family.
 
 One row per grain, keyed on its name. Columns: the name; a one-sentence statement of what one
 instance is, length-checked; the canonical key shape as a column list; and the corpus the grain lives
-in, constrained to the corpora the store actually reads.
+in, a foreign key into `meta_corpus`.
 
 ### `meta_relation`
 
-One row per relation, keyed on the relation name, covering views as well as tables.
+One row per relation the migration has reached, keyed on the relation name, covering views as well as
+tables. Every column NOT NULL.
 
-- `state`, either declared or pending. NOT NULL. Pending means nobody has reached this relation yet.
 - `grain_name`, a foreign key into `meta_grain`.
-- `owner`, a foreign key into `meta_owner`.
+- `owner_name`, a foreign key into `meta_gatherer`, named for the role the reference plays.
 - `grain_text`, the one sentence saying what one row is.
 - `example`, one example row stated concretely.
 - `rationale`, why this relation exists, with a larger length allowance than the two above. Not a
   place to put the old comment tails; see below.
 
-**The five content columns are nullable and the `CHECK` constraints tie them to the state**, both
-ways: a declared row must have all five, and a pending row must have none of them. Nullable rather
-than a spelled pending value, which is the other design this spec has a precedent for and the wrong
-one here. A spelled value would need a `meta_grain` row named pending and a `meta_owner` row to match,
-which puts a transitional artefact permanently into two rosters whose whole job is to say what this
-store is about. The `owner_kind` precedent is for an absence that is part of the model and never goes
-away; this absence is a work queue.
+**A relation nobody has reached yet has no row, and that absence is the pending state.** This
+supersedes the nullable-with-state design round 1 settled, with a third option neither review round
+weighed: no pending representation at all. The store's census (`meta_relation_family` over
+`INFORMATION_SCHEMA`) already says which relations exist, so which ones lack a `meta_relation` row is
+a query, and a row that exists answers all four questions or fails a NOT NULL. What the pending state
+bought, "a relation joining the store is a decision recorded rather than a row appearing", the
+absence form buys identically through the roster gate below, without a state column, without five
+two-way CHECKs, and without 276 content-free INSERT rows in a file this item exists to slim down. It
+also dissolves the mechanical half-migration: there is no verbatim-tail-into-`rationale` step, a row
+exists exactly when its four questions have been answered, which is what the migration section below
+already said the real work is.
 
-**The state column stays after the migration rather than being dropped, and earns its keep.** Once
-the pending count reaches zero the ratchet pins zero, so a new relation cannot arrive pending without
-moving a number somebody has to edit. That is the same property the rest of this item is after: a
-relation joining the store becomes a decision recorded rather than a row appearing.
+**The ratchet pins the roster, not a count.** The gate test carries the list of relations that have
+no `meta_relation` row yet, frozen at migration start and only ever shrinking. A count admits a swap
+(declare one relation, sneak in a new undeclared one, number unchanged); a shrink-only list does not,
+and it is the exemption polarity the schema gates already use throughout. A new relation is on no
+frozen list, so it fails the build until someone declares it, mid-migration and after alike. The item
+is not done while the list is non-empty; once it empties, the gate is the both-ways equality the
+Gates section states.
 
 **The owner column is where this meets the ownership rule on the fact model page.** That page states
 that a view reading one family belongs to that family and is owned by that family's gatherer, and
 that a rule whose facts cross families is owned by the gatherer that runs last. It also states, in its
-own enforcement line, that nothing checks this. The `owner` column is what makes it checkable: a
-relation owned by the last gatherer whose captured facts all sit in one family is the misfiling the
-rule names, and that is a query rather than a review.
+own enforcement line, that nothing checks this. The `owner_name` column plus the declared dependency
+edges are what make it checkable, and `ViewReferences` already parses stored view definitions, so the
+gate walks each declared view's reads: every relation a view reads must be owned by the view's own
+owner or by a gatherer in that owner's declared dependency set. The gate covers views; the
+hand-written producers read through jOOQ code no stored definition exposes, and
+`CaptureCorpusIsolationTest` keeps covering that side dynamically.
 
-**Owner and grain must agree about the corpus, which is a second free check.** A gatherer reads one
-corpus and a grain lives in one corpus, so a relation whose grain is a catalog grain and whose owner
-is the SDL gatherer is a capture-time cross-corpus read. `CaptureCorpusIsolationTest` already catches
-that dynamically by capturing twice; this would state it declaratively, and the two disagreeing is
-worth knowing about either way.
+**Owner and grain must agree about the corpus, which is a second free check.** A relation whose grain
+is a catalog grain and whose owner is the SDL gatherer is a capture-time cross-corpus read.
+`CaptureCorpusIsolationTest` already catches that dynamically by capturing twice; this states it
+declaratively, and the two disagreeing is worth knowing about either way.
 
 ### What this is already partly doing, which is why it should land clean
 
@@ -320,25 +352,34 @@ why it exists at all.
 
 ### Gates
 
-- Every relation in `INFORMATION_SCHEMA` has a `meta_relation` row and every row names a relation
-  that exists. Equality both ways.
-- A declared row's relation comment equals its `grain_text` and `example` joined, so the two homes
-  cannot drift and a SQL client is never told something the pages do not say. **Only declared rows.**
-  A pending relation still carries its old multi-sentence comment and has no `grain_text` to compare
-  it against, so no prose gate binds on it at all; there is no weaker intermediate form to specify,
-  because the state that would need one carries nothing to check.
-- Every `meta_relation.grain_name` resolves, by the foreign key.
-- **Owner and grain agree about the corpus, directionally.** A corpus gatherer may own only relations
-  whose grain lives in the corpus it reads. The rule is not an equality join in both directions:
-  relations owned by the last gatherer sit at grains that live in captured corpora, so
-  `intent_field_scope_table` is at an SDL-corpus grain with the derivation gatherer as its owner, and
-  blanket equality would flag every crossing rule in the store. The exemption falls out of the data
-  rather than being a case in the gate: `meta_owner.corpus` is nullable and is null exactly for a
-  gatherer that reads no corpus, so the gate is "a row whose owner names a corpus must have a grain in
-  that corpus" and says nothing about the rest. The derivation gatherer's corpus is therefore null,
-  which is what makes it the owner that may cross.
-- Every `meta_owner` row names a Java class that exists, held by the Javadoc reference gate the
-  build already runs.
+- Every `meta_relation` row names a relation that exists, and every relation in `INFORMATION_SCHEMA`
+  has a `meta_relation` row unless it is on the not-yet-migrated roster pinned in the gate test,
+  frozen at migration start and only ever shrinking. Once the roster empties this is equality both
+  ways, and the gate holds it there.
+- A row's relation comment equals its `grain_text` and `example` joined, so the two homes cannot
+  drift and a SQL client is never told something the pages do not say. Every row is held to this,
+  there being no pending rows: a relation still on the roster carries its old multi-sentence comment
+  and no row to compare it against.
+- `grain_text` is a single sentence by `GrainSentence`'s own terminator rule, so the echo's first
+  sentence is the grain sentence and the extractor keeps working unchanged.
+- Every `meta_relation.grain_name` and `owner_name` resolves, by the foreign keys.
+- **Owner and grain agree about the corpus, directionally.** A gatherer with corpus rows may own only
+  relations whose grain lives in one of the corpora it reads. The rule is not an equality join in
+  both directions: relations owned by the last gatherer sit at grains that live in captured corpora,
+  so `intent_field_scope_table` is at an SDL-corpus grain with the derivation gatherer as its owner,
+  and blanket equality would flag every crossing rule in the store. The exemption falls out of the
+  data rather than being a case in the gate: the derivation gatherer has no `meta_gatherer_corpus`
+  rows, so the gate binds on nothing for it, which is what makes it the owner that may cross.
+- **A declared view reads only what its owner may read.** Walk the view's stored definition with
+  `ViewReferences`; every relation it reads must be owned by the view's own owner or by a gatherer in
+  the owner's declared `meta_gatherer_dependency` set. This is the fact model page's ownership rule
+  as a query.
+- A declared base table's primary-key column list equals its grain's key shape, which is what "a
+  relation's primary key is its grain expressed as columns" means once grain is data. Views carry no
+  key, so for the 107 views the declaration is the modelling decision the item exists to force.
+- Every `meta_gatherer` row names a Java class that exists, held by a class-loading gate in the
+  `graphitron` module, which is where the gatherer classes live; `graphitron-model` cannot see them,
+  the dependency pointing the other way.
 - The lengths, by `CHECK` constraints in the DDL rather than by tests, which is the point: a `CHECK`
   fires when the schema is applied, at every store boot, and cannot be skipped or disabled.
 
@@ -368,29 +409,32 @@ not-applicable, or a split into the two relations the conditional grain was hidi
 ### The work, family by family
 
 276 relations. Each is asked the same four questions and each is one decision, so the item is long
-rather than hard, and it is done in family order rather than in one pass:
+rather than hard, and it is done in family order rather than in one pass. The model itself lands
+first, before any family: the six relations, the gatherer and corpus rosters populated (those are
+global and small), `meta_grain` and `meta_relation` empty, and every gate live with the frozen
+roster carrying all 276 relations. The new `meta_` relations themselves start on that roster too:
+declaring them needs the `store_`/`meta_` owner question answered, which is deliberately that
+slice's decision, not the first one's.
 
 [cols="2,1,1,1,4"]
 |===
 | family | tables | views | unkeyed | why here in the order
 
-| `sql_` | 14 | 0 | 0 | one corpus, one gatherer, every relation keyed: proves the three new relations end to end at the smallest scale
+| `sql_` | 14 | 0 | 0 | one corpus, one gatherer, every relation keyed: proves the model end to end at the smallest scale
 | `jvm_` | 7 | 0 | 0 | the same shape one corpus over, and the second owner
 | `java_`, `javac_`, `lint_`, `walk_`, `rejection_`, `build_warning_` | 12 | 0 | 0 | small and mostly scaffolding; settles how a family with a retirement clock declares an owner
 | `graphql_` | 27 | 1 | 0 | the first large family, and the one whose grains the key shapes already state most clearly
 | `graphitron_` | 61 | 0 | 0 | the largest table family, same gatherer as `graphql_`, so the owner is already settled by the time it starts
-| `store_`, `meta_`, and the prefixless `diagnostic` | 15 | 7 | 0 | the store describing itself and the run; their owner is neither a corpus gatherer nor the last one, and whether it takes a corpus of its own or a null like the derivation gatherer is left open for this slice deliberately, since the answer depends on what these relations turn out to be about
+| `store_`, `meta_`, and the prefixless `diagnostic` | 15 | 7 | 0 | the store describing itself and the run; their owner is neither a corpus gatherer nor the last one, and whether it takes a corpus of its own or no corpus rows like the derivation gatherer is left open for this slice deliberately, since the answer depends on what these relations turn out to be about
 | `intent_` | 25 | 107 | 20 | last, and it is half the work: no keys to derive a grain from, and the twenty owe one
 |===
 
 **What stops the second half from never happening**, since a family-by-family plan invites exactly
-that. `meta_relation` covers every relation from the first slice onward, and a relation nobody has
-reached yet carries a row whose state says so. The `CHECK` constraints on grain, example and
-rationale are conditional on that state, so a pending row is legal and an incomplete declared row is
-not. The count of pending rows is pinned by equality and can only fall, which is the ratchet this
-repo already uses for read cost: the number is in a test somebody has to edit, so a family that
-stalls is visible in a diff rather than in nobody's memory. The item is not done while a pending row
-survives.
+that. The gate test carries the roster of relations with no `meta_relation` row, frozen when the
+model lands and only ever shrinking, which is the ratchet this repo already uses for read cost: the
+roster is in a test somebody has to edit, so a family that stalls is visible in a diff rather than in
+nobody's memory, and a new relation is on no frozen roster so it cannot arrive undeclared. The item
+is not done while the roster is non-empty.
 
 ## Two cautions for whoever picks this up
 
@@ -489,3 +533,32 @@ table. Two counts corrected in passing in this commit: the content-column paragr
 the list above it carries five (`grain_name`, `owner`, `grain_text`, `example`, `rationale`; the
 two-way CHECK's intent was unambiguous either way), and one leftover 2563 from the measurement
 correction in round 1.
+
+### In Progress amendments (2026-08-30, owner and implementer session, at the owner's direction)
+
+Three design changes agreed with the owner before slice 1, each amended into the plan body above so
+the body reads as one design; recorded here because two of them revise what round 2 signed off.
+
+**Pending state replaced by absence.** Round 1 weighed nullable-with-state against spelled pending
+values and round 2 signed off nullable; the owner put a third option on the table that neither round
+weighed, and it wins: no pending representation at all. The census over `INFORMATION_SCHEMA` already
+says which relations lack a row, so `meta_relation` holds only answered rows, every column NOT NULL,
+and the ratchet pins a shrink-only roster of unmigrated relations in the gate test rather than a
+count (a count admits a swap; a frozen list does not). This also deletes the mechanical
+tail-into-`rationale` migration step, which the spec's own doctrine said was not the real work
+anyway.
+
+**Run order replaced by declared dependencies.** The spec gave the owner roster a run-order column;
+the order gatherers run in is `FactCapture.capture`'s statement order, a fact of the code the column
+would only transcribe, and an ordinal asserts a total order the model does not have (the corpus
+gatherers are mutually independent by design). `meta_gatherer_dependency` declares whose rows a
+gatherer may read, and a gate denies declared views that read outside their owner's dependency set,
+which is the fact model page's ownership rule made mechanical. The roster drives no execution.
+
+**`meta_owner` renamed `meta_gatherer`, corpus moved to a junction.** A relation is named for what
+its rows are, never for their role ("owner" survives as the role-named FK column on
+`meta_relation`); "crawler" was considered and rejected because the tree uses that word for the
+corpus-reading passes specifically and the derivation gatherer crawls nothing. The scalar nullable
+corpus column is replaced by `meta_gatherer_corpus` plus a `meta_corpus` roster: `CatalogFactCapture`
+reads two corpora (catalog and classpath), which a scalar could not state, and the derivation
+gatherer's exemption becomes absence of rows rather than a NULL.
