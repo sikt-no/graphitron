@@ -581,6 +581,19 @@ class FactCaptureAgreementTest {
         registrations.put("meta_relation_reference", Arm.DERIVED);
         registrations.put("meta_materialize", Arm.DERIVED);
         registrations.put("meta_materialize_dependency", Arm.DERIVED);
+        // The declaration rosters sit in the same stratum as tables whose rows an INSERT in the
+        // DDL supplies, so capture never writes them either. Their anchors are the DDL's own
+        // keys, foreign keys and CHECK constraints, the declaration gates in
+        // no.sikt.graphitron.model.MetaDeclarationGateTest (which close the undeclared roster,
+        // the comment echo, the corpus agreement, the key-shape match and the view-ownership
+        // rule against the observed schema), and the gatherer-class gate in FactSchemaGateTest,
+        // which holds every meta_gatherer row to a class that exists.
+        registrations.put("meta_corpus", Arm.DERIVED);
+        registrations.put("meta_gatherer", Arm.DERIVED);
+        registrations.put("meta_gatherer_corpus", Arm.DERIVED);
+        registrations.put("meta_gatherer_dependency", Arm.DERIVED);
+        registrations.put("meta_grain", Arm.DERIVED);
+        registrations.put("meta_relation", Arm.DERIVED);
         registrations.put("javac_diagnostic", Arm.ORACLE);
         registrations.put("walk_type_backing_class", Arm.ORACLE);
         registrations.put("rejection_validation_error", Arm.ORACLE);

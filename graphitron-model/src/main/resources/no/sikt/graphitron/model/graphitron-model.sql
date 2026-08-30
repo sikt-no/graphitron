@@ -9758,7 +9758,7 @@ CREATE VIEW meta_family (prefix, title, ordinal, introduction, definition) AS VA
   ('rejection_', 'The legacy walk''s verdicts', 9, 'The legacy walk''s error verdicts, in the sealed rejection hierarchy''s own vocabulary. Transitional by construction: each kind of verdict moves out as its detection is rebuilt store-native, and the family empties as that migration completes.', 'The legacy walk''s verdicts, transcribed in the sealed Rejection hierarchy''s own spellings (kind, variant, lsp_code, attempt_kind and stub_key are all that hierarchy''s words) and carrying the same retirement clock as walk_: transitional by construction, drained family by family as detections migrate store-native. Deliberately not validator_, both because that names a role and because the validation phase outlives the hierarchy and may one day want its own name.'),
   ('lint_', 'The linter''s findings', 10, 'The linter''s findings: one row per finding, plus the corrections a rule can compute for its own findings. A correction here is a suggestion an editor may offer, never a rewrite the build performs. The family speaks the linter''s vocabulary, where severity follows from the rule.', 'The linter''s vocabulary (lint_finding.lint_rule is LintRule.id()), its own family because a lint finding''s severity is a function of its rule, never a rejection kind, and because lint rules are predicates over classified facts that should be free to migrate store-native without contending for another family''s relation.'),
   ('build_warning_', 'The advisory arm', 11, 'The advisory arm of build feedback: warnings that point at nothing rule-shaped, just a message and a location worth a human''s attention. Small on purpose.', 'The sealed BuildWarning hierarchy''s advisory arm in that hierarchy''s own words (message and location are NoRule''s entire component list), with the arm selector in the relation name per the jvm_scalar_type_field precedent, since the sibling arm lives in lint_. Not graphitron_, whose decoded-directives-and-macro-provenance charter an advisory is neither of, and not walk_, because a family may not be named for its producer and both of the arm''s producers outlive the walk.'),
-  ('meta_', 'The schema describing itself', 12, 'The schema describing itself: which families exist, where the exceptions live, and how the roster closes against the relations actually observed. These rows are versioned with the schema definition and never change at run time. The reference pages you are reading are rendered from this family''s rows and the comments beside them.', 'The schema''s own description: the family roster, each family''s headline relations and its sanctioned normalization crossings, the placement of relations no prefix covers, the census that closes both rosters against the observed schema, the declared key edges resolved out of the engine''s catalog, the register of which derived views are materialized into which tables, and the register''s derived refresh edges. Rows that are a function of this file alone, versioned with the DDL they describe and never refreshable apart from it, which is the property that matters and which every form in the family keeps: a roster stated as a VALUES view has rows that are part of the definition, and the register stated as a table has rows an INSERT in this same file supplies before any run opens the store. The register takes the table form because it is the one resident whose rows a constraint should defend, a key on the source view and NOT NULL on all three columns, and a view can carry neither; the two older rosters keep the view form until an item converts them. meta_materialize_dependency is the family''s one machine-written resident: unlike its authored siblings its rows come from one boot-time routine that derives them from the stored view definitions, so a hand edit is a bug, the same standing meta_relation_family''s comment claims for its derivation, here as a table because transitive reach through unregistered intermediate views is not a plain SQL view''s to express. Not store_, because these rows are a statement of what this file declares, never a record of what a run read.');
+  ('meta_', 'The schema describing itself', 12, 'The schema describing itself: which families exist, where the exceptions live, and how the roster closes against the relations actually observed. These rows are versioned with the schema definition and never change at run time. The reference pages you are reading are rendered from this family''s rows and the comments beside them.', 'The schema''s own description: the family roster, each family''s headline relations and its sanctioned normalization crossings, the placement of relations no prefix covers, the census that closes both rosters against the observed schema, the declared key edges resolved out of the engine''s catalog, the corpus, gatherer and grain rosters with the per-relation declarations binding each declared relation to them, the register of which derived views are materialized into which tables, and the register''s derived refresh edges. Rows that are a function of this file alone, versioned with the DDL they describe and never refreshable apart from it, which is the property that matters and which every form in the family keeps: a roster stated as a VALUES view has rows that are part of the definition, and the register stated as a table has rows an INSERT in this same file supplies before any run opens the store. A resident whose rows a constraint should defend takes the table form, a key, a foreign key and a CHECK being nothing a view can carry: the materialization register and the declaration rosters around meta_relation are tables whose rows an INSERT in this same file supplies; the two older rosters keep the view form until an item converts them. meta_materialize_dependency is the family''s one machine-written resident: unlike its authored siblings its rows come from one boot-time routine that derives them from the stored view definitions, so a hand edit is a bug, the same standing meta_relation_family''s comment claims for its derivation, here as a table because transitive reach through unregistered intermediate views is not a plain SQL view''s to express. Not store_, because these rows are a statement of what this file declares, never a record of what a run read.');
 COMMENT ON VIEW meta_family IS 'The family roster: one row per relation-name prefix, keyed by the prefix under the schema''s naming discipline (a family is named for whose vocabulary its rows are written in, never for its reader or its role). The introduction column presents each family to a first-time reader and the definition column carries its charter, the latter migrated out of this file''s header so the roster has one home; the generated schema reference renders one page per row, ordered by ordinal, and the schema gates close the roster against the observed relations in both directions.';
 COMMENT ON COLUMN meta_family.prefix IS 'the family''s relation-name prefix, trailing underscore included; the roster''s key, unique by gate since a view carries no PRIMARY KEY, and no prefix may be a prefix of another (gated), which is what lets the census match exactly';
 COMMENT ON COLUMN meta_family.title IS 'the family''s rendered page title in the generated schema reference; plain prose, display material only';
@@ -9837,6 +9837,128 @@ COMMENT ON COLUMN meta_relation_reference.child_relation_name IS 'the referencin
 COMMENT ON COLUMN meta_relation_reference.child_prefix IS 'the referencing relation''s family, from the census rather than from its name; NULL only where the census places the relation in no family, which an exemption row would have to argue';
 COMMENT ON COLUMN meta_relation_reference.parent_relation_name IS 'the referenced relation, the one whose unique key the foreign key resolves against';
 COMMENT ON COLUMN meta_relation_reference.parent_prefix IS 'the referenced relation''s family, from the census on the same terms as the referencing side''s';
+
+-- The declared documentation model: the corpora the store reads, the gatherers that fill it and
+-- what each one reads and may depend on, the grains relations are declared at, and the
+-- per-relation declaration binding a relation to a grain, an owner, its grain sentence, one
+-- example and its reason to exist. Tables with rows supplied by INSERTs in this same file rather
+-- than VALUES views, because the design leans on keys, foreign keys and CHECK constraints, none
+-- of which a view can carry; the rows stay a function of this file alone, which is the property
+-- the family charter requires. The gates closing these rosters against the observed schema are in
+-- MetaDeclarationGateTest beside this module's other structural gates, and the gate holding every
+-- gatherer class to one that exists is in the graphitron module, the module that can load them.
+
+CREATE TABLE meta_corpus (
+  corpus_name VARCHAR NOT NULL,
+  definition  VARCHAR NOT NULL,
+  PRIMARY KEY (corpus_name),
+  CHECK (CHAR_LENGTH(definition) BETWEEN 1 AND 300)
+);
+COMMENT ON TABLE meta_corpus IS 'One corpus the store reads: an input that exists outside the store and independently of the other inputs, named so gatherers and grains can say which input they are about. For example the row named sdl is the GraphQL schema documents. Keyed on the name; the gatherer junction and the grain roster resolve into it by foreign key, so a corpus cannot be misspelled at either site.';
+COMMENT ON COLUMN meta_corpus.corpus_name IS 'the corpus''s name, the roster''s key, in lowercase kebab case';
+COMMENT ON COLUMN meta_corpus.definition IS 'one sentence saying what the corpus is; length-checked by the CHECK beside it';
+
+INSERT INTO meta_corpus VALUES
+  ('configuration', 'The configuration the run holds in hand about its subject graph, handed to capture rather than read from a file.'),
+  ('sdl', 'The GraphQL schema documents the run reads, as parsed source text.'),
+  ('catalog', 'The consumer database catalog, read through the generated jOOQ model.'),
+  ('classpath', 'The classfiles on the declared compile classpath.'),
+  ('java-source', 'The consumer''s own .java source files, as a plain parse reads them.'),
+  ('javac', 'The JDK compiler''s diagnostic stream from compiling the emitted sources.');
+
+CREATE TABLE meta_gatherer (
+  gatherer_name  VARCHAR NOT NULL,
+  gatherer_class VARCHAR NOT NULL,
+  PRIMARY KEY (gatherer_name),
+  UNIQUE (gatherer_class)
+);
+COMMENT ON TABLE meta_gatherer IS 'One fact gatherer: a producer that fills this store, rostered so a relation can declare which one owns it. For example the row named sdl is the gatherer whose class is SdlFactCapture. The class column is what keeps the roster from becoming a second vocabulary: a gate loads every named class, so a row cannot quietly outlive the code it points at. What a gatherer reads is stated beside it, its corpora in meta_gatherer_corpus and its declared read edges in meta_gatherer_dependency.';
+COMMENT ON COLUMN meta_gatherer.gatherer_name IS 'the gatherer''s name, the roster''s key, in lowercase kebab case';
+COMMENT ON COLUMN meta_gatherer.gatherer_class IS 'the fully qualified Java class that is the gatherer''s entry point, unique per row; a class-loading gate in the graphitron module holds every value to a class that exists. The derivation gatherer names Materializations, the executor of the refresh plan meta_materialize declares, which is the one class that acts for it.';
+
+INSERT INTO meta_gatherer VALUES
+  ('configuration', 'no.sikt.graphitron.rewrite.capture.ConfigurationFactCapture'),
+  ('sdl', 'no.sikt.graphitron.rewrite.capture.SdlFactCapture'),
+  ('catalog', 'no.sikt.graphitron.rewrite.capture.CatalogFactCapture'),
+  ('java-source', 'no.sikt.graphitron.rewrite.capture.JavaSourceFacts'),
+  ('compile', 'no.sikt.graphitron.rewrite.compile.CompileFacts'),
+  ('derivation', 'no.sikt.graphitron.model.derive.Materializations');
+
+CREATE TABLE meta_gatherer_corpus (
+  gatherer_name VARCHAR NOT NULL,
+  corpus_name   VARCHAR NOT NULL,
+  PRIMARY KEY (gatherer_name, corpus_name),
+  FOREIGN KEY (gatherer_name) REFERENCES meta_gatherer (gatherer_name),
+  FOREIGN KEY (corpus_name) REFERENCES meta_corpus (corpus_name)
+);
+COMMENT ON TABLE meta_gatherer_corpus IS 'One corpus a gatherer reads: a declared pairing of one gatherer with one outside input. For example the catalog gatherer carries two rows, catalog and classpath. A gatherer with at least one row here is a crawler, and this junction is the store''s definition of that word: a transcription pass whose rows about its own corpus may not vary with any other corpus''s contents. The derivation gatherer has no row here, reads only captured rows, and is thereby the one owner whose relations may cross corpora.';
+COMMENT ON COLUMN meta_gatherer_corpus.gatherer_name IS 'the reading gatherer, a meta_gatherer key';
+COMMENT ON COLUMN meta_gatherer_corpus.corpus_name IS 'the corpus read, a meta_corpus key';
+
+INSERT INTO meta_gatherer_corpus VALUES
+  ('configuration', 'configuration'),
+  ('sdl', 'sdl'),
+  ('catalog', 'catalog'),
+  ('catalog', 'classpath'),
+  ('java-source', 'java-source'),
+  ('compile', 'javac');
+
+CREATE TABLE meta_gatherer_dependency (
+  gatherer_name VARCHAR NOT NULL,
+  depends_on    VARCHAR NOT NULL,
+  PRIMARY KEY (gatherer_name, depends_on),
+  FOREIGN KEY (gatherer_name) REFERENCES meta_gatherer (gatherer_name),
+  FOREIGN KEY (depends_on) REFERENCES meta_gatherer (gatherer_name),
+  CHECK (gatherer_name <> depends_on)
+);
+COMMENT ON TABLE meta_gatherer_dependency IS 'One declared read edge between gatherers: the first may read rows the second produced. For example the derivation gatherer depends on every crawler, which is what running last means once it stops being a position. Declared rather than derived from the view bodies, deliberately: the declaration states the intended shape, and the view-ownership gate denies a declared view that reads outside its owner''s dependency set, so a view forking the shape fails instead of widening it. The corpus gatherers carry no edges, which states their mutual independence. The roster drives no execution: the order gatherers run in is FactCapture.capture''s statement order, and these edges are what that order has to satisfy.';
+COMMENT ON COLUMN meta_gatherer_dependency.gatherer_name IS 'the dependent gatherer, the one performing the read; a meta_gatherer key';
+COMMENT ON COLUMN meta_gatherer_dependency.depends_on IS 'the prerequisite gatherer whose rows may be read; a meta_gatherer key, and never the dependent itself, the CHECK refusing the length-one cycle';
+
+INSERT INTO meta_gatherer_dependency VALUES
+  ('derivation', 'configuration'),
+  ('derivation', 'sdl'),
+  ('derivation', 'catalog'),
+  ('derivation', 'java-source'),
+  ('derivation', 'compile');
+
+CREATE TABLE meta_grain (
+  grain_name    VARCHAR NOT NULL,
+  instance_text VARCHAR NOT NULL,
+  key_shape     VARCHAR NOT NULL,
+  corpus_name   VARCHAR NOT NULL,
+  PRIMARY KEY (grain_name),
+  FOREIGN KEY (corpus_name) REFERENCES meta_corpus (corpus_name),
+  CHECK (CHAR_LENGTH(instance_text) BETWEEN 1 AND 300),
+  CHECK (CHAR_LENGTH(key_shape) >= 1)
+);
+COMMENT ON TABLE meta_grain IS 'One grain this store knows about: what one row of a relation at this grain is about. For example a grain named field with key shape graph_name, type_name, field_name says one row is one field of one type in one graph. The store already states every grain twice without naming it, a relation''s primary key being its grain as columns and its comment''s first sentence being its grain as prose; this roster is the same fact as data, and a declared base table''s key must equal its grain''s shape (gated).';
+COMMENT ON COLUMN meta_grain.grain_name IS 'the grain''s name, the roster''s key, in lowercase kebab case';
+COMMENT ON COLUMN meta_grain.instance_text IS 'one sentence saying what one instance of the grain is; length-checked';
+COMMENT ON COLUMN meta_grain.key_shape IS 'the canonical key as a comma-separated column list in key order; a declared base table at this grain carries exactly this primary key (gated)';
+COMMENT ON COLUMN meta_grain.corpus_name IS 'the corpus the grain lives in, a meta_corpus key; where a declared relation''s owner reads any corpus at all, the grain''s corpus must be among them (gated)';
+
+CREATE TABLE meta_relation (
+  relation_name VARCHAR NOT NULL,
+  grain_name    VARCHAR NOT NULL,
+  owner_name    VARCHAR NOT NULL,
+  grain_text    VARCHAR NOT NULL,
+  example       VARCHAR NOT NULL,
+  rationale     VARCHAR NOT NULL,
+  PRIMARY KEY (relation_name),
+  FOREIGN KEY (grain_name) REFERENCES meta_grain (grain_name),
+  FOREIGN KEY (owner_name) REFERENCES meta_gatherer (gatherer_name),
+  CHECK (CHAR_LENGTH(grain_text) BETWEEN 1 AND 300),
+  CHECK (CHAR_LENGTH(example) BETWEEN 1 AND 300),
+  CHECK (CHAR_LENGTH(rationale) BETWEEN 1 AND 1500)
+);
+COMMENT ON TABLE meta_relation IS 'One declared relation: which grain it is at, which gatherer owns it, what one of its rows is, one example of one, and why the relation exists at all. For example a row for sql_column names its grain, the catalog gatherer as its owner, and one concrete column as its example. A relation with no row is one nobody has declared yet; the roster of those is pinned in MetaDeclarationGateTest, frozen when this model landed and only ever shrinking, so a new relation cannot arrive undeclared. A declared relation''s own comment must equal grain_text and example joined (gated), which keeps the inline description a SQL client shows and these columns from drifting apart.';
+COMMENT ON COLUMN meta_relation.relation_name IS 'the declared relation''s name, the key; must name an observed relation (gated)';
+COMMENT ON COLUMN meta_relation.grain_name IS 'the grain the relation is at, a meta_grain key';
+COMMENT ON COLUMN meta_relation.owner_name IS 'the gatherer that owns the relation, a meta_gatherer key, the column named for the role the reference plays; a declared view may read only relations its owner owns or declares a dependency on (gated)';
+COMMENT ON COLUMN meta_relation.grain_text IS 'the one sentence saying what one row is: a single sentence by GrainSentence''s own rule, and the first sentence of the relation''s comment (both gated)';
+COMMENT ON COLUMN meta_relation.example IS 'one example row stated concretely, and the remainder of the relation''s comment after the grain sentence (gated)';
+COMMENT ON COLUMN meta_relation.rationale IS 'why this relation exists, a paragraph at most by the CHECK beside it; measurements, rejected shapes and arguments with earlier authors belong in the architecture docs rather than here';
 
 CREATE TABLE meta_materialize (
   source_view_name  VARCHAR NOT NULL,

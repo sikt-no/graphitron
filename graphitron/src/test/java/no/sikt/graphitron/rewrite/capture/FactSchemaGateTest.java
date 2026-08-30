@@ -33,6 +33,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.META_FAMILY;
+import static no.sikt.graphitron.model.Tables.META_GATHERER;
 import static no.sikt.graphitron.model.Tables.META_MATERIALIZE;
 import static no.sikt.graphitron.model.Tables.META_PREFIXLESS_RELATION;
 import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
@@ -354,6 +355,37 @@ class FactSchemaGateTest {
         }
     }
 
+    /**
+     * The gatherer roster names each gatherer's class precisely so it cannot become a second
+     * vocabulary that outlives the code, and this is the gate that makes the claim true: a
+     * renamed or deleted gatherer fails here until its row is repointed. In this module rather
+     * than beside the store's declaration gates because the gatherer classes live here and
+     * {@code graphitron-model} cannot see them, its dependency pointing the other way.
+     */
+    @Test
+    @DisplayName("every gatherer row names a Java class that exists")
+    void everyGathererRowNamesAClassThatExists() {
+        try (var store = GraphitronModelStore.open()) {
+            var rows = store.dsl()
+                .select(META_GATHERER.GATHERER_NAME, META_GATHERER.GATHERER_CLASS)
+                .from(META_GATHERER)
+                .fetch();
+            assertThat(rows).as("gatherer rows to gate").isNotEmpty();
+            var dangling = new java.util.ArrayList<String>();
+            for (var row : rows) {
+                try {
+                    Class.forName(row.value2(), false, FactSchemaGateTest.class.getClassLoader());
+                } catch (ClassNotFoundException e) {
+                    dangling.add(row.value1() + " names " + row.value2());
+                }
+            }
+            assertThat(dangling)
+                .as("gatherer rows naming classes the reactor no longer declares;"
+                    + " repoint the row at the class that took the job")
+                .isEmpty();
+        }
+    }
+
     @Test
     @DisplayName("merge ordinals are dense from zero within each type")
     void mergeOrdinalsAreDense(@TempDir Path tmp) {
@@ -614,6 +646,11 @@ class FactSchemaGateTest {
                 } else if (table.startsWith("meta_")) {
                     expected = switch (table) {
                         case "meta_materialize", "meta_materialize_dependency" -> "source_view_name";
+                        case "meta_corpus" -> "corpus_name";
+                        case "meta_gatherer", "meta_gatherer_corpus", "meta_gatherer_dependency"
+                            -> "gatherer_name";
+                        case "meta_grain" -> "grain_name";
+                        case "meta_relation" -> "relation_name";
                         default -> "graph_name";
                     };
                 } else {

@@ -562,3 +562,10 @@ corpus-reading passes specifically and the derivation gatherer crawls nothing. T
 corpus column is replaced by `meta_gatherer_corpus` plus a `meta_corpus` roster: `CatalogFactCapture`
 reads two corpora (catalog and classpath), which a scalar could not state, and the derivation
 gatherer's exemption becomes absence of rows rather than a NULL.
+
+**Slice 1 decision: the derivation gatherer's row names `Materializations`.** The roster names each
+gatherer's class, and the derivation gatherer has no orchestrating class of its own today: its
+producers are several classes run in sequence by `FactCapture.capture`. The row names
+`Materializations`, the executor of the refresh plan `meta_materialize` declares, which is the one
+class that acts for the gatherer as a whole. If a later slice extracts the derive block into a class
+of its own, the row repoints and the class gate holds the rename honest.
