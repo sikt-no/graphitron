@@ -1,7 +1,7 @@
 ---
 id: R873
 title: "Polymorphic child fields under an Outcome payload never emit the wrapper arm-unwrap"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: codegen-correctness
