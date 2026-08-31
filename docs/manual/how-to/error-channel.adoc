@@ -144,6 +144,7 @@ Two consequences:
 
 Add a typed channel slot when an untyped fallthrough turns out to be a regular, expected condition (not a bug). Leave it as a fallthrough when it really is a bug: the redacted shape is exactly what you want for a 500-class condition.
 
+[[pitfalls]]
 == Pitfalls
 
 * *Source order is significant.* Declare narrow handlers (with `matches:` substrings, more specific `className:` subclasses) before broad ones. The first match wins, not the most specific.
@@ -152,6 +153,7 @@ Add a typed channel slot when an untyped fallthrough turns out to be a regular, 
 * *`VALIDATION` runs pre-execution.* The Bean-Validation handler intercepts before the service method runs; its results bypass the dispatch loop and route straight into the errors slot. There's at most one `VALIDATION` handler per channel.
 * *Cause-chain unwrap is per mapping, not per source-order step.* If a wrapping exception declares a handler at the channel and the wrapped exception declares a different one, the *wrapping* exception wins for any mapping it matches first — even if the wrapped exception would match a later mapping more specifically. Keep handler tuples disjoint across the wrap boundary.
 * *Unmatched flows redact.* If a developer expects a specific exception class to surface to the client and it doesn't, the most likely cause is "no `@error` type covers it"; check the redaction log for a correlation ID, then add the handler.
+* *An error payload from a `@service` field says the call failed, not that nothing was written.* Graphitron opens no transaction around a `@service` invocation (see xref:../reference/directives/service.adoc#transaction-demarcation[the `@service` constraint]), so a method that threw partway through a batch may already have committed the rows it got to, and the payload is well-formed either way. A payload-returning DML xref:../reference/directives/mutation.adoc[`@mutation`] carrier does carry the rollback promise: its per-row writes run inside one transaction graphitron opens, so an error payload from one means nothing was written. A payload-returning xref:../reference/directives/routine.adoc[`@routine`] Mutation write carries it for statement 1 only, the caveat that page already publishes. A service that needs the promise must open the transaction itself; the trap is a service whose own javadoc claims all-or-nothing, since believing the contract is satisfied somewhere is what makes a partial commit invisible rather than merely surprising.
 * *No payload, no channel.* `@error` only takes effect when the type appears as (or in a union behind) an `errors:` field on a payload one of the three producer families returns: a `@service` field, a payload-returning DML `@mutation`, or a payload-returning `@routine` Mutation write. A standalone `@error` type with no carrier is rejected at classify time.
 
 == See also

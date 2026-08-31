@@ -29,9 +29,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Ready | 2026-08-31 <sub>created 2026-08-19</sub> | [plan](service-transaction-demarcation-undocumented.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-27 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
+| `R721` | The transaction demarcation difference between @mutation and @service is undocumented | In Progress | 2026-08-31 <sub>created 2026-08-19</sub> | [plan](service-transaction-demarcation-undocumented.md) |
 | `R874` | A @condition that owns a @nodeId predicate must hand-roll the wire format, because NodeIdEncoder is generated downstream of it | In Review | 2026-08-31 <sub>created 2026-08-28</sub> | [plan](nodeid-decode-helper-for-condition-methods.md) |
 | `R883` | Five prose sites name the parent-source derivation by its retired boolean | Spec | 2026-08-31 | [plan](parent-source-derivation-named-by-its-old-boolean.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -481,7 +481,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R703` [**Generated list-valued bean members emit an unchecked cast that fails a consumer build under -Werror**](list-valued-bean-member-unchecked-cast.md) — Backlog, bug
 - `R694` [**Key the @service input-bean helper dedup on binding shape, the member-axis twin of R437**](service-bean-helper-dedup-by-binding-shape.md) — Backlog, architecture
 - `R674` [**Reconcile @service record projection: a monomorphic record return passes through while the polymorphic route auto-fetches by PK**](service-record-return-pk-autofetch.md) — Backlog, bug
-- `R721` [**The transaction demarcation difference between @mutation and @service is undocumented**](service-transaction-demarcation-undocumented.md) — Ready, docs
+- `R721` [**The transaction demarcation difference between @mutation and @service is undocumented**](service-transaction-demarcation-undocumented.md) — In Progress, docs
 - `R402` [**Retire the ValueShape to synthetic CallSiteExtraction.InputBean round-trip in the bean-helper queue**](retire-bean-helper-queue-valueshape-roundtrip.md) — Backlog, structural
 - `R837` [**A jOOQ record with no table cannot be a @service input parameter**](table-less-jooq-record-input.md) — Spec, feature
 - `R555` [**Deprecate @externalField: fold the computed-field shape into @service**](deprecate-externalfield-fold-into-service.md) — Ready, cleanup

@@ -1,7 +1,7 @@
 ---
 id: R721
 title: "The transaction demarcation difference between @mutation and @service is undocumented"
-status: Ready
+status: In Progress
 bucket: docs
 priority: 3
 theme: service
@@ -156,6 +156,41 @@ There is no build gate that would catch this class of omission, and this item do
 one. A gate comparing emitted transaction boundaries against doc prose is not a thing we know
 how to build cheaply, and the honest record is that the next such gap will also be found by a
 consumer.
+
+## What shipped
+
+The three edits landed as specified, plus one mechanical addition the xref check forced.
+
+* **`service.adoc`.** The opening sentence now says a multi-statement transaction is the
+  reason you reach for the escape hatch, not something the escape hatch supplies, states that
+  graphitron opens no transaction around the invocation, and links the constraint. A new
+  Constraints bullet (last in the list, anchored `transaction-demarcation`) carries the full
+  contract: bare `DSLContext`, the method owns the commit point, `ctx.transactionResult(...)`
+  for an all-or-nothing service, the explicit contrast with a generated `@mutation` batch, the
+  query-path arm, and an xref into the error-channel pitfall.
+* **`error-channel.adoc`.** A Pitfalls bullet ahead of "No payload, no channel", stating that a
+  service error payload reports a failed call and not an empty write, that a DML `@mutation`
+  carrier's payload does carry the rollback promise, that a `@routine` Mutation write carries it
+  for statement 1 only, and that a service needing the promise opens the transaction itself.
+  Both details from the field report are in it: the well-formed payload, and the service javadoc
+  that claimed a contract nothing enforced.
+* **`mutation.adoc`.** The transaction claim in the opening sentence now reads "a transaction
+  graphitron opens" and is followed by the reciprocal clause pointing at the `@service` anchor.
+* **The anchor addition.** `AdocXrefAnchorCheck` requires a cross-file anchored xref to name an
+  explicit `[[id]]`/`[#id]`, never an auto-generated heading id, so `error-channel.adoc`'s
+  Pitfalls section gained a `[[pitfalls]]` anchor and the `service.adoc` bullet carries an
+  inline `[[transaction-demarcation]]`. Nothing about the contract; purely what the check
+  demands to keep the three pages mutually navigable.
+
+No emitted code changed, and no wording promises `@service(transactional:)`.
+
+Two notes for the Done gate. The line numbers this item quotes have drifted (the bulk
+two-step fetcher's boundary is now around `TypeFetcherGenerator.java:5475`), which is why the
+Verification section says re-derive rather than transcribe. Doing so confirmed both halves
+still hold: every `dsl.transactionResult` occurrence in main sources sits on a DML or routine
+write path, no service arm has acquired one, and `buildServiceFetcherCommon` still carries the
+"the developer-supplied method owns the transaction scope" sentence the docs wording is aligned
+with.
 
 ## Out of scope
 

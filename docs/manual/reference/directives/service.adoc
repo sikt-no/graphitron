@@ -2,7 +2,7 @@
 :description: Hand off the database operation for a field to a custom Java method.
 :!toc:
 
-Replaces the generated DB operation for a field with a call to an external Java method. Use it when the operation cannot be expressed by the directive surface — multi-statement transactions, business-logic-heavy reads, third-party calls, or shapes the framework does not (yet) cover.
+Replaces the generated DB operation for a field with a call to an external Java method. Use it when the operation cannot be expressed by the directive surface: multi-statement transactions, business-logic-heavy reads, third-party calls, or shapes the framework does not (yet) cover. A multi-statement transaction is a reason to reach for the escape hatch, not something the escape hatch supplies. Graphitron opens no transaction around a `@service` invocation and the method owns its own boundaries; see <<transaction-demarcation,the constraint below>>.
 
 == SDL signature
 
@@ -135,6 +135,7 @@ The rules:
 * `@service` and xref:mutation.adoc[`@mutation`] are mutually exclusive on the same field. Use `@mutation` for fully-generated DB writes, `@service` for custom logic.
 * On non-root fields, `@service` requires `@splitQuery`: the parent's selection set is collected first, the service method receives a `Set` of parent records (only their primary-key columns populated), and returns a `Map` from those keys to results. Single-statement nested resolution is not supported on the service path.
 * Conditions and other DB-customisation directives on the same field are ignored: the service is opaque and the generator does not splice generated SQL into a custom method's body.
+* [[transaction-demarcation]]Graphitron opens no transaction around a `@service` invocation. The generated fetcher calls your method on a bare `DSLContext`, so the method owns the commit point, and a service whose contract is all-or-nothing must open the transaction itself: `ctx.transactionResult(...)` on the injected context. The contrast with the generated path is the part worth holding on to, because it is where the surprise lives: a xref:mutation.adoc[`@mutation`] write runs inside a transaction graphitron opens, batch writes included, so a generated batch mutation and a service batch mutation sitting side by side in one schema carry different integrity guarantees with nothing in the SDL to signal it. This holds on Query fields too, where a `@service` (or a xref:routine.adoc[`@routine`]) that writes is equally undemarcated. For what the asymmetry means once a call fails partway through, see xref:../../how-to/error-channel.adoc#pitfalls[Pitfalls] on the error channel.
 
 == See also
 

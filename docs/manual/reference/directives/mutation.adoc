@@ -2,7 +2,7 @@
 :description: Flip a mutation resolver into INSERT, UPDATE, DELETE, or UPSERT; the write target is named by the field's return type or @mutation(table:).
 :!toc:
 
-Marks a mutation field as fully generated and picks the SQL shape (`INSERT`, `UPDATE`, `DELETE`, `UPSERT`). The write runs inside a transaction with a primary-key-only `RETURNING`; a `@table`-typed response is then read back by a follow-up SELECT keyed on those primary keys, so the response selection set never widens the write statement itself.
+Marks a mutation field as fully generated and picks the SQL shape (`INSERT`, `UPDATE`, `DELETE`, `UPSERT`). The write runs inside a transaction graphitron opens, with a primary-key-only `RETURNING`; a `@table`-typed response is then read back by a follow-up SELECT keyed on those primary keys, so the response selection set never widens the write statement itself. The delegated alternative carries no such boundary: graphitron opens no transaction around a xref:service.adoc#transaction-demarcation[`@service`] invocation, and the method owns its own commit point.
 
 == SDL signature
 
