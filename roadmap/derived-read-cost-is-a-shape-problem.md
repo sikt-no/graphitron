@@ -2844,10 +2844,16 @@ own example carries, so the capture exercises the last six slices considerably h
 fixture does.
 
 **The capture itself is the first result, and it is not the one this slice set out to take.** The
-same capture on the same schema cost four hours and nineteen minutes of materialization refresh on
-2026-08-27. It now completes in **one minute and eight seconds**. Nothing in this item's slices did
-that, and the item has said so from the start; what is new is that the figure has now been observed
-end to end on a consumer schema rather than reconstructed from a refresh pass on a copy.
+same capture cost four hours and nineteen minutes of materialization refresh on 2026-08-27. It now
+completes in **one minute and eight seconds**. Nothing in this item's slices did that, and the item
+has said so from the start; what is new is that the figure has been observed end to end on a consumer
+schema rather than reconstructed from a refresh pass on a copy.
+
+**And the pair is a controlled comparison rather than two readings of a similar thing.** The
+consumer repository is on the same branch at the same commit as the run that produced the kept store,
+with a clean tree, so the sources are identical and the generator is the only variable between them.
+The author-error count moved from 119 to 114 over the same four days, which is other items' work
+showing up in the same window and is worth knowing when reading the pair.
 
 **The move of slices 23 through 28 holds up on a real schema, and the arithmetic is exact.** 218
 `@asConnection` applications produce 218 `graphitron_connection` rows and 218 field rewrites in

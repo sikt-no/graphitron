@@ -57,9 +57,11 @@ slice.** The figures above were taken on a bench that builds a store from the DD
 consumer's captured facts into it. That copy no longer works: the kept capture predates five of the
 base tables the shipping DDL declares and disagrees with a sixth column for column, so there is
 nothing to copy into. What replaces it is a fresh capture, which is now cheap in a way it was not
-when the bench was built. The same consumer schema captured in four hours and nineteen minutes on
-2026-08-27 and in one minute and eight seconds on 2026-08-31, so the reason the bench existed, that a
-capture was too expensive to repeat, has gone.
+when the bench was built. The same consumer sources, at the same commit with a clean tree, captured
+in four hours and nineteen minutes on 2026-08-27 and in one minute and eight seconds on 2026-08-31,
+so the reason the bench existed, that a capture was too expensive to repeat, has gone. A fresh
+capture of that schema is kept beside the one it replaces, with its provenance and the sources it was
+taken from recorded next to it.
 
 A captured consumer store is not in this repository and must not be. Taking one needs the consumer's
 sources, its catalog and its build, all of which exist outside it.
