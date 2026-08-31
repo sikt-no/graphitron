@@ -78,12 +78,37 @@ reaches, and it may move in either direction. The item should shrink where a sit
 unreachable from authored SDL, and grow where the inventory finds a site this reading missed.
 
 The test that put a site on this list is mechanical, and worth stating so a later reader can re-run
-it: the receiver's Java type and the argument's Java type are supplied by **two different**
-`ColumnRef`s. Every emitted equality that takes both from the *same* `ColumnRef` is immune however
-the converter is configured, because there is one type and it cannot disagree with itself. That
-disposes of `ReentryRowsFragments.valuesJoinOn`, `TypeFetcherGenerator`'s bulk-update lookup
-`WHERE`, `SelectMethodBody`'s dispatcher `ON`, `ProjectionUnitRenderer`'s lookup-input `ON`, and
-`ServiceRowsFragments`'s projection-input `ON`, none of which appear below.
+it rather than re-derive it: the receiver's Java type and the argument's Java type are supplied by
+**two different** `ColumnRef`s. Two kinds of site pass that test and are immune anyway, and both
+kinds are common enough that the reader needs them named:
+
+* **Same column on both sides.** One type cannot disagree with itself, however the converter is
+  configured. This disposes of `ReentryRowsFragments.valuesJoinOn`, `TypeFetcherGenerator`'s
+  bulk-update lookup `WHERE`, `SelectMethodBody`'s dispatcher `ON`,
+  `ProjectionUnitRenderer`'s lookup-input `ON`, and `ServiceRowsFragments`'s projection-input `ON`.
+* **Both operands erased.** `TypeFetcherGenerator`'s untyped parent-record condition emits
+  `DSL.field(DSL.name("<child>")).eq(parentRecord.get(DSL.name("<parent>")))`, whose two ColumnRefs
+  really are the two sides of a slot, but `DSL.field(Name)` is a `Field<Object>` and
+  `Record.get(Name)` an `Object`, so the comparison is type-blind for the same structural reason
+  `.onKey(Keys.<CONSTANT>)` is. This one is worth watching rather than dismissing: it is immune
+  today only because nothing types it, so a later change that gives either operand a real type puts
+  it back on the list.
+
+**This enumeration is not closed, and closing it is iteration 1's deliverable, not this section's.**
+The eight sites below came off a narrower grep than they should have, and widening the pattern found
+shapes the first pass missed, including the erased site just named. The pattern that found
+everything, worth recording because the obvious narrower ones do not, is
+
+```
+grep -rn --include=*.java -o '"[^"]*\.eq(\$\?[^"]*"' graphitron/src/main/java
+```
+
+Sites that pattern surfaces and this section has not classified either way are the row-comparison
+arms in `ReentryRowsFragments.keyEquality` and `RoutineWriteFetcherRenderer`, whose operands are a
+target column against a lifted `RecordN` accessor, and `TypeFetcherGenerator`'s `@lookupKey` input
+bindings, whose right operand is decoded input rather than a second catalog column and which are
+therefore probably *Out of scope* below rather than immune. Iteration 1 should classify each against
+the test above and correct the count.
 
 * `JoinFragments.emitCorrelationWhere` writes `firstAlias.<target>.eq(parentAlias.<source>)` for the
   step-0 correlation of a reach path. This is the shape the issue reports. Note that it emits an
@@ -116,13 +141,16 @@ disposes of `ReentryRowsFragments.valuesJoinOn`, `TypeFetcherGenerator`'s bulk-u
 
 ## Design
 
-### One mint, not eight patches
+### One mint, not one patch per site
 
-The eight sites above are eight spellings of one question: *given two catalog columns, write the Java
+The sites above are so many spellings of one question: *given two catalog columns, write the Java
 that compares them.* Patching each site with its own type check would leave the same three-line
-rule copied eight times, with no structural reason a ninth site would pick it up. That risk is not
-hypothetical: two of the eight are the same shape in two classes, and the inventory found the second
-one only after the first had been written up as a one-off. The tree already
+rule copied once per site, with no structural reason the next site would pick it up. That risk is
+not hypothetical, and it is why the open-ended count above is an argument for the mint rather than a
+problem for it: two of the eight listed are the same shape in two different classes, the inventory
+found the second only after the first had been written up as a one-off, and a widened grep then
+found further shapes still unclassified. A design whose correctness depends on having enumerated
+every site is the wrong design here. The tree already
 answers this class of problem by funnelling a shape through a single producer: `ValuesJoinRowBuilder`
 states that "all routes go through `cellsCode`, so every VALUES cell in the generator binds as
 `DSL.val(value, col.getDataType())`"; `DiscriminatedTableFragments` mints the discriminator
@@ -309,9 +337,10 @@ unambiguous FK. That combination is what reaches `emitCorrelationWhere`, and it 
 
 **Iteration 1: fixture and inventory, no fix.** Add the diverged table to `init.sql` and the
 minimum schema fixtures, and record what actually breaks. This is the iteration that converts the
-eight-site list above from a reading of the source into a fact. It is expected to fail the
+site list above from a reading of the source into a fact, and it owes the closed enumeration that
+section explicitly does not provide, using the grep recorded there. It is expected to fail the
 compilation tier, deliberately and visibly, and its deliverable is the recorded `javac` error list
-plus a decision on which of the eight sites a diverged key can actually reach from authored SDL. Some
+plus a decision on which listed site a diverged key can actually reach from authored SDL. Some
 may turn out unreachable, and the item should shrink rather than emit dead handling for them. Also
 confirm here whether the store-sourced path sees the divergence.
 
@@ -462,11 +491,19 @@ stands rather than re-reading round 1.
 
 What changed, against the three asks:
 
-* Both `MultiTablePolymorphicEmitter` sites are named under *Emission sites*, which is now eight
-  sites rather than six, and the counts in *One mint* and *Iterations* follow. *Emission sites* also
-  states the mechanical test that put a site on the list (receiver type and argument type come from
-  two different `ColumnRef`s) and names the five same-column sites that test excludes, so a later
-  reader can re-run the inventory rather than trusting it.
+* Both `MultiTablePolymorphicEmitter` sites are named under *Emission sites*, which lists eight
+  rather than six. *Emission sites* also states the mechanical test that put a site on the list
+  (receiver type and argument type come from two different `ColumnRef`s) and names the sites that
+  test excludes, in two buckets: same column on both sides, and both operands erased.
+* The enumeration is now explicitly **open**, and the closed one is iteration 1's deliverable. This
+  is a correction to the round-1 finding, which asserted "the inventory is eight sites, not six" as
+  though the sweep were finished. It was not. That count came off a grep pattern narrow enough to
+  miss `TypeFetcherGenerator`'s untyped parent-record condition, two row-comparison arms in
+  `ReentryRowsFragments` and `RoutineWriteFetcherRenderer`, and the `@lookupKey` input bindings.
+  Widening the pattern found them; classifying all of them is more than a review pass can stand
+  behind, so the section records the grep that finds every candidate and hands the classification to
+  iteration 1 rather than implying a closed list. The *One mint* argument is stated to survive this,
+  and in fact leans on it: a design that needed the enumeration closed would be the wrong design.
 * The value-operand rule is settled in a new *The value operand* subsection. The round-1 finding
   framed this as a conflict between the coerce rule and the bind-at-source rule. That diagnosis was
   wrong, and the correction is the substance of the resolution: the two rules compose in order.
