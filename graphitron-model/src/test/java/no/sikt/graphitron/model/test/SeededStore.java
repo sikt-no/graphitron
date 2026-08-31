@@ -34,6 +34,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEY_COLUMN;
@@ -615,6 +618,82 @@ public final class SeededStore {
                 .replace("]", "").replace("!", ""))
             .set(GRAPHITRON_FIELD_SYNTHESIS.NON_NULL, typeSdl.endsWith("!"))
             .set(GRAPHITRON_FIELD_SYNTHESIS.IS_LIST, typeSdl.startsWith("["))
+            .execute();
+    }
+
+    /**
+     * A type the expansion minted rather than the author declared, with the one site that minted
+     * it. The counterpart to {@link #seedType} on the other side of the expanded population: a
+     * reader that admits authored and minted types alike must be stated against both, and the two
+     * live in different relations precisely so that a reader can tell them apart when it needs to.
+     *
+     * <p>No {@code graphql_type_coordinate} row comes with it, and that is the point rather than an
+     * omission. The transcription holds what the author wrote, so a name nobody wrote has no
+     * coordinate to claim, which is why the domain relation over the expanded population carries no
+     * key into the coordinates.
+     *
+     * <p>Idempotent, on {@link #seedType}'s terms, so a case that mints an Edge and a Connection
+     * naming the same carrier can ask for either without tracking which came first.
+     *
+     * @param carrierTypeName the type whose field carried the macro application, or {@code null}
+     *                        for a type minted once and shared, as {@code PageInfo} is
+     * @param carrierFieldName that field's name, {@code null} on the same terms
+     */
+    public static void seedMintedType(DSLContext dsl, String graphName, String typeName,
+                                      String carrierTypeName, String carrierFieldName) {
+        if (dsl.fetchExists(GRAPHITRON_MINTED_TYPE, GRAPHITRON_MINTED_TYPE.GRAPH_NAME.eq(graphName)
+                .and(GRAPHITRON_MINTED_TYPE.TYPE_NAME.eq(typeName)))) {
+            return;
+        }
+        dsl.insertInto(GRAPHITRON_MINTED_TYPE)
+            .set(GRAPHITRON_MINTED_TYPE.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_MINTED_TYPE.TYPE_NAME, typeName)
+            .set(GRAPHITRON_MINTED_TYPE.KIND, "OBJECT")
+            .set(GRAPHITRON_MINTED_TYPE.MACRO, "CONNECTION")
+            .execute();
+        dsl.insertInto(GRAPHITRON_MINTED_TYPE_SITE)
+            .set(GRAPHITRON_MINTED_TYPE_SITE.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_MINTED_TYPE_SITE.TYPE_NAME, typeName)
+            .set(GRAPHITRON_MINTED_TYPE_SITE.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_MINTED_TYPE_SITE.SOURCE_LINE, SEED_LINE)
+            .set(GRAPHITRON_MINTED_TYPE_SITE.SOURCE_COLUMN, SEED_COLUMN)
+            .set(GRAPHITRON_MINTED_TYPE_SITE.MERGE_ORDINAL, 0)
+            .set(GRAPHITRON_MINTED_TYPE_SITE.IS_EXTENSION, false)
+            .set(GRAPHITRON_MINTED_TYPE_SITE.CARRIER_TYPE_NAME, carrierTypeName)
+            .set(GRAPHITRON_MINTED_TYPE_SITE.CARRIER_FIELD_NAME, carrierFieldName)
+            .execute();
+    }
+
+    /**
+     * One field on a minted type, with its wrapping stated the way {@link #seedInputField} states
+     * an input field's: a minted field's cardinality is what a reader of the expanded population
+     * compares against, so it cannot be a default here.
+     *
+     * <p>The owning type is the case's to mint, because only the case knows which carrier it came
+     * from; a field on a type nothing minted is a foreign key violation rather than a silent row.
+     *
+     * @param itemNonNull the element's non-nullability when {@code isList}, and {@code null}
+     *                    otherwise, which the DDL checks rather than tolerates
+     */
+    public static void seedMintedField(DSLContext dsl, String graphName, String typeName,
+                                       String fieldName, String namedType, int ordinal,
+                                       boolean nonNull, boolean isList, Boolean itemNonNull) {
+        var wrapped = isList
+            ? "[" + namedType + (Boolean.TRUE.equals(itemNonNull) ? "!" : "") + "]"
+            : namedType;
+        dsl.insertInto(GRAPHITRON_MINTED_FIELD)
+            .set(GRAPHITRON_MINTED_FIELD.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_MINTED_FIELD.TYPE_NAME, typeName)
+            .set(GRAPHITRON_MINTED_FIELD.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_MINTED_FIELD.ORDINAL, ordinal)
+            .set(GRAPHITRON_MINTED_FIELD.TYPE_SDL, wrapped + (nonNull ? "!" : ""))
+            .set(GRAPHITRON_MINTED_FIELD.NAMED_TYPE, namedType)
+            .set(GRAPHITRON_MINTED_FIELD.NON_NULL, nonNull)
+            .set(GRAPHITRON_MINTED_FIELD.IS_LIST, isList)
+            .set(GRAPHITRON_MINTED_FIELD.ITEM_NON_NULL, itemNonNull)
+            .set(GRAPHITRON_MINTED_FIELD.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_MINTED_FIELD.SOURCE_LINE, SEED_LINE)
+            .set(GRAPHITRON_MINTED_FIELD.SOURCE_COLUMN, SEED_COLUMN)
             .execute();
     }
 

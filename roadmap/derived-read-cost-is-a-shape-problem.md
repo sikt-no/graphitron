@@ -2908,6 +2908,53 @@ expansion count predicts plannability and nothing else. What 128 relation refere
 hundred and thirty-nine thousand characters buy is a statement the planner can hold, which is the
 precondition for costing it, not a reading of what it costs.
 
+### Slice 30: the fifth reader, and the roster that would have found it
+
+Slice 28 said four readers wanted the union rather than the transcription and that the suite found
+every one. The first sentence was short by at least one and the second was wrong.
+
+**The defect.** `intent_field_accessor_hop` read `graphql_field`. On the consumer schema it returned
+20853 rows against the 21287 this item's own Tests section names as its row-identity anchor. The 434
+missing rows were all one field name, `node`, one per minted Edge type, and running the identical
+rule against `intent_expanded_field` on the same store returned exactly 21287. That last check is
+what settles the attribution: the older figure was taken on an older store, so the gap could have
+been four days of other items' work, and it is not. Same store, same generator, and the union arm
+hits the anchor to the digit.
+
+**It is not a cosmetic shortfall.** A minted Edge's `node` field is the edge that says what a
+connection's element stands on, so the accessor closure could no longer traverse carrier to Edge to
+element. The relation's own comment already ruled on this without anybody noticing: it is total over
+standing classes, a coordinate pairs with every class offering a slot of that name, and provenance is
+not a condition it states. Excluding minted coordinates was an exception the relation never declared.
+
+**What the suite could not have caught, and why.** Every reader repointed in slice 28 was found by a
+test that already asserted something specific about it. This one had no such test, and the anchor
+that would have caught it is listed in this item's Tests section under what the item owes and was
+never written. The measurement that found it, months of prose about five spellings notwithstanding,
+was one row count on a fresh capture.
+
+**So the gate is the roster rather than the repoint.** `ExpandedPopulationReaderGateTest` closes the
+schema around the choice the expansion created. Forty-two readings of `graphql_type` and
+`graphql_field` survive across twenty-four views; two are the union views themselves and are pinned
+separately, and the remaining thirty-nine sit on a frozen shrink-only roster. The roster asserts that
+a reading is known, not that it is right: the expansion used to write minted rows into those two
+relations, so all forty-two got the expanded population for free and none of them chose it. What it
+buys today is that a view arriving on the transcription is on no frozen roster and fails, which makes
+the decision an author's to take rather than a reviewer's to notice. Entries leave as each reading is
+adjudicated.
+
+**The anchors are tests now, which is the part this item owed all along.** All five come back exact
+on a fresh capture: `intent_field_accessor_hop` 21287, `intent_field_navigated_type` 8408,
+`intent_spelled_table` 313, `intent_argmapping_pair` 108, `intent_class_member_slot` 4198. The
+consumer figures are the confirmation and not the assertion, because no fixture in this repository
+reproduces them; what the build holds is the invariant they stood for, a minted coordinate hopping on
+the same terms as an authored one, with the authored half asserted beside it as the control that
+separates a rule reading the wrong population from a case that seeded nothing.
+
+**And the thirty-nine are this item's honest residual.** Each is a decision nobody has taken. One of
+the forty-two turned out to be wrong; the rate among the rest is unknown, and the roster is what makes
+that a bounded question rather than an open one.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
@@ -2999,8 +3046,9 @@ The gates that already govern this ground, and what each will say when the slice
 
 What this item owes that no gate holds today:
 
-- **Row-identity anchors on every repointed view.** A view that reads a supertype table must return
-  what it returned when it reconstructed the supertype by union. This is the one class of defect the whole item can
+- **Row-identity anchors on every repointed view.** Owed for the whole life of this item and paid
+  in slice 30, which is also where the defect they were owed against turned up. A view that reads a
+  supertype table must return what it returned when it reconstructed the supertype by union. This is the one class of defect the whole item can
   plausibly introduce and it is cheap to pin, and the figures to pin against are measured rather than
   assumed: on the kept store, with all four repoints applied, `intent_spelled_table_live` returns 313
   rows before and after, `intent_argmapping_pair_live` 108, `intent_class_member_slot` 4198,

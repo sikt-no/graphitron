@@ -1,0 +1,56 @@
+# Readings of graphql_type and graphql_field that have not been adjudicated against the expanded
+# population. Frozen 2026-08-31, shrink-only.
+#
+# An entry here is not a claim that the reading is right. It is a claim that somebody knows it is
+# there. The expansion used to write what it minted into these two relations, so every one of these
+# readings got the expanded population for free and none of them chose it. Splitting the two made
+# each one a decision, and this roster is the list of decisions still owed.
+#
+# A line leaves when its reading is adjudicated: repointed to intent_expanded_type or
+# intent_expanded_field where the rule is about the schema the generator works against, or kept and
+# moved under a reason heading below where the rule is genuinely about what an author wrote. A
+# reading kept for a reason is still a reading of the transcription, so it stays on the roster with
+# its reason beside it rather than disappearing from the count.
+#
+# The two union views are not here. Their reading of the transcription is the seam this roster
+# protects, and theExpandedViewsReadBothArms holds it.
+
+intent_argument_column_match_live graphql_type
+intent_argument_filter_role graphql_type
+intent_authored_claim_conflict graphql_field
+intent_authored_field_claim graphql_field
+intent_authored_field_claim graphql_type
+intent_carrier_data_field_live graphql_field
+intent_carrier_data_field_live graphql_type
+intent_carrier_routine_hop graphql_field
+intent_column_match_claim graphql_field
+intent_column_match_claim graphql_type
+intent_condition_membership graphql_field
+intent_condition_membership graphql_type
+intent_condition_param_decode graphql_field
+intent_condition_param_decode graphql_type
+intent_errors_field graphql_field
+intent_errors_field graphql_type
+intent_facet_binding graphql_field
+intent_facet_binding graphql_type
+intent_field_demand_rule graphql_field
+intent_field_demand_rule graphql_type
+intent_field_separate_fetch graphql_field
+intent_field_separate_fetch graphql_type
+intent_input_field_column_match graphql_field
+intent_input_field_column_match graphql_type
+intent_input_field_filter_role_live graphql_field
+intent_input_field_filter_role_live graphql_type
+intent_input_occurrence_descent_order graphql_field
+intent_mutation_payload_column_live graphql_field
+intent_mutation_payload_key_membership_live graphql_field
+intent_mutation_payload_refusal_live graphql_field
+intent_mutation_routine_seat graphql_field
+intent_mutation_write_payload_live graphql_type
+intent_node_id_instruction_live graphql_field
+intent_node_id_instruction_live graphql_type
+intent_producer_cardinality_conflict graphql_field
+intent_routine_return_binding graphql_type
+intent_type_backing_seed graphql_field
+intent_type_backing_seed graphql_type
+intent_type_exemption graphql_type

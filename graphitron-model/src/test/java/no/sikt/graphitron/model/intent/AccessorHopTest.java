@@ -22,6 +22,8 @@ import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethod;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethodParameter;
+import static no.sikt.graphitron.model.test.SeededStore.seedMintedField;
+import static no.sikt.graphitron.model.test.SeededStore.seedMintedType;
 import static no.sikt.graphitron.model.test.SeededStore.seedRecordComponent;
 import static no.sikt.graphitron.model.test.SeededStore.seedReturnTypeRef;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
@@ -471,6 +473,53 @@ class AccessorHopTest {
     private static final String SPOKEN_TITLE = "(Lapp/LanguageRecord;)Lapp/LanguageRecord;";
     private static final String SEARCH =
         "(Ljava/util/List;Lapp/LanguageRecord;Ljava/util/List;)Lapp/FilmRecord;";
+
+    // ===== The expanded population =====
+
+    /**
+     * A minted type's field is a field coordinate, and this relation is total over coordinates. The
+     * expansion mints {@code <Carrier>Edge} with a {@code node} field naming the element type, and
+     * whichever class carries a {@code node} slot is a class that coordinate might stand on, on the
+     * same terms as any authored coordinate. Nothing about a coordinate's provenance is a condition
+     * this relation states, so a minted one having no rows would be an exception it does not
+     * declare.
+     *
+     * <p>Written against its own store rather than the census above, because the subject is which
+     * population the rule reads and not which class wins: one authored coordinate and one minted
+     * coordinate, both naming a slot the one class offers, and the two have to answer alike.
+     *
+     * <p>The authored half is not scenery. It is what separates a rule that reads the expanded
+     * population from a store that simply has no rows to find: if both halves come back empty the
+     * case is broken rather than passing, and the assertion says so by naming both.
+     */
+    @Test
+    void aMintedTypesFieldHopsOnTheSameTermsAsAnAuthoredOne() {
+        withSeededStore(GRAPH, dsl -> {
+            seedSource(dsl, APP, "DIRECTORY");
+            seedGraphSource(dsl, GRAPH, APP);
+            seedClass(dsl, APP, FILM, "RECORD");
+            seedRecordComponent(dsl, APP, FILM, "node", Map.of("", "app.LanguageRecord"));
+            seedMethod(dsl, APP, FILM, "node", "()Lapp/LanguageRecord;",
+                Map.of("", "app.LanguageRecord"));
+
+            seedType(dsl, GRAPH, "Film", "OBJECT");
+            seedField(dsl, GRAPH, "Store", "node", "Film", false);
+
+            seedMintedType(dsl, GRAPH, "FilmEdge", "Store", "films");
+            seedMintedField(dsl, GRAPH, "FilmEdge", "node", "Film", 0, false, false, null);
+
+            assertThat(hops(dsl, GRAPH, "Store", "node"))
+                .as("the authored coordinate, which is the control: empty here means the case is"
+                    + " broken rather than that the minted half is fine")
+                .extracting(r -> r.getFromClassName() + " " + r.getToClassName())
+                .containsExactly(FILM + " app.LanguageRecord");
+
+            assertThat(hops(dsl, GRAPH, "FilmEdge", "node"))
+                .as("the minted coordinate, on the same slot and the same class")
+                .extracting(r -> r.getFromClassName() + " " + r.getToClassName())
+                .containsExactly(FILM + " app.LanguageRecord");
+        });
+    }
 
     /**
      * Two classpath entries, one per graph, and the coordinates the hop cases depart from. The
