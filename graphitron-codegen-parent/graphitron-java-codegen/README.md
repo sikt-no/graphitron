@@ -1003,6 +1003,11 @@ Note that mutations need either the **@mutation** or the **@service** directive 
 > **Important:** The output from generated update and insert mutations are currently incorrect when using JDBC batching.
 > The mutation output is being fetched and filtered based on the input fields rather than returning the actual mutated record(s). To enable improved queries with returning clauses, disable JDBC batching by setting `useJdbcBatchingForInserts` and/or `useJdbcBatchingForDeletes` to `false` in the [query generation settings](#query-generation-settings).
 
+> **Note:** Generated insert mutations with returning clauses set the table columns explicitly, so every input field must correspond to a column.
+> `ID` input fields do so when [`makeNodeStrategy`](#global-node-identification) is enabled, as the columns a node ID covers are then known, and otherwise when the field name or its **@field** directive matches a column in the table.
+> An `ID` input field that matches no column is resolved through generated extension methods on the table, and the columns behind those are not known during generation.
+> Code generation fails for such fields, and the fix is either to point the field at a column with **@field** or to enable `makeNodeStrategy`.
+
 > **Note:** By default, upsert mutations use SQL MERGE via jOOQ's `batchMerge`. If `batchStore` is preferred, enable `generateUpsertAsStore` in the [query generation settings](#query-generation-settings). This changes the generated code to fetch existing records first and use `batchStore`.
 
 ### Custom logic with @service

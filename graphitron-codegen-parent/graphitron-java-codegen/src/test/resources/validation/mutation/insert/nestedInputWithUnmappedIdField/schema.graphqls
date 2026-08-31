@@ -1,0 +1,11 @@
+type Mutation {
+    mutation(in: CustomerNestedIdInput!): Customer @mutation(typeName: INSERT)
+}
+
+input CustomerNestedIdInput @table(name: "CUSTOMER") {
+    nested: NestedIdInput!
+}
+
+input NestedIdInput {
+    id: ID!
+}

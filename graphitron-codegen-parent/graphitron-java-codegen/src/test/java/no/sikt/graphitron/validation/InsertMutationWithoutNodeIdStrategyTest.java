@@ -41,10 +41,33 @@ public class InsertMutationWithoutNodeIdStrategyTest extends ValidationTest {
     }
 
     @Test
-    @DisplayName("Generated inserts when node ID strategy is disabled is not supported if there is ID field input")
+    @DisplayName("Generated inserts when node ID strategy is disabled is not supported if an ID field input has no matching column")
     void disabledNodeIdStrategyAndIdFieldInput() {
         assertErrorsContain("disabledNodeIdStrategyAndIdFieldInput",
-                "'Mutation.mutation' is a generated INSERT field with ID input, but this is only supported with node ID strategy enabled."
+                "'Mutation.mutation' is a generated INSERT field with ID input that does not map to any column in table 'CUSTOMER'. " +
+                        "Without the node ID strategy such ID fields are resolved with generated extension methods, " +
+                        "which this mutation form can not insert into. Fields without a matching column: 'CustomerInputTable.id'."
+        );
+    }
+
+    @Test
+    @DisplayName("Generated inserts when node ID strategy is disabled is supported if the ID field input maps to a column")
+    void idFieldMappedToColumn() {
+        getProcessedSchema("idFieldMappedToColumn");
+    }
+
+    @Test
+    @DisplayName("Generated inserts when node ID strategy is disabled is supported if a nested ID field input maps to a column")
+    void nestedInputWithMappedIdField() {
+        getProcessedSchema("nestedInputWithMappedIdField");
+    }
+
+    @Test
+    @DisplayName("Generated inserts when node ID strategy is disabled is not supported if a nested ID field input has no matching column")
+    void nestedInputWithUnmappedIdField() {
+        assertErrorsContain("nestedInputWithUnmappedIdField",
+                "'Mutation.mutation' is a generated INSERT field with ID input that does not map to any column in table 'CUSTOMER'.",
+                "Fields without a matching column: 'NestedIdInput.id'."
         );
     }
 

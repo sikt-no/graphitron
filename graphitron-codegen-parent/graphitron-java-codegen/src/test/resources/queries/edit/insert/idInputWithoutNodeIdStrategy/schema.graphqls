@@ -1,0 +1,7 @@
+type Mutation {
+  mutation(in: CustomerIdInput!): Int @mutation(typeName: INSERT) @field(name: "CUSTOMER_ID")
+}
+
+input CustomerIdInput @table(name: "CUSTOMER") {
+    customerId: ID! @field(name: "CUSTOMER_ID")
+}

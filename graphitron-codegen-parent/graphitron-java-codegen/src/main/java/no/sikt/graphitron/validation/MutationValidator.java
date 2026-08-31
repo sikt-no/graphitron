@@ -25,6 +25,7 @@ import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessage;
 import static no.sikt.graphitron.validation.ValidationHandler.addWarningMessage;
 import static no.sikt.graphitron.validation.messages.InputTableError.MISSING_FIELD;
 import static no.sikt.graphitron.validation.messages.InputTableError.MISSING_NON_NULLABLE;
+import static no.sikt.graphql.directives.GenerationDirective.FIELD;
 import static org.apache.commons.lang3.StringUtils.lowerCase;
 
 /**
@@ -124,16 +125,28 @@ class MutationValidator extends AbstractSchemaValidator {
         }
 
         var input = recordInputs.stream().findFirst().orElseThrow();
+        var inputTable = schema.getRecordType(input).getTable();
 
-        if (isInsertWithReturning && !shouldMakeNodeStrategy() && schema.getInputType(input).getFields().stream().anyMatch(AbstractField::isID)) {
-            addErrorMessage("%s is a generated %s field with ID input, but this is only supported with node ID strategy enabled.",
-                    field.formatPath(),
-                    field.getMutationType()
-            );
-            return;
+        if (isInsertWithReturning && !shouldMakeNodeStrategy()) {
+            var unmappedIDFields = findIDFieldsWithoutColumn(input, inputTable, 0);
+            if (!unmappedIDFields.isEmpty()) {
+                addErrorMessage("%s is a generated %s field with ID input that does not map to any column in table '%s'. " +
+                                "Without the node ID strategy such ID fields are resolved with generated extension methods, " +
+                                "which this mutation form can not insert into. Fields without a matching column: %s." +
+                                "\nPossible fix(es):" +
+                                "\n* Set the %s directive on these fields to a column in '%s'." +
+                                "\n* Enable the node ID strategy.",
+                        field.formatPath(),
+                        field.getMutationType(),
+                        inputTable.getMappingName(),
+                        String.join(", ", unmappedIDFields.stream().map(GenerationSourceField::formatPath).toList()),
+                        FIELD.getName(),
+                        inputTable.getMappingName()
+                );
+                return;
+            }
         }
 
-        var inputTable = schema.getRecordType(input).getTable();
         var outputTable = schema.isScalar(dataField.get()) ? inputTable : schema.getRecordType(dataField.get()).getTable();
 
         if (!inputTable.equals(outputTable)) {
@@ -152,6 +165,31 @@ class MutationValidator extends AbstractSchemaValidator {
         if (isDeleteWithReturning) {
             validateDeleteMutation(field, dataField.orElse(null), input);
         }
+    }
+
+    /**
+     * Finds the ID fields that the insert-with-returning form can not write, which is the ID fields that do not
+     * correspond to a column in the target table. Such fields are read with generated extension methods on the table,
+     * and the columns they cover are not known here. Nested input types are included, as their fields are set on the
+     * same table as the fields of the input type containing them.
+     */
+    private List<InputField> findIDFieldsWithoutColumn(InputField input, JOOQMapping table, int recursion) {
+        recursionCheck(recursion);
+
+        var inputType = schema.getInputType(input);
+        if (inputType == null || !tableExists(table.getName())) {
+            return List.of();
+        }
+
+        var result = new ArrayList<InputField>();
+        for (var inputField : inputType.getFields()) {
+            if (schema.isInputType(inputField)) {
+                result.addAll(findIDFieldsWithoutColumn(inputField, table, recursion + 1));
+            } else if (inputField.isID() && getJavaFieldName(table.getName(), inputField.getUpperCaseName()).isEmpty()) {
+                result.add(inputField);
+            }
+        }
+        return result;
     }
 
     private void validateDeleteMutation(ObjectField field, ObjectField dataField, InputField input) {
