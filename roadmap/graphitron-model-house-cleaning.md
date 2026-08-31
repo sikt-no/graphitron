@@ -7,7 +7,7 @@ priority: 2
 theme: model-cleanup
 depends-on: []
 created: 2026-08-29
-last-updated: 2026-08-30
+last-updated: 2026-08-31
 ---
 
 # The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation
@@ -569,3 +569,39 @@ producers are several classes run in sequence by `FactCapture.capture`. The row 
 `Materializations`, the executor of the refresh plan `meta_materialize` declares, which is the one
 class that acts for the gatherer as a whole. If a later slice extracts the derive block into a class
 of its own, the row repoints and the class gate holds the rename honest.
+
+### The `sql_` family, the first family slice (2026-08-31)
+
+All 14 relations declared, at 11 grains, every one owned by the `catalog` gatherer, and struck from
+the frozen roster, which drops from 281 to 267. Each relation's `COMMENT ON TABLE` is now its
+`grain_text` and `example` and nothing else; the column comments are untouched, which is where most
+of the family's prose lives and where none of the sprawl this item measured was. Four decisions the
+slice made, since the family table says this one is meant to settle the model end to end at the
+smallest scale.
+
+**Three relations are at a grain another relation already declares, and that is the model working
+rather than a collision.** `sql_primary_key` and `sql_node_metadata` are both at `database-table`
+alongside `sql_table`: each says one thing about one table, which is one grain and three facts, and
+their keys agree with the grain's shape because they are the same key. A grain is a roster entry
+several relations point at, so nothing here needed a per-relation grain to be minted.
+`sql_referential_constraint` sits at `table-constraint` beside `sql_constraint` on the same reading.
+
+**The ordered-child grains are keyed by position, and the name says so.** `constraint-column`,
+`index-column`, `routine-parameter` and `node-key-column` are each one position in a list rather
+than one column of a thing, because that is what the key states and what the order is for. The
+instance sentence is the place that distinction becomes legible, and writing it is what turned four
+near-identical relations into four grains that state the same shape deliberately.
+
+**`bound-enum-class` lives in the catalog corpus, not the classpath one.** The class it names is on
+the classpath, but the classpath census excludes the generated jOOQ package by design and the row is
+reachable only through the catalog's column walk, so the catalog is the corpus the grain lives in.
+The gate would have passed either way, the catalog gatherer reading both; the choice is stated here
+because the wrong answer is available and cheap.
+
+**The seeded detection case now clears the shipped declarations first.**
+`MetaDeclarationGateTest.theGatesDetectWhatTheyClaimTo` proves each gate detects its own violation by
+seeding declarations, and it seeded `sql_table` at a `database-table` grain of its own, which this
+slice declared underneath it. It deletes the store's own `meta_relation` and `meta_grain` rows before
+seeding, so a subject the case wants to state something false about stays available however far the
+migration gets. The alternative, moving the case onto whichever relation is still undeclared, buys
+one slice of quiet and breaks again at the next.

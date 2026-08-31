@@ -113,15 +113,19 @@ class MetaDeclarationGateTest {
     }
 
     /**
-     * The prose, corpus, ownership and key gates all bind per declared row and the store today
-     * declares none, so this case seeds declarations and proves each gate detects its own
-     * violation rather than passing because it never ran. The subjects are real relations of the
-     * booted store; only the meta rows are the test's.
+     * The prose, corpus, ownership and key gates all bind per declared row, so this case seeds
+     * declarations of its own and proves each gate detects its own violation rather than passing
+     * because it never ran. The subjects are real relations of the booted store; only the meta
+     * rows are the test's, and the store's shipped declarations are cleared first so a subject
+     * this case wants to state something false about stays available as the migration declares
+     * relation after relation.
      */
     @Test
     @DisplayName("the gates detect what they claim to, on seeded declarations")
     void theGatesDetectWhatTheyClaimTo() {
         withStore(dsl -> {
+            dsl.deleteFrom(META_RELATION).execute();
+            dsl.deleteFrom(META_GRAIN).execute();
             dsl.insertInto(META_GRAIN)
                 .values("database-table", "One table of one database catalog.",
                     "source_name, table_schema, table_name", "catalog")

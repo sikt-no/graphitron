@@ -2530,7 +2530,7 @@ CREATE TABLE sql_schema (
   PRIMARY KEY (source_name, table_schema),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
 );
-COMMENT ON TABLE sql_schema IS 'A schema exists in the consumer''s catalog, and carries the generated artifacts that belong to the schema rather than to any one of its tables. It exists because those classes are per schema: hanging a name off sql_table would repeat one value across every table in the schema, which is the repeating group the projection era shipped. Two such artifacts so far, the Keys class and the Tables class, and both are here for the same reason rather than the second being an afterthought: each is one class serving a whole schema, and each is reachable only by loading it off the codegen classpath. Written for every schema the catalog census touches, so a table''s schema is always present.';
+COMMENT ON TABLE sql_schema IS 'One schema the consumer''s catalog declares, carrying the generated artifacts that belong to the schema rather than to any one of its tables. For example the public schema of a codegen source, naming the Keys class holding its key constants and the Tables class holding its table constants.';
 COMMENT ON COLUMN sql_schema.source_name IS 'the generated package the schema lives in; the partition this row belongs to and the key''s leading dimension, as on sql_table';
 COMMENT ON COLUMN sql_schema.table_schema IS 'SQL schema name; empty string when the generated model declares no schema for its tables, which is the same fallback sql_table applies';
 COMMENT ON COLUMN sql_schema.keys_class_fqn IS 'the fully qualified name of the generated Keys class holding this schema''s key constants, resolved by loading it off the codegen classpath rather than by concatenating a configured package with ".Keys". The guess and the fact diverge under multi-schema layouts, where each schema gets its own Keys class in its own package. Null when the generated model carries no Keys class for the schema, which is a fact: a schema with no keys has no constants to name. Goto-definition on @reference(key:) lands in this class, so it is a join key rather than a completion nicety.';
@@ -2551,7 +2551,7 @@ CREATE TABLE sql_table (
   FOREIGN KEY (source_name) REFERENCES store_source (source_name),
   FOREIGN KEY (source_name, table_schema) REFERENCES sql_schema (source_name, table_schema)
 );
-COMMENT ON TABLE sql_table IS 'A table exists in the consumer''s catalog. Every table jOOQ''s generated model declares, across every schema it declares; ambiguity of an unqualified @table(name:) is a resolution question and therefore derivation, so capture just records them all.';
+COMMENT ON TABLE sql_table IS 'One table the consumer''s catalog declares. For example public.film, carrying the kind of object it is, the generated jOOQ table class and the record class its rows bind to.';
 COMMENT ON COLUMN sql_table.source_name IS 'the generated package the table''s schema lives in; the partition this row belongs to and the key''s leading dimension, so two modules'' catalogs carrying one (schema, table) coordinate coexist instead of the second build clobbering the first. The package rather than the classpath entry it was loaded from, because one jar carries every schema a codegen run produced and invalidating the jar would discard them all, while the package is the granularity codegen actually rewrites. Schemas flattened into one package (jOOQ''s outputSchemaToDefault) share a source, which is correct: they are regenerated together';
 COMMENT ON COLUMN sql_table.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_table.table_name IS 'SQL table name';
@@ -2579,7 +2579,7 @@ CREATE TABLE sql_column (
   PRIMARY KEY (source_name, table_schema, table_name, column_name),
   FOREIGN KEY (source_name, table_schema, table_name) REFERENCES sql_table (source_name, table_schema, table_name)
 );
-COMMENT ON TABLE sql_column IS 'A column exists on a table. The SQL name is the coordinate, which is what the schema''s directives spell; the jOOQ name rides along because the LSP surface is Java-name-centric. A column carries two types, not one: the SQL type the database declares and the Java type jOOQ binds it to. Both are facts about the column and neither derives from the other by any rule the store could apply, since the mapping is the generator''s configured binding.';
+COMMENT ON TABLE sql_column IS 'One column of one table the consumer''s catalog declares. For example film.title, a varchar the generated model binds to java.lang.String.';
 COMMENT ON COLUMN sql_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_column.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_column.table_name IS 'SQL table name';
@@ -2601,7 +2601,7 @@ CREATE TABLE sql_enum_binding (
   PRIMARY KEY (source_name, class_fqn),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
 );
-COMMENT ON TABLE sql_enum_binding IS 'A Java enum class some column of this source binds to. The one relation in the store that can answer whether a named class is an enum for the classes jvm_class deliberately does not hold: the classpath census excludes the generated jOOQ package by design and says so, and a generated enum lives in exactly that package, so a reader asking "is this parameter type an enum" got a correct no for an author''s own enum and a wrong no for the generated one. The generator asks that question with Class.isEnum() and nothing else, which is why the population here is every enum a column binds to rather than every database enum type: a Java enum reached through a configured converter satisfies the generator''s predicate while naming no catalog type at all, and capturing only the database-typed half would answer no for it, silently and in the direction that changes emitted code. The grain is the class and not the column, the fact being about the class; a source''s several columns of one enum type contribute one row. Reached through the column walk because that is the only route the catalog offers: a generated Schema exposes its tables and not its enums, so an enum type no column binds to is unreachable here and absent, and a reader takes absence as not-known-to-be-an-enum on jvm_class''s own stated terms rather than as not-an-enum. An array-typed column is likewise absent, its bound type being the array and not the element. The source is the schema''s generated package, as everywhere in this family, which is also the package the generated enum classes sit under, so a row clears and refills with the schema that reached it.';
+COMMENT ON TABLE sql_enum_binding IS 'One Java enum class some column of one catalog source binds to. For example the class generated for the mpaa_rating database type, which film.rating binds to, and equally a hand-written enum a configured converter binds a column to.';
 COMMENT ON COLUMN sql_enum_binding.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension. A class reachable from two sources is two rows, on jvm_class.source_name''s terms';
 COMMENT ON COLUMN sql_enum_binding.class_fqn IS 'the fully qualified name of the enum class, as Field.getType() reports it; the value a declared parameter type is compared against, and the reason the comparison can be an equality rather than a fold: both sides are binary names nobody wrote by hand';
 COMMENT ON COLUMN sql_enum_binding.table_schema IS 'the SQL schema declaring the database enum type this class was generated for; NULL where the class names no catalog type, which is the converter-bound Java enum the table comment describes, and NULL again where it names one that is not schema-scoped. Not a foreign key into sql_schema for the first reason: that half is not a schema the walk failed to resolve, it is a row for which no schema is the right answer';
@@ -2622,7 +2622,7 @@ CREATE TABLE sql_constraint (
   FOREIGN KEY (source_name, table_schema, table_name) REFERENCES sql_table (source_name, table_schema, table_name),
   CHECK (constraint_type IN ('PRIMARY KEY', 'UNIQUE', 'FOREIGN KEY'))
 );
-COMMENT ON TABLE sql_constraint IS 'A named constraint exists on a table. The supertype: one row per constraint whatever its form, discriminated by constraint_type as the standard''s TABLE_CONSTRAINTS is. Filtered to what jOOQ''s generated model carries: PRIMARY KEY, UNIQUE and FOREIGN KEY. CHECK, NOT NULL and deferrability are absent, and arrive as further type values rather than as new relations.';
+COMMENT ON TABLE sql_constraint IS 'One named constraint of one table. For example film_pkey on public.film, of type PRIMARY KEY, at its position in the table''s uniqueness enumeration.';
 COMMENT ON COLUMN sql_constraint.jooq_name IS 'the generated Keys-class constant name for this constraint, which is what an author types in @reference(key:). Resolved by reference identity over the Keys class''s fields rather than by any formula over the constraint name, so a name colliding across schemas cannot mis-resolve; that resolution needs the live key on the codegen classpath and is unrecoverable afterwards. Null when the constraint resolves to no constant, which is a fact and not a failure: a generated model need not carry a Keys class, and a key with no constant is one nobody can name. Nullable where sql_table.jooq_name and sql_column.jooq_name are not, because a table and a column always have a generated Java name and a constraint need not.';
 COMMENT ON COLUMN sql_constraint.key_position IS 'where this constraint sits in the table''s uniqueness enumeration, jOOQ''s Table.getKeys() order with the primary key folded in, counting from zero. Captured rather than derived because the order is the generated model''s and nothing in the constraint''s own name or columns recovers it. It exists because a consumer picking one row-identifying key out of several has to pick the one the generator picks, and the generator walks this enumeration; without the position a relation ranking candidate keys would have to invent a tiebreaker among unique keys, and an invented precedence that happens to agree today is the kind of second answer that diverges silently later. Null on a FOREIGN KEY row, which is not in this enumeration at all: absence here means the constraint identifies no row rather than that its position is unknown.';
 COMMENT ON COLUMN sql_constraint.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
@@ -2647,7 +2647,7 @@ CREATE TABLE sql_constraint_column (
   FOREIGN KEY (source_name, table_schema, table_name, column_name)
     REFERENCES sql_column (source_name, table_schema, table_name, column_name)
 );
-COMMENT ON TABLE sql_constraint_column IS 'An ordered column of a constraint: the key columns of a primary key or a unique constraint, and the referencing columns of a foreign key, in one relation for all three forms as KEY_COLUMN_USAGE does. A foreign key''s target columns are not here; they are the referenced constraint''s own rows, matched on position.';
+COMMENT ON TABLE sql_constraint_column IS 'One position in one constraint''s column list, naming the column that sits there. For example position 0 of film_actor''s primary key, naming actor_id.';
 COMMENT ON COLUMN sql_constraint_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_constraint_column.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_constraint_column.table_name IS 'SQL table name';
@@ -2664,7 +2664,7 @@ CREATE TABLE sql_primary_key (
   FOREIGN KEY (source_name, table_schema, table_name, constraint_name)
     REFERENCES sql_constraint (source_name, table_schema, table_name, constraint_name)
 );
-COMMENT ON TABLE sql_primary_key IS 'Table T''s primary key is constraint C. Keyed by the table, because a table has at most one, which is what makes the cardinality structural instead of a gate query over a flag.';
+COMMENT ON TABLE sql_primary_key IS 'One table''s primary key, naming the constraint that is it. For example public.film, whose primary key is the constraint film_pkey.';
 COMMENT ON COLUMN sql_primary_key.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_primary_key.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_primary_key.table_name IS 'SQL table name';
@@ -2685,7 +2685,7 @@ CREATE TABLE sql_referential_constraint (
   FOREIGN KEY (referenced_source_name, referenced_schema, referenced_table, referenced_constraint_name)
     REFERENCES sql_constraint (source_name, table_schema, table_name, constraint_name)
 );
-COMMENT ON TABLE sql_referential_constraint IS 'A foreign key references a constraint, the foreign-key-only extension of sql_constraint. Referencing the constraint rather than the table is what SQL declares; the target columns are that constraint''s own sql_constraint_column rows matched on position, which is how both Oracle and the standard resolve them and is guaranteed by SQL semantics, never copied onto the referencing row. Implicit-path inference ("exactly one FK between these two tables") is a derivation over this relation, not a captured fact.';
+COMMENT ON TABLE sql_referential_constraint IS 'One foreign key''s reference to the constraint it resolves against. For example film_actor''s foreign key to film, referencing the film_pkey constraint of public.film.';
 COMMENT ON COLUMN sql_referential_constraint.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_referential_constraint.table_schema IS 'schema of the declaring table';
 COMMENT ON COLUMN sql_referential_constraint.table_name IS 'the declaring (source) table';
@@ -2703,7 +2703,7 @@ CREATE TABLE sql_index (
   PRIMARY KEY (source_name, table_schema, table_name, index_name),
   FOREIGN KEY (source_name, table_schema, table_name) REFERENCES sql_table (source_name, table_schema, table_name)
 );
-COMMENT ON TABLE sql_index IS 'An index exists on a table (@order(index:) and @index resolve against it). Filtered: jOOQ''s Table.getIndexes() excludes the indexes backing a primary key or unique constraint, so those are absent here and present in sql_constraint instead. @order(index:) naming a primary key''s index therefore resolves against a documented absence rather than an apparent one.';
+COMMENT ON TABLE sql_index IS 'One index of one table, which is the population @order(index:) and @index resolve against. For example idx_actor_last_name on public.actor.';
 COMMENT ON COLUMN sql_index.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_index.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_index.table_name IS 'SQL table name';
@@ -2720,7 +2720,7 @@ CREATE TABLE sql_index_column (
   FOREIGN KEY (source_name, table_schema, table_name, index_name)
     REFERENCES sql_index (source_name, table_schema, table_name, index_name)
 );
-COMMENT ON TABLE sql_index_column IS 'An ordered column of an index.';
+COMMENT ON TABLE sql_index_column IS 'One position in one index''s column list, naming the column that sits there. For example position 0 of idx_actor_last_name, naming last_name.';
 COMMENT ON COLUMN sql_index_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_index_column.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_index_column.table_name IS 'SQL table name';
@@ -2739,7 +2739,7 @@ CREATE TABLE sql_routine (
   FOREIGN KEY (source_name) REFERENCES store_source (source_name),
   FOREIGN KEY (source_name, table_schema) REFERENCES sql_schema (source_name, table_schema)
 );
-COMMENT ON TABLE sql_routine IS 'A callable exists in the consumer''s catalog. Its own subject rather than columns on sql_table, on the rule that names this family: the standard the family is named for separates ROUTINES from TABLES, and a routine''s parameters are a fact about the callable, never about a result. The population is what makes that more than pedantry. A routine with no RETURNS TABLE form has a callable and no table at all, so parameters hung off sql_table would have nowhere to go the moment the walk reads one. This takes sql_constraint''s shape for the same reason: a supertype discriminated by type, with the forms an iteration does not yet read arriving as further routine_type values rather than as a reshaping. Today the walk reads jOOQ''s table census, and a table-valued function is the one routine form that appears in it, so every row here is currently a function that also has a sql_table row; whether a routine is table-valued is that join (a FUNCTION-typed sql_table row at the same coordinate), not a column here. The key is inherited from sql_table''s and carries its one hole with it: an overload set sharing a SQL name collides in both relations, jOOQ distinguishing overloads only by generated class name.';
+COMMENT ON TABLE sql_routine IS 'One callable the consumer''s catalog declares. For example the table-valued function public.films_for_actor, whose generated call surface is the Routines method filmsForActor.';
 COMMENT ON COLUMN sql_routine.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_routine.table_schema IS 'SQL schema the routine lives in';
 COMMENT ON COLUMN sql_routine.routine_name IS 'SQL routine name; for a table-valued function this is also its sql_table row''s table_name, the two being one database object read two ways';
@@ -2758,7 +2758,7 @@ CREATE TABLE sql_routine_parameter (
   FOREIGN KEY (source_name, table_schema, routine_name)
     REFERENCES sql_routine (source_name, table_schema, routine_name)
 );
-COMMENT ON TABLE sql_routine_parameter IS 'An ordered IN parameter of a routine''s call surface. Under a family written in SQL''s vocabulary this relation carries none of it, and that is a finding rather than an omission: for a table-valued function jOOQ generates no Routine object at all, only the result table class and the Routines convenience method, so the database''s own parameter names survive only as jOOQ''s camelCase transform of them and the SQL types only as anonymous bind placeholders behind a protected field on TableImpl. Both columns were left out rather than shipped always-null or reached for through a field another module never opened.';
+COMMENT ON TABLE sql_routine_parameter IS 'One position in one routine''s call-surface parameter list, as the generated method takes it. For example position 0 of public.films_for_actor, a java.lang.Integer the generated method names pActorId.';
 COMMENT ON COLUMN sql_routine_parameter.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_routine_parameter.table_schema IS 'SQL schema the routine lives in';
 COMMENT ON COLUMN sql_routine_parameter.routine_name IS 'SQL routine name';
@@ -2785,7 +2785,7 @@ CREATE TABLE sql_node_metadata (
   CHECK ((key_columns_class IS NOT NULL) = (key_columns_form = 'OTHER')),
   CHECK (NOT (type_id_form = 'ABSENT' AND key_columns_form = 'ABSENT'))
 );
-COMMENT ON TABLE sql_node_metadata IS 'A generated jOOQ table class states node-identity metadata: the two static constants Sikt''s KjerneJooqGenerator emits on a table it treats as a node, transcribed as stated rather than as validated. A row exists exactly when the class declares either constant, so a table with no row publishes neither, and a class declaring only half the pair is a row with the other half''s ABSENT form rather than the silence the live reflection probe folds it into. Whether what the class stated is well-formed is not asked here: that is intent_node_metadata_defect, a derivation over these rows and sql_column, which is what keeps the crawler''s job transcription. Under the sql_ family because the constants ride on the same generated package sql_table partitions on, refreshed in the same clearing round by the same walk, and sql_table.class_fqn already commits this family to facts about the generated classes; a family boundary here would cut one refresh unit in half.';
+COMMENT ON TABLE sql_node_metadata IS 'One table''s node-identity metadata, as the generated jOOQ class states it. For example a film table class stating a type id of film and a key-columns array of one entry, against a table class stating neither, which has no row here at all.';
 COMMENT ON COLUMN sql_node_metadata.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_node_metadata.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_node_metadata.table_name IS 'SQL table name. With the two columns above this is sql_table''s full key: the metadata is a property of the table rather than of the class, which is why the key is the table''s and not a class name';
@@ -2805,7 +2805,7 @@ CREATE TABLE sql_node_key_column (
   FOREIGN KEY (source_name, table_schema, table_name)
     REFERENCES sql_node_metadata (source_name, table_schema, table_name)
 );
-COMMENT ON TABLE sql_node_key_column IS 'An ordered entry of the key-columns constant, as stated. Deliberately no foreign key to sql_column: the constant spells a column by name and may spell one the table does not have, which is exactly the state worth recording, and the schema''s own rule puts a foreign key only where the walk writes the child while standing on the parent, never on a reference an author spells by name. The crawler stands on the table. Whether an entry resolves is intent_node_metadata_defect''s question.';
+COMMENT ON TABLE sql_node_key_column IS 'One position in one table''s stated node key-columns array, naming what the entry states. For example position 0 of a film table class''s array, naming film_id.';
 COMMENT ON COLUMN sql_node_key_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_node_key_column.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_node_key_column.table_name IS 'SQL table name';
@@ -10198,7 +10198,40 @@ INSERT INTO meta_grain VALUES
    'graph_name, type_name, field_name', 'sdl'),
   ('minted-type-site',
    'one declaration site a macro contributed for one minted type in one graph',
-   'graph_name, type_name, source_name, source_line, source_column', 'sdl');
+   'graph_name, type_name, source_name, source_line, source_column', 'sdl'),
+  ('database-schema',
+   'one schema of one generated catalog source',
+   'source_name, table_schema', 'catalog'),
+  ('database-table',
+   'one table of one schema, in one generated catalog source',
+   'source_name, table_schema, table_name', 'catalog'),
+  ('database-column',
+   'one column of one table',
+   'source_name, table_schema, table_name, column_name', 'catalog'),
+  ('bound-enum-class',
+   'one Java enum class some column of one catalog source binds to',
+   'source_name, class_fqn', 'catalog'),
+  ('table-constraint',
+   'one named constraint of one table',
+   'source_name, table_schema, table_name, constraint_name', 'catalog'),
+  ('constraint-column',
+   'one position in one constraint''s column list',
+   'source_name, table_schema, table_name, constraint_name, position', 'catalog'),
+  ('table-index',
+   'one index of one table',
+   'source_name, table_schema, table_name, index_name', 'catalog'),
+  ('index-column',
+   'one position in one index''s column list',
+   'source_name, table_schema, table_name, index_name, position', 'catalog'),
+  ('database-routine',
+   'one callable of one schema, in one generated catalog source',
+   'source_name, table_schema, routine_name', 'catalog'),
+  ('routine-parameter',
+   'one position in one routine''s call-surface parameter list',
+   'source_name, table_schema, routine_name, position', 'catalog'),
+  ('node-key-column',
+   'one position in one table''s stated node key-columns array',
+   'source_name, table_schema, table_name, position', 'catalog');
 
 INSERT INTO meta_relation VALUES
   ('graphitron_minted_type', 'expanded-type', 'graphitron',
@@ -10224,7 +10257,63 @@ INSERT INTO meta_relation VALUES
   ('graphitron_argmapping_candidate', 'argmapping-candidate', 'graphitron',
    'What an argMapping right-hand side may name: one row per candidate, under the position the path is written from.',
    'For example the argument input of Mutation.rentFilm is one row at the empty path, and the input field inventoryId below it is another at path inventoryId, each carrying the type that says whether anything opens under it in turn.',
-   'The specification states rules an argMapping right-hand side follows, a head naming a position in scope and each later segment naming something the value there opens into, and no relation held that set: every reader re-derived it, walking a positional decomposition of the authored path against a second decomposition of the same descent and aligning the two with nested negation. Stating the candidates once turns resolution into a probe and completion into a read of one parent link. Two origins share the relation because a path written on a field and one written on an input field are one payload at two coordinates, which this schema answers with a discriminator and a total spelling rather than a second relation. Keyed by the input-field coordinate rather than by the occurrences that reach it, since a field opens into whatever its own type does, so every occurrence would repeat one subtree. Stored rather than stated as a view because the descent is recursive.');
+   'The specification states rules an argMapping right-hand side follows, a head naming a position in scope and each later segment naming something the value there opens into, and no relation held that set: every reader re-derived it, walking a positional decomposition of the authored path against a second decomposition of the same descent and aligning the two with nested negation. Stating the candidates once turns resolution into a probe and completion into a read of one parent link. Two origins share the relation because a path written on a field and one written on an input field are one payload at two coordinates, which this schema answers with a discriminator and a total spelling rather than a second relation. Keyed by the input-field coordinate rather than by the occurrences that reach it, since a field opens into whatever its own type does, so every occurrence would repeat one subtree. Stored rather than stated as a view because the descent is recursive.'),
+  ('sql_schema', 'database-schema', 'catalog',
+   'One schema the consumer''s catalog declares, carrying the generated artifacts that belong to the schema rather than to any one of its tables.',
+   'For example the public schema of a codegen source, naming the Keys class holding its key constants and the Tables class holding its table constants.',
+   'Those artifacts are per schema, so naming them on sql_table would repeat one value across every table in the schema, which is a repeating group. Each is reachable only by loading it off the codegen classpath, so a reader assembling a table or key reference without a live catalog has nowhere else to get it. Written for every schema the catalog census touches, so a table''s schema is always present.'),
+  ('sql_table', 'database-table', 'catalog',
+   'One table the consumer''s catalog declares.',
+   'For example public.film, carrying the kind of object it is, the generated jOOQ table class and the record class its rows bind to.',
+   'A written table name, the kind an author spells in @table(name:), needs ground to resolve against, and every table jOOQ''s generated model declares is that ground. Capture records them all across every schema and resolves nothing: whether an unqualified name is ambiguous is a resolution question and therefore a derivation. The row also carries the facts about the generated classes no other family holds, the classpath census excluding the generated jOOQ package by design, which is what lets goto-definition on a directive reach generated sources at all.'),
+  ('sql_column', 'database-column', 'catalog',
+   'One column of one table the consumer''s catalog declares.',
+   'For example film.title, a varchar the generated model binds to java.lang.String.',
+   'The SQL name is the coordinate the schema''s directives spell, and the jOOQ name rides along because the editor surface is Java-name-centric. A column carries two types rather than one, the SQL type the database declares and the Java type jOOQ binds it to, and neither derives from the other by any rule the store could apply: the mapping is the generator''s configured binding, resolvable only off the codegen classpath and unrecoverable afterwards.'),
+  ('sql_enum_binding', 'bound-enum-class', 'catalog',
+   'One Java enum class some column of one catalog source binds to.',
+   'For example the class generated for the mpaa_rating database type, which film.rating binds to, and equally a hand-written enum a configured converter binds a column to.',
+   'This is the one relation that can answer whether a named class is an enum for the classes jvm_class deliberately does not hold: the classpath census excludes the generated jOOQ package by design, and a generated enum lives in exactly that package. The generator asks that question with Class.isEnum() and nothing else, which is why the population is every enum a column binds to rather than every database enum type: an enum reached through a configured converter satisfies the predicate while naming no catalog type at all, and capturing only the database-typed half would answer no for it in the direction that changes emitted code. The grain is the class and not the column, the fact being about the class, so a source''s several columns of one enum type contribute one row. An enum no column binds to is unreachable through the column walk and absent, and absence reads as not-known-to-be-an-enum rather than as not-an-enum. An array-typed column is absent on the same terms, its bound type being the array and not the element.'),
+  ('sql_constraint', 'table-constraint', 'catalog',
+   'One named constraint of one table.',
+   'For example film_pkey on public.film, of type PRIMARY KEY, at its position in the table''s uniqueness enumeration.',
+   'The supertype: one row per constraint whatever its form, discriminated by constraint_type as the standard''s TABLE_CONSTRAINTS is, so a form a later walk reads arrives as a further type value rather than as a new relation. Filtered to what jOOQ''s generated model carries, which is PRIMARY KEY, UNIQUE and FOREIGN KEY; CHECK, NOT NULL and deferrability are absent. It also carries the two facts nothing else can supply: the Keys-class constant an author types in @reference(key:), resolved by reference identity on the codegen classpath rather than by a formula over the constraint name, and the position the generated model enumerates its keys in, which is the order a consumer picking one row-identifying key out of several has to pick along.'),
+  ('sql_constraint_column', 'constraint-column', 'catalog',
+   'One position in one constraint''s column list, naming the column that sits there.',
+   'For example position 0 of film_actor''s primary key, naming actor_id.',
+   'One relation for all three forms as KEY_COLUMN_USAGE is: the key columns of a primary key or a unique constraint, and the referencing columns of a foreign key. A foreign key''s target columns are deliberately not here, being the referenced constraint''s own rows matched on position, which is how both the standard and jOOQ resolve them; copying them onto the referencing row would be a second answer able to disagree with the first. The position is the key rather than the column name because the order is the fact: a key''s columns are ordered, and the ordering is what pairs a reference against its target.'),
+  ('sql_primary_key', 'database-table', 'catalog',
+   'One table''s primary key, naming the constraint that is it.',
+   'For example public.film, whose primary key is the constraint film_pkey.',
+   'Keyed by the table rather than by the constraint, because a table has at most one primary key and that makes the cardinality structural instead of a gate query over a flag on sql_constraint. A reader wanting the key''s columns joins on to sql_constraint_column; a reader asking only whether a table is keyed at all stops here.'),
+  ('sql_referential_constraint', 'table-constraint', 'catalog',
+   'One foreign key''s reference to the constraint it resolves against.',
+   'For example film_actor''s foreign key to film, referencing the film_pkey constraint of public.film.',
+   'The foreign-key-only extension of sql_constraint, split off rather than folded in as nullable columns, so a row exists exactly where a reference does. Referencing a constraint rather than a table is what SQL declares, and the target columns stay the referenced constraint''s own sql_constraint_column rows matched on position, guaranteed by SQL semantics and never copied onto the referencing row. Implicit-path inference, the rule that reads exactly one foreign key between two tables as the path an author left unspelled, is a derivation over this relation rather than a captured fact.'),
+  ('sql_index', 'table-index', 'catalog',
+   'One index of one table, which is the population @order(index:) and @index resolve against.',
+   'For example idx_actor_last_name on public.actor.',
+   'Filtered by jOOQ''s own census: Table.getIndexes() excludes the indexes backing a primary key or a unique constraint, so those are absent here and present in sql_constraint instead. Recording that filter is what makes an author naming a primary key''s index resolve against a documented absence rather than an apparent one.'),
+  ('sql_index_column', 'index-column', 'catalog',
+   'One position in one index''s column list, naming the column that sits there.',
+   'For example position 0 of idx_actor_last_name, naming last_name.',
+   'An index is ordered, and a reader that knew only which columns an index covered could not tell a leading column from a trailing one, which is the difference between an index a predicate can seek on and one it cannot. That is why the position is the key. Separate from sql_index for the reason sql_constraint_column is separate from sql_constraint: the columns are a repeating group, and a relation at the index grain has nowhere to put them.'),
+  ('sql_routine', 'database-routine', 'catalog',
+   'One callable the consumer''s catalog declares.',
+   'For example the table-valued function public.films_for_actor, whose generated call surface is the Routines method filmsForActor.',
+   'Its own subject rather than columns on sql_table, on the rule the family is named for: the standard separates ROUTINES from TABLES, and a routine''s parameters are a fact about the callable, never about a result. The population is what makes that more than pedantry, a routine with no RETURNS TABLE form having a callable and no table at all, so parameters hung off sql_table would have nowhere to go the moment the walk reads one. It takes sql_constraint''s shape, a supertype discriminated by type, so a form an iteration does not yet read arrives as a further routine_type value rather than as a reshaping. Whether a routine is table-valued is the join to a FUNCTION-typed sql_table row at the same coordinate rather than a column here. The key is sql_table''s and carries its one hole with it: an overload set sharing a SQL name collides in both relations, jOOQ distinguishing overloads only by generated class name.'),
+  ('sql_routine_parameter', 'routine-parameter', 'catalog',
+   'One position in one routine''s call-surface parameter list, as the generated method takes it.',
+   'For example position 0 of public.films_for_actor, a java.lang.Integer the generated method names pActorId.',
+   'A parameter list is what @routine(argMapping:) is matched against, and it is ordered, so the position is the key. It describes one generated method rather than the routine in the abstract, jOOQ generating several call forms per routine, which is why sql_routine names the method these rows belong to. Under a family written in SQL''s vocabulary this relation carries none of it, and that is a finding rather than an omission: for a table-valued function jOOQ generates no Routine object at all, so the database''s own parameter names survive only as jOOQ''s camelCase transform of them and the SQL types only as anonymous bind placeholders behind a protected field on TableImpl. Both were left out rather than shipped always-null or reached for through a field another module never opened.'),
+  ('sql_node_metadata', 'database-table', 'catalog',
+   'One table''s node-identity metadata, as the generated jOOQ class states it.',
+   'For example a film table class stating a type id of film and a key-columns array of one entry, against a table class stating neither, which has no row here at all.',
+   'Sikt''s KjerneJooqGenerator emits two static constants on a table it treats as a node, and this transcribes them as stated rather than as validated. A row exists exactly when the class declares either constant, and a class declaring only half the pair is a row carrying the other half''s ABSENT form rather than the silence a live reflection probe folds it into. Whether what the class stated is well-formed is intent_node_metadata_defect''s question, a derivation over these rows and sql_column, which is what keeps the crawler''s job transcription. Under the sql_ family because the constants ride on the same generated package sql_table partitions on and refresh in the same clearing round by the same walk; a family boundary here would cut one refresh unit in half.'),
+  ('sql_node_key_column', 'node-key-column', 'catalog',
+   'One position in one table''s stated node key-columns array, naming what the entry states.',
+   'For example position 0 of a film table class''s array, naming film_id.',
+   'The array is ordered and the encoded identity depends on that order, so a reader that recovered the columns from the table''s own key would encode different ids than the ones already issued: the position is the fact and therefore the key. Deliberately no foreign key to sql_column, because the constant spells a column by name and may spell one the table does not have, which is exactly the state worth recording, and the schema''s own rule puts a foreign key only where the walk writes the child while standing on the parent. The crawler stands on the table. Whether an entry resolves is intent_node_metadata_defect''s question.');
 
 CREATE TABLE meta_materialize_dependency (
   source_view_name VARCHAR NOT NULL,
