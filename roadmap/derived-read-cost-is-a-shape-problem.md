@@ -2629,6 +2629,77 @@ so they are not reconstructible after the fact the way a directive application i
 a different question from this one. The gatherer roster says the graphitron gatherer owns that
 family; today it owns all of it but those three.
 
+### Slice 26: the census of who actually reads the expansion's rows
+
+The remaining graphitron semantics in the SDL walk is `MacroCapture`, the `@asConnection` expansion,
+and it is different in kind from the decode that just moved: it does not merely read the corpus, it
+*writes into* `graphql_type`, `graphql_field` and `graphql_type_declaration`. So purifying the walk
+forces a modelling decision rather than a mechanical move. A synthesized coordinate cannot stay in
+`graphql_` written by the graphitron gatherer, that being two gatherers on one relation, so either
+the coordinates move to `graphitron_` and readers that want the expanded set read a union, or the
+walk keeps them and stays impure.
+
+The reason to prefer moving them is not purity for its own sake. `MacroCapture`'s own comment records
+the defect the current placement produces: for the field type the expansion *rewrites*, "the
+expression the field was written with survives only in that relation's own text column, and no
+anti-join recovers it". Inverted, the problem disappears. `graphql_field` holds what the author wrote
+because that is what a transcription is, the rewritten expression sits in the graphitron relation,
+and "as authored" against "as graphitron sees it" becomes two reads instead of one read plus an
+anti-join that does not work. It also dissolves a constraint that reads as arbitrary today: an
+expansion inside a crawler may read only that crawler's corpus, which is why `@asConnection` may run
+there and federation's key synthesis may not, having been exiled to `intent_` because nodehood needs
+the jOOQ metadata. Move the expansion to the gatherer that reads no corpus and the two belong in the
+same place.
+
+**The cost was worth measuring before committing, because the static count is frightening and wrong.**
+The three relations are named directly by 35 of the schema's 115 views and imported by 16 main-source
+Java files across the reactor. Counted that way the union looks like a migration of a third of the
+schema.
+
+**Measured, it is eleven views.** The method: capture a schema, then un-expand the store in two
+stages and see which views answer differently. Stage one puts every carrier field's authored type
+expression back, which `graphitron_field_synthesis.authored_type_sdl` holds exactly. Stage two
+deletes every row about a minted type, the minted names coming from
+`graphitron_type_declaration_synthesis`, children before parents in the reverse of the write order
+the foreign keys already derive. Materializations refresh between stages so a registered target
+cannot answer from a stale copy. On the sakila example schema (4547 lines, 33 `@asConnection`
+applications, 40 minted types, 20 rewritten carrier fields), 93 of the 115 views hold rows and
+**11 of them change**:
+
+[cols="1,1,3"]
+|===
+| Relation | Rows before / after | What it is about
+
+| `intent_connection_element_type` | 22 / 2 | the Connection to element resolution, which is the expansion's whole subject
+| `intent_resolved_field_demand` | 942 / 822 | which fields the emitted surface demands
+| `intent_field_navigated_type` | 959 / 839 | total over `graphql_field`, so every minted field has a row
+| `intent_field_scope_table_live` | 409 / 351 | the table a field's scope resolves to
+| `intent_field_exemption_rule` | 212 / 132 | which coordinates a rule exempts
+| `intent_resolved_type_demand` | 287 / 247 | which types the emitted surface demands
+| `intent_type_demand` | 193 / 153 | the demand rule underneath it
+| `intent_field_participant_scope_table` | 152 / 116 | the participant side of the same scoping
+| `intent_field_column_table` | 130 / 116 | the table a field's column sits on
+| `intent_field_column_scope_live` | 281 / 267 | the column scope itself
+| `intent_field_payload_producer` | 139 / 139 | changes content without changing count
+|===
+
+**Why the gap between 35 and 11 is structural rather than a shortfall of the fixture.** A minted type
+is a plain object type carrying machinery fields and no directives at all: no `@table`, no `@service`,
+no `@field`, no arguments. So every directive-driven reader is blind to it by construction, and that
+is most of the 35. The eleven that see it are, without exception, readers about the *emitted* surface
+rather than about what the author wrote: what the generator must produce, what it navigates through,
+what table a field resolves to. That is exactly the population a union view is for, and eleven
+readers is a slice rather than a migration.
+
+**What the census turned up in passing, and it is worth deciding rather than inheriting.** None of
+the four author-facing LSP surfaces that read these relations, the declarations, the type usages, the
+descriptions and the diagnostics, filters the synthesis provenance. So the minted `Connection` and
+`Edge` types are indistinguishable from authored ones there today. Whether that is wrong differs per
+surface: a minted type's declaration position is the carrier's own `@asConnection` application, so a
+jump to it lands somewhere defensible, while offering the author a completion for a type name nobody
+wrote is harder to argue for. Purification decides it by construction instead, which is the argument
+for it that has nothing to do with gatherers.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
