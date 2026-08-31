@@ -45,7 +45,7 @@
           recorded-recipe freshness replay cannot drift apart.
         -->
         <version.org.codehaus.plexus.plexus-utils>3.6.1</version.org.codehaus.plexus.plexus-utils>
-        <version.org.junit>6.0.3</version.org.junit>
+        <version.org.junit>6.1.3</version.org.junit>
         <version.ch.qos.logback>1.5.32</version.ch.qos.logback>
         <version.postgresql>42.7.10</version.postgresql>
         <version.testcontainers.postgresql>2.0.4</version.testcontainers.postgresql>
