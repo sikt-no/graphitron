@@ -2955,44 +2955,43 @@ separates a rule reading the wrong population from a case that seeded nothing.
 the forty-two turned out to be wrong; the rate among the rest is unknown, and the roster is what makes
 that a bounded question rather than an open one.
 
-### Slice 31: @node's defaulted key columns cannot be captured here, and the reason is not the one slice 23 named
+### Slice 31: @node's defaulted key columns are not blocked, and the first reading of this slice was wrong
 
-Slice 23 listed four questions the gathering architecture would unblock and named this one the
-sharpest: an `@node` that omits its key columns defaults to the bound table's primary key, capture
-could not write that default, and the stated reason was that `sql_primary_key` had no rows yet
-because the catalog gatherer ran last. The catalog runs first now and that reason is gone. The fact
-still cannot be captured, and the real blocker was never the one named.
+**Withdrawn and replaced.** The first version of this slice concluded that the default could not be
+captured here, because the closure of `intent_resolved_node_key_column` reaches the classpath census
+and a later gatherer writes it. The closure figure was right and the conclusion drawn from it was
+wrong twice over. It is recorded rather than deleted because the mistake is instructive: a roster was
+read for a fact the roster does not carry.
 
-**A default needs two things and only one of them was missing.** It needs the primary key of a table,
-which is catalog and now readable, and it needs to know *which* table the type is bound to. The
-binding is not a fact any gatherer writes. It is
-`intent_resolved_type_binding`, a union of the `@table` spelling resolved against the catalog census
-and the return type of a bound routine.
+**The first error was about which relation pulls the census in.** The claim was that the binding's
+routine arm resolves a bound routine's return type through the classpath. It does not; a routine's
+return is a catalog fact. Walking the path rather than reading the view names the real entry:
+`intent_resolved_node_key_column` to the resolved binding to the routine return binding to the field
+chain terminus to the chain node to the reference-step hop to **`intent_condition_method_route`**,
+which is where `@condition`'s method route reads `jvm_method`, `jvm_method_parameter` and
+`jvm_declared_type_ref`. Five relations further down than the arm named, and about a different
+directive.
 
-**The routine arm is what puts it out of reach, established by walking the closure rather than by
-reading the view.** The transitive read closure of `intent_resolved_node_key_column` is forty
-relations, and three of them are `jvm_declared_type_ref`, `jvm_method` and `jvm_method_parameter`:
-the classpath census. That is the java-source gatherer's family, and the roster has
-`('derivation', 'java-source')` with no edge from `graphitron` to it. So the graphitron gatherer
-cannot see the binding, not because of a charter argument but because the rows do not exist when it
-runs, which is exactly the diagnosis slice 23 made about the catalog and got right for the wrong
-relation.
+**The second error was about who writes the census, and it is the one that changes the answer.**
+`meta_gatherer` lists a `java-source` gatherer, and the census relations begin `jvm_`, so the roster
+looked like it settled the question. It does not. `java-source` writes the `java_` family, which is
+the consumer's own source text as a plain parse reads it, and **no view in this schema reads a
+`java_` relation at all**; its consumers are the MCP server and the language server. The `jvm_`
+family is the bytecode classpath scan, and `meta_gatherer_corpus` says who answers for it:
+`('catalog', 'classpath')`. The catalog gatherer writes both families, `('graphitron', 'catalog')` is
+already an edge, and slice 24 of this item moved the catalog to the front of the run.
 
-**Which relocates the fact rather than refusing it.** The gatherer that can write this default is the
-one that runs after java-source, and that gatherer already has a register of things it computes. What
-the default should become there is not another keyless copy of a view body but a grain table keyed on
-what a row is about, which for this relation is the graph, the type and the key position. That is this
-item's own prescription for what the last gatherer ought to be materializing, and it is a better home
-than the one slice 23 imagined. It is filed rather than built here, because it lands in the register
-this item hands to its successor.
+**So the fact is capturable here, and it was made capturable by this item four slices before the
+slice that said it was not.** Every base table in that forty-relation closure belongs to
+configuration, sdl, catalog or graphitron itself; the sixteen `intent_` relations in it are views,
+which hold no rows and are evaluable the moment their bases are. Nothing has to move.
 
-**One thing found on the way, worth recording because it is not what this slice went looking for.**
-`intent_spelled_table` is declared in `meta_family_bridge` as bridging `graphitron_` and `sql_`, and
-both of those are inside the graphitron gatherer's dependency closure. A crossing rule is owned by
-the gatherer that runs after everything it reads, and for that relation the gatherer is graphitron
-rather than the derivation. It is the most-read relation in the schema and it may be sitting one
-gatherer too late. That is an observation and not a proposal: nothing here has checked what its own
-closure reaches.
+**What the measurement says about whether it is worth capturing, which is a different question.** On
+the consumer schema the tier distribution is 929 `JOOQ_METADATA`, 2 `SDL_PINNED` and **zero**
+`CATALOG_PRIMARY_KEY`. The defaulted arm returns nothing there. It is three joins and a rank tier
+carried on every read of the resolved key for a population that, on the one consumer measured, is
+empty. That makes the case for taking it out of read time stronger than the case for capturing it
+into a table, and it is the sort of thing an item should know before it proposes either.
 
 ### Deferred: the registration precondition
 
@@ -3227,12 +3226,13 @@ None of them is a precondition for anything left in this item.
 - **R898**, the candidate tree stopping one level above the key column, which is this item's own
   defect one level lower down.
 
-**And one more, filed after it was investigated rather than before.** R902 takes `@node`'s defaulted
-key columns. This item declared them as staying in scope, on slice 23's claim that the gathering
-architecture unblocked them; slice 31 establishes that it did not, because the binding they default
-from resolves through the classpath census, which a gatherer running after this one captures. The
-fact belongs to that gatherer, as a grain table rather than a view arm, which puts it in the register
-this item hands on.
+**And one more, whose subject changed while it was being investigated.** R902 takes `@node`'s
+defaulted key columns. Slice 23 listed them as unblocked by the gathering architecture and it was
+right: slice 24 put the gatherer that writes the classpath census at the front of the run, so the
+decode can reach everything the default needs. What slice 31 found instead is that the defaulted arm
+returns no rows at all on the consumer schema measured, which turns the item from "capture this fact"
+into "decide whether this arm should be evaluated on every read", and that is a question worth its
+own item rather than a slice here.
 
 **One thread was dropped rather than filed.** An earlier note in this item's working record proposed
 splitting what claims a type is a node into three relations. The schema does not support the

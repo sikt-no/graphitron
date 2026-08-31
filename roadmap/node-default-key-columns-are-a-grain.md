@@ -18,29 +18,34 @@ the user manual documents as the default. Nothing captures that. It is the third
 to `sql_primary_key` and `sql_constraint_column`, under a `DENSE_RANK()` window that picks the
 winning tier.
 
-**The obvious home for it is the wrong one, which was established by measurement rather than
-argument.** The natural move is to have the gatherer that decodes `@node` write the default beside
-the columns an author spelled, now that the catalog is captured before it runs. It cannot: a default
-needs to know which table the type is bound to, and the transitive read closure of
-`intent_resolved_node_key_column` is forty relations, three of which are `jvm_declared_type_ref`,
-`jvm_method` and `jvm_method_parameter`. The binding's routine arm resolves a bound routine's return
-type through the classpath census, which a later gatherer captures. The rows do not exist when the
-decode runs.
+**Nothing blocks capturing it, which took a wrong answer and a correction to establish.** The
+gatherer that decodes `@node` runs after the one that writes both the database catalog and the
+bytecode classpath census, and every base table the resolution reaches belongs to a gatherer at or
+before it. An earlier reading held that the classpath census belonged to a later gatherer; it does
+not, and the family that does, `java_`, is read by no view in this schema.
 
-**So the fact belongs to the gatherer that runs after the census, and the shape it should take there
-is a grain table.** That gatherer already computes and stores a register of relations, and the
-standing criticism of that register is that its targets are keyless copies of view bodies rather than
-tables keyed on what a row is about. This relation has an obvious grain: the graph, the type and the
-key position. Landing it keyed rather than as another keyless copy is the difference between adding
-to the problem and demonstrating the fix.
+**The measurement is what makes this interesting, and it points the other way from the title.** On
+the one consumer schema measured, the tier distribution of `intent_resolved_node_key_column` is 929
+`JOOQ_METADATA`, 2 `SDL_PINNED` and **zero** `CATALOG_PRIMARY_KEY`. The defaulted arm returns no
+rows. So capturing it would store an empty table, while the arm itself goes on costing three joins
+and a rank tier on every read of the resolved key, and this relation is read by a registered target.
 
-**What it is worth, and the honest bound on that.** Three joins and a window function leave every read
-of the resolved key. The binding relation the arm joins to carries a fifty-fold planner degradation
-reported separately, so removing one of its readers is worth more than the join count suggests.
-Neither figure has been measured for this change specifically, and the item owes that before it
-claims anything.
+**Which makes the real question whether the arm should exist at read time at all**, and the title of
+this item is a hypothesis rather than the answer. Three shapes are worth pricing against each other
+rather than one being assumed:
 
-**Two questions to settle in Spec.** Whether the other two tiers move with it or only the defaulted
-one, since a relation half captured and half reconstructed is the shape this schema keeps finding
-expensive. And whether a disagreement between the tiers, which the resolution view's own comment says
-nothing records today, becomes a defect relation at the same time.
+- Capture the default as a grain table keyed on graph, type and key position, and have the arm read
+  it. Right if the population is non-empty on consumers other than the one measured.
+- Capture it and find it stays empty, in which case the honest outcome is that the manual documents
+  a default that the generator's own metadata always beats, and the arm is dead code with a
+  documentation bug behind it.
+- Leave the default where the manual puts it and remove the arm from the resolution, making the
+  fallback something a reader asks for rather than something every read pays for.
+
+**What this item owes before it chooses.** The tier distribution on more than one consumer schema,
+since a single capture cannot tell an empty population from an unrepresentative one. And a reading of
+whether the jOOQ metadata arm and the primary-key arm can ever disagree, which the resolution view's
+own comment says nothing records today.
+
+**One thing not to fold in.** Whether the whole relation becomes a keyed grain table rather than a
+window-function view is a register question and belongs with the item that holds the register.
