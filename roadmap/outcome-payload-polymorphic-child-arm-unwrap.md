@@ -1,7 +1,7 @@
 ---
 id: R873
 title: "Polymorphic child fields under an Outcome payload never emit the wrapper arm-unwrap"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: codegen-correctness
@@ -327,7 +327,8 @@ with the existing `contains` / `replace` comparison unchanged. That cannot rot o
 or naming change, and it fails for the one reason the test exists. A roadmap-only diff will not
 cover this; the fix touches `graphitron` test sources, so it owes a full verification build.
 
-**Addressed in `ec74183`.** The text block is gone; the guard is now obtained from
+**Addressed in `6e20f53`** ("R873: derive the pipeline test's prelude from its producer, not a
+source literal"). The text block is gone; the guard is now obtained from
 `ParentSourceBinding.DirectRecord.prelude`, over the same subject and escape
 `MultiTablePolymorphicEmitter`'s batched list fetcher hands it, and rendered through javapoet's
 own `MethodSpec` renderer (a probe method, signature line and closing brace stripped) so the body

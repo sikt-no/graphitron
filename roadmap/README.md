@@ -21,9 +21,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R880` | An explicit null clears a nullable reference on UPDATE, and a straddler is admitted when its identity half is pinned | Spec | 2026-08-31 | [plan](nullable-straddling-reference-clears-its-out-of-key-half.md) |
 | `R864` | Capture moves below the generator: the fact tier becomes a module boundary <sub>blocked by: [capture-stops-reading-the-walk](capture-stops-reading-the-walk.md)</sub> | Spec | 2026-08-27 | [plan](capture-moves-below-the-generator.md) |
-| `R873` | Polymorphic child fields under an Outcome payload never emit the wrapper arm-unwrap | In Progress | 2026-08-31 <sub>created 2026-08-28</sub> | [plan](outcome-payload-polymorphic-child-arm-unwrap.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-08-30 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R834` | A top-level @service returning a @table type reads columns off the returned record instead of refetching by key | In Review | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](root-service-table-return-skips-key-refetch.md) |
+| `R873` | Polymorphic child fields under an Outcome payload never emit the wrapper arm-unwrap | In Review | 2026-08-31 <sub>created 2026-08-28</sub> | [plan](outcome-payload-polymorphic-child-arm-unwrap.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
@@ -579,7 +579,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### codegen-correctness
 
-- `R873` [**Polymorphic child fields under an Outcome payload never emit the wrapper arm-unwrap**](outcome-payload-polymorphic-child-arm-unwrap.md) — In Progress, bug
+- `R873` [**Polymorphic child fields under an Outcome payload never emit the wrapper arm-unwrap**](outcome-payload-polymorphic-child-arm-unwrap.md) — In Review, bug
 - `R756` [**The orphan sweep never visits four subpackages the generator emits into**](orphan-sweep-misses-emitted-subpackages.md) — Backlog, correctness
 - `R663` [**@defaultOrder on a @splitQuery child list is dropped at emit**](split-query-child-list-drops-default-order.md) — Ready, bug
 - `R480` [**@oneOf definition augment defeated by descriptions quoting the definition; federated SDL fails Apollo composition**](oneof-augment-defeated-by-descriptions.md) — Backlog, bug
