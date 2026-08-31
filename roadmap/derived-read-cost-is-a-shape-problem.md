@@ -53,7 +53,7 @@ them turned out to have the same mechanical cause.
 
 **The empty register stays as the standard rather than as this item's scope.** The five-second
 budget below, and the two arms it is measured on, are unchanged and still say what they said. What
-changes is who owes it. A successor takes the target carrying the burden this item established, that
+changes is who owes it. R899 takes the target carrying the burden this item established, that
 a registration has to be shown necessary rather than shown wasteful, and carrying what this item
 measured: four confirmed supertype omissions, of which this repointed two and left the largest
 untouched, and the ten relations that move the wrong way on the emptied arm, three of which have a
@@ -3053,6 +3053,41 @@ And it does not re-argue the refresh. That axis is closed on the tree, section 1
 slice here proposing to make a registration's refresh cheaper would be work against a 43-second pass.
 Anything this item does to the register it does for the reads above it or for the coherence of when a
 row is added, never for the pass.
+
+## Filed out of this item
+
+Threads this item opened and did not close, each filed on its own terms rather than carried here.
+None of them is a precondition for anything left in this item.
+
+- **R899**, the target itself: no relation a consumer reads refuses a five-second budget with
+  nothing materialized. It inherits the two arms, the four confirmed supertype omissions, the ten
+  relations that move the wrong way, and the two register-pricing questions this item raised and did
+  not answer, `intent_spelled_table`'s registration and the fifty-fold planner degradation on
+  `intent_resolved_type_binding`. The deferred registration precondition below goes with it.
+- **R900**, the argMapping relations spelling their own subject three ways, and the two names the
+  schema already admits are inaccurate.
+- **R901**, what `trailing_segments` is a count of. The proposal to collapse it to a boolean is
+  refused by the column's own comment, which makes the question sharper rather than closed.
+- **R895**, the four language-server surfaces that cannot tell a minted Connection type from an
+  authored one. The provenance is a row now, so the mechanism is easy; what is owed is four
+  decisions about what each surface should show.
+- **R896**, the census that would retire `intent_argmapping_segment_binding`. Its original reason is
+  gone and it still has readers in the plan, which is a census rather than a deletion.
+- **R897**, typeId uniqueness, which is scoped to the supergraph and therefore cannot be a
+  constraint on a relation capture writes one graph at a time.
+- **R898**, the candidate tree stopping one level above the key column, which is this item's own
+  defect one level lower down.
+
+**What stays here** is `@node`'s defaulted key columns becoming a captured fact. It is the last of
+the four questions slice 23 named as blocked on the gathering architecture, and it is the cheapest
+demonstration that the architecture change paid for itself.
+
+**One thread was dropped rather than filed.** An earlier note in this item's working record proposed
+splitting what claims a type is a node into three relations. The schema does not support the
+description: the authored claim and the inferred one already live in `graphitron_node` and
+`intent_inferred_node_type`, separate relations coalesced by a view, exactly as the provenance rule
+requires. Whatever the proposal was about, it cannot be restated from the tree, and filing an item
+with a body nobody can check is worse than the gap.
 
 ## Superseded items
 
