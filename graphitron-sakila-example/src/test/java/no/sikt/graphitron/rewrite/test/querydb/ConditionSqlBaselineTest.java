@@ -159,7 +159,8 @@ class ConditionSqlBaselineTest {
                     + "on \"customersbyaddressdistrictsplit_c0\".\"store_id\" = \"parentinput\".\"store_id\" "
                     + "where exists (select 1 as \"one\" from \"public\".\"address\" as \"customersbyaddressdistrictsplit_c0_fkt0_0\" "
                     + "where (\"customersbyaddressdistrictsplit_c0_fkt0_0\".\"address_id\" = \"customersbyaddressdistrictsplit_c0\".\"address_id\" "
-                    + "and \"customersbyaddressdistrictsplit_c0_fkt0_0\".\"district\" = ?))");
+                    + "and \"customersbyaddressdistrictsplit_c0_fkt0_0\".\"district\" = ?)) "
+                    + "order by \"customersbyaddressdistrictsplit_c0\".\"customer_id\" asc");
     }
 
     @Test
@@ -258,7 +259,8 @@ class ConditionSqlBaselineTest {
                     + "from (values (0, ?)) as \"parentinput\" (\"idx\", \"store_id\") "
                     + "join \"public\".\"customer\" as \"customersseenbyuser_c0\" "
                     + "on \"customersseenbyuser_c0\".\"store_id\" = \"parentinput\".\"store_id\" "
-                    + "where lower(\"customersseenbyuser_c0\".\"first_name\") = lower(?)");
+                    + "where lower(\"customersseenbyuser_c0\".\"first_name\") = lower(?) "
+                    + "order by \"customersseenbyuser_c0\".\"customer_id\" asc");
     }
 
     @Test

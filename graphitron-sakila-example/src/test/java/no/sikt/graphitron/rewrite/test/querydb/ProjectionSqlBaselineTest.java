@@ -104,7 +104,8 @@ class ProjectionSqlBaselineTest {
                 "select \"tags_s0\".\"tag\", \"parentinput\".\"idx\" as \"__idx__\" "
                     + "from (values (0, ?), (1, ?)) as \"parentinput\" (\"idx\", \"parent_code\") "
                     + "join \"public\".\"split_parent_tag\" as \"tags_s0\" "
-                    + "on \"tags_s0\".\"parent_code\" = \"parentinput\".\"parent_code\"");
+                    + "on \"tags_s0\".\"parent_code\" = \"parentinput\".\"parent_code\" "
+                    + "order by \"tags_s0\".\"tag_id\" asc");
     }
 
     @Test

@@ -286,6 +286,43 @@ carry.
 If a reviewer wants a sharper signal that this item is a bug fix and not a feature: the delivery
 edits no user-facing prose except to widen one directive name.
 
+## Delivery notes
+
+Two departures from the plan above, both recorded here rather than left for a reviewer to
+discover in the diff.
+
+**The sequencing was not observed.** "Relationship to the facts pivot" argues that R682 should
+land first, so that a deliberate SQL change does not move the instrument that conversion is
+measured with. R682 is a long-running architecture item whose slices ship as separate items, and
+the user directed this one be picked up now. The reopen trigger that section states did not fire:
+`batchedResultOf` and `batchedLookupRow` were still reading the leaf's ordering slot at pickup, so
+the "two arms, two edits" framing held and the anchors needed no re-derivation. What the
+conversion inherits instead is a baseline whose three list-arm strings changed once, deliberately,
+with the reason written into the file's own javadoc; that is a documented step, not an
+unexplained diff, and the remaining strings still hold the fold's promise.
+
+**The keyless-target fixture is a table, not a view.** The field report's target was
+view-backed, and the plan's test section names a view. What makes that population unable to opt
+out is the *missing primary key*: with no key to fall back on, `validateListRequiresOrdering`
+compels the very `@defaultOrder` the emission discarded. A view is one way to have no primary
+key; a table declared without one is another, and it reproduces the case exactly while costing no
+jOOQ synthetic-key codegen configuration and introducing no unrelated question about whether
+view-backed targets are supported elsewhere. The fixture (`role_holder` / `role_assignment`,
+reached through `RoleHolder.roles` and `RoleHolder.rolesByCode`) states this in its own comment.
+
+**The fanned assertion re-shaped its fixture rather than adding one.** Proving the tenant-blocking
+contract needs one parent with rows in more than one tenant, and needs the tenants' sort keys to
+interleave, or a globally re-sorted merge would produce the same answer as the contract. The
+multi-tenant fan-out fixture's films now share one language across both tenants with interleaved
+ids, so storage order, a global re-sort and the published contract are three distinguishable
+answers. The existing `filmsEverywhere` pins were unaffected: they assert on titles, and the
+within-tenant sort order of those titles did not move.
+
+Every assertion the delivery added or tightened was confirmed red against the unfixed generator
+before the fix was restored, which is what the plan's "the execution assertion must be able to
+fail" trap asks for. The fanned one fails on the within-tenant sort, the two keyless-target ones
+on the declared sort, and the three baseline strings on the added `ORDER BY`.
+
 ## Out of scope
 
 * **Argument-driven `@orderBy` on a batched child.** The render layer takes it for free (see the
