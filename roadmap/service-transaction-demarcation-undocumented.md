@@ -1,13 +1,13 @@
 ---
 id: R721
 title: "The transaction demarcation difference between @mutation and @service is undocumented"
-status: Spec
+status: Ready
 bucket: docs
 priority: 3
 theme: service
 depends-on: []
 created: 2026-08-19
-last-updated: 2026-08-19
+last-updated: 2026-08-31
 ---
 
 # The transaction demarcation difference between @mutation and @service is undocumented
