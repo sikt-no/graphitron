@@ -248,7 +248,7 @@ final class MutationInputResolver {
      * become a carrier lands, so it distinguishes the carrier-adjacent cases before falling to its
      * generic text: a structurally rejected payload (the scan's own reason), one disqualified by a
      * forbidden directive on its data field, and one that is well-formed but ungrounded
-     * ({@link #ungroundedCarrierReason}, off the recognizer's published fact).
+     * ({@link #ungroundedCarrier}, off the recognizer's published fact).
      */
     static String validateReturnType(ReturnTypeRef returnType, DmlKind kind, boolean listInput, BuildContext ctx) {
         String perArm = switch (returnType) {

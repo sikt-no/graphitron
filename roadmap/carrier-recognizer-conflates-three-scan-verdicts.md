@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 6
 theme: classification-model
-depends-on: [dml-carrier-errors-field-blocks-return-derived-table]
+depends-on: []
 created: 2026-08-19
 last-updated: 2026-08-19
 ---

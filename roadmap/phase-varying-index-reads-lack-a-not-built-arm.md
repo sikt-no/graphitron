@@ -18,12 +18,14 @@ runs, a reader gets a populated-looking index that answers every membership ques
 "no". The empty value conflates two different facts, "this schema declares no `@error`
 types" and "the index has not been built yet", and a pre-index reader cannot tell them
 apart, so it computes a plausible wrong answer instead of refusing. This has now bitten
-twice through `BuildContext.detectErrorsFieldShape`: the routine-carrier grounding
-(fixed by moving `groundRoutineCarriers()` after the index build) and the DML-carrier
-grounding (R687, which applies the same fix); in both cases the write target
-silently failed to ground and the payload surfaced a misleading classify-time rejection.
-The only enforcement today is prose comments on the call sites in
-`TypeBuilder.prepareForWalk`, which is review-only and did not propagate the last time.
+twice through `BuildContext.detectErrorsFieldShape`: the routine-carrier grounding, and
+then the DML-carrier grounding (R687). Both were fixed the same way, by moving the
+grounding after the index build; R687 folded the two into one pass named for that
+precondition, `RecordBindingResolver.groundIndexDependentBindings`, which is where the
+former `groundRoutineCarriers()` now lives. In both cases the write target silently failed
+to ground and the payload surfaced a misleading classify-time rejection. The only
+enforcement today is prose comments on the call sites in `TypeBuilder.prepareForWalk`,
+which is review-only and did not propagate the first time.
 
 The fix shape to evaluate at Spec: give the not-yet-built state its own arm (a sealed
 `NotBuilt` / `Built(map)` on the index types, or hand the built index to passes as a
