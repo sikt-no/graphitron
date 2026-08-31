@@ -147,6 +147,45 @@ coercion is only about the Java types lining up afterwards. Getting these backwa
 original converter bug in that fixture arose, so the two are worth naming separately in the mint's
 javadoc.
 
+### Alternative considered: jOOQ's implicit path join
+
+The reporter supplied the 9.3.2 cross-check on the issue, and it names a real alternative rather
+than a historical curiosity. 9.3.2 never wrote a column equality at all. It navigated the FK
+through jOOQ's generated path method and let jOOQ render the predicate:
+
+```java
+// OrganisasjonDBQueries.java, graphitron 9.3.2
+var _a_institusjon_2769165829_land = _a_institusjon.land().as("land_169829664");
+```
+
+`institusjon.land()` is the generated navigation method for the `LAND_INSTITUSJON` foreign key, so
+the predicate lives inside jOOQ's path-join machinery and is type-blind at the Java layer for the
+same structural reason the `.onKey(Keys.<CONSTANT>)` arms are. The SQL it produced is the plain
+`land.landnr = institusjon.landnr` this section argues was always correct. The cross-check therefore
+confirms the design rather than competing with it: the predecessor's output is exactly what a
+coerced equality renders, so `coerce` restores 9.3.2's emitted SQL byte for byte.
+
+Adopting the mechanism, rather than just matching its output, is the alternative, and it is
+rejected on three counts:
+
+* **Path methods can be absent.** They are a codegen feature a consumer configures, and this
+  reactor's own fixture already switches half of them off: `graphitron-sakila-db/pom.xml` sets
+  `<implicitJoinPathsToMany>false</implicitJoinPathsToMany>` because sakila's mutual store/staff
+  FKs and the category self-FK generate colliding method names that jOOQ flags on every codegen
+  run. A generator that emits calls to those methods would break on that configuration, and on the
+  ordinary schemas that provoke it.
+* **They cover only catalog FKs.** The name-matched arms pair columns with no `ForeignKey` behind
+  them, so no path method exists to navigate. Those sites need the mint regardless, and having two
+  mechanisms for one question is the outcome the "one mint" argument above exists to avoid.
+* **They do not reach the shapes that actually break.** A correlated subquery's `WHERE`, a
+  `VALUES`-joined DataLoader batch, and a pivot multiset are not path navigations, and there is no
+  path-method spelling of any of them.
+
+Structurally the rewrite has already taken the other road: the pom comment records that no catalog
+consumer navigates via path methods and that "the rewrite reads `ForeignKey` metadata off the
+`Keys` class directly", and a grep of the generator confirms it emits no path-method call anywhere.
+So this is a road not taken by design, not a mechanism the rewrite dropped by accident.
+
 ### Where divergence is decided
 
 `BuildContext.resolveFkColumnRefs` resolves both ends of every FK through `catalog.findColumn` and
@@ -238,11 +277,10 @@ Per the tier rubric in `docs/architecture/how-to/testing.adoc`, top-down:
 * **Converters on ordering keys.** A converter that is not order-preserving misorders a keyset page
   whether or not the FK is diverged. Pre-existing, orthogonal, and worth its own Backlog item if
   anyone hits it.
-* **What 9.3.2 emitted.** The reporter states it compiled and was correct, but the shape is not
-  recorded and the legacy generator is not in this reactor. Since the SQL is fixed by the schema and
-  the fix is a pure Java-type reconciliation, the emitted SQL matches any correct predecessor
-  regardless of how it spelled it, so recovering the old spelling would not change the design. Not
-  worth chasing; noted because the issue raises it.
+* **Restoring 9.3.2's mechanism.** The reporter has since supplied what 9.3.2 emitted, so the
+  question the Backlog body left open is answered and is no longer out of scope; it is evidence, and
+  it lives under *Alternative considered: jOOQ's implicit path join* above. Adopting the path-join
+  mechanism itself is what stays out of scope, for the three reasons given there.
 * **Diverged non-key column comparisons.** This item covers columns compared as join or correlation
   operands. A converter that diverges two columns compared somewhere else entirely is the same class
   of fault, but there is no reported instance and no fixture for one; the mint is the place a future
