@@ -9955,14 +9955,13 @@ CREATE TABLE meta_gatherer_corpus (
   FOREIGN KEY (gatherer_name) REFERENCES meta_gatherer (gatherer_name),
   FOREIGN KEY (corpus_name) REFERENCES meta_corpus (corpus_name)
 );
-COMMENT ON TABLE meta_gatherer_corpus IS 'One corpus a gatherer reads: a declared pairing of one gatherer with one outside input. For example the catalog gatherer carries two rows, catalog and classpath. A gatherer with at least one row here is a crawler, and this junction is the store''s definition of that word: a transcription pass whose rows about its own corpus may not vary with any other corpus''s contents. Two crawlers may name one corpus, which is a division of labour over one input rather than a second reading of it: the sdl and graphitron gatherers both read the schema documents, the first transcribing what stands there and the second decoding what graphitron makes of it, and the second reads the first''s rows rather than the text again. The derivation gatherer has no row here, reads only captured rows, and is thereby the one owner whose relations may cross corpora.';
+COMMENT ON TABLE meta_gatherer_corpus IS 'One corpus a gatherer reads: a declared pairing of one gatherer with one outside input. For example the catalog gatherer carries two rows, catalog and classpath. A gatherer with at least one row here is a crawler, and this junction is the store''s definition of that word: a transcription pass whose rows about its own corpus may not vary with any other corpus''s contents. A gatherer with no row here reads no corpus at all: it reads captured rows, and is thereby free to cross corpora, which is what the derivation gatherer and the graphitron gatherer both are. The second is worth naming because its family is a decode of the SDL and reads as a crawler until you ask what it reads: it reads the sdl gatherer''s transcription of the documents rather than the documents, and the catalog beside it, so a decode with a default to resolve resolves it here rather than pushing the question up a family.';
 COMMENT ON COLUMN meta_gatherer_corpus.gatherer_name IS 'the reading gatherer, a meta_gatherer key';
 COMMENT ON COLUMN meta_gatherer_corpus.corpus_name IS 'the corpus read, a meta_corpus key';
 
 INSERT INTO meta_gatherer_corpus VALUES
   ('configuration', 'configuration'),
   ('sdl', 'sdl'),
-  ('graphitron', 'sdl'),
   ('catalog', 'catalog'),
   ('catalog', 'classpath'),
   ('java-source', 'java-source'),
@@ -9976,12 +9975,13 @@ CREATE TABLE meta_gatherer_dependency (
   FOREIGN KEY (depends_on) REFERENCES meta_gatherer (gatherer_name),
   CHECK (gatherer_name <> depends_on)
 );
-COMMENT ON TABLE meta_gatherer_dependency IS 'One declared read edge between gatherers: the first may read rows the second produced. For example the derivation gatherer depends on every crawler, which is what running last means once it stops being a position. Declared rather than derived from the view bodies, deliberately: the declaration states the intended shape, and the view-ownership gate denies a declared view that reads outside its owner''s dependency set, so a view forking the shape fails instead of widening it. An edge between two crawlers stays inside one corpus, the graphitron gatherer reading the sdl gatherer''s rows rather than re-reading the documents; a crawler never depends on a crawler of another corpus, that being the same statement as its own rows not varying with another corpus''s contents. Crawlers of different corpora carry no edges either way, which states their mutual independence. The roster drives no execution: the order gatherers run in is FactCapture.capture''s statement order, and these edges are what that order has to satisfy. What makes the order able to satisfy them is that each gatherer''s rows are flushed to the store before the next one starts, a flush inside the load''s one transaction being what lets a downstream gatherer read an upstream''s rows without publishing a partition mid-load.';
+COMMENT ON TABLE meta_gatherer_dependency IS 'One declared read edge between gatherers: the first may read rows the second produced. For example the derivation gatherer depends on every crawler, which is what running last means once it stops being a position. Declared rather than derived from the view bodies, deliberately: the declaration states the intended shape, and the view-ownership gate denies a declared view that reads outside its owner''s dependency set, so a view forking the shape fails instead of widening it. A crawler carries no edges at all: its rows about its own corpus may not vary with any other corpus''s contents, which is the same statement as depending on nobody, so the sdl and catalog gatherers stand independent of each other and of everything else. Every edge therefore runs from a gatherer that reads no corpus, and there are two of those: the graphitron gatherer, which decodes what the sdl gatherer transcribed and may read the catalog beside it, and the derivation gatherer downstream of them all. The roster drives no execution: the order gatherers run in is FactCapture.capture''s statement order, and these edges are what that order has to satisfy. What makes the order able to satisfy them is that each gatherer''s rows are flushed to the store before the next one starts, a flush inside the load''s one transaction being what lets a downstream gatherer read an upstream''s rows without publishing a partition mid-load.';
 COMMENT ON COLUMN meta_gatherer_dependency.gatherer_name IS 'the dependent gatherer, the one performing the read; a meta_gatherer key';
 COMMENT ON COLUMN meta_gatherer_dependency.depends_on IS 'the prerequisite gatherer whose rows may be read; a meta_gatherer key, and never the dependent itself, the CHECK refusing the length-one cycle';
 
 INSERT INTO meta_gatherer_dependency VALUES
   ('graphitron', 'sdl'),
+  ('graphitron', 'catalog'),
   ('derivation', 'configuration'),
   ('derivation', 'sdl'),
   ('derivation', 'graphitron'),

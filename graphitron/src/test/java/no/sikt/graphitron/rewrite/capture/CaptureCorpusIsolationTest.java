@@ -35,10 +35,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  * crawler adds no reference, it changes which rows exist.
  *
  * <p>The relation set is enumerated off the generated model by family prefix rather than listed, so
- * the next cross-corpus read fails this without being named here. Both SDL-side families are in
- * scope: {@code graphql_}, the generic transcription, and {@code graphitron_}, the decode of what that
- * transcription read. The catalog's own families are deliberately out of scope, being exactly the rows
- * whose presence the two arms differ by.
+ * the next cross-corpus read fails this without being named here. One family is in scope,
+ * {@code graphql_}, the transcription of the documents, and that is the whole of what a crawler
+ * answers for. The catalog's own families are deliberately out of scope, being exactly the rows whose
+ * presence the two arms differ by.
+ *
+ * <p>{@code graphitron_} is deliberately out of scope too, and the reason is what the family is
+ * rather than a concession. Its rows are a decode of what the transcription captured, produced by a
+ * gatherer that reads no corpus and declares its reads on the sdl and catalog gatherers both, so
+ * "does not vary with the catalog" is not a property it has or should have: a decode resolving a
+ * directive's documented default against a primary key varies with the catalog by construction, and
+ * that is the family doing its job. What still holds it in place is the ownership rule, which puts a
+ * conclusion drawn about the schema in {@code intent_} rather than here. The historic defect this
+ * gate was built for is unaffected: a synthesized {@code @key} appearing in the catalog arm was a row
+ * in {@code graphql_type_directive}, and a transcription of a directive nobody wrote fails this gate
+ * on the relation where it is actually wrong.
  *
  * <p>The fixture has to be able to fail. It is federation-linked and carries an inferred-node shape,
  * a {@code @table} type implementing {@code Node} over a table whose generated class publishes node
@@ -49,8 +60,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class CaptureCorpusIsolationTest {
 
-    /** The families whose rows are about the SDL corpus, and must not vary with the catalog. */
-    private static final List<String> SDL_FAMILIES = List.of("graphql_", "graphitron_");
+    /** The family whose rows are about the SDL corpus, and must not vary with the catalog. */
+    private static final List<String> SDL_FAMILIES = List.of("graphql_");
 
     private static final String FIXTURE = """
         directive @link(url: String!, import: [String]) repeatable on SCHEMA
