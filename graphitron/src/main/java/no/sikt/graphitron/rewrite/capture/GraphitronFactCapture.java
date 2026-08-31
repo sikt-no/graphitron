@@ -12,6 +12,12 @@ import graphql.language.ObjectValue;
 import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.Value;
+import graphql.parser.InvalidSyntaxException;
+import graphql.parser.Parser;
+
+import org.jooq.DSLContext;
+import org.jooq.Record;
+import org.jooq.Table;
 
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import no.sikt.graphitron.rewrite.ArgMappingSigil;
@@ -20,10 +26,25 @@ import no.sikt.graphitron.rewrite.selection.GraphQLSelectionParseException;
 import no.sikt.graphitron.rewrite.selection.GraphQLSelectionParser;
 import no.sikt.graphitron.rewrite.selection.ParsedEntry;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_PATH_SEGMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
@@ -117,6 +138,187 @@ final class GraphitronFactCapture {
 
     GraphitronFactCapture(FactSink sink) {
         this.sink = sink;
+    }
+
+
+    // ---------------------------------------------------------------- the gatherer's own entry
+
+    /**
+     * Decodes every directive application the SDL gatherer transcribed, reading the applications
+     * out of the store rather than being handed them while the walk still holds the parse.
+     *
+     * <p>That is what makes this a gatherer rather than a visitor the SDL walk calls. A decode
+     * driven by callbacks can only ever see what the walk holds at that instant, which is one
+     * directive and no store at all: it cannot join the coordinate it is decoding against anything,
+     * and every fact it needs from elsewhere has to arrive as a parameter somebody threaded to the
+     * walk. Driven from the store it runs after both crawlers have flushed, so the whole
+     * {@code graphql_} transcription and the whole catalog are readable, which is what the
+     * gatherer's declared dependencies say and what a decode with a default to resolve needs.
+     *
+     * <p>The store carries the applications losslessly. A coordinate, a name and an ordinal are
+     * columns; the application's own position is three more; and each authored argument is a row
+     * holding the literal as {@code AstPrinter} rendered it. So the input to a decode is rebuilt by
+     * parsing each literal back to the {@link Value} it was printed from, which is the same
+     * round-trip the applied-directive emitter already ships into generated sources. What the
+     * decode reads has not changed at all: it asks a directive for an argument by name and for its
+     * own source location, and both survive the round-trip exactly.
+     */
+    static void capture(FactSink sink, DSLContext dsl, String graphName) {
+        var decode = new GraphitronFactCapture(sink);
+        decode.schemaDirectives(dsl, graphName);
+        decode.typeDirectives(dsl, graphName);
+        decode.fieldDirectives(dsl, graphName);
+        decode.argumentDirectives(dsl, graphName);
+        decode.enumValueDirectives(dsl, graphName);
+    }
+
+    private void schemaDirectives(DSLContext dsl, String graphName) {
+        var arguments = argumentsBy(dsl, graphName, GRAPHQL_SCHEMA_DIRECTIVE_ARG,
+            "DIRECTIVE_NAME", "ORDINAL");
+        for (var row : dsl.selectFrom(GRAPHQL_SCHEMA_DIRECTIVE)
+                .where(GRAPHQL_SCHEMA_DIRECTIVE.GRAPH_NAME.eq(graphName))
+                .orderBy(GRAPHQL_SCHEMA_DIRECTIVE.DIRECTIVE_NAME, GRAPHQL_SCHEMA_DIRECTIVE.ORDINAL)
+                .fetch()) {
+            captureSchemaDirective(
+                directive(row.getDirectiveName(),
+                    location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()),
+                    arguments.get(List.of(row.getDirectiveName(), row.getOrdinal()))),
+                row.getOrdinal());
+        }
+    }
+
+    private void typeDirectives(DSLContext dsl, String graphName) {
+        var arguments = argumentsBy(dsl, graphName, GRAPHQL_TYPE_DIRECTIVE_ARG,
+            "TYPE_NAME", "DIRECTIVE_NAME", "ORDINAL");
+        for (var row : dsl.selectFrom(GRAPHQL_TYPE_DIRECTIVE)
+                .where(GRAPHQL_TYPE_DIRECTIVE.GRAPH_NAME.eq(graphName))
+                .orderBy(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME, GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME,
+                    GRAPHQL_TYPE_DIRECTIVE.ORDINAL)
+                .fetch()) {
+            // The site's location is the declaration the application sits on, which is why this
+            // relation carries two positions: the declaration's, keyed here, and the directive's own.
+            var site = new SiteRef(row.getTypeName(), new SourceLocation(
+                row.getDeclarationLine(), row.getDeclarationColumn(), row.getSourceName()));
+            captureTypeDirective(site,
+                directive(row.getDirectiveName(),
+                    location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()),
+                    arguments.get(List.of(row.getTypeName(), row.getDirectiveName(), row.getOrdinal()))),
+                row.getOrdinal());
+        }
+    }
+
+    private void fieldDirectives(DSLContext dsl, String graphName) {
+        var arguments = argumentsBy(dsl, graphName, GRAPHQL_FIELD_DIRECTIVE_ARG,
+            "TYPE_NAME", "FIELD_NAME", "DIRECTIVE_NAME", "ORDINAL");
+        // Which coordinates are input fields, from the transcription rather than from a flag the
+        // walk carried down: one query answers it for every application below.
+        var inputTypes = Set.copyOf(dsl.select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE)
+            .where(GRAPHQL_TYPE.GRAPH_NAME.eq(graphName))
+            .and(GRAPHQL_TYPE.KIND.eq("INPUT_OBJECT"))
+            .fetch(GRAPHQL_TYPE.TYPE_NAME));
+        for (var row : dsl.selectFrom(GRAPHQL_FIELD_DIRECTIVE)
+                .where(GRAPHQL_FIELD_DIRECTIVE.GRAPH_NAME.eq(graphName))
+                .orderBy(GRAPHQL_FIELD_DIRECTIVE.TYPE_NAME, GRAPHQL_FIELD_DIRECTIVE.FIELD_NAME,
+                    GRAPHQL_FIELD_DIRECTIVE.DIRECTIVE_NAME, GRAPHQL_FIELD_DIRECTIVE.ORDINAL)
+                .fetch()) {
+            captureFieldDirective(row.getTypeName(), row.getFieldName(),
+                directive(row.getDirectiveName(),
+                    location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()),
+                    arguments.get(List.of(row.getTypeName(), row.getFieldName(),
+                        row.getDirectiveName(), row.getOrdinal()))),
+                row.getOrdinal(), inputTypes.contains(row.getTypeName()));
+        }
+    }
+
+    private void argumentDirectives(DSLContext dsl, String graphName) {
+        var arguments = argumentsBy(dsl, graphName, GRAPHQL_ARGUMENT_DIRECTIVE_ARG,
+            "TYPE_NAME", "FIELD_NAME", "ARGUMENT_NAME", "DIRECTIVE_NAME", "ORDINAL");
+        for (var row : dsl.selectFrom(GRAPHQL_ARGUMENT_DIRECTIVE)
+                .where(GRAPHQL_ARGUMENT_DIRECTIVE.GRAPH_NAME.eq(graphName))
+                .orderBy(GRAPHQL_ARGUMENT_DIRECTIVE.TYPE_NAME, GRAPHQL_ARGUMENT_DIRECTIVE.FIELD_NAME,
+                    GRAPHQL_ARGUMENT_DIRECTIVE.ARGUMENT_NAME,
+                    GRAPHQL_ARGUMENT_DIRECTIVE.DIRECTIVE_NAME, GRAPHQL_ARGUMENT_DIRECTIVE.ORDINAL)
+                .fetch()) {
+            captureArgumentDirective(row.getTypeName(), row.getFieldName(), row.getArgumentName(),
+                directive(row.getDirectiveName(),
+                    location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()),
+                    arguments.get(List.of(row.getTypeName(), row.getFieldName(),
+                        row.getArgumentName(), row.getDirectiveName(), row.getOrdinal()))),
+                row.getOrdinal());
+        }
+    }
+
+    private void enumValueDirectives(DSLContext dsl, String graphName) {
+        var arguments = argumentsBy(dsl, graphName, GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG,
+            "TYPE_NAME", "VALUE_NAME", "DIRECTIVE_NAME", "ORDINAL");
+        for (var row : dsl.selectFrom(GRAPHQL_ENUM_VALUE_DIRECTIVE)
+                .where(GRAPHQL_ENUM_VALUE_DIRECTIVE.GRAPH_NAME.eq(graphName))
+                .orderBy(GRAPHQL_ENUM_VALUE_DIRECTIVE.TYPE_NAME, GRAPHQL_ENUM_VALUE_DIRECTIVE.VALUE_NAME,
+                    GRAPHQL_ENUM_VALUE_DIRECTIVE.DIRECTIVE_NAME, GRAPHQL_ENUM_VALUE_DIRECTIVE.ORDINAL)
+                .fetch()) {
+            captureEnumValueDirective(row.getTypeName(), row.getValueName(),
+                directive(row.getDirectiveName(),
+                    location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()),
+                    arguments.get(List.of(row.getTypeName(), row.getValueName(),
+                        row.getDirectiveName(), row.getOrdinal()))),
+                row.getOrdinal());
+        }
+    }
+
+    /**
+     * Every application's authored arguments in one query, grouped by the coordinate columns named:
+     * the alternative is a query per application, and a consumer schema carries tens of thousands.
+     */
+    private static Map<List<Object>, Map<String, String>> argumentsBy(
+        DSLContext dsl, String graphName, Table<?> table, String... keyColumns
+    ) {
+        var grouped = new LinkedHashMap<List<Object>, Map<String, String>>();
+        for (Record row : dsl.selectFrom(table)
+                .where(table.field("GRAPH_NAME", String.class).eq(graphName))
+                .fetch()) {
+            var key = new ArrayList<>(keyColumns.length);
+            for (String column : keyColumns) {
+                key.add(row.get(column));
+            }
+            grouped.computeIfAbsent(key, k -> new LinkedHashMap<>())
+                .put(row.get("DIRECTIVE_ARGUMENT_NAME", String.class),
+                    row.get("VALUE_SDL", String.class));
+        }
+        return grouped;
+    }
+
+    /**
+     * Rebuilds one application from its stored columns. An argument whose literal does not parse
+     * back quarantines and is left off, which lands the decode on the same path an argument the
+     * author never wrote takes: a NULL column, and the authored text preserved beside it.
+     */
+    private Directive directive(String name, SourceLocation location, Map<String, String> stored) {
+        var arguments = new ArrayList<Argument>();
+        if (stored != null) {
+            stored.forEach((argumentName, valueSdl) -> {
+                Value<?> value = parsed(valueSdl);
+                if (value == null) {
+                    undecoded(name, location, argumentName, valueSdl);
+                } else {
+                    arguments.add(Argument.newArgument().name(argumentName).value(value).build());
+                }
+            });
+        }
+        return Directive.newDirective().name(name).arguments(arguments)
+            .sourceLocation(location).build();
+    }
+
+    private static Value<?> parsed(String valueSdl) {
+        try {
+            return Parser.parseValue(valueSdl);
+        } catch (InvalidSyntaxException e) {
+            return null;
+        }
+    }
+
+    /** A position from the three columns that hold one, or none where the store recorded none. */
+    private static SourceLocation location(String sourceName, Integer line, Integer column) {
+        return line == null || column == null ? null : new SourceLocation(line, column, sourceName);
     }
 
     // ---------------------------------------------------------------- schema-level
@@ -1261,6 +1463,25 @@ final class GraphitronFactCapture {
      * authored value survives a decode that produced nothing. Dormant while assembly runs
      * upstream and rejects such schemas first.
      */
+    private void undecoded(String directiveName, SourceLocation location, String argumentName,
+                           String valueSdl) {
+        if (location == null || location.getSourceName() == null) {
+            return;
+        }
+        if (!sink.claim(GRAPHITRON_UNDECODED_ARGUMENT, location.getSourceName(), location.getLine(),
+                location.getColumn(), directiveName, argumentName)) {
+            return;
+        }
+        var record = sink.dsl().newRecord(GRAPHITRON_UNDECODED_ARGUMENT);
+        record.setSourceName(location.getSourceName());
+        record.setSourceLine(location.getLine());
+        record.setSourceColumn(location.getColumn());
+        record.setDirectiveName(directiveName);
+        record.setDirectiveArgumentName(argumentName);
+        record.setValueSdl(valueSdl);
+        sink.add(record);
+    }
+
     private void undecoded(Directive directive, String argumentName, Value<?> value) {
         SourceLocation location = directive.getSourceLocation();
         if (location == null || location.getSourceName() == null) {

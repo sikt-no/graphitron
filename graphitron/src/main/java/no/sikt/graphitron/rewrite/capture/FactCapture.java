@@ -611,9 +611,10 @@ public final class FactCapture {
             // rows reach the store before the next one starts. A flush is not a commit: the rows
             // land inside this transaction, so a gatherer reads what ran before it through the
             // store rather than through a parameter its caller threaded, and nothing outside the
-            // transaction sees a partition mid-load. The catalog crawler leads the SDL crawler
-            // because the directive decode the SDL walk carries reads catalog rows; the catalog
-            // reads no SDL row, which is why no edge runs back the other way.
+            // transaction sees a partition mid-load. The two crawlers depend on nothing and on
+            // each other least of all, so their order is free and the catalog takes the lead on
+            // rate of change: a consumer's database moves on a release cadence where their schema
+            // documents move on a keystroke. The decode depends on both and therefore runs last.
             ConfigurationFactCapture.capture(sink, config);
             sink.flush();
             CatalogFactCapture.capture(sink, jooq, extensions, sources);
@@ -622,6 +623,8 @@ public final class FactCapture {
                 verdicts.refusedSourceNames());
             sink.flush();
             SdlVerdictCapture.capture(sink, verdicts, assembly);
+            sink.flush();
+            GraphitronFactCapture.capture(sink, txDsl, graph.name());
             sink.flush();
             // The capture-cadence derivation stratum: materialized derivations re-derive from
             // the flushed rows inside the same transaction, so they are current exactly when

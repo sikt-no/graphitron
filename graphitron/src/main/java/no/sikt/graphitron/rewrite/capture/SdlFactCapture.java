@@ -66,8 +66,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 
 /**
  * The SDL capture load: one walk over the {@link TypeDefinitionRegistry} filling the {@code graphql_}
- * family, and, through {@link GraphitronFactCapture}, the {@code graphitron_} relations decoded from
- * the graphitron and federation directive inventory.
+ * family, and nothing else. What graphitron makes of the applications this walk transcribes is
+ * {@link GraphitronFactCapture}'s, and it is a gatherer that runs after this one rather than a
+ * visitor this walk calls: the decode reads the applications back out of the store, so it can join
+ * them against everything else the store holds instead of seeing one directive at a time.
  *
  * <p>The {@code graphql_} family is a total transcription of the document. Every declaration, every
  * directive definition, and every directive application is a row, graphitron's own namespace
@@ -80,9 +82,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
  * character. The registry validates nothing: it retains undeclared directives, unknown argument
  * names, wrong-typed literals, missing required arguments, and duplicate declarations without
  * error. Capture is therefore <em>tolerant by construction</em> and never throws on author input;
- * a duplicate element quarantines in {@code graphql_duplicate_declaration} and an undecodable
- * literal in {@code graphitron_undecoded_argument}, both rendered and located, so a detection has its
- * row and no authored text is lost.
+ * a duplicate element quarantines in {@code graphql_duplicate_declaration}, rendered and located, so
+ * a detection has its row and no authored text is lost. An argument's literal is transcribed exactly
+ * as {@code AstPrinter} renders it, which is what lets the decode rebuild the application from these
+ * rows; what it makes of a literal that does not fit its declared shape is its own quarantine.
  *
  * <p>Capture is also <b>type-local</b>: every row's content is a function of its own type's
  * declaration sites and nothing else. Nothing here reads across types and no verdict is computed
@@ -108,7 +111,6 @@ public final class SdlFactCapture {
     /** The coordinate anchors, and the first-wins claim on every one of them. */
     private final SdlCoordinates coordinates;
 
-    private final GraphitronFactCapture decode;
 
     /**
      * Each type's running element ordinals. Type-wide rather than per-site because a repeatable type
@@ -147,7 +149,6 @@ public final class SdlFactCapture {
         this.sink = sink;
         this.registry = registry;
         this.coordinates = new SdlCoordinates(sink);
-        this.decode = new GraphitronFactCapture(sink);
         this.macros = new MacroCapture(sink, coordinates, registry,
             named -> connectionElementByType().get(named));
         this.sources = sources;
@@ -391,7 +392,6 @@ public final class SdlFactCapture {
                 : ((graphql.language.SchemaExtensionDefinition) definition).getDirectives();
             for (Directive directive : directives) {
                 int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
-                decode.captureSchemaDirective(directive, ordinal);
                 if (!sink.claim(GRAPHQL_SCHEMA_DIRECTIVE, directive.getName(), ordinal)) {
                     quarantine("DIRECTIVE_APPLICATION", "@" + directive.getName(), directive);
                     continue;
@@ -774,7 +774,6 @@ public final class SdlFactCapture {
 
     /** One authored type-level application, at the position the author wrote it. */
     private void captureTypeDirective(SiteRef site, Directive directive, int ordinal) {
-        decode.captureTypeDirective(site, directive, ordinal);
         if (!sink.claim(GRAPHQL_TYPE_DIRECTIVE, site.typeName(), directive.getName(), ordinal)) {
             quarantine("DIRECTIVE_APPLICATION", site.typeName() + " @" + directive.getName(), directive);
             return;
@@ -808,7 +807,6 @@ public final class SdlFactCapture {
         var ordinals = new LinkedHashMap<String, Integer>();
         for (Directive directive : directives) {
             int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
-            decode.captureFieldDirective(typeName, fieldName, directive, ordinal, inputField);
             if (!sink.claim(GRAPHQL_FIELD_DIRECTIVE, typeName, fieldName, directive.getName(), ordinal)) {
                 quarantine("DIRECTIVE_APPLICATION",
                     typeName + "." + fieldName + " @" + directive.getName(), directive);
@@ -844,7 +842,6 @@ public final class SdlFactCapture {
         var ordinals = new LinkedHashMap<String, Integer>();
         for (Directive directive : directives) {
             int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
-            decode.captureArgumentDirective(typeName, fieldName, argumentName, directive, ordinal);
             if (!sink.claim(GRAPHQL_ARGUMENT_DIRECTIVE,
                     typeName, fieldName, argumentName, directive.getName(), ordinal)) {
                 quarantine("DIRECTIVE_APPLICATION",
@@ -882,7 +879,6 @@ public final class SdlFactCapture {
         var ordinals = new LinkedHashMap<String, Integer>();
         for (Directive directive : directives) {
             int ordinal = ordinals.merge(directive.getName(), 0, (old, ignored) -> old + 1);
-            decode.captureEnumValueDirective(typeName, valueName, directive, ordinal);
             if (!sink.claim(GRAPHQL_ENUM_VALUE_DIRECTIVE, typeName, valueName, directive.getName(), ordinal)) {
                 quarantine("DIRECTIVE_APPLICATION",
                     typeName + "." + valueName + " @" + directive.getName(), directive);
