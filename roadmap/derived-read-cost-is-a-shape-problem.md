@@ -2531,6 +2531,52 @@ columns become a captured fact rather than a read-time tier. What stays out: the
 draws, the declaration rows R877 populates, and the naming collision between the two fact packages,
 which is worth settling once both live under one tier rather than twice.
 
+### Slice 24: the catalog leads, each gatherer's rows land before the next one runs
+
+Slice 23 named the mechanism and argued the fix was cheap. This slice made it, and the fix is the two
+lines the argument predicted plus the roster rows that say what the new order means.
+
+**The order.** `FactCapture.capture` ran configuration, SDL, SDL verdicts, catalog. It now runs
+configuration, catalog, SDL, SDL verdicts. The catalog leads the two crawlers for the reason its
+corpus differs from the other's: a consumer's database schema changes on a release cadence and their
+`.graphqls` files change on a keystroke, so the corpus that is stable belongs underneath the corpus
+that is not. The reordering cost nothing to establish, which a read-only check made certain before
+anything moved: `CatalogFactCapture` names no `graphql_` or `graphitron_` relation anywhere, its one
+real store read is the partition clear it owns, and `store_source`, the single relation both crawlers
+write, is claimed first-wins by whichever reaches it, so it works under either order. There was no
+reverse dependency to unpick.
+
+**The flush.** Each gatherer now flushes before the next one starts, inside the load's one
+transaction. Everything slice 23 predicted survives: the sink's dedup is per relation and each
+relation has one writer, so no claim spans a flush boundary; the write order is derived from the
+generated foreign keys, and no foreign key runs from a catalog-family relation to an SDL-family one
+or back, so no flush can strand a child ahead of its parent. Two tests pin the property the whole
+order now rests on, at the sink rather than through a capture, because no gatherer exercises the read
+yet and a test of a mechanism should fail for the mechanism's own reasons: a row flushed by one
+gatherer is readable by the next, and a later flush's foreign key resolves against it; and a load
+that dies between two flushes leaves the store untouched, which is the atomicity the single flush
+used to buy by accident and now has to be stated.
+
+**What the rosters say now.** `GraphitronFactCapture` was not in `meta_gatherer` at all, which was
+the roster agreeing with the code that it is part of the SDL gatherer rather than a gatherer. It has
+a row now, it reads the `sdl` corpus, and it declares one read edge, on `sdl`. That edge is the whole
+argMapping story in one row: the decode reads what the transcription wrote rather than re-reading the
+document. The derivation gatherer gains the matching edge, and the one declared `graphitron_`
+relation is repointed from the SDL gatherer to its own. Enforcement stays out of scope: the edges are
+a declaration of what the order has to satisfy, and nothing yet fails a build when it does not.
+
+**One correction to slice 23, and it is a real one.** That slice ended by putting `@node`'s defaulted
+key columns among the things that become a captured fact. They cannot be, and the reason is the rule
+this schema already states beside `meta_gatherer_corpus`: a crawler is a transcription pass whose
+rows about its own corpus may not vary with any other corpus's contents. The graphitron gatherer is a
+crawler over the SDL. Resolving a defaulted `keyColumns` means reading `sql_primary_key`, so a
+`graphitron_` relation holding the resolved columns would be a crawler's rows varying with the
+catalog, which `CaptureCorpusIsolationTest` exists to refuse and would refuse. So the edge to the
+catalog was drafted and then not declared. What capture can and should write is the fact the SDL
+actually carries, which is whether the author wrote a column list at all; the resolution of the
+default against the primary key crosses two families and belongs where every other crossing does.
+That is a smaller claim than slice 23 made and it is the one the charter supports.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
@@ -2598,6 +2644,14 @@ The gates that already govern this ground, and what each will say when the slice
   index item documents; take its doctrine rather than inventing one.
 - `FactSchemaGateTest.everyRelationLeadsWithItsPartitionDimension` needs a case for each new
   supertype table.
+- `CaptureCorpusIsolationTest` is the gate the gathering order answers to. It captures one registry
+  with the jOOQ catalog and once without and requires the `graphql_` and `graphitron_` rows to be
+  identical, which is the crawler rule as a differential. Running the catalog first does not weaken
+  it and is exactly the change that could: a crawler reading a corpus it does not answer for now has
+  rows to read where before it had none.
+- `GathererHandoffTest` pins the two properties the per-gatherer flush rests on: an upstream
+  gatherer's row is readable by the one after it, and a load that dies between two flushes publishes
+  nothing.
 
 What this item owes that no gate holds today:
 
