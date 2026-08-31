@@ -1,13 +1,13 @@
 ---
 id: R834
 title: "A top-level @service returning a @table type reads columns off the returned record instead of refetching by key"
-status: In Review
+status: Ready
 bucket: bug
 priority: 2
 theme: service
 depends-on: []
 created: 2026-08-25
-last-updated: 2026-08-26
+last-updated: 2026-08-31
 ---
 
 # A top-level @service returning a @table type reads columns off the returned record instead of refetching by key
