@@ -1,7 +1,7 @@
 ---
 id: R880
 title: "An explicit null clears a nullable reference on UPDATE, and a straddler is admitted when its identity half is pinned"
-status: In Review
+status: Ready
 bucket: feature
 priority: 2
 theme: mutation-write
@@ -267,3 +267,112 @@ over SET carriers and names the wholly-in-key nullable reference as keeping toda
 Retired vocabulary entry now covers all three sites carrying the unqualified "observationally
 irrelevant" claim (the walker's claim-resolution comment, the test body, and
 `intent_mutation_write_destination`'s table comment), with the qualified form that survives.
+
+### Round 1 (2026-08-31, In Review -> Done, reviewer session 01FdSYTkUbW5EpbRfT2iDNTo)
+
+Verdict: rework. One blocking finding on question two, two further defects worth fixing in the same
+pass, one non-blocking note. Landing SHA reviewed: `a7d7de9`. `mvn install -Plocal-db` passes
+(BUILD SUCCESS, 12:35) on the delivered tree rebased onto trunk.
+
+*What was checked and holds.* Question one is answered. The walker's pinning gate is the spec's
+definition and nothing wider: a nullable straddler's in-key columns are collected aside, phase 1
+settles `keyBySqlName` from whole non-self-FK carriers and non-null straddlers' winning claims
+(`!claim.owner().nonNull()` is what keeps a nullable one from ever claiming), and phase 2 measures
+membership in that map, which is the definition applied once rather than twice. Moving the stage's
+early return below the gate is sound: a rejected own-columns straddler contributes to neither
+partition, so the resolution runs over a smaller input, not an inconsistent one. Stage 7a's null
+rule is uniform over the three roles and reads only SDL nullability against the carrier's own SET
+columns, so the self-FK overlap lands on *refused as identity* and an admitted straddler on *clears*
+by construction, exactly as argued. `CannotArrive` routes through the unchanged `appendDecodeLocal`
+overload, so its output really is byte-identical. The three-statement split is there and is the
+shape the plan called load-bearing.
+
+The fourth `.value<n>()` site the plan did not list, `emitKeySetAgreementPreamble`, was checked and
+needs nothing: it re-decodes into its own preamble local through `emitAgreementDecodeLocal` and
+already guards `presence && local != null`, so a cleared reference drops out of the single-row
+cross-partition check rather than NPE-ing. The bulk sibling's added `!= null` gate indexes
+`bulkSetKey_<rgi>` off the same `setGroups` position `emitBulkSetDecodeLocals` names, so the locals
+line up.
+
+The SQL follows from the same definition. `identity_pinned` is the definition's full extension and
+`pinned` stays whole-carrier-only with one reader each, as round 1 of the Spec gate concluded. The
+second arm of the refusal predicate drops `carrier_key_membership` deliberately and the
+wholly-in-key nullable reference escapes by self-pinning through the WHOLE arm, which matches the
+walker (that shape reaches `addKeyColumns` and is never collected as a straddler). Retirement sweep
+is clean: all three "observationally irrelevant" sites carry the qualified form, the
+`CrossTableFk(boolean nonNull)` component and its javadoc claim are gone, and the "can never be
+cleared" advice and the backwards MATCH SIMPLE premise are gone from the error arm, the walker, both
+`.adoc` pages and the view comment. User-facing-doc check: `nodeId.adoc` carries the drafted
+replacement and `typed-rejection.adoc` moved with it.
+
+Question two's evidence is otherwise strong and was verified rather than assumed. The unit tier
+carries the discriminating case the Spec gate demanded
+(`nullableStraddler_pinnedByANonNullStraddlerAlone_isAdmitted`); `assertStraddlePartition` is the
+shared helper all four consumer tests call, so the null rule really is asserted on all four; the new
+corpus document is the two-straddler shape and its `@expectEquals` names exactly one refusal row, so
+a narrow SQL reading would fail the build there; `WriteRefusalShadowTest` is honest about comparing
+coordinates both ways and causes one way; the execution tier covers clear, omit, re-point and the
+cross-tenant refusal across all four arms, reading the row back and asserting the shelf is
+unreferenced afterwards rather than trusting the absence of an error; and the SQL baselines pin the
+`v(...)` alias, which is the cell-position claim.
+
+**Finding 1 (question two, blocking: the one piece of named evidence that is delivered by a banned
+mechanism, and it is too weak to carry its own claim).** The Tests section asks `FetcherPipelineTest`
+for "the structural pin that a *clears* carrier emits a null branch distinct from its decode branch".
+What shipped is `dmlUpdateClearingReference_emitsANullBranchApartFromTheDecodeBranch`, which reads
+`method(spec, "updateCatalogueItem").code().toString()` and asserts `.contains("Wire = ")`,
+`.contains("!= null && ")`, `.contains("== null ? null : ")` and `.contains("cells.add(")`. Those are
+code-string assertions on a generated method body, which
+`docs/architecture/principles/development-principles.adoc` bans at every tier and says is
+"review-enforced at test-review time"; this gate is that enforcement point, and R873 was sent back
+for the same thing the day before, its fix being to derive the expected text from the production
+producer rather than transcribe it.
+
+Two things make this more than a rule citation. The fragments are precisely the "break on every
+refactor" kind the principle names: rewriting the ternary as an if/else, or renaming the wire
+local's suffix, fails the test with no behaviour change. And they do not assert what the test's own
+name claims, because none of them is tied to the `shelfId` carrier: `!= null && ` matches any null
+guard anywhere in the method, and the test would still pass with the null branch attached to the
+wrong carrier. The neighbouring UPDATE tests in the same file carry the same pattern, but those
+predate this item and are a separate matter; the one nearby test that argues for body-content
+assertions does so on the ground that "the return-half re-projection has no structural equivalent",
+which is not the case here.
+
+What would satisfy it: drop the test, or restate the claim so it is derived rather than transcribed
+(R873's `asRenderedMethodBody` shape, or an assertion over the emitted structure). Dropping it costs
+the item nothing, which is the point: the behaviour is already pinned by
+`clearingReferenceSingleUpdate_bindsTheNullAsAnOrdinarySetColumn` and
+`clearingReferenceBulkUpdate_keepsTheColumnInTheValuesAlias` on the statement, by the four execution
+tests on the database, and by the null-rule assertions at the model tier. This finding is about the
+mechanism, not about a hole in the coverage.
+
+**Finding 2 (the refusal view's comment states the rule backwards in its defining sentence).**
+`intent_mutation_write_refusal`'s comment now reads "NULLABLE_STRADDLING_REFERENCE is a cross-table
+reference in the same position, where the split itself is legitimate and the spelling is, but only
+where the reference is the sole supplier of one of the key''s columns." Read as written, the
+spelling is legitimate *only* where the reference is the sole supplier, which is the inverse of the
+rule; the four sentences after it state the rule correctly. This is not a typo in a private comment:
+the view comment is the cause's published definition and renders into
+`docs/architecture/reference/schema/intent.adoc` on the docs site, so the contributor-facing page
+currently opens its account of this cause with the rule reversed. Repair the clause (for example
+"...the split itself is legitimate and so is the spelling, except where the reference is the sole
+supplier of one of the key's columns").
+
+**Finding 3 (`UpdateRows.java` ships a raw NUL byte and is no longer a text file).**
+`UpdateRows.Identified`'s duplicate-rule guard keys its `HashSet` on
+`r.sdlFieldName() + "<U+0000>" + r.extraction()`, written as a literal NUL character in the source
+rather than as the escape `"\0"`. The behaviour is right and it compiles, but git now classifies the
+file as binary: `git diff` on it prints "Binary files differ" instead of a diff, and text tooling
+stops seeing it. That is a durable cost on a carrier file every future reader of this area opens,
+and it was invisible to this gate's own review of the change. Write the separator as `"\0"` (or any
+ordinary delimiter) so the file is text again.
+
+*Non-blocking.* The fixture deviates from the plan and deviates well: instead of adding `shelfId` to
+`UpdateCatalogueItemInput` and payload-returning `updateCatalogueItem` mutations, it adds a separate
+`ShelveCatalogueItemInput` and four `shelve*` mutations, on the argument that an `ID!` sibling on the
+same input would force every clearing call to resend the catalogue, which is the cost this item
+exists to remove. That argument is right and is recorded durably in the schema fixture's own comment
+and in the commit message, so it is noted rather than charged; the delivery covers everything the
+plan's fixture asked for and adds the two payload arms it named. The Implementation section's
+"`UpdateCatalogueItemInput` gains `shelfId`" sentence is the one line of the spec body that no longer
+describes the tree.
