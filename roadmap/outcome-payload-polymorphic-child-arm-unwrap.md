@@ -1,13 +1,13 @@
 ---
 id: R873
 title: "Polymorphic child fields under an Outcome payload never emit the wrapper arm-unwrap"
-status: In Review
+status: Ready
 bucket: bug
 priority: 2
 theme: codegen-correctness
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-08-28
+last-updated: 2026-08-31
 ---
 
 # Polymorphic child fields under an Outcome payload never emit the wrapper arm-unwrap
@@ -279,6 +279,83 @@ beside a `WrapperArm` errors field rejects; the fixed combinations pass validati
 
 Docs: update the `SourceEnvelope` javadoc gap sentence and the matching paragraph in
 `dispatch-axes.adoc`.
+
+## Reviewer findings
+
+### Round 1 (In Review → Ready)
+
+Both gate questions pass. The implementation is the change the spec approved, and the
+completeness evidence is the right evidence and holds: `OutcomePolymorphicChildExecutionTest`
+covers both parent backings on both `Outcome` arms against real fixture rows, and it is green
+in a full `mvn install -Plocal-db` (all 14 modules SUCCESS). One approval precondition fails,
+and that is the whole of the rework.
+
+**Blocking: a code-string assertion on a generated method body.**
+`RecordParentMultiTablePolymorphicPipelineTest.childUnionField_recordParent_matchesTableParent`
+pins the `DirectRecord` prelude as a Java source literal:
+
+```java
+String nullSourceGuard = """
+        if (env.getSource() == null) {
+          return java.util.concurrent.CompletableFuture.completedFuture(null);
+        }
+        """.indent(2);
+assertThat(recordReferrers.toString()).contains(nullSourceGuard);
+```
+
+`development-principles.adoc`, "Behaviour is pinned at the pipeline tier and above", bans this
+at every tier ("they test implementation, not behaviour, and break on every refactor"), and
+names review as the enforcement point. The literal pins javapoet's rendering choices: the
+two-space indent, the fully-qualified `CompletableFuture` rather than an import, and the exact
+statement form. Any of those moving breaks a test that is not about them. The rest of the
+delivery honours the rule deliberately (the new `FetcherPipelineTest` pins carry a comment
+saying the tier does not string-match bodies), so this is a lone inconsistency, not a stance.
+
+**What satisfies it.** Keep the test's real claim, that the record parent's fetcher differs
+from the table parent's by exactly the `DirectRecord` prelude, but derive the guard from the
+production producer instead of transcribing it, so the assertion compares two generated
+artifacts:
+
+```java
+String nullSourceGuard = new ParentSourceBinding.DirectRecord()
+    .prelude(CodeBlock.of("env.getSource()"),
+             CodeBlock.of("$T.completedFuture(null)", COMPLETABLE_FUTURE))
+    .toString();
+```
+
+with the existing `contains` / `replace` comparison unchanged. That cannot rot on a formatting
+or naming change, and it fails for the one reason the test exists. A roadmap-only diff will not
+cover this; the fix touches `graphitron` test sources, so it owes a full verification build.
+
+**Non-blocking, recorded not requested.**
+
+- The design's line "no child-field parent read spells `env.getSource()` at its own site" is
+  true of the source expression but not of the literal: emitters still spell `env.getSource()`
+  as the `subject` they hand the binding (`MultiTablePolymorphicEmitter.ENV_SOURCE`,
+  `TypeFetcherGenerator.envSource`). The subject parameter is a sound refinement, it is what
+  lets a `LightFetcher` read pass `source` instead, and the load-bearing invariant (the source
+  expression is only ever obtained from a binding) holds. The design sentence is the thing that
+  is now slightly wrong, not the code.
+- Five prose sites still name the type-level derivation `sourceIsOutcome`
+  (`ChildField.java:193`, `KeyLift.java:79`, `FieldBuilder.java:6650`, `:6730`, `:6775`).
+  The retirement sweep passes as declared, since the retired item was the boolean *parameter
+  threading* and the local feeding the producer survives under that name. But the derivation now
+  has a proper name, and the spec updated two of the seven places that state this claim. Worth a
+  follow-up sweep rather than a gate.
+- `ParentSourceBinding.of` is the single producer, but the `parentTable != null ? Table : Record`
+  splice ahead of it is written twice (`TypeFetcherGenerator.generateTypeSpec`,
+  `FetcherRegistrationsEmitter.parentSourceBinding`). Both sites duplicated the equivalent
+  `hasWrapperArmErrors` call before this change too, so nothing regressed.
+
+Verified during review and needing no action: the `buildBatchedDataFetcher` table-arm fork moved
+from the per-leaf `field.sourceShape() == Table` to the per-type `parentSource instanceof
+TableRow`. The two agree, because `parentTable != null` holds exactly when the type is a
+`TableBackedType`, which `SourceShapeProjectionTest` pins as equivalent to the child's
+`sourceShape() == Table`. Both "Implementation notes" settlements were checked against the code
+and honour the design's forks: `validateLocalContextErrorsFieldGuards` really does admit only
+`BatchedTableField` and `SingleRecordIdFieldFromReturning`, and declaring the child `@service`
+leaves wrapper-inadmissible is what the design's enforcement section prescribes for any leaf not
+routed through the seam.
 
 ## Retired vocabulary
 
