@@ -1021,15 +1021,36 @@ CREATE TABLE catalogue (
     PRIMARY KEY (tenant_id, catalog_code)
 );
 
+-- The sibling optional reference on the same table, and the clearing half of the fixture.
+-- catalogue_item.catalog_code is NOT NULL, so nothing on that reference can exercise an admitted
+-- clear; catalogue_shelf is the same straddle over the same tenant column with a nullable out-of-key
+-- half. A shelf is where an item physically sits and most items have none, which is the ordinary
+-- shape of an optional reference: NULL is the live encoding of "no shelf" rather than a defect.
+--
+-- Clearing it writes NULL into shelf_code and leaves tenant_id exactly where the predicate put it,
+-- so the foreign key tuple is half-null. Under PostgreSQL's default MATCH SIMPLE a half-null tuple
+-- imposes no referential obligation at all, which is what makes the cleared reference an absent one
+-- rather than a dangling one; the execution tier asserts that by reading the row back.
+CREATE TABLE catalogue_shelf (
+    tenant_id  int NOT NULL,
+    shelf_code varchar(20) NOT NULL,
+    shelf_name varchar(100),
+    PRIMARY KEY (tenant_id, shelf_code)
+);
+
 CREATE TABLE catalogue_item (
     tenant_id    int NOT NULL,
     item_no      int NOT NULL,
     catalog_code varchar(20) NOT NULL,
+    shelf_code   varchar(20),
     item_name    varchar(100),
     PRIMARY KEY (tenant_id, item_no),
     CONSTRAINT catalogue_item_catalogue_fk
         FOREIGN KEY (tenant_id, catalog_code)
-        REFERENCES catalogue (tenant_id, catalog_code)
+        REFERENCES catalogue (tenant_id, catalog_code),
+    CONSTRAINT catalogue_item_shelf_fk
+        FOREIGN KEY (tenant_id, shelf_code)
+        REFERENCES catalogue_shelf (tenant_id, shelf_code)
 );
 
 INSERT INTO catalogue (tenant_id, catalog_code, catalogue_name) VALUES
@@ -1038,11 +1059,18 @@ INSERT INTO catalogue (tenant_id, catalog_code, catalogue_name) VALUES
     (2, 'BOOKS', 'Books, tenant 2'),
     (2, 'TOOLS', 'Tools, tenant 2');
 
-INSERT INTO catalogue_item (tenant_id, item_no, catalog_code, item_name) VALUES
-    (1, 1, 'BOOKS', 'tenant-1 item-1'),
-    (1, 2, 'MEDIA', 'tenant-1 item-2'),
-    (2, 1, 'BOOKS', 'tenant-2 item-1'),
-    (2, 2, 'TOOLS', 'tenant-2 item-2');
+-- Two shelves per tenant, so a cross-tenant re-point is expressible on this reference too.
+INSERT INTO catalogue_shelf (tenant_id, shelf_code, shelf_name) VALUES
+    (1, 'A1', 'Aisle 1, tenant 1'),
+    (1, 'B2', 'Aisle 2, tenant 1'),
+    (2, 'A1', 'Aisle 1, tenant 2'),
+    (2, 'C3', 'Aisle 3, tenant 2');
+
+INSERT INTO catalogue_item (tenant_id, item_no, catalog_code, shelf_code, item_name) VALUES
+    (1, 1, 'BOOKS', 'A1', 'tenant-1 item-1'),
+    (1, 2, 'MEDIA', NULL, 'tenant-1 item-2'),
+    (2, 1, 'BOOKS', 'A1', 'tenant-2 item-1'),
+    (2, 2, 'TOOLS', NULL, 'tenant-2 item-2');
 
 -- ===========================
 -- R413 converter-domain fixture

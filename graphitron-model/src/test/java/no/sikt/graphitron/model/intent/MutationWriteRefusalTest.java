@@ -138,11 +138,23 @@ class MutationWriteRefusalTest {
      */
     private static void crossTableFkField(DSLContext dsl, String inputTypeName, String fieldName,
                                           int ordinal, boolean nonNull) {
+        publisherIsANode(dsl);
+        crossTableFkFieldOnly(dsl, inputTypeName, fieldName, ordinal, nonNull);
+    }
+
+    /** {@code Publisher} as a node type over its own table; seeded once per store, so a payload
+     *  carrying two references to it declares the type once. */
+    private static void publisherIsANode(DSLContext dsl) {
         seedType(dsl, GRAPH, "Publisher", "OBJECT");
         seedTableBinding(dsl, GRAPH, "Publisher", "publisher");
         seedNode(dsl, GRAPH, "Publisher");
         seedNodeKeyColumnRef(dsl, GRAPH, "Publisher", 0, "pub_a");
         seedNodeKeyColumnRef(dsl, GRAPH, "Publisher", 1, "pub_b");
+    }
+
+    /** A second reference to an already-declared {@code Publisher}. */
+    private static void crossTableFkFieldOnly(DSLContext dsl, String inputTypeName, String fieldName,
+                                              int ordinal, boolean nonNull) {
         payloadField(dsl, "updateFilm", inputTypeName, fieldName, "ID", ordinal, nonNull);
         seedFieldNodeId(dsl, GRAPH, inputTypeName, fieldName, "Publisher");
         seedFieldReference(dsl, GRAPH, inputTypeName, fieldName, 0);
@@ -201,11 +213,12 @@ class MutationWriteRefusalTest {
 
     /**
      * A nullable cross-table reference straddling the key is refused for a different reason: the
-     * split is legitimate, but clearing a nullable pointer would write half of a foreign key and
-     * leave the other half where the predicate put it.
+     * split is legitimate, and so is clearing it, but here the reference is the only supplier of
+     * {@code pub_a_ref}, so its in-key half would have to be the predicate. An optional field cannot
+     * be that: omitted, it leaves nothing to find the row by.
      */
     @Test
-    void aNullableStraddlingReferenceIsRefused() {
+    void aNullableStraddlingReferenceWithNoOtherIdentityContributorIsRefused() {
         withCatalog(dsl -> {
             updateSurface(dsl, "FilmUpdateInput");
             crossTableFkField(dsl, "FilmUpdateInput", "publisherRef", 0, false);
@@ -216,14 +229,51 @@ class MutationWriteRefusalTest {
     }
 
     /**
-     * The same reference spelled non-null is admitted. The pair is the whole content of that cause:
-     * what is refused is the nullable spelling of a straddle and not the straddle.
+     * The same reference spelled non-null is admitted. A non-null field is present on every call, so
+     * its in-key half can be the column's predicate; what the cause is about is a column whose only
+     * supplier may be absent, not a nullable spelling.
      */
     @Test
     void aNonNullStraddlingReferenceIsNotRefused() {
         withCatalog(dsl -> {
             updateSurface(dsl, "FilmUpdateInput");
             crossTableFkField(dsl, "FilmUpdateInput", "publisherRef", 0, true);
+
+            assertThat(refusals(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * The first arm of the pinning window: a whole carrier supplies the contested column, so the
+     * nullable straddler never has to. It contributes an assignment for its out-of-key half and a
+     * check for its in-key half, and an explicit null on it clears the first and touches neither the
+     * second nor the predicate.
+     */
+    @Test
+    void aNullableStraddlerPinnedByAWholeCarrierIsNotRefused() {
+        withCatalog(dsl -> {
+            updateSurface(dsl, "FilmUpdateInput");
+            aliasField(dsl, "updateFilm", "FilmUpdateInput", "pubA", "pub_a_ref", 0);
+            crossTableFkField(dsl, "FilmUpdateInput", "publisherRef", 1, false);
+
+            assertThat(refusals(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * The second arm, and the one a narrower reading of the rule would get wrong: no whole carrier
+     * supplies {@code pub_a_ref} at all, and the nullable straddler is still admitted because the
+     * non-null one beside it lifts that column in its own in-key half. That claim IS the column's
+     * predicate and a non-null field cannot be absent, so it pins exactly as a whole carrier does.
+     * Both statements of this rule have to agree here or a payload the walker builds is one this
+     * relation says is refused.
+     */
+    @Test
+    void aNullableStraddlerPinnedByANonNullStraddlerAloneIsNotRefused() {
+        withCatalog(dsl -> {
+            updateSurface(dsl, "FilmUpdateInput");
+            crossTableFkField(dsl, "FilmUpdateInput", "pinningRef", 0, true);
+            crossTableFkFieldOnly(dsl, "FilmUpdateInput", "publisherRef", 1, false);
 
             assertThat(refusals(dsl)).isEmpty();
         });

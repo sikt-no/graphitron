@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ArgConditionRef;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.CarrierNullRule;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.FilterBinding;
@@ -176,14 +177,44 @@ class UpdateRowsWalkerTest {
     }
 
     @Test
-    void nullableStraddlingReference_rejectsWithCarriedKeyAndWriteTarget() {
-        // The nullable spelling of the admitted shape. An explicit null would write NULL into
-        // last_update and leave actor_id alone, and MATCH SIMPLE would accept that half-null tuple,
-        // so the reference is rejected at build time rather than half-cleared at runtime. The arm
-        // carries the matched key and table because the same field is legal where the key does not
-        // intersect the foreign key.
+    void nullableStraddlingReference_pinnedByAWholeCarrier_isAdmittedAndClears() {
+        // The nullable spelling of the admitted shape, and the case that used to reject. actorId and
+        // filmId between them pin the whole key, so the straddler's in-key half is identity supplied
+        // by something else: it neither filters nor writes actor_id, contributes an obligation there,
+        // and writes last_update. An explicit null on it clears that write and nothing else.
         var result = walker.walk(null, table("film_actor"), List.of(
             columnField("actorId", col(PUBLIC, "film_actor", "actor_id")),
+            columnField("filmId", col(PUBLIC, "film_actor", "film_id")),
+            nullableCompositeReferenceField("straddle", List.of(
+                col(PUBLIC, "film_actor", "actor_id"),
+                col(PUBLIC, "film_actor", "last_update")))
+        ), PUBLIC, "input");
+
+        var carrier = ok(result);
+        assertThat(carrier.keyColumns()).extracting(k -> k.sdlFieldName() + ":" + k.targetColumn().sqlName())
+            .containsExactlyInAnyOrder("actorId:actor_id", "filmId:film_id");
+        assertThat(carrier.setColumns()).extracting(s -> s.sdlFieldName() + ":" + s.targetColumn().sqlName())
+            .containsExactly("straddle:last_update");
+        assertThat(carrier.setColumns().get(0).decodeSlot())
+            .as("the out-of-key column keeps its own decode slot")
+            .isEqualTo(1);
+        assertThat(carrier.agreementObligations()).singleElement().satisfies(ob -> {
+            assertThat(ob.column().sqlName()).isEqualTo("actor_id");
+            assertThat(ob.keySide().sdlFieldName()).isEqualTo("actorId");
+            assertThat(ob.referenceSide().sdlFieldName()).isEqualTo("straddle");
+        });
+        assertThat(ruleFor(carrier, "straddle"))
+            .as("a straddler's SET half is its out-of-key half, so a null clears and nothing else")
+            .isInstanceOf(CarrierNullRule.OnExplicitNull.Clears.class);
+    }
+
+    @Test
+    void nullableStraddlingReference_soleContributorOfAKeyColumn_rejectsNamingTheUnpinnedColumns() {
+        // The surviving reject. Nothing but the straddler supplies actor_id, so its in-key half would
+        // have to be the WHERE predicate, and an optional field cannot be load-bearing identity:
+        // omitted, it leaves the row unidentifiable. The arm names exactly the columns with no other
+        // contributor, plus the key and table, because the same spelling is legal wherever they have one.
+        var result = walker.walk(null, table("film_actor"), List.of(
             columnField("filmId", col(PUBLIC, "film_actor", "film_id")),
             nullableCompositeReferenceField("straddle", List.of(
                 col(PUBLIC, "film_actor", "actor_id"),
@@ -196,9 +227,78 @@ class UpdateRowsWalkerTest {
         assertThat(nullable.fieldName()).isEqualTo("straddle");
         assertThat(nullable.table()).isEqualTo("film_actor");
         assertThat(sqlNames(nullable.matchedKey().columns())).containsExactlyInAnyOrder("actor_id", "film_id");
-        assertThat(sqlNames(nullable.columnsInKey())).containsExactly("actor_id");
+        assertThat(sqlNames(nullable.unpinnedColumns())).containsExactly("actor_id");
         assertThat(sqlNames(nullable.columnsOutsideKey())).containsExactly("last_update");
         assertThat(nullable.lspCode()).isEqualTo("graphitron.update-rows.nullable-straddling-reference");
+    }
+
+    @Test
+    void nullableStraddler_pinnedByANonNullStraddlerAlone_isAdmitted() {
+        // The case that pins the identity-contributor definition itself, and the only place the answer
+        // is ever settled: no whole carrier supplies actor_id, so a narrower reading (whole carriers
+        // pin, straddlers do not) would refuse this. A non-null straddler's winning claim IS the
+        // column's WHERE predicate and a non-null field cannot be absent, so it pins exactly as a
+        // whole carrier does. `first` still supplies the predicate; the nullable `second` neither
+        // filters nor writes actor_id and clears on an explicit null.
+        var result = walker.walk(null, table("film_actor"), List.of(
+            columnField("filmId", col(PUBLIC, "film_actor", "film_id")),
+            compositeReferenceField("first", List.of(
+                col(PUBLIC, "film_actor", "actor_id"),
+                col(PUBLIC, "film_actor", "last_update"))),
+            nullableCompositeReferenceField("second", List.of(
+                col(PUBLIC, "film_actor", "actor_id"),
+                col(PUBLIC, "film_actor", "last_update")))
+        ), PUBLIC, "input");
+
+        var carrier = ok(result);
+        assertThat(carrier.keyColumns()).filteredOn(k -> k.targetColumn().sqlName().equals("actor_id"))
+            .singleElement()
+            .satisfies(k -> assertThat(k.sdlFieldName()).isEqualTo("first"));
+        assertThat(carrier.agreementObligations()).singleElement().satisfies(ob -> {
+            assertThat(ob.column().sqlName()).isEqualTo("actor_id");
+            assertThat(ob.keySide().sdlFieldName()).isEqualTo("first");
+            assertThat(ob.referenceSide().sdlFieldName()).isEqualTo("second");
+        });
+        assertThat(ruleFor(carrier, "second")).isInstanceOf(CarrierNullRule.OnExplicitNull.Clears.class);
+        assertThat(ruleFor(carrier, "first"))
+            .as("a non-null field cannot receive a null, so GraphQL settles it before graphitron sees one")
+            .isInstanceOf(CarrierNullRule.OnExplicitNull.CannotArrive.class);
+    }
+
+    @Test
+    void nullableSelfFkOverlappingTheMatchedKey_isRefusedAsIdentity() {
+        // The predicate is uniform over the carrier roles and never consults straddling, which is what
+        // makes the self-FK case right for free: it routes every lifted column to SET, so mailbox_id is
+        // an ordinary assignment right up to the point where the assigned value is null and the row
+        // would be orphaned. The rule names the identity column the refusal is about.
+        var result = walker.walk(null, table("email"), List.of(
+            compositeColumnField("id", List.of(
+                col(PUBLIC, "email", "mailbox_id"),
+                col(PUBLIC, "email", "message_no"))),
+            nullableSelfReferenceField("inReplyTo", List.of(
+                col(PUBLIC, "email", "mailbox_id"),
+                col(PUBLIC, "email", "in_reply_to_no"))),
+            columnField("subject", col(PUBLIC, "email", "subject"))
+        ), PUBLIC, "input");
+
+        var carrier = ok(result);
+        assertThat(ruleFor(carrier, "inReplyTo"))
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.type(
+                CarrierNullRule.OnExplicitNull.RefusedAsIdentity.class))
+            .satisfies(r -> assertThat(sqlNames(r.identityColumns())).containsExactly("mailbox_id"));
+    }
+
+    @Test
+    void nullableNonStraddlingReference_clears() {
+        // Clearing is not a property of the straddle. A nullable cross-table reference wholly outside
+        // the matched key writes its whole foreign-key tuple, so a null clears every column of it.
+        var result = walker.walk(null, table("film"), List.of(
+            columnField("filmId", col(PUBLIC, "film", "film_id")),
+            nullableColumnReferenceField("languageRef", List.of(col(PUBLIC, "film", "language_id")))
+        ), PUBLIC, "input");
+
+        var carrier = ok(result);
+        assertThat(ruleFor(carrier, "languageRef")).isInstanceOf(CarrierNullRule.OnExplicitNull.Clears.class);
     }
 
     @Test
@@ -224,8 +324,11 @@ class UpdateRowsWalkerTest {
     @Test
     void twoStraddlersSharingAnInKeyColumn_firstInInputOrderPinsIt() {
         // Deterministic tiebreak: the first straddler in input-field order supplies the WHERE
-        // predicate, the second contributes an obligation against it. The agreement check makes the
-        // choice observationally irrelevant for well-formed input; being deterministic is the point.
+        // predicate, the second contributes an obligation against it. Which of them wins is
+        // observationally irrelevant for well-formed input, the agreement check running either way,
+        // and being deterministic is the point. Which carriers may contend at all is a separate
+        // question and is not irrelevant: both here are non-null, and a nullable one never claims
+        // (nullableStraddler_pinnedByANonNullStraddlerAlone_isAdmitted is that case).
         var result = walker.walk(null, table("film_actor"), List.of(
             columnField("filmId", col(PUBLIC, "film_actor", "film_id")),
             compositeReferenceField("first", List.of(
@@ -489,6 +592,15 @@ class UpdateRowsWalkerTest {
         return columns.stream().map(ColumnRef::sqlName).toList();
     }
 
+    /** The stated explicit-null rule for one SET carrier. A missing rule is itself a failure: the
+     *  walker states exactly one per carrier contributing to SET. */
+    private static CarrierNullRule.OnExplicitNull ruleFor(UpdateRows.Identified carrier, String sdlFieldName) {
+        var rules = carrier.nullRules().stream()
+            .filter(r -> r.sdlFieldName().equals(sdlFieldName)).toList();
+        assertThat(rules).as("one null rule for SET carrier '" + sdlFieldName + "'").hasSize(1);
+        return rules.getFirst().rule();
+    }
+
     // --- fixture builders ---
 
     private static TableRef table(String sqlName) {
@@ -533,7 +645,8 @@ class UpdateRowsWalkerTest {
             lifted, List.of(), new FilterBinding.Local(lifted), false, Optional.empty(), dummyDecode(lifted));
     }
 
-    /** The nullable spelling of {@link #compositeReferenceField}: rejected where it straddles. */
+    /** The nullable spelling of {@link #compositeReferenceField}: admitted where its in-key half is
+     *  pinned elsewhere, rejected where it is a key column's sole contributor. */
     private static InputField.ColumnBackedReferenceField nullableCompositeReferenceField(
             String name, List<ColumnRef> lifted) {
         return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", false, false,
@@ -546,6 +659,14 @@ class UpdateRowsWalkerTest {
         return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", false, false,
             List.of(lifted.getFirst()), List.of(), new FilterBinding.Local(lifted), false,
             Optional.empty(), dummyDecode(lifted));
+    }
+
+    /** The nullable spelling of {@link #selfReferenceField}: admitted, and refused a clear where one
+     *  of its lifted columns is also a matched-key column. */
+    private static InputField.ColumnBackedReferenceField nullableSelfReferenceField(
+            String name, List<ColumnRef> lifted) {
+        return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", false, false,
+            lifted, List.of(), new FilterBinding.Local(lifted), true, Optional.empty(), dummyDecode(lifted));
     }
 
     private static InputField.ColumnBackedReferenceField selfReferenceField(String name, List<ColumnRef> lifted) {

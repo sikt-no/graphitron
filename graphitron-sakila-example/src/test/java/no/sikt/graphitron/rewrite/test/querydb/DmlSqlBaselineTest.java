@@ -291,6 +291,60 @@ class DmlSqlBaselineTest {
     }
 
     @Test
+    void clearingReferenceSingleUpdate_bindsTheNullAsAnOrdinarySetColumn() {
+        // A cleared reference is a SET column like any other: shelf_code is assigned, the identity
+        // columns still filter, and nothing about the statement's shape says the bound value is null.
+        // Pinned on the statement so a regression that stops binding it, or that drops the column
+        // from SET when the value is null, fails here rather than on a value read back.
+        seedCatalogueItem(720, "BOOKS");
+        SQL_LOG.clear();
+        String id = NodeIdEncoder.encode("CatalogueItem", CATALOGUE_TENANT, 720);
+        execute("mutation { shelveCatalogueItem(in: {id: \"" + id + "\", shelfId: null}) "
+            + "{ itemNo shelfCode } }");
+        assertThat(SQL_LOG)
+            .as("clearing a straddling reference, single row: shelf_code is set, tenant_id filters")
+            .containsExactly(
+                "update \"public\".\"catalogue_item\" set \"shelf_code\" = ? "
+                    + "where (\"public\".\"catalogue_item\".\"tenant_id\" = ? "
+                    + "and \"public\".\"catalogue_item\".\"item_no\" = ?) "
+                    + "returning \"public\".\"catalogue_item\".\"tenant_id\", \"public\".\"catalogue_item\".\"item_no\"",
+                "select \"public\".\"catalogue_item\".\"shelf_code\", \"public\".\"catalogue_item\".\"item_no\" "
+                    + "from \"public\".\"catalogue_item\" "
+                    + "where (\"public\".\"catalogue_item\".\"tenant_id\", \"public\".\"catalogue_item\".\"item_no\") = (?, ?)");
+    }
+
+    @Test
+    void clearingReferenceBulkUpdate_keepsTheColumnInTheValuesAlias() {
+        // Column membership in v is decided by first-row presence and not by nullness, so a cleared
+        // row keeps shelf_code in the alias at the position every other row's cell sits at. A cell
+        // that moved would silently write one row's value into another column.
+        seedCatalogueItem(730, "BOOKS");
+        seedCatalogueItem(731, "BOOKS");
+        SQL_LOG.clear();
+        String idA = NodeIdEncoder.encode("CatalogueItem", CATALOGUE_TENANT, 730);
+        String idB = NodeIdEncoder.encode("CatalogueItem", CATALOGUE_TENANT, 731);
+        String shelf = NodeIdEncoder.encode("CatalogueShelf", CATALOGUE_TENANT, "B2");
+        execute("mutation { shelveCatalogueItems(in: ["
+            + "{id: \"" + idA + "\", shelfId: \"" + shelf + "\"}, "
+            + "{id: \"" + idB + "\", shelfId: null}"
+            + "]) { itemNo shelfCode } }");
+        assertThat(SQL_LOG)
+            .as("clearing on one row of a batch: v(...) still names shelf_code once, for both rows")
+            .containsExactly(
+                "update \"public\".\"catalogue_item\" set \"shelf_code\" = \"v\".\"shelf_code\" "
+                    + "from (values (?, ?, ?), (?, ?, ?)) as \"v\" (\"tenant_id\", \"item_no\", \"shelf_code\") "
+                    + "where (\"public\".\"catalogue_item\".\"tenant_id\" = \"v\".\"tenant_id\" "
+                    + "and \"public\".\"catalogue_item\".\"item_no\" = \"v\".\"item_no\") "
+                    + "returning \"public\".\"catalogue_item\".\"tenant_id\", \"public\".\"catalogue_item\".\"item_no\"",
+                "select \"public\".\"catalogue_item\".\"shelf_code\", \"public\".\"catalogue_item\".\"item_no\" "
+                    + "from \"public\".\"catalogue_item\" "
+                    + "join (values (?, ?, ?), (?, ?, ?)) as \"keysinput\" (\"idx\", \"tenant_id\", \"item_no\") "
+                    + "on (\"public\".\"catalogue_item\".\"tenant_id\" = \"keysinput\".\"tenant_id\" "
+                    + "and \"public\".\"catalogue_item\".\"item_no\" = \"keysinput\".\"item_no\") "
+                    + "order by \"keysinput\".\"idx\"");
+    }
+
+    @Test
     void compositeKeyListUpdate_multiColumnValuesRowsCompanion() {
         seedEmail(700, "before A");
         seedEmail(701, "before B");

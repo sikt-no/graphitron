@@ -899,6 +899,21 @@ class MutationDmlNodeIdClassificationTest {
             assertThat(ob.referenceSide().sdlFieldName()).isEqualTo("catalogueId");
             assertThat(ob.referenceSide().decodeSlot()).isEqualTo(0);
         });
+        // What an explicit null means is the second fact a consumer can silently drop, so it is
+        // asserted on all four alongside the partition. Both carriers here are spelled non-null.
+        assertThat(nullRuleOf(updateRows, "catalogueId"))
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.CarrierNullRule.OnExplicitNull.CannotArrive.class);
+        assertThat(nullRuleOf(updateRows, "itemName"))
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.CarrierNullRule.OnExplicitNull.Clears.class);
+    }
+
+    /** The stated explicit-null rule for one SET carrier of an UPDATE carrier. */
+    private static no.sikt.graphitron.rewrite.model.CarrierNullRule.OnExplicitNull nullRuleOf(
+            no.sikt.graphitron.rewrite.model.UpdateRows.Identified updateRows, String sdlFieldName) {
+        var rules = updateRows.nullRules().stream()
+            .filter(r -> r.sdlFieldName().equals(sdlFieldName)).toList();
+        assertThat(rules).as("one null rule for SET carrier '" + sdlFieldName + "'").hasSize(1);
+        return rules.getFirst().rule();
     }
 
     @Test
@@ -939,9 +954,10 @@ class MutationDmlNodeIdClassificationTest {
     }
 
     @Test
-    void nullableStraddlingReference_update_rejectsAtBuildTime() {
-        // The nullable spelling of the admitted shape. Rejected because an explicit null would write
-        // NULL into catalog_code and leave tenant_id populated, which MATCH SIMPLE accepts.
+    void nullableStraddlingReference_pinnedByTheIdentityField_isAdmittedAndClears() {
+        // The nullable spelling of the admitted shape, which used to reject. `id` is a whole-key
+        // carrier, so tenant_id has an identity contributor and the reference neither filters nor
+        // writes it; catalog_code is its only write, and an explicit null clears exactly that.
         var schema = TestSchemaHelper.buildSchema("""
             type Catalogue implements Node @table(name: "catalogue") @node { id: ID! @nodeId }
             type CatalogueItem implements Node @table(name: "catalogue_item") @node {
@@ -957,11 +973,39 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { updateCatalogueItem(in: UpdateCatalogueItemInput!): CatalogueItem @mutation(typeName: UPDATE) }
             """);
 
+        assertThat(schema.diagnostics()).isEmpty();
+        var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified)
+            updateRowsOf((MutationField.DmlTableField) schema.field("Mutation", "updateCatalogueItem"));
+        assertThat(updateRows.setColumns()).extracting(s -> s.sdlFieldName() + ":" + s.targetColumn().sqlName())
+            .containsExactlyInAnyOrder("itemName:item_name", "catalogueId:catalog_code");
+        assertThat(nullRuleOf(updateRows, "catalogueId"))
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.CarrierNullRule.OnExplicitNull.Clears.class);
+    }
+
+    @Test
+    void nullableStraddlingReference_soleContributorOfAKeyColumn_rejectsAtBuildTime() {
+        // The surviving reject, narrowed to the one shape that cannot work. Without `id` nothing but
+        // the reference supplies tenant_id, so an omitted value would leave no way to find the row.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Catalogue implements Node @table(name: "catalogue") @node { id: ID! @nodeId }
+            type CatalogueItem implements Node @table(name: "catalogue_item") @node {
+                id: ID! @nodeId
+                itemName: String @field(name: "item_name")
+            }
+            input UpdateCatalogueItemInput {
+                itemNo: Int! @field(name: "item_no")
+                itemName: String @field(name: "item_name")
+                catalogueId: ID @nodeId(typeName: "Catalogue")
+            }
+            type Query { x: String }
+            type Mutation { updateCatalogueItem(in: UpdateCatalogueItemInput!): CatalogueItem @mutation(typeName: UPDATE) }
+            """);
+
         var f = (UnclassifiedField) schema.field("Mutation", "updateCatalogueItem");
         assertThat(f.reason())
-            .contains("nullable cross-table @nodeId reference")
+            .contains("optional cross-table @nodeId reference")
             .contains("catalogueId")
-            .contains("catalog_code")
+            .contains("tenant_id")
             .contains("ID!");
     }
 

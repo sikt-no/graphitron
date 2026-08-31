@@ -39,6 +39,24 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Four cases across both arms: a same-tenant re-point writes exactly {@code catalog_code} and
  * leaves {@code tenant_id} alone, and a cross-tenant input throws before any write, on the
  * single-row arm and on the bulk arm alike.
+ *
+ * <p>The same table carries a second straddling reference over the same tenant column,
+ * {@code catalogue_item_shelf_fk} lifting {@code (tenant_id, shelf_code)}, and this one is spelled
+ * {@code ID} over a nullable column. It is the clearing half of the fixture: {@code catalog_code} is
+ * NOT NULL, so nothing on the first reference can exercise a clear at all. It lives on its own input
+ * ({@code ShelveCatalogueItemInput}, driving the {@code shelve*} mutations) rather than beside
+ * {@code catalogueId}, because {@code ID!} is mandatory on every call: an input carrying both would
+ * make every clearing call resend the catalogue, which is the cost this shape exists to remove. The
+ * optional spelling is admitted because {@code id} is a whole-key carrier and so supplies
+ * {@code tenant_id}; the shape still refused is an optional reference that is a matched-key column's
+ * <em>only</em> contributor, which is a build-time rejection with no runtime to observe.
+ *
+ * <p>What the clearing cases assert is the three behaviours an author expects of an optional field
+ * (omitted leaves it, an id re-points it, an explicit null clears it) on all four emit consumers:
+ * direct-return single-row and bulk, and payload-returning single-row and bulk, the last two of
+ * which had no execution coverage of a straddling reference at all. The MATCH SIMPLE claim the
+ * clear rests on is asserted rather than assumed, by deleting the shelf the item used to sit on and
+ * finding the database allows it.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -59,6 +77,13 @@ class StraddlingReferenceUpdateExecutionTest {
      */
     private static final int ITEM_NO_BAND_START = 100;
     private static final int ITEM_NO_BAND_END = 199;
+
+    /**
+     * A shelf this class creates and deletes, so the "is the reference gone" check can be a real
+     * delete. The seeded shelves stay untouched, a delete of one being a fixture change rather than
+     * an observation.
+     */
+    private static final String DISPOSABLE_SHELF = "Z9";
 
     @BeforeAll
     static void startDatabase() {
@@ -88,15 +113,60 @@ class StraddlingReferenceUpdateExecutionTest {
             .where(DSL.field("tenant_id", Integer.class).eq(TENANT_ONE))
             .and(DSL.field("item_no", Integer.class).between(ITEM_NO_BAND_START, ITEM_NO_BAND_END))
             .execute();
+        dsl.deleteFrom(DSL.table("catalogue_shelf"))
+            .where(DSL.field("tenant_id", Integer.class).eq(TENANT_ONE))
+            .and(DSL.field("shelf_code", String.class).eq(DISPOSABLE_SHELF))
+            .execute();
     }
 
-    /** Inserts an item at (tenant 1, itemNo) pointing at the given catalogue code. */
+    /** Inserts this class's own shelf under tenant 1. */
+    private void seedShelf(String shelfCode) {
+        dsl.insertInto(DSL.table("catalogue_shelf"),
+                DSL.field("tenant_id"), DSL.field("shelf_code"), DSL.field("shelf_name"))
+            .values(TENANT_ONE, shelfCode, "disposable " + shelfCode)
+            .execute();
+    }
+
+    /** Inserts an item at (tenant 1, itemNo) pointing at the given catalogue code, on no shelf. */
     private void seedItem(int itemNo, String catalogCode) {
+        seedItem(itemNo, catalogCode, null);
+    }
+
+    /** The same, on a shelf of tenant 1. */
+    private void seedItem(int itemNo, String catalogCode, String shelfCode) {
         dsl.insertInto(DSL.table("catalogue_item"),
                 DSL.field("tenant_id"), DSL.field("item_no"),
-                DSL.field("catalog_code"), DSL.field("item_name"))
-            .values(TENANT_ONE, itemNo, catalogCode, "item-" + itemNo)
+                DSL.field("catalog_code"), DSL.field("shelf_code"), DSL.field("item_name"))
+            .values(TENANT_ONE, itemNo, catalogCode, shelfCode, "item-" + itemNo)
             .execute();
+    }
+
+    private String shelfCodeOf(int itemNo) {
+        return dsl.select(DSL.field("shelf_code", String.class))
+            .from(DSL.table("catalogue_item"))
+            .where(DSL.field("tenant_id", Integer.class).eq(TENANT_ONE))
+            .and(DSL.field("item_no", Integer.class).eq(itemNo))
+            .fetchOne(DSL.field("shelf_code", String.class));
+    }
+
+    /**
+     * Deletes a shelf row and reports whether the database allowed it. This is what makes the
+     * MATCH SIMPLE claim an observation rather than an inference: while any item still references
+     * the shelf, {@code catalogue_item_shelf_fk} refuses the delete, so a successful delete after a
+     * clear says the reference is genuinely absent and not merely half-written. The clear's own
+     * statement having succeeded proves the constraint accepts a half-null tuple; this proves the
+     * half-null tuple is not still pointing anywhere.
+     */
+    private boolean shelfIsUnreferenced(String shelfCode) {
+        try {
+            dsl.deleteFrom(DSL.table("catalogue_shelf"))
+                .where(DSL.field("tenant_id", Integer.class).eq(TENANT_ONE))
+                .and(DSL.field("shelf_code", String.class).eq(shelfCode))
+                .execute();
+            return true;
+        } catch (org.jooq.exception.DataAccessException refused) {
+            return false;
+        }
     }
 
     private String catalogCodeOf(int itemNo) {
@@ -214,6 +284,157 @@ class StraddlingReferenceUpdateExecutionTest {
         assertThat(rows).extracting(r -> r.get("catalogCode")).containsOnly("MEDIA");
         assertThat(catalogCodeOf(110)).isEqualTo("MEDIA");
         assertThat(catalogCodeOf(111)).isEqualTo("MEDIA");
+    }
+
+    // ===== Clearing the optional reference =====
+    //
+    // catalogue_item carries a second straddling reference over the same tenant column, this one
+    // over a nullable column: catalogue_item_shelf_fk lifts (tenant_id, shelf_code). It is spelled
+    // `shelfId: ID`, which is admitted because `id` is a whole-key carrier and so pins tenant_id.
+    // The three cases below are the three an author expects of an optional field, and the fourth is
+    // the cross-tenant guard the non-null sibling already has.
+
+    @Test
+    void explicitNullClearsTheOutOfKeyHalfAndLeavesEverythingElse() {
+        // The claim this whole item rests on, asserted by reading the row back rather than by
+        // trusting the absence of an error: shelf_code goes to NULL, tenant_id stays where the
+        // predicate put it, and the foreign key is still satisfied afterwards, because a half-null
+        // tuple imposes no referential obligation under MATCH SIMPLE. A DELETE of the shelf row the
+        // item used to point at would fail if the reference were still live, which is what the
+        // constraint check below actually exercises.
+        int itemNo = 130;
+        seedShelf(DISPOSABLE_SHELF);
+        seedItem(itemNo, "BOOKS", DISPOSABLE_SHELF);
+        String self = NodeIdEncoder.encode("CatalogueItem", TENANT_ONE, itemNo);
+
+        Map<String, Object> data = execute(
+            "mutation { shelveCatalogueItem(in: {id: \"" + self + "\", shelfId: null}) "
+            + "{ itemNo catalogCode shelfCode } }");
+
+        Map<String, Object> row = (Map<String, Object>) data.get("shelveCatalogueItem");
+        assertThat(row).extractingByKey("shelfCode").isNull();
+        assertThat(shelfCodeOf(itemNo)).isNull();
+        assertThat(catalogCodeOf(itemNo))
+            .as("the other reference's column is untouched by this one's clear").isEqualTo("BOOKS");
+        assertThat(rowCountInTenant(TENANT_ONE, itemNo))
+            .as("the in-key half is identity and is never written, so the row does not move")
+            .isEqualTo(1);
+        assertThat(shelfIsUnreferenced(DISPOSABLE_SHELF))
+            .as("a half-null foreign key tuple is an absent reference, not a dangling one")
+            .isTrue();
+    }
+
+    @Test
+    void omittedShelfIdLeavesTheExistingValue() {
+        // PATCH semantics, and the case a caller renaming one field of a wide input relies on:
+        // omitting the reference is not clearing it.
+        int itemNo = 131;
+        seedItem(itemNo, "BOOKS", "A1");
+        String self = NodeIdEncoder.encode("CatalogueItem", TENANT_ONE, itemNo);
+
+        execute("mutation { shelveCatalogueItem(in: {id: \"" + self + "\", itemName: \"renamed\"}) "
+            + "{ itemNo } }");
+
+        assertThat(shelfCodeOf(itemNo)).isEqualTo("A1");
+        assertThat(itemNameOf(itemNo)).isEqualTo("renamed");
+    }
+
+    @Test
+    void sendingAShelfIdRepointsTheReference() {
+        int itemNo = 132;
+        seedItem(itemNo, "BOOKS", "A1");
+        String self = NodeIdEncoder.encode("CatalogueItem", TENANT_ONE, itemNo);
+        String shelf = NodeIdEncoder.encode("CatalogueShelf", TENANT_ONE, "B2");
+
+        execute("mutation { shelveCatalogueItem(in: {id: \"" + self + "\", shelfId: \"" + shelf
+            + "\"}) { itemNo shelfCode } }");
+
+        assertThat(shelfCodeOf(itemNo)).isEqualTo("B2");
+    }
+
+    @Test
+    void crossTenantShelf_throwsBeforeAnyWrite() {
+        // The optional spelling does not weaken the agreement check: the reference still decodes a
+        // tenant, and a shelf in another tenant disagrees with the one `id` pins.
+        int itemNo = 133;
+        seedItem(itemNo, "BOOKS", "A1");
+        String self = NodeIdEncoder.encode("CatalogueItem", TENANT_ONE, itemNo);
+        String otherTenantShelf = NodeIdEncoder.encode("CatalogueShelf", TENANT_TWO, "C3");
+
+        ExecutionResult result = executeRaw(
+            "mutation { shelveCatalogueItem(in: {id: \"" + self + "\", shelfId: \""
+            + otherTenantShelf + "\", itemName: \"renamed\"}) { itemNo } }");
+
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(shelfCodeOf(itemNo)).as("nothing is written when the two sides disagree").isEqualTo("A1");
+        assertThat(itemNameOf(itemNo)).isEqualTo("item-" + itemNo);
+    }
+
+    @Test
+    void bulkClear_clearsOneRowAndRepointsAnotherInOneStatement() {
+        // The VALUES-join arm. Column membership in v is decided by first-row presence and an
+        // explicitly-null key is a present key, so the two rows share one alias and one cell
+        // position; a cleared row that dropped its cell would misalign the batch.
+        seedItem(140, "BOOKS", "A1");
+        seedItem(141, "BOOKS", "A1");
+        String first = NodeIdEncoder.encode("CatalogueItem", TENANT_ONE, 140);
+        String second = NodeIdEncoder.encode("CatalogueItem", TENANT_ONE, 141);
+        String shelf = NodeIdEncoder.encode("CatalogueShelf", TENANT_ONE, "B2");
+
+        Map<String, Object> data = execute(
+            "mutation { shelveCatalogueItems(in: ["
+            + "{id: \"" + first + "\", shelfId: \"" + shelf + "\"},"
+            + "{id: \"" + second + "\", shelfId: null}"
+            + "]) { itemNo shelfCode } }");
+
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("shelveCatalogueItems");
+        assertThat(rows).extracting(r -> r.get("itemNo")).containsExactlyInAnyOrder(140, 141);
+        assertThat(shelfCodeOf(140)).isEqualTo("B2");
+        assertThat(shelfCodeOf(141)).isNull();
+    }
+
+    @Test
+    void payloadSingleRow_clearsThroughTheCarrierArm() {
+        // The payload-returning single-row arm, which had no execution coverage of a straddling
+        // reference at all. It runs the cross-partition agreement preamble and the SET map through
+        // their own emitters, so the clear reaching the database here is a separate fact from the
+        // direct-return arm's.
+        int itemNo = 150;
+        seedItem(itemNo, "BOOKS", "A1");
+        String self = NodeIdEncoder.encode("CatalogueItem", TENANT_ONE, itemNo);
+
+        Map<String, Object> data = execute(
+            "mutation { shelveCatalogueItemPayload(in: {id: \"" + self + "\", shelfId: null}) "
+            + "{ item { itemNo shelfCode } } }");
+
+        Map<String, Object> payload = (Map<String, Object>) data.get("shelveCatalogueItemPayload");
+        Map<String, Object> item = (Map<String, Object>) payload.get("item");
+        assertThat(item).extractingByKey("shelfCode").isNull();
+        assertThat(shelfCodeOf(itemNo)).isNull();
+        assertThat(catalogCodeOf(itemNo)).isEqualTo("BOOKS");
+        assertThat(rowCountInTenant(TENANT_ONE, itemNo)).isEqualTo(1);
+    }
+
+    @Test
+    void payloadBulk_clearsPerRowThroughTheCarrierArm() {
+        // The payload-returning bulk arm is a loop of single-row statements rather than the
+        // VALUES-join, so the per-row clear is its own emit path again.
+        seedItem(160, "BOOKS", "A1");
+        seedItem(161, "BOOKS", "A1");
+        String first = NodeIdEncoder.encode("CatalogueItem", TENANT_ONE, 160);
+        String second = NodeIdEncoder.encode("CatalogueItem", TENANT_ONE, 161);
+        String shelf = NodeIdEncoder.encode("CatalogueShelf", TENANT_ONE, "B2");
+
+        Map<String, Object> data = execute(
+            "mutation { shelveCatalogueItemsPayload(in: ["
+            + "{id: \"" + first + "\", shelfId: null},"
+            + "{id: \"" + second + "\", shelfId: \"" + shelf + "\"}"
+            + "]) { items { itemNo shelfCode } } }");
+
+        Map<String, Object> payload = (Map<String, Object>) data.get("shelveCatalogueItemsPayload");
+        assertThat((List<?>) payload.get("items")).hasSize(2);
+        assertThat(shelfCodeOf(160)).isNull();
+        assertThat(shelfCodeOf(161)).isEqualTo("B2");
     }
 
     @Test

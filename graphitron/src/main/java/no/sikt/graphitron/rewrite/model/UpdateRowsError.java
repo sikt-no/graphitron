@@ -98,7 +98,8 @@ public sealed interface UpdateRowsError extends Rejection.AuthorError permits
      * no longer reach this arm: a self-FK routes wholly to SET (its columns point at a sibling row,
      * never identity), and a cross-table FK partitions per column, its in-key half staying identity
      * and its out-of-key half becoming a SET write. The one cross-table shape still rejected is the
-     * nullable one, under {@link NullableStraddlingReference}.
+     * optional reference that is a matched-key column's only contributor, under
+     * {@link NullableStraddlingReference}.
      */
     record MixedCarrierKeyMembership(
         String fieldName,
@@ -122,50 +123,55 @@ public sealed interface UpdateRowsError extends Rejection.AuthorError permits
 
     /**
      * A <em>nullable</em> cross-table {@code @nodeId} reference field whose lifted foreign-key
-     * columns straddle the matched key. The non-null spelling of the same field is admitted and
-     * partitions per column.
+     * columns straddle the matched key, and whose in-key half no other contributor supplies. The
+     * straddle itself is admitted whatever the spelling; what this arm refuses is an optional field
+     * being the only thing that pins a key column.
      *
-     * <p>The hazard is clearing. An explicit {@code null} on such a field would write {@code NULL}
-     * into the out-of-key half of the foreign key and leave the in-key half alone, because that half
-     * is the row's own identity and is never written. PostgreSQL's default {@code MATCH SIMPLE}
-     * treats a partially-null foreign key as satisfied, so the constraint does not catch it and the
-     * row keeps a dangling half-key. The coherent rule is that the in-key half of a straddling
-     * reference <em>is</em> row identity: the reference can be re-pointed only within the same key
-     * value, and can never be cleared.
+     * <p>A straddling reference partitions per column: the out-of-key half is written, the in-key
+     * half is the row's identity. Where nothing else supplies an in-key column, the reference is
+     * itself the WHERE predicate for it, and an optional field cannot be load-bearing identity:
+     * omitted, it leaves the row unidentifiable, and no per-row conditional recovers a WHERE
+     * conjunct that was never sent. Where something else does supply it, the reference neither
+     * filters nor writes that column and an explicit null clears the out-of-key half cleanly, so
+     * there is nothing to refuse.
+     *
+     * <p>An <em>identity contributor</em> to a column is a carrier guaranteed present on every call
+     * whose decode supplies, or can supply, that column's WHERE predicate: a whole carrier other
+     * than a self-FK, or a non-null cross-table straddler lifting the column in its in-key half.
+     * The columns this arm names are the ones with none.
      *
      * <p>This is a build-time reject rather than a runtime throw because the hazard is knowable from
      * the schema alone. It is a separate permit from {@link MixedCarrierKeyMembership} rather than a
      * widening of it, because {@link #lspCode()} is what downstream tooling switches on and "don't
-     * straddle your own key" and "make this reference non-null" are different fixes.
+     * straddle your own key" and "give that key column another contributor" are different fixes.
      *
      * <p>Carries the matched key and write target as well as the field, because the rejection is not
-     * a property of the field alone: the same nullable reference is legal on a field whose matched
-     * key does not intersect the foreign key, so the message has to be able to say why the same
-     * spelling is fine elsewhere.
+     * a property of the field alone: the same nullable reference is legal wherever its in-key half is
+     * pinned, so the message has to be able to say why the same spelling is fine elsewhere.
      */
     record NullableStraddlingReference(
         String fieldName,
         SourceLocation location,
         String table,
         MatchedKey matchedKey,
-        List<ColumnRef> columnsInKey,
+        List<ColumnRef> unpinnedColumns,
         List<ColumnRef> columnsOutsideKey
     ) implements UpdateRowsError {
         public NullableStraddlingReference {
-            columnsInKey = List.copyOf(columnsInKey);
+            unpinnedColumns = List.copyOf(unpinnedColumns);
             columnsOutsideKey = List.copyOf(columnsOutsideKey);
         }
         @Override public String message() {
             return "@mutation(typeName: UPDATE) input field '" + fieldName + "' on table '" + table
-                + "' is a nullable cross-table @nodeId reference whose foreign-key columns straddle "
-                + describeKey(matchedKey) + ": " + sqlNames(columnsInKey) + " are in the key but "
-                + sqlNames(columnsOutsideKey) + " are not. The in-key half is this row's identity and"
-                + " is never written, so an explicit null would write NULL into "
-                + sqlNames(columnsOutsideKey) + " and leave the rest of the foreign key populated;"
-                + " MATCH SIMPLE accepts that half-null tuple, so the row would keep a dangling"
-                + " reference. Such a reference can be re-pointed but never cleared: spell the field"
-                + " non-null (ID!). (The same nullable field is fine where the matched key does not"
-                + " intersect the foreign key, since then nothing about it is identity.)";
+                + "' is an optional cross-table @nodeId reference whose foreign-key columns straddle "
+                + describeKey(matchedKey) + ", and it is the only contributor to "
+                + sqlNames(unpinnedColumns) + ". The in-key half of a straddling reference is this"
+                + " row's identity, so an omitted value would leave nothing to find the row by."
+                + " Either give " + sqlNames(unpinnedColumns) + " another contributor on this input"
+                + " (a field or reference that is present on every call), or spell this field"
+                + " non-null (ID!). The out-of-key half " + sqlNames(columnsOutsideKey)
+                + " is not what refuses: a nullable straddling reference whose key columns are"
+                + " pinned elsewhere is admitted, and an explicit null on it clears that half.";
         }
         @Override public String lspCode() { return "graphitron.update-rows.nullable-straddling-reference"; }
     }

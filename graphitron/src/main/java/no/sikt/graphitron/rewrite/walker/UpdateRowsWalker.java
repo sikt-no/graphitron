@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.ArgConditionRef;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.model.AgreementObligation;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.CarrierNullRule;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -50,6 +51,15 @@ import java.util.Set;
  * so the emitters check the two decoded values agree before any DML runs. The same obligation covers
  * the self-FK overlap, which the emitters used to intersect for themselves.
  *
+ * <p><b>What an explicit null means.</b> Stated per SET-contributing carrier as a
+ * {@link no.sikt.graphitron.rewrite.model.CarrierNullRule}, for the same reason the obligations are:
+ * the answer turns on the matched key, so an emitter cannot derive it, and four emit consumers would
+ * otherwise each have to. The rule and the admission gate for a nullable straddler both follow from
+ * one definition, of an <em>identity contributor</em> to a column: a carrier guaranteed present on
+ * every call whose decode supplies, or can supply, that column's WHERE predicate. That is a whole
+ * carrier other than a self-FK, or a non-null cross-table straddler lifting the column in its in-key
+ * half, and it is what the two claim-resolution phases below transcribe.
+ *
  * <p>Errors are collected across stages without short-circuiting so the LSP surfaces every
  * per-field issue at once.
  *
@@ -67,7 +77,9 @@ public final class UpdateRowsWalker {
      *
      * <p>Replaces a {@code boolean selfReference} flag. The flag answered two of the three cases and
      * left the third (own columns versus a cross-table pointer) to be re-derived, which mattered
-     * once the two stopped sharing a disposition. Nullability rides only on the arm that reads it.
+     * once the two stopped sharing a disposition. Nullability is not an arm's component: every arm
+     * reads it now, because the rule for what an explicit null means is uniform over the three, so
+     * it rides on {@link Contribution} instead.
      */
     private sealed interface CarrierRole {
 
@@ -84,10 +96,10 @@ public final class UpdateRowsWalker {
         record SelfFk() implements CarrierRole {}
 
         /** A cross-table FK {@code @nodeId} reference: a pointer at another table's row, whose lifted
-         *  child columns can legitimately include this row's own identity. Partitions per column.
-         *  {@code nonNull} is read only where such a carrier straddles the matched key, where a
-         *  nullable spelling is rejected because clearing it would leave a half-null foreign key. */
-        record CrossTableFk(boolean nonNull) implements CarrierRole {}
+         *  child columns can legitimately include this row's own identity. Partitions per column,
+         *  whatever its spelling; a nullable one is measured against the settled WHERE partition and
+         *  refused only where it is the sole contributor to a matched-key column. */
+        record CrossTableFk() implements CarrierRole {}
     }
 
     /**
@@ -108,7 +120,7 @@ public final class UpdateRowsWalker {
      * letting each emitter re-derive one from its own partition's ordering.
      */
     private record Contribution(String sdlFieldName, List<ColumnRef> columns, CallSiteExtraction extraction,
-                                CarrierRole role, SourceLocation location) {
+                                CarrierRole role, boolean nonNull, SourceLocation location) {
 
         /** A self-FK's columns are a sibling pointer, so they never pin the row they live on. */
         boolean pinsIdentity() { return !(role instanceof CarrierRole.SelfFk); }
@@ -181,8 +193,9 @@ public final class UpdateRowsWalker {
         //     write; the FK forces it equal to the WHERE value, checked at emit.
         //   - A cross-table FK partitions PER COLUMN. It is equally a pointer rather than an
         //     identity, but unlike a self-FK its child columns can include this row's own key, so
-        //     the in-key half stays identity and only the out-of-key half is written. A nullable
-        //     straddler rejects: clearing it would half-null the FK tuple.
+        //     the in-key half stays identity and only the out-of-key half is written. Its spelling
+        //     does not change the partition; a nullable one is measured against the settled WHERE
+        //     partition below and refused only where it is a key column's sole contributor.
         //
         // Each flattened row carries its decode slot, read off the contribution's column index (see
         // Contribution). This is the one place the index is available as the decode slot; once a
@@ -195,6 +208,9 @@ public final class UpdateRowsWalker {
         // the WHERE predicate depends on whether anything else already does. Collected here and
         // resolved once every whole-carrier key column is known.
         var identityClaims = new ArrayList<ColumnSlot>();
+        // The nullable straddlers, with the in-key columns each lifts, held aside for the pinning
+        // gate below: whether one is admitted turns on the WHERE partition, which is not settled yet.
+        var nullableStraddlers = new ArrayList<Straddle>();
         for (var c : contributions) {
             if (c.role() instanceof CarrierRole.SelfFk) {
                 addSetColumns(setColumns, c);
@@ -213,13 +229,7 @@ public final class UpdateRowsWalker {
                             c.sdlFieldName(), inKey, outsideKey));
                         continue;
                     }
-                    case CarrierRole.CrossTableFk(var nonNull) -> {
-                        if (!nonNull) {
-                            errors.add(new UpdateRowsError.NullableStraddlingReference(
-                                c.sdlFieldName(), c.location(), table.tableName(), matchedKey,
-                                inKey, outsideKey));
-                            continue;
-                        }
+                    case CarrierRole.CrossTableFk ignored -> {
                         for (int slot = 0; slot < c.columns().size(); slot++) {
                             var col = c.columns().get(slot);
                             if (keySqlNames.contains(col.sqlName())) {
@@ -227,6 +237,9 @@ public final class UpdateRowsWalker {
                             } else {
                                 setColumns.add(new SetColumn(c.sdlFieldName(), col, c.extraction(), slot));
                             }
+                        }
+                        if (!c.nonNull()) {
+                            nullableStraddlers.add(new Straddle(c, List.copyOf(inKey), List.copyOf(outsideKey)));
                         }
                         continue;
                     }
@@ -241,28 +254,55 @@ public final class UpdateRowsWalker {
                 addSetColumns(setColumns, c);
             }
         }
-        if (!errors.isEmpty()) {
-            return new WalkerResult.Err<>(errors);
-        }
+        // No early return here. The two straddle refusals are one stage and are reported together,
+        // an author fixing one of them meeting the other; the nullable one is only decidable once
+        // the WHERE partition below has settled, so the stage's return moves down with it. A
+        // rejected own-columns straddler contributes nothing to either partition, so the resolution
+        // below runs over a smaller input rather than an inconsistent one.
 
-        // Resolve the straddlers' identity claims. A claimed column that no whole carrier supplies
-        // gets its WHERE predicate from the straddler (the sole-contributor case: there is nothing
-        // to check it against). Otherwise the straddler contributes only an agreement obligation
-        // below. Two straddlers claiming one column resolve in input-field order; the choice is
-        // observationally irrelevant for well-formed input, because the agreement check runs either
-        // way, and being deterministic is what matters.
+        // Resolve the straddlers' identity claims, in two stated phases rather than one pass.
+        //
+        // Phase 1 settles the WHERE partition: whole carriers (already in keyColumns) and NON-NULL
+        // straddlers. A claimed column that no whole carrier supplies gets its WHERE predicate from
+        // the straddler (the sole-contributor case: there is nothing to check it against).
+        // Otherwise the straddler contributes only an agreement obligation below. Two straddlers
+        // claiming one column resolve in input-field order. That choice is observationally
+        // irrelevant AMONG PHASE 1'S CLAIMANTS, whose agreement checks run whichever wins; which
+        // carriers may claim at all is not irrelevant, and the phase split is what decides it.
+        //
+        // Phase 2 measures the nullable straddlers against the settled set. A nullable field cannot
+        // be load-bearing identity: omitted, it leaves the row unidentifiable, and no per-row
+        // conditional recovers a WHERE conjunct that was never sent. So it never claims, and it is
+        // admitted exactly where every in-key column it lifts already has an identity contributor.
         var keyBySqlName = new java.util.LinkedHashMap<String, KeyColumn>();
         for (var kc : keyColumns) {
             keyBySqlName.putIfAbsent(kc.targetColumn().sqlName(), kc);
         }
         for (var claim : identityClaims) {
-            if (keyBySqlName.containsKey(claim.column().sqlName())) {
+            if (!claim.owner().nonNull() || keyBySqlName.containsKey(claim.column().sqlName())) {
                 continue;
             }
             var kc = new KeyColumn(claim.owner().sdlFieldName(), claim.column(),
                 claim.owner().extraction(), claim.slot());
             keyColumns.add(kc);
             keyBySqlName.put(claim.column().sqlName(), kc);
+        }
+        // The pinning gate. keyBySqlName now holds exactly the identity contributors' columns: a
+        // whole non-self-FK carrier supplies its columns directly, and a non-null straddler's in-key
+        // column is either its own winning claim or one a whole carrier already carries. Either way
+        // membership here IS "has an identity contributor", so the definition is applied once.
+        for (var s : nullableStraddlers) {
+            var unpinned = s.inKey().stream()
+                .filter(col -> !keyBySqlName.containsKey(col.sqlName()))
+                .toList();
+            if (!unpinned.isEmpty()) {
+                errors.add(new UpdateRowsError.NullableStraddlingReference(
+                    s.carrier().sdlFieldName(), s.carrier().location(), table.tableName(), matchedKey,
+                    unpinned, s.outsideKey()));
+            }
+        }
+        if (!errors.isEmpty()) {
+            return new WalkerResult.Err<>(errors);
         }
 
         // Stage 6a: the value-agreement obligations, the walker's finished decision about every
@@ -324,8 +364,41 @@ public final class UpdateRowsWalker {
                 new UpdateRowsError.NoSetFields(table.tableName(), matchedKey)));
         }
 
+        // Stage 7a: what an explicit null on each SET-contributing carrier means. Computed here
+        // because this is where the matched key and each carrier's own SET columns are both in hand;
+        // an emitter holding one of them cannot answer. The predicate is uniform over the three
+        // carrier roles and never consults straddling: what decides is the SDL nullability and
+        // whether any column this carrier WRITES is a matched-key column. That is what makes the
+        // self-FK case fall out for free (it routes every lifted column to SET, so one overlapping
+        // the key is refused, because clearing it would orphan the row) and an admitted straddler
+        // fall out as a clear (its SET half is its out-of-key half by construction).
+        var setColumnsByCarrier = new java.util.LinkedHashMap<Contribution, List<ColumnRef>>();
+        for (var c : contributions) {
+            for (var sc : setColumns) {
+                if (sc.sdlFieldName().equals(c.sdlFieldName()) && sc.extraction().equals(c.extraction())) {
+                    setColumnsByCarrier.computeIfAbsent(c, k -> new ArrayList<>()).add(sc.targetColumn());
+                }
+            }
+        }
+        var nullRules = new ArrayList<CarrierNullRule>();
+        for (var e : setColumnsByCarrier.entrySet()) {
+            var c = e.getKey();
+            var identityWrites = e.getValue().stream()
+                .filter(col -> keySqlNames.contains(col.sqlName()))
+                .toList();
+            CarrierNullRule.OnExplicitNull rule;
+            if (c.nonNull()) {
+                rule = new CarrierNullRule.OnExplicitNull.CannotArrive();
+            } else if (!identityWrites.isEmpty()) {
+                rule = new CarrierNullRule.OnExplicitNull.RefusedAsIdentity(identityWrites);
+            } else {
+                rule = new CarrierNullRule.OnExplicitNull.Clears();
+            }
+            nullRules.add(new CarrierNullRule(c.sdlFieldName(), c.extraction(), rule));
+        }
+
         return new WalkerResult.Ok<>(
-            new UpdateRows.Identified(matchedKey, setColumns, keyColumns, obligations));
+            new UpdateRows.Identified(matchedKey, setColumns, keyColumns, obligations, nullRules));
     }
 
     /**
@@ -344,7 +417,7 @@ public final class UpdateRowsWalker {
             switch (f) {
                 case InputField.ColumnBackedField c -> classifyColumnCarrier(
                     c.name(), c.list(), c.columns(), wrap(c.extraction(), prefix, c.name(), outerArgName),
-                    new CarrierRole.OwnColumns(), c.condition(), c.location(), errors, contributions);
+                    new CarrierRole.OwnColumns(), c.nonNull(), c.condition(), c.location(), errors, contributions);
                 // A reference carrier contributes the tuple its binding names on this table. A
                 // Remote binding has none: its decoded key identifies a target row and reaches this
                 // table only through the join, so there is nothing to put in a SET or a WHERE
@@ -353,8 +426,8 @@ public final class UpdateRowsWalker {
                     switch (c.binding()) {
                         case FilterBinding.Local(var ownTableColumns) -> classifyColumnCarrier(
                             c.name(), c.list(), ownTableColumns, wrap(c.extraction(), prefix, c.name(), outerArgName),
-                            c.selfReference() ? new CarrierRole.SelfFk() : new CarrierRole.CrossTableFk(c.nonNull()),
-                            c.condition(), c.location(), errors, contributions);
+                            c.selfReference() ? new CarrierRole.SelfFk() : new CarrierRole.CrossTableFk(),
+                            c.nonNull(), c.condition(), c.location(), errors, contributions);
                         case FilterBinding.Remote ignored ->
                             errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
                                 c.name(), "translated FK-target @nodeId reference",
@@ -423,7 +496,7 @@ public final class UpdateRowsWalker {
      */
     private void classifyColumnCarrier(
         String name, boolean list, List<ColumnRef> columns, CallSiteExtraction extraction,
-        CarrierRole role, Optional<ArgConditionRef> condition, SourceLocation location,
+        CarrierRole role, boolean nonNull, Optional<ArgConditionRef> condition, SourceLocation location,
         List<Rejection.AuthorError> errors, List<Contribution> contributions
     ) {
         if (list) {
@@ -444,12 +517,17 @@ public final class UpdateRowsWalker {
             }
             return;
         }
-        contributions.add(new Contribution(name, columns, extraction, role, location));
+        contributions.add(new Contribution(name, columns, extraction, role, nonNull, location));
     }
 
     /** One column of one contribution, with the decode slot it sits at: a straddler's in-key column
      *  held aside until every whole carrier's key columns are known. */
     private record ColumnSlot(Contribution owner, ColumnRef column, int slot) {}
+
+    /** One straddling carrier's partition, held for the pinning gate: which of its columns are the
+     *  matched key's and which are not. Only nullable straddlers are collected, those being the only
+     *  ones the gate measures; the split is kept because the diagnostic renders both halves. */
+    private record Straddle(Contribution carrier, List<ColumnRef> inKey, List<ColumnRef> outsideKey) {}
 
     /** Append every column of {@code c} to the SET partition, each at its decode slot. */
     private static void addSetColumns(List<SetColumn> setColumns, Contribution c) {

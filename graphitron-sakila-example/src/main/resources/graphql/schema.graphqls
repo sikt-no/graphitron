@@ -3718,24 +3718,60 @@ input UpdateEmailReplyInput {
 # (tenant_id, catalog_code). An UPDATE input carrying the item's own id plus a Catalogue reference
 # therefore has one field whose columns fall on both sides of the WHERE/SET boundary.
 #
-# The reference is spelled ID! deliberately, and the build requires it: the in-key half of a
-# straddling reference is the row's identity, so the reference can be re-pointed within a tenant but
-# never cleared. A nullable spelling would let an explicit null write NULL into catalog_code while
-# leaving tenant_id populated, which MATCH SIMPLE accepts as a satisfied foreign key.
+# Two straddling references over the same tenant column, spelled differently on purpose, because the
+# two spellings are what the pair is for. `catalogueId` is ID! over a NOT NULL column: it can be
+# re-pointed within the tenant, and there is nothing there to clear. `shelfId` is ID over a nullable
+# column and is the clearing case: an explicit null writes NULL into shelf_code and leaves tenant_id
+# where the predicate put it, which under MATCH SIMPLE is an absent reference rather than a dangling
+# one. A shelf is where an item physically sits, and most items sit on none.
+#
+# The optional spelling is admitted because tenant_id has an identity contributor: `id` is a
+# whole-key carrier, so the reference is never the only thing pinning a key column. The one shape the
+# build still refuses is an optional reference that IS a key column's only contributor, and it
+# refuses that because an omitted value would leave nothing to find the row by, not because the
+# field is nullable.
+#
+# The two live on separate inputs, and the separation is the point rather than tidiness. `ID!` makes
+# a field mandatory on every call, so an input carrying both would force a caller who only wants to
+# move an item to another shelf to resend the catalogue it did not intend to touch. That cost is
+# exactly what spelling an optional reference `ID!` imposes on a consumer, and a fixture paying it on
+# every clearing call would obscure what those calls demonstrate.
 type Catalogue implements Node @table(name: "catalogue") @node {
     id: ID! @nodeId
     catalogueName: String @field(name: "catalogue_name")
+}
+type CatalogueShelf implements Node @table(name: "catalogue_shelf") @node {
+    id: ID! @nodeId
+    shelfName: String @field(name: "shelf_name")
 }
 type CatalogueItem implements Node @table(name: "catalogue_item") @node {
     id: ID! @nodeId
     itemNo: Int @field(name: "item_no")
     itemName: String @field(name: "item_name")
     catalogCode: String @field(name: "catalog_code")
+    shelfCode: String @field(name: "shelf_code")
 }
 input UpdateCatalogueItemInput {
     id: ID! @nodeId(typeName: "CatalogueItem")
     itemName: String @field(name: "item_name")
     catalogueId: ID! @nodeId(typeName: "Catalogue")
+}
+input ShelveCatalogueItemInput {
+    id: ID! @nodeId(typeName: "CatalogueItem")
+    itemName: String @field(name: "item_name")
+    shelfId: ID @nodeId(typeName: "CatalogueShelf")
+}
+
+# Payload-returning carriers over the shelf input, so the clear routes through all four UPDATE emit
+# consumers rather than the two a direct-@table return covers. The single-row and bulk payload arms
+# had no execution-tier coverage of a straddling reference at all, which is also what left their
+# cross-partition agreement preamble unexercised: an optional straddler still owes an obligation on
+# the tenant column it neither filters nor writes.
+type CatalogueItemPayload {
+    item: CatalogueItem
+}
+type CatalogueItemsPayload {
+    items: [CatalogueItem!]
 }
 
 # Single-record DML carrier payload type. The SDL author authors no Java class —
@@ -4418,6 +4454,16 @@ type Mutation {
     # straddler's checked column never enters the derived table at all (it is neither a key group nor a
     # set group), so the v(...) alias names each column once by construction.
     updateCatalogueItems(in: [UpdateCatalogueItemInput!]!): [CatalogueItem!]! @mutation(typeName: UPDATE)
+
+    # The optional straddling reference, on all four UPDATE emit consumers. `shelfId` lifts the same
+    # tenant column as `catalogueId` and a nullable shelf_code beside it, so an explicit null clears
+    # shelf_code and leaves tenant_id where `id` put it. Direct-@table return first, single-row and
+    # bulk; then the payload-returning single-row and bulk-per-row arms, which had no execution-tier
+    # coverage of a straddling reference at all and so never ran their agreement preamble.
+    shelveCatalogueItem(in: ShelveCatalogueItemInput!): CatalogueItem @mutation(typeName: UPDATE)
+    shelveCatalogueItems(in: [ShelveCatalogueItemInput!]!): [CatalogueItem!]! @mutation(typeName: UPDATE)
+    shelveCatalogueItemPayload(in: ShelveCatalogueItemInput!): CatalogueItemPayload @mutation(typeName: UPDATE)
+    shelveCatalogueItemsPayload(in: [ShelveCatalogueItemInput!]!): CatalogueItemsPayload @mutation(typeName: UPDATE)
 
     # R315 D4 execution pin: a nullable same-table identity (addressId: ID @nodeId(typeName: "Address"))
     # on a jOOQ AddressRecord @service param, resolving to the record's own serial PK (address_id).

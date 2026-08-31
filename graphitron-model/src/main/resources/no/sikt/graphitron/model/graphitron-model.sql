@@ -9128,6 +9128,7 @@ CREATE TABLE intent_mutation_payload_key_membership (
   input_field_name       VARCHAR NOT NULL,
   role                   VARCHAR NOT NULL,
   carrier_role           VARCHAR NOT NULL,
+  non_null               BOOLEAN NOT NULL,
   position               INT     NOT NULL,
   column_name            VARCHAR NOT NULL,
   in_key                 BOOLEAN NOT NULL,
@@ -9144,17 +9145,17 @@ CREATE TABLE intent_mutation_payload_key_membership (
 
 CREATE VIEW intent_mutation_payload_key_membership_live
   (graph_name, type_name, field_name,
-   path, container_type_name, input_field_name, role, carrier_role,
+   path, container_type_name, input_field_name, role, carrier_role, non_null,
    position, column_name, in_key, carrier_key_membership, constraint_name,
    write_source_name, write_schema, write_table,
    source_name, source_line, source_column) AS
 WITH measured (graph_name, type_name, field_name,
-               path, container_type_name, input_field_name, role, carrier_role,
+               path, container_type_name, input_field_name, role, carrier_role, non_null,
                position, column_name, in_key, constraint_name,
                write_source_name, write_schema, write_table,
                source_name, source_line, source_column) AS (
   SELECT c.graph_name, c.type_name, c.field_name,
-         c.path, c.container_type_name, c.input_field_name, c.role, c.carrier_role,
+         c.path, c.container_type_name, c.input_field_name, c.role, c.carrier_role, f.non_null,
          c.position, c.column_name,
          CASE WHEN kc.column_name IS NULL THEN FALSE ELSE TRUE END, k.constraint_name,
          c.write_source_name, c.write_schema, c.write_table,
@@ -9163,6 +9164,9 @@ WITH measured (graph_name, type_name, field_name,
     JOIN intent_mutation_payload_column c
       ON c.graph_name = k.graph_name AND c.type_name = k.type_name
      AND c.field_name = k.field_name
+    JOIN graphql_field f
+      ON f.graph_name = c.graph_name AND f.type_name = c.container_type_name
+     AND f.field_name = c.input_field_name
     LEFT JOIN sql_constraint_column kc
       ON kc.source_name = k.write_source_name AND kc.table_schema = k.write_schema
      AND kc.table_name = k.write_table AND kc.constraint_name = k.constraint_name
@@ -9170,7 +9174,7 @@ WITH measured (graph_name, type_name, field_name,
    WHERE c.operation = 'UPDATE' AND k.verdict = 'IDENTIFIED'
 )
 SELECT m.graph_name, m.type_name, m.field_name,
-       m.path, m.container_type_name, m.input_field_name, m.role, m.carrier_role,
+       m.path, m.container_type_name, m.input_field_name, m.role, m.carrier_role, m.non_null,
        m.position, m.column_name, m.in_key,
        CASE WHEN MIN(CASE WHEN m.in_key THEN 1 ELSE 0 END)
                    OVER (PARTITION BY m.graph_name, m.type_name, m.field_name, m.path) = 1
@@ -9192,6 +9196,7 @@ COMMENT ON COLUMN intent_mutation_payload_key_membership_live.container_type_nam
 COMMENT ON COLUMN intent_mutation_payload_key_membership_live.input_field_name IS 'the input_field_name of a row of this rule, materialized into intent_mutation_payload_key_membership.input_field_name, whose comment carries what the value means';
 COMMENT ON COLUMN intent_mutation_payload_key_membership_live.role IS 'the role of a row of this rule, materialized into intent_mutation_payload_key_membership.role, whose comment carries what the value means';
 COMMENT ON COLUMN intent_mutation_payload_key_membership_live.carrier_role IS 'the carrier_role of a row of this rule, materialized into intent_mutation_payload_key_membership.carrier_role, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_payload_key_membership_live.non_null IS 'the non_null of a row of this rule, materialized into intent_mutation_payload_key_membership.non_null, whose comment carries what the value means';
 COMMENT ON COLUMN intent_mutation_payload_key_membership_live.position IS 'the position of a row of this rule, materialized into intent_mutation_payload_key_membership.position, whose comment carries what the value means';
 COMMENT ON COLUMN intent_mutation_payload_key_membership_live.column_name IS 'the column_name of a row of this rule, materialized into intent_mutation_payload_key_membership.column_name, whose comment carries what the value means';
 COMMENT ON COLUMN intent_mutation_payload_key_membership_live.in_key IS 'the in_key of a row of this rule, materialized into intent_mutation_payload_key_membership.in_key, whose comment carries what the value means';
@@ -9212,6 +9217,7 @@ COMMENT ON COLUMN intent_mutation_payload_key_membership.container_type_name IS 
 COMMENT ON COLUMN intent_mutation_payload_key_membership.input_field_name IS 'the contributing field''s name within that container; named apart from field_name because that column is the mutation''s';
 COMMENT ON COLUMN intent_mutation_payload_key_membership.role IS 'which rule resolved the column, NAME_MATCHED or NODE_ID, carried from the payload column so a consumer forking on whether the value is decoded does not join back for it';
 COMMENT ON COLUMN intent_mutation_payload_key_membership.carrier_role IS 'what the carrier points at, carried for the same reason. Both consumers fork on it: a self-referencing foreign key is exempt from the partition altogether and a cross-table one is the only carrier that may be split';
+COMMENT ON COLUMN intent_mutation_payload_key_membership.non_null IS 'whether the contributing input field is spelled non-null, carried from the field declaration and repeated down the carrier''s columns exactly as carrier_key_membership is, and under the same argument: both consumers fork on the pair, so a row carrying only the column answer would send each of them back for the carrier''s. What it decides is which carriers may supply a predicate and which are only measured against the ones that do. A non-null carrier cannot be absent, so its value is available on every call and may be a column''s only source; a nullable one may be, so it may not, and that asymmetry is the whole content of the refusal beside this relation';
 COMMENT ON COLUMN intent_mutation_payload_key_membership.position IS 'the decode slot this column binds, counting from zero, and zero for a name match. Carried because the split is per column and neither half of a split carrier recovers the slot from its own ordering';
 COMMENT ON COLUMN intent_mutation_payload_key_membership.column_name IS 'the column of the write table this slot binds';
 COMMENT ON COLUMN intent_mutation_payload_key_membership.in_key IS 'whether this column is one of the matched key''s, which is a lookup against sql_constraint_column for the constraint named beside it';
@@ -9232,12 +9238,18 @@ CREATE VIEW intent_mutation_write_refusal
 WITH disposed AS (
   SELECT p.graph_name, p.type_name, p.field_name, p.path, p.container_type_name,
          p.input_field_name, p.role, p.carrier_role, p.carrier_key_membership, p.in_key,
-         p.column_name, p.write_source_name, p.write_schema, p.write_table,
+         p.non_null, p.column_name, p.write_source_name, p.write_schema, p.write_table,
          p.source_name, p.source_line, p.source_column,
          CASE WHEN p.carrier_role = 'SELF_FK'
                 OR p.carrier_key_membership = 'NONE'
                 OR (p.carrier_key_membership = 'STRADDLE' AND p.in_key = FALSE)
-              THEN 1 ELSE 0 END AS writes
+              THEN 1 ELSE 0 END AS writes,
+         MAX(CASE WHEN (p.carrier_key_membership = 'WHOLE' AND p.carrier_role <> 'SELF_FK')
+                    OR (p.carrier_key_membership = 'STRADDLE' AND p.carrier_role = 'CROSS_TABLE_FK'
+                        AND p.in_key AND p.non_null)
+                  THEN 1 ELSE 0 END)
+           OVER (PARTITION BY p.graph_name, p.type_name, p.field_name, p.column_name)
+           AS identity_pinned
     FROM intent_mutation_payload_key_membership p),
 marked AS (
   SELECT d.*,
@@ -9257,12 +9269,9 @@ caused AS (
          m.write_source_name, m.write_schema, m.write_table,
          m.source_name, m.source_line, m.source_column
     FROM marked m
-    JOIN graphql_field f
-      ON f.graph_name = m.graph_name AND f.type_name = m.container_type_name
-     AND f.field_name = m.input_field_name
-   WHERE m.carrier_key_membership = 'STRADDLE'
-     AND (m.carrier_role = 'OWN_COLUMNS'
-          OR (m.carrier_role = 'CROSS_TABLE_FK' AND f.non_null = FALSE))
+   WHERE (m.carrier_key_membership = 'STRADDLE' AND m.carrier_role = 'OWN_COLUMNS')
+      OR (m.carrier_role = 'CROSS_TABLE_FK' AND m.non_null = FALSE
+          AND m.in_key AND m.identity_pinned = 0)
    UNION ALL
   SELECT m.graph_name, m.type_name, m.field_name, 'PLAIN_COLUMN_COLLISION', 1,
          m.path, m.container_type_name, m.input_field_name, m.column_name,
@@ -9288,7 +9297,7 @@ SELECT graph_name, type_name, field_name, cause,
                                                     c.field_name) AS reported
           FROM caused c) r
  WHERE r.stage = r.reported;
-COMMENT ON VIEW intent_mutation_write_refusal IS 'Why an UPDATE the walker admitted field by field is refused anyway, once the matched key has partitioned its columns. The third of three refusal relations over one statement and the last in the order the build reaches them: whether each field is admissible at all is intent_mutation_payload_refusal''s and is collected before any key is matched, whether the admitted remainder pins a row is the matched key''s UNCOVERED verdict, and what is left is what only the partition can see. A consumer assembling an UPDATE reads all three and stops at the first that answers, in that order. The domain is UPDATE alone, and that is the whole reason these causes exist. A DELETE has no assignment half: every admitted column of one is a predicate, so there is no boundary for a carrier to straddle into, no assignment for two writers to collide over, and nothing that must be non-empty. Four causes in three stages, and the stage is what makes the ranking load-bearing rather than cosmetic. The walker collects a stage''s refusals without short-circuiting and returns at the end of it, so a cause from a later stage on the same coordinate is not merely unreported: it would have been computed over a partition an earlier refusal made the walker abandon. This relation therefore keeps, per coordinate, only the causes of the first stage that has any. The first stage carries the two straddles and reports them together, an author fixing one of them meeting the other. MIXED_CARRIER_KEY_MEMBERSHIP is a carrier of the row''s own columns with a column on each side of the key: half of it is the identity the statement finds the row by and half is a value it writes, which is moving the row rather than updating it. NULLABLE_STRADDLING_REFERENCE is a cross-table reference in the same position, where the split itself is legitimate and the spelling is not, clearing a nullable pointer writing half a foreign key and leaving the other half where the predicate put it. A self-referencing foreign key appears under neither, routing wholly to the assignment half before the boundary is consulted. The second stage carries PLAIN_COLUMN_COLLISION, two plain carriers assigning one column, which would silently last-write-win; an overlap one of whose writers decodes its value is admitted instead and reconciled at runtime by the agreement check, which is why the cause is about plain writers rather than about writers. The third carries NO_SET_FIELDS, an UPDATE every column of which is the key it filters on, which is structurally ill-formed rather than a no-op. Where a row is located varies by cause and so do two of its columns, which is the shape of the underlying errors rather than an unfilled slot. A straddle is a fact about one occurrence and names it with no column. A collision is a fact about one column and names every occurrence writing it; the walker''s own diagnostic quotes two of them, which is an artefact of the order it built the assignment half in rather than a fact about the payload, so this relation names the contributors and leaves the choice to whoever renders one. An empty assignment is a fact about the statement and names neither, and its position is the @mutation application''s rather than any field''s. Absence is an UPDATE whose partition the walker accepts, every DELETE, and every coordinate one of the two earlier refusals already answers for.';
+COMMENT ON VIEW intent_mutation_write_refusal IS 'Why an UPDATE the walker admitted field by field is refused anyway, once the matched key has partitioned its columns. The third of three refusal relations over one statement and the last in the order the build reaches them: whether each field is admissible at all is intent_mutation_payload_refusal''s and is collected before any key is matched, whether the admitted remainder pins a row is the matched key''s UNCOVERED verdict, and what is left is what only the partition can see. A consumer assembling an UPDATE reads all three and stops at the first that answers, in that order. The domain is UPDATE alone, and that is the whole reason these causes exist. A DELETE has no assignment half: every admitted column of one is a predicate, so there is no boundary for a carrier to straddle into, no assignment for two writers to collide over, and nothing that must be non-empty. Four causes in three stages, and the stage is what makes the ranking load-bearing rather than cosmetic. The walker collects a stage''s refusals without short-circuiting and returns at the end of it, so a cause from a later stage on the same coordinate is not merely unreported: it would have been computed over a partition an earlier refusal made the walker abandon. This relation therefore keeps, per coordinate, only the causes of the first stage that has any. The first stage carries the two straddles and reports them together, an author fixing one of them meeting the other. MIXED_CARRIER_KEY_MEMBERSHIP is a carrier of the row''s own columns with a column on each side of the key: half of it is the identity the statement finds the row by and half is a value it writes, which is moving the row rather than updating it. NULLABLE_STRADDLING_REFERENCE is a cross-table reference in the same position, where the split itself is legitimate and the spelling is, but only where the reference is the sole supplier of one of the key''s columns. The in-key half of a straddling reference is the row''s own identity, and an optional field cannot be load-bearing identity: omitted, it leaves the row unidentifiable, and no per-row conditional recovers a predicate that was never sent. Where something else supplies that column the same nullable reference is admitted, and an explicit null on it clears its out-of-key half; a half-null foreign key imposes no referential obligation under MATCH SIMPLE, so the cleared reference is an absent one rather than a dangling one, which is the premise this cause used to be argued from backwards. What counts as supplying it is the identity_pinned window beside the predicate: a whole carrier other than a self-referencing one, or a non-null cross-table straddler lifting the column in its in-key half. The second arm is the one that is easy to drop, and it is what makes this relation agree with the walker: a non-null straddler''s winning claim IS the column''s predicate and a non-null field cannot be absent, so it pins exactly as a whole carrier does. That window is this view''s own and is deliberately wider than the destination''s pinned window beside it, which stays whole-carrier-only: broadening that one would empty its claim step for any column two non-null straddlers lift and silently drop the column''s predicate. The predicate is silent about carrier_key_membership, which is sound but by a subtlety worth writing down rather than tidying away. It also matches a nullable cross-table reference whose columns fall wholly inside the key, and that shape escapes only because the window counts the carrier''s own WHOLE rows and so self-pins. A straddler is never WHOLE and so never self-pins, which is what makes the same window read as some other carrier for the rows this cause is about; the wholly-in-key nullable reference is a neighbouring hazard deliberately left to its own measurement, and a later reader fixing the self-inclusion would refuse schemas that build today. A self-referencing foreign key appears under neither cause, routing wholly to the assignment half before the boundary is consulted. The second stage carries PLAIN_COLUMN_COLLISION, two plain carriers assigning one column, which would silently last-write-win; an overlap one of whose writers decodes its value is admitted instead and reconciled at runtime by the agreement check, which is why the cause is about plain writers rather than about writers. The third carries NO_SET_FIELDS, an UPDATE every column of which is the key it filters on, which is structurally ill-formed rather than a no-op. Where a row is located varies by cause and so do two of its columns, which is the shape of the underlying errors rather than an unfilled slot. A straddle is a fact about one occurrence and names it with no column. A collision is a fact about one column and names every occurrence writing it; the walker''s own diagnostic quotes two of them, which is an artefact of the order it built the assignment half in rather than a fact about the payload, so this relation names the contributors and leaves the choice to whoever renders one. An empty assignment is a fact about the statement and names neither, and its position is the @mutation application''s rather than any field''s. Absence is an UPDATE whose partition the walker accepts, every DELETE, and every coordinate one of the two earlier refusals already answers for.';
 COMMENT ON COLUMN intent_mutation_write_refusal.graph_name IS 'the owning graph''s partition, carried from the write payload';
 COMMENT ON COLUMN intent_mutation_write_refusal.type_name IS 'the type declaring the refused mutation field';
 COMMENT ON COLUMN intent_mutation_write_refusal.field_name IS 'the mutation field whose statement this row refuses; with the type, the coordinate intent_mutation_write_payload is keyed by';
@@ -9317,6 +9326,7 @@ CREATE TABLE intent_mutation_write_destination (
   position            INT     NOT NULL,
   column_name         VARCHAR NOT NULL,
   destination         VARCHAR NOT NULL,
+  on_explicit_null    VARCHAR,
   write_source_name   VARCHAR NOT NULL,
   write_schema        VARCHAR NOT NULL,
   write_table         VARCHAR NOT NULL,
@@ -9332,17 +9342,17 @@ CREATE INDEX ix_mutation_write_destination_column ON intent_mutation_write_desti
 CREATE VIEW intent_mutation_write_destination_live
   (graph_name, type_name, field_name, operation,
    path, container_type_name, input_field_name, role, carrier_role,
-   position, column_name, destination,
+   position, column_name, destination, on_explicit_null,
    write_source_name, write_schema, write_table,
    source_name, source_line, source_column) AS
 WITH
 disposed (graph_name, type_name, field_name, path, container_type_name, input_field_name,
-          role, carrier_role, carrier_key_membership, in_key, position, column_name,
+          role, carrier_role, carrier_key_membership, in_key, non_null, position, column_name,
           write_source_name, write_schema, write_table,
           source_name, source_line, source_column, pinned) AS (
   SELECT p.graph_name, p.type_name, p.field_name, p.path, p.container_type_name,
          p.input_field_name, p.role, p.carrier_role, p.carrier_key_membership, p.in_key,
-         p.position, p.column_name, p.write_source_name, p.write_schema, p.write_table,
+         p.non_null, p.position, p.column_name, p.write_source_name, p.write_schema, p.write_table,
          p.source_name, p.source_line, p.source_column,
          MAX(CASE WHEN p.carrier_key_membership = 'WHOLE' AND p.carrier_role <> 'SELF_FK'
                   THEN 1 ELSE 0 END)
@@ -9350,25 +9360,25 @@ disposed (graph_name, type_name, field_name, path, container_type_name, input_fi
     FROM intent_mutation_payload_key_membership p
 ),
 admitted (graph_name, type_name, field_name, path, container_type_name, input_field_name,
-          role, carrier_role, carrier_key_membership, in_key, position, column_name,
+          role, carrier_role, carrier_key_membership, in_key, non_null, position, column_name,
           write_source_name, write_schema, write_table,
           source_name, source_line, source_column) AS (
   SELECT graph_name, type_name, field_name, path, container_type_name, input_field_name,
-         role, carrier_role, carrier_key_membership, in_key, position, column_name,
+         role, carrier_role, carrier_key_membership, in_key, non_null, position, column_name,
          write_source_name, write_schema, write_table, source_name, source_line, source_column
     FROM (SELECT u.*,
                  MAX(u.refused) OVER (PARTITION BY u.graph_name, u.type_name,
                                                    u.field_name) AS payload_refused
             FROM (SELECT d.graph_name, d.type_name, d.field_name, d.path, d.container_type_name,
                          d.input_field_name, d.role, d.carrier_role, d.carrier_key_membership,
-                         d.in_key, d.position, d.column_name,
+                         d.in_key, d.non_null, d.position, d.column_name,
                          d.write_source_name, d.write_schema, d.write_table,
                          d.source_name, d.source_line, d.source_column, 0 AS refused
                     FROM disposed d
                    UNION ALL
                   SELECT f.graph_name, f.type_name, f.field_name, NULL, NULL,
                          NULL, NULL, NULL, NULL,
-                         NULL, NULL, NULL,
+                         NULL, NULL, NULL, NULL,
                          NULL, NULL, NULL,
                          NULL, NULL, NULL, 1
                     FROM intent_mutation_write_refusal f) u) flagged
@@ -9378,7 +9388,7 @@ claim (graph_name, type_name, field_name, path, position, column_name) AS (
   SELECT d.graph_name, d.type_name, d.field_name, d.path, d.position, d.column_name
     FROM disposed d
    WHERE d.carrier_key_membership = 'STRADDLE' AND d.carrier_role = 'CROSS_TABLE_FK'
-     AND d.in_key = TRUE AND d.pinned = 0
+     AND d.non_null = TRUE AND d.in_key = TRUE AND d.pinned = 0
 ),
 winner (graph_name, type_name, field_name, path, position, column_name) AS (
   SELECT graph_name, type_name, field_name, path, position, column_name
@@ -9390,10 +9400,31 @@ winner (graph_name, type_name, field_name, path, position, column_name) AS (
             JOIN intent_input_occurrence_descent_order o
               ON o.graph_name = c.graph_name AND o.path = c.path) ranked
    WHERE rn = 1
+),
+dispositioned (graph_name, type_name, field_name, path, container_type_name, input_field_name,
+               role, carrier_role, in_key, non_null, position, column_name, destination,
+               write_source_name, write_schema, write_table,
+               source_name, source_line, source_column) AS (
+  SELECT p.graph_name, p.type_name, p.field_name,
+         p.path, p.container_type_name, p.input_field_name, p.role, p.carrier_role,
+         p.in_key, p.non_null, p.position, p.column_name,
+         CASE WHEN p.carrier_role = 'SELF_FK' THEN 'VALUE'
+              WHEN p.carrier_key_membership = 'NONE' THEN 'VALUE'
+              WHEN p.carrier_key_membership = 'WHOLE' THEN 'PREDICATE'
+              WHEN p.in_key = FALSE THEN 'VALUE'
+              WHEN w.path IS NOT NULL THEN 'PREDICATE'
+              ELSE 'CHECKED' END,
+         p.write_source_name, p.write_schema, p.write_table,
+         p.source_name, p.source_line, p.source_column
+    FROM admitted p
+    LEFT JOIN winner w
+      ON w.graph_name = p.graph_name AND w.type_name = p.type_name
+     AND w.field_name = p.field_name AND w.path = p.path
+     AND w.position = p.position AND w.column_name = p.column_name
 )
 SELECT c.graph_name, c.type_name, c.field_name, c.operation,
        c.path, c.container_type_name, c.input_field_name, c.role, c.carrier_role,
-       c.position, c.column_name, 'PREDICATE',
+       c.position, c.column_name, 'PREDICATE', CAST(NULL AS VARCHAR),
        c.write_source_name, c.write_schema, c.write_table,
        c.source_name, c.source_line, c.source_column
   FROM intent_mutation_payload_column c
@@ -9402,22 +9433,20 @@ SELECT c.graph_name, c.type_name, c.field_name, c.operation,
    AND k.field_name = c.field_name AND k.verdict <> 'UNCOVERED'
  WHERE c.operation = 'DELETE'
  UNION ALL
-SELECT p.graph_name, p.type_name, p.field_name, 'UPDATE',
-       p.path, p.container_type_name, p.input_field_name, p.role, p.carrier_role,
-       p.position, p.column_name,
-       CASE WHEN p.carrier_role = 'SELF_FK' THEN 'VALUE'
-            WHEN p.carrier_key_membership = 'NONE' THEN 'VALUE'
-            WHEN p.carrier_key_membership = 'WHOLE' THEN 'PREDICATE'
-            WHEN p.in_key = FALSE THEN 'VALUE'
-            WHEN w.path IS NOT NULL THEN 'PREDICATE'
-            ELSE 'CHECKED' END,
-       p.write_source_name, p.write_schema, p.write_table,
-       p.source_name, p.source_line, p.source_column
-  FROM admitted p
-  LEFT JOIN winner w
-    ON w.graph_name = p.graph_name AND w.type_name = p.type_name
-   AND w.field_name = p.field_name AND w.path = p.path
-   AND w.position = p.position AND w.column_name = p.column_name
+SELECT d.graph_name, d.type_name, d.field_name, 'UPDATE',
+       d.path, d.container_type_name, d.input_field_name, d.role, d.carrier_role,
+       d.position, d.column_name, d.destination,
+       CASE WHEN MAX(CASE WHEN d.destination = 'VALUE' THEN 1 ELSE 0 END)
+                   OVER (PARTITION BY d.graph_name, d.type_name, d.field_name, d.path) = 0
+            THEN CAST(NULL AS VARCHAR)
+            WHEN d.non_null THEN 'CANNOT_ARRIVE'
+            WHEN MAX(CASE WHEN d.destination = 'VALUE' AND d.in_key THEN 1 ELSE 0 END)
+                   OVER (PARTITION BY d.graph_name, d.type_name, d.field_name, d.path) = 1
+            THEN 'REFUSED_AS_IDENTITY'
+            ELSE 'CLEARS' END,
+       d.write_source_name, d.write_schema, d.write_table,
+       d.source_name, d.source_line, d.source_column
+  FROM dispositioned d
 ;
 COMMENT ON VIEW intent_mutation_write_destination_live IS 'This states the rule and is evaluated on demand. The canonical name intent_mutation_write_destination beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_mutation_write_destination.';
 COMMENT ON COLUMN intent_mutation_write_destination_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_mutation_write_destination.graph_name, whose comment carries what the value means';
@@ -9432,13 +9461,14 @@ COMMENT ON COLUMN intent_mutation_write_destination_live.carrier_role IS 'the ca
 COMMENT ON COLUMN intent_mutation_write_destination_live.position IS 'the position of a row of this rule, materialized into intent_mutation_write_destination.position, whose comment carries what the value means';
 COMMENT ON COLUMN intent_mutation_write_destination_live.column_name IS 'the column_name of a row of this rule, materialized into intent_mutation_write_destination.column_name, whose comment carries what the value means';
 COMMENT ON COLUMN intent_mutation_write_destination_live.destination IS 'the destination of a row of this rule, materialized into intent_mutation_write_destination.destination, whose comment carries what the value means';
+COMMENT ON COLUMN intent_mutation_write_destination_live.on_explicit_null IS 'the on_explicit_null of a row of this rule, materialized into intent_mutation_write_destination.on_explicit_null, whose comment carries what the value means';
 COMMENT ON COLUMN intent_mutation_write_destination_live.write_source_name IS 'the write_source_name of a row of this rule, materialized into intent_mutation_write_destination.write_source_name, whose comment carries what the value means';
 COMMENT ON COLUMN intent_mutation_write_destination_live.write_schema IS 'the write_schema of a row of this rule, materialized into intent_mutation_write_destination.write_schema, whose comment carries what the value means';
 COMMENT ON COLUMN intent_mutation_write_destination_live.write_table IS 'the write_table of a row of this rule, materialized into intent_mutation_write_destination.write_table, whose comment carries what the value means';
 COMMENT ON COLUMN intent_mutation_write_destination_live.source_name IS 'the source_name of a row of this rule, materialized into intent_mutation_write_destination.source_name, whose comment carries what the value means';
 COMMENT ON COLUMN intent_mutation_write_destination_live.source_line IS 'the source_line of a row of this rule, materialized into intent_mutation_write_destination.source_line, whose comment carries what the value means';
 COMMENT ON COLUMN intent_mutation_write_destination_live.source_column IS 'the source_column of a row of this rule, materialized into intent_mutation_write_destination.source_column, whose comment carries what the value means';
-COMMENT ON TABLE intent_mutation_write_destination IS 'What each column a write payload contributes is for, one row per contributing occurrence per decode slot: the finished partition, and what an emitter assembles a statement out of. The verb decides how many destinations are reachable at all. A DELETE reaches one. Every admitted column of it is a predicate and the matched key is a cardinality guard beside them rather than a subset of them, so the broadcast arm contributes predicates exactly as the identified one does and a self-referencing foreign key filters there exactly as a plain column does. An UPDATE reaches all three, and which one a column reaches turns on its carrier rather than on the column. A carrier wholly inside the key filters. One wholly outside it writes. A self-referencing foreign key writes however it falls, its columns pointing at a sibling row rather than at this one, so a key column it carries is an ordinary assignment and the foreign key forces it equal to what the predicate matched. A cross-table foreign key is the one carrier that splits, its in-key half being this row''s own identity and its out-of-key half a value, which is why the decode slot is a column here and not an implicit ordering: once a carrier is split, neither half recovers which slot of the decode a column came from. CHECKED is the destination that is easy to miss and the reason the vocabulary is not two values. Where a straddler''s in-key column is already pinned by some other carrier, the straddler neither filters nor writes it: the two decoded values are compared before any DML runs and the column has a contribution and no place in the statement. It is stated rather than left as an absence, an absence at this grain saying that the occurrence contributes nothing to that column, which is not what happens. Which carrier pins a contested key column, where more than one straddler claims it and nothing else does, is the walker''s input-field order, the first claim supplying the predicate and the rest being checked. The choice is observationally irrelevant, the agreement check running either way, but it decides which field''s decode appears in the emitted WHERE clause, so it is transcribed rather than left to whatever order a row arrives in. The order is the flattener''s descent, which intent_input_occurrence_descent_order ranks every occurrence of a payload by; this relation reads that rank and keeps the earliest claim, rather than comparing the contenders itself. It compared them itself first, and stopped when the second reader wanting the same order arrived: a comparison spelled twice is a rule stated twice, and the grain it is really asked at is the occurrence rather than the contested column. A refused payload contributes nothing at all: the walker returns before building either half, so a coordinate with any refusal has no row here whichever of the three refusal relations carries it. The exclusion against the partition-stage refusals is written as a set difference rather than as a test per row, the per-row form re-deriving that whole rule once for every column it filters. Absence is a refused payload, a payload with no column-bearing occurrence in it, and every mutation offering no write surface at all. Which pairs of contributions must agree at runtime is the one thing this relation does not decide and intent_mutation_write_agreement does, as a reduction over these rows rather than a fact beside them: every such pair is a predicate row and a non-predicate row here over one column of one statement. Materialized: this relation is a table refilled from intent_mutation_write_destination_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
+COMMENT ON TABLE intent_mutation_write_destination IS 'What each column a write payload contributes is for, one row per contributing occurrence per decode slot: the finished partition, and what an emitter assembles a statement out of. The verb decides how many destinations are reachable at all. A DELETE reaches one. Every admitted column of it is a predicate and the matched key is a cardinality guard beside them rather than a subset of them, so the broadcast arm contributes predicates exactly as the identified one does and a self-referencing foreign key filters there exactly as a plain column does. An UPDATE reaches all three, and which one a column reaches turns on its carrier rather than on the column. A carrier wholly inside the key filters. One wholly outside it writes. A self-referencing foreign key writes however it falls, its columns pointing at a sibling row rather than at this one, so a key column it carries is an ordinary assignment and the foreign key forces it equal to what the predicate matched. A cross-table foreign key is the one carrier that splits, its in-key half being this row''s own identity and its out-of-key half a value, which is why the decode slot is a column here and not an implicit ordering: once a carrier is split, neither half recovers which slot of the decode a column came from. CHECKED is the destination that is easy to miss and the reason the vocabulary is not two values. Where a straddler''s in-key column is already pinned by some other carrier, the straddler neither filters nor writes it: the two decoded values are compared before any DML runs and the column has a contribution and no place in the statement. It is stated rather than left as an absence, an absence at this grain saying that the occurrence contributes nothing to that column, which is not what happens. Which carrier pins a contested key column, where more than one straddler claims it and nothing else does, is the walker''s input-field order, the first claim supplying the predicate and the rest being checked. Which of them wins is observationally irrelevant, the agreement check running either way, but it decides which field''s decode appears in the emitted WHERE clause, so it is transcribed rather than left to whatever order a row arrives in. That irrelevance is about the contenders and not about who may contend: only a non-null straddler may claim at all, and the claim step says so. A nullable one cannot, its value being absent on some call and a predicate conjunct that was never sent being unrecoverable, so it is measured against the settled claims instead, by the refusal relation, and either admitted with its in-key column CHECKED or refused there. Which carriers may claim is therefore load-bearing where which winner emerges is not. The order is the flattener''s descent, which intent_input_occurrence_descent_order ranks every occurrence of a payload by; this relation reads that rank and keeps the earliest claim, rather than comparing the contenders itself. It compared them itself first, and stopped when the second reader wanting the same order arrived: a comparison spelled twice is a rule stated twice, and the grain it is really asked at is the occurrence rather than the contested column. A refused payload contributes nothing at all: the walker returns before building either half, so a coordinate with any refusal has no row here whichever of the three refusal relations carries it. The exclusion against the partition-stage refusals is written as a set difference rather than as a test per row, the per-row form re-deriving that whole rule once for every column it filters. Absence is a refused payload, a payload with no column-bearing occurrence in it, and every mutation offering no write surface at all. Which pairs of contributions must agree at runtime is the one thing this relation does not decide and intent_mutation_write_agreement does, as a reduction over these rows rather than a fact beside them: every such pair is a predicate row and a non-predicate row here over one column of one statement. Materialized: this relation is a table refilled from intent_mutation_write_destination_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
 COMMENT ON COLUMN intent_mutation_write_destination.graph_name IS 'the owning graph''s partition, carried from the write payload';
 COMMENT ON COLUMN intent_mutation_write_destination.type_name IS 'the type declaring the writing mutation field';
 COMMENT ON COLUMN intent_mutation_write_destination.field_name IS 'the mutation field whose statement this column takes part in; with the type, the coordinate intent_mutation_write_payload is keyed by';
@@ -9451,6 +9481,7 @@ COMMENT ON COLUMN intent_mutation_write_destination.carrier_role IS 'what the ca
 COMMENT ON COLUMN intent_mutation_write_destination.position IS 'the decode slot this column binds, counting from zero, and zero for a name match. The one place the slot survives: a split carrier''s two halves each lose the other''s ordering, so a consumer reading one of them cannot recover it';
 COMMENT ON COLUMN intent_mutation_write_destination.column_name IS 'the column of the write table this row''s value reaches';
 COMMENT ON COLUMN intent_mutation_write_destination.destination IS 'what the column is for, in a closed vocabulary of three. PREDICATE where the statement finds its row by this column, VALUE where it assigns it, CHECKED where it does neither and the contribution is only compared against the predicate''s value before the statement runs';
+COMMENT ON COLUMN intent_mutation_write_destination.on_explicit_null IS 'what an explicit null on the contributing field means, in a closed vocabulary of three, and NULL where the question does not arise. It is a fact about the carrier rather than about this row''s column, repeated down the carrier''s rows the way the membership relation repeats its own carrier-level answer, and it is here because a reader that can say which columns a statement assigns but not what a null on them means is left deriving the second answer from the first, which does not follow: the same VALUE row clears under one spelling and is refused under another. CANNOT_ARRIVE is a non-null field, where the schema rejects a null before the statement is reached. CLEARS is a nullable field no assigned column of which is one the statement finds the row by, so a null writes NULL to every column it assigns and touches nothing else; an admitted straddling reference is always this, its assigned half being its out-of-key half by construction. REFUSED_AS_IDENTITY is a nullable field that assigns a column the statement identifies the row by, which a self-referencing foreign key can be and no other carrier is, and a null on it is refused when the statement runs rather than orphaning the row. NULL is a carrier that assigns nothing, which is a whole carrier and every row of a DELETE: there is no assignment for a null to clear, so there is no rule and an absence is the honest answer rather than a fourth value';
 COMMENT ON COLUMN intent_mutation_write_destination.write_source_name IS 'the catalog partition of the table the write targets';
 COMMENT ON COLUMN intent_mutation_write_destination.write_schema IS 'the write table''s SQL schema';
 COMMENT ON COLUMN intent_mutation_write_destination.write_table IS 'the write table''s SQL name; with the two columns above, sql_table''s full key';

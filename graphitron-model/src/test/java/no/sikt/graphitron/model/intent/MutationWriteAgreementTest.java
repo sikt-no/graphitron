@@ -456,19 +456,38 @@ class MutationWriteAgreementTest {
     }
 
     /**
-     * A refused payload has none. This is the checked-straddler case above with one word changed,
-     * the reference spelled nullable rather than non-null: the overlap that would be an obligation
-     * is still in the input, and the statement is never emitted, so there is nothing for a check to
-     * run before.
+     * A refused payload has none. This is the sole-straddler case above with one word changed, the
+     * reference spelled nullable rather than non-null: an optional field cannot be the predicate,
+     * because omitted it leaves nothing to find the row by, so the payload is refused and the
+     * statement is never emitted. There is nothing for a check to run before.
      */
     @Test
     void aRefusedPayloadOwesNoAgreement() {
         withCatalog(dsl -> {
             updateSurface(dsl, "FilmUpdateInput");
+            crossTableFkField(dsl, "updateFilm", "FilmUpdateInput", "publisherRef", 0, false);
+            payloadField(dsl, "updateFilm", "FilmUpdateInput", "title", "String", 1);
+
+            assertThat(obligations(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * The nullable spelling of the checked-straddler case, which is admitted and owes the same
+     * obligation. The reference neither filters nor writes {@code pub_a_ref} whatever its spelling,
+     * and the pair still both decode a value for it, so the check is the same one; what its
+     * nullability decides is only what an explicit null on it means, which is
+     * {@code intent_mutation_write_destination}'s to say and not this relation's.
+     */
+    @Test
+    void anOptionalStraddlerPinnedElsewhereOwesTheSameAgreement() {
+        withCatalog(dsl -> {
+            updateSurface(dsl, "FilmUpdateInput");
             payloadField(dsl, "updateFilm", "FilmUpdateInput", "pub_a_ref", "String", 0);
             crossTableFkField(dsl, "updateFilm", "FilmUpdateInput", "publisherRef", 1, false);
 
-            assertThat(obligations(dsl)).isEmpty();
+            assertThat(obligations(dsl)).containsExactly(
+                "pub_a_ref pub_a_ref:0 NAME_MATCHED = publisherRef:0 CHECKED");
         });
     }
 }

@@ -52,7 +52,7 @@ public final class CorpusDocuments {
      * that stops resolving, or a glob that stops matching, reads as an empty corpus and passes every
      * sweep over it; this is what makes that failure loud instead.
      */
-    static final int MIN_DOCUMENTS = 57;
+    static final int MIN_DOCUMENTS = 58;
 
     /** The prelude document's filename, excluded from the document glob by its leading underscore. */
     static final String PRELUDE_DOCUMENT = "_prelude.graphqls";

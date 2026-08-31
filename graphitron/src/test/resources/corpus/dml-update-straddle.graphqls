@@ -1,0 +1,53 @@
+"A catalogue, keyed within a tenant: a catalogue code means nothing on its own."
+type Catalogue implements Node @node @table(name: "catalogue") { id: ID! @nodeId }
+"A shelf, keyed the same way. An item may sit on one or on none."
+type CatalogueShelf implements Node @node @table(name: "catalogue_shelf") { id: ID! @nodeId }
+"""
+An item, keyed (tenant_id, item_no). Both foreign keys leaving it carry the tenant column, because
+a catalogue code and a shelf code are each unique only within a tenant, so every reference from
+this table straddles its own key.
+"""
+type CatalogueItem implements Node @node @table(name: "catalogue_item") {
+  id: ID! @nodeId
+  itemName: String @field(name: "item_name")
+}
+
+"""
+Two straddling references and no whole carrier for the tenant column, which is the shape that
+separates the two ways this rule can be read. `catalogueId` is non-null: its in-key half wins the
+claim and becomes the statement's tenant predicate, and a non-null field cannot be absent, so it is
+as good a supplier as a field of the row's own would be. `shelfId` is optional and is admitted
+because of that: it neither filters nor writes the tenant column, and an explicit null on it clears
+`shelf_code` alone.
+"""
+input RepointCatalogueItemInput {
+  itemNo: Int! @field(name: "item_no")
+  itemName: String @field(name: "item_name")
+  catalogueId: ID! @nodeId(typeName: "Catalogue")
+  shelfId: ID @nodeId(typeName: "CatalogueShelf")
+}
+
+"""
+The same input with the non-null reference taken away, which is the one shape that cannot work.
+Nothing else supplies the tenant column now, so the optional reference would have to be the
+statement's tenant predicate, and an omitted value leaves no way to find the row at all.
+"""
+input ShelveCatalogueItemInput {
+  itemNo: Int! @field(name: "item_no")
+  itemName: String @field(name: "item_name")
+  shelfId: ID @nodeId(typeName: "CatalogueShelf")
+}
+
+type Mutation {
+  repointCatalogueItem(in: RepointCatalogueItemInput!): CatalogueItem
+    @mutation(typeName: UPDATE)
+    @classified(source: Mutation, operations: [Update, Reentry], target: Single, targetShape: Table)
+
+  shelveCatalogueItem(in: ShelveCatalogueItemInput!): CatalogueItem
+    @mutation(typeName: UPDATE)
+}
+
+extend schema @expectEquals(relation: "intent_mutation_write_refusal", rows: """
+  type_name, field_name,          input_field_name, cause
+  Mutation,  shelveCatalogueItem, shelfId,          NULLABLE_STRADDLING_REFERENCE
+  """)

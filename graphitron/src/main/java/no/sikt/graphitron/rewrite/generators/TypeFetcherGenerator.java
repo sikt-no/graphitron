@@ -40,6 +40,8 @@ import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.AgreementObligation;
+import no.sikt.graphitron.rewrite.model.CarrierNullRule;
+import no.sikt.graphitron.rewrite.model.CarrierNullRule.OnExplicitNull;
 import no.sikt.graphitron.rewrite.model.ColumnOverlap;
 import no.sikt.graphitron.rewrite.model.ColumnOverlap.OverlapColumn;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -3037,6 +3039,7 @@ public class TypeFetcherGenerator {
     private static void emitSetMapPuts(
             CodeBlock.Builder block,
             List<SetGroup> setFields,
+            Map<List<String>, OnExplicitNull> nullRules,
             String setsLocal,
             String presenceLocal,
             String valueMapLocal,
@@ -3051,20 +3054,32 @@ public class TypeFetcherGenerator {
             var sf = setFields.get(sfi);
             var cols = sf.columns();
             var nidk = sf.nidk();
+            var rule = requireNullRule(nullRules, sf);
+            boolean clears = rule instanceof OnExplicitNull.Clears;
             String recLocal = nidk != null ? decodeLocalPrefix + "_" + sfi : null;
             emitNestedPresenceGuardedLeaf(block, root, sf.accessPath(), decodeLocalPrefix + sfi,
                 (innerMap, leafKey) -> {
+                    var wireExpr = CodeBlock.of("$L.get($S)", innerMap, leafKey);
                     if (nidk != null) {
-                        appendDecodeLocal(block, recLocal, nidk, innerMap, leafKey);
+                        appendSetDecodeLocal(block, recLocal, nidk, wireExpr, leafKey, rule, null);
+                    } else if (rule instanceof OnExplicitNull.RefusedAsIdentity r) {
+                        // A plain carrier writes the wire value straight through, so there is no
+                        // decode local to hang the refusal on; guard the value itself.
+                        appendIdentityClearThrow(block, wireExpr, leafKey, r);
                     }
                     for (var sc : cols) {
                         var col = sc.column();
                         if (nidk != null) {
+                            // A cleared reference decodes to no record, and each column it writes
+                            // takes a typed NULL rather than a slot read of a record that is not there.
+                            var value = clears
+                                ? CodeBlock.of("$L == null ? null : $L.value$L()", recLocal, recLocal, sc.slot() + 1)
+                                : CodeBlock.of("$L.value$L()", recLocal, sc.slot() + 1);
                             block.addStatement(
-                                "$L.put($T.$L.$L, $T.val($L.value$L(), $T.$L.$L.getDataType()))",
+                                "$L.put($T.$L.$L, $T.val($L, $T.$L.$L.getDataType()))",
                                 setsLocal,
                                 tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
-                                DSL, recLocal, sc.slot() + 1,
+                                DSL, value,
                                 tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
                         } else {
                             block.addStatement(
@@ -3077,6 +3092,104 @@ public class TypeFetcherGenerator {
                     }
                 });
         }
+    }
+
+    /**
+     * The walker's per-carrier explicit-null rules, indexed by the wire access path the
+     * {@link SetGroup}s are keyed on. One entry per SET carrier, which is the grain the walker states
+     * them at; a composite carrier's several columns share one entry.
+     */
+    private static Map<List<String>, OnExplicitNull> nullRulesByPath(List<CarrierNullRule> rules) {
+        var out = new java.util.LinkedHashMap<List<String>, OnExplicitNull>();
+        for (var r : rules) {
+            out.put(accessPathOf(r.sdlFieldName(), r.extraction()), r.rule());
+        }
+        return out;
+    }
+
+    /** The rule for one SET group. A miss is a walker/emitter disagreement about which carriers
+     *  contribute to SET rather than an authoring error, and picking a default here would emit the
+     *  wrong branch silently, so fail loudly for the reason {@link #requireGroup} does. */
+    private static OnExplicitNull requireNullRule(Map<List<String>, OnExplicitNull> byPath, SetGroup group) {
+        var rule = byPath.get(group.accessPath());
+        if (rule == null) {
+            throw new IllegalStateException("the UPDATE carrier states no explicit-null rule for SET"
+                + " group '" + String.join(".", group.accessPath())
+                + "'; the walker states exactly one per SET carrier");
+        }
+        return rule;
+    }
+
+    /**
+     * Declare a SET group's {@code @nodeId} decode local, in the shape its explicit-null rule calls
+     * for. Three statements rather than one ternary, which is the load-bearing detail: the plain
+     * {@code (wire instanceof String s) ? decode(s) : null} collapses an explicit null, a non-string
+     * wire value and a wrong-type id onto one {@code null}, harmless only while all three throw.
+     * Widening that single branch would turn a malformed request into a silent column clear.
+     *
+     * <ul>
+     *   <li><b>Cannot arrive</b> — GraphQL rejects a null before the fetcher runs, so this emits the
+     *       unchanged {@link #appendDecodeLocal} shape (byte-identical output).</li>
+     *   <li><b>Clears</b> — a null wire value leaves the local null and throws nothing; anything else
+     *       that fails to decode still throws.</li>
+     *   <li><b>Refused as identity</b> — a null wire value throws, naming the identity columns the
+     *       clear would have nulled; a wrong-type id still throws its own message.</li>
+     * </ul>
+     *
+     * <p>{@code presenceExpr} gates the refusal on the bulk arm, where the local is declared
+     * unconditionally outside any presence guard and an omitted field must stay an omission rather
+     * than becoming a refused clear. The single-row arm declares its local inside the presence guard
+     * and passes {@code null}.
+     */
+    private static void appendSetDecodeLocal(
+            CodeBlock.Builder block, String recLocal, CallSiteExtraction.NodeIdDecodeKeys nidk,
+            CodeBlock wireExpr, String sourceField, OnExplicitNull rule, CodeBlock presenceExpr) {
+        if (rule instanceof OnExplicitNull.CannotArrive) {
+            appendDecodeLocal(block, recLocal, nidk, wireExpr, sourceField);
+            return;
+        }
+        ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
+        String wireLocal = recLocal + "Wire";
+        block.addStatement("$T $L = $L", Object.class, wireLocal, wireExpr);
+        block.addStatement("$T $L = ($L instanceof $T _s$L) ? $T.$L(_s$L) : null",
+            nidk.decodeMethod().returnType(), recLocal, wireLocal, String.class, recLocal,
+            nidk.decodeMethod().encoderClass(), nidk.decodeMethod().methodName(), recLocal);
+        if (rule instanceof OnExplicitNull.RefusedAsIdentity r) {
+            var gate = presenceExpr == null
+                ? CodeBlock.of("$L == null", wireLocal)
+                : CodeBlock.of("$L && $L == null", presenceExpr, wireLocal);
+            block.beginControlFlow("if ($L)", gate)
+                .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
+                    identityClearMessage(sourceField, r))
+                .endControlFlow();
+        }
+        block.beginControlFlow("if ($L != null && $L == null)", wireLocal, recLocal)
+            .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
+                "Decoded NodeId did not match the expected type for input field '" + sourceField + "'")
+            .endControlFlow();
+    }
+
+    /** The refusal a plain (non-decoding) carrier gets when an explicit null would clear a column the
+     *  statement identifies the row by. Emitted inside the leaf's own presence guard, so an omitted
+     *  field is untouched. */
+    private static void appendIdentityClearThrow(
+            CodeBlock.Builder block, CodeBlock wireExpr, String sourceField,
+            OnExplicitNull.RefusedAsIdentity rule) {
+        ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
+        block.beginControlFlow("if ($L == null)", wireExpr)
+            .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
+                identityClearMessage(sourceField, rule))
+            .endControlFlow();
+    }
+
+    /** What a refused clear tells the caller: which field, and which of the row's identity columns
+     *  the clear would have nulled. */
+    private static String identityClearMessage(String sourceField, OnExplicitNull.RefusedAsIdentity rule) {
+        return "Input field '" + sourceField + "' cannot be cleared on this @mutation(typeName: UPDATE): "
+            + "it writes " + rule.identityColumns().stream().map(ColumnRef::sqlName)
+                .collect(java.util.stream.Collectors.joining(", ", "{", "}"))
+            + ", which the statement identifies the row by, so a null would leave the row without an "
+            + "identity. Omit the field to leave it unchanged, or send a value.";
     }
 
     /**
@@ -3095,7 +3208,8 @@ public class TypeFetcherGenerator {
      * against the first present through {@code requireColumnAgreement}, coerced via the column's DataType.
      */
     private static void emitSetAgreementPreamble(
-            CodeBlock.Builder block, List<SetGroup> setGroups, String mapLocal, String decodeLocalPrefix,
+            CodeBlock.Builder block, List<SetGroup> setGroups, Map<List<String>, OnExplicitNull> nullRules,
+            String mapLocal, String decodeLocalPrefix,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
         // The per-column grouping is the shared ColumnOverlap.groupByColumn; this site forks on
         // shared() && !allPlain() (a decode-involving overlap; the all-plain overlap is the upstream
@@ -3135,7 +3249,8 @@ public class TypeFetcherGenerator {
             for (var c : oc.contributors()) {
                 var v = (SetGroupWriter) c.writer();
                 appendAgreementValue(block, v.group(), c.slot(), mapLocal,
-                    decodeLocalPrefix + "Agree_" + v.index(), listName, "sa" + ci + "w" + (wi++));
+                    decodeLocalPrefix + "Agree_" + v.index(), listName, "sa" + ci + "w" + (wi++),
+                    requireNullRule(nullRules, v.group()) instanceof OnExplicitNull.Clears);
             }
             String idx = listName + "Idx";
             block.beginControlFlow("for (int $L = 1; $L < $L.size(); $L++)", idx, idx, listName, idx)
@@ -3288,17 +3403,50 @@ public class TypeFetcherGenerator {
             nidk.decodeMethod().encoderClass(), nidk.decodeMethod().methodName(), salt);
     }
 
-    /** Append one side's present value for the shared column to the agreement list. A decode
-     *  group reads its record slot ({@code value<slot+1>()}) guarded on presence + a non-null decode;
-     *  a plain field reads the (possibly nested) wire value guarded on presence. */
+    /** {@link #appendAgreementValue(CodeBlock.Builder, SetGroup, int, String, String, String, String, boolean)}
+     *  with a decode local that is null only where there is nothing to compare: a cross-partition
+     *  check whose reference side was cleared, or a re-decode of a present-but-mismatched id whose
+     *  throw the SET emission surfaces. Either way the side drops out of the comparison. */
     private static void appendAgreementValue(
             CodeBlock.Builder block, SetGroup group, int slot, String mapLocal, String decodeLocal,
             String listName, String salt) {
+        appendAgreementValue(block, group, slot, mapLocal, decodeLocal, listName, salt, false);
+    }
+
+    /**
+     * Append one side's present value for the shared column to the agreement list. A decode
+     * group reads its record slot ({@code value<slot+1>()}) guarded on presence + a non-null decode;
+     * a plain field reads the (possibly nested) wire value guarded on presence.
+     *
+     * <p>{@code nullAgrees} decides what a null decode local means at this site, and the two readings
+     * are not interchangeable. Where the shared column is one <em>both</em> writers assign, a cleared
+     * writer is a contribution and not an absence: it adds an explicit null, so
+     * {@code requireColumnAgreement} sees null against a value and reports the conflict, one writer
+     * clearing while another sets being exactly that. Where the check is cross-partition, a cleared
+     * reference contributes nothing to the column at all and the side drops out instead. The wire
+     * value is tested directly rather than the decode local, so a cleared field and a wrong-type id
+     * stay distinguishable: only the first contributes a null, the second still drops out and lets
+     * the SET emission's own throw surface it.
+     */
+    private static void appendAgreementValue(
+            CodeBlock.Builder block, SetGroup group, int slot, String mapLocal, String decodeLocal,
+            String listName, String salt, boolean nullAgrees) {
         var presence = nestedContainsKeyExpr(mapLocal, group.accessPath(), salt);
         if (group.nidk() != null) {
-            block.beginControlFlow("if ($L && $L != null)", presence, decodeLocal)
-                .addStatement("$L.add($L.value$L())", listName, decodeLocal, slot + 1)
-                .endControlFlow();
+            if (nullAgrees) {
+                block.beginControlFlow("if ($L)", presence)
+                    .beginControlFlow("if ($L == null)",
+                        ArgCallEmitter.nestedMapValueExpr(mapLocal, group.accessPath()))
+                    .addStatement("$L.add(null)", listName)
+                    .nextControlFlow("else if ($L != null)", decodeLocal)
+                    .addStatement("$L.add($L.value$L())", listName, decodeLocal, slot + 1)
+                    .endControlFlow()
+                    .endControlFlow();
+            } else {
+                block.beginControlFlow("if ($L && $L != null)", presence, decodeLocal)
+                    .addStatement("$L.add($L.value$L())", listName, decodeLocal, slot + 1)
+                    .endControlFlow();
+            }
         } else {
             block.beginControlFlow("if ($L)", presence)
                 .addStatement("$L.add($L)", listName, ArgCallEmitter.nestedMapValueExpr(mapLocal, group.accessPath()))
@@ -3438,11 +3586,12 @@ public class TypeFetcherGenerator {
     private static void emitSetBulkCellAdds(
             CodeBlock.Builder block,
             List<SetGroup> setFields,
+            Map<List<String>, OnExplicitNull> nullRules,
             Set<String> lookupSqlNames,
             String decodeLocalPrefix,
             GeneratorUtils.ResolvedTableNames tablesOnly,
             TableRef tableRef) {
-        emitBulkSetDecodeLocals(block, setFields, decodeLocalPrefix);
+        emitBulkSetDecodeLocals(block, setFields, nullRules, decodeLocalPrefix);
         var listCn = ClassName.get("java.util", "List");
         var arrayListCn = ClassName.get("java.util", "ArrayList");
         var plan = setColumnPlan(setFields);
@@ -3472,7 +3621,8 @@ public class TypeFetcherGenerator {
                 for (var c : sc.contributors()) {
                     var v = (SetGroupWriter) c.writer();
                     appendAgreementValue(block, v.group(), c.slot(), "row",
-                        decodeLocalPrefix + "_" + v.index(), listName, "bsa" + ci + "w" + (wi++));
+                        decodeLocalPrefix + "_" + v.index(), listName, "bsa" + ci + "w" + (wi++),
+                        requireNullRule(nullRules, v.group()) instanceof OnExplicitNull.Clears);
                 }
                 String idx = listName + "Idx";
                 block.beginControlFlow("for (int $L = 1; $L < $L.size(); $L++)", idx, idx, listName, idx)
@@ -3487,8 +3637,15 @@ public class TypeFetcherGenerator {
                 var v = (SetGroupWriter) c.writer();
                 var g = v.group();
                 if (g.nidk() != null) {
-                    block.addStatement("cells.add($T.val($L.value$L(), $T.$L.$L.getDataType()))",
-                        DSL, decodeLocalPrefix + "_" + v.index(), c.slot() + 1,
+                    String local = decodeLocalPrefix + "_" + v.index();
+                    // A cleared reference decodes to no record on this row, and the cell takes a typed
+                    // NULL. The column is in v either way: membership is decided by first-row presence
+                    // and an explicitly-null key is a present key, so no cell position moves.
+                    var value = requireNullRule(nullRules, g) instanceof OnExplicitNull.Clears
+                        ? CodeBlock.of("$L == null ? null : $L.value$L()", local, local, c.slot() + 1)
+                        : CodeBlock.of("$L.value$L()", local, c.slot() + 1);
+                    block.addStatement("cells.add($T.val($L, $T.$L.$L.getDataType()))",
+                        DSL, value,
                         tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
                 } else {
                     block.addStatement("cells.add($T.val($L, $T.$L.$L.getDataType()))",
@@ -3510,23 +3667,47 @@ public class TypeFetcherGenerator {
      * shared column's gather all read one decode without re-decoding per writer.
      */
     private static void emitBulkSetDecodeLocals(
-            CodeBlock.Builder block, List<SetGroup> setFields, String decodeLocalPrefix) {
+            CodeBlock.Builder block, List<SetGroup> setFields,
+            Map<List<String>, OnExplicitNull> nullRules, String decodeLocalPrefix) {
         ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
         for (int gi = 0; gi < setFields.size(); gi++) {
             var sf = setFields.get(gi);
             var nidk = sf.nidk();
-            if (nidk == null) continue;
             var path = sf.accessPath();
+            var rule = requireNullRule(nullRules, sf);
+            if (nidk == null) {
+                // A plain carrier writes its wire value straight into the row's cell, so a refused
+                // clear has no decode local to hang on; guard the value itself, presence-gated so an
+                // omitted field stays an omission.
+                if (rule instanceof OnExplicitNull.RefusedAsIdentity r) {
+                    block.beginControlFlow("if ($L && $L == null)",
+                            nestedContainsKeyExpr("row", path, "bsip" + gi),
+                            ArgCallEmitter.nestedMapValueExpr("row", path))
+                        .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
+                            identityClearMessage(sf.name(), r))
+                        .endControlFlow();
+                }
+                continue;
+            }
             String recLocal = decodeLocalPrefix + "_" + gi;
-            block.addStatement("$T $L = ($L instanceof $T _s$L) ? $T.$L(_s$L) : null",
-                nidk.decodeMethod().returnType(), recLocal,
-                ArgCallEmitter.nestedMapValueExpr("row", path), String.class, recLocal,
-                nidk.decodeMethod().encoderClass(), nidk.decodeMethod().methodName(), recLocal);
-            block.beginControlFlow("if ($L && $L == null)",
-                    nestedContainsKeyExpr("row", path, "bsid" + gi), recLocal)
-                .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
-                    "Decoded NodeId did not match the expected type for input field '" + sf.name() + "'")
-                .endControlFlow();
+            if (rule instanceof OnExplicitNull.CannotArrive) {
+                block.addStatement("$T $L = ($L instanceof $T _s$L) ? $T.$L(_s$L) : null",
+                    nidk.decodeMethod().returnType(), recLocal,
+                    ArgCallEmitter.nestedMapValueExpr("row", path), String.class, recLocal,
+                    nidk.decodeMethod().encoderClass(), nidk.decodeMethod().methodName(), recLocal);
+                block.beginControlFlow("if ($L && $L == null)",
+                        nestedContainsKeyExpr("row", path, "bsid" + gi), recLocal)
+                    .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
+                        "Decoded NodeId did not match the expected type for input field '" + sf.name() + "'")
+                    .endControlFlow();
+                continue;
+            }
+            // The local is declared outside any presence guard here, so the refusal needs the
+            // presence expression: an absent field reads as a null wire value and must stay an
+            // omission rather than becoming a refused clear.
+            appendSetDecodeLocal(block, recLocal, nidk,
+                ArgCallEmitter.nestedMapValueExpr("row", path), sf.name(), rule,
+                nestedContainsKeyExpr("row", path, "bsid" + gi));
         }
     }
 
@@ -3580,6 +3761,7 @@ public class TypeFetcherGenerator {
             CodeBlock.Builder block,
             List<InputColumnBindingGroup> keyGroups,
             List<SetGroup> setGroups,
+            Map<List<String>, OnExplicitNull> nullRules,
             List<AgreementObligation> obligations,
             String keyDecodeLocalPrefix,
             String setDecodeLocalPrefix,
@@ -3633,8 +3815,16 @@ public class TypeFetcherGenerator {
                 : ArgCallEmitter.nestedMapValueExpr("row", refGroup.accessPath());
             String label = "input fields '" + String.join(".", keyPath) + "', '"
                 + String.join(".", refGroup.accessPath()) + "'";
-            block.beginControlFlow("if ($L)",
-                firstRowSetPresenceExpr(refGroup.accessPath(), "ksa" + rgi + "_" + refSlot));
+            // A cleared reference contributes nothing to this column, so there is nothing to agree
+            // about on that row and the check drops out; without the guard the slot read would NPE.
+            // The gate is per row, so one row of a batch clearing never changes another row's check.
+            var gate = refGroup.nidk() != null
+                    && requireNullRule(nullRules, refGroup) instanceof OnExplicitNull.Clears
+                ? CodeBlock.of("$L && $L_$L != null",
+                    firstRowSetPresenceExpr(refGroup.accessPath(), "ksa" + rgi + "_" + refSlot),
+                    setDecodeLocalPrefix, rgi)
+                : firstRowSetPresenceExpr(refGroup.accessPath(), "ksa" + rgi + "_" + refSlot);
+            block.beginControlFlow("if ($L)", gate);
             block.addStatement("$T.requireColumnAgreement($S, $T.$L.$L.getDataType(), $L, $L)",
                 agreementEncoder(ob, refGroup, refGroup), label,
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
@@ -3670,10 +3860,11 @@ public class TypeFetcherGenerator {
         String tableLocal = tablesOnly.tableLocalName();
         var setGroups = setGroupsOf(w.updateRows().setColumns());
         var keyGroups = keyGroupsOf(w.updateRows().keyColumns());
+        var setNullRules = nullRulesByPath(w.updateRows().nullRules());
 
         if (inputArg.list()) {
             return buildBulkUpdateFetcher(ctx, f, outputPackage, inputArg, tableRef, tablesOnly, tableLocal,
-                setGroups, keyGroups, w.updateRows().agreementObligations(), row, carrierDsl);
+                setGroups, keyGroups, setNullRules, w.updateRows().agreementObligations(), row, carrierDsl);
         }
 
         // Single-row UPDATE: build the SET clause dynamically from the present-key set so absent
@@ -3687,7 +3878,7 @@ public class TypeFetcherGenerator {
         // Value-agreement preamble for any SET column written by more than one carrier with a
         // @nodeId decode among them; the silent last-write-wins the Map.put below would otherwise allow.
         // No-op (byte-identical) when there is no such overlap.
-        emitSetAgreementPreamble(postInGuard, setGroups, "in", "setKey", tablesOnly, tableRef);
+        emitSetAgreementPreamble(postInGuard, setGroups, setNullRules, "in", "setKey", tablesOnly, tableRef);
         // Cross-partition (WHERE∩SET) value-agreement preamble. A self-FK @reference routes its
         // lifted columns wholly to SET while the row identity comes from the WHERE key, so a column the
         // self-FK shares with the identity field (e.g. email.mailbox_id) sits in both partitions; the FK
@@ -3697,7 +3888,7 @@ public class TypeFetcherGenerator {
         var keySetGroups = keyColumnsAsSetGroups(w.updateRows().keyColumns());
         emitKeySetAgreementPreamble(postInGuard, keySetGroups, setGroups,
             w.updateRows().agreementObligations(), "in", "keySet", tablesOnly, tableRef);
-        emitSetMapPuts(postInGuard, setGroups, "sets", "in", "in",
+        emitSetMapPuts(postInGuard, setGroups, setNullRules, "sets", "in", "in",
             "setKey", tablesOnly, tableRef);
         // Runtime PATCH guard: the carrier guarantees the schema has at least one settable column,
         // but a caller may omit every set-field value (sending only key columns); fail with a
@@ -3746,6 +3937,7 @@ public class TypeFetcherGenerator {
                                                      String tableLocal,
                                                      List<SetGroup> setGroups,
                                                      List<InputColumnBindingGroup> keyGroups,
+                                                     Map<List<String>, OnExplicitNull> setNullRules,
                                                      List<AgreementObligation> agreementObligations,
                                                      no.sikt.graphitron.command.LauncherCommand row,
                                                      no.sikt.graphitron.command.CarrierDsl carrierDsl) {
@@ -3806,10 +3998,10 @@ public class TypeFetcherGenerator {
             var g = groups.get(gi);
             emitLookupKeyCellAdds(postInGuard, g, gi, "row", tablesOnly, tableRef);
         }
-        emitSetBulkCellAdds(postInGuard, setGroups, lookupSqlNames, "bulkSetKey", tablesOnly, tableRef);
+        emitSetBulkCellAdds(postInGuard, setGroups, setNullRules, lookupSqlNames, "bulkSetKey", tablesOnly, tableRef);
         // WHERE∩SET per-row value agreement (self-FK shared column), reusing the bulkKey / bulkSetKey
         // decode locals declared above this in the loop body. No-op when there is no cross-partition overlap.
-        emitBulkKeySetAgreement(postInGuard, groups, setGroups, agreementObligations,
+        emitBulkKeySetAgreement(postInGuard, groups, setGroups, setNullRules, agreementObligations,
             "bulkKey", "bulkSetKey", tablesOnly, tableRef);
         postInGuard.addStatement("vRows.add($T.row(cells.toArray(new $T<?>[0])))", DSL, fieldClass);
         postInGuard.endControlFlow();
@@ -5070,10 +5262,11 @@ public class TypeFetcherGenerator {
                 var keyGroups = keyGroupsOf(w.updateRows().keyColumns());
                 var keySetGroups = keyColumnsAsSetGroups(w.updateRows().keyColumns());
                 var obligations = w.updateRows().agreementObligations();
+                var setNullRules = nullRulesByPath(w.updateRows().nullRules());
                 yield buildSingleRecordTwoStepFetcher(
                     ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.qualifiedName(),
                     (tablesOnly, tableLocal) -> buildCarrierUpdateChainSingle(
-                        setGroups, keyGroups, keySetGroups, obligations,
+                        setGroups, keyGroups, keySetGroups, setNullRules, obligations,
                         w.inputArg().table(), tablesOnly, tableLocal),
                     outputPackage);
             }
@@ -5176,7 +5369,8 @@ public class TypeFetcherGenerator {
      */
     private static DmlChainAndGuards buildCarrierUpdateChainSingle(
             List<SetGroup> setGroups, List<InputColumnBindingGroup> keyGroups,
-            List<SetGroup> keySetGroups, List<AgreementObligation> agreementObligations,
+            List<SetGroup> keySetGroups, Map<List<String>, OnExplicitNull> setNullRules,
+            List<AgreementObligation> agreementObligations,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {
         var fieldClass = ClassName.get("org.jooq", "Field");
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
@@ -5188,7 +5382,7 @@ public class TypeFetcherGenerator {
         // walker's obligations is what makes the omission impossible rather than merely fixed.
         emitKeySetAgreementPreamble(preGuard, keySetGroups, setGroups, agreementObligations,
             "in", "keySet", tablesOnly, tableRef);
-        emitSetMapPuts(preGuard, setGroups, "sets", "in", "in", "setKey", tablesOnly, tableRef);
+        emitSetMapPuts(preGuard, setGroups, setNullRules, "sets", "in", "in", "setKey", tablesOnly, tableRef);
         // Runtime PATCH guard: the carrier guarantees the schema has at least one settable column,
         // but a caller may omit every set-field value (sending only key columns); fail with a
         // friendly message rather than letting jOOQ reject an empty SET map.
@@ -5391,6 +5585,7 @@ public class TypeFetcherGenerator {
                     ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.qualifiedName(),
                     (tablesOnly, tableLocal, pkCols, recordRowType) -> buildCarrierBulkPerRowUpdateBody(
                         setGroups, keyGroups, keyColumnsAsSetGroups(w.updateRows().keyColumns()),
+                        nullRulesByPath(w.updateRows().nullRules()),
                         w.updateRows().agreementObligations(),
                         w.inputArg().table(), tablesOnly, tableLocal, pkCols, recordRowType),
                     outputPackage);
@@ -5498,7 +5693,8 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock buildCarrierBulkPerRowUpdateBody(
             List<SetGroup> setGroups, List<InputColumnBindingGroup> keyGroups,
-            List<SetGroup> keySetGroups, List<AgreementObligation> agreementObligations,
+            List<SetGroup> keySetGroups, Map<List<String>, OnExplicitNull> setNullRules,
+            List<AgreementObligation> agreementObligations,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal,
             List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols, TypeName recordRowType) {
         var fieldClass = ClassName.get("org.jooq", "Field");
@@ -5510,7 +5706,7 @@ public class TypeFetcherGenerator {
         // its single-payload sibling it shipped without any such check.
         emitKeySetAgreementPreamble(body, keySetGroups, setGroups, agreementObligations,
             "row", "keySet", tablesOnly, tableRef);
-        emitSetMapPuts(body, setGroups, "sets", "row", "row", "setKey", tablesOnly, tableRef);
+        emitSetMapPuts(body, setGroups, setNullRules, "sets", "row", "row", "setKey", tablesOnly, tableRef);
         body.beginControlFlow("if (sets.isEmpty())")
             .addStatement("throw new $T($S)", IllegalArgumentException.class,
                 "@mutation(typeName: UPDATE) call has no settable fields present; "

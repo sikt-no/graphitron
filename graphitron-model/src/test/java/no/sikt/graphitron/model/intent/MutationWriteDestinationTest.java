@@ -176,6 +176,24 @@ class MutationWriteDestinationTest {
     }
 
     /**
+     * What an explicit null on each carrier means, at the grain the answer is decided: one row per
+     * occurrence, read off the rows this relation already carries. Separate from {@link #render}
+     * because the fact is the carrier's and not the column's, so a per-column rendering would repeat
+     * one answer down N rows with nothing able to see them disagree.
+     */
+    private static List<String> nullRules(DSLContext dsl) {
+        derive(dsl);
+        return dsl.selectDistinct(INTENT_MUTATION_WRITE_DESTINATION.PATH,
+                                  INTENT_MUTATION_WRITE_DESTINATION.ON_EXPLICIT_NULL)
+            .from(INTENT_MUTATION_WRITE_DESTINATION)
+            .where(INTENT_MUTATION_WRITE_DESTINATION.GRAPH_NAME.eq(GRAPH))
+            .orderBy(INTENT_MUTATION_WRITE_DESTINATION.PATH)
+            .fetch()
+            .map(r -> r.get(INTENT_MUTATION_WRITE_DESTINATION.PATH) + " -> "
+                + r.get(INTENT_MUTATION_WRITE_DESTINATION.ON_EXPLICIT_NULL));
+    }
+
+    /**
      * The occurrence, what its carrier points at, the decode slot, the column it binds and where
      * that column goes. The slot is spelled out because the split is per column and a consumer
      * reading one half of a split carrier cannot recover the slot from that half's own ordering.
@@ -477,6 +495,64 @@ class MutationWriteDestinationTest {
                 "Mutation.updateFilm(in)/film_id OWN_COLUMNS 0:film_id -> PREDICATE",
                 "Mutation.updateFilm(in)/parentRef SELF_FK 0:parent_id -> VALUE",
                 "Mutation.updateFilm(in)/parent_id OWN_COLUMNS 0:parent_id -> VALUE");
+        });
+    }
+
+    // ===== What an explicit null means =====
+
+    /**
+     * The three answers on one payload, which is what makes them a vocabulary rather than a flag.
+     * {@code film_id} assigns nothing, being the whole key, so it holds no rule at all: an absence
+     * rather than a fourth value. {@code title} is nullable and assigns a column outside the key, so
+     * a null clears it. The non-null {@code publisherRef} cannot receive one, the schema refusing it
+     * before the statement is reached.
+     */
+    @Test
+    void theThreeAnswersAndTheAbsence() {
+        withCatalog(dsl -> {
+            updateSurface(dsl, "FilmUpdateInput");
+            payloadField(dsl, "updateFilm", "FilmUpdateInput", "film_id", "String", 0);
+            payloadField(dsl, "updateFilm", "FilmUpdateInput", "title", "String", 1);
+            crossTableFkField(dsl, "updateFilm", "FilmUpdateInput", "publisherRef", 2, true);
+
+            assertThat(nullRules(dsl)).containsExactly(
+                "Mutation.updateFilm(in)/film_id -> null",
+                "Mutation.updateFilm(in)/publisherRef -> CANNOT_ARRIVE",
+                "Mutation.updateFilm(in)/title -> CLEARS");
+        });
+    }
+
+    /**
+     * The answer turns on what the carrier <em>assigns</em> and never on whether it straddles, which
+     * is what makes the self-FK case fall out rather than needing its own clause. A nullable
+     * self-referencing foreign key routes {@code parent_id} to the assignment half, and here that
+     * column is also the matched key's, so clearing it would leave the row without an identity and
+     * the null is refused when the statement runs. The straddling reference beside it is admitted and
+     * clears, its assigned half being its out-of-key half by construction.
+     */
+    @Test
+    void aNullableCarrierAssigningAKeyColumnIsRefusedAndAStraddlerIsNot() {
+        withCatalog(dsl -> {
+            updateSurface(dsl, "FilmUpdateInput");
+            payloadField(dsl, "updateFilm", "FilmUpdateInput", "parent_id", "String", 0);
+            selfFkField(dsl, "updateFilm", "FilmUpdateInput", "parentRef", 1);
+            crossTableFkField(dsl, "updateFilm", "FilmUpdateInput", "publisherRef", 2, false);
+
+            assertThat(nullRules(dsl)).containsExactly(
+                "Mutation.updateFilm(in)/parentRef -> REFUSED_AS_IDENTITY",
+                "Mutation.updateFilm(in)/parent_id -> null",
+                "Mutation.updateFilm(in)/publisherRef -> CLEARS");
+        });
+    }
+
+    /** A DELETE assigns nothing at all, so no row of one carries a rule. */
+    @Test
+    void aDeleteCarriesNoNullRule() {
+        withCatalog(dsl -> {
+            deleteSurface(dsl, "FilmDeleteInput");
+            payloadField(dsl, "deleteFilm", "FilmDeleteInput", "film_id", "String", 0);
+
+            assertThat(nullRules(dsl)).containsExactly("Mutation.deleteFilm(in)/film_id -> null");
         });
     }
 }
