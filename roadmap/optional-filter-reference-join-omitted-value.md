@@ -1,7 +1,7 @@
 ---
 id: R888
 title: "An optional filter field's @reference join must not constrain the query when the value is absent"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: codegen-correctness
