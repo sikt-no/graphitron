@@ -9942,6 +9942,7 @@ COMMENT ON COLUMN meta_gatherer.gatherer_class IS 'the fully qualified Java clas
 INSERT INTO meta_gatherer VALUES
   ('configuration', 'no.sikt.graphitron.rewrite.capture.ConfigurationFactCapture'),
   ('sdl', 'no.sikt.graphitron.rewrite.capture.SdlFactCapture'),
+  ('graphitron', 'no.sikt.graphitron.rewrite.capture.GraphitronFactCapture'),
   ('catalog', 'no.sikt.graphitron.rewrite.capture.CatalogFactCapture'),
   ('java-source', 'no.sikt.graphitron.rewrite.capture.JavaSourceFacts'),
   ('compile', 'no.sikt.graphitron.rewrite.compile.CompileFacts'),
@@ -9954,13 +9955,14 @@ CREATE TABLE meta_gatherer_corpus (
   FOREIGN KEY (gatherer_name) REFERENCES meta_gatherer (gatherer_name),
   FOREIGN KEY (corpus_name) REFERENCES meta_corpus (corpus_name)
 );
-COMMENT ON TABLE meta_gatherer_corpus IS 'One corpus a gatherer reads: a declared pairing of one gatherer with one outside input. For example the catalog gatherer carries two rows, catalog and classpath. A gatherer with at least one row here is a crawler, and this junction is the store''s definition of that word: a transcription pass whose rows about its own corpus may not vary with any other corpus''s contents. The derivation gatherer has no row here, reads only captured rows, and is thereby the one owner whose relations may cross corpora.';
+COMMENT ON TABLE meta_gatherer_corpus IS 'One corpus a gatherer reads: a declared pairing of one gatherer with one outside input. For example the catalog gatherer carries two rows, catalog and classpath. A gatherer with at least one row here is a crawler, and this junction is the store''s definition of that word: a transcription pass whose rows about its own corpus may not vary with any other corpus''s contents. Two crawlers may name one corpus, which is a division of labour over one input rather than a second reading of it: the sdl and graphitron gatherers both read the schema documents, the first transcribing what stands there and the second decoding what graphitron makes of it, and the second reads the first''s rows rather than the text again. The derivation gatherer has no row here, reads only captured rows, and is thereby the one owner whose relations may cross corpora.';
 COMMENT ON COLUMN meta_gatherer_corpus.gatherer_name IS 'the reading gatherer, a meta_gatherer key';
 COMMENT ON COLUMN meta_gatherer_corpus.corpus_name IS 'the corpus read, a meta_corpus key';
 
 INSERT INTO meta_gatherer_corpus VALUES
   ('configuration', 'configuration'),
   ('sdl', 'sdl'),
+  ('graphitron', 'sdl'),
   ('catalog', 'catalog'),
   ('catalog', 'classpath'),
   ('java-source', 'java-source'),
@@ -9974,13 +9976,15 @@ CREATE TABLE meta_gatherer_dependency (
   FOREIGN KEY (depends_on) REFERENCES meta_gatherer (gatherer_name),
   CHECK (gatherer_name <> depends_on)
 );
-COMMENT ON TABLE meta_gatherer_dependency IS 'One declared read edge between gatherers: the first may read rows the second produced. For example the derivation gatherer depends on every crawler, which is what running last means once it stops being a position. Declared rather than derived from the view bodies, deliberately: the declaration states the intended shape, and the view-ownership gate denies a declared view that reads outside its owner''s dependency set, so a view forking the shape fails instead of widening it. The corpus gatherers carry no edges, which states their mutual independence. The roster drives no execution: the order gatherers run in is FactCapture.capture''s statement order, and these edges are what that order has to satisfy.';
+COMMENT ON TABLE meta_gatherer_dependency IS 'One declared read edge between gatherers: the first may read rows the second produced. For example the derivation gatherer depends on every crawler, which is what running last means once it stops being a position. Declared rather than derived from the view bodies, deliberately: the declaration states the intended shape, and the view-ownership gate denies a declared view that reads outside its owner''s dependency set, so a view forking the shape fails instead of widening it. An edge between two crawlers stays inside one corpus, the graphitron gatherer reading the sdl gatherer''s rows rather than re-reading the documents; a crawler never depends on a crawler of another corpus, that being the same statement as its own rows not varying with another corpus''s contents. Crawlers of different corpora carry no edges either way, which states their mutual independence. The roster drives no execution: the order gatherers run in is FactCapture.capture''s statement order, and these edges are what that order has to satisfy. What makes the order able to satisfy them is that each gatherer''s rows are flushed to the store before the next one starts, a flush inside the load''s one transaction being what lets a downstream gatherer read an upstream''s rows without publishing a partition mid-load.';
 COMMENT ON COLUMN meta_gatherer_dependency.gatherer_name IS 'the dependent gatherer, the one performing the read; a meta_gatherer key';
 COMMENT ON COLUMN meta_gatherer_dependency.depends_on IS 'the prerequisite gatherer whose rows may be read; a meta_gatherer key, and never the dependent itself, the CHECK refusing the length-one cycle';
 
 INSERT INTO meta_gatherer_dependency VALUES
+  ('graphitron', 'sdl'),
   ('derivation', 'configuration'),
   ('derivation', 'sdl'),
+  ('derivation', 'graphitron'),
   ('derivation', 'catalog'),
   ('derivation', 'java-source'),
   ('derivation', 'compile');
@@ -10083,7 +10087,7 @@ INSERT INTO meta_grain VALUES
    'graph_name, origin, path', 'sdl');
 
 INSERT INTO meta_relation VALUES
-  ('graphitron_argmapping_candidate', 'argmapping-candidate', 'sdl',
+  ('graphitron_argmapping_candidate', 'argmapping-candidate', 'graphitron',
    'What an argMapping right-hand side may name: one row per candidate, under the position the path is written from.',
    'For example the argument input of Mutation.rentFilm is one row at the empty path, and the input field inventoryId below it is another at path inventoryId, each carrying the type that says whether anything opens under it in turn.',
    'The specification states rules an argMapping right-hand side follows, a head naming a position in scope and each later segment naming something the value there opens into, and no relation held that set: every reader re-derived it, walking a positional decomposition of the authored path against a second decomposition of the same descent and aligning the two with nested negation. Stating the candidates once turns resolution into a probe and completion into a read of one parent link. Two origins share the relation because a path written on a field and one written on an input field are one payload at two coordinates, which this schema answers with a discriminator and a total spelling rather than a second relation. Keyed by the input-field coordinate rather than by the occurrences that reach it, since a field opens into whatever its own type does, so every occurrence would repeat one subtree. Stored rather than stated as a view because the descent is recursive.');
