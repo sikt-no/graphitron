@@ -104,4 +104,13 @@ public class FetchQueryTest extends GeneratorTest {
                 ").toList()) : DSL.falseCondition())"
         );
     }
+
+    @Test  // The condition on a listed payload field lands in a multiset helper method rather than on the outer query.
+    @DisplayName("An empty input list should give an empty listed payload field, not the whole table")
+    void emptyInputListForNestedListOutput() {
+        // The outer query for this schema has no where clause at all, so the multiset in the payload helper method
+        // holds the only condition. Together these assert that it does not fall back to an unfiltered select.
+        resultDoesNotContain("nestedOutput", "DSL.noCondition()");
+        assertGeneratedContentContains("nestedOutput", ") : DSL.falseCondition()");
+    }
 }

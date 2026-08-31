@@ -67,7 +67,18 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
     public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
-        this(localObject, processedSchema, false);
+        this(localObject, processedSchema, isMutationRoot(localObject));
+    }
+
+    /**
+     * Conditions built from mutation inputs must never fall back to {@link org.jooq.impl.DSL#noCondition()}, as that
+     * would leave the payload query without the predicate that ties it to the mutated rows. Deriving this from the
+     * local object rather than letting each generator opt in keeps the outer query and the payload helper methods
+     * from disagreeing on the fallback for the same field.
+     */
+    protected static boolean isMutationRoot(ObjectDefinition localObject) {
+        return localObject.isOperationRoot()
+                && localObject.getName().equals(GraphQLReservedName.SCHEMA_MUTATION.getName());
     }
 
     protected boolean isRoot() {
