@@ -42,6 +42,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>The other half is the shape. Arity and list-ness are independent facts arriving from different
  * places, the node type's key columns and the slot's own declaration, so a case that fixed both at
  * once could not tell a relation that carried one through from one that carried the other.
+ *
+ * <p>A slot is named by a {@code @condition} three ways and bound from two sites, so the cases
+ * below lead with the three: the slot's own directive at an argument and at an input field, and a
+ * field-level directive over one of its field's arguments. The last is why the class and the method
+ * are part of the key, one argument being nameable twice at once.
  */
 class ConditionParamDecodeTest {
 
@@ -50,7 +55,7 @@ class ConditionParamDecodeTest {
     private static final String PUBLIC = "public";
     private static final String COND = "com.example.FilmConditions";
 
-    // ===== The two sites =====
+    // ===== The three ways a slot is named =====
 
     /** An argument slot: the coordinate is the argument's own, and the shape is the node type's. */
     @Test
@@ -87,6 +92,73 @@ class ConditionParamDecodeTest {
             derive(dsl);
             assertThat(rows(dsl)).containsExactly(
                 "INPUT_FIELD Query.films(filter)/filmId com.example.FilmConditions.byFilm Film 1 false");
+        });
+    }
+
+    /**
+     * A field-level {@code @condition} binds its field's own arguments, so a {@code @nodeId}
+     * argument of that field is exempted by a directive written one coordinate above it. The row
+     * lands at the argument all the same, this relation's site column being the slot's and not the
+     * directive's: the generator installs the decode keyed on the slot, and a coordinate with no row
+     * would assert the declared-type rule stands where it does not.
+     *
+     * <p>The field's other argument carries no {@code @nodeId} and draws nothing, which is the half
+     * that keeps this arm from reading as "a field-level {@code @condition} exempts everything it
+     * sees": the exemption is the slot's, and the directive above it only names the method.
+     */
+    @Test
+    void aFieldLevelConditionExemptsItsFieldsNodeIdArgument() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "Film", "film", "film_id");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "filmId", "Film");
+            seedArgument(dsl, GRAPH, "Query", "films", "title", "String");
+            seedFieldCondition(dsl, GRAPH, "Query", "films", COND, "byFilm", true);
+
+            derive(dsl);
+            assertThat(rows(dsl)).containsExactly(
+                "ARGUMENT Query.films(filmId) com.example.FilmConditions.byFilm Film 1 false");
+        });
+    }
+
+    /**
+     * Both directives at once, naming two methods. Two authored methods each receive the decoded
+     * key, so the coordinate carries two rows and the method is what tells them apart: this is why
+     * the class and the method complete the key rather than riding as payload of the coordinate.
+     */
+    @Test
+    void twoDirectivesNamingTwoMethodsAreTwoRowsAtOneCoordinate() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "Film", "film", "film_id");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "filmId", "Film");
+            seedArgumentCondition(dsl, GRAPH, "Query", "films", "filmId", COND, "byFilm", true);
+            seedFieldCondition(dsl, GRAPH, "Query", "films", COND, "acrossTheField", true);
+
+            derive(dsl);
+            assertThat(rows(dsl)).containsExactlyInAnyOrder(
+                "ARGUMENT Query.films(filmId) com.example.FilmConditions.byFilm Film 1 false",
+                "ARGUMENT Query.films(filmId) com.example.FilmConditions.acrossTheField Film 1 false");
+        });
+    }
+
+    /**
+     * The same pair naming one method is one row. The exemption is a fact about a slot and a method,
+     * so a second directive asserting it again adds no fact, and a bag with the row twice would put
+     * a multiplicity in the relation that means nothing to any reader.
+     */
+    @Test
+    void twoDirectivesNamingOneMethodStayOneRow() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "Film", "film", "film_id");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "filmId", "Film");
+            seedArgumentCondition(dsl, GRAPH, "Query", "films", "filmId", COND, "byFilm", true);
+            seedFieldCondition(dsl, GRAPH, "Query", "films", COND, "byFilm", true);
+
+            derive(dsl);
+            assertThat(rows(dsl)).containsExactly(
+                "ARGUMENT Query.films(filmId) com.example.FilmConditions.byFilm Film 1 false");
         });
     }
 

@@ -364,6 +364,111 @@ class NodeIdParticipantRoutePipelineTest {
         assertThat(message).contains("@nodeId(typeName:");
     }
 
+    // ===== The third directive site =====
+
+    /**
+     * A field-level {@code @condition} binds its field's own arguments, so a parameter bound to a
+     * {@code @nodeId} argument is at the argument coordinate however the directive was written, and
+     * takes the decode there. The case runs without {@code override}, which is the shape that makes
+     * the rule load-bearing rather than tidy: the implicit column predicate stands beside the
+     * authored call in one emitted glue method, and leaving the authored parameter on the
+     * declared-type rule would read one wire value two contradictory ways in that one method.
+     */
+    @Test
+    void aFieldLevelConditionBindingANodeIdArgumentTakesTheDecode() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Language implements Node @table(name: "language") @node {
+                id: ID! @nodeId
+                name: String
+            }
+            type Query {
+                languages(languageId: ID @nodeId(typeName: "Language")): [Language!]!
+                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "languageIdDecodedKeyCondition"})
+            }
+            """);
+
+        var field = schema.field("Query", "languages");
+        assertThat(field)
+            .as("the field was expected to classify; it rejected as %s", field)
+            .isInstanceOf(QueryField.QueryTableField.class);
+        var filters = ((QueryField.QueryTableField) field).filters();
+
+        var authored = filters.stream()
+            .filter(f -> f instanceof no.sikt.graphitron.rewrite.model.ConditionFilter)
+            .map(f -> (no.sikt.graphitron.rewrite.model.ConditionFilter) f)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no authored @condition among " + filters));
+        var bound = authored.params().stream()
+            .filter(p -> p.name().equals("languageId"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no parameter bound to the slot in "
+                + authored.params()));
+        assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) bound.source()).extraction())
+            .as("the authored parameter receives the decoded key, not the wire string")
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys.class);
+        assertThat(filters)
+            .as("and the implicit predicate the decode has to agree with is still there")
+            .anySatisfy(f -> assertThat(f).isInstanceOf(GeneratedConditionFilter.class));
+    }
+
+    /**
+     * The declared-type refusal reached through the field-level directive. Same ground as the
+     * argument-level twin above: the contract's only other enforcer is the consumer's javac inside
+     * emitted glue, and the directive's placement does not change which coordinate the slot is at.
+     */
+    @Test
+    void aFieldLevelConditionDeclaringTheWireStringIsRejectedNamingTheRequiredType() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Language implements Node @table(name: "language") @node {
+                id: ID! @nodeId
+                name: String
+            }
+            type Query {
+                languages(languageId: ID @nodeId(typeName: "Language")): [Language!]!
+                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "languageIdWireString"})
+            }
+            """);
+
+        var field = schema.field("Query", "languages");
+        assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        String message = ((GraphitronField.UnclassifiedField) field).reason();
+        assertThat(message).contains("Query.languages");
+        assertThat(message).contains("languageIdWireString");
+        assertThat(message).contains("java.lang.Integer");
+        assertThat(message).contains("java.lang.String");
+    }
+
+    /**
+     * The divergence refusal beside that install, which the field-level site needs for itself: a
+     * bare {@code @nodeId} argument on a multitable root decodes a different node type per branch,
+     * so the one declared parameter type cannot serve every branch. Reached from the enclosing
+     * field's directive rather than the argument's, and caught once the field's method is reflected,
+     * because whether a field-level condition binds a given argument is not known before that.
+     */
+    @Test
+    void aFieldLevelConditionBindingADivergentArgumentIsRejectedRatherThanDispatched() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type FilmNode implements Node @table(name: "film") @node { id: ID! @nodeId }
+            type InventoryNode implements Node @table(name: "inventory") @node { id: ID! @nodeId }
+            union Stock = FilmNode | InventoryNode
+            type Query {
+                stock(id: ID @nodeId): [Stock!]!
+                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "argConditionTypeUnique"}, override: true)
+            }
+            """);
+
+        var field = schema.field("Query", "stock");
+        assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        // The refusal is minted at the coordinate it is about and the field keeps the consequence,
+        // so the reason it gives reads off the diagnostics, as it does for the leaf-local causes.
+        String message = schema.diagnostics().stream().map(ValidationError::message)
+            .collect(java.util.stream.Collectors.joining(" | "));
+        assertThat(message).contains("Query.stock");
+        assertThat(message).contains("argument 'id'");
+        assertThat(message).contains("different");
+        assertThat(message).contains("@nodeId(typeName:");
+    }
+
     // ===== Aggregation =====
 
     @Test

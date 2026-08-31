@@ -35,9 +35,11 @@ class ConditionParamDecodeCaptureTest {
     private static final String COND = "no.sikt.graphitron.rewrite.TestConditionStub";
 
     /**
-     * Both sites in one schema, so a capture that reaches one coordinate and not the other fails
-     * rather than passing on the half it found: the argument-site directive is captured at a
-     * three-part coordinate and the input-field one at the shared field coordinate.
+     * All three ways a slot is named, in one schema, so a capture that reaches one coordinate and
+     * not another fails rather than passing on the half it found: the argument-site directive is
+     * captured at a three-part coordinate, the input-field one at the shared field coordinate, and
+     * the field-level one at that same shared coordinate under an object type, where the slot it
+     * exempts is an argument one level below the directive.
      */
     private static final String SDL = """
         type Language implements Node @table(name: "language") @node {
@@ -64,15 +66,23 @@ class ConditionParamDecodeCaptureTest {
                 method: "languageIdDecodedKeyCondition"
               }, override: true)
           ): [Film!]!
+          filmsByFieldCondition(
+            languageId: ID @nodeId(typeName: "Language")
+          ): [Film!]!
+            @condition(condition: {
+              className: "no.sikt.graphitron.rewrite.TestConditionStub",
+              method: "languageIdDecodedKeyCondition"
+            }, override: true)
         }
         """;
 
     @Test
-    @DisplayName("both slot sites land an exemption row carrying the node type's key shape")
-    void bothSlotSitesLandAnExemptionRowOverARealCapture(@TempDir Path tmp) {
+    @DisplayName("every directive site lands an exemption row carrying the node type's key shape")
+    void everyDirectiveSiteLandsAnExemptionRowOverARealCapture(@TempDir Path tmp) {
         withCatalogStore(tmp, dsl ->
             assertThat(decodes(dsl)).containsExactlyInAnyOrder(
                 "ARGUMENT Query.filmsByArgument(languageId) Language 1 false",
+                "ARGUMENT Query.filmsByFieldCondition(languageId) Language 1 false",
                 "INPUT_FIELD Query.filmsByFilter(filter)/languageId Language 1 false"));
     }
 

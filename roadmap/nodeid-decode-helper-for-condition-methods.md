@@ -5,7 +5,7 @@ status: In Progress
 bucket: dx
 priority: 3
 theme: nodeid
-depends-on: [preserve-enum-extraction-through-condition-rewrap]
+depends-on: []
 created: 2026-08-28
 last-updated: 2026-08-31
 ---
@@ -55,21 +55,21 @@ Three smaller corrections ride along, all statements about where the encoder is 
 
 ## Implementation
 
-Ordered by seam, not by commit.
+Ordered by seam, not by commit. Written as the plan and kept as the record of what was approved; where a fork the plan left open has since been settled, the seam says how it landed and "Implementation notes" below carries the reasoning.
 
 **Resolver.** `NodeIdLeafResolver.Resolved.AuthorOwnedPredicate` gains the `HelperRef.Decode decodeMethod` its mint site already holds in scope (the arm is minted a few lines below the successful `resolveDecodeHelperForType` call; no new resolution work). One consequence is the point, not a second rule: `FieldBuilder.decodeTargetOf` becomes total over the seal, so `decodesOf` and `firstNestedDivergence` see the arm, and the currently-silent hole (an all-author-owned nested leaf with bare `@nodeId` whose participants infer different node types passes with nothing catching it) closes under the same divergence rule that already guards routed leaves.
 
 One precision the arm's new vote needs: **an authored parameter rejects on divergence where a routed leaf may dispatch.** Feeding `verdictOf` unchanged would mint `NodeIdArgTarget.PerParticipant` for a divergent author-owned top-level argument and inherit `PruneOnMismatch`, contradicting the THROW contract above. The ground is the binding-shape rule, not a new policy: an authored declaration set cannot carry two decoded parameter types, because non-table positions must be identical in declared type across the set. The same ground applies to a routed leaf whose participants decode different key shapes when an authored `@condition` binds it. The refusal copies `firstMixedContract`'s form: name the leaf, the participants, what each resolved, and the remedy that exists (`@nodeId(typeName:)` pinning). The message names live symbols, never a roadmap id.
 
-**Extraction.** The install sites produce a ThrowOnMismatch `NodeIdDecodeKeys` extraction instead of `Direct` for an authored parameter bound to a `@nodeId` slot, at both coordinates. `legacyArgExtraction` itself stays the declared-type rule for everything else; the decode override is installed where the slot is known, not by widening that shared static. The input-field coordinate rides through `ConditionResolver.rewrapForNested`, which today *replaces* the extraction with a two-arg `NestedInputField` whose leaf defaults to `Direct`; R862 owns that composition defect, hence the `depends-on`. If R862 has not landed at pickup, this item ships the composition (pass the parameter's own extraction as the leaf; the three-arg constructor already refuses the one non-composable shape) and R862 shrinks to its enum coverage.
+**Extraction.** The install sites produce a ThrowOnMismatch `NodeIdDecodeKeys` extraction instead of `Direct` for an authored parameter bound to a `@nodeId` slot. `legacyArgExtraction` itself stays the declared-type rule for everything else; the decode override is installed where the slot is known, not by widening that shared static. The install is keyed on the slot, so it runs at three sites rather than the two the plan named: the slot's own `@condition` at an argument and at an input field, and a field-level `@condition` binding one of its field's `@nodeId` arguments. The input-field coordinate rides through `ConditionResolver.rewrapForNested`, which *replaced* the extraction with a two-arg `NestedInputField` whose leaf defaults to `Direct`; this item shipped the composition (the parameter's own extraction becomes the leaf) rather than waiting on R862, which is now that defect's enum coverage.
 
 **Renderer.** No new arm. `ConditionGlueRenderer.decodeCall` / `localType` / `emitsUncheckedLocalCast` already handle a `NodeIdDecodeKeys` behind a `NestedInputField`, and `CompositeDecodeHelperRegistry` dedups on `(encoderClass, methodName, mode, list)`, so on a routed leaf the implicit predicate and the authored call share one decode helper.
 
-**Carrier.** `ArgumentRef.ScalarArg.ConditionOwnedArg` is `@nodeId`-only by construction and takes the decode component flat. `InputField.ConditionOwnedField` also carries plain column-miss overrides that have no node id, so it must not grow an `Optional` component every consumer probes for flavour: split the `@nodeId` flavour out as its own arm, mirroring the asymmetry the argument side already documents as deliberate. (If the store view below turns out to be the better read path for the renderer, the carrier component can be dropped entirely; the implementer decides, the constraint is only that no consumer re-derives "is this the nodeId flavour" from a component's emptiness.)
+**Carrier.** `ArgumentRef.ScalarArg.ConditionOwnedArg` is `@nodeId`-only by construction and takes the decode component flat. `InputField.ConditionOwnedField` also carries plain column-miss overrides that have no node id, so it must not grow an `Optional` component every consumer probes for flavour. The constraint the plan set, that no consumer re-derives "is this the nodeId flavour" from a component's emptiness, is met by the component landing on the argument only: nothing on the input-field side reads one, so no arm split was needed there.
 
-**Store.** `intent_condition_param_extraction`'s DDL comment states the `@condition` extraction is decided by the parameter's declared type alone, is method-keyed because the rule does not vary by site, and has a closed two-value vocabulary. All three claims become false and the comment is corrected in the same change. The decode override lands as a *use-keyed* relation beside it, in the override shape the fact model uses elsewhere: presence means "this bound parameter receives a decoded key, of this shape", absence means the declared-type rule stands. Its inputs are already captured (`intent_node_id_instruction`, `intent_resolved_node_key_column`), so it is a view. The validator's rejection below and the LSP read it, so the editor can tell an author the required declared type rather than leaving it to javac. Existing pins (`ConditionParamExtractionCaptureTest`, `ConditionParamExtractionTest`) update alongside.
+**Store.** `intent_condition_param_extraction`'s DDL comment states the `@condition` extraction is decided by the parameter's declared type alone, is method-keyed because the rule does not vary by site, and has a closed two-value vocabulary. All three claims become false and the comment is corrected in the same change. The decode override lands as a *use-keyed* relation beside it, in the override shape the fact model uses elsewhere: presence means "this bound parameter receives a decoded key, of this shape", absence means the declared-type rule stands. Its inputs are already captured (`intent_node_id_instruction`, `intent_resolved_node_key_column`), so it is a view. The validator's rejection below and the LSP read it, so the editor can tell an author the required declared type rather than leaving it to javac. Existing pins (`ConditionParamExtractionCaptureTest`, `ConditionParamExtractionTest`) update alongside. The relation carries one arm per site the generator installs at, three rather than two, and the class and the method are part of its key because one argument can be named by its own `@condition` and by its field's at once; two directives naming one method at one coordinate stay one row.
 
-**Rejection.** A `@condition` parameter bound to a `@nodeId` slot whose declared Java type does not match the decoded type is rejected at classify time, naming the coordinate, the declared type, and the required type. Without it the contract's only enforcer is the consumer's javac inside emitted glue, a failure with no line back to the SDL. This is the seam R411 owns for wire-coercion casts: this item threads its check through the same typed-rejection channel and grows no second assignability derivation beside `WireCoercionResolver.checkScalar`; whether the decoded-type check consumes that predicate with the expected side swapped, or stands as a sibling in the same home, is settled at implementation in R411's terms.
+**Rejection.** A `@condition` parameter bound to a `@nodeId` slot whose declared Java type does not match the decoded type is rejected at classify time, naming the coordinate, the declared type, and the required type. Without it the contract's only enforcer is the consumer's javac inside emitted glue, a failure with no line back to the SDL. This is the seam R411 owns for wire-coercion casts: the check threads through the same typed-rejection channel and grows no second assignability derivation beside `WireCoercionResolver.checkScalar`. It landed as a sibling arm in that family, `WireCoercionError.NodeIdDecodedType`, rather than as a consumer of `checkScalar`'s predicate.
 
 **Error-contract alignment, a bounded rider.** The `argMapping` projection path (`ProjectedKeyReads` / `RecordDecodeHelperRegistry`) is the other authored-parameter decode, at the column grain rather than the whole-key grain, and it stays a separate mechanism. But its mismatch failure (a bare `GraphqlErrorException`, "Decoded NodeId did not match the expected type for this argument") diverges from the two-branch malformed-vs-wrong-type `GraphitronClientException` the key helpers throw. One malformed id should fail identically at both grains; align the projection helper's failure onto the same message family. Both helper bodies host on the same conditions class, so the seam is one file.
 
@@ -77,8 +77,9 @@ One precision the arm's new vote needs: **an authored parameter rejects on diver
 
 - Pipeline, in the `NodeIdParticipantRoutePipelineTest` neighborhood: the override escape emits a decode helper per participant and the authored call consumes the decoded local; the existing invariant that no `GeneratedConditionFilter` stands beside it is preserved.
 - Rejections: divergent inferred node types on an all-author-owned leaf (the closed hole); a `String`-declared parameter on a decoded slot, with the message naming the required type.
-- Execution, `MultiTableNodeIdRouteExecutionTest`: `stockByLanguageOverride` round-trips a *real* encoded id end to end. The test supplies `NodeIdEncoder.encode(...)` output (test code is downstream of generated code, so it can), the fixture receives `Integer`, and the old plain-integer string now fails the request with the mismatch error, which is itself asserted. This retires the tree's only escape-hatch fixture that cannot decode.
+- Execution, `MultiTableNodeIdRouteExecutionTest`: `stockByLanguageOverride` round-trips a *real* encoded id end to end. The test supplies `NodeIdEncoder.encode(...)` output (test code is downstream of generated code, so it can), the fixture receives `Integer`, and the old plain-integer string now fails the request with the mismatch error, whose message is itself asserted at both branches, malformed and wrong-type. This retires the tree's only escape-hatch fixture that cannot decode.
 - Coverage for the routed `override: true` coordinate (the FK-target shape) receiving the decoded key, at whichever tier the testing rubric places it.
+- The field-level coordinate, at the three tiers it is a fact at: the install and its declared-type refusal in the pipeline test beside their argument-level twins, the divergence refusal beside them, the exemption row over a real capture in `ConditionParamDecodeCaptureTest`, and the arm itself, with the two-directives cases that make the key readable, in `ConditionParamDecodeTest`.
 - Store: pins for the new view per the existing capture/intent pattern.
 
 Fixture migration: `MultiTableConditionFixtures.stockByRawNodeId` renames (it no longer receives a raw id) and takes `Integer`; its javadoc and the example-schema comments stop documenting the un-followable pattern.
@@ -113,7 +114,7 @@ Five forks the plan left to the implementer, settled during the work.
 
 **The install is keyed on the slot, so a third directive site rides along.** The plan named two coordinates, the argument and the input field, meaning the two slots a value is bound from. A field-level `@condition` binds its field's own arguments, so a parameter bound to a `@nodeId` argument is at the argument coordinate however the directive was written, and it shares a glue method with that argument's implicit predicate: leaving it on the declared-type rule would have moved the two-contradictory-readings defect rather than closed it. It takes the same install, run in `projectForFilter` where the arguments are already classified.
 
-One shape stays uncovered, and is stated here rather than left to be discovered: a field-level `argMapping` descending to a `@nodeId` **input field** (`"p: filter.languageId"`). The path is dotted, so it is not a whole-slot binding, and its last segment names an input field rather than a key column, so the projection rail does not claim it either. Such a parameter still receives the wire string. Closing it wants a descent-aware install neither rail has today.
+One shape stays uncovered, and is stated here rather than left to be discovered: a field-level `argMapping` descending to a `@nodeId` **input field** (`"p: filter.languageId"`). The path is dotted, so it is not a whole-slot binding, and its last segment names an input field rather than a key column, so the projection rail does not claim it either. Such a parameter still receives the wire string. Closing it wants a descent-aware install neither rail has today, which is R884's to do; the manual's own promise is scoped to whole-slot bindings and names what a dotted descent gets, so an author cannot follow the bullet into the hole.
 
 **The declared-type refusal is a sibling arm in the wire-coercion family, not a consumer of its predicate.** The plan left that fork to R411's terms. `WireCoercionError.NodeIdDecodedType` joins `Assignability` and `EnumConstantDivergence` because it is that family's own comparison run one transform later: the declared type against what the generator hands the call site, rather than against what graphql-java delivers. Consuming `WireCoercionResolver.checkScalar` with the sides swapped was the other option and does not fit, that predicate taking an SDL leaf type and deriving graphql-java's coercion from it, which is exactly the derivation the decode replaces. No second assignability derivation grows: the check is exact type equality, the same discipline `checkScalar` already applies under a name that suggests otherwise.
 
@@ -121,7 +122,7 @@ One shape stays uncovered, and is stated here rather than left to be discovered:
 
 **R862 had not landed at pickup, so this item shipped the composition.** `ConditionResolver.rewrapForNested` now passes the parameter's own extraction as the `NestedInputField` leaf rather than defaulting it to `Direct`. The composition alone would not have delivered the enum case, because `ConditionGlueRenderer.nestedExtraction` had no enum arm: an `EnumValueOf` leaf fell through to the same cast-to-declared-type the `Direct` default produced, so the arm ships here too, as the nested twin of the top-level one. What stays with R862 is the coverage: proving the enum leaf works wants a fixture at the compile or execution tier, the pipeline tier banning code-string body matching, and that fixture is R862's to add.
 
-**The store relation is `intent_condition_param_decode`, keyed on the use site.** It states the shape as an arity and a list flag rather than a composed Java type, the type being the generator's composition of the key columns' own types (already a relation) with the wrapping this one names. Which of the method's parameters receives the decoded key is *not* a column: that is the binding question the fact model defers everywhere, and a reader that has resolved the binding for itself, which the validator and the LSP both have, needs only the shape.
+**The store relation is `intent_condition_param_decode`, keyed on the use site and the method.** It states the shape as an arity and a list flag rather than a composed Java type, the type being the generator's composition of the key columns' own types (already a relation) with the wrapping this one names. Which of the method's parameters receives the decoded key is *not* a column: that is the binding question the fact model defers everywhere, and a reader that has resolved the binding for itself, which the validator and the LSP both have, needs only the shape. Three arms, one per site the generator installs at, because absence here asserts the declared-type rule stands and an arm short of the generator would assert it where it does not. The method joins the key with the third arm: one argument can be named by its own `@condition` and by its field's at once, two authored methods each receiving the decoded key, while two directives naming *one* method at one coordinate stay one row, an exemption being a fact about a slot and a method rather than about a directive.
 
 ## Reviewer findings
 
@@ -187,6 +188,43 @@ instead. File a Backlog item if closing the hole is wanted.
   collapsing on the next pass; the delivered state is recorded, just in two places.
 - The nested enum arm in `ConditionGlueRenderer.nestedExtraction` ships with its coverage deferred,
   which the notes disclose and attribute. Not counted against this gate.
+
+### Round 1 addressed
+
+**1. The third install site has a relation arm and tests.** `intent_condition_param_decode` gained a
+third arm over `graphitron_field_condition` at an object or interface type, joined to the
+`@nodeId` instruction at each of that field's arguments. The arm lands `site = 'ARGUMENT'`, the site
+column being the slot's and not the directive's, so the relation now carries a row wherever the
+generator installs and the "absence asserts the declared-type rule" reading holds again.
+
+The arm changed the key rather than only widening the population, which the view's comment and the
+two column comments now state: an argument can be named by its own `@condition` and by its field's
+at once, so `class_name` and `method_name` complete the key. Two directives naming *one* method at
+one coordinate stay one row, which an anti-join in the third arm is what says; the alternative, a
+bag with the same fact twice, would have put a multiplicity in the relation that means nothing to
+any reader.
+
+Coverage at the tier each fact belongs to: `ConditionParamDecodeTest` gains the arm's own case (with
+a plain sibling argument that draws nothing, so the arm reads as the slot's exemption rather than
+"the directive exempts everything it sees") plus the two-directives pair that makes the key
+readable; `ConditionParamDecodeCaptureTest` proves the three captures meet over a real run;
+`NodeIdParticipantRoutePipelineTest` gains the field-level install, its declared-type refusal and its
+divergence refusal, beside their argument-level twins.
+
+**2. `condition.adoc` is scoped to whole-slot bindings.** The constraints bullet now promises the
+decoded key to a parameter bound to *the whole of* a slot, and a second bullet says what a dotted
+`argMapping:` gets instead: opening the slot with a key column is the projection rail, which is
+documented and works; descending through an input object onto a `@nodeId` input field is neither
+rail, still receives the wire string, and the remedy that exists today is the input field's own
+`@condition`. R884 owns closing the hole.
+
+**Non-blocking, taken.** The two execution-tier refusal tests now assert the decode-failure message
+at both of its branches, malformed and wrong-type, which is what the message-family rider bought;
+each also asserts against the errors rather than a single element, the aborted non-null field
+raising a bubble error behind the client error. The `Implementation` section's settled forks now read
+as delivered, the R862 conditional included, with the reasoning left in `Implementation notes`; the
+`depends-on` goes with it, and R862's own body records that the composition shipped here and that
+what remains there is its enum coverage.
 
 ## Retired vocabulary
 

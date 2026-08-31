@@ -286,9 +286,14 @@ class MultiTableNodeIdRouteExecutionTest {
         var result = executeRaw("""
             { stockByLanguageOverride(filter: { languageId: "1" }) { __typename } }
             """);
+        // The decode's own error, plus the non-null bubble the aborted field raises behind it.
         assertThat(result.getErrors())
             .as("a plain key where an encoded LanguageNode id is declared")
-            .isNotEmpty();
+            .anySatisfy(e -> assertThat(e.getMessage())
+                .as("the malformed branch of the one decode-failure message, naming the value and"
+                    + " the node type the leaf declares")
+                .contains("Invalid node id \"1\"")
+                .contains("not a valid LanguageNode id"));
     }
 
     @Test
@@ -300,6 +305,10 @@ class MultiTableNodeIdRouteExecutionTest {
             """.formatted(NodeIdEncoder.encode("Film", 1)));
         assertThat(result.getErrors())
             .as("a Film id supplied where a LanguageNode id is declared")
-            .isNotEmpty();
+            .anySatisfy(e -> assertThat(e.getMessage())
+                .as("the wrong-type branch of the same message, which names what the id decoded to"
+                    + " rather than reading as malformed")
+                .contains("decodes to type \"Film\"")
+                .contains("expected a LanguageNode id"));
     }
 }

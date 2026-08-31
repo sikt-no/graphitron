@@ -38,6 +38,20 @@ Scope worth settling at Spec: whether the fix is simply passing `arg.extraction(
 what a regression test looks like at which tier. The execution tier is where a wrong cast surfaces,
 and the fixture needs a jOOQ enum column reachable from an input-field `@condition`.
 
+## What is left, after the composition shipped elsewhere
+
+R874, which needed the same composition to carry a decoded `@nodeId` key down to an input-field
+`@condition`, shipped it: `ConditionResolver.rewrapForNested` now passes each parameter's own
+extraction as the `NestedInputField` leaf rather than defaulting it to `Direct`. The renderer arm
+that the enum case additionally needed shipped there too, `ConditionGlueRenderer.nestedExtraction`
+having had no enum arm, so an `EnumValueOf` leaf fell through to the same cast-to-declared-type the
+`Direct` default produced.
+
+So the defect above is fixed and this item is now its coverage: a fixture that proves a jOOQ enum
+column reaches an input-field `@condition` method as the enum. The tier question in the scope
+paragraph stands unanswered, and is the whole of what Spec has to settle; the pipeline tier bans
+code-string body matching, so the fixture belongs at compile or execution.
+
 ## Provenance
 
 Found by counting the producers of a condition binding's extraction while narrowing the authored
