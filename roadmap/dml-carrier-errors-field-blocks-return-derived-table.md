@@ -1,7 +1,7 @@
 ---
 id: R687
 title: "A DML carrier payload with an errors field loses its return-derived write target"
-status: Ready
+status: In Progress
 bucket: structural
 priority: 5
 theme: mutation-write
@@ -480,6 +480,57 @@ Pipeline tier, in `SingleRecordPayloadPipelineTest`:
   is enough: the same record-element payload *with* `@mutation(table:)` still grounds and still
   gets the per-verb record-element rejection, which is what keeps that live rejection from
   being deleted as dead code later.
+
+## Implementation findings
+
+**The diagnostic half's seat was wrong, and the plan's reachability claim is falsified.** The
+Design section puts the ungrounded-carrier diagnostic at `validateReturnType`'s scalar arm, on the
+premise that the generic "not yet supported" message "still fires whenever a payload fails to ground
+for any reason". Probed against the tree, it does not. Every classifier that can reach that scalar
+arm resolves its write target first: `classifyInsertTableField` and `classifyUpdateTableField` both
+call their write-target resolver before `validateReturnType`, and
+`resolveReturnCapableWriteTarget`'s `WriteTableRef.None` arm rejects there. A record-element or
+ID-element carrier resolves no rung at all, so it never reaches the scalar arm; measured on trunk
+before this change, both got
+
+```
+@mutation(typeName: INSERT) field 'createFilm' has no write target: return the row's @table type
+or a carrier payload whose data field is that @table type (preferred), or name the table with
+@mutation(table: "<table>") on this field.
+```
+
+which is the message this item's own Design section quotes as `resolveReturnCapableWriteTarget`'s.
+The `@table`-element population does reach the scalar arm, and is exactly the reported bug; once the
+ordering move lands it grounds instead, so post-fix nothing an SDL fixture can express arrives
+there. The residual is the `Class.forName` case the Design section anticipated when it worded the
+`Table` bucket cause-neutrally: a payload whose table resolved but whose jOOQ record class will not
+load. That population is real but not expressible as a schema fixture.
+
+What was built instead, keeping the design move and moving the seat: the recognizer split is
+unchanged (`CarrierBinding.NotACarrier` sealed over a plain arm and `UngroundedDmlCarrier`, minted
+at the single construction site, carrying the decoded data-field name and `DmlElementKind`), and the
+per-shape wording is a shared clause (`MutationInputResolver.ungroundedCarrierSteer`) that **two**
+seats prepend their own framing to: the `WriteTableRef.None` arm, where the record-element and
+ID-element populations actually land, and the scalar arm the plan named, which keeps the
+`@table`-element residual. Neither seat re-derives the predicate; both read the published fact
+through `MutationInputResolver.ungroundedCarrier`. Delivering scope bullet 2's stated goal, a
+carrier shape gets advice matched to its shape rather than an edit that cannot help it, requires the
+first seat; the plan's single seat alone would have changed nothing an author sees.
+
+**One consequence for the Tests section.** Its first ungrounded-carrier bullet asks for a
+`Table`-element carrier that cannot ground. That fixture does not exist post-fix, for the reason
+above, and the test class says so where the pins live. The other three bullets are pinned as
+written, parameterised over INSERT and UPDATE.
+
+**The rung-1 routing removed a parameter.** Routing `resolveReturnCapableWriteTarget`'s step-3
+rung-1 read through `MutationInputResolver.resolveReturnDerivedTable` (the Implementation section's
+last bullet) left `returnType` unused in that method and, transitively, in
+`resolveInsertWriteTarget` and `resolveUpdateWriteTarget`. All three signatures dropped it rather
+than carrying a dead parameter. The equivalence the plan asked to verify holds on every shape a
+fixture reaches; the one divergence is a `Connection`-wrapped `@table` return, where the inline read
+saw rung 1 and the helper does not. That shape is rejected by `validateReturnType` either way, so
+only the message changes, and the write target itself is unaffected (step 2 already resolved it
+through the same helper).
 
 ## Reviewer findings
 

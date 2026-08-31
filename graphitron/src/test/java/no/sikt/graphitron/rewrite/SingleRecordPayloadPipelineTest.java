@@ -532,8 +532,9 @@ class SingleRecordPayloadPipelineTest {
         // emitter, which does not exist. The mutation classifier rejects at classify time with
         // a per-mismatch message naming the carrier, the data field, and pointing to @service
         // as the right path. The record-element payload derives no write target from its
-        // return, so @mutation(table:) supplies it; UPDATE resolves the write target before
-        // the payload scan, so without it the rejection would be masked by "no write target".
+        // return, so @mutation(table:) supplies it; write-target resolution runs before the
+        // payload scan, so without it the field rejects at the no-write-target seat instead
+        // (payload_recordElementCarrier_withoutTableArg_steersAtServiceProducer pins that steer).
         String sdl = """
             type Film @table(name: "film") { title: String }
             type FilmDto { title: String }
@@ -580,11 +581,15 @@ class SingleRecordPayloadPipelineTest {
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
     void payload_singleInput_withErrorsField_classifiesAsMutationDmlRecordFieldWithLocalContext(DmlKind kind) {
-        // A payload with an errors-shaped sibling does not return-derive the write target, so
-        // the fixture names it with @mutation(table:).
+        // The consumer shape from the field report: an errors-as-data channel beside the data
+        // field, with no @mutation(table:). The errors field is skipped by the carrier scan, so the
+        // payload return-derives its write target off the @table-element data field like any other
+        // carrier. This is the regression pin for the grounding-order fix: before it, the grounding
+        // pass ran while the ErrorIndex was still empty, the errors field read as a second data
+        // channel, no DmlEmitted was minted, and the field rejected with "not yet supported".
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind,
             CARRIER_WALK_LOCAL_CONTEXT_ERRORS
-            + "type FilmPayload { film: Film errors: [CarrierError!] }", true));
+            + "type FilmPayload { film: Film errors: [CarrierError!] }"));
 
         // UPDATE folds in with a Write.Update arm; INSERT carries Write.Insert.
         // The LocalContext error channel is carried on the common WithErrorChannel supertype either way.
@@ -615,10 +620,11 @@ class SingleRecordPayloadPipelineTest {
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
     void payload_bulkInput_withErrorsField_classifiesAsMutationBulkDmlRecordFieldWithLocalContext(DmlKind kind) {
-        // Errors-shaped sibling → no return-derivation; @mutation(table:) names the target.
+        // The bulk-input half of the same regression pin: an errors channel does not stop the
+        // payload from return-deriving its write target, so no @mutation(table:) is needed.
         var schema = TestSchemaHelper.buildSchema(payloadDml(kind,
             CARRIER_WALK_LOCAL_CONTEXT_ERRORS
-            + "type FilmPayload { films: [Film!] errors: [CarrierError!] }", true));
+            + "type FilmPayload { films: [Film!] errors: [CarrierError!] }"));
 
         // UPDATE folds in with a Write.Update arm; INSERT carries Write.Insert.
         // The LocalContext error channel is carried on the common WithErrorChannel supertype either way.
@@ -653,7 +659,7 @@ class SingleRecordPayloadPipelineTest {
         // regressions to the PayloadAccessor transport without a model-level signal.
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(DmlKind.INSERT,
             CARRIER_WALK_LOCAL_CONTEXT_ERRORS
-            + "type FilmPayload { film: Film errors: [CarrierError!] }", true));
+            + "type FilmPayload { film: Film errors: [CarrierError!] }"));
 
         var generated = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
         var mutationFetchers = generated.stream()
@@ -687,6 +693,122 @@ class SingleRecordPayloadPipelineTest {
         assertThat(filmPayloadFetchers)
             .as("FilmPayloadFetchers.errors reads env.getLocalContext()")
             .contains("env.getLocalContext()");
+    }
+
+    @Test
+    void payload_withErrorsField_explicitTableArg_classifiesAndAgreesOnBothRungs() {
+        // The explicit argument must keep working alongside an errors channel, which the three
+        // fixtures above no longer cover now that they return-derive. Doubles as the rung-agreement
+        // pin on an errors-bearing carrier: @mutation(table:) (rung 2) names the same table the
+        // payload's @table-element data field derives (rung 1), so the grounded carrier's table and
+        // the classified leaf's write target are the one fact resolveDmlWriteTableRef produces.
+        //
+        // A standing invariant pin, not a regression pin for the grounding order: on an agreeing
+        // fixture both rungs resolve the same TableRef, so the equality also held before the
+        // ordering fix (grounding fell to rung 2 while classification took rung 1 — the provenance
+        // diverged, the value did not). A disagreeing fixture cannot pin it either, since the
+        // classify-phase cross-check rejects one. The flipped fixtures above carry this item's
+        // regression weight.
+        var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(DmlKind.INSERT,
+            CARRIER_WALK_LOCAL_CONTEXT_ERRORS
+            + "type FilmPayload { film: Film errors: [CarrierError!] }", true));
+
+        var mutField = schema.field("Mutation", mutationName(DmlKind.INSERT));
+        assertThat(mutField).isInstanceOf(MutationField.MutationDmlRecordField.class);
+        var leaf = (MutationField.MutationDmlRecordField) mutField;
+        assertThat(leaf.errorChannel()).isPresent();
+
+        var carrierType = schema.type("FilmPayload");
+        assertThat(carrierType).isInstanceOf(GraphitronType.JooqTableRecordType.class);
+        assertThat(((GraphitronType.JooqTableRecordType) carrierType).table())
+            .as("the grounded carrier table equals the classified leaf's write target")
+            .isEqualTo(leaf.write().table());
+    }
+
+    // ===== Ungrounded-carrier diagnostics (shape-matched steers) =====
+    //
+    // A structurally well-formed carrier payload that no DML producer bound is published by the
+    // recognizer as CarrierBinding.NotACarrier.UngroundedDmlCarrier, and the rejection wording forks
+    // on its element kind. The populations split across two seats, which is why the fixtures below
+    // read the two messages: a record- or ID-element carrier resolves no write-target rung, so
+    // FieldBuilder.resolveReturnCapableWriteTarget's no-source arm rejects it before any return-type
+    // validation runs. The @table-element population reaches
+    // MutationInputResolver.validateReturnType's scalar arm instead, and post-fix nothing an SDL
+    // fixture can express lands there: a @table-element payload that resolves rung 1 at classify
+    // time resolved it at grounding time too, so it grounds. The residual population there is a
+    // payload whose table resolved but whose jOOQ record class would not load, which no schema
+    // fixture can produce; the flipped errors-bearing fixtures above are the pin that this shape
+    // classifies rather than reaching that seat at all.
+
+    @ParameterizedTest
+    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
+    void payload_recordElementCarrier_withoutTableArg_steersAtServiceProducer(DmlKind kind) {
+        // A record-element carrier's rows come from a producer, so neither of the generic message's
+        // two fixes (return the row's @table type, name the table) helps. Naming a table with
+        // @mutation(table:) does make it ground, but only onto the per-verb record-element
+        // rejection pinned by payload_recordElement_dmlMutationRejectsAtClassifier.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type FilmDto { title: String }
+            type FilmDtoPayload { film: FilmDto }
+            input FilmInput { %s }
+            type Query {
+                aFilmDto: FilmDto @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
+            type Mutation { %s(in: FilmInput!): FilmDtoPayload @mutation(typeName: %s) }
+            """.formatted(inputBody(kind), mutationName(kind), kind.name()));
+
+        var mutField = schema.field("Mutation", mutationName(kind));
+        assertThat(mutField).isInstanceOf(UnclassifiedField.class);
+        var reason = ((UnclassifiedField) mutField).rejection().message();
+        assertThat(reason)
+            .contains("'FilmDtoPayload' is carrier-shaped", "data field 'film' is record-backed",
+                "producing @service return type")
+            .doesNotContain("not yet supported");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
+    void payload_idElementCarrier_withoutTableArg_steersAtDeleteOnlyPermit(DmlKind kind) {
+        // The ID-element data field is the DELETE PK-echo permit. On INSERT / UPDATE a table name
+        // does not unlock it, so the steer points at the return shape instead.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type FilmIdPayload { id: ID! }
+            input FilmInput { %s }
+            type Query { x: String }
+            type Mutation { %s(in: FilmInput!): FilmIdPayload @mutation(typeName: %s) }
+            """.formatted(inputBody(kind), mutationName(kind), kind.name()));
+
+        var mutField = schema.field("Mutation", mutationName(kind));
+        assertThat(mutField).isInstanceOf(UnclassifiedField.class);
+        var reason = ((UnclassifiedField) mutField).rejection().message();
+        assertThat(reason)
+            .contains("'FilmIdPayload' is carrier-shaped", "data field 'id' echoes the primary key",
+                "only @mutation(typeName: DELETE) may return")
+            .doesNotContain("not yet supported");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
+    void payload_idElementCarrier_withTableArg_stillGroundsAndHitsPerVerbRejection(DmlKind kind) {
+        // The counterpart that keeps the per-verb rejection from reading as dead code: naming the
+        // table grounds the payload, so it classifies as a ResultReturnType and reaches the
+        // PK-echo-permit rejection rather than the ungrounded-carrier steer above.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type FilmIdPayload { id: ID! }
+            input FilmInput { %s }
+            type Query { x: String }
+            type Mutation { %s(in: FilmInput!): FilmIdPayload @mutation(typeName: %s, table: "film") }
+            """.formatted(inputBody(kind), mutationName(kind), kind.name()));
+
+        var mutField = schema.field("Mutation", mutationName(kind));
+        assertThat(mutField).isInstanceOf(UnclassifiedField.class);
+        var reason = ((UnclassifiedField) mutField).rejection().message();
+        assertThat(reason)
+            .contains("single-record carrier 'FilmIdPayload'", "PK-echo permit")
+            .doesNotContain("has no write target");
     }
 
     // ===== Helpers =====
@@ -724,11 +846,14 @@ class SingleRecordPayloadPipelineTest {
 
     /**
      * The {@code @mutation(...)} directive for {@code kind}. INSERT / UPDATE derive their write
-     * target from a payload whose single data field is a {@code @table}-element; fixtures whose
-     * payload does not return-derive (an errors-shaped sibling present, or a deliberately
-     * broken carrier shape) pass {@code tableArg} to name the write target with
-     * {@code @mutation(table:)} so classification proceeds past write-target resolution to the
-     * behavior under test. DELETE has no return-derived rung and always names its table.
+     * target from a payload whose single data field is a {@code @table}-element, an errors-shaped
+     * sibling notwithstanding: the carrier scan skips errors fields, so a payload carrying one
+     * return-derives exactly as a bare payload does. Two kinds of fixture still pass
+     * {@code tableArg} to name the write target with {@code @mutation(table:)}: one whose payload
+     * is a deliberately broken carrier shape (which return-derives nothing, so the explicit
+     * argument is what carries classification past write-target resolution to the behavior under
+     * test), and one that is testing the explicit argument itself. DELETE has no return-derived
+     * rung and always names its table.
      */
     private static String mutationDirective(DmlKind kind, boolean tableArg) {
         String table = (tableArg || kind == DmlKind.DELETE) ? ", table: \"film\"" : "";

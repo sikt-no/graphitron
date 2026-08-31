@@ -118,6 +118,15 @@ class TypeBuilder {
     /** Per-name memo for {@link #lookAheadVerdict}; {@code Optional.empty()} caches a null verdict. */
     private final Map<String, Optional<GraphitronType>> lookAheadMemo = new java.util.HashMap<>();
 
+    /**
+     * Whether {@link #lookAheadVerdict} may write to {@link #lookAheadMemo}. False until
+     * {@link #prepareForWalk()} reaches its end, so a verdict a preparation-time probe computes
+     * against the still-forming binding fixed point is recomputed rather than cached. The write
+     * gate, and not a clear-at-the-end, is what makes the property positional-independent: a pass
+     * added anywhere inside {@code prepareForWalk} inherits it.
+     */
+    private boolean lookAheadMemoOpen = false;
+
     TypeBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
@@ -230,10 +239,10 @@ class TypeBuilder {
         // via the same producers classification uses (buildTableType / buildTableInterfaceType),
         // not from the registry, so they may be built before the walk.
         buildClassificationIndices();
-        // The routine-carrier grounding runs after the indices: its structural scan detects the
-        // payload's errors-shaped field through the ErrorIndex, which the root-producer pass
-        // predates. See RecordBindingResolver.groundRoutineCarriers.
-        bindings.groundRoutineCarriers();
+        // The DML- and routine-carrier grounding runs after the indices: their structural scans
+        // detect the payload's errors-shaped field through the ErrorIndex, which the root-producer
+        // pass predates. See RecordBindingResolver.groundIndexDependentBindings.
+        bindings.groundIndexDependentBindings();
         // Emit the directive-ignored warning in a dedicated pass over getAllTypesAsList so the
         // warning order is stable (SDL order) and independent of walk order. It reads only the
         // reflection-binding fixed point and SDL directives, never the registry.
@@ -245,10 +254,12 @@ class TypeBuilder {
         // reaches a rejected type, classifyAndRegister's rejection-first guard reconstructs the
         // same payload, so the register is an equals-idempotent no-op, never a re-demote.
         surfaceMultiProducerRejections();
-        // resolveAll's DML grounding probes the structural payload scan (and through it
-        // lookAheadVerdict) while the binding fold is still forming; verdicts computed then
-        // predate the fixed point and must not stick. Only post-preparation verdicts memoize.
-        lookAheadMemo.clear();
+        // The grounding passes probe the structural payload scan (and through it lookAheadVerdict)
+        // while the binding fold is still forming; verdicts computed then predate the fixed point
+        // and must not stick. Opening the memo for writes here, rather than clearing it, is what
+        // makes that hold for a pass inserted anywhere above: a preparation-time probe never
+        // populates the memo in the first place.
+        lookAheadMemoOpen = true;
     }
 
     /**
@@ -350,12 +361,38 @@ class TypeBuilder {
         record TableBacked(TableRef table) implements CarrierBinding {}
         /** Two-level {@code @service} carrier: backed by the per-element composite class. */
         record ClassBacked(Class<?> recordClass) implements CarrierBinding {}
-        /** Not a producer-backed carrier (orphan, or not carrier-shaped at all). */
-        record NotACarrier() implements CarrierBinding {}
+        /**
+         * Not a producer-backed carrier (orphan, or not carrier-shaped at all).
+         *
+         * <p>Sealed over two arms so a reader that only wants the coarse answer keeps asking
+         * {@code instanceof NotACarrier} and gets it, while the one seat that needs to know
+         * <em>why</em> can switch. The split is inside this arm and not beside it precisely because
+         * every existing read site wants the coarse answer for an ungrounded carrier too: it stays
+         * a nesting target, it yields no shape verdict, and it still reaches the orphan
+         * {@code @service} diagnostic.
+         */
+        sealed interface NotACarrier extends CarrierBinding
+            permits NotACarrier.Plain, NotACarrier.UngroundedDmlCarrier {
+            /** Not carrier-shaped for any family, or carrier-shaped for a family that grounded nothing. */
+            record Plain() implements NotACarrier {}
+            /**
+             * The DML structural scan admitted the payload, but no {@code @mutation} field grounded
+             * a {@code DmlEmitted} for it, so the payload never earns a carrier verdict. Carries
+             * the scan's decoded facts, the data field's name and its element kind, so the DML
+             * return-type validator can say what is missing instead of misdescribing the return
+             * type. Decoded at construction rather than republishing the scan's {@code Admit}: a
+             * published recognizer fact should hand its consumers neither a graphql-java handle nor
+             * the scan's own result vocabulary.
+             */
+            record UngroundedDmlCarrier(String dataFieldName, BuildContext.DmlElementKind element)
+                implements NotACarrier {}
+        }
     }
 
     CarrierBinding carrierBinding(String name) {
-        if (ctx.scanStructuralDmlPayload(name) instanceof BuildContext.DmlPayloadScan.Admit) {
+        BuildContext.DmlPayloadScan.Admit dmlAdmit = null;
+        if (ctx.scanStructuralDmlPayload(name) instanceof BuildContext.DmlPayloadScan.Admit admit) {
+            dmlAdmit = admit;
             var table = dmlEmittedBinding(name).map(b -> b.tableRef()).orElse(null);
             if (table != null) return new CarrierBinding.TableBacked(table);
         }
@@ -385,7 +422,14 @@ class TypeBuilder {
                 if (cls != null) return new CarrierBinding.ClassBacked(cls);
             }
         }
-        return new CarrierBinding.NotACarrier();
+        // The one construction of the not-a-carrier fact, so the arm is chosen where the fact is
+        // made. Only a DML Admit mints the reasoned arm: the seat that reads it is the DML return
+        // validator, whose precondition is already a non-Reject DML scan, and a "which family
+        // admitted" slot would depend on the scan order above.
+        return dmlAdmit == null
+            ? new CarrierBinding.NotACarrier.Plain()
+            : new CarrierBinding.NotACarrier.UngroundedDmlCarrier(
+                dmlAdmit.dataField().getName(), dmlAdmit.element());
     }
 
     /**
@@ -513,8 +557,9 @@ class TypeBuilder {
      * reflection bindings, catalog, the carrier fixed point) is fixed, so the verdict is a pure
      * function of the name and the memo makes the registry and the look-ahead two materializations
      * of one computation. During {@code prepareForWalk} itself the inputs are still forming (the
-     * DML grounding probes the payload scan mid-fold), so {@code prepareForWalk} clears the memo
-     * at its end and only post-fixed-point verdicts stick.
+     * grounding passes probe the payload scan mid-preparation), so the memo does not accept writes
+     * until that method reaches its end ({@code lookAheadMemoOpen}); a preparation-time probe
+     * recomputes and caches nothing, and only post-fixed-point verdicts stick.
      */
     GraphitronType lookAheadVerdict(String typeName) {
         var memo = lookAheadMemo.get(typeName);
@@ -522,7 +567,9 @@ class TypeBuilder {
             return memo.orElse(null);
         }
         GraphitronType verdict = computeLookAheadVerdict(typeName);
-        lookAheadMemo.put(typeName, Optional.ofNullable(verdict));
+        if (lookAheadMemoOpen) {
+            lookAheadMemo.put(typeName, Optional.ofNullable(verdict));
+        }
         return verdict;
     }
 

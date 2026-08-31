@@ -130,9 +130,8 @@ final class MutationInputResolver {
      * The {@code @mutation} verbs whose write target derives from the return type (a direct
      * {@code @table} return, or a carrier payload's single {@code @table}-element data field):
      * INSERT and UPDATE. DELETE is deliberately absent: a DELETE cannot return the deleted row's
-     * {@code @table} type (Invariant #14), so no DELETE return names a table. This rung is
-     * preferred over {@code @mutation(table:)} and the input {@code @table} bridge (see
-     * {@link #resolveDmlWriteTableRef}).
+     * {@code @table} type (Invariant #14), so no DELETE return names a table. Where this rung sits
+     * in the write-target precedence is {@link #resolveDmlWriteTableRef}'s to state.
      */
     static final Set<DmlKind> RETURN_DERIVED_TABLE_VERBS = Set.of(DmlKind.INSERT, DmlKind.UPDATE);
 
@@ -174,11 +173,15 @@ final class MutationInputResolver {
      * the classify-phase resolvers, not here; this helper returns the highest present rung and
      * never rejects on disagreement.
      *
-     * <p>Phase-portable: reads only SDL directives, the catalog through
-     * {@link ServiceCatalog#resolveTable}, and the registry-free
-     * {@link BuildContext#scanStructuralDmlPayload}, all available before the classification walk.
-     * The verb gates live here rather than at the call sites so a verb gaining a rung flows to
-     * every caller through the sets.
+     * <p>Registry-free but <em>not</em> phase-portable: rung 1 reaches
+     * {@link BuildContext#scanStructuralDmlPayload}, whose errors-field detection reads the
+     * phase-varying {@code ErrorIndex}. Called before {@code TypeBuilder.buildClassificationIndices}
+     * has run, this returns a different answer for a carrier payload with an errors field (the
+     * errors field reads as a second data channel, the scan rejects, and rung 1 comes back empty).
+     * Both callers therefore run post-index: the binding grounder from
+     * {@code RecordBindingResolver.groundIndexDependentBindings}, the classify-time resolvers from
+     * the walk. A new caller owes the same precondition. The verb gates live here rather than at
+     * the call sites so a verb gaining a rung flows to every caller through the sets.
      */
     static WriteTableRef resolveDmlWriteTableRef(
             GraphQLFieldDefinition fieldDef, DmlKind kind, ServiceCatalog svc, BuildContext ctx) {
@@ -240,6 +243,12 @@ final class MutationInputResolver {
      *
      * <p>Returns a non-null rejection reason on violation; {@code null} when the return type
      * is acceptable.
+     *
+     * <p>The {@link ReturnTypeRef.ScalarReturnType} arm is where every payload that failed to
+     * become a carrier lands, so it distinguishes the carrier-adjacent cases before falling to its
+     * generic text: a structurally rejected payload (the scan's own reason), one disqualified by a
+     * forbidden directive on its data field, and one that is well-formed but ungrounded
+     * ({@link #ungroundedCarrierReason}, off the recognizer's published fact).
      */
     static String validateReturnType(ReturnTypeRef returnType, DmlKind kind, boolean listInput, BuildContext ctx) {
         String perArm = switch (returnType) {
@@ -276,6 +285,15 @@ final class MutationInputResolver {
                                 + "is rejected on a DML carrier.";
                         }
                         yield message;
+                    }
+                    // A structurally well-formed carrier that no DML producer bound. The fact is
+                    // the recognizer's, not a fourth structural scan spelled here; a unit-tier
+                    // harness with no typeBuilder falls through to the generic message below.
+                    var ungrounded = ungroundedCarrier(s.returnTypeName(), ctx);
+                    if (ungrounded.isPresent()) {
+                        yield "@mutation(typeName: " + kind + ") return type '" + s.returnTypeName()
+                            + "': the payload is carrier-shaped, but "
+                            + ungroundedCarrierSteer(kind, ungrounded.get());
                     }
                 }
                 yield "@mutation(typeName: " + kind + ") return type '"
@@ -352,6 +370,63 @@ final class MutationInputResolver {
                 + "(Invariant #15)";
         }
         return null;
+    }
+
+    /**
+     * The shape-matched advice for a structurally well-formed carrier payload that no DML producer
+     * bound, forked on the data field's element kind because the three populations need different
+     * fixes: a {@code @table}-element carrier wants a write target, a record-element carrier wants
+     * an {@code @service} producer, and an ID-element carrier is asking for a permit only DELETE
+     * has. Without the fork all three get the same "name the table" steer, which is the wrong edit
+     * for two of them.
+     *
+     * <p>Two seats prepend their own framing and share this clause, because the populations split
+     * across them and neither seat sees all three. A record- or ID-element carrier resolves no
+     * write-target rung at all, so it is rejected by
+     * {@code FieldBuilder.resolveReturnCapableWriteTarget}'s no-source arm before any return-type
+     * validation runs; a {@code @table}-element carrier resolves its rung there and reaches
+     * {@link #validateReturnType}'s scalar arm instead, which is where a payload that resolved a
+     * table but still failed to ground (an unloadable jOOQ record class, say) lands.
+     *
+     * <p>The {@code @table} clause is worded as a steer rather than as an assertion that the write
+     * target is missing: at the scalar seat the table has by construction already resolved, so
+     * "there is no table" would be false there even though naming one is still the fix.
+     */
+    static String ungroundedCarrierSteer(
+            DmlKind kind, TypeBuilder.CarrierBinding.NotACarrier.UngroundedDmlCarrier carrier) {
+        String dataField = "its data field '" + carrier.dataFieldName() + "' ";
+        return switch (carrier.element()) {
+            case BuildContext.DmlElementKind.Table ignored -> dataField
+                + "is a @table type, which is what the write target derives from, but no DML "
+                + "producer bound the payload; name the write table with "
+                + "@mutation(table: \"<table>\") on this field.";
+            case BuildContext.DmlElementKind.RecordElement ignored -> dataField
+                + "is record-backed rather than a @table type, so its rows come from a producer "
+                + "rather than from DML RETURNING; back the payload with a producing @service "
+                + "return type. A write table named with @mutation(table:) does not produce "
+                + "those rows.";
+            case BuildContext.DmlElementKind.IdElement ignored -> dataField
+                + "echoes the primary key, which only @mutation(typeName: DELETE) may return; on "
+                + kind + " return the row's @table type, or a carrier payload whose data field is "
+                + "that @table type.";
+        };
+    }
+
+    /**
+     * The published ungrounded-carrier fact for a payload SDL type, or empty when the payload is
+     * not one. Reads the recognizer ({@code TypeBuilder.carrierBinding}) rather than re-deriving
+     * the predicate from a fresh structural scan, so the two cannot disagree about which payloads
+     * are ungrounded carriers. Empty for a unit-tier harness that wired no {@code typeBuilder};
+     * every production path wires it before classification starts, and the pipeline fixtures are
+     * the enforcement that the diagnostics below are live on the shipped path.
+     */
+    static Optional<TypeBuilder.CarrierBinding.NotACarrier.UngroundedDmlCarrier> ungroundedCarrier(
+            String payloadSdlName, BuildContext ctx) {
+        if (ctx == null || ctx.typeBuilder == null || payloadSdlName == null) return Optional.empty();
+        return ctx.typeBuilder.carrierBinding(payloadSdlName)
+                instanceof TypeBuilder.CarrierBinding.NotACarrier.UngroundedDmlCarrier u
+            ? Optional.of(u)
+            : Optional.empty();
     }
 
     /**

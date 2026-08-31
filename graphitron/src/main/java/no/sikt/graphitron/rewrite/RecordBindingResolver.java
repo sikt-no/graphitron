@@ -280,15 +280,15 @@ final class RecordBindingResolver {
             // consumers alone.
         });
 
-        // @service, @externalField (ComputedField), and @mutation (DmlEmitted)
-        // on field definitions.
+        // @service and @externalField (ComputedField) on field definitions. The DML @mutation
+        // grounding is not here: its carrier scan reads the ErrorIndex, so it runs from
+        // groundIndexDependentBindings once the classification indices exist.
         ctx.schema.getAllTypesAsList().forEach(named -> {
             if (!(named instanceof GraphQLObjectType obj)) return;
             if (named.getName().startsWith("__")) return;
             for (GraphQLFieldDefinition field : obj.getFieldDefinitions()) {
                 groundServiceField(obj, field);
                 groundComputedField(obj, field);
-                groundDmlMutationField(obj, field);
             }
         });
     }
@@ -603,13 +603,16 @@ final class RecordBindingResolver {
     }
 
     /**
-     * Grounds a {@link ProducerBinding.DmlEmitted} result-axis observation for the payload SDL
-     * type of every DML {@code @mutation} field whose payload is a non-{@code @table} SDL Object.
-     * Reads the {@code @mutation(typeName:)} arg to derive {@link DmlKind}, resolves the
-     * write-target table by the shared precedence
-     * ({@link MutationInputResolver#resolveDmlWriteTableRef}: {@code @mutation(table:)} preferred
-     * on a supported verb, else the input's {@code @table}), and lifts the cardinality from the
-     * field's single input-object argument's list shape (bulk-vs-single dispatch).
+     * Grounds a {@link ProducerBinding.DmlEmitted} observation on its own dedicated axis (see
+     * {@link #resolveDmlEmitted}) for the payload SDL type of every DML {@code @mutation} field
+     * whose payload is a non-{@code @table} SDL Object. Reads the {@code @mutation(typeName:)} arg
+     * to derive {@link DmlKind}, resolves the write-target table by the shared precedence
+     * {@link MutationInputResolver#resolveDmlWriteTableRef} implements, and lifts the cardinality
+     * from the field's single input-object argument's list shape (bulk-vs-single dispatch).
+     *
+     * <p>Called from {@link #groundIndexDependentBindings}, not from {@link #groundRootProducers}:
+     * the write-target precedence reaches the structural payload scan, whose errors-field detection
+     * needs the built {@link ErrorIndex}. That javadoc carries the reason.
      *
      * <p>Single-sourcing the precedence with the classify-time
      * {@code FieldBuilder.resolveDeleteWriteTarget} lets a payload-returning DELETE that names its
@@ -656,10 +659,9 @@ final class RecordBindingResolver {
         // grounded as RootTable; don't double-bind.
         if (payloadObj.hasAppliedDirective(DIR_TABLE)) return;
 
-        // Cardinality from the field's single input-object argument's list shape: the DML input
-        // on the deprecated-bridge route, the raw input on the @mutation(table:) field-derived
-        // route. Zero or multiple input-object arguments skip silently; the classifier rejects any
-        // other shape independently.
+        // Cardinality from the field's single input-object argument's list shape, whichever rung
+        // resolved the write target above. Zero or multiple input-object arguments skip silently;
+        // the classifier rejects any other shape independently.
         GraphQLArgument inputArg = singleInputObjectArg(field);
         if (inputArg == null) return;
         Arity arrival =
@@ -675,15 +677,45 @@ final class RecordBindingResolver {
     }
 
     /**
-     * The {@link ProducerBinding.RoutineEmitted} grounding pass, run by
-     * {@link TypeBuilder#prepareForWalk()} <em>after</em> the classification indices are built
-     * rather than inside {@link #groundRootProducers}: the carrier scan's errors-field
-     * detection reads the {@link ErrorIndex}, which does not exist during the root-producer
-     * pass, and a carrier with an errors field would otherwise mis-scan (the errors field read
-     * as a second data field) and silently fail to ground. Safe to run late because the
-     * routine memo is a dedicated axis the result/input fold never reads.
+     * The grounding whose precondition is the classification indices, run by
+     * {@link TypeBuilder#prepareForWalk()} <em>after</em> {@code buildClassificationIndices()}
+     * rather than inside {@link #groundRootProducers}. The pass is named for that precondition and
+     * not for the families in it, because the precondition is the single fact it asserts: every
+     * grounder here reaches a structural carrier scan whose errors-field detection reads the
+     * {@link ErrorIndex}. During the root-producer pass that index is still
+     * {@code ErrorIndex.EMPTY}, so a carrier payload with an errors field mis-scans (the errors
+     * field counted as a second data field) and silently fails to ground; the payload then earns
+     * no carrier verdict and its field rejects at classify time with a message naming the return
+     * type instead of the missing write target.
+     *
+     * <p>Two families, in two sequential loops rather than two calls per field: the order in which
+     * {@code dmlEmittedMemo} and {@code routineEmittedMemo} become visible to
+     * {@code TypeBuilder.carrierBinding} is observable for a payload reachable from both a
+     * {@code @mutation} and a {@code @routine} field, and DML-then-routine is the total order the
+     * per-field DML grounding had while it lived in {@link #groundRootProducers}. The routine loop
+     * also carries {@link #groundRoutineReturnType}, which binds a routine read field's return
+     * rather than a carrier: one more reason the pass cannot be named for a family set.
+     *
+     * <p>Safe to run late on both axes: {@code dmlEmittedMemo} and {@code routineEmittedMemo} are
+     * dedicated maps that {@link #propagateAccessorChains} and {@link #foldAll} never read (see
+     * {@link #resolveDmlEmitted}), and nothing between {@link #resolveAll} and this pass reads
+     * them either.
+     *
+     * <p>{@link ProducerBinding.ServiceEmitted} stays in {@link #groundRootProducers}, deliberately.
+     * Its carrier detection excludes errors-shaped fields structurally (the data field must be a
+     * GraphQL Object), so it never reads the {@link ErrorIndex} and has no bug forcing the move;
+     * and {@link #groundServiceField} also grounds result- and input-axis observations that must
+     * feed the fold, so it could not move wholesale in any case. Do not "complete" the migration by
+     * moving it.
      */
-    void groundRoutineCarriers() {
+    void groundIndexDependentBindings() {
+        ctx.schema.getAllTypesAsList().forEach(named -> {
+            if (!(named instanceof GraphQLObjectType obj)) return;
+            if (named.getName().startsWith("__")) return;
+            for (GraphQLFieldDefinition field : obj.getFieldDefinitions()) {
+                groundDmlMutationField(obj, field);
+            }
+        });
         ctx.schema.getAllTypesAsList().forEach(named -> {
             if (!(named instanceof GraphQLObjectType obj)) return;
             if (named.getName().startsWith("__")) return;
@@ -753,10 +785,11 @@ final class RecordBindingResolver {
      * downstream reader (the mutation leaf's captured pairs, the data field's correlation)
      * reads this carried result.
      *
-     * <p>Reading the table off the scan calls into {@code TypeBuilder.lookAheadVerdict} while
-     * the binding fixed point is still forming; that is the sanctioned mid-fold probe pattern
-     * ({@code prepareForWalk} clears the look-ahead memo at its end, so only post-fixed-point
-     * verdicts stick), the same instance the DML grounding above already exercises.
+     * <p>Reading the table off the scan calls into {@code TypeBuilder.lookAheadVerdict} before the
+     * walk begins; that is the sanctioned preparation-time probe pattern. The look-ahead memo does
+     * not accept writes until {@code prepareForWalk} finishes, so a verdict computed here cannot
+     * stick and be read back as if it were a post-fixed-point one.
+     * {@link #groundDmlMutationField}, the other grounder in this pass, probes the same seam.
      *
      * <p>Skipped cases, each silent (the walk grounds observations, the classify-phase
      * resolvers diagnose): non-Mutation parents, a {@code @reference} beside the
