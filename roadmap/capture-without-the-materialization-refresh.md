@@ -255,10 +255,19 @@ shape against a capture entry point.
 **The entry point is a projection, not a fifth pipeline.** `GraphQLRewriteGenerator`'s javadoc is
 explicit that its four public entry points are four `Projection` values of one `runPipeline` body,
 and that "a fifth entry point that grows a front half of its own is the regression this shape exists
-to prevent". Capture-only is therefore a fifth projection. It costs more than the existing four
-because validation and lint run on every pass today and this projection wants neither, so the
-projection record grows the switches to say so. That is the honest cost of the goal and it is small,
-but an implementer who reaches for a second body has built the thing that javadoc names.
+to prevent". Capture-only is therefore a fifth projection, and the pipeline's existing stage order
+is what makes that cheap: everything the goal wants already runs before the capture, and everything
+it does not want already runs after it, with one exception.
+
+The exception is lint, which `runPipeline` computes above the capture unconditionally, so the
+projection record grows a switch for it. Validation needs no switch, because it runs inside the
+capture window's continuation and the projection simply returns before it. Two facts make that
+return safe rather than lossy, and both should be checked rather than assumed by whoever implements:
+classification runs ahead of validation already, so the walk the capture transcribes is the same one
+a generating run transcribes; and the validation errors a build produces are not store rows on this
+path, `RejectionFacts` being a dev-session writer rather than a pipeline one. What capture does
+write about the read, the stage verdicts from `assembleAndCaptureVerdicts`, is produced above the
+capture and is unaffected.
 
 ## The measurement this was going to buy, and no longer does
 
@@ -332,9 +341,11 @@ quietly.
   schema fails validation, and find a store holding that schema's captured rows and the stage
   verdicts that refused it. This is what separates the goal from `mvn graphitron:validate`, which
   fills a store and then fails the build.
-* **No production code outside the mojos opens a store.** A test asserts it, in the shape
-  `graphitron-mcp`'s `StoreClientBoundaryTest` already uses for a guard list: after this item the
-  generator's main sources name no store opener.
+* **`graphitron`'s main sources name no store opener.** A test asserts it, in the shape
+  `graphitron-mcp`'s `StoreClientBoundaryTest` already uses for a guard list. Scoped to that module
+  deliberately: `graphitron-model` keeps two openers of its own that this item does not touch, the
+  build-time `ModelCodegenDriver` and the store's own boot surface, so a guard phrased over the
+  whole reactor would be false the day it lands.
 * A test drives a generation against a store the caller opened and asserts the pass captured into
   *that* store, which is the claim "the generator takes a store" reduces to and the one a green
   build would otherwise not answer.
