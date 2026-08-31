@@ -50,9 +50,15 @@ move, javac refuses it.
 
 **The store clients carry an edge they do not want.** `graphitron-lsp` and `graphitron-mcp` both
 depend on `graphitron` at test scope, and both poms apologise for it in their own words: compile
-scope "would let a request-path class reach a generator type again without anyone noticing". The
-edge exists for one reason, that building a populated store in a test requires driving a generator.
-Remove that requirement and both modules drop the dependency in every scope.
+scope "would let a request-path class reach a generator type again without anyone noticing". Neither
+module's main sources name a generator type today; the edge is entirely about what their tests need
+to build a fixture.
+
+For `graphitron-mcp` that need is the whole edge, and this item removes it. For `graphitron-lsp` it
+is most of the edge but not all: its tests also exercise the lint rule engine and the walk, which
+stay above the line, so the edge narrows rather than disappearing. The census under step 1 states
+both outcomes exactly, because the first draft of this item asserted the stronger claim for both and
+it is false for one.
 
 **Nobody can get a store without running a generation.** Every instrument built on the store so far
 has had to keep a file left behind by a run that happened to produce one, which is why the
@@ -83,12 +89,17 @@ pass inside that session opens a second handle underneath it because no caller c
 The saving is a handle rather than a database, H2 giving one process one database per file; what
 matters is that the session and the pass stop disagreeing about who owns the store.
 
-**Both store clients drop `graphitron` entirely.** What `graphitron-mcp` imports from it at test
-scope is `FactCapture`, `JooqCatalog`, `ClasspathScanner`, `CompletionData`, `CompileFacts`,
-`CompileDiagnostic`, `CompileRound`, `LintConfig` and the `CapturedStore` harness, all of which move
-down, plus `GraphQLRewriteGenerator`, `RewriteContext` and `BuiltStore`, which are there to drive a
-generator in order to obtain a store. The capture goal and the moved capture remove both reasons.
+**`graphitron-mcp` drops `graphitron` entirely, and `graphitron-lsp`'s edge narrows.** What
+`graphitron-mcp` imports at test scope is `FactCapture`, `JooqCatalog`, `ClasspathScanner`,
+`CompletionData`, `CompileFacts`, `CompileDiagnostic`, `CompileRound`, `LintConfig`, `Rejection` and
+`ValidationError`, all of which move down, plus `GraphQLRewriteGenerator`, `RewriteContext` and the
+`BuiltStore` / `CapturedStore` / `FactWriters` harnesses, which exist to drive a generator in order
+to obtain a store. The capture goal and the moved capture remove both reasons, so
 `StoreClientBoundaryTest` tightens from main-sources-only to all scopes.
+
+`graphitron-lsp` keeps a test-scope edge, for the imports named in step 1. What it gains instead is
+the guard `graphitron-mcp` already has: its rule about main sources lives only as a comment in its
+pom today, and this item makes it a test.
 
 ## How we get there
 
@@ -103,6 +114,31 @@ with the walk under R682; they have live callers in `TypeBackingProjectionTest` 
 `rewrite/lint` splits, `LintConfig` going down as a value in `SubjectConfig` while the rule engine
 stays above as analysis over a read schema. The third is the walk-side write, which R870 deletes and
 which this item therefore does not carry.
+
+**The store clients are censused too, and the two answers differ.** Both modules' main sources
+import nothing from the generator today, so this is entirely about their tests.
+
+`graphitron-mcp` clears. Every generator type its tests name either moves down with capture
+(`FactCapture`, `JooqCatalog`, `ClasspathScanner`, `CompletionData`, `CompileFacts`,
+`CompileDiagnostic`, `CompileRound`, `LintConfig`), is settled by the `rewrite/derive` gap below
+(`Rejection`, `ValidationError`), or is a store-fixture harness that moves with what it drives
+(`BuiltStore`, `CapturedStore`, `FactWriters`, all three in `graphitron`'s test sources today).
+
+`graphitron-lsp` does not clear, and the reason is this plan's own splits. Its tests import the lint
+rule engine (`LintRule`, `LintFix`, `DeprecationRecognizer`), which stays above as analysis over a
+read schema; the half of `rewrite/catalog` that stays above (`CatalogBuilder`, `TypeBackingShape`),
+whose live caller `R157PipelineTest` is the reason this plan does not delete it yet; the walk itself
+(`GraphitronSchemaBuilder`); and three generator-tier values (`ValidationReport`, `BuildWarning`,
+`GraphitronType`). None of those is store-fixture work, so no amount of capture moving down reaches
+them.
+
+**So `graphitron-lsp` keeps a test-scope edge on `graphitron`, and this item says so rather than
+promising otherwise.** Two things bound it. The edge shrinks to tests that exercise the analysis
+tier and the walk, which is what a test-scope dependency on the generator is legitimately for, and
+most of what is left retires on its own schedule: `GraphitronSchemaBuilder`, `CatalogBuilder`'s
+above-half and `TypeBackingShape` all die with the walk under R682. The durable residue is the lint
+rule engine, and moving *that* below the line is a separate design question about whether lint is
+analysis or fact, which this item does not open.
 
 The one census gap to close first: six files in `rewrite/derive` import `ValidationError` and
 `Rejection`, and two import `TableRef` and `ColumnRef` from the leaf zoo that stays above. The
@@ -152,9 +188,12 @@ window's continuation and the projection returns before it.
 **6. Move the modules.** No relation changes shape, no generated output changes, no store answers
 differently. A commit that moves a class and a commit that changes what it does are separate
 commits. The corpus at `graphitron/src/test/resources/corpus` moves with capture and ships as a
-test-jar for the planner and emitter tests that consume it. `FactCaptureAgreementTest` does not
-move: it is scaffolding for the walk's retirement, and an agreement test between two tiers belongs
-above the line anyway.
+test-jar for the planner and emitter tests that consume it. The store-fixture harnesses
+`BuiltStore`, `CapturedStore` and `FactWriters` move by the same mechanism and for a stronger
+reason: they are how a test obtains a populated store, which is the thing this item relocates, and
+leaving them above the line would keep `graphitron-mcp` reaching over it for a fixture after every
+other reason had gone. `FactCaptureAgreementTest` does not move: it is scaffolding for the walk's
+retirement, and an agreement test between two tiers belongs above the line anyway.
 
 ## Decisions this spec makes
 
@@ -221,8 +260,13 @@ dissolves the middle either way, and this decides where the line is rather than 
   store opener. Both are guard tests rather than review-time greps. Scope the opener guard to that
   module: `graphitron-model` keeps two openers this item does not touch, the build-time
   `ModelCodegenDriver` and the store's own boot surface.
-* **`graphitron-lsp` and `graphitron-mcp` declare no dependency on `graphitron` in any scope**, and
+* **`graphitron-mcp` declares no dependency on `graphitron` in any scope**, and
   `StoreClientBoundaryTest.noGeneratorReferenceInMainSources` scans test sources too.
+* **`graphitron-lsp`'s remaining edge is test scope only, and is the set step 1 names.** Its main
+  sources name no generator type, which is true today and becomes a guard of its own rather than a
+  comment in its pom. Its test imports are the lint rule engine, the walk, `CatalogBuilder`'s
+  above-half with `TypeBackingShape`, and three generator-tier values; a test importing anything
+  that moved down is a test that was not updated.
 * **A generation drives against a store its caller opened**, and the demotion arm is covered: a
   store directory the run does not own yields the demoted outcome with its reason, the generation
   completes, and the shared file is untouched.
