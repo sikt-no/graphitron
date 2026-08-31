@@ -1,15 +1,7 @@
 package no.sikt.graphitron.rewrite.capture;
 
-import graphql.language.Directive;
-import graphql.language.FieldDefinition;
-import graphql.language.ListType;
-import graphql.language.NonNullType;
-import graphql.language.SourceLocation;
-import graphql.language.StringValue;
-import graphql.language.Type;
-import graphql.language.TypeName;
-import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.model.ConnectionNaming;
+import org.jooq.DSLContext;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -18,39 +10,32 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NAVIGATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DECLARATION_SYNTHESIS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
 
 /**
- * The {@code @asConnection} expansion inside the capture walk: the rows it contributes, written
- * through the same doors an authored row goes through, plus the provenance that says an expansion
- * put them there.
+ * The {@code @asConnection} expansion: the Relay machinery it mints, and the rewrite it performs on
+ * the field that carried the application.
  *
- * <p>Capture reads the registry <em>before</em> the pipeline's synthesis rewrites, so an expansion
- * that only ran as a rewrite would leave the store describing a schema no consumer sees. Running it
- * here makes the expansion a derivation inside the capture walk: its rows go through capture's own
- * doors, and the provenance relations record what it contributed. What that leaves recoverable
- * splits by kind. For the declaration sites it <em>adds</em>
- * ({@code graphitron_type_declaration_synthesis}) the transcription is the anti-join against the
- * provenance. For the field type it <em>rewrites</em> ({@code graphitron_field_synthesis}) it is
- * not: the expression the field was written with survives only in that relation's own text column,
- * and no anti-join recovers it.
- * While a rewrite
- * implementation of the same rule is still live for the legacy pipeline, the two are pinned to each
- * other by the agreement suite rather than by one calling the other; they run at different stages
- * over different representations, and a shared caller would invert the pipeline's ordering.
+ * <p>Nothing it writes lands in the {@code graphql_} family. The transcription is what the author
+ * declared and only that, so a type this expansion minted is a {@code graphitron_minted_type} and a
+ * field of one is a {@code graphitron_minted_field}; a reader wanting the population the generator
+ * actually emits reads {@code intent_expanded_type} and {@code intent_expanded_field}, which union
+ * the two. That split is what makes the rewrite recoverable in both directions: the authored type
+ * expression stays in {@code graphql_field} where it was written, the expansion's replacement is a
+ * row of its own, and neither is reconstructed from the other by an anti-join.
  *
- * <p>This is the one expansion that may run here, and the constraint is the reason rather than an
- * accident of what got written: an expansion inside a crawler may read only the corpus that crawler
- * is responsible for. {@code @asConnection} passes, its element type entering as a name that
- * nothing here resolves. Federation's key synthesis does not, since nodehood conjoins the SDL claim
- * with metadata a generated jOOQ class publishes, so that rule is a derivation over the captured
- * facts of both corpora; see the fact model's stratum discipline in
- * {@code docs/architecture/explanation/fact-model.adoc}.
+ * <p>It reads the store rather than the parse. Its input is the decode's own
+ * {@code graphitron_connection} rows joined to the carrier's transcribed field, so it runs as a
+ * stage of the graphitron gatherer after both crawlers and the directive decode have flushed. That
+ * is also what makes the author-declared-name rule a query: a name a carrier would mint but an
+ * author already declared is left to the author, which is one lookup against the type coordinates
+ * rather than a registry the walk happened to be holding.
  *
  * <p>Nothing here rejects. A macro whose precondition does not hold contributes no rows, exactly as
  * the rest of capture declines to throw on author input.
@@ -58,8 +43,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 final class MacroCapture {
 
     private static final String MACRO_CONNECTION = "CONNECTION";
-    private static final String AS_CONNECTION = "asConnection";
-    private static final String ARG_CONNECTION_NAME = "connectionName";
     private static final String CONNECTION_SUFFIX = "Connection";
     private static final String EDGE_SUFFIX = "Edge";
     private static final String PAGE_INFO = "PageInfo";
@@ -81,166 +64,157 @@ final class MacroCapture {
     private static final String DESC_END_CURSOR = "When paginating forwards, the cursor to continue.";
 
     private final FactSink sink;
-    private final SdlCoordinates coordinates;
-    private final TypeDefinitionRegistry registry;
-
-    /**
-     * @param connectionElement what a type name delivers if it is a connection, or null if it is
-     *     not. A minted field's navigation is resolved on the same rungs an authored field's is,
-     *     and this is the middle one; owned by {@link SdlFactCapture} because it is a reading of
-     *     the whole SDL and minting sees one carrier at a time
-     */
-    MacroCapture(FactSink sink, SdlCoordinates coordinates, TypeDefinitionRegistry registry,
-                 java.util.function.Function<String, String> connectionElement) {
-        this.sink = sink;
-        this.coordinates = coordinates;
-        this.registry = registry;
-        this.connectionElement = connectionElement;
-    }
-
-    private final java.util.function.Function<String, String> connectionElement;
-
-    /** Carriers found during the walk, minted after it so a type's own rows are never interleaved. */
-    private final List<Carrier> carriers = new ArrayList<>();
+    private final Set<String> declared;
     private final Set<String> minted = new LinkedHashSet<>();
     private int pageInfoSites;
 
+    private MacroCapture(FactSink sink, Set<String> declared) {
+        this.sink = sink;
+        this.declared = declared;
+    }
+
+    /**
+     * Runs every expansion this store's decode calls for, returning the edges the expansion adds to
+     * the schema the store describes.
+     */
+    static Map<String, Set<String>> expand(FactSink sink, DSLContext dsl, String graphName) {
+        var declared = Set.copyOf(dsl.select(GRAPHQL_TYPE_COORDINATE.TYPE_NAME)
+            .from(GRAPHQL_TYPE_COORDINATE)
+            .where(GRAPHQL_TYPE_COORDINATE.GRAPH_NAME.eq(graphName))
+            .fetch(GRAPHQL_TYPE_COORDINATE.TYPE_NAME));
+        var expansion = new MacroCapture(sink, declared);
+        List<Carrier> carriers = expansion.carriers(dsl, graphName);
+        for (Carrier carrier : carriers) {
+            expansion.rewriteCarrier(carrier);
+            expansion.mintConnection(carrier);
+            expansion.mintEdge(carrier);
+            expansion.mintPageInfo(carrier);
+        }
+        return synthesizedEdges(carriers);
+    }
+
     /**
      * One directive-driven {@code @asConnection} carrier: everything the mint needs, read from the
-     * carrier field alone. The element type is a name, not a resolved type, which is what keeps the
-     * expansion type-local; nothing here reads the type it names.
+     * carrier's own two rows. The element type is a name, not a resolved type, which is what keeps
+     * the expansion from depending on anything but the coordinate it sits on.
      */
     private record Carrier(String parentTypeName, String fieldName, String connectionName,
                            String edgeName, String elementTypeName, boolean itemNullable,
-                           SourceLocation position) {}
+                           String sourceName, int sourceLine, int sourceColumn) {}
 
-    void expand() {
-        expandConnections();
+    /**
+     * The applications that expand, in position order. Ordered by where the author wrote them rather
+     * than by name, because the order decides which carrier's position defines the shared PageInfo
+     * and which ones extend it, and a document order is the one a reader can predict.
+     */
+    private List<Carrier> carriers(DSLContext dsl, String graphName) {
+        var carriers = new ArrayList<Carrier>();
+        for (var row : dsl
+                .select(GRAPHITRON_CONNECTION.TYPE_NAME, GRAPHITRON_CONNECTION.FIELD_NAME,
+                    GRAPHITRON_CONNECTION.CONNECTION_NAME,
+                    GRAPHITRON_CONNECTION.SOURCE_NAME, GRAPHITRON_CONNECTION.SOURCE_LINE,
+                    GRAPHITRON_CONNECTION.SOURCE_COLUMN,
+                    GRAPHQL_FIELD.TYPE_SDL, GRAPHQL_FIELD.SOURCE_NAME,
+                    GRAPHQL_FIELD.SOURCE_LINE, GRAPHQL_FIELD.SOURCE_COLUMN)
+                .from(GRAPHITRON_CONNECTION)
+                .join(GRAPHQL_FIELD)
+                .on(GRAPHQL_FIELD.GRAPH_NAME.eq(GRAPHITRON_CONNECTION.GRAPH_NAME))
+                .and(GRAPHQL_FIELD.TYPE_NAME.eq(GRAPHITRON_CONNECTION.TYPE_NAME))
+                .and(GRAPHQL_FIELD.FIELD_NAME.eq(GRAPHITRON_CONNECTION.FIELD_NAME))
+                .where(GRAPHITRON_CONNECTION.GRAPH_NAME.eq(graphName))
+                .fetch()) {
+            Element element = element(row.value7());
+            if (element == null) {
+                // @asConnection on something that is not a bare list of a named type. The misuse is
+                // a detection, and the field keeps the type its author wrote.
+                continue;
+            }
+            // The application's own position where it has one, the carrier field's otherwise; both
+            // are lines the author can edit, which is the point of inheriting a position.
+            boolean own = row.value4() != null && row.value5() != null && row.value6() != null;
+            String sourceName = own ? row.value4() : row.value8();
+            Integer line = own ? row.value5() : row.value9();
+            Integer column = own ? row.value6() : row.value10();
+            if (line == null || column == null) {
+                continue;
+            }
+            String connectionName = row.value3() != null && !row.value3().isEmpty()
+                ? row.value3()
+                : ConnectionNaming.defaultConnectionName(row.value1(), row.value2());
+            carriers.add(new Carrier(row.value1(), row.value2(), connectionName,
+                connectionName.replace(CONNECTION_SUFFIX, EDGE_SUFFIX),
+                element.name(), element.nullable(), sourceName, line, column));
+        }
+        carriers.sort(java.util.Comparator
+            .comparing(Carrier::sourceName)
+            .thenComparingInt(Carrier::sourceLine)
+            .thenComparingInt(Carrier::sourceColumn)
+            .thenComparing(Carrier::parentTypeName)
+            .thenComparing(Carrier::fieldName));
+        return carriers;
+    }
+
+    /** The element of a bare list of a named type, or null where the application expands nothing. */
+    private record Element(String name, boolean nullable) {}
+
+    private static Element element(String typeSdl) {
+        String expression = typeSdl.trim();
+        if (expression.endsWith("!")) {
+            expression = expression.substring(0, expression.length() - 1);
+        }
+        if (!expression.startsWith("[") || !expression.endsWith("]")) {
+            return null;
+        }
+        String item = expression.substring(1, expression.length() - 1).trim();
+        boolean nullable = !item.endsWith("!");
+        if (!nullable) {
+            item = item.substring(0, item.length() - 1);
+        }
+        if (item.isEmpty() || item.contains("[") || item.contains("]") || item.contains("!")) {
+            return null;
+        }
+        return new Element(item, nullable);
     }
 
     /**
-     * The edges this expansion adds to the schema the store describes, source type name to the type
-     * names its synthesized members reference. The rooted traversal follows them because the
-     * schema it walks is the one capture read, before the pipeline's own rewrite mints these shapes:
-     * without them a minted Connection would be a census member no traversal reaches.
-     *
-     * <p>Stated from the carriers rather than from what the mint landed, so a name the author had
-     * already declared still carries its edge: the carrier's field type is rewritten to the
-     * connection name either way, and whether the type behind that name is the author's or this
-     * expansion's is not this map's question.
+     * The rewrite itself: the carrier returns the Connection this expansion mints, stated beside the
+     * authored expression rather than over it. A bare nullable name, the wrapping the expansion puts
+     * on a carrier being none.
      */
-    Map<String, Set<String>> synthesizedEdges() {
-        var edges = new LinkedHashMap<String, Set<String>>();
-        for (Carrier carrier : carriers) {
-            edge(edges, carrier.parentTypeName(), carrier.connectionName());
-            edge(edges, carrier.connectionName(), carrier.edgeName());
-            edge(edges, carrier.connectionName(), PAGE_INFO);
-            edge(edges, carrier.connectionName(), carrier.elementTypeName());
-            edge(edges, carrier.connectionName(), "Int");
-            edge(edges, carrier.edgeName(), carrier.elementTypeName());
-            edge(edges, carrier.edgeName(), "String");
-            edge(edges, PAGE_INFO, "Boolean");
-            edge(edges, PAGE_INFO, "String");
+    private void rewriteCarrier(Carrier carrier) {
+        if (!sink.claim(GRAPHITRON_FIELD_SYNTHESIS, carrier.parentTypeName(), carrier.fieldName())) {
+            return;
         }
-        return edges;
-    }
-
-    private static void edge(Map<String, Set<String>> edges, String from, String to) {
-        edges.computeIfAbsent(from, key -> new LinkedHashSet<>()).add(to);
-    }
-
-    /**
-     * The expanded type of an output field, called while the walk writes the field's row. A
-     * directive-driven {@code @asConnection} carrier returns the Connection it mints, and the
-     * expression the field was written with is recorded in {@code graphitron_field_synthesis} rather
-     * than lost, that relation being the only place it survives. Every other field returns its own
-     * type unchanged.
-     *
-     * <p>Only the directive-driven arm rewrites. A carrier whose return type already names a
-     * declared Connection is minting nothing and rewriting nothing: those rows are the author's and
-     * the walk captured them already.
-     */
-    Type<?> expandedFieldType(String parentTypeName, FieldDefinition field) {
-        var applications = field.getDirectives(AS_CONNECTION);
-        if (applications.isEmpty()) {
-            return field.getType();
-        }
-        Directive directive = applications.get(0);
-        Type<?> unwrapped = field.getType() instanceof NonNullType outer ? outer.getType() : field.getType();
-        if (!(unwrapped instanceof ListType list)) {
-            // @asConnection on something that is not a bare list. The misuse is a detection, and
-            // the field keeps the type its author wrote.
-            return field.getType();
-        }
-        boolean itemNullable = !(list.getType() instanceof NonNullType);
-        Type<?> element = itemNullable ? list.getType() : ((NonNullType) list.getType()).getType();
-        if (!(element instanceof TypeName elementName)) {
-            return field.getType();
-        }
-        String connectionName = connectionName(parentTypeName, field, directive);
-        carriers.add(new Carrier(parentTypeName, field.getName(), connectionName,
-            connectionName.replace(CONNECTION_SUFFIX, EDGE_SUFFIX), elementName.getName(), itemNullable,
-            position(directive, field)));
-
         var row = sink.dsl().newRecord(GRAPHITRON_FIELD_SYNTHESIS);
-        row.setTypeName(parentTypeName);
-        row.setFieldName(field.getName());
+        row.setTypeName(carrier.parentTypeName());
+        row.setFieldName(carrier.fieldName());
         row.setMacro(MACRO_CONNECTION);
-        row.setAuthoredTypeSdl(SdlFactCapture.Wrapping.of(field.getType()).typeSdl());
+        row.setTypeSdl(carrier.connectionName());
+        row.setNamedType(carrier.connectionName());
+        row.setNonNull(false);
+        row.setIsList(false);
         sink.add(row);
-
-        return new TypeName(connectionName);
-    }
-
-    /** The deprecated {@code connectionName:} override wins; otherwise the derived name. */
-    private static String connectionName(String parentTypeName, FieldDefinition field, Directive directive) {
-        var override = directive.getArgument(ARG_CONNECTION_NAME);
-        if (override != null && override.getValue() instanceof StringValue value
-                && value.getValue() != null && !value.getValue().isEmpty()) {
-            return value.getValue();
-        }
-        return ConnectionNaming.defaultConnectionName(parentTypeName, field.getName());
-    }
-
-    /**
-     * Mints the Relay machinery each carrier implies: a Connection and an Edge per carrier, and one
-     * shared PageInfo. A minted type enters as an ordinary declaration site at the causing
-     * application's position, and its fields hang off that site through the ordinary declaration
-     * reference, so nothing downstream needs to know a macro was involved to read them.
-     *
-     * <p>A name a carrier would mint but an author already declared is left to the author: capture
-     * is first-wins and the collision is the author's to resolve, so the site claim simply loses and
-     * the walk's rows stand. The primary key stays a capture-bug detector, never an author-triggerable
-     * throw.
-     */
-    private void expandConnections() {
-        for (Carrier carrier : carriers) {
-            mintConnection(carrier);
-            mintEdge(carrier);
-            mintPageInfo(carrier);
-        }
     }
 
     private void mintConnection(Carrier carrier) {
         if (!mintType(carrier.connectionName(), DESC_CONNECTION, carrier, 0, false)) {
             return;
         }
-        var fields = new MintedFields(carrier.connectionName(), carrier.position());
-        fields.add("edges", DESC_EDGES,
-            nonNull(list(nonNull(new TypeName(carrier.edgeName())))));
-        fields.add("nodes", DESC_NODES, nonNull(list(item(carrier))));
-        fields.add("pageInfo", DESC_PAGE_INFO_FIELD, nonNull(new TypeName(PAGE_INFO)));
+        var fields = new MintedFields(carrier, carrier.connectionName());
+        fields.add("edges", DESC_EDGES, "[" + carrier.edgeName() + "!]!");
+        fields.add("nodes", DESC_NODES, "[" + item(carrier) + "]!");
+        fields.add("pageInfo", DESC_PAGE_INFO_FIELD, PAGE_INFO + "!");
         // Nullable like the connection's other aggregate: a skipped count degrades to null rather
         // than bubbling a failure through the connection.
-        fields.add("totalCount", DESC_TOTAL_COUNT, new TypeName("Int"));
+        fields.add("totalCount", DESC_TOTAL_COUNT, "Int");
     }
 
     private void mintEdge(Carrier carrier) {
         if (!mintType(carrier.edgeName(), DESC_EDGE, carrier, 0, false)) {
             return;
         }
-        var fields = new MintedFields(carrier.edgeName(), carrier.position());
-        fields.add("cursor", DESC_CURSOR, nonNull(new TypeName("String")));
+        var fields = new MintedFields(carrier, carrier.edgeName());
+        fields.add("cursor", DESC_CURSOR, "String!");
         fields.add("node", DESC_NODE, item(carrier));
     }
 
@@ -260,128 +234,123 @@ final class MacroCapture {
         if (extension) {
             return;
         }
-        var fields = new MintedFields(PAGE_INFO, carrier.position());
-        fields.add("hasNextPage", DESC_HAS_NEXT_PAGE, nonNull(new TypeName("Boolean")));
-        fields.add("hasPreviousPage", DESC_HAS_PREVIOUS_PAGE, nonNull(new TypeName("Boolean")));
-        fields.add("startCursor", DESC_START_CURSOR, new TypeName("String"));
-        fields.add("endCursor", DESC_END_CURSOR, new TypeName("String"));
+        var fields = new MintedFields(carrier, PAGE_INFO);
+        fields.add("hasNextPage", DESC_HAS_NEXT_PAGE, "Boolean!");
+        fields.add("hasPreviousPage", DESC_HAS_PREVIOUS_PAGE, "Boolean!");
+        fields.add("startCursor", DESC_START_CURSOR, "String");
+        fields.add("endCursor", DESC_END_CURSOR, "String");
     }
 
     /**
-     * Writes the existence row (first site only), the declaration site, and its provenance. Returns
-     * false when the site was already claimed, which is how an author-declared name wins.
+     * Writes the minted type (first site only) and the site itself. Returns false when the site was
+     * already claimed, or when the author declared the name: capture is first-wins and the collision
+     * is the author's to resolve, so the mint stands down and their declaration stands. Adding
+     * machinery fields to a type the author wrote would silently merge two types nobody asked to
+     * merge, and the primary key stays a capture-bug detector rather than an author-triggerable throw.
      */
     private boolean mintType(String typeName, String description, Carrier carrier,
                              int mergeOrdinal, boolean extension) {
-        if (registry.types().containsKey(typeName) || registry.scalars().containsKey(typeName)) {
-            // The author declared the name this carrier would mint. Their declaration is already
-            // captured, and adding machinery fields to it would silently merge two types nobody
-            // asked to merge; the misuse is a detection, so the mint simply stands down.
+        if (declared.contains(typeName)) {
             return false;
         }
-        SourceLocation at = carrier.position();
-        if (!sink.claim(GRAPHQL_TYPE_DECLARATION, typeName,
-                at.getSourceName(), at.getLine(), at.getColumn())) {
+        if (!sink.claim(GRAPHITRON_MINTED_TYPE_SITE, typeName,
+                carrier.sourceName(), carrier.sourceLine(), carrier.sourceColumn())) {
             return false;
         }
-        if (minted.add(typeName) && coordinates.claimType(typeName)) {
-            var type = sink.dsl().newRecord(GRAPHQL_TYPE);
+        if (minted.add(typeName)) {
+            var type = sink.dsl().newRecord(GRAPHITRON_MINTED_TYPE);
             type.setTypeName(typeName);
             type.setKind(OBJECT);
             type.setDescription(description);
+            type.setMacro(MACRO_CONNECTION);
             sink.add(type);
         }
-        var declaration = sink.dsl().newRecord(GRAPHQL_TYPE_DECLARATION);
-        declaration.setTypeName(typeName);
-        declaration.setSourceName(at.getSourceName());
-        declaration.setSourceLine(at.getLine());
-        declaration.setSourceColumn(at.getColumn());
-        declaration.setMergeOrdinal(mergeOrdinal);
-        declaration.setIsExtension(extension);
-        declaration.setKind(OBJECT);
-        sink.add(declaration);
-
-        var provenance = sink.dsl().newRecord(GRAPHITRON_TYPE_DECLARATION_SYNTHESIS);
-        provenance.setTypeName(typeName);
-        provenance.setSourceName(at.getSourceName());
-        provenance.setSourceLine(at.getLine());
-        provenance.setSourceColumn(at.getColumn());
-        provenance.setMacro(MACRO_CONNECTION);
-        provenance.setCarrierTypeName(carrier.parentTypeName());
-        provenance.setCarrierFieldName(carrier.fieldName());
-        sink.add(provenance);
+        var site = sink.dsl().newRecord(GRAPHITRON_MINTED_TYPE_SITE);
+        site.setTypeName(typeName);
+        site.setSourceName(carrier.sourceName());
+        site.setSourceLine(carrier.sourceLine());
+        site.setSourceColumn(carrier.sourceColumn());
+        site.setMergeOrdinal(mergeOrdinal);
+        site.setIsExtension(extension);
+        site.setCarrierTypeName(carrier.parentTypeName());
+        site.setCarrierFieldName(carrier.fieldName());
+        sink.add(site);
         return true;
     }
 
-    /** Writes a minted type's fields against the site the mint just contributed. */
+    /** The element reference a Connection's {@code nodes} and an Edge's {@code node} share. */
+    private static String item(Carrier carrier) {
+        return carrier.itemNullable() ? carrier.elementTypeName() : carrier.elementTypeName() + "!";
+    }
+
+    /** Writes a minted type's fields, numbering them in the order the macro writes them. */
     private final class MintedFields {
+        private final Carrier carrier;
         private final String typeName;
-        private final SourceLocation at;
         private int ordinal;
 
-        MintedFields(String typeName, SourceLocation at) {
+        MintedFields(Carrier carrier, String typeName) {
+            this.carrier = carrier;
             this.typeName = typeName;
-            this.at = at;
         }
 
-        void add(String fieldName, String description, Type<?> type) {
-            if (!coordinates.claimField(typeName, fieldName)) {
+        void add(String fieldName, String description, String typeSdl) {
+            if (!sink.claim(GRAPHITRON_MINTED_FIELD, typeName, fieldName)) {
                 return;
             }
-            var wrapping = SdlFactCapture.Wrapping.of(type);
-            var record = sink.dsl().newRecord(GRAPHQL_FIELD);
+            var record = sink.dsl().newRecord(GRAPHITRON_MINTED_FIELD);
             record.setTypeName(typeName);
             record.setFieldName(fieldName);
             record.setOrdinal(ordinal++);
-            record.setDeclarationLine(at.getLine());
-            record.setDeclarationColumn(at.getColumn());
-            record.setSourceName(at.getSourceName());
-            record.setSourceLine(at.getLine());
-            record.setSourceColumn(at.getColumn());
-            record.setTypeSdl(wrapping.typeSdl());
-            record.setNamedType(wrapping.namedType());
-            record.setNonNull(wrapping.nonNull());
-            record.setIsList(wrapping.isList());
-            record.setItemNonNull(wrapping.itemNonNull());
+            record.setTypeSdl(typeSdl);
+            boolean nonNull = typeSdl.endsWith("!");
+            String inner = nonNull ? typeSdl.substring(0, typeSdl.length() - 1) : typeSdl;
+            boolean isList = inner.startsWith("[");
+            record.setNamedType(namedTypeOf(typeSdl));
+            record.setNonNull(nonNull);
+            record.setIsList(isList);
+            record.setItemNonNull(isList
+                ? inner.substring(1, inner.length() - 1).endsWith("!") : null);
             record.setDescription(description);
+            record.setSourceName(carrier.sourceName());
+            record.setSourceLine(carrier.sourceLine());
+            record.setSourceColumn(carrier.sourceColumn());
             sink.add(record);
-
-            // A minted field navigates like any other, and the relation is total over graphql_field,
-            // so the rows minted here need theirs as much as the authored ones do. No authored
-            // expression exists for a field the generator wrote, so the top rung cannot fire and the
-            // other two are resolved exactly as they are for an authored field.
-            String named = wrapping.namedType();
-            String element = connectionElement.apply(named);
-            var navigation = sink.dsl().newRecord(GRAPHITRON_FIELD_NAVIGATION);
-            navigation.setTypeName(typeName);
-            navigation.setFieldName(fieldName);
-            navigation.setBasis(element != null ? "CONNECTION_ELEMENT" : "NAMED_TYPE");
-            navigation.setNavigatedTypeName(element != null ? element : named);
-            sink.add(navigation);
         }
     }
 
-    /** The element reference a Connection's {@code nodes} and an Edge's {@code node} share. */
-    private static Type<?> item(Carrier carrier) {
-        TypeName element = new TypeName(carrier.elementTypeName());
-        return carrier.itemNullable() ? element : nonNull(element);
-    }
-
-    private static NonNullType nonNull(Type<?> type) {
-        return NonNullType.newNonNullType(type).build();
-    }
-
-    private static ListType list(Type<?> type) {
-        return ListType.newListType(type).build();
+    private static String namedTypeOf(String typeSdl) {
+        return typeSdl.replace("[", "").replace("]", "").replace("!", "");
     }
 
     /**
-     * Where a synthesized row points. The causing application if it is located, the carrier field
-     * otherwise; both are lines the author can edit, which is the whole point of inheriting a
-     * position rather than inventing one.
+     * The edges this expansion adds to the schema the store describes, source type name to the type
+     * names its minted members reference. The rooted traversal follows them because the schema it
+     * walks is the one capture read, before the pipeline's own rewrite mints these shapes: without
+     * them a minted Connection would be a census member no traversal reaches.
+     *
+     * <p>Stated from the carriers rather than from what the mint landed, so a name the author had
+     * already declared still carries its edge: the carrier's field type is rewritten to the
+     * connection name either way, and whether the type behind that name is the author's or this
+     * expansion's is not this map's question.
      */
-    private static SourceLocation position(Directive directive, FieldDefinition field) {
-        SourceLocation own = directive.getSourceLocation();
-        return own != null && own.getSourceName() != null ? own : field.getSourceLocation();
+    private static Map<String, Set<String>> synthesizedEdges(List<Carrier> carriers) {
+        var edges = new LinkedHashMap<String, Set<String>>();
+        for (Carrier carrier : carriers) {
+            edge(edges, carrier.parentTypeName(), carrier.connectionName());
+            edge(edges, carrier.connectionName(), carrier.edgeName());
+            edge(edges, carrier.connectionName(), PAGE_INFO);
+            edge(edges, carrier.connectionName(), carrier.elementTypeName());
+            edge(edges, carrier.connectionName(), "Int");
+            edge(edges, carrier.edgeName(), carrier.elementTypeName());
+            edge(edges, carrier.edgeName(), "String");
+            edge(edges, PAGE_INFO, "Boolean");
+            edge(edges, PAGE_INFO, "String");
+        }
+        return edges;
+    }
+
+    private static void edge(Map<String, Set<String>> edges, String from, String to) {
+        edges.computeIfAbsent(from, key -> new LinkedHashSet<>()).add(to);
     }
 }

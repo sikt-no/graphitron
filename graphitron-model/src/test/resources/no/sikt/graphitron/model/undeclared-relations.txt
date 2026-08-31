@@ -59,7 +59,6 @@ graphitron_spelled_reference
 graphitron_split_query
 graphitron_table
 graphitron_tenant_fan_out
-graphitron_type_declaration_synthesis
 graphitron_undecoded_argument
 graphql_argument
 graphql_argument_coordinate

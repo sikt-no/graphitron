@@ -21,7 +21,8 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.testCont
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
+import static no.sikt.graphitron.model.Tables.INTENT_EXPANDED_FIELD;
+import static no.sikt.graphitron.model.Tables.INTENT_EXPANDED_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_DEMAND;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_TYPE_DEMAND;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
@@ -281,16 +282,17 @@ class DemandShadowTest {
 
     /** The count the coverage gate compares against: the domain's field-bearing coordinates. */
     private static int domainFieldCoordinateCount(DSLContext dsl, String graphName) {
-        return dsl.fetchCount(dsl.select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME)
-            .from(GRAPHQL_FIELD)
+        return dsl.fetchCount(dsl
+            .select(INTENT_EXPANDED_FIELD.TYPE_NAME, INTENT_EXPANDED_FIELD.FIELD_NAME)
+            .from(INTENT_EXPANDED_FIELD)
             .join(INTENT_TYPE_DOMAIN)
-            .on(INTENT_TYPE_DOMAIN.GRAPH_NAME.eq(GRAPHQL_FIELD.GRAPH_NAME)
-                .and(INTENT_TYPE_DOMAIN.TYPE_NAME.eq(GRAPHQL_FIELD.TYPE_NAME)))
-            .join(GRAPHQL_TYPE)
-            .on(GRAPHQL_TYPE.GRAPH_NAME.eq(GRAPHQL_FIELD.GRAPH_NAME)
-                .and(GRAPHQL_TYPE.TYPE_NAME.eq(GRAPHQL_FIELD.TYPE_NAME)))
-            .where(GRAPHQL_FIELD.GRAPH_NAME.eq(graphName))
-            .and(GRAPHQL_TYPE.KIND.in(FIELD_BEARING_KINDS)));
+            .on(INTENT_TYPE_DOMAIN.GRAPH_NAME.eq(INTENT_EXPANDED_FIELD.GRAPH_NAME)
+                .and(INTENT_TYPE_DOMAIN.TYPE_NAME.eq(INTENT_EXPANDED_FIELD.TYPE_NAME)))
+            .join(INTENT_EXPANDED_TYPE)
+            .on(INTENT_EXPANDED_TYPE.GRAPH_NAME.eq(INTENT_EXPANDED_FIELD.GRAPH_NAME)
+                .and(INTENT_EXPANDED_TYPE.TYPE_NAME.eq(INTENT_EXPANDED_FIELD.TYPE_NAME)))
+            .where(INTENT_EXPANDED_FIELD.GRAPH_NAME.eq(graphName))
+            .and(INTENT_EXPANDED_TYPE.KIND.in(FIELD_BEARING_KINDS)));
     }
 
     /**

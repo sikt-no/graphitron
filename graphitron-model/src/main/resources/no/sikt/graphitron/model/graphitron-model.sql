@@ -2261,46 +2261,108 @@ COMMENT ON COLUMN graphitron_undecoded_argument.value_sdl IS 'the literal as wri
 -- captured value overwrites one, so the authored expression survives only in the relation that
 -- stashed it. Both are the cost of an expansion running inside the walk, and both are payable
 -- exactly because @asConnection reads one corpus.
-CREATE TABLE graphitron_type_declaration_synthesis (
+CREATE TABLE graphitron_minted_type (
+  graph_name  VARCHAR NOT NULL,
+  type_name   VARCHAR NOT NULL,
+  kind        VARCHAR NOT NULL,
+  description VARCHAR,
+  macro       VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (kind IN ('OBJECT')),
+  CHECK (macro IN ('CONNECTION'))
+);
+COMMENT ON TABLE graphitron_minted_type IS 'A type macro expansion added to the schema that the author did not declare: one row per minted type name in the graph. For example @asConnection on Query.films mints QueryFilmsConnection here, where graphql_type holds only what the document declares and therefore holds no row for it; a reader wanting both populations reads intent_expanded_type.';
+COMMENT ON COLUMN graphitron_minted_type.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_minted_type.type_name IS 'the minted type''s name; with the graph, the grain, and one row however many carriers caused it, which is how the shared PageInfo is one type';
+COMMENT ON COLUMN graphitron_minted_type.kind IS 'the type''s kind in graphql_type''s vocabulary, always OBJECT: the macros mint nothing else, and the CHECK holds them to it';
+COMMENT ON COLUMN graphitron_minted_type.description IS 'the docstring the macro wrote, matching what the assembled-schema synthesis emits; display material, never a dimension';
+COMMENT ON COLUMN graphitron_minted_type.macro IS 'which macro minted the type, from the closed vocabulary the CHECK states';
+
+CREATE TABLE graphitron_minted_type_site (
   graph_name         VARCHAR NOT NULL,
   type_name          VARCHAR NOT NULL,
   source_name        VARCHAR NOT NULL,
   source_line        INT     NOT NULL,
   source_column      INT     NOT NULL,
-  macro              VARCHAR NOT NULL,
+  merge_ordinal      INT     NOT NULL,
+  is_extension       BOOLEAN NOT NULL,
   carrier_type_name  VARCHAR,
   carrier_field_name VARCHAR,
   PRIMARY KEY (graph_name, type_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name, type_name, source_name, source_line, source_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column),
-  CHECK (macro IN ('CONNECTION'))
+  FOREIGN KEY (graph_name, type_name)
+    REFERENCES graphitron_minted_type (graph_name, type_name) ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_type_declaration_synthesis IS 'A declaration site was contributed by a macro rather than the author: a definition site when the macro creates the type (Connection, Edge, facet shapes, at merge_ordinal 0), and an empty extension site when a later carrier touches a shared machinery type (PageInfo), so carrier multiplicity is the site count. Synthesized element rows hang off these sites through the ordinary declaration reference, which is what marks additions without per-element provenance; a type is synthesized exactly when its merge_ordinal-0 site is.';
-COMMENT ON COLUMN graphitron_type_declaration_synthesis.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_type_declaration_synthesis.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_type_declaration_synthesis.source_name IS 'the causing application''s position, which is the site''s identity';
-COMMENT ON COLUMN graphitron_type_declaration_synthesis.source_line IS 'line of the causing application, which is the site''s identity';
-COMMENT ON COLUMN graphitron_type_declaration_synthesis.source_column IS 'the site key''s fourth part, as on graphql_type_declaration';
-COMMENT ON COLUMN graphitron_type_declaration_synthesis.macro IS 'which expansion contributed the site';
-COMMENT ON COLUMN graphitron_type_declaration_synthesis.carrier_type_name IS 'the causing coordinate; NULL for schema-level causes (@link)';
-COMMENT ON COLUMN graphitron_type_declaration_synthesis.carrier_field_name IS 'the causing field coordinate; NULL for type- and schema-level causes';
+COMMENT ON TABLE graphitron_minted_type_site IS 'One declaration site a macro contributed for a minted type: the position an author can edit to make the type go away, and which carrier put it there. For example the shared PageInfo carries one site per @asConnection application, the first defining it and the rest extending, so the site count is the carrier multiplicity an incremental refresh refcounts the type by.';
+COMMENT ON COLUMN graphitron_minted_type_site.graph_name IS 'the owning graph''s partition, carried from the minted type''s own row';
+COMMENT ON COLUMN graphitron_minted_type_site.type_name IS 'the minted type this site declares or extends';
+COMMENT ON COLUMN graphitron_minted_type_site.source_name IS 'the file the causing application sits in; a minted row points at a line the author can edit rather than at an invented position';
+COMMENT ON COLUMN graphitron_minted_type_site.source_line IS 'the causing application''s line, or the carrier field''s where the application has no position of its own';
+COMMENT ON COLUMN graphitron_minted_type_site.source_column IS 'the causing application''s column, on the same terms';
+COMMENT ON COLUMN graphitron_minted_type_site.merge_ordinal IS 'the site''s place among this type''s sites, 0-based, mirroring how graphql_type_declaration numbers an authored type''s';
+COMMENT ON COLUMN graphitron_minted_type_site.is_extension IS 'whether the site extends a type already minted rather than defining it; false on exactly the merge_ordinal 0 row';
+COMMENT ON COLUMN graphitron_minted_type_site.carrier_type_name IS 'the type owning the field whose application caused this site; NULL where a macro mints without a carrier, which nothing does today';
+COMMENT ON COLUMN graphitron_minted_type_site.carrier_field_name IS 'that field''s name, so a reader reaches the application from the minted type in one join';
+
+CREATE TABLE graphitron_minted_field (
+  graph_name    VARCHAR NOT NULL,
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  type_sdl      VARCHAR NOT NULL,
+  named_type    VARCHAR NOT NULL,
+  non_null      BOOLEAN NOT NULL,
+  is_list       BOOLEAN NOT NULL,
+  item_non_null BOOLEAN,
+  description   VARCHAR,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name)
+    REFERENCES graphitron_minted_type (graph_name, type_name) ON DELETE CASCADE,
+  CHECK (is_list OR item_non_null IS NULL)
+);
+COMMENT ON TABLE graphitron_minted_field IS 'One field of a minted type, carrying the same wrapping columns graphql_field carries for an authored one. For example a minted Connection''s edges field has a row here naming its Edge type, non-null and a list of non-null items; the union of these rows with graphql_field''s is intent_expanded_field.';
+COMMENT ON COLUMN graphitron_minted_field.graph_name IS 'the owning graph''s partition, carried from the minted type';
+COMMENT ON COLUMN graphitron_minted_field.type_name IS 'the minted type owning this field';
+COMMENT ON COLUMN graphitron_minted_field.field_name IS 'the field''s name, one of the Relay machinery names the macro writes; with the two columns above, the grain';
+COMMENT ON COLUMN graphitron_minted_field.ordinal IS 'the field''s position within its minted type, dense from 0 in the order the macro writes them, which is the emission order';
+COMMENT ON COLUMN graphitron_minted_field.type_sdl IS 'the type expression the macro wrote, rendered the way graphql_field renders an authored one';
+COMMENT ON COLUMN graphitron_minted_field.named_type IS 'that expression''s named type with its wrappers stripped, the column readers join on';
+COMMENT ON COLUMN graphitron_minted_field.non_null IS 'whether the outermost wrapper is non-null';
+COMMENT ON COLUMN graphitron_minted_field.is_list IS 'whether the expression is a list';
+COMMENT ON COLUMN graphitron_minted_field.item_non_null IS 'whether a list''s item is non-null; NULL where the expression is not a list, which the CHECK holds';
+COMMENT ON COLUMN graphitron_minted_field.description IS 'the docstring the macro wrote; display material, never a dimension';
+COMMENT ON COLUMN graphitron_minted_field.source_name IS 'the file the causing application sits in, inherited from the minting site';
+COMMENT ON COLUMN graphitron_minted_field.source_line IS 'the causing application''s line, inherited from the minting site';
+COMMENT ON COLUMN graphitron_minted_field.source_column IS 'the causing application''s column, inherited from the minting site';
 
 CREATE TABLE graphitron_field_synthesis (
-  graph_name        VARCHAR NOT NULL,
-  type_name         VARCHAR NOT NULL,
-  field_name        VARCHAR NOT NULL,
-  macro             VARCHAR NOT NULL,
-  authored_type_sdl VARCHAR NOT NULL,
+  graph_name    VARCHAR NOT NULL,
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  macro         VARCHAR NOT NULL,
+  type_sdl      VARCHAR NOT NULL,
+  named_type    VARCHAR NOT NULL,
+  non_null      BOOLEAN NOT NULL,
+  is_list       BOOLEAN NOT NULL,
+  item_non_null BOOLEAN,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name),
-  CHECK (macro IN ('CONNECTION'))
+  CHECK (macro IN ('CONNECTION')),
+  CHECK (is_list OR item_non_null IS NULL)
 );
-COMMENT ON TABLE graphitron_field_synthesis IS 'A field''s type expression was rewritten by a macro; the expression the field was written with survives here while the field''s graphql_field row holds the expansion''s result.';
+COMMENT ON TABLE graphitron_field_synthesis IS 'A field''s type expression was rewritten by a macro: one row per carrier coordinate, holding the expression the macro put there. The authored expression stays in graphql_field where it was written, so the two readings are two relations rather than one value and a stash, and intent_expanded_field is where they meet.';
 COMMENT ON COLUMN graphitron_field_synthesis.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_synthesis.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_field_synthesis.field_name IS 'the field name within the owning type';
 COMMENT ON COLUMN graphitron_field_synthesis.macro IS 'which expansion rewrote the type expression';
-COMMENT ON COLUMN graphitron_field_synthesis.authored_type_sdl IS 'the type expression as the author wrote it, pre-expansion';
+COMMENT ON COLUMN graphitron_field_synthesis.type_sdl IS 'the type expression the macro rewrote the field to, rendered the way graphql_field renders an authored one; the authored expression it replaced stays in that relation rather than being stashed here';
+COMMENT ON COLUMN graphitron_field_synthesis.named_type IS 'that expression''s named type with its wrappers stripped, which for every macro today is the expression itself, a mint returning a bare type name';
+COMMENT ON COLUMN graphitron_field_synthesis.non_null IS 'whether the macro''s expression is non-null; false for every macro today, an expansion putting no wrapper on a carrier';
+COMMENT ON COLUMN graphitron_field_synthesis.is_list IS 'whether the macro''s expression is a list; false for every macro today, on the same terms';
+COMMENT ON COLUMN graphitron_field_synthesis.item_non_null IS 'whether a list expression''s item is non-null; NULL where the expression is not a list, which the CHECK holds and which is every row today';
 
 -- ---- supertypes over the directive families ----------------------------------------
 -- Where one fact is authored at several kinds of site, the relations here are that fact, written
@@ -2352,17 +2414,16 @@ CREATE TABLE graphitron_field_navigation (
   basis               VARCHAR NOT NULL,
   navigated_type_name VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name)
-    REFERENCES graphql_field_coordinate (graph_name, type_name, field_name),
-  CHECK (basis IN ('AUTHORED_EXPRESSION', 'CONNECTION_ELEMENT', 'NAMED_TYPE'))
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (basis IN ('CONNECTION_ELEMENT', 'NAMED_TYPE'))
 );
 CREATE INDEX graphitron_field_navigation_type_ix
   ON graphitron_field_navigation (graph_name, navigated_type_name);
-COMMENT ON TABLE graphitron_field_navigation IS 'Which type a field''s own generated SQL navigates as: the type whose binding, whose members and whose columns a rule at this coordinate should read, as against the type the field''s signature happens to name. The two differ wherever a wrapper stands between the field and what it delivers, and a rule that reads the signature at such a coordinate reads the wrapper''s facts, which are none. Total over graphql_field: every field navigates as something, so a consumer joins this rather than left-joining it, and the fallback rung is what makes that true. Captured rather than derived, which is a claim about where the answer comes from: all three rungs are readings of the SDL, and capture holds the SDL. The upper rung is the type expression the author wrote before a macro rewrote it, which only capture ever sees; the middle one asks whether the field''s named type is a connection, which is a question about the shape of another type and is answered off the same merged sites this schema''s graphql_type rows are written from, extensions included; the lowest is the field''s own named type. Stored because a reader joins on the answer: a view is seekable on the coordinate it is keyed by and not on a name it projects, so a reader that joins a binding onto the projected type name hands the planner the cheaper driver and the projection is evaluated once per driving row. As a column here it is a value an index leads with. This relation is the correction of a resolution that had five spellings, all of which read the same way and all of which were wrong at the same half: a connection navigates as its element when the generator built the connection, and as the wrapper when the author wrote it, the second being a silence rather than a rule. Every site that needs a field''s navigated type reads this, and the rule to hold it to is not a count of those sites but that the next spelling is the one nobody has written yet.';
+COMMENT ON TABLE graphitron_field_navigation IS 'Which type a field''s own generated SQL navigates as: the type whose binding, whose members and whose columns a rule at this coordinate should read, as against the type the field''s signature happens to name. The two differ wherever a wrapper stands between the field and what it delivers, and a rule that reads the signature at such a coordinate reads the wrapper''s facts, which are none. Two rungs: the connection''s element where the field''s named type is a connection, and the named type itself otherwise. Total over intent_expanded_field, minted machinery fields included, so a consumer joins this rather than left-joining it. Stored rather than stated as a view because a reader joins on the answer: a view is seekable on the coordinate it is keyed by and not on a name it projects, so as a column here the navigated type is a value an index leads with. This relation is the correction of a resolution that had five spellings, all of which read the same way and all of which were wrong at the same half: a connection navigates as its element when the generator built the connection, and as the wrapper when the author wrote it, the second being a silence rather than a rule. Every site that needs a field''s navigated type reads this, and the rule to hold it to is not a count of those sites but that the next spelling is the one nobody has written yet.';
 COMMENT ON COLUMN graphitron_field_navigation.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_navigation.type_name IS 'the type owning the field';
 COMMENT ON COLUMN graphitron_field_navigation.field_name IS 'the field whose navigation this row states; with the two columns above the whole key, one row per field of the graph';
-COMMENT ON COLUMN graphitron_field_navigation.basis IS 'which rung answered, in a closed vocabulary of three: AUTHORED_EXPRESSION from the pre-expansion type expression a macro rewrote, CONNECTION_ELEMENT from the structural edges.node shape of a connection type the author declared, NAMED_TYPE from the field''s own named type. Provenance and a pinnable rule both; a reader that means one of them filters on it and owns having chosen. The upper two agree wherever both could fire, a synthesised connection''s edges.node being the element the authored expression named, so the precedence between them is a tie-break rather than a disagreement';
+COMMENT ON COLUMN graphitron_field_navigation.basis IS 'which rung answered: CONNECTION_ELEMENT where the field''s named type is structurally a connection and this row names what it paginates, NAMED_TYPE where the field returns what it says it returns. A third rung took the expression the author wrote wherever a macro had rewritten it; it was retired once measurement showed every row it answered is the row these two answer, the expansion''s edges.node being the element the authored expression named.';
 COMMENT ON COLUMN graphitron_field_navigation.navigated_type_name IS 'the type name the field navigates as, wrappers already stripped. A name and never a binding, so a consumer joins intent_resolved_type_binding, intent_poly_member or graphql_type on it according to what it actually needs to know. Not null on any row, the lowest rung being the field''s own named type, so a reader joins this relation rather than left-joining it';
 
 CREATE TABLE graphitron_arg_mapping_pair (
@@ -4278,7 +4339,10 @@ COMMENT ON COLUMN intent_field_chain_terminus.candidates IS 'how many distinct t
 
 CREATE VIEW intent_expanded_type (graph_name, type_name, kind, description) AS
 SELECT graph_name, type_name, kind, description
-  FROM graphql_type;
+  FROM graphql_type
+ UNION ALL
+SELECT graph_name, type_name, kind, description
+  FROM graphitron_minted_type;
 COMMENT ON VIEW intent_expanded_type IS 'Every type the generator works with, the author''s and the ones macro expansion minted, under one key: one row per type name in the graph. For example a Connection type the CONNECTION macro minted sits here beside the type whose field carried the macro, at the same grain and answering the same questions. Total by construction, so a consumer joins this rather than left-joining it.';
 COMMENT ON COLUMN intent_expanded_type.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN intent_expanded_type.type_name IS 'the type''s name; with the graph, the grain, and one row per name however many declaration sites contributed to it';
@@ -4288,9 +4352,19 @@ COMMENT ON COLUMN intent_expanded_type.description IS 'the docstring, authored o
 CREATE VIEW intent_expanded_field
   (graph_name, type_name, field_name, ordinal, type_sdl, named_type, non_null, is_list,
    item_non_null, default_value_sdl, description) AS
+SELECT f.graph_name, f.type_name, f.field_name, f.ordinal,
+       COALESCE(x.type_sdl, f.type_sdl), COALESCE(x.named_type, f.named_type),
+       COALESCE(x.non_null, f.non_null), COALESCE(x.is_list, f.is_list),
+       CASE WHEN x.type_name IS NULL THEN f.item_non_null ELSE x.item_non_null END,
+       f.default_value_sdl, f.description
+  FROM graphql_field f
+  LEFT JOIN graphitron_field_synthesis x
+    ON x.graph_name = f.graph_name AND x.type_name = f.type_name
+   AND x.field_name = f.field_name
+ UNION ALL
 SELECT graph_name, type_name, field_name, ordinal, type_sdl, named_type, non_null, is_list,
-       item_non_null, default_value_sdl, description
-  FROM graphql_field;
+       item_non_null, CAST(NULL AS VARCHAR), description
+  FROM graphitron_minted_field;
 COMMENT ON VIEW intent_expanded_field IS 'Every field the generator works with, at the type expression it works with: one row per field coordinate, carrying the wrapping columns graphql_field carries. For example a field the CONNECTION macro rewrote reads here as the Connection it returns, where graphql_type''s own transcription is where a reader goes for what the author wrote instead.';
 COMMENT ON COLUMN intent_expanded_field.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row';
 COMMENT ON COLUMN intent_expanded_field.type_name IS 'the type owning the field';
@@ -6117,7 +6191,7 @@ SELECT s.graph_name, s.type_name, s.field_name, s.ordinal, s.seat,
                              AND c.type_name = s.return_type_name
                              AND c.family = 'ROUTINE' AND c.data_fields = 1)
                THEN 'REFERENCE_ON_CARRIER_RETURN'
-             WHEN EXISTS (SELECT 1 FROM graphql_field cf
+             WHEN EXISTS (SELECT 1 FROM intent_expanded_field cf
                            JOIN intent_connection_element_type ce
                              ON ce.graph_name = cf.graph_name AND ce.type_name = cf.named_type
                            WHERE cf.graph_name = s.graph_name AND cf.type_name = s.type_name
@@ -6253,8 +6327,11 @@ CREATE TABLE intent_type_domain (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name)
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+  -- No key on the type: this relation's population is the authored types and the ones macro
+  -- expansion minted, which is intent_expanded_type, and a view is no key's target. The anchor
+  -- moved when the minted types did; before that the SDL coordinate held every name in the graph
+  -- and the key was exact.
 );
 COMMENT ON TABLE intent_type_domain IS 'The classification domain''s type members: every named type, of every kind, the generator''s intended traversal reaches from its seeds. Named for the assertion, not the graph operation, because the seeds are generator policy rather than neutral schema reachability: root operation bindings, @node carriers, types declaring implements Node, authored @key carriers, and the argument types of directive definitions that survive into the emitted schema, where survivorship is read from each definition''s own source (graphitron''s bundled directive vocabulary is build-time only) rather than from a name set held in Java, so the seeds are a function of the captured document throughout. Every seed is an SDL fact, which is what makes this a one-corpus derivation: the node arm seeds on the declaration alone, deliberately over-approximating node inference, whose other two conjuncts (a @table binding, well-formed node metadata on the bound table) decide what nodehood means and never whether the author declared it. Seeding is monotone, so the superset answers membership correctly, and a type declaring the Relay contract over no table or over defective metadata is a member that gains diagnostics instead of vanishing. Materialized, not a view: the closure over cyclic type graphs has no safe H2 view form (a recursive UNION does not terminate on cycles, and the path-guarded form enumerates simple paths), and the descent rule is graphql-java''s own child semantics rather than something SQL should restate edge kind by edge kind. Written by the SDL gatherer''s rooted traversal over the schema its assembly stage produced, inside the capture transaction, so on any settled store these rows are current for every captured graph. A run whose registry did not assemble has no schema to traverse and leaves this partition empty; that emptiness is read together with the ASSEMBLY verdict in graphql_schema_error, never alone.';
 COMMENT ON COLUMN intent_type_domain.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -10118,9 +10195,24 @@ INSERT INTO meta_grain VALUES
    'graph_name, type_name', 'sdl'),
   ('expanded-field',
    'one field coordinate the generator works with in one graph, at the type expression the generator reads there',
-   'graph_name, type_name, field_name', 'sdl');
+   'graph_name, type_name, field_name', 'sdl'),
+  ('minted-type-site',
+   'one declaration site a macro contributed for one minted type in one graph',
+   'graph_name, type_name, source_name, source_line, source_column', 'sdl');
 
 INSERT INTO meta_relation VALUES
+  ('graphitron_minted_type', 'expanded-type', 'graphitron',
+   'A type macro expansion added to the schema that the author did not declare: one row per minted type name in the graph.',
+   'For example @asConnection on Query.films mints QueryFilmsConnection here, where graphql_type holds only what the document declares and therefore holds no row for it; a reader wanting both populations reads intent_expanded_type.',
+   'The transcription is what the author declared and only that, so a type this expansion minted cannot live in it. Keeping it here rather than there is what makes the rewrite recoverable in both directions and what lets the SDL crawler stay a crawler: the expansion is a stage of the graphitron gatherer, reading the decode''s own connection rows, and it writes nothing another gatherer owns. One row per name however many carriers caused it, which is how the shared PageInfo is one type with a site apiece.'),
+  ('graphitron_minted_type_site', 'minted-type-site', 'graphitron',
+   'One declaration site a macro contributed for a minted type: the position an author can edit to make the type go away, and which carrier put it there.',
+   'For example the shared PageInfo carries one site per @asConnection application, the first defining it and the rest extending, so the site count is the carrier multiplicity an incremental refresh refcounts the type by.',
+   'Separate from the minted type because the multiplicity is the point: a type minted once per carrier would be indistinguishable from shared machinery if the sites were folded into it, and refcounting is what tells an incremental refresh when the last carrier naming PageInfo went away. The site carries a position rather than inventing one, so a diagnostic about a minted shape points at the application that caused it.'),
+  ('graphitron_minted_field', 'expanded-field', 'graphitron',
+   'One field of a minted type, carrying the same wrapping columns graphql_field carries for an authored one.',
+   'For example a minted Connection''s edges field has a row here naming its Edge type, non-null and a list of non-null items; the union of these rows with graphql_field''s is intent_expanded_field.',
+   'The field-grain half of graphitron_minted_type''s argument. The columns mirror graphql_field''s deliberately: the union that puts the two populations back together is a projection and not a translation, so a reader joining named_type joins one column whichever arm supplied its row.'),
   ('intent_expanded_type', 'expanded-type', 'derivation',
    'Every type the generator works with, the author''s and the ones macro expansion minted, under one key: one row per type name in the graph.',
    'For example a Connection type the CONNECTION macro minted sits here beside the type whose field carried the macro, at the same grain and answering the same questions. Total by construction, so a consumer joins this rather than left-joining it.',

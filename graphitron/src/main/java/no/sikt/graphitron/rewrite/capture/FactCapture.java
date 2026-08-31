@@ -619,12 +619,12 @@ public final class FactCapture {
             sink.flush();
             CatalogFactCapture.capture(sink, jooq, extensions, sources);
             sink.flush();
-            var expansions = SdlFactCapture.capture(sink, registry, sources, attribution,
+            SdlFactCapture.capture(sink, registry, sources, attribution,
                 verdicts.refusedSourceNames());
             sink.flush();
             SdlVerdictCapture.capture(sink, verdicts, assembly);
             sink.flush();
-            GraphitronFactCapture.capture(sink, txDsl, graph.name());
+            var synthesizedEdges = GraphitronFactCapture.capture(sink, txDsl, graph.name());
             sink.flush();
             // The capture-cadence derivation stratum: materialized derivations re-derive from
             // the flushed rows inside the same transaction, so they are current exactly when
@@ -634,7 +634,7 @@ public final class FactCapture {
             // code rather than stored view definitions.
             ClassificationDomainCapture.derive(txDsl, graph.name(),
                 assembly instanceof SchemaAssembly.Assembled a ? a.schema() : null,
-                expansions.synthesizedEdges());
+                synthesizedEdges);
             InputOccurrencePaths.derive(txDsl, graph.name());
             ArgMappingCandidates.derive(txDsl, graph.name());
             TypeBackingRows.derive(txDsl, graph.name());

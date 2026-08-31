@@ -34,6 +34,12 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NAVIGATION;
+import static no.sikt.graphitron.model.Tables.INTENT_CONNECTION_ELEMENT_TYPE;
+import static no.sikt.graphitron.model.Tables.INTENT_EXPANDED_FIELD;
+import static org.jooq.impl.DSL.coalesce;
+import static org.jooq.impl.DSL.val;
+import static org.jooq.impl.DSL.when;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE;
@@ -163,13 +169,55 @@ final class GraphitronFactCapture {
      * decode reads has not changed at all: it asks a directive for an argument by name and for its
      * own source location, and both survive the round-trip exactly.
      */
-    static void capture(FactSink sink, DSLContext dsl, String graphName) {
+    static Map<String, Set<String>> capture(FactSink sink, DSLContext dsl, String graphName) {
         var decode = new GraphitronFactCapture(sink);
         decode.schemaDirectives(dsl, graphName);
         decode.typeDirectives(dsl, graphName);
         decode.fieldDirectives(dsl, graphName);
         decode.argumentDirectives(dsl, graphName);
         decode.enumValueDirectives(dsl, graphName);
+        // The gatherer's own stages, each reading what the one before it wrote. A flush inside the
+        // load's transaction is what makes that possible and publishes nothing: macro expansion is
+        // driven by the graphitron_connection rows the decode above just produced, and the
+        // navigation rule is stated over the population expansion completes.
+        sink.flush();
+        var edges = MacroCapture.expand(sink, dsl, graphName);
+        sink.flush();
+        navigation(dsl, graphName);
+        return edges;
+    }
+
+    /**
+     * Which type each field's own generated SQL navigates as, over the population the generator
+     * emits rather than over the document: the connection's element where the field's named type is
+     * a connection, and the named type itself otherwise.
+     *
+     * <p>Two rungs and not the three this rule used to carry. The retired one took the expression
+     * the author wrote wherever a macro had rewritten it, which was the only rung needing something
+     * no relation held, and therefore the only reason this rule had to be computed where the parse
+     * was. It was also carrying nothing: measured over a consumer-size schema every row it answered
+     * is the row the two rungs below it answer, a synthesised connection's {@code edges.node} being
+     * the element the authored expression named. Stated as one statement rather than as a view
+     * because a reader joins on what it projects and wants an index on that column.
+     */
+    private static void navigation(DSLContext dsl, String graphName) {
+        dsl.insertInto(GRAPHITRON_FIELD_NAVIGATION)
+            .columns(GRAPHITRON_FIELD_NAVIGATION.GRAPH_NAME, GRAPHITRON_FIELD_NAVIGATION.TYPE_NAME,
+                GRAPHITRON_FIELD_NAVIGATION.FIELD_NAME, GRAPHITRON_FIELD_NAVIGATION.BASIS,
+                GRAPHITRON_FIELD_NAVIGATION.NAVIGATED_TYPE_NAME)
+            .select(dsl
+                .select(INTENT_EXPANDED_FIELD.GRAPH_NAME, INTENT_EXPANDED_FIELD.TYPE_NAME,
+                    INTENT_EXPANDED_FIELD.FIELD_NAME,
+                    when(INTENT_CONNECTION_ELEMENT_TYPE.ELEMENT_TYPE_NAME.isNull(),
+                        val("NAMED_TYPE")).otherwise(val("CONNECTION_ELEMENT")),
+                    coalesce(INTENT_CONNECTION_ELEMENT_TYPE.ELEMENT_TYPE_NAME,
+                        INTENT_EXPANDED_FIELD.NAMED_TYPE))
+                .from(INTENT_EXPANDED_FIELD)
+                .leftJoin(INTENT_CONNECTION_ELEMENT_TYPE)
+                .on(INTENT_CONNECTION_ELEMENT_TYPE.GRAPH_NAME.eq(INTENT_EXPANDED_FIELD.GRAPH_NAME))
+                .and(INTENT_CONNECTION_ELEMENT_TYPE.TYPE_NAME.eq(INTENT_EXPANDED_FIELD.NAMED_TYPE))
+                .where(INTENT_EXPANDED_FIELD.GRAPH_NAME.eq(graphName)))
+            .execute();
     }
 
     private void schemaDirectives(DSLContext dsl, String graphName) {

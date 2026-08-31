@@ -50,7 +50,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DECLARATION_SYNTHESIS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE_SITE;
 import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.INTENT_SYNTHESIZED_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_SITE;
@@ -391,7 +391,8 @@ class FactCaptureAgreementTest {
             "graphitron_federation_key", "graphitron_federation_key_field",
             "graphitron_federation_key_field_segment", "graphitron_link",
             "graphitron_link_import", "graphitron_multitable_reference", "graphitron_record",
-            "graphitron_undecoded_argument", "graphitron_type_declaration_synthesis",
+            "graphitron_undecoded_argument", "graphitron_minted_type",
+            "graphitron_minted_type_site", "graphitron_minted_field",
             "graphitron_field_synthesis",
             // The three supertypes ride the arm of the sites that spell them. The spelled reference
             // and the method reference are written in the same walk as the per-site row they sit
@@ -455,6 +456,9 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_chain_node", Arm.DERIVED);
         registrations.put("intent_field_chain_terminus", Arm.DERIVED);
         registrations.put("intent_field_reference_discovery", Arm.DERIVED);
+        registrations.put("graphitron_minted_type", Arm.DERIVED);
+        registrations.put("graphitron_minted_type_site", Arm.DERIVED);
+        registrations.put("graphitron_minted_field", Arm.DERIVED);
         registrations.put("intent_expanded_type", Arm.DERIVED);
         registrations.put("intent_expanded_field", Arm.DERIVED);
         registrations.put("intent_connection_element_type", Arm.DERIVED);
@@ -890,11 +894,11 @@ class FactCaptureAgreementTest {
 
             var captured = new LinkedHashSet<String>();
             store.dsl()
-                .select(GRAPHITRON_TYPE_DECLARATION_SYNTHESIS.TYPE_NAME,
-                    GRAPHITRON_TYPE_DECLARATION_SYNTHESIS.CARRIER_TYPE_NAME,
-                    GRAPHITRON_TYPE_DECLARATION_SYNTHESIS.CARRIER_FIELD_NAME)
-                .from(GRAPHITRON_TYPE_DECLARATION_SYNTHESIS)
-                .where(GRAPHITRON_TYPE_DECLARATION_SYNTHESIS.TYPE_NAME.ne("PageInfo"))
+                .select(GRAPHITRON_MINTED_TYPE_SITE.TYPE_NAME,
+                    GRAPHITRON_MINTED_TYPE_SITE.CARRIER_TYPE_NAME,
+                    GRAPHITRON_MINTED_TYPE_SITE.CARRIER_FIELD_NAME)
+                .from(GRAPHITRON_MINTED_TYPE_SITE)
+                .where(GRAPHITRON_MINTED_TYPE_SITE.TYPE_NAME.ne("PageInfo"))
                 .fetch()
                 .forEach(row -> captured.add(row.value1() + "<-" + row.value2() + "." + row.value3()));
             assertThat(captured).isEqualTo(expected);
@@ -905,8 +909,8 @@ class FactCaptureAgreementTest {
                 .anyMatch(minted -> minted.declaredArm() == GraphitronType.PageInfoType.class);
             long carriers = relation.rows().values().stream()
                 .filter(ConnectionSynthesis.DirectiveDriven.class::isInstance).count();
-            assertThat(store.dsl().fetchCount(GRAPHITRON_TYPE_DECLARATION_SYNTHESIS,
-                GRAPHITRON_TYPE_DECLARATION_SYNTHESIS.TYPE_NAME.eq("PageInfo")))
+            assertThat(store.dsl().fetchCount(GRAPHITRON_MINTED_TYPE_SITE,
+                GRAPHITRON_MINTED_TYPE_SITE.TYPE_NAME.eq("PageInfo")))
                 .isEqualTo(modelMintedPageInfo ? (int) carriers : 0);
         }
     }

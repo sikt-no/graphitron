@@ -9,8 +9,9 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DECLARATION_SYNTHESIS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
+import static no.sikt.graphitron.model.Tables.INTENT_EXPANDED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -76,9 +77,9 @@ class MacroCaptureTest {
     void theCarrierFieldIsRewritten(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, CONNECTIONS)) {
             var effective = store.dsl()
-                .select(GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.TYPE_SDL)
-                .from(GRAPHQL_FIELD)
-                .where(GRAPHQL_FIELD.TYPE_NAME.eq("Query"))
+                .select(INTENT_EXPANDED_FIELD.FIELD_NAME, INTENT_EXPANDED_FIELD.TYPE_SDL)
+                .from(INTENT_EXPANDED_FIELD)
+                .where(INTENT_EXPANDED_FIELD.TYPE_NAME.eq("Query"))
                 .fetch()
                 .intoMap(r -> r.value1(), r -> r.value2());
             assertThat(effective).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
@@ -86,14 +87,25 @@ class MacroCaptureTest {
                 "actors", "ActorConnection",
                 "plain", "[Film!]!"));
 
+            // And the transcription still holds what the author wrote at the same coordinates,
+            // which is the direction that used to need a provenance stash to recover.
             var authored = store.dsl()
+                .select(GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.TYPE_SDL)
+                .from(GRAPHQL_FIELD)
+                .where(GRAPHQL_FIELD.TYPE_NAME.eq("Query"))
+                .fetch();
+            assertThat(authored.map(r -> r.value1() + "=" + r.value2()))
+                .containsExactlyInAnyOrder("films=[Film!]!", "actors=[Actor]", "plain=[Film!]!");
+
+            var rewritten = store.dsl()
                 .select(GRAPHITRON_FIELD_SYNTHESIS.FIELD_NAME,
-                    GRAPHITRON_FIELD_SYNTHESIS.AUTHORED_TYPE_SDL,
+                    GRAPHITRON_FIELD_SYNTHESIS.TYPE_SDL,
                     GRAPHITRON_FIELD_SYNTHESIS.MACRO)
                 .from(GRAPHITRON_FIELD_SYNTHESIS)
                 .fetch();
-            assertThat(authored.map(r -> r.value1() + "=" + r.value2() + ":" + r.value3()))
-                .containsExactlyInAnyOrder("films=[Film!]!:CONNECTION", "actors=[Actor]:CONNECTION");
+            assertThat(rewritten.map(r -> r.value1() + "=" + r.value2() + ":" + r.value3()))
+                .containsExactlyInAnyOrder("films=QueryFilmsConnection:CONNECTION",
+                    "actors=ActorConnection:CONNECTION");
         }
     }
 
@@ -119,10 +131,10 @@ class MacroCaptureTest {
     void mintedTypesCarryProvenance(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, CONNECTIONS)) {
             var marked = store.dsl()
-                .select(GRAPHITRON_TYPE_DECLARATION_SYNTHESIS.TYPE_NAME,
-                    GRAPHITRON_TYPE_DECLARATION_SYNTHESIS.CARRIER_TYPE_NAME,
-                    GRAPHITRON_TYPE_DECLARATION_SYNTHESIS.CARRIER_FIELD_NAME)
-                .from(GRAPHITRON_TYPE_DECLARATION_SYNTHESIS)
+                .select(GRAPHITRON_MINTED_TYPE_SITE.TYPE_NAME,
+                    GRAPHITRON_MINTED_TYPE_SITE.CARRIER_TYPE_NAME,
+                    GRAPHITRON_MINTED_TYPE_SITE.CARRIER_FIELD_NAME)
+                .from(GRAPHITRON_MINTED_TYPE_SITE)
                 .fetch();
             assertThat(marked.map(r -> r.value1() + "<-" + r.value2() + "." + r.value3()))
                 .containsExactlyInAnyOrder(
@@ -143,10 +155,11 @@ class MacroCaptureTest {
     void pageInfoSitesCountCarriers(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, CONNECTIONS)) {
             var sites = store.dsl()
-                .select(GRAPHQL_TYPE_DECLARATION.MERGE_ORDINAL, GRAPHQL_TYPE_DECLARATION.IS_EXTENSION)
-                .from(GRAPHQL_TYPE_DECLARATION)
-                .where(GRAPHQL_TYPE_DECLARATION.TYPE_NAME.eq("PageInfo"))
-                .orderBy(GRAPHQL_TYPE_DECLARATION.MERGE_ORDINAL)
+                .select(GRAPHITRON_MINTED_TYPE_SITE.MERGE_ORDINAL,
+                    GRAPHITRON_MINTED_TYPE_SITE.IS_EXTENSION)
+                .from(GRAPHITRON_MINTED_TYPE_SITE)
+                .where(GRAPHITRON_MINTED_TYPE_SITE.TYPE_NAME.eq("PageInfo"))
+                .orderBy(GRAPHITRON_MINTED_TYPE_SITE.MERGE_ORDINAL)
                 .fetch();
             assertThat(sites.map(r -> r.value1() + ":" + r.value2()))
                 .containsExactly("0:false", "1:true");
@@ -167,17 +180,17 @@ class MacroCaptureTest {
             """;
         try (var store = CapturedStore.of(tmp, sdl)) {
             assertThat(fieldsOf(store, "QueryFilmsConnection")).containsExactly("mine=String");
-            assertThat(store.dsl().fetchCount(GRAPHITRON_TYPE_DECLARATION_SYNTHESIS,
-                GRAPHITRON_TYPE_DECLARATION_SYNTHESIS.TYPE_NAME.eq("QueryFilmsConnection"))).isZero();
+            assertThat(store.dsl().fetchCount(GRAPHITRON_MINTED_TYPE_SITE,
+                GRAPHITRON_MINTED_TYPE_SITE.TYPE_NAME.eq("QueryFilmsConnection"))).isZero();
         }
     }
 
     private static java.util.List<String> fieldsOf(CapturedStore store, String typeName) {
         return store.dsl()
-            .select(GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.TYPE_SDL)
-            .from(GRAPHQL_FIELD)
-            .where(GRAPHQL_FIELD.TYPE_NAME.eq(typeName))
-            .orderBy(GRAPHQL_FIELD.ORDINAL)
+            .select(INTENT_EXPANDED_FIELD.FIELD_NAME, INTENT_EXPANDED_FIELD.TYPE_SDL)
+            .from(INTENT_EXPANDED_FIELD)
+            .where(INTENT_EXPANDED_FIELD.TYPE_NAME.eq(typeName))
+            .orderBy(INTENT_EXPANDED_FIELD.ORDINAL)
             .fetch()
             .map(r -> r.value1() + "=" + r.value2());
     }

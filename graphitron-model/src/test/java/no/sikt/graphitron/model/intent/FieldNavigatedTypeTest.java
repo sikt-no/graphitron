@@ -148,17 +148,19 @@ class FieldNavigatedTypeTest {
     }
 
     /**
-     * The upper rung: where a macro rewrote the field's type expression, the expression the author
-     * wrote is what the coordinate navigates as, its list and non-null wrappers stripped.
+     * A field a macro rewrote navigates as the element the connection paginates, read off the shape
+     * rather than off the expansion record. The field's own row still carries the list the author
+     * wrote; what the generator reads at the coordinate is the expansion's replacement, and that is
+     * a connection, so the structural rung answers exactly as it does for one the author wrote out.
      */
     @Test
-    void aMacroRewrittenFieldNavigatesAsTheExpressionTheAuthorWrote() {
+    void aMacroRewrittenFieldNavigatesAsTheElementItPaginates() {
         withCatalog(dsl -> {
             seedConnection(dsl, "FilmConnection", "FilmEdge", "Film");
-            seedField(dsl, GRAPH, "Query", "films", "FilmConnection", false);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "CONNECTION", "[Film!]!");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "CONNECTION", "FilmConnection");
 
-            assertThat(navigatedRows(dsl)).contains("Query.films AUTHORED_EXPRESSION Film");
+            assertThat(navigatedRows(dsl)).contains("Query.films CONNECTION_ELEMENT Film");
         });
     }
 
@@ -179,19 +181,20 @@ class FieldNavigatedTypeTest {
     }
 
     /**
-     * Where both upper rungs fire they agree, a synthesised connection's {@code edges.node} being the
-     * element the authored expression named, so the precedence between them is a tie-break rather
-     * than a disagreement. Pinned because a reader could otherwise take the ordering for a conflict
-     * the relation resolves in one rung's favour.
+     * A synthesised connection and an author-written one answer on the same rung, which is what
+     * retiring the third one rested on. This relation used to prefer the authored expression stashed
+     * beside a rewritten field, and that rung never disagreed with the structural one: a synthesised
+     * connection's {@code edges.node} is the element the authored expression named. Pinned as a case
+     * so the agreement stays a property rather than an observation somebody once made.
      */
     @Test
-    void aSynthesisedConnectionTakesTheAuthoredRungAndBothAgree() {
+    void aSynthesisedConnectionAnswersOnTheStructuralRungLikeAnAuthoredOne() {
         withCatalog(dsl -> {
             seedConnection(dsl, "FilmConnection", "FilmEdge", "Film");
-            seedField(dsl, GRAPH, "Query", "films", "FilmConnection", false);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "CONNECTION", "[Film!]!");
+            seedField(dsl, GRAPH, "Query", "films", "Film", true);
+            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "CONNECTION", "FilmConnection");
 
-            assertThat(navigatedRows(dsl)).contains("Query.films AUTHORED_EXPRESSION Film");
+            assertThat(navigatedRows(dsl)).contains("Query.films CONNECTION_ELEMENT Film");
             assertThat(elementRows(dsl)).contains("FilmConnection Film");
         });
     }

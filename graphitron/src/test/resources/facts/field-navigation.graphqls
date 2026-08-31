@@ -24,7 +24,7 @@ extend type Query { firstFilm: Film }
 
 extend schema @assertContains(relation: "graphitron_field_navigation", rows: """
   type_name, field_name, basis,               navigated_type_name
-  Query,     films,      AUTHORED_EXPRESSION, Film
+  Query,     films,      CONNECTION_ELEMENT,  Film
   Query,     pages,      CONNECTION_ELEMENT,  Film
   Query,     firstFilm,  NAMED_TYPE,          Film
   Query,     ping,       NAMED_TYPE,          String

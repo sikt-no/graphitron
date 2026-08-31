@@ -253,17 +253,9 @@ public final class SeededStore {
             INSERT INTO graphitron_field_navigation
               (graph_name, type_name, field_name, basis, navigated_type_name)
             SELECT f.graph_name, f.type_name, f.field_name,
-                   CASE WHEN fs.field_name IS NOT NULL THEN 'AUTHORED_EXPRESSION'
-                        WHEN ce.type_name IS NOT NULL THEN 'CONNECTION_ELEMENT'
-                        ELSE 'NAMED_TYPE' END,
-                   COALESCE(
-                     REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''), '!', ''),
-                     ce.element_type_name,
-                     f.named_type)
-              FROM graphql_field f
-              LEFT JOIN graphitron_field_synthesis fs
-                ON fs.graph_name = f.graph_name AND fs.type_name = f.type_name
-               AND fs.field_name = f.field_name
+                   CASE WHEN ce.type_name IS NULL THEN 'NAMED_TYPE' ELSE 'CONNECTION_ELEMENT' END,
+                   COALESCE(ce.element_type_name, f.named_type)
+              FROM intent_expanded_field f
               LEFT JOIN intent_connection_element_type ce
                 ON ce.graph_name = f.graph_name AND ce.type_name = f.named_type
             """);
@@ -604,21 +596,25 @@ public final class SeededStore {
     }
 
     /**
-     * What a macro left behind when it rewrote a field's type expression: the field's own row now
-     * carries the effective type and this one carries the type the author wrote. A relation reading
-     * the authored expression joins here, so a case about that reading states both spellings and the
-     * two deliberately disagree.
+     * What a macro put at a field it rewrote: the field's own row still carries the type the author
+     * wrote and this one carries the expansion's replacement. A case about the reading the generator
+     * takes states both spellings, and the two deliberately disagree.
      *
      * @param macro the expansion that rewrote it; {@code CONNECTION} is the only one the DDL accepts
+     * @param typeSdl the expression the macro put there, a bare type name for every macro today
      */
     public static void seedFieldSynthesis(DSLContext dsl, String graphName, String typeName,
-                                          String fieldName, String macro, String authoredTypeSdl) {
+                                          String fieldName, String macro, String typeSdl) {
         dsl.insertInto(GRAPHITRON_FIELD_SYNTHESIS)
             .set(GRAPHITRON_FIELD_SYNTHESIS.GRAPH_NAME, graphName)
             .set(GRAPHITRON_FIELD_SYNTHESIS.TYPE_NAME, typeName)
             .set(GRAPHITRON_FIELD_SYNTHESIS.FIELD_NAME, fieldName)
             .set(GRAPHITRON_FIELD_SYNTHESIS.MACRO, macro)
-            .set(GRAPHITRON_FIELD_SYNTHESIS.AUTHORED_TYPE_SDL, authoredTypeSdl)
+            .set(GRAPHITRON_FIELD_SYNTHESIS.TYPE_SDL, typeSdl)
+            .set(GRAPHITRON_FIELD_SYNTHESIS.NAMED_TYPE, typeSdl.replace("[", "")
+                .replace("]", "").replace("!", ""))
+            .set(GRAPHITRON_FIELD_SYNTHESIS.NON_NULL, typeSdl.endsWith("!"))
+            .set(GRAPHITRON_FIELD_SYNTHESIS.IS_LIST, typeSdl.startsWith("["))
             .execute();
     }
 
