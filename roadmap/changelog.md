@@ -4,6 +4,57 @@ next-id: R887
 
 # Rewrite Changelog
 
+- R834 (`d1abd12` Phase 1, the keyless-return-table rejection landing alone and inert, `4a2d3e8` the
+  cutover plus its proof and prose, `c07e7e5` the rework round; Ready -> In Progress `f74fffa`,
+  In Progress -> In Review `a856f68`, Done-gate round 1 withhold `4709dd8`, In Review -> Ready
+  `17f9e41`, Ready -> In Progress `ee92631`, In Progress -> In Review `d9f9c48`; Done gate in this
+  commit): a root `@service` whose GraphQL return type carries `@table` no longer hands the records
+  the developer's method returned straight to graphql-java. It reads them as key carriers, lifts
+  each record's primary key, and re-selects the fields the query asked for from the table, one
+  batched query on the request's connection, ordered back to the order the method returned. Before
+  this, a service that populated only the key resolved the key and answered `null` for every other
+  selected field, on every row, with no build warning and nothing thrown; a whole column of nulls is
+  indistinguishable from a genuinely empty one, so it reached production twice at a Sikt subgraph
+  (reported as sikt-no/graphitron#534 against 10.0.0-RC33). The passthrough was an omission rather
+  than a decision: the polymorphic and `@discriminate` service returns already refetched by key,
+  because they were forced to, and the plain single-table return is the shape an author writes
+  first. The contract across every table-returning service shape is now one sentence, populate the
+  key columns and Graphitron fetches the rest, stated on all four user-facing surfaces plus the
+  architecture triggers page with the inbound and outbound rules cross-referencing each other.
+  Mechanically the passthrough was one clause in the central reentry mint, so deleting it makes
+  `emitsKeyedReQuery()` and `requiresReFetch()` agree at every coordinate; a new `SERVICE_REENTRY`
+  launch verdict mints the *existing* `LaunchSource.ProjectedReentry` over the return table's own
+  primary key, which leaves `RootLauncherRenderer` untouched at all three of its switches and
+  widens `Invocation.ReturningKeyed` in prose only, from "the mutation entry point runs the write"
+  to "keys captured at the call site", with the DML `RETURNING` capture and the service key lift as
+  its two callers. **Two breaking consequences.** A schema whose returned `@table` type has no
+  primary key stops building, rejected at classify time naming the table and offering the escape
+  hatch; and a service that deliberately returned column values differing from the table now gets
+  table values. The escape hatch for both is dropping `@table` and naming columns with
+  `@field(name:)`, which keeps the direct record read and the same Java signature at the cost of the
+  catalog-driven surface (`@reference`, `@splitQuery`, `@orderBy`, pagination, `@node`). Worth
+  singling out: a root `@mutation @service` that deletes rows and hands the deleted records back
+  bound to a `@table` type refetches nothing under the new rule and resolves an empty list or a
+  null, and no key-only rewrite recovers it; only dropping `@table` does.
+  Independent-session In Review -> Done review, the reviewer sharing no session with any
+  implementation commit: the shallow clone was deepened past its graft so all four original
+  commits could be resolved rather than asserted absent, and none carries a `Claude-Session`
+  trailer (git author a human), while the rework round carries
+  `session_01XWRcm5Tn4A2E4PxcbnePQi`, not the reviewer's. Full reactor green under
+  `mvn install -Plocal-db` (`BUILD SUCCESS`, 14/14 modules, 10:11, zero failures). Completeness was
+  checked against the spec's own Done criteria rather than against the build, each one traced to a
+  named artifact: the generated `QueryFetchers.filmsByService` and `filmByServiceUnchecked` read
+  out of `target/generated-sources` at both cardinalities; the execution pins for key-only
+  resolution, the missing-row drop, the single-arm null by both routes, and the full-select sibling
+  answering unchanged; `RootServiceReturnTablePkRejectionTest`'s reject-plus-control from SDL beside
+  the four hand-built validator rows at each service-table leaf; `ReFetchDerivationTest`'s
+  site-versus-value agreement pin; and the doc surfaces read in place. Round 4's three findings are
+  closed rather than argued away, including its own half-stale first finding, and the retirement
+  sweep finds none of the four retired phrases in live code or docs. Non-blocking, left unfiled: the
+  single-cardinality arms of both reentry callers cap their typed `RecordN` key at jOOQ's degree 22
+  with no validate-time guard (only the list arms, which spend a slot on `idx`, are guarded at 21),
+  a pre-existing hole this item mirrors faithfully from the DML side rather than introduces.
+
 - R873 (`f074dfe` the binding, the partition and the sibling validator rule, `cae5163` the execution
   fixtures, `d62e514` the error union wrap, `d2a58be` the list-arm order pin, `6e20f53` the rework;
   filed `d9e85aa`, spec drafted `87bf4d0`, Spec -> Ready `00f0ebd`, Ready -> In Progress `ea3d597`,
