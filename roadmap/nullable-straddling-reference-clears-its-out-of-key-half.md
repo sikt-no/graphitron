@@ -1,7 +1,7 @@
 ---
 id: R880
 title: "An explicit null clears a nullable reference on UPDATE, and a straddler is admitted when its identity half is pinned"
-status: Spec
+status: Ready
 bucket: feature
 priority: 2
 theme: mutation-write

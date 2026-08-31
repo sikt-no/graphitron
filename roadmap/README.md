@@ -19,8 +19,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R876` | Expensive derived reads are a modelling defect: capture writes the subtypes and omits the supertype, and materialization has been the first lever reached for instead of the last | In Progress | 2026-08-29 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows <sub>blocked by: [capture-moves-below-the-generator](capture-moves-below-the-generator.md), [capture-without-the-materialization-refresh](capture-without-the-materialization-refresh.md), [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-08-28 <sub>created 2026-08-27</sub> | [plan](dev-start-refreshes-the-register-twice.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
-| `R880` | An explicit null clears a nullable reference on UPDATE, and a straddler is admitted when its identity half is pinned | Spec | 2026-08-31 | [plan](nullable-straddling-reference-clears-its-out-of-key-half.md) |
 | `R864` | Capture moves below the generator: the fact tier becomes a module boundary <sub>blocked by: [capture-stops-reading-the-walk](capture-stops-reading-the-walk.md)</sub> | Spec | 2026-08-27 | [plan](capture-moves-below-the-generator.md) |
+| `R880` | An explicit null clears a nullable reference on UPDATE, and a straddler is admitted when its identity half is pinned | Ready | 2026-08-31 | [plan](nullable-straddling-reference-clears-its-out-of-key-half.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-08-30 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R834` | A top-level @service returning a @table type reads columns off the returned record instead of refetching by key | In Review | 2026-08-26 <sub>created 2026-08-25</sub> | [plan](root-service-table-return-skips-key-refetch.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
@@ -501,7 +501,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutation-write
 
-- `R880` [**An explicit null clears a nullable reference on UPDATE, and a straddler is admitted when its identity half is pinned**](nullable-straddling-reference-clears-its-out-of-key-half.md) — Spec, feature
+- `R880` [**An explicit null clears a nullable reference on UPDATE, and a straddler is admitted when its identity half is pinned**](nullable-straddling-reference-clears-its-out-of-key-half.md) — Ready, feature
 - `R820` [**An authored index on the field census named-type coordinate**](graphql-field-named-type-index.md) — Backlog, store
 - `R829` [**The payload-returning UPDATE arms cross-partition agreement check has no compile or execution coverage**](payload-update-straddle-execution-coverage.md) — Backlog, bug
 - `R821` [**The payload-returning UPDATE arms emit no within-SET value-agreement check**](payload-update-within-set-agreement.md) — Backlog, bug
