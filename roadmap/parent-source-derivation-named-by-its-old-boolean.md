@@ -1,7 +1,7 @@
 ---
 id: R883
 title: "Five prose sites name the parent-source derivation by its retired boolean"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 4
 theme: codegen-correctness
@@ -117,11 +117,12 @@ actually holds it.
 No new test, and no new guard. The item is prose only, so what demonstrates completion is a
 grep plus a gate.
 
-At the Done gate, `grep -rn sourceIsOutcome --include=*.java` returns exactly one hit: the live
-local in `TypeFetcherGenerator.generateTypeSpec`, which stays. Every other Java occurrence is
-gone. Two mentions outside Java survive on purpose and are not the grep's business: this item's
-own file, which is deleted at Done, and the `roadmap/changelog.md` entry that records the
-retirement lineage, which is the permanent home for exactly that. Of the sites that were repointed
+At the Done gate, `grep -rn sourceIsOutcome --include=*.java` returns exactly two hits, both the
+live local in `TypeFetcherGenerator.generateTypeSpec`, which stays: its declaration and its single
+use. Every other Java occurrence is gone. Three mentions outside Java survive on purpose and are
+not the grep's business: this item's own file and R886's, both deleted at their own Done, and the
+`roadmap/changelog.md` entry that records the retirement lineage, which is the permanent home for
+exactly that. Of the sites that were repointed
 rather than emptied, both are now build-enforced, because the javadoc
 reference gate resolves the two model `{@link}`s and the corrected
 `{@link TypeFetcherGenerator#generateTypeSpec}` on every `verify`. That gate firing on a future
