@@ -57,6 +57,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * which had no execution coverage of a straddling reference at all. The MATCH SIMPLE claim the
  * clear rests on is asserted rather than assumed, by deleting the shelf the item used to sit on and
  * finding the database allows it.
+ *
+ * <p>A fourth behaviour is asserted beside those three, because the clear is what makes it fragile:
+ * an id that fails to decode still throws rather than clearing. A clearing carrier reaches its
+ * decode with a non-null wire value in both cases, so the two are one refactor apart, and only the
+ * database can say which one happened.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -368,6 +373,53 @@ class StraddlingReferenceUpdateExecutionTest {
         assertThat(result.getErrors()).isNotEmpty();
         assertThat(shelfCodeOf(itemNo)).as("nothing is written when the two sides disagree").isEqualTo("A1");
         assertThat(itemNameOf(itemNo)).isEqualTo("item-" + itemNo);
+    }
+
+    @Test
+    void wrongTypeShelfId_throwsRatherThanClearing() {
+        // The distinction a clearing carrier's decode local exists to keep: an explicit null clears,
+        // but an id that fails to decode still throws. Both reach the decode as a non-null wire value
+        // that yields no record, so a decode local collapsing the two would silently clear the column
+        // on a malformed request instead of refusing it. A Catalogue id in shelfId is exactly that
+        // shape: a well-formed node id whose type is not the one the field expects.
+        int itemNo = 134;
+        seedItem(itemNo, "BOOKS", "A1");
+        String self = NodeIdEncoder.encode("CatalogueItem", TENANT_ONE, itemNo);
+        String notAShelf = NodeIdEncoder.encode("Catalogue", TENANT_ONE, "BOOKS");
+
+        ExecutionResult result = executeRaw(
+            "mutation { shelveCatalogueItem(in: {id: \"" + self + "\", shelfId: \"" + notAShelf
+            + "\"}) { itemNo } }");
+
+        // The pair of assertions is what discriminates, since the message itself is redacted to a
+        // correlation id at the wire boundary: a collapsed decode branch would clear the column and
+        // report no error at all, so an error beside an unchanged column can only be the refusal.
+        // The same call with a real shelf id succeeds, two tests up, so the id's type is the only
+        // thing that differs.
+        assertThat(result.getErrors())
+            .as("a wrong-type id is a malformed request, not a clear")
+            .isNotEmpty();
+        assertThat(shelfCodeOf(itemNo))
+            .as("and nothing is written, least of all the null a clear would have written")
+            .isEqualTo("A1");
+    }
+
+    @Test
+    void bulkWrongTypeShelfId_throwsRatherThanClearing() {
+        // The VALUES-join arm declares its decode local per row through its own emitter, so the same
+        // distinction is a separate fact there.
+        seedItem(142, "BOOKS", "A1");
+        String self = NodeIdEncoder.encode("CatalogueItem", TENANT_ONE, 142);
+        String notAShelf = NodeIdEncoder.encode("Catalogue", TENANT_ONE, "BOOKS");
+
+        ExecutionResult result = executeRaw(
+            "mutation { shelveCatalogueItems(in: [{id: \"" + self + "\", shelfId: \"" + notAShelf
+            + "\"}]) { itemNo } }");
+
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(shelfCodeOf(142))
+            .as("the row keeps its shelf; a collapsed branch would have cleared it silently")
+            .isEqualTo("A1");
     }
 
     @Test

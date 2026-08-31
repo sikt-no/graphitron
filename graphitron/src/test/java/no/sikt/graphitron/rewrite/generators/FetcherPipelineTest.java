@@ -621,56 +621,6 @@ class FetcherPipelineTest {
             .contains("@mutation(typeName: UPDATE) call has no settable fields present");
     }
 
-    /**
-     * A clearing reference emits a null branch <em>distinct</em> from its decode branch, on the
-     * single-row arm and on the bulk VALUES-join arm. This is the one structural fact worth pinning
-     * here rather than leaving to the execution tier, because the failure it guards is silent: the
-     * decode local's plain form collapses an explicit null, a non-string wire value and a wrong-type
-     * id onto one {@code null}, and that is safe only while all three throw. Widening the single
-     * branch instead of splitting it would turn a malformed request into a silent column clear, and
-     * nothing downstream would notice.
-     */
-    @Test
-    void dmlUpdateClearingReference_emitsANullBranchApartFromTheDecodeBranch() {
-        var sdl = """
-            type Catalogue implements Node @node @table(name: "catalogue") { id: ID! @nodeId }
-            type CatalogueShelf implements Node @node @table(name: "catalogue_shelf") { id: ID! @nodeId }
-            type CatalogueItem implements Node @node @table(name: "catalogue_item") {
-                id: ID! @nodeId
-                itemName: String @field(name: "item_name")
-            }
-            input UpdateCatalogueItemInput {
-                id: ID! @nodeId(typeName: "CatalogueItem")
-                itemName: String @field(name: "item_name")
-                shelfId: ID @nodeId(typeName: "CatalogueShelf")
-            }
-            type Query { dummy: String }
-            type Mutation {
-                updateCatalogueItem(in: UpdateCatalogueItemInput!): CatalogueItem @mutation(typeName: UPDATE)
-                updateCatalogueItems(in: [UpdateCatalogueItemInput!]!): [CatalogueItem!]! @mutation(typeName: UPDATE)
-            }
-            """;
-        var spec = findSpec("MutationFetchers", sdl);
-
-        var single = method(spec, "updateCatalogueItem").code().toString();
-        assertThat(single)
-            .as("the wire value is read into its own local, so null and non-string stay distinguishable")
-            .contains("Wire = ")
-            .as("a null wire value does not throw; anything else that fails to decode still does")
-            .contains("!= null && ")
-            .contains("Decoded NodeId did not match the expected type for input field 'shelfId'")
-            .as("a cleared reference binds a typed null rather than reading a record that is not there")
-            .contains("== null ? null : ");
-
-        var bulk = method(spec, "updateCatalogueItems").code().toString();
-        assertThat(bulk)
-            .as("the VALUES-join arm splits the same three ways, per row")
-            .contains("Wire = ")
-            .contains("!= null && ")
-            .contains("== null ? null : ")
-            .contains("cells.add(");
-    }
-
     // ===== single-table discriminated interface as a DML return =====
     // Body-content assertions (justified as in TypeFetcherGeneratorTest's discriminator tests): the
     // return-half re-projection has no structural equivalent, and the load-bearing facts are the
