@@ -1,7 +1,7 @@
 ---
 id: R721
 title: "The transaction demarcation difference between @mutation and @service is undocumented"
-status: In Progress
+status: In Review
 bucket: docs
 priority: 3
 theme: service
