@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-08-29
+last-updated: 2026-08-31
 ---
 
 # Expensive derived reads are a modelling defect: capture writes the subtypes and omits the supertype, and materialization has been the first lever reached for instead of the last
@@ -31,6 +31,35 @@ ordering the fact model should have been using. The evidence is in
 outlives this file.
 
 ## What changes when this lands
+
+**Restated as the item closes, because what it produced is not what it set out to produce.** The
+register is the diagnostic and not the deliverable. Every defect this item fixed was found by asking
+why a relation had been registered, and not one of the fixes was a retirement: the two supertypes,
+the two stored join keys, the five grains, the captured head, the keyed candidate tree and the
+gathering architecture are all things that question uncovered rather than answers to it. Twenty
+registrations stand today against twenty-one when the item opened. That is the honest count, and it
+is not the measure of the work.
+
+**Two things ship, and they are worth naming separately because they were found on the same thread.**
+The first is a fact model that states more about itself: relations that had never said what one of
+their rows was about now carry grains and keys, the two reconstructions readers were unioning are
+captured tables, the join keys that existed only as expressions are stored columns an index can
+serve, and the argMapping candidate tree is keyed by the path it resolves. The second is a capture
+that can read what it has written. Gatherers run in a declared order and each one's rows reach the
+store before the next one starts, so a rule that needs another corpus is a query rather than a
+hand-threaded Java parameter. That second one was not in the first draft's plan at all. It arrived
+because four separate modelling questions kept coming back as charter arguments, and every one of
+them turned out to have the same mechanical cause.
+
+**The empty register stays as the standard rather than as this item's scope.** The five-second
+budget below, and the two arms it is measured on, are unchanged and still say what they said. What
+changes is who owes it. A successor takes the target carrying the burden this item established, that
+a registration has to be shown necessary rather than shown wasteful, and carrying what this item
+measured: four confirmed supertype omissions, of which this repointed two and left the largest
+untouched, and the ten relations that move the wrong way on the emptied arm, three of which have a
+named cause and seven of which do not.
+
+Everything below this paragraph is the diagnosis as it was written, and stands as taken.
 
 **The target is a register that is empty, and that is a statement about the model rather than about
 performance.** At the data volume the ninety-ninth percentile of consumers carries, nothing in this
@@ -108,10 +137,11 @@ merged: the cold-refresh split, and the two payload registrations that landed 20
 worth 588.2 seconds down to 43.2 on their own. Nothing in this item's slices was needed for any of
 it.
 
-**The outcome this item owes is a store that spends no time materializing and still answers its
+**The outcome the target names is a store that spends no time materializing and still answers its
 readers.** Not a cheaper refresh: no refresh, because every fact a reader needs is a fact capture
 wrote, and every key a reader joins on is a column an index can serve. On that target the register
-is not a thing to prune, it is a thing to make unnecessary.
+is not a thing to prune, it is a thing to make unnecessary. Per the restatement above, that outcome
+is what the successor is measured against; what this item owes is the shape work underneath it.
 
 **Measured against that target, the item is not there and the gap is now named rather than guessed.**
 Two arms on the kept store, both with statistics present, both over the 39 relations the generator,
@@ -147,7 +177,7 @@ a mystery. The other seven have no such cause identified yet, and saying so is m
 implying the signature explains everything.
 
 **So the honest status is under-implemented, not refuted.** Four confirmed supertype omissions exist;
-the arm above fixes two of them and leaves the largest untouched. The outcome this item owes is
+the arm above fixes two of them and leaves the largest untouched. The target is
 therefore stated as a target and a test: **no relation in the consumer read set refuses a five-second
 budget with nothing materialized**, which is what makes `mvn graphitron:validate` and
 `mvn graphitron:dev` usable on that schema and lets `graphitron:dev` reach its language-server and MCP
@@ -1989,7 +2019,8 @@ against the 106, 84 and 38 slice 16 measured: the path segment list read a handf
 than a hundred, the pair table in the low single digits, and the occurrence-path step relation
 likewise once the correspondence has a name. Behind those, the by-name arm gone from both readers
 that spell it and the correlated anti-join probing a keyed relation instead of inlining a rule.
-Slice 15 holds the before figures for the timings.
+Slice 15 holds the before figures for the timings. **Measured in slice 29: two of the three met, the
+pair table missed at twelve.**
 
 **The two sides of an argMapping resolve against different families, and only one of them has been
 modelled.** An argMapping has a left side and a right side. The left names a parameter and resolves
@@ -2464,6 +2495,10 @@ relations the kept capture predates, so the arm needs its backfill extended agai
 trusted. The plan-instantiation counts are the honest measure here and they are the next thing to
 take.
 
+**Taken in slice 29, and the caveat above turned out not to reach them.** A plan is not made of
+rows, so the counts need neither the bench nor its backfill. The three relations slice 16 named come
+out at 2, 12 and 0.
+
 ### Slice 23: the scope widens to how facts are gathered, and the reason is mechanical
 
 This item has hit the same wall four times, each time reading it as a modelling question and each
@@ -2791,6 +2826,85 @@ population is now the union, and a view is no key's target, so the relation keep
 The alternative was minting SDL coordinates for types the SDL does not declare, which would put the
 graphitron gatherer back inside a relation the SDL crawler owns and buy the constraint at the price
 of the property the whole slice is for.
+
+### Slice 29: the criterion slice 16 set, measured
+
+Slice 16 stated what would show its line of work had landed, as three instantiation counts in one
+plan of `intent_node_id_decode` against the 106, 84 and 38 it had just taken. Slice 22 closed by
+saying those counts were the honest measure and the next thing to take. Six slices went past without
+taking them. This one does.
+
+**The instrument, and why it costs nothing.** An empty in-memory store on the shipping DDL, one
+`EXPLAIN SELECT COUNT(*) FROM intent_node_id_decode`, and a count of `PUBLIC.<name>` references in
+the returned plan text per relation. No kept store, no consumer capture, no backfill. That is not a
+convenience, it is the claim slice 17 made when it called these numbers properties of the schema
+rather than of a run, and it is why slice 22's caveat about a starved arm never applied to this
+measurement: an arm can starve of rows, and a plan is not made of rows.
+
+**Which is a claim this slice was able to check rather than repeat.** The same probe was run against
+two earlier states of the tree, each in a detached worktree, and compared to what those states
+published at the time.
+
+[cols="4,2,2,2"]
+|===
+| relation | slice 16 published | probe at that commit | probe at slice 17's commit
+
+| `graphitron_argument_path_segment` | 106 | 104 | 34, published as 34
+| `graphitron_arg_mapping_pair` | 84 | 82 |
+| `intent_input_occurrence_path_step` | 38 | 36 |
+| `sql_node_metadata` | 26 | 26 |
+| `graphql_argument` | 26 | 26 |
+| `sql_routine_parameter` | 4 | 4 |
+| `jvm_method_parameter` | 4 | 4 |
+|===
+
+Four figures exact, three low by two, and slice 17's single published number reproduced to the digit.
+The constant offset of two on exactly the relations that carry an outermost reference is a difference
+in what the two counts admit, not a disagreement about the plan. The instrument is sound and the
+figures below are on the same footing as the ones they are compared against.
+
+**The counts today.**
+
+[cols="4,2,2,2"]
+|===
+| relation | slice 16 | slice 17 | today
+
+| `graphitron_argument_path_segment` | 104 | 34 | **2**
+| `graphitron_arg_mapping_pair` | 82 | 92 | **12**
+| `intent_input_occurrence_path_step` | 36 | 40 | **0**
+| `intent_argmapping_pair` | 80 | | 10
+| `graphql_argument` | 26 | 26 | 0
+| `sql_node_metadata` | 26 | 26 | 9
+| `sql_routine_parameter` | 4 | 4 | 4
+| `jvm_method_parameter` | 4 | 4 | 4
+| total relation references, this method | 473 | 419 | 128
+| plan text, characters | 623 413 | 511 237 | 139 755
+|===
+
+**Against the criterion: two met and one missed, and the miss is worth stating as a miss.** The
+segment list was to be read a handful of times rather than a hundred, and it is read twice. The
+occurrence-path step relation was to fall once the correspondence had a name, and it is gone from the
+plan entirely, as is `graphql_argument`. The pair table was to be in the low single digits and it is
+at twelve. That is a fall of eighty-five percent and it is not what the criterion said.
+
+**And the trajectory says something slice 17 did not report about itself.** Between slice 16 and
+slice 17 the segment list fell from 104 to 34, which is the number slice 17 published, while the pair
+table rose from 82 to 92 and the occurrence-path step relation from 36 to 40. The head column moved
+instantiations rather than removing them, and slice 17's own conclusion, that the change bought no
+time because the nodes it removed were index probes into a 202-row table, reads better for knowing
+the count went up somewhere else at the same time. What removed them was the candidate tree of slices
+18 through 22, which is where the three named relations fall to 2, 12 and 0.
+
+**The totals are internally consistent and not comparable to the pair slice 17 quoted.** That slice
+reported the plan's total relation references falling from 818 to 674, and this method counts 473 at
+the same commit, so the two methods admit different things. The 473 to 128 fall stands on its own
+arm; the 818 and 674 stand on theirs; neither should be quoted against the other.
+
+**What this does not measure.** Not time. Slice 17 already established at this exact relation that a
+smaller statement and a faster one are different achievements, and slice 4's census said the
+expansion count predicts plannability and nothing else. What 128 relation references and a plan of a
+hundred and forty thousand characters buy is a statement the planner can hold, which is the
+precondition for costing it, not a reading of what it costs.
 
 ### Deferred: the registration precondition
 
