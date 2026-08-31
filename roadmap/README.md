@@ -26,9 +26,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
-| `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | In Progress | 2026-08-31 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-27 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -581,7 +581,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R888` [**An optional filter field's @reference join must not constrain the query when the value is absent**](optional-filter-reference-join-omitted-value.md) — In Progress, bug
 - `R756` [**The orphan sweep never visits four subpackages the generator emits into**](orphan-sweep-misses-emitted-subpackages.md) — Backlog, correctness
-- `R663` [**@defaultOrder on a @splitQuery child list is dropped at emit**](split-query-child-list-drops-default-order.md) — Ready, bug
+- `R663` [**@defaultOrder on a @splitQuery child list is dropped at emit**](split-query-child-list-drops-default-order.md) — In Progress, bug
 - `R480` [**@oneOf definition augment defeated by descriptions quoting the definition; federated SDL fails Apollo composition**](oneof-augment-defeated-by-descriptions.md) — Backlog, bug
 - `R679` [**A child lookup is rejected for a positional contract it does not have**](child-lookup-positional-rationale.md) — Backlog, bug
 - `R677` [**Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see**](list-ordering-invariant-enforcement.md) — Backlog, validation
