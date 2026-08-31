@@ -2464,6 +2464,73 @@ relations the kept capture predates, so the arm needs its backfill extended agai
 trusted. The plan-instantiation counts are the honest measure here and they are the next thing to
 take.
 
+### Slice 23: the scope widens to how facts are gathered, and the reason is mechanical
+
+This item has hit the same wall four times, each time reading it as a modelling question and each
+time being partly wrong about which. Whether capture may write `@node`'s defaulted key columns.
+Whether the argMapping candidate tree belongs to a capture family or to `intent_`. Whether the head
+of a written path can be resolved where it is split. Whether a total argMapping relation can be
+captured at all. Every one of them came back to a family or charter argument, and every one of them
+has the same mechanical cause underneath, which this slice went and found in the code rather than
+inferring from the shape.
+
+**Nothing any gatherer writes exists in the store until every gatherer has finished.** `FactSink`
+buffers into a `Map<Table, List<TableRecord>>`, and the single `sink.flush()` in `FactCapture` is the
+first moment any fact reaches the database. So a gatherer cannot read another gatherer's facts,
+because there are none to read, and everything one gatherer needs from another has to arrive as a
+Java parameter instead. That is what the `Expansions`, `ClasspathSources`, `attribution`,
+`extensions` and `refusedSourceNames` chain is: not shared state somebody chose, but the only channel
+that exists.
+
+**The sharpest instance is the one that blocked this item twice.** `GraphitronFactCapture` is a field
+of `SdlFactCapture` and is driven by five `decode.captureXDirective(...)` callbacks from inside the
+SDL walk. It is not a gatherer that runs after the SDL gatherer; it is a visitor the walk calls while
+walking, so it can only ever see what the walk is holding at that instant. That is why it cannot
+default `@node`'s key columns from the primary key, and the reason is not that the catalog is another
+corpus. It is that `sql_primary_key` has no rows yet.
+
+**And the ordering reads backwards from how the code is arranged.** The catalog gatherer runs last,
+so there is no phase in which SDL facts exist and catalog facts do not. There is one phase in which
+nothing exists and one in which everything does.
+
+**The fix is far smaller than the diagnosis suggests, which is why this belongs here rather than in a
+plan of its own.** A flush is not a commit. `sink.flush()` already clears its buckets and is
+therefore re-entrant, and flushing once per gatherer inside the same transaction changes nothing
+about atomicity, locking or the retry path: it only makes each gatherer's rows visible to the
+gatherers after it. Two properties the buffer is doing real work for both survive it. Its dedup is
+within a relation, and one relation has one writer with two exceptions, `MacroCapture` writing
+alongside the SDL walk it belongs to and `store_source` shared by the SDL and catalog gatherers, so
+dedup does not span gatherers. And its write order is derived from the generated foreign keys rather
+than a hand-kept list, so ordering across gatherers is the same derivation applied at a coarser
+grain, which is exactly what `meta_gatherer_dependency` already declares.
+
+**There is a worked example of the target shape in this repository, under a name that will have to be
+settled.** `no.sikt.graphitron.facts` has a shared traversal, visitors that declare the subject kinds
+they subscribe to, a sealed permit list and a total switch that makes registering a visitor without
+an output slot a compile error. It touches no `DSLContext`, no `Tables` and no `FactSink`: it runs
+over the assembled `GraphQLSchema` during the build, not over the store during capture, so despite
+its name it is generator-side. It gets away with the shape because everything it needs is in the
+object it is handed. Capture's equivalent shared object is the store, and the store is empty.
+
+**Why this item and not another.** Three items touch this ground and none of them covers it. R877 is
+about the store: the declared documentation model, grains, gatherers, dependencies, as data. It says
+nothing about the code that populates them, and its `meta_gatherer_dependency` roster is a
+description the runtime does not yet obey. R864 is about module boundaries and moving the existing
+code below the generator; moving these packages without changing how they hand facts to each other
+relocates the coupling rather than removing it, and R864's own dependency, that capture stops reading
+the walk, is a different constraint from this one. This item is about the model defects that force
+the cheating, and the gathering architecture is now the largest of them: it is what turned four
+modelling questions into charter arguments, and the fixes this item has left to make cannot be made
+without it.
+
+**What that adds to this item's scope**, stated so the boundary against the other two stays legible:
+the flush becomes per gatherer inside the one transaction, in the declared dependency order; the
+hand-threaded parameters are replaced by reads of the store; `GraphitronFactCapture` stops being a
+callback of the SDL walk and becomes a gatherer that runs after it; and `@node`'s defaulted key
+columns become a captured fact rather than a read-time tier. What stays out: the module line R864
+draws, the declaration rows R877 populates, and the naming collision between the two fact packages,
+which is worth settling once both live under one tier rather than twice.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
