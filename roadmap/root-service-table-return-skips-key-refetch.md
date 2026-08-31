@@ -679,3 +679,99 @@ One imprecision in Retired vocabulary, mentioned only because a Done criterion t
 finding none of it: "universal passthrough" also names the success arm of the record-returning and
 scalar-returning service leaves, where it stays accurate. The phrase retires at
 `buildServiceFetcherCommon`, whose success arm stops being universal, not everywhere it appears.
+
+### Round 4 (In Review -> Done gate, session_01KdaUAayLBKKV6deApWv7Z5, 2026-08-31)
+
+Independent reviewer session, different from every session that authored an implementation commit
+(the four carry no session trailer; the git-author fallback is a human, and this is a Claude Code
+session with its own id). **Request rework.** Question 2 fails. Status `In Review` -> `Ready`.
+
+`mvn install -Plocal-db` passes on the delivered tree, all 14 modules, 08:39 wall clock, including
+`GraphQLQueryTest` (388 tests) and `RootLauncherSqlBaselineTest` (22). So the findings below are
+about evidence that is absent, not about anything that is broken.
+
+Question 1 passes, with one substitution noted in finding 2. The mechanism the design approved is
+what arrived, point by point: the `rootServicePassthrough` clause is gone from both mint homes and
+`mintsReentry` reads as the positive fact; `DECLARED_SHAPES` carries `Kind.REENTRY` in the
+*required* set for both service-table leaves with the "every instance mints" reasoning stated
+beside it; `Launch.SERVICE_REENTRY` exists with the verdict "root, has ServiceCall, has Reentry",
+mints `LaunchSource.ProjectedReentry` over `ParentCorrelation.OnLiftedSlots(table,
+table.primaryKeyColumns())` with `Invocation.ReturningKeyed`, a null where slot and single tenancy,
+and is served by the schema-free walk with the reasoning read the other way; `RootLauncherRenderer`
+is untouched at all three switches; `emitServiceReentryLift` owns the empty gate and builds the
+keys container through typed `newResult` / `newRecord`; `domainReturnType()` stays
+`Record(table)` with the conflict-avoidance citation. The generated proof is there and reads
+cleanly: `QueryFetchers.filmsByService` declares `DataFetcherResult<List<Record>>`, gates on
+`result == null || result.isEmpty()`, lifts `Result<Record1<Integer>> keys`, and returns
+`rowsFilmsByService(keys, env)`. Done criterion 1 is met. So is criterion 5: all four user-facing
+surfaces plus the architecture triggers page state the one-sentence contract, the inbound
+`IMPORTANT` and the outbound rule cross-reference each other, and the escape hatch names what
+dropping `@table` gives up (`@reference`, `@splitQuery`, `@orderBy`, pagination, `@node`). The
+retirement sweep finds none of the retired vocabulary in live code or docs; the surviving hits are
+`roadmap/changelog.md` (permanent record) and R674's body, which quotes the manual sentences this
+item rewrote and is now stale for its own next pass rather than for this one.
+
+Three findings, all on question 2's evidence.
+
+1. **Done criterion 3 is not delivered: the keyless root return has no reject pin at all, and
+   neither do the other two new root guards.** The criterion says "rejected naming the table,
+   classifier and validator both, with reject-plus-control pipeline pins", and Phase 1's whole
+   content was that rejection landing "alone and green before any behaviour changes". Both halves
+   of the rejection exist in main sources: `ServiceDirectiveResolver` lines 321-330 (the
+   `STRICT_ROOT` classify arm) and `GraphitronSchemaValidator.validateRootServiceTableReturn`
+   (982-1022, all three guards). Not one of the four error branches is exercised by any test.
+   `QueryServiceTableFieldValidationTest` and `MutationServiceTableFieldValidationTest` each hold
+   a single `VALID` case, so the control half shipped without the reject half; the only
+   "returned table ... to have a primary key" pin in the tree is the pre-existing child-arm one at
+   `Film.externalChild` in `ServiceFieldValidationTest.RETURN_TABLE_NO_PK`, which is a different
+   coordinate with different wording. This is load-bearing rather than bookkeeping: the keyless
+   rejection is the precondition the emitter runs on, because `serviceReentryRow` hands
+   `table.primaryKeyColumns()` to `ParentCorrelation.OnLiftedSlots`, which refuses an empty tuple.
+   If the classify arm ever stops firing, the failure mode is a generator-side throw or a wrong
+   correlation, not the build error the item promises consumers. The arity guard is round 3's
+   non-blocking note 1, taken and then left unpinned, which leaves `ReentryRowsFragments`'
+   `ROW_CONTEXT` javadoc claiming a validate-time rejection that nothing demonstrates at the new
+   coordinate. What satisfies this: a reject case per guard beside the existing control, in the
+   two validation tests or as a pipeline reject-plus-control pair on the
+   `PkLessParentServiceSourcesRejectionTest` shape the plan named, asserting the message text at
+   both the classifier and the validator coordinate.
+
+2. **Three code-string assertions on generated method bodies, which the approval preconditions ban
+   and which the plan's own test surface said would not be here.** Test surface, Unit bullet:
+   `queryServiceTableField_emittedFetcher_declaresTypedResult` "re-asserts the new declared payload
+   type ...; body shape stays delegated to execution tier per its own comment". The delivered test
+   keeps that comment ("Body-shape properties (the dsl local, the service call, the key lift) are
+   asserted at execution tier") and then contradicts it two lines later:
+   `TypeFetcherGeneratorTest.java:651-653` asserts the body contains
+   `"org.jooq.Result<...FilmRecord> result"` and `"rowsFilmsByService(keys, env)"`, and
+   `:839` adds `"rowsCreateFilm(keys, env)"` to the mutation twin. `development-principles.adoc`
+   bans the form at every tier ("they test implementation, not behaviour, and break on every
+   refactor"), review-enforced, which is this gate. The `connectionField_withOrderByArg_*`
+   carve-out does not extend here: it claims its exemption in prose and states why no structural
+   equivalent exists, and both facts these three assert do have one, the launcher row's unit name
+   (already pinned by `LauncherRelationClosureTest`) and the compile tier resolving the companion
+   call. Local precedent exists at the DML caller (`FetcherPipelineTest:667`/`699`,
+   `SingleRecordPayloadPipelineTest:445`), so this reads as following the family rather than
+   inventing anything; it is pre-existing debt, not a licence. What satisfies this: drop the three
+   `contains` on `.code().toString()`, keep the `returnType()` assertions, which are structural and
+   are what the plan asked for.
+
+3. **The single-cardinality arm has no compile or execution coverage, and half of criterion 4 is
+   unproven.** Criterion 4 wants a test proving "the missing-row drop/null contract"; the delivered
+   `queryServiceTable_keyWithNoLiveRow_dropsFromTheListResult` proves the drop, and nothing proves
+   the null. The reason is structural rather than an oversight in the test file: every plain root
+   `@service` `@table` coordinate in `graphitron-sakila-example` is list cardinality
+   (`contentSearchOne` is the discriminated interface leaf, not this one), so
+   `emitServiceReentryLift`'s single arm, the `result == null` gate and the bare `RecordN` keys
+   container, reaches neither the compile tier nor the execution tier. "Compilation: ... nothing
+   new" in the test surface is true only of shapes the example schema declares, and it declares
+   none. This is an untested arm and not a broken one: I probe-compiled the emitted shape
+   (`Record1<Integer> keys = dsl.newRecord(FILM.FILM_ID).values(result.get(FILM.FILM_ID))` into a
+   `Record rowsX(Record1<Integer>, ...)` call) against the sakila catalog at `--release 17` and it
+   compiles. Cheapest of the three to close: one single-cardinality field on the example schema
+   plus a service method, which buys the compile coverage, and one execution test for the null.
+
+Nothing else. The plan departures section is accurate about what shipped and is worth keeping as
+written. One bookkeeping item for the next pass, not a finding: the Phases section is still
+forward-looking prose rather than one-line "shipped at `<sha>`" notes, which the Done gate's
+preconditions ask for; the departures section already carries most of what the collapse would say.
