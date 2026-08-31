@@ -20,11 +20,12 @@ last-updated: 2026-08-31
 > to work.
 >
 > That makes the ownership inversion this item's spine rather than a neighbouring item's
-> consequence, and it demotes the refresh cadence from headline to corollary: once the caller owns
-> the store, the caller owns the cadence, and the parameter the item used to argue for stops needing
-> an argument of its own. The previous re-premise is kept below under "What the first re-premising
+> consequence. It also ends the item's other half rather than relocating it: **there is no way to
+> decline the materialization refresh in this item, at any layer.** No `<skipMaterialize>`, no
+> cadence parameter on the capture entry point, no property. R876 is why, and the reasoning is under
+> "No declinable refresh" below. The previous re-premise is kept under "What the first re-premising
 > cost this item", because its accounting is still correct and a reviewer should not have to
-> reconstruct it. Sections that the ownership reading retires say so where they stand.
+> reconstruct it. Sections that these two readings retire say so where they stand.
 
 Two facts about the tree today, and the second is the one that has moved to the front.
 
@@ -141,10 +142,10 @@ to produce it because it disliked the input. What this buys is the thing the der
 could not have: a store anyone can make on demand, rather than one kept from a run that happened to
 leave it behind, which is why every figure in R876 rests on one file with a recorded SHA.
 
-**The cadence follows ownership rather than being argued for separately.** Capture stops deciding
-the refresh cadence because it stops deciding anything about the store's lifetime. The caller that
-opened the store says which contract it wants, which for a generating run is exactly what it asks
-for today, and for the capture goal is a stated default rather than a weld.
+**The refresh does not change at all.** A capture the goal runs refreshes the registered targets
+exactly as a generating run's capture does, on the same cadence, in the same transaction on the same
+path. The store the goal produces is complete, and nothing in this item gives any caller a way to
+ask for a store that is not.
 
 **The dev session's second store loses its reason to exist.** `DevMojo` opens a long-lived
 `sessionStore` for the language server, the MCP server and the diagnostics writers, and every
@@ -171,28 +172,36 @@ trimmed to stop claiming the inversion before it goes to Ready, and its dependen
 need this item: the two are independent and either order works. Tell its author rather than editing
 its front-matter from here.
 
-## The refresh parameter, which the ownership reading settles
+## No declinable refresh
 
-The previous draft carried `<skipMaterialize>` as an open question, because every argument for it
-was about the clock and every one of those arguments had died. The ownership reading answers it, and
-answers it in two parts that should not be confused.
+The previous two drafts carried a `<skipMaterialize>` parameter, first as the item's headline and
+then as an open question. It is dropped outright, and so is the API-level cadence enum the last
+draft proposed to keep in its place. Nothing in this item lets any caller obtain a store whose
+registered targets are stale.
 
-**The cadence parameter on the capture entry point stays, and is no longer optional.** Once the
-caller owns the store, capture has to be told which contract to run, because it no longer has
-standing to choose. An enum (`REFRESH` / `SKIP`) rather than a boolean, since the signature already
-carries a positional `warm` boolean and a second one would make call sites read `capture(dsl, true,
-false, ...)`.
+**R876 is the reason, and it is a stronger one than "no user needs it".** That item's whole finding
+is that the register is a diagnostic rather than a deliverable: an expensive refresh is a modelling
+defect, a relation capture never wrote or a join key that exists only as an expression, and where
+the defect is fixed the registration has nothing left to buy. Its target is an empty register, and
+it states the standard as a test rather than an aspiration: no relation in the consumer read set
+refuses a five-second budget with nothing materialized. Against that standard, a switch that turns
+the refresh off is the wrong instrument twice over. It treats the register as a cost to be declined
+rather than a defect to be removed, and it takes the pressure off exactly the measurement R876 and
+R899 need to stay uncomfortable. A refresh anybody wants to skip is a registration that should not
+exist, and the fix belongs there.
 
-**The user-facing `<skipMaterialize>` flag is dropped, and the recommendation has flipped.** Nothing
-a consumer does needs it. The goal produces a complete store, 43 seconds of refresh included, and a
-store with stale targets is not a better artifact for anyone who is not debugging the refresh. A
-reviewer who wants it back should say what user run wants a store whose registered targets are
-empty; the API-level cadence is where the contract lives, and shipping a Maven parameter to express
-one internal call's argument is the weld inverted rather than removed.
+**What that costs this item, stated rather than glossed.** The first draft's argument for the
+parameter was real: `Materializations` distinguishes the writer cadence from the reader cadence and
+calls the difference "a real contract, not a convenience", and capture welds the writer cadence in.
+That weld survives this item. It is defensible where it stands, because capture writes and currency
+is implied by its own write, and the caller that wanted the other contract is the reader that opens
+a store it did not fill, which already has `refreshAll` and calls it. What would have made the weld
+a defect is a caller who writes and does not want currency, and R876's reading is that no such
+caller should exist.
 
 **Consequence for R857.** It depends on this item for a correctness interaction: its rule says the
 capture-cadence refresh "stays unconditional and records a claim per partition it refills", which
-needed reconciling only with a capture path that could decline. With no such path shipping, the rule
+needed reconciling only with a capture path that could decline. No such path ships, so the rule
 stays true as written and R857's dependency on this item can go. R857 is another session's item, so
 this is a message to its author rather than an edit from here.
 
@@ -209,9 +218,11 @@ refresh out of the capture transaction.
 It is not the module boundary. Nothing moves between modules here, and after this item a planner
 that imports a crawler still compiles. That is R864's, as stated above.
 
-It is not a change to what capture writes. A store the new goal produces holds the same rows a
-generating run's capture writes, because a store missing a relation would not answer the question
-anyone opens it for.
+It is not a change to what capture writes, and it is not a way to write less. A store the new goal
+produces holds the same rows a generating run's capture writes, refreshed targets included, because
+a store missing a relation would not answer the question anyone opens it for. Whether a registration
+should exist at all is R876's question and R899's after it, and the answer to an expensive refresh
+is to retire the registration rather than to add a switch that skips it.
 
 ## The shape
 
@@ -257,7 +268,7 @@ prices every position of the pass and R848 reached Done without needing the subt
 heading rather than deleted, so a reader who remembers the argument can see that it was retired
 rather than quietly dropped.
 
-## Four seams in the code
+## Three seams in the code
 
 **1. Store creation leaves `FactCapture.runInternal`.** This is the seam the rest hang off, and it
 is the one that is not mechanical: the open, the reaper report, the ownership check, the retry pair
@@ -266,19 +277,7 @@ private method, and they come out as an opener with a sealed result. Every exist
 survive the move, the demotion warning included, because a build beside a dev session that silently
 did nothing is what that warning exists to prevent.
 
-**2. The refresh becomes a decision the capture entry point is told rather than takes.**
-`FactCapture.capture`'s widest overload runs one of two cadences depending on `firstGraph`, and ends
-with `Materializations.analyse` on both paths. The cadence enum selects which contract runs; it does
-not merge the two paths, which differ for a measured reason `refreshAnalysing` carries. The narrower
-overloads keep their signatures and pass `REFRESH`.
-
-One consequence to get right rather than discover: on the first-graph path the source stamps are
-committed *after* the refresh, deliberately, so that a pass which stopped part-way leaves a null
-stamp and the next run re-captures instead of retaining a partition whose targets were never filled.
-A cadence that skipped the refresh and still committed stamps would break that rule. The safe
-reading is that a skipping capture commits no stamps.
-
-**3. The walk-side write has to come out of `detect`.** `FactCapture.detect` currently does two
+**2. The walk-side write has to come out of `detect`.** `FactCapture.detect` currently does two
 unrelated things in one arm: it writes `walk_type_backing_class` from the run's `ClassifiedRun`, and
 it runs the store-backed detections. A capture-only run wants the first and not the second, so
 today "capture faithfully but detect nothing" is not reachable. Lifting `TypeBackingClassRows.write`
@@ -296,7 +295,7 @@ is small and unblocked, so that is the likely order. Plan this seam as work, but
 already done before starting it, and if it is, delete the seam rather than reinstating a write to
 have something to lift.
 
-**4. `packagesRequired()` returns `false`, as it does for `validate`.** The sentinel only substitutes
+**3. `packagesRequired()` returns `false`, as it does for `validate`.** The sentinel only substitutes
 when the parameter is absent, so a consumer with `<jooqPackage>` configured gets a full catalog
 crawl. A capture run that fell back on the sentinel writes no `sql_` rows at all, which makes the
 store useless for timing views that join the catalog, so the goal logs a warning when it substitutes
