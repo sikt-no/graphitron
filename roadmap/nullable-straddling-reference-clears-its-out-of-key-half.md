@@ -117,7 +117,7 @@ This plan does not gate admission on whether the written columns are NOT NULL, w
 
 ## Consumer note
 
-`sis` is on Graphitron 10 and currently carries 31 schema errors in total, 15 of them this rejection. The walker reports one error per mutation, so those 15 diagnostics stand in for the 31 offending fields; the other 16 surface only as each preceding one is resolved. Graphitron 9 bound these fields to `kjerneapi-codegen` record accessors over column tuples rather than to columns, so there is no v9 statement to compare against; unlike R784, this is a shape v9 expressed differently rather than one it generated correctly. Related: R784, which established the per-column partition and the obligation-consuming emitters this item extends; R829, whose named fixture (payload-returning UPDATE mutations over an overlapping reference) this item adds because the clear routes through those arms; R881 and R882, the two axes split out of this one under "Column nullability is a separate axis" and "Out of scope"; R682, which is In Progress over the derived-fact views this item also edits.
+`sis` is on Graphitron 10 and currently carries 31 schema errors in total, 15 of them this rejection. The walker reports one error per mutation, so those 15 diagnostics stand in for the 31 offending fields; the other 16 surface only as each preceding one is resolved. Every one of the 15 inputs spells identity as a single bare `id: ID!`, a whole-key carrier, so in all 31 fields the in-key intersection `{INSTITUSJONSNR_EIER}` is pinned by a whole carrier and the admission gate turns on nothing subtler there; the two-straddler shape the unit tier pins is reachable in principle but occurs in no consumer currently measured. Graphitron 9 bound these fields to `kjerneapi-codegen` record accessors over column tuples rather than to columns, so there is no v9 statement to compare against; unlike R784, this is a shape v9 expressed differently rather than one it generated correctly. Related: R784, which established the per-column partition and the obligation-consuming emitters this item extends; R829, whose named fixture (payload-returning UPDATE mutations over an overlapping reference) this item adds because the clear routes through those arms; R881 and R882, the two axes split out of this one under "Column nullability is a separate axis" and "Out of scope"; R682, which is In Progress over the derived-fact views this item also edits.
 
 ## Reviewer findings
 
@@ -207,6 +207,20 @@ destination view, the refusal view gains its own wider `identity_pinned` window,
 case (the `twoStraddlersSharingAnInKeyColumn` shape with `second` nullable) is added to the Tests
 section, with its derived-facts sibling and a corpus document carrying the shape so the shadow leg
 sweeps it.
+
+*Correction from the measuring session (relayed 2026-08-31):* the finding's plausibility argument
+misreads the `sis` measurement. Every one of the 15 affected `sis` UPDATE inputs spells identity as
+a single bare `id: ID!`, which is necessarily a whole-key carrier there (in
+`OppdaterStudieoppbygningsdelerInput` the matched key is `{INSTITUSJONSNR_EIER,
+EMNEKOMBINASJONSKODE}` and `EMNEKOMBINASJONSKODE` has no contributor other than `id`), so
+`INSTITUSJONSNR_EIER` is WHOLE-pinned in all 31 fields and both readings of the predicate agree
+across the entire motivating consumer. The references straddle on the tenant column; none supplies
+it as its only source. This does not touch the finding's blocking status: the inconsistency was
+real and reachable, exactly as the `film_actor` shape shows. It changes what carries the decision.
+The broad reading rests on the walker's mechanics alone, not on consumer pressure, and the
+reviewer's observation that the `catalogue_shelf` fixture cannot see the divergence extends
+further than stated: no consumer shape currently known can, which is what makes the requested unit
+case the only place the answer is ever pinned.
 
 **Finding 2 (question two, supporting: the shadow leg is pointed at the wrong corpus).** The Tests
 section describes the new shadow leg as "the `ColumnMatchShadowTest` / `DemandShadowTest` /
