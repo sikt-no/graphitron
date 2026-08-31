@@ -327,6 +327,16 @@ with the existing `contains` / `replace` comparison unchanged. That cannot rot o
 or naming change, and it fails for the one reason the test exists. A roadmap-only diff will not
 cover this; the fix touches `graphitron` test sources, so it owes a full verification build.
 
+**Addressed in `ec74183`.** The text block is gone; the guard is now obtained from
+`ParentSourceBinding.DirectRecord.prelude`, over the same subject and escape
+`MultiTablePolymorphicEmitter`'s batched list fetcher hands it, and rendered through javapoet's
+own `MethodSpec` renderer (a probe method, signature line and closing brace stripped) so the body
+indentation is generated rather than transcribed. The `contains` / `replace` comparison is
+unchanged. Two details beyond the suggested snippet: the rendering step replaces the literal
+`.indent(2)`, which would have re-pinned javapoet's indent width, and a non-blank assertion on the
+derived guard keeps the containment from going vacuous should an arm ever mint an empty prelude.
+Falsified by substituting the empty-prelude `TableRow` arm, which fails the comparison.
+
 **Non-blocking, recorded not requested.**
 
 - The design's line "no child-field parent read spells `env.getSource()` at its own site" is
