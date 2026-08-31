@@ -116,3 +116,109 @@ This plan does not gate admission on whether the written columns are NOT NULL, w
 ## Consumer note
 
 `sis` is on Graphitron 10 and currently carries 31 schema errors in total, 15 of them this rejection. The walker reports one error per mutation, so those 15 diagnostics stand in for the 31 offending fields; the other 16 surface only as each preceding one is resolved. Graphitron 9 bound these fields to `kjerneapi-codegen` record accessors over column tuples rather than to columns, so there is no v9 statement to compare against; unlike R784, this is a shape v9 expressed differently rather than one it generated correctly. Related: R784, which established the per-column partition and the obligation-consuming emitters this item extends; R829, whose named fixture (payload-returning UPDATE mutations over an overlapping reference) this item adds because the clear routes through those arms; R881 and R882, the two axes split out of this one under "Column nullability is a separate axis" and "Out of scope"; R682, which is In Progress over the derived-fact views this item also edits.
+
+## Reviewer findings
+
+### Round 1 (2026-08-31, Spec -> Ready, reviewer session 015TFrZNvh6yW9xPCoT7iZaZ)
+
+Verdict: withhold. One blocking finding on question two, one supporting finding on the same
+question, three non-blocking notes.
+
+*What was checked and holds.* Question one is answered well: an author gets to spell an optional
+cross-table reference `ID` on an UPDATE input, an explicit `null` clears the columns that reference
+owns while leaving the row's identity alone, and the only surviving rejection is the shape where the
+optional reference is the sole thing pinning a key column. That reads off the item without
+reconstructing it from the phase list, and the reframing from "gate the straddle" to "clearing is
+broken for every nullable reference carrier" is the strongest thing in the item.
+
+Every symbol the plan names exists as named. `UpdateRowsWalker`'s `CarrierRole.CrossTableFk(var
+nonNull)` arm and its `if (!nonNull)` reject sit where the plan says (the straddle branch of stage
+6), the javadoc does carry "Nullability rides only on the arm that reads it", and the stage-6 claim
+comment does carry "resolve in input-field order; the choice is observationally irrelevant".
+`appendDecodeLocal` is exactly the collapse the plan calls load-bearing: `(wire instanceof String
+_s) ? decode(_s) : null` followed by an unconditional `if (local == null) throw "Decoded NodeId did
+not match the expected type"`, and `emitBulkSetDecodeLocals` says the same with a presence-gated
+throw. All four `UpdateRows` consumers exist under the given names, as do
+`emitSetMapPuts`, `emitSetBulkCellAdds`, `emitBulkKeySetAgreement`, `appendAgreementValue` (which
+does guard `decodeLocal != null`), `requireGroup`, and the three `SetGroup` producers the plan cites
+as its reason not to hang the fact there. `requireColumnAgreement` is
+`Objects.equals(type.convert(a), type.convert(b))`, so the null-agrees-with-null reading is right.
+The bulk uniform-shape guard exists and throws on a differing present-key set, so the plan's claim
+that a batch cannot mix a clear with an omission holds, and since an explicitly-null key is a
+present key the first-row-presence argument about `v(...)` column membership holds too. On the SQL
+side `pinned`, the `disposed` CTE, the `claim` CTE, `intent_mutation_write_refusal`'s
+`NULLABLE_STRADDLING_REFERENCE` branch and `intent_mutation_payload_key_membership` (plus its
+`_live` view) are all as described, and the destination view really does already read the refusal
+view through its `admitted` CTE, so the forced-duplicate argument for lifting `pinned` is sound.
+`catalogue_item.catalog_code` is NOT NULL as claimed, no `catalogue_shelf` or `shelf_code` exists
+yet, and every named test class and test method exists. `sql_column.nullable` is captured and no
+walker reads column nullability, so the R881 split is argued from the true state of the tree. The
+two doc sentences the item retires exist verbatim, including the MATCH SIMPLE premise in
+`typed-rejection.adoc`.
+
+**Finding 1 (question two: the plan's central predicate is stated twice, with two different
+extensions, and the difference is reachable).** The Rule section says a nullable straddler is
+admitted when "every in-key column the carrier lifts must already have an identity contributor
+other than this carrier", and the phase split names who settles that: "Whole carriers *and non-null
+straddlers* settle the WHERE partition first ... nullable straddlers are then measured against the
+settled set". So a non-null straddler that won its claim counts as a pin. The Implementation section
+then states the same rule as `carrier_role = 'CROSS_TABLE_FK' AND f.non_null = FALSE AND in_key AND
+NOT pinned`, over the existing `pinned` window lifted unchanged, and that window is `MAX(CASE WHEN
+p.carrier_key_membership = 'WHOLE' AND p.carrier_role <> 'SELF_FK' THEN 1 ELSE 0 END)`: whole
+carriers only. A non-null straddler pins under the walker rule and does not pin under the SQL rule.
+
+The divergence is not hypothetical, and the tree already fixtures the shape it needs.
+`UpdateRowsWalkerTest.twoStraddlersSharingAnInKeyColumn_firstInInputOrderPinsIt` walks `film_actor`
+with `filmId` plus two straddlers on `(actor_id, last_update)`, where `actor_id` is in the matched
+key and no whole carrier supplies it: `first` pins it and `second` contributes an obligation. Spell
+`second` nullable and the walker admits it while the SQL refuses the whole payload. That case is
+also the plausible consumer shape rather than a curiosity, since the item's own measurement says all
+31 `sis` references straddle on `INSTITUSJONSNR_EIER` and the tenant column is typically supplied by
+references rather than by a field of its own.
+
+The two readings are not interchangeable, which is why this needs the author and not the
+implementer. Under the broad reading the plan's "lift it ... and have both readers join it" does not
+work: broadening `pinned` to count non-null straddlers empties the `claim` CTE for any column
+carrying two or more of them, and the column silently loses its WHERE conjunct, so the refusal
+reader needs a second and wider pinning expression rather than the same column. Under the narrow
+reading the lift works as written, but "and non-null straddlers" has to come out of the phase-split
+sentence, and the rejection surface is wider than the Rule section currently promises.
+
+What would satisfy it: pick one reading, state it once in the Rule section as the definition of
+"identity contributor", and make the Implementation section's SQL follow from it (one lifted column
+under the narrow reading, two pinning notions under the broad one). Then add the unit case that
+pins the answer, a nullable second straddler over an in-key column no whole carrier supplies. The
+proposed `catalogue_shelf` fixture cannot see this: `UpdateCatalogueItemInput.id` is
+`ID! @nodeId(typeName: "CatalogueItem")`, a whole-key carrier, so `tenant_id` is WHOLE-pinned there
+and both readings agree on the whole execution tier.
+
+**Finding 2 (question two, supporting: the shadow leg is pointed at the wrong corpus).** The Tests
+section describes the new shadow leg as "the `ColumnMatchShadowTest` / `DemandShadowTest` /
+`InputOccurrenceShadowTest` pattern, over `MaterializedRegistryFixture`". Those three tests do not
+use `MaterializedRegistryFixture`; they sweep `CorpusDocuments.documents()` captured through
+`CapturedStore.ofCatalog`. `MaterializedRegistryFixture` is used by `DerivedReadCostTest`,
+`RefreshPlanStatisticsTest` and `RefreshPrerequisiteStatisticsTest`, and by no shadow test. This is
+more than a wrong name, because the shadow leg is the plan's own stated defence against the two
+statements of the rule drifting, which is exactly what Finding 1 describes: whether it can see that
+drift depends on the swept corpus carrying an UPDATE mutation with two straddlers on one in-key
+column, one of them nullable. Naming the real fixture and saying what the corpus must contain is
+what would satisfy this.
+
+*Non-blocking.* Three things noticed that do not bear on either question.
+
+- The refusal predicate's silence about `carrier_key_membership` is sound but only by a subtlety
+  worth writing down. `carrier_role = 'CROSS_TABLE_FK' AND f.non_null = FALSE AND in_key` also
+  matches a nullable cross-table reference whose columns fall *wholly* inside the key, the shape
+  handed to R882, and that shape escapes refusal only because `pinned` counts the carrier's own
+  WHOLE rows and so self-pins. A straddler is never WHOLE, so it never self-pins, which is why the
+  same window reads as "some other carrier" there. One clause in the view comment would stop a later
+  reader from "fixing" the self-inclusion.
+- A nullable carrier lying wholly inside the key gets no `CarrierNullRule` at all, since the rule is
+  stated per carrier contributing to the SET partition, so an explicit null on it still lands on
+  today's "Decoded NodeId did not match the expected type" throw. That is right for this item's
+  scope and is R882's diagnostic to fix; noting it only because "the arm set is closed" reads as
+  closed over all carriers rather than over SET carriers.
+- The Retired vocabulary section names `UpdateRowsWalker`'s stage-6 comment as carrying the
+  "observationally irrelevant" claim the phase split falsifies, but the same claim is also in the
+  body of `UpdateRowsWalkerTest.twoStraddlersSharingAnInKeyColumn_firstInInputOrderPinsIt`, which
+  the Tests section does not mention.
