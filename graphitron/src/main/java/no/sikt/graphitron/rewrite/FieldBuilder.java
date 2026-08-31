@@ -6796,9 +6796,9 @@ class FieldBuilder {
      * reads the PK off the source record via the enclosing type's {@code ResultType}; the
      * DataLoader key is a {@code RowN} PK tuple, the lift arm's derived wrap), and the
      * {@code @sourceRow} {@link LoaderRegistration} constant. The
-     * source envelope ({@code DIRECT} vs {@code OUTCOME_SUCCESS}) is derived at the type level by the
-     * generator ({@code sourceIsOutcome}), not carried on the key. Every re-fetch field is batched
-     * (source cardinality {@code Many}); the single-source case is a correct one-element batch.
+     * source envelope ({@code DIRECT} vs {@code OUTCOME_SUCCESS}) is derived at the type level by
+     * the generator, not carried on the key. Every re-fetch field is batched (source cardinality
+     * {@code Many}); the single-source case is a correct one-element batch.
      */
     private ChildField buildPayloadCarrierBatchedTableField(
             String parentTypeName, String name, SourceLocation location,
@@ -6876,8 +6876,8 @@ class FieldBuilder {
                 // The DML payload carrier collapses into a record-sourced BatchedTableField — a source=target
                 // re-fetch. The producer hands back the RETURNING record on env.getSource(); the
                 // field re-projects the @table by correlating the record's PK to the catalog rows.
-                // The source envelope (DIRECT here) is derived at the type level by the generator
-                // (sourceIsOutcome), not carried on the key.
+                // The source envelope (DIRECT here) is derived at the type level by the generator,
+                // not carried on the key.
                 return buildPayloadCarrierBatchedTableField(parentTypeName, name, location, tb, binding);
             }
             // Non-@table, non-polymorphic children on DML payloads fall through to the
@@ -6921,8 +6921,8 @@ class FieldBuilder {
                 // hands back the target XRecord on env.getSource() (bare, or wrapped in
                 // Outcome.Success when the payload carries an errors field); the field re-projects
                 // the @table by correlating the record's PK to the catalog rows. The source
-                // envelope (DIRECT vs OUTCOME_SUCCESS) is derived at the type level by the generator
-                // (sourceIsOutcome = hasWrapperArmErrors), not carried on the key.
+                // envelope (DIRECT vs OUTCOME_SUCCESS) is derived at the type level by the
+                // generator, not carried on the key.
                 return buildPayloadCarrierBatchedTableField(parentTypeName, name, location, tb, binding);
             }
             // ID-element data field on an @service carrier — the opptak

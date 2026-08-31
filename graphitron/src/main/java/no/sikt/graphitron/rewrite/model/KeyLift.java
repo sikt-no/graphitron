@@ -76,7 +76,7 @@ public sealed interface KeyLift {
      * wrapper's arity: {@link Arity#ONE} reads the PK off the single source record;
      * {@link Arity#MANY} iterates the held collection, one {@code RowN} PK key per element (the
      * {@code LOAD_MANY} contract). The source envelope is handled by the generator at the type
-     * level ({@code sourceIsOutcome}), not carried here.
+     * level ({@link no.sikt.graphitron.rewrite.generators.ParentSourceBinding}), not carried here.
      */
     record ProducedRecords(Arity arity) implements KeyLift {
         public ProducedRecords {

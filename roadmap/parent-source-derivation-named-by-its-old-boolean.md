@@ -1,7 +1,7 @@
 ---
 id: R883
 title: "Five prose sites name the parent-source derivation by its retired boolean"
-status: Ready
+status: In Review
 bucket: cleanup
 priority: 4
 theme: codegen-correctness
@@ -130,6 +130,19 @@ rename is the whole guarantee the item is buying at those sites; at the other th
 is that no symbol name is left to rename.
 
 Verification is the full `mvn install -Plocal-db`, since the diff touches main sources.
+
+**Re-probing the gate needs a cleared `apidocs` first.** Measured during implementation, and worth
+writing down because it silently inverts the answer. maven-javadoc-plugin skips regeneration when it
+judges the output up to date, logging `Skipping javadoc generation, everything is up to date` at
+debug only, which the gate's `quiet` setting hides. A comment-only edit does not defeat that
+judgment, so a probe run over a populated `graphitron/target/reports/apidocs` returns green whatever
+the probe says, and reads exactly like "this site is not covered". Clear the directory before every
+probe and before the verification build. On cleared runs all three of this item's claims reproduce:
+the dangling probes in `ChildField.SingleRecordIdField` and in `ParentSourceBinding`'s own class
+javadoc both fail the build, a dangling `TypeFetcherGenerator#generateTypeSpecNoSuchMethod` member
+probe fails too (so the corrected member link is enforced even though `generateTypeSpec` is
+package-private, doclint resolving members the `show=protected` filter excludes from the output),
+and a probe in `FieldBuilder`'s private-method javadoc is still accepted silently.
 
 ## Why no registry entry, and no retirement
 

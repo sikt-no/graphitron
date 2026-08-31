@@ -25,9 +25,10 @@ import java.util.Set;
  * already holds: the parent's {@link SourceShape} (a {@code @table}-backed parent projects its
  * own table row; a class-backed parent hands a producer object) and, on the record arm, whether
  * the parent type owns an errors field on the {@code WrapperArm} transport
- * ({@link FetcherEmitter#hasWrapperArmErrors}, computed once per type at
- * {@code TypeFetcherGenerator.generateForType}). That per-type predicate keys on the
- * {@code WrapperArm} transport specifically; its classify-time sibling,
+ * ({@link FetcherEmitter#hasWrapperArmErrors}, computed once per emitted type in
+ * {@link TypeFetcherGenerator#generateTypeSpec}, which every entry point routes through). That
+ * per-type predicate keys on the {@code WrapperArm} transport specifically; its classify-time
+ * sibling,
  * {@code FieldBuilder.carrierPayloadHasErrorsField} (any errors-shaped payload field, the signal
  * that mints {@link no.sikt.graphitron.rewrite.model.SourceEnvelope} on the two envelope-carrying
  * leaves), answers a broader question on a narrower population. The two agree wherever both

@@ -190,8 +190,9 @@ public sealed interface ChildField extends OutputField
      * constructor requires that wrap unconditionally, this leaf being the only
      * {@link #envelope()}-bearing typed-record read. {@link #envelope()} ({@code DIRECT} /
      * {@code OUTCOME_SUCCESS}) is the same axis the table-field sibling's emitter derives as
-     * {@code sourceIsOutcome}; the bulk arrival is the field's own wrapper position
-     * ({@code returnType().wrapper().isList()}). {@link #encode} mirrors the compaction slot
+     * {@link no.sikt.graphitron.rewrite.generators.ParentSourceBinding}; the bulk arrival is the
+     * field's own wrapper position ({@code returnType().wrapper().isList()}).
+     * {@link #encode} mirrors the compaction slot
      * every other NodeId-encoded projection uses. Declines {@link TableTargetField} (element is
      * the {@code ID} scalar) and {@link BatchKeyField} (no DataLoader).
      */
