@@ -43,7 +43,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R724` | The stated key-column match spends its ambiguity silently; make it state its arity | Ready | 2026-08-19 | [plan](stated-key-column-match-states-its-arity.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
-| `R687` | A DML carrier payload with an errors field loses its return-derived write target | In Progress | 2026-08-31 <sub>created 2026-08-17</sub> | [plan](dml-carrier-errors-field-blocks-return-derived-table.md) |
+| `R687` | A DML carrier payload with an errors field loses its return-derived write target | In Review | 2026-08-31 <sub>created 2026-08-17</sub> | [plan](dml-carrier-errors-field-blocks-return-derived-table.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
@@ -502,7 +502,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R882` [**A nullable input field can be the sole supplier of a matched-key column on UPDATE, and an omitted value then has no diagnostic**](nullable-carrier-as-sole-row-identity.md) — Backlog, validation
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R881` [**No write carrier reads column nullability, so a clear or a write into a NOT NULL column is only the database's to refuse**](write-carriers-never-read-column-nullability.md) — Backlog, validation
-- `R687` [**A DML carrier payload with an errors field loses its return-derived write target**](dml-carrier-errors-field-blocks-return-derived-table.md) — In Progress, structural
+- `R687` [**A DML carrier payload with an errors field loses its return-derived write target**](dml-carrier-errors-field-blocks-return-derived-table.md) — In Review, structural
 - `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
 - `R172` [**Audit: forbid service-side references to <outputPackage>.inputs.***](inputs-package-internal-use-audit.md) — Backlog, architecture
