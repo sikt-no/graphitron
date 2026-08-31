@@ -1,13 +1,13 @@
 ---
 id: R874
 title: "A @condition that owns a @nodeId predicate must hand-roll the wire format, because NodeIdEncoder is generated downstream of it"
-status: In Review
+status: Ready
 bucket: dx
 priority: 3
 theme: nodeid
 depends-on: [preserve-enum-extraction-through-condition-rewrap]
 created: 2026-08-28
-last-updated: 2026-08-28
+last-updated: 2026-08-31
 ---
 
 # A @condition that owns a @nodeId predicate must hand-roll the wire format, because NodeIdEncoder is generated downstream of it
@@ -122,6 +122,71 @@ One shape stays uncovered, and is stated here rather than left to be discovered:
 **R862 had not landed at pickup, so this item shipped the composition.** `ConditionResolver.rewrapForNested` now passes the parameter's own extraction as the `NestedInputField` leaf rather than defaulting it to `Direct`. The composition alone would not have delivered the enum case, because `ConditionGlueRenderer.nestedExtraction` had no enum arm: an `EnumValueOf` leaf fell through to the same cast-to-declared-type the `Direct` default produced, so the arm ships here too, as the nested twin of the top-level one. What stays with R862 is the coverage: proving the enum leaf works wants a fixture at the compile or execution tier, the pipeline tier banning code-string body matching, and that fixture is R862's to add.
 
 **The store relation is `intent_condition_param_decode`, keyed on the use site.** It states the shape as an arity and a list flag rather than a composed Java type, the type being the generator's composition of the key columns' own types (already a relation) with the wrapping this one names. Which of the method's parameters receives the decoded key is *not* a column: that is the binding question the fact model defers everywhere, and a reader that has resolved the binding for itself, which the validator and the LSP both have, needs only the shape.
+
+## Reviewer findings
+
+Done gate round 1: withhold. Everything the plan named at the resolver, extraction, renderer, carrier
+and rejection seams is delivered and well evidenced, and the verification build is green. What fails
+is the coordinate the delivery *added*: the field-level `@condition` install ships without its store
+half and without a test.
+
+**1. The third install site has no relation row and no test (blocks both gate questions).**
+The generator installs the decode at three sites: `FieldBuilder` line ~2131 (the argument's own
+`@condition`), `BuildContext` line ~3065 (the input field's own), and `FieldBuilder` line ~2561 (a
+field-level `@condition` binding one of its field's `@nodeId` arguments), the last being the site the
+"Implementation notes" section discloses as riding along. `intent_condition_param_decode` has two
+arms: one over `graphitron_argument_condition`, and one over `graphitron_field_condition` restricted
+to `t.kind = 'INPUT_OBJECT'`. A field-level `@condition` sits in `graphitron_field_condition` with
+`t.kind = 'OBJECT'`, so the third site produces no row.
+
+That is not a silence. The view's own comment states that "presence here is the whole of what says the
+exception applies. Absence is not a silence; it is the assertion that the declared-type rule stands at
+that coordinate." The relation therefore asserts the declared-type rule stands at a coordinate where
+the shipped generator installs the decode, which is the fact model saying the opposite of the
+generator. The view's "Population boundary" sentence names two exclusions and this is not one of them,
+and `ConditionResolver.installNodeIdDecode`'s javadoc says the opposite outright: "Three sites bind the
+same slots and all three route through here." Nothing currently reads the relation, so no consumer is
+being misled today; the reader the plan built it for (the editor telling an author the required
+declared type) would inherit the wrong answer.
+
+The same coordinate is untested at every tier. Every `@condition` in the delivered tests sits on the
+slot itself; none sits on the enclosing field. So the field-level block, both the install and the
+divergence refusal beside it, is uncovered, and the divergence refusal's message has never been
+executed.
+
+To satisfy: a third arm on the view, or, if the omission is deliberate, a stated population boundary
+that `ConditionResolver`'s javadoc and the manual bullet are made to agree with. Plus a case in
+`ConditionParamDecodeTest` for the new arm, and a pipeline case covering the field-level install and
+its divergence refusal.
+
+**2. `condition.adoc` overclaims over the shape the delivery leaves uncovered.**
+The new constraints bullet says the decoded handoff holds "at every such coordinate: argument or input
+field, routed or author-owned, `override: true` or `false`, and whether the `@condition` sits on the
+slot itself or on the enclosing field", and then tells the author to bind such a parameter "by giving
+it the slot's name, or with `argMapping:`". The Implementation notes disclose that one shape is not
+covered: a field-level `argMapping` descending to a `@nodeId` input field (`"p: filter.languageId"`)
+is a dotted path, so it is not a whole-slot binding and still receives the wire string.
+
+`ConditionResolver.installNodeIdDecode`'s javadoc carries that gap, which is the right place for it to
+survive this item. The manual does not, and the manual is what an author reads. An author in that
+shape follows the bullet, declares the decoded type, and gets a cast that is wrong at request time,
+which is the failure class this item exists to retire. This item owns the correction because its whole
+premise is that the manual documented an un-followable form at this directive.
+
+To satisfy: scope the bullet's promise to whole-slot bindings and say what a dotted descent gets
+instead. File a Backlog item if closing the hole is wanted.
+
+### Non-blocking
+
+- The two new execution-tier refusal tests assert only that `getErrors()` is non-empty. The plan said
+  the mismatch error "is itself asserted", and this item also shipped the message-family alignment
+  (`NodeIdDecodeFailure`), so asserting the message would pin what that rider bought. The pair of
+  tests does distinguish the two failure shapes, so this is a strengthening rather than a gap.
+- The `Implementation` section still reads as forward-looking plan prose, including a conditional
+  ("If R862 has not landed at pickup...") that `Implementation notes` has since resolved. Worth
+  collapsing on the next pass; the delivered state is recorded, just in two places.
+- The nested enum arm in `ConditionGlueRenderer.nestedExtraction` ships with its coverage deferred,
+  which the notes disclose and attribute. Not counted against this gate.
 
 ## Retired vocabulary
 
