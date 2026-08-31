@@ -287,28 +287,25 @@ fixture pins that key-only records refetch on the request connection.
 
 ## Phases
 
-**Phase 1, additive.** The keyless-return-table rejection at the root arm: classifier diagnostic
-plus validator mirror plus pipeline pins, cloned from the child arm's wording and from the
-reject-plus-control shape of `PkLessParentServiceSourcesRejectionTest`. Lands alone and green
-before any behaviour changes.
+**Phase 1, additive.** Shipped at `d1abd12d`: the keyless-return-table rejection at the root arm,
+classifier diagnostic plus validator mirror plus the reject-plus-control pipeline pins in
+`RootServiceReturnTablePkRejectionTest`. Landed alone and green before any behaviour changed.
 
-**Phase 2, cutover.** One commit, because the pieces are coupled by the implementedness guard:
-the model flip (both mint homes plus `DECLARED_SHAPES`), the `Launch` arm with its
-`ProjectedReentry` row producer in both walks, the caller-side lift in
-`buildServiceFetcherCommon`, the emitted-payload-type move, the guard admission, and the
-reentry-family javadoc widening from point 3. Pin updates ride along:
-`OperationMemberMintPinTest`, `ReFetchDerivationTest`, `LauncherRelationClosureTest` (the pinned
-absence of a root-service launcher row becomes a pinned presence),
-`GraphitronSchemaBuilderTest`'s service rows, the corpus examples whose outcome tables show the
-passthrough, and `TypeFetcherGeneratorTest`'s body-shape comment.
+**Phase 2, cutover.** Shipped at `4a2d3e85`, one commit as planned: the model flip, the `Launch`
+arm and its `ProjectedReentry` row producer in both walks, the caller-side lift, the
+emitted-payload-type move, the guard admission, and every pin update named here.
 
-**Phase 3, proof and prose.** Rewrite `SampleQueryService.filmsByService` to populate only
-`FILM_ID`, which is the fixture the tier never had; its siblings (`filmsByServiceRenamed`, the
-path-mapping family) stay full-select to prove already-full records keep working and the extra
-lookup is harmless. Execution pins for the key-only fixture, the missing-row drop, and the
-existing `titleTitlecase` child resolving off the projected parent. Update the service javadoc
-contracts (`SampleQueryService` states the passthrough today; `PolymorphicSearchService` and
-`ContentSearchService` become statements of the now-universal rule). Docs per the section below.
+**Phase 3, proof and prose.** Shipped at `4a2d3e85` too, folded into the cutover commit rather
+than following it: the key-only `SampleQueryService.filmsByService`, the execution pins, the
+service javadoc contracts, and all four documentation surfaces.
+
+**Rework round 1.** Shipped at `<this pass>`: the three evidence gaps round 4 named. The
+validator's three root guards get their unit-tier reject pins beside the control, the three
+code-string assertions on generated bodies are gone, and the single-cardinality arm gets the
+example-schema coordinate it never had plus its compile and execution coverage. Round 4's
+finding 1 is partly answered by Phase 1 rather than by this pass; see the round 5 note below.
+
+Nothing outstanding. The changelog entry is still the Done gate's, per `roadmap/workflow.adoc`.
 
 ## Test surface
 
@@ -381,7 +378,8 @@ the new keyless rejection loudly.
 
 ## Plan departures (recorded during implementation)
 
-Six, none changing the design:
+Seven, none changing the design. The first six were recorded during the original implementation;
+the seventh during rework round 1:
 
 1. **The unit-tier `film` fixture had to gain a primary key.** `TestFixtures.filmTable()` carries
    no PK columns, and `ParentCorrelation.OnLiftedSlots` refuses an empty column tuple, so the
@@ -408,6 +406,15 @@ Six, none changing the design:
    still a passthrough, so those three sites keep the word "passthrough" and drop "universal".
 6. **The changelog entry is left to the Done gate**, per `roadmap/workflow.adoc`, which places it
    at the approve step with the landing commits cited.
+7. **The validator's three guards are pinned at the unit tier, not as pipeline
+   reject-plus-control.** Round 4's finding 1 offered either. Only the unit tier can reach them: a
+   schema cannot produce a field that arrives at the validator carrying any of the three defects,
+   because the classifier rejects the key-less return first (which is what the Phase 1 pipeline
+   test asserts, from SDL) and channel resolution answers no-channel for a table-bound return. The
+   hand-built enum row is the house pattern for exactly this, already used by
+   `ServiceFieldValidationTest.reentryServiceFieldWithPresentChannel_rejected` at the child
+   coordinate. The two tiers divide the work the criterion asks for: the pipeline test pins the
+   diagnostic an author actually meets, the unit rows pin that the mirror behind it is enforced.
 
 ## Done criteria
 
@@ -775,3 +782,49 @@ Nothing else. The plan departures section is accurate about what shipped and is 
 written. One bookkeeping item for the next pass, not a finding: the Phases section is still
 forward-looking prose rather than one-line "shipped at `<sha>`" notes, which the Done gate's
 preconditions ask for; the departures section already carries most of what the collapse would say.
+
+### Rework round 1 (response to round 4, session_01XWRcm5Tn4A2E4PxcbnePQi, 2026-08-31)
+
+All three findings addressed. No behaviour changed: the diff is tests, two fixtures, and one
+example-schema coordinate.
+
+**Finding 1, the new root-arm rejections.** Partly already delivered, and the correction matters
+for what the next gate should check. `RootServiceReturnTablePkRejectionTest` landed in Phase 1 at
+`d1abd12d` and is the reject-plus-control pipeline pin the criterion asks for at the classifier
+coordinate: the rejection from SDL at both cardinalities and both root kinds, the classify verdict
+and its arrival at the build boundary as a validation error, a keyed control, and a second control
+for the escape hatch the rejection's own wording offers. Round 4 did not find it (its search was
+for the child arm's message wording, which this test does not use; it asserts the fragments
+`film_list`, `primary key` and `drop @table`), and concluded no pin existed at all. That half of
+the finding is stale.
+
+What was genuinely missing is the validator's own three guards, none of which the pipeline test
+reaches. `QueryServiceTableFieldValidationTest` and `MutationServiceTableFieldValidationTest` now
+carry four rows each beside the existing control, asserting the full message text at the validator
+coordinate: the key-less return table, the 22-column key on the list arm, the same key at single
+cardinality staying silent (the guard is list-only, because only the list arm's `VALUES (idx,
+key...)` row spends a slot on the index), and a present error channel. Departure 7 above states why
+these are unit-tier rows rather than a second pipeline test. The arity row is what makes
+`ReentryRowsFragments`' `ROW_CONTEXT` javadoc true at this coordinate: the row builder's own throw
+really is a backstop behind a validate-time rejection, and there is now a test that fails if the
+rejection goes away.
+
+**Finding 2, the code-string assertions.** All three are gone:
+`TypeFetcherGeneratorTest.queryServiceTableField_emittedFetcher_declaresTypedResult` keeps only its
+`returnType()` assertion, and the mutation twin keeps its stub-regression assertions and drops the
+`rowsCreateFilm(keys, env)` one. Both facts the deleted assertions covered keep structural homes,
+named in the surviving comment: `LauncherRelationClosureTest` pins the launcher row's unit name
+(`rowsExternalFilm`, its source arm and its invocation) and the compile tier pins that the emitted
+call resolves. The pre-existing precedent at the DML caller is left alone, as the finding said.
+
+**Finding 3, the single-cardinality arm.** `Query.filmByServiceUnchecked(id: Int): Film` is the
+coordinate the example schema lacked, backed by `SampleQueryService.filmByServiceUnchecked`, which
+returns one key carrier with no query run, or nothing at all when `id` is omitted. That buys the
+compile coverage the arm never had (the bare `RecordN` keys container and the single-record
+companion call now come out of the generator and through the Java 17 gate), and three execution
+pins: a key-only record resolving full column data at single cardinality, a key with no live row
+resolving null, and a service returning no record resolving null through the emitter's own
+`result == null` gate. The two null routes are separate tests because only the second reaches that
+gate; the first goes through the companion and comes back empty.
+
+Verification: `mvn install -Plocal-db` on the rebased tree, all modules green.

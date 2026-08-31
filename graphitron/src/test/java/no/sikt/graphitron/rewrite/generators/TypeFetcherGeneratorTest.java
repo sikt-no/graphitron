@@ -628,7 +628,9 @@ class TypeFetcherGeneratorTest {
         // records the service returns are key carriers, and what reaches graphql-java (and so
         // every child's env.getSource()) is the projected row the companion re-selected. Body-
         // shape properties (the dsl local, the service call, the key lift) are asserted at
-        // execution tier: GraphQLQueryTest.queryServiceTable_filmsByService_*.
+        // execution tier: GraphQLQueryTest.queryServiceTable_filmsByService_*. The companion the
+        // body calls has its own structural homes: LauncherRelationClosureTest pins the launcher
+        // row and its unit name, and the compile tier pins that the call resolves.
         var method = TestFixtures.staticServiceMethodRef(
             "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             "filmsByService",
@@ -646,11 +648,6 @@ class TypeFetcherGeneratorTest {
 
         assertThat(method(spec, "filmsByService").returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>");
-        // The developer's own container stays the inner result local's type, and the companion
-        // the row named is what the body returns.
-        assertThat(method(spec, "filmsByService").code().toString())
-            .contains("org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord> result")
-            .contains("rowsFilmsByService(keys, env)");
     }
 
     @Test
@@ -834,9 +831,6 @@ class TypeFetcherGeneratorTest {
             .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Record>");
         var body = emitted.code().toString();
         assertThat(body).contains("com.example.Service.createFilm");
-        // The service call is this arm's write-analog, and the keyed re-select follows it here
-        // exactly as it follows a DML write.
-        assertThat(body).contains("rowsCreateFilm(keys, env)");
         // Stub variants throw from a fresh body; the real emitter goes through the try block.
         assertThat(body).doesNotContain("UnsupportedOperationException");
         assertThat(body).contains("try");

@@ -65,6 +65,25 @@ public final class SampleQueryService {
     }
 
     /**
+     * The single-cardinality shape of the same contract: one key carrier rather than a container
+     * of them, with no query run. Its own arm in the generated fetcher, which is why it is a
+     * fixture and not a variation on {@link #filmsByServiceUnchecked}: the lift builds a bare
+     * {@code RecordN} instead of a {@code Result}, and a missing row nulls the field instead of
+     * dropping an element. Both ways of arriving at that null are reachable from here, a key the
+     * table has no row for and a service that returns nothing at all.
+     *
+     * @param id the key to carry, or {@code null} to return no record at all
+     */
+    public static FilmRecord filmByServiceUnchecked(DSLContext dsl, Integer id) {
+        if (id == null) {
+            return null;
+        }
+        FilmRecord carrier = dsl.newRecord(Tables.FILM);
+        carrier.setFilmId(id);
+        return carrier;
+    }
+
+    /**
      * Returns a scalar {@code Integer} — graphql-java coerces to the GraphQL {@code Int!}.
      */
     public static Integer filmCount(DSLContext dsl) {

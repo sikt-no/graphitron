@@ -583,6 +583,15 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             method: "filmsByServiceUnchecked"
         })
+    # The single-cardinality arm of the same coordinate: one key carrier instead of a container of
+    # them. Its own emitted shape (a bare RecordN key row, and a null where the list arm returns an
+    # empty list), so it is a distinct field rather than a variation on the one above. Omitting `id`
+    # makes the service return no record at all, which is the other way the field resolves null.
+    filmByServiceUnchecked(id: Int): Film
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+            method: "filmByServiceUnchecked"
+        })
     # R53 (external-code-reference-arg-mapping.md): GraphQL arg `ids` binds to the Java parameter
     # `filmIds` via argMapping; SampleQueryService.filmsByServiceRenamed(DSLContext, List<Integer> filmIds).
     filmsByServiceRenamed(ids: [Int!]!): [Film!]!

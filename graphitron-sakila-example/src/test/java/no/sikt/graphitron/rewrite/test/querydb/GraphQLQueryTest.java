@@ -4381,6 +4381,46 @@ class GraphQLQueryTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void queryServiceTableSingle_keyOnlyServiceRecord_resolvesFullColumnData() {
+        // The single-cardinality arm of the contract: one key carrier rather than a container of
+        // them. filmByServiceUnchecked runs no query and sets only FILM_ID, and the fetcher lifts
+        // that key into a bare RecordN rather than the list arm's Result.
+        Map<String, Object> data = execute(
+            "{ filmByServiceUnchecked(id: 1) { filmId title rentalRate } }");
+        Map<String, Object> film = (Map<String, Object>) data.get("filmByServiceUnchecked");
+        assertThat(film)
+            .as("columns the service never selected resolve from the table, single arm included")
+            .containsEntry("filmId", 1)
+            .containsEntry("title", "ACADEMY DINOSAUR");
+        assertThat(film).extractingByKey("rentalRate").isNotNull();
+    }
+
+    @Test
+    void queryServiceTableSingle_keyWithNoLiveRow_resolvesNull() {
+        // The other half of the missing-row contract, the half the list arm answers by dropping
+        // the element: at single cardinality there is no element to drop, so the field resolves
+        // null. film_id 999999 is unseeded and the unchecked service hands it over unchecked.
+        Map<String, Object> data = execute(
+            "{ filmByServiceUnchecked(id: 999999) { filmId title } }");
+        assertThat(data)
+            .as("a lifted key the table has no row for nulls the field rather than erroring")
+            .containsEntry("filmByServiceUnchecked", null);
+    }
+
+    @Test
+    void queryServiceTableSingle_serviceReturningNoRecord_resolvesNull() {
+        // The same null by the other route: the service returns nothing, so the fetcher's own
+        // null gate answers before any key is lifted. Both routes have to reach null, and only
+        // this one exercises the gate.
+        Map<String, Object> data = execute(
+            "{ filmByServiceUnchecked { filmId } }");
+        assertThat(data)
+            .as("a service that returns no record nulls the field without a re-select")
+            .containsEntry("filmByServiceUnchecked", null);
+    }
+
+    @Test
     void queryServiceRecord_filmCount_returnsScalar() {
         // SampleQueryService.filmCount returns Integer; graphql-java coerces to Int!. The service
         // counts the film table, and other classes in this module insert films, so the assertion is
