@@ -39,6 +39,10 @@ is not a guess about intent; it is what every read site in `graphitron-lsp`, `gr
 | `jvm_record_component_type_ref` | 561 | anchored, through `intent_type_backing_seed` |
 | `jvm_class_supertype` | 8,817 | **not read at all**, see below |
 
+The three `*_type_ref` relations were collapsed into one supertype table, `jvm_declared_type_ref`,
+after this census was taken. The counts above are of the shape that was measured and are left as
+taken; what a reader greps for today is the single relation.
+
 So **11,851 rows of 417,225, 2.8%, carry the enumerative load**, and 405,374 rows exist to answer
 questions that arrive with a class name attached.
 

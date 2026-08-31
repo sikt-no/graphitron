@@ -2006,7 +2006,7 @@ own plan: the base facts first, the total relation on top of them.
   closed at nine and four of them carry rows on the capture measured here. Whether each site's
   population is total in the same sense has to be settled per site rather than assumed from one.
 - **Where the inference runs.** Capture writing the inferred rows moves inference below the
-  generator, which is the axis R864 already occupies. If inference stays in the generator the store's
+  generator, which is the axis R865 already occupies. If inference stays in the generator the store's
   relation cannot be total and this reduces to naming the head.
 - **Provenance vocabulary.** Settle jointly with R218 and R219, which hold the same distinction in
   the Java model being retired. Nothing here should encode a branch boundary R219 removes.
@@ -2551,9 +2551,9 @@ object it is handed. Capture's equivalent shared object is the store, and the st
 **Why this item and not another.** Three items touch this ground and none of them covers it. R877 is
 about the store: the declared documentation model, grains, gatherers, dependencies, as data. It says
 nothing about the code that populates them, and its `meta_gatherer_dependency` roster is a
-description the runtime does not yet obey. R864 is about module boundaries and moving the existing
+description the runtime does not yet obey. R865 is about module boundaries and moving the existing
 code below the generator; moving these packages without changing how they hand facts to each other
-relocates the coupling rather than removing it, and R864's own dependency, that capture stops reading
+relocates the coupling rather than removing it, and R865's own dependency, that capture stops reading
 the walk, is a different constraint from this one. This item is about the model defects that force
 the cheating, and the gathering architecture is now the largest of them: it is what turned four
 modelling questions into charter arguments, and the fixes this item has left to make cannot be made
@@ -2563,7 +2563,7 @@ without it.
 the flush becomes per gatherer inside the one transaction, in the declared dependency order; the
 hand-threaded parameters are replaced by reads of the store; `GraphitronFactCapture` stops being a
 callback of the SDL walk and becomes a gatherer that runs after it; and `@node`'s defaulted key
-columns become a captured fact rather than a read-time tier. What stays out: the module line R864
+columns become a captured fact rather than a read-time tier. What stays out: the module line R865
 draws, the declaration rows R877 populates, and the naming collision between the two fact packages,
 which is worth settling once both live under one tier rather than twice.
 
@@ -2955,6 +2955,45 @@ separates a rule reading the wrong population from a case that seeded nothing.
 the forty-two turned out to be wrong; the rate among the rest is unknown, and the roster is what makes
 that a bounded question rather than an open one.
 
+### Slice 31: @node's defaulted key columns cannot be captured here, and the reason is not the one slice 23 named
+
+Slice 23 listed four questions the gathering architecture would unblock and named this one the
+sharpest: an `@node` that omits its key columns defaults to the bound table's primary key, capture
+could not write that default, and the stated reason was that `sql_primary_key` had no rows yet
+because the catalog gatherer ran last. The catalog runs first now and that reason is gone. The fact
+still cannot be captured, and the real blocker was never the one named.
+
+**A default needs two things and only one of them was missing.** It needs the primary key of a table,
+which is catalog and now readable, and it needs to know *which* table the type is bound to. The
+binding is not a fact any gatherer writes. It is
+`intent_resolved_type_binding`, a union of the `@table` spelling resolved against the catalog census
+and the return type of a bound routine.
+
+**The routine arm is what puts it out of reach, established by walking the closure rather than by
+reading the view.** The transitive read closure of `intent_resolved_node_key_column` is forty
+relations, and three of them are `jvm_declared_type_ref`, `jvm_method` and `jvm_method_parameter`:
+the classpath census. That is the java-source gatherer's family, and the roster has
+`('derivation', 'java-source')` with no edge from `graphitron` to it. So the graphitron gatherer
+cannot see the binding, not because of a charter argument but because the rows do not exist when it
+runs, which is exactly the diagnosis slice 23 made about the catalog and got right for the wrong
+relation.
+
+**Which relocates the fact rather than refusing it.** The gatherer that can write this default is the
+one that runs after java-source, and that gatherer already has a register of things it computes. What
+the default should become there is not another keyless copy of a view body but a grain table keyed on
+what a row is about, which for this relation is the graph, the type and the key position. That is this
+item's own prescription for what the last gatherer ought to be materializing, and it is a better home
+than the one slice 23 imagined. It is filed rather than built here, because it lands in the register
+this item hands to its successor.
+
+**One thing found on the way, worth recording because it is not what this slice went looking for.**
+`intent_spelled_table` is declared in `meta_family_bridge` as bridging `graphitron_` and `sql_`, and
+both of those are inside the graphitron gatherer's dependency closure. A crossing rule is owned by
+the gatherer that runs after everything it reads, and for that relation the gatherer is graphitron
+rather than the derivation. It is the most-read relation in the schema and it may be sitting one
+gatherer too late. That is an observation and not a proposal: nothing here has checked what its own
+closure reaches.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
@@ -3090,6 +3129,53 @@ What this item owes that no gate holds today:
 No wall-clock assertion, for the reason `DerivedReadCostTest` already states: a duration is not a
 build assertion, and every timing in this item is research evidence rather than a ratchet.
 
+## Retired vocabulary
+
+What this item removed, for the retirement sweep at the Done gate. Determined by diffing the
+schema's relation names across the item's life rather than from its own prose, then swept; the
+survivors found are listed with what was done about them.
+
+**Relations.** Eight per-site argMapping tables collapsed into one supertype,
+`graphitron_argument_condition_arg_mapping_pair`,
+`graphitron_argument_reference_for_step_arg_mapping_pair`,
+`graphitron_argument_reference_step_arg_mapping_pair`,
+`graphitron_field_condition_arg_mapping_pair`,
+`graphitron_field_reference_step_arg_mapping_pair`,
+`graphitron_reference_for_step_arg_mapping_pair`, `graphitron_routine_arg_mapping_pair` and
+`graphitron_service_arg_mapping_pair`, all now `graphitron_arg_mapping_pair`. Three classpath
+type-reference tables collapsed likewise: `jvm_method_parameter_type_ref`,
+`jvm_method_return_type_ref` and `jvm_record_component_type_ref`, all now `jvm_declared_type_ref`.
+Two polymorphic membership tables, `graphql_implements` and `graphql_union_member`, now
+`graphql_poly_member`. `graphitron_source_row`, which was the shared fact the eight tables were
+hiding. `intent_declared_type_ref`. `graphitron_type_declaration_synthesis`, now
+`graphitron_minted_type` and `graphitron_minted_type_site`. And two retired registrations, which
+deletes a `_live` view and a table each: `intent_argmapping_pair_live` and `intent_errors_field_live`.
+
+**Columns and values.** `graphitron_field_synthesis.authored_type_sdl`, the relation's payload having
+flipped to carry the macro's replacement rather than the expression it overwrote.
+`AUTHORED_EXPRESSION`, retired from the navigation basis vocabulary, which is two values now.
+
+**Java.** `MacroCapture.expandConnections`, now `MacroCapture.expand` and driven by store rows rather
+than by the walk. The `Expansions` record and the five `captureXDirective` callbacks `SdlFactCapture`
+drove the decode through, along with `captureNavigation` and `connectionElementByType`, all of which
+went when the decode stopped being a visitor of the SDL walk.
+
+**Swept, with seven survivors found and fixed.** One in main sources: the comment on
+`intent_field_navigated_type.basis` still described a closed vocabulary of three and named the retired
+rung as current. Six in roadmap bodies, four of them live plans rather than history:
+`capture-expands-facet-synthesis` and `corpus-directives-to-expect-equals` named the retired synthesis
+relation, `producer-registration-after-duplication-removal` offered the retired errors-field pair as
+the model to copy, and `planners-read-facts-emitters-read-commands` named a retired census relation
+twice. `census-stores-members-it-reads-by-name` carries the three census relations inside a measured
+table; the counts are left as taken with a note, because renaming them would falsify a measurement.
+
+**One survivor was not a name fix and is flagged rather than corrected.**
+`authored-connection-type-scope-silence` rests its whole premise on
+`graphitron_field_synthesis.authored_type_sdl` and on `intent_field_scope_table` reading it. The
+column is gone, the direction is reversed, and that view reads neither relation now. A dated note
+says so in its body; whether the defect it reports still exists is for its own author to re-measure,
+not for the sweep to decide.
+
 ## What this item does not do
 
 It does not delete the twelve unreachable targets or their relations. They are work under
@@ -3141,9 +3227,12 @@ None of them is a precondition for anything left in this item.
 - **R898**, the candidate tree stopping one level above the key column, which is this item's own
   defect one level lower down.
 
-**What stays here** is `@node`'s defaulted key columns becoming a captured fact. It is the last of
-the four questions slice 23 named as blocked on the gathering architecture, and it is the cheapest
-demonstration that the architecture change paid for itself.
+**And one more, filed after it was investigated rather than before.** R902 takes `@node`'s defaulted
+key columns. This item declared them as staying in scope, on slice 23's claim that the gathering
+architecture unblocked them; slice 31 establishes that it did not, because the binding they default
+from resolves through the classpath census, which a gatherer running after this one captures. The
+fact belongs to that gatherer, as a grain table rather than a view arm, which puts it in the register
+this item hands on.
 
 **One thread was dropped rather than filed.** An earlier note in this item's working record proposed
 splitting what claims a type is a node into three relations. The schema does not support the

@@ -142,7 +142,7 @@ when a store relation states it, and a directive is deleted when its last axis h
   per document is what keeps a declared row trustworthy as a witness.
 - **`@synthesises` is out of scope.** It has 2 applications, asserts minted type names for
   connection synthesis, and plausibly follows the same path (the store already declares
-  `graphitron_type_declaration_synthesis` and `graphitron_field_synthesis`), but the user-visible
+  `graphitron_minted_type` and `graphitron_minted_field`), but the user-visible
   ask is the trio; fold `@synthesises` in only if a migrating commit makes it free, otherwise
   file it separately when the trio is done.
 - Documents convert wholesale per axis, never per document: a corpus where the same fact is

@@ -25,6 +25,14 @@ the connection type. A connection type the author declares in the SDL has no syn
 rule fell back to the field's own named type, that type binds no table, and the field had no row
 at all.
 
+**The mechanism this describes no longer exists, and the premise needs re-checking before the item
+is picked up (noted 2026-08-31 by the retirement sweep, not by this item's author).** The column
+`authored_type_sdl` is gone: the expansion no longer overwrites the field's type expression, so
+`graphql_field` carries what the author wrote and `graphitron_field_synthesis` carries the macro's
+replacement, which is the opposite direction. `intent_field_scope_table` reads neither of them now,
+navigating through `intent_field_navigated_type` and `intent_expanded_field` instead. Whether the
+four coordinates below still have no row is a question to re-measure rather than inherit.
+
 Four coordinates in the sakila example schema are in this population: `Query.filmsConnection`,
 `Query.filmsConnectionDesc`, `Query.filmsByRateDescTitleAsc` and `Query.filmsOrderedConnection`,
 all returning the hand-written `FilmsConnection`. Their generator-synthesised siblings

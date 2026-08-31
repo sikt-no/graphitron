@@ -20,8 +20,8 @@ the answer is re-derived against what is true now.
 ## What was originally argued
 
 Capture expands `@asConnection` into the synthesized types the classification walk later sees
-(`MacroCapture.expandConnections`, whose carriers are minted after the walk, with provenance on
-`graphitron_type_declaration_synthesis`). `@asFacet` had no equivalent expansion. The argument for
+(`MacroCapture.expand`, whose carriers are minted after the walk, with provenance on
+`graphitron_minted_type` and its per-carrier `graphitron_minted_type_site`). `@asFacet` had no equivalent expansion. The argument for
 adding one was specific: a classified-model builder that holds no `GraphQLSchema` cannot mint the
 facet types that only a schema rebuild produces, so capture would have to expand them first. On that
 reasoning the facet expansion was a strict dependency of the store-reading classification walk, which

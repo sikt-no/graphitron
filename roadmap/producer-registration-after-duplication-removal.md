@@ -86,7 +86,7 @@ reached. The 327 ms and 261 ms above were taken with no index declared, so they 
 row would stand on, and an index would have to earn its cost on every refresh on top of them.
 
 Nothing else about the registration is a new mechanism: it is the established view-rename-plus-target
-pair, on the `intent_errors_field_live` / `intent_errors_field` model, with the existing relation and
+pair, on the `intent_spelled_table_live` / `intent_spelled_table` model, with the existing relation and
 column comments moved onto the table verbatim and the standard materialization sentence appended.
 `MaterializeRegistryGateTest.targetsAreShapedLikeTheViewsThatFillThem` is what closes the column shape,
 the refresh being `INSERT INTO target SELECT * FROM source`.

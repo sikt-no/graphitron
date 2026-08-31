@@ -3233,7 +3233,7 @@ runs into that the availability check did not surface. The three relations that 
 present, so membership and the generated arm's payload are store-stated. The authored arm is not
 finished: `Predicate.Authored` carries a `MethodRef`, which is reflection material (a javapoet
 `returnType`, `params` each with a `javaType`), and the store's classfile side states the pieces
-(`jvm_method`, `jvm_method_parameter`, `jvm_method_parameter_type_ref`) without stating the
+(`jvm_method`, `jvm_method_parameter`, `jvm_declared_type_ref`) without stating the
 assembled reference. The condition-hop work added `intent_condition_method_route`, which routes a
 method between tables but does not carry its signature. So the conversion's first question is
 whether `Predicate.Authored` narrows off `MethodRef` onto the fields the emitters actually read, the
@@ -3332,7 +3332,7 @@ bound parameter names, `intent_input_occurrence_path` for the descent). The list
 type modifier. The one fact that genuinely requires a classpath is the authored parameter's declared
 Java type, generics included, and the classfile side already states it twice over:
 `jvm_method_parameter.declared_parameter_type` carries the type as the source declared it, and
-`jvm_method_parameter_type_ref` decomposes that declared form position by position with variance. The
+`jvm_declared_type_ref` decomposes that declared form position by position with variance. The
 node-id leaf routes to the node-id relations rather than needing a helper reference restated.
 
 **What that makes the next increment.** Not "grow the store a new kind of fact", which is what the
