@@ -5,7 +5,7 @@ status: Spec
 bucket: dx
 priority: 2
 theme: tooling
-depends-on: [capture-moves-below-the-generator, capture-without-the-materialization-refresh, warm-capture-empties-unpartitioned-catalog-relations]
+depends-on: [capture-without-the-materialization-refresh, warm-capture-empties-unpartitioned-catalog-relations]
 created: 2026-08-27
 last-updated: 2026-08-28
 ---
