@@ -1,7 +1,7 @@
 ---
 id: R885
 title: "Converter-diverged FK key columns emit non-compiling column comparisons"
-status: In Progress
+status: In Review
 bucket: correctness
 priority: 1
 depends-on: []
