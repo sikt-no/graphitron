@@ -94,21 +94,22 @@ kinds are common enough that the reader needs them named:
   today only because nothing types it, so a later change that gives either operand a real type puts
   it back on the list.
 
-**This enumeration is not closed, and closing it is iteration 1's deliverable, not this section's.**
-The eight sites below came off a narrower grep than they should have, and widening the pattern found
-shapes the first pass missed, including the erased site just named. The pattern that found
-everything, worth recording because the obvious narrower ones do not, is
+**This enumeration was not closed when the plan was written; iteration 1 closed it, and the result is
+under *Iterations* below.** The eight sites listed here came off a narrower grep than they should
+have, and widening the pattern found shapes the first pass missed, including the erased site just
+named. The pattern that found everything, worth recording because the obvious narrower ones do not,
+is
 
 ```
 grep -rn --include=*.java -o '"[^"]*\.eq(\$\?[^"]*"' graphitron/src/main/java
 ```
 
-Sites that pattern surfaces and this section has not classified either way are the row-comparison
+Sites that pattern surfaces and this section did not classify either way are the row-comparison
 arms in `ReentryRowsFragments.keyEquality` and `RoutineWriteFetcherRenderer`, whose operands are a
 target column against a lifted `RecordN` accessor, and `TypeFetcherGenerator`'s `@lookupKey` input
-bindings, whose right operand is decoded input rather than a second catalog column and which are
-therefore probably *Out of scope* below rather than immune. Iteration 1 should classify each against
-the test above and correct the count.
+bindings, whose right operand is decoded input rather than a second catalog column. Iteration 1
+classified each against the test above; the verdicts are under *Iterations* below, and one of them
+(`RoutineWriteFetcherRenderer`) came back vulnerable rather than immune.
 
 * `JoinFragments.emitCorrelationWhere` writes `firstAlias.<target>.eq(parentAlias.<source>)` for the
   step-0 correlation of a reach path. This is the shape the issue reports. Note that it emits an
@@ -333,34 +334,128 @@ carry an explicit `@reference(path: [{key: ...}])`. The reported shape is none o
 single-cardinality reference with **no** `@splitQuery` and **no** `@reference`, resolved off the
 unambiguous FK. That combination is what reaches `emitCorrelationWhere`, and it is the gap.
 
+As shipped, the fixture grew past that minimum in two directions, both driven by iteration 1's
+inventory rather than planned here. It carries the reported reference and its `@splitQuery` sibling
+in both cardinalities (four fields across `DivergedRefChild` and `DivergedRefOrg`), and it carries
+the diverged key under a multi-table polymorphic child field in both cardinalities, which needed a
+second small table (`diverged_child_label`) to supply the sibling participant. The list polymorphic
+field is what reaches `parentInputSlotPredicate` and the single one `valueBoundParentWhere`.
+
+One fixture constraint is worth recording because it cost two build cycles and reads as a fault in
+the work under test. A multi-table polymorphic field's stage-1 statement unions one branch per
+participant and projects each branch's key as `__pk0__`, so the participants' primary keys must
+agree on **both** the Java type and the SQL type, not merely on arity. A converter is exactly what
+pulls those two demands apart, which is why this bites here and not in the fixtures that predate it:
+
+* Keyed on an integer, the sibling makes the union's branches `Record3<String,Integer,Integer>` and
+  `Record3<String,String,String>`, and the generated module does not compile.
+* Keyed on a `varchar`, it compiles (both branches are `String` in Java) and then fails at runtime
+  with `UNION types character varying and bigint cannot be matched`, because
+  `converter_org.org_code` is a `bigint` that only *generates* as `String`.
+
+Declaring the sibling's key on `org_code_domain` settles both at once, and is what a real schema
+keyed on a shared code domain looks like anyway. Neither failure message names the diverged key or a
+comparison, so a future reader hitting one should suspect the fixture before the mint.
+
+The sibling is also left with no rows, mirroring how no `category_label` row shares the `CategoryRef`
+fixture's isolating `category_id`. The field is single-cardinality, so a populated sibling would make
+which participant answers depend on how the two key values happen to sort, and the assertion would be
+reading a numeric accident. A populated sibling beside a populated diverged branch is covered by the
+list field instead.
+
+One operational note for anyone re-running this. Adding a table to `init.sql` mid-session does not
+by itself put it in the jOOQ catalog: the sandbox seeds `rewrite_test` at session start, so the
+build fails with "table `diverged_ref_child` could not be resolved in the jOOQ catalog" and a
+did-you-mean list, which reads exactly like an authoring mistake. The recovery is the re-seed plus
+`rm -rf` of the generated sources documented under "Catalog-jar clobber" in
+`.claude/web-environment.md`.
+
 ## Iterations
 
-**Iteration 1: fixture and inventory, no fix.** Add the diverged table to `init.sql` and the
-minimum schema fixtures, and record what actually breaks. This is the iteration that converts the
-site list above from a reading of the source into a fact, and it owes the closed enumeration that
-section explicitly does not provide, using the grep recorded there. It is expected to fail the
-compilation tier, deliberately and visibly, and its deliverable is the recorded `javac` error list
-plus a decision on which listed site a diverged key can actually reach from authored SDL. Some
-may turn out unreachable, and the item should shrink rather than emit dead handling for them. Also
-confirm here whether the store-sourced path sees the divergence.
+All three iterations have shipped. What follows is what they found, kept because it is the closed
+enumeration the *Emission sites* section above deliberately did not provide, and because it records
+which sites went onto the mint with no fixture reaching them.
 
-The inventory may also grow, and one topology is known in advance to need more than the reported
-shape to reach it. The two `MultiTablePolymorphicEmitter` sites serve `@referenceFor` paths under a
-multi-table polymorphic interface or union, which the plain single-cardinality reference above does
-not exercise, so a `javac` list from that fixture alone cannot speak to them either way. Either
-extend the fixture with a diverged key under a polymorphic parent, or record explicitly that those
-two sites were moved onto the mint without a fixture reaching them and say why that was the right
-trade. Silence about them is the one outcome this iteration must not produce, because a site absent
-from the inventory is a site iterations 2 and 3 will not look for.
+### Iteration 1: the recorded inventory
 
-**Iteration 2: the mint, and the sites the inventory proved reachable.** Introduce
-`ColumnComparison`, move the reachable sites onto it, and get the fixture compiling. Existing
-approved output must not move; if it does, the equality rule fired on a non-diverged pair and the
-null/equal guards are wrong.
+The fixture is the one described under *Fixture* above, grown once during the iteration (see below).
+Built without the mint, it fails the compilation tier with exactly five `javac` errors across four
+generated files, every one of them `no suitable method found for eq(...)`:
 
-**Iteration 3: the remaining reachable sites and the execution proof.** Sites the inventory reached
-but iteration 2 did not need, plus the execution-tier test that the coerce changed no SQL and no
-rows.
+[cols="1,1"]
+|===
+| Generated site | Emission site
+
+| `types/DivergedRefChild.$project`, the `organisation` arm
+| `JoinFragments.emitCorrelationWhere`, child to parent
+
+| `types/DivergedRefOrg.$project`, the `children` arm
+| `JoinFragments.emitCorrelationWhere`, parent to child list
+
+| `fetchers/DivergedRefChildFetchers`, the `splitOrganisation` rows method
+| `BatchedRowsFragments.fromBridgeAndParentJoin`
+
+| `fetchers/DivergedRefOrgFetchers`, the `splitChildren` rows method
+| `BatchedRowsFragments.fromBridgeAndParentJoin`
+
+| `fetchers/DivergedRefOrgFetchers`, the `polyChildren` stage-1 union's `DivergedChildRef` arm
+| `MultiTablePolymorphicEmitter.parentInputSlotPredicate`
+|===
+
+The last row is the outcome this iteration's two-directional charter existed to produce. The
+polymorphic topology was added to the fixture during the iteration rather than being taken on faith:
+a diverged key under a multi-table polymorphic child field, whose stage-1 union carries the diverged
+`DivergedChildRef` arm beside the undiverged `DivergedCampusRef` arm in the same statement. That
+juxtaposition is worth more than a second fixture would be, because it pins the two rules against
+each other: the diverged arm must coerce and the undiverged arm must stay byte-identical.
+
+**The store-sourced path does see the divergence.** `CatalogColumn.javaTypeName` is documented as the
+bound Java type "as jOOQ names it", which is the post-converter type, and `ColumnRef.decodeBindingType`
+recovers it. The command tier therefore gets its own `ColumnComparison.equality` overload that decodes
+rather than a second copy of the rule.
+
+**Two sites went onto the mint with no fixture reaching them, deliberately.**
+`MultiTablePolymorphicEmitter.valueBoundParentWhere` was reached by extending the fixture with a
+single-cardinality polymorphic reference over the diverged key, so it is covered. The two that
+remain uncovered by a fixture are `ProjectionUnitRenderer`'s pivot-multiset correlation (plus the
+pivot arm of `BatchedRowsFragments`) and `DiscriminatedTableFragments`'s joined-detail `ON`. Both
+need a topology orthogonal to divergence to reach at all (a pivot attribute table, a single-table
+discriminated interface with a joined detail), so reaching them means building a second fixture
+whose only new fact is that the mint is called from a third and fourth place. The trade taken is to
+move them onto the mint unreached: the mint is a total function over two types with its own per-arm
+unit coverage, so what a fixture would add there is call-site wiring, and that is what the compiler
+checks. `JoinFragments`'s name-matched arms are the same case for the same reason.
+
+**Sites the widened grep surfaced and this iteration classified as immune**, each because the
+receiver's type and the argument's type come from the *same* `ColumnRef`:
+`ReentryRowsFragments.valuesJoinOn` and `keyEquality` (the `keys` `RecordN` is typed from the same
+`correlation.columns()` the comparison reads), `RoutineWriteFetcherRenderer`'s single-column and
+row-value arms are *not* immune and are recorded below instead, `ProjectionUnitRenderer`'s
+lookup-input `ON`, `ServiceRowsFragments`'s projection-input `ON`, `SelectMethodBody`'s dispatcher
+`ON`, `TypeFetcherGenerator`'s bulk-update lookup `WHERE` and its `MapGroup` `@lookupKey` binding
+(which binds at the receiving column's own `DataType`, the companion rule already), and
+`ConditionGlueRenderer.columnCompare` (likewise). `TypeFetcherGenerator`'s untyped parent-record
+condition stays immune-because-erased, as *Emission sites* records.
+
+**One site is vulnerable in principle and is not fixed here.**
+`RoutineWriteFetcherRenderer.keysInCondition` compares hop 0's target-side columns against values
+read off a `keys` local typed from the *source* side, so the two types really do come from two
+different columns. It is not on the mint for two reasons that hold together. First, its three
+spellings are `Field.eq(value)`, `Field.in(Collection)` and `Row.eq(Row)`, and the last two are
+comparison shapes the mint's three entry points do not spell; covering them is a second design, not
+a fourth caller. Second, the value's source column is a column of the *routine's own result table*,
+for which the site holds no `TableRef`, so the bind-at-source rule has nothing to spell a
+`DataType` from. Reaching it needs a routine-write coordinate whose captured key is diverged, which
+no fixture in the tree builds. Recorded under *Out of scope* below rather than left silent.
+
+### Iterations 2 and 3: the mint and the sites
+
+`ColumnComparison` in `no.sikt.graphitron.render` carries the rule and the three entry points the
+design named, plus the `CatalogColumn` overload iteration 1 turned up. Every site named in
+*Emission sites* is on it. `valueBoundParentWhere` took the one threaded argument the design
+predicted, `parentKeyOwnerTable`, down two frames from `singleBranchCorrelationWhere`'s caller.
+
+No approved generated output moved, which is the check that the null and equal guards are right.
 
 ## Tests
 
@@ -386,6 +481,26 @@ Per the tier rubric in `docs/architecture/how-to/testing.adoc`, top-down:
 * **Pipeline tier**: nothing owed. The classification of a diverged reference is identical to a
   non-diverged one, which is the point; a pipeline case asserting that would pin a non-difference.
 
+### What shipped
+
+All of the above, including the conditional second execution test, since iteration 1 did get a
+diverged key under a polymorphic parent. Concretely: `ColumnComparisonTest` (ten cases across four
+entry points, both the diverged and the undiverged branch of each) and four `@Test` methods in
+`GraphQLQueryTest`, one per topology the inventory reached (correlated single, DataLoader single,
+list in both flavours side by side, and the polymorphic pair). The compilation tier needed no test
+class as predicted.
+
+Two existing assertions moved, and neither is the churn the design warned about. The pinned line
+number in `FixtureWarningsGateTest` shifted because the fixture added SDL above the field it names.
+`TypeFetcherGeneratorTest`'s two per-branch `parentInput` JOIN assertions now expect a coerce,
+because the fixture they run on invents a single-column `Timestamp` primary key on `film_actor` to
+reach the arity-1 DataLoader path while the participant columns it compares against are `Integer`.
+Those two types genuinely disagree, so the mint fires; a real catalog cannot produce that pair,
+because both ends of a foreign key share a SQL type. The assertion is spelled through one helper
+that says so, rather than restating the coerce twice.
+
+No approved generated output moved.
+
 ## Out of scope
 
 * **Converters on ordering keys.** A converter that is not order-preserving misorders a keyset page
@@ -399,6 +514,10 @@ Per the tier rubric in `docs/architecture/how-to/testing.adoc`, top-down:
   operands. A converter that diverges two columns compared somewhere else entirely is the same class
   of fault, but there is no reported instance and no fixture for one; the mint is the place a future
   instance would land.
+* **`RoutineWriteFetcherRenderer.keysInCondition`.** Found vulnerable by iteration 1's inventory and
+  deliberately left off the mint; see the two reasons recorded there. Worth its own Backlog item if
+  a consumer hits it, and the mint is where the `Field.eq(value)` third of it would land once the
+  routine's result table is reachable as a `TableRef`.
 
 ## Reviewer findings
 

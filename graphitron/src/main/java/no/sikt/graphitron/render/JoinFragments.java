@@ -13,6 +13,11 @@ import no.sikt.graphitron.rewrite.model.On;
  * {@link On.ColumnPairs}, never a raw {@code On}: this is the below-narrowing layer, and the
  * per-hop dispatch on the {@code On} seal that decides which arm applies lives one level up, in
  * {@link PathFragments}.
+ *
+ * <p>Every explicit column-to-column equality below is minted by
+ * {@link ColumnComparison#equality}, which reconciles the two columns' Java types when a
+ * consumer's converter has diverged them. The {@code .onKey(Keys.<CONSTANT>)} arms need nothing:
+ * they name a catalog constant and are type-blind by construction.
  */
 public final class JoinFragments {
 
@@ -57,9 +62,8 @@ public final class JoinFragments {
                 int i = 0;
                 for (var pair : cp.pairs()) {
                     if (i > 0) on.add(".and(");
-                    on.add("$L.$L.eq($L.$L)",
-                        prevAlias, pair.sourceSide().javaName(),
-                        hopAlias, pair.targetSide().javaName());
+                    on.add("$L", ColumnComparison.equality(
+                        prevAlias, pair.sourceSide(), hopAlias, pair.targetSide()));
                     if (i > 0) on.add(")");
                     i++;
                 }
@@ -78,9 +82,8 @@ public final class JoinFragments {
                 int i = 0;
                 for (var slot : cp.slots()) {
                     if (i > 0) on.add(".and(");
-                    on.add("$L.$L.eq($L.$L)",
-                        prevAlias, slot.sourceSide().javaName(),
-                        hopAlias, slot.targetSide().javaName());
+                    on.add("$L", ColumnComparison.equality(
+                        prevAlias, slot.sourceSide(), hopAlias, slot.targetSide()));
                     if (i > 0) on.add(")");
                     i++;
                 }
@@ -103,9 +106,8 @@ public final class JoinFragments {
         int i = 0;
         for (var slot : first.slots()) {
             if (i > 0) code.add(".and(");
-            code.add("$L.$L.eq($L.$L)",
-                firstAlias, slot.targetSide().javaName(),
-                parentAlias, slot.sourceSide().javaName());
+            code.add("$L", ColumnComparison.equality(
+                firstAlias, slot.targetSide(), parentAlias, slot.sourceSide()));
             if (i > 0) code.add(")");
             i++;
         }

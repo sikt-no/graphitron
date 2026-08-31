@@ -401,8 +401,8 @@ public final class DiscriminatedTableFragments {
             String aliasVar = jtb.detailAliasVarName();
             CodeBlock keyOn = null;
             for (var slot : jtb.childToParentPairs().slots()) {
-                var eq = CodeBlock.of("$L.$L.eq($L.$L)",
-                    aliasVar, slot.sourceSide().javaName(), tableLocal, slot.targetSide().javaName());
+                var eq = ColumnComparison.equality(
+                    aliasVar, slot.sourceSide(), tableLocal, slot.targetSide());
                 keyOn = keyOn == null ? eq : CodeBlock.of("$L.and($L)", keyOn, eq);
             }
             var onCondition = CodeBlock.builder()

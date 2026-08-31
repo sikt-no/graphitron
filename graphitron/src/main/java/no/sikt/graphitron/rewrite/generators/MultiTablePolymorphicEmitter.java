@@ -9,6 +9,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.util.PolymorphicSelectionSetClassGenerator;
+import no.sikt.graphitron.render.ColumnComparison;
 import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.render.ProjectionCall;
 import no.sikt.graphitron.render.ValuesJoinRowBuilder;
@@ -1290,7 +1291,8 @@ public final class MultiTablePolymorphicEmitter {
             // Combine the parent correlation predicate (child fetchers) with the @field filter
             // predicate (root fields); either may be null, in which case the other stands alone.
             CodeBlock branchWhere = andWhere(
-                singleBranchCorrelationWhere(participant, participantJoinPaths, parentSourceKey),
+                singleBranchCorrelationWhere(participant, participantJoinPaths, parentSourceKey,
+                    parentKeyOwnerTable),
                 branchFilterWhere(parentTypeName, fieldName, participant, participantFilters, outputPackage));
             if (p == 0) {
                 b.add("dsl.select($L)\n", branchProjection(participant, alias));
@@ -1430,14 +1432,15 @@ public final class MultiTablePolymorphicEmitter {
      * {@link #branchBridgingJoins}). Per-hop {@code filter()}s on intermediate hops are ANDed on.
      */
     private static CodeBlock singleBranchCorrelationWhere(ParticipantRef.TableBound participant,
-            Map<String, ParticipantCorrelation> participantJoinPaths, SourceKey parentSourceKey) {
+            Map<String, ParticipantCorrelation> participantJoinPaths, SourceKey parentSourceKey,
+            TableRef parentKeyOwnerTable) {
         var correlation = participantJoinPaths.get(participant.typeName());
         if (correlation == null) return null;
         String firstAlias = branchHopAliases(participant, correlation).get(0);
         CodeBlock base = switch (correlation) {
-            case ParticipantCorrelation.KeyTupleWhere k -> valueBoundParentWhere(firstAlias, k.slots());
+            case ParticipantCorrelation.KeyTupleWhere k -> valueBoundParentWhere(firstAlias, k.slots(), parentKeyOwnerTable);
             case ParticipantCorrelation.JoinedCorrelation jc -> switch (((JoinStep.Hop) jc.hops().get(0)).on()) {
-                case On.ColumnPairs cp -> valueBoundParentWhere(firstAlias, cp.slots());
+                case On.ColumnPairs cp -> valueBoundParentWhere(firstAlias, cp.slots(), parentKeyOwnerTable);
                 case On.Predicate ignored -> parentKeyBoundWhere(branchParentAlias(participant, correlation), parentSourceKey);
                 case On.Lateral ignored -> throw new IllegalStateException(
                     "a lateral hop cannot head a @referenceFor path");
@@ -1452,19 +1455,27 @@ public final class MultiTablePolymorphicEmitter {
      * parent side is always {@code slot.sourceSide()} and the child side {@code slot.targetSide()},
      * so iteration is direction-blind. The two-arg {@code parentRecord.get(Name, Class)} form
      * returns the typed value so {@code Field<T>.eq(T)} selects without an unchecked cast.
+     *
+     * <p>The right operand is a bare value rather than a {@code Field}, which is why the equality is
+     * minted by {@link ColumnComparison#equalityAgainstValue}: a converter-diverged key needs the
+     * value bound at its source column's {@code DataType} before anything can be coerced onto the
+     * receiver. {@code parentKeyOwnerTable} is what spells that {@code DataType}.
      */
-    private static CodeBlock valueBoundParentWhere(String firstAlias, List<JoinSlot.FkSlot> slots) {
+    private static CodeBlock valueBoundParentWhere(String firstAlias, List<JoinSlot.FkSlot> slots,
+            TableRef parentKeyOwnerTable) {
         var b = CodeBlock.builder();
         int i = 0;
         for (var slot : slots) {
             ColumnRef parentSide = slot.sourceSide();
             ColumnRef childSide = slot.targetSide();
+            CodeBlock value = CodeBlock.of("parentRecord.get($T.name($S), $T.class)",
+                DSL, parentSide.sqlName(), parentSide.columnType());
+            CodeBlock eq = ColumnComparison.equalityAgainstValue(
+                firstAlias, childSide, parentSide, parentKeyOwnerTable, value);
             if (i == 0) {
-                b.add("$L.$L.eq(parentRecord.get($T.name($S), $T.class))",
-                    firstAlias, childSide.javaName(), DSL, parentSide.sqlName(), parentSide.columnType());
+                b.add("$L", eq);
             } else {
-                b.add(".and($L.$L.eq(parentRecord.get($T.name($S), $T.class)))",
-                    firstAlias, childSide.javaName(), DSL, parentSide.sqlName(), parentSide.columnType());
+                b.add(".and($L)", eq);
             }
             i++;
         }
@@ -2048,10 +2059,12 @@ public final class MultiTablePolymorphicEmitter {
             CodeBlock lookup = CodeBlock.of("parentInput.field($S, $T.$L.$L.getDataType())",
                 parentCol.sqlName(), parentKeyOwnerTable.constantsClass(),
                 parentKeyOwnerTable.javaFieldName(), parentCol.javaName());
+            CodeBlock eq = ColumnComparison.equalityAgainstField(
+                firstAlias, childCol, parentCol, lookup);
             if (i == 0) {
-                b.add("$L.$L.eq($L)", firstAlias, childCol.javaName(), lookup);
+                b.add("$L", eq);
             } else {
-                b.add(".and($L.$L.eq($L))", firstAlias, childCol.javaName(), lookup);
+                b.add(".and($L)", eq);
             }
             i++;
         }

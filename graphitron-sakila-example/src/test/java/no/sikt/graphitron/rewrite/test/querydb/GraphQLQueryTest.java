@@ -2500,6 +2500,130 @@ class GraphQLQueryTest {
                 tuple("1120", List.of("NTNU")));
     }
 
+    // ===== Converter-diverged foreign key =====
+    //
+    // diverged_ref_child.org_code is plain bigint and escapes the type-selected forcedType, while
+    // the converter_org.org_code it references is the org_code_domain that forcedType converts to
+    // String. jOOQ therefore types the two ends of one foreign key as Field<Long> and
+    // Field<String>, and a generated child.ORG_CODE.eq(parent.ORG_CODE) does not compile at all.
+    // That the generated module compiles is the compilation tier's assertion, not these tests';
+    // what these prove is the design's actual safety claim, that reconciling the Java types with
+    // coerce did not disturb the SQL. Both columns are bigint in the database whatever converters
+    // are registered, so the right rows must still come back, in the right shape, from the same
+    // number of round-trips as an undiverged key.
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void divergedFkSingle_correlatedSubselect_resolvesAgainstUnchangedSql() {
+        // The reported shape: a plain single-cardinality reference, no @splitQuery and no
+        // @reference, resolved off the unambiguous foreign key. One round-trip, the reference
+        // riding the root query as a correlated subselect.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ divergedRefChildren { childName organisation { orgName } } }");
+        assertThat(QUERY_COUNT.get())
+            .as("a correlated reference adds no round-trip of its own")
+            .isEqualTo(1);
+        assertThat(data).extractingByKey("divergedRefChildren", as(list(Map.class)))
+            .extracting(c -> c.get("childName"),
+                c -> ((Map<String, Object>) c.get("organisation")).get("orgName"))
+            .containsExactly(
+                tuple("Diverged Tromsø", "UiT"),
+                tuple("Diverged Trondheim", "NTNU"),
+                tuple("Diverged Gjøvik", "NTNU"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void divergedFkSingle_dataLoaderParentInput_resolvesAgainstUnchangedSql() {
+        // The same key through a DataLoader instead, which reaches the parent-input VALUES-join
+        // predicate rather than the correlated WHERE.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ divergedRefChildren { childName splitOrganisation { orgName } } }");
+        assertThat(QUERY_COUNT.get())
+            .as("root query plus one batched organisation fetch")
+            .isEqualTo(2);
+        assertThat(data).extractingByKey("divergedRefChildren", as(list(Map.class)))
+            .extracting(c -> c.get("childName"),
+                c -> ((Map<String, Object>) c.get("splitOrganisation")).get("orgName"))
+            .containsExactly(
+                tuple("Diverged Tromsø", "UiT"),
+                tuple("Diverged Trondheim", "NTNU"),
+                tuple("Diverged Gjøvik", "NTNU"));
+    }
+
+    @Test
+    void divergedFkList_bothDirectionsGroupUnderTheRightParent() {
+        // The list direction over the same diverged key, correlated and split side by side. Rows
+        // landing under the wrong parent is the failure a coerce that changed the predicate's
+        // meaning would produce, and it is invisible to a compile check.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ divergedRefOrgs { orgName children { childName } splitChildren { childName } } }");
+        assertThat(QUERY_COUNT.get())
+            .as("root query plus one batched splitChildren fetch; children rides the root")
+            .isEqualTo(2);
+        var orgs = assertThat(data).extractingByKey("divergedRefOrgs", as(list(Map.class)));
+        for (String field : List.of("children", "splitChildren")) {
+            orgs.filteredOn(o -> "UiT".equals(o.get("orgName")))
+                .singleElement(as(MAP))
+                .extractingByKey(field, as(list(Map.class)))
+                .extracting(c -> c.get("childName"))
+                .as("%s under UiT", field)
+                .containsExactly("Diverged Tromsø");
+            orgs.filteredOn(o -> "NTNU".equals(o.get("orgName")))
+                .singleElement(as(MAP))
+                .extractingByKey(field, as(list(Map.class)))
+                .extracting(c -> c.get("childName"))
+                .as("%s under NTNU", field)
+                .containsExactly("Diverged Trondheim", "Diverged Gjøvik");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void divergedFkUnderPolymorphicParent_bothCorrelationArmsResolve() {
+        // The multi-table polymorphic emitter spells its parent correlation twice, and the two
+        // spellings reconcile the divergence differently. The batched list arm compares the child
+        // column against a parent-input VALUES cell; the single arm compares it against a value
+        // read out of the parent record, which has to be bound at its source column's DataType
+        // before anything can be coerced onto it. That bind is the only place in this item where
+        // the reconciliation could change the SQL, so it is pinned against PostgreSQL rather than
+        // only in a render assertion.
+        //
+        // Each org's polyChildren carries both participants: the diverged diverged_ref_child rows
+        // and the undiverged converter_campus rows, whose emission must stay byte-identical.
+        Map<String, Object> data = execute(
+            "{ divergedRefOrgs { orgName polyChildren { ... on DivergedChildRef { label } "
+                + "... on DivergedCampusRef { label } } } }");
+        var orgs = assertThat(data).extractingByKey("divergedRefOrgs", as(list(Map.class)));
+        orgs.filteredOn(o -> "UiT".equals(o.get("orgName")))
+            .singleElement(as(MAP))
+            .extractingByKey("polyChildren", as(list(Map.class)))
+            .extracting(c -> c.get("label"))
+            .as("the diverged participant and the undiverged one both land under UiT")
+            .containsExactlyInAnyOrder("Diverged Tromsø", "Tromsø");
+        orgs.filteredOn(o -> "NTNU".equals(o.get("orgName")))
+            .singleElement(as(MAP))
+            .extractingByKey("polyChildren", as(list(Map.class)))
+            .extracting(c -> c.get("label"))
+            .containsExactlyInAnyOrder(
+                "Diverged Trondheim", "Diverged Gjøvik", "Trondheim", "Gjøvik");
+
+        // The single arm: the value-bound parent correlation, resolving each child's own org.
+        Map<String, Object> single = execute(
+            "{ divergedRefChildren { childName polyOrg { title } } }");
+        assertThat(single).extractingByKey("divergedRefChildren", as(list(Map.class)))
+            .extracting(c -> c.get("childName"),
+                c -> ((Map<String, Object>) c.get("polyOrg")).get("title"))
+            .as("bind-then-coerce resolves the same org a plain reference does")
+            .containsExactly(
+                tuple("Diverged Tromsø", "UiT"),
+                tuple("Diverged Trondheim", "NTNU"),
+                tuple("Diverged Gjøvik", "NTNU"));
+    }
+
     @SuppressWarnings("unchecked")
     @Test
     void splitLookupTableField_filtersActorsPerFilm() {

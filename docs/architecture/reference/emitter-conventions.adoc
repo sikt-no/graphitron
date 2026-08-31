@@ -72,6 +72,56 @@ a jOOQ FK to the child's `@table` ; see <<dto-parent-batching,DTO-parent batchin
 lifter contract is how the schema author hands the framework a typed key when the catalog can't
 supply one.
 
+[#column-to-column-comparison]
+== Column-to-column comparison: `ColumnComparison`
+
+The companion rule to the one above, on the other axis. Where `DSL.val(rawValue,
+col.getDataType())` covers "bind a value against a column", every comparison of *two catalog
+columns* goes through `no.sikt.graphitron.render.ColumnComparison` and none is spelled inline.
+
+The reason is that the two columns can disagree on their Java type while agreeing on their SQL
+type. A jOOQ `Converter` is a client-side type mapping only: it changes what `Field.getType()`
+reports and cannot change the column's SQL type. A consumer whose codegen selects a `<forcedType>`
+by column path rather than by type therefore lands the converter on one end of a foreign key and
+not the other, and the two ends *diverge*: one stays `Field<Short>` while the other becomes
+`Field<String>`. `a.eq(b)` then does not compile, and the whole generated module fails with it,
+even though `a = b` was always a valid, index-usable predicate.
+
+`ColumnComparison` reconciles that with `coerce`, which reinterprets a field's Java type and leaves
+the rendered SQL alone. Reach for it, never for `cast`: `cast` puts a real SQL `CAST` around the
+column and costs the index on it.
+
+[cols="1,2"]
+|===
+| Entry point | When the right operand is
+
+| `equality`
+| another aliased table column. Overloaded for the walk's `ColumnRef` and the command tier's
+  `CatalogColumn`, which carries its bound type as a name and is decoded inside the mint.
+
+| `equalityAgainstField`
+| some other `Field` expression typed by a known catalog column, typically a `parentInput.field(…)`
+  lookup into a `VALUES`-derived table. The caller names the column the lookup's `DataType` was
+  spelled from.
+
+| `equalityAgainstValue`
+| a bare Java value, so there is nothing for `coerce` to attach to. This is the two rules composed:
+  bind the value at the `DataType` of the column it was read from, which makes it a `Field`
+  rendering through that column's converter, then coerce that field onto the receiver.
+|===
+
+Two properties are worth knowing before touching a call site. A pair whose types agree, or either
+of whose types is unknown, emits `left.eq(right)` unchanged, so no approved generated output moves
+for a schema that compiles today. And the argument is coerced onto the receiver in both directions:
+neither "raw" nor "referenced" is recoverable from a `TypeName`, and since neither operand is a
+bind value the direction is invisible in the emitted SQL, so the rule is chosen for mechanical
+reviewability rather than for semantics.
+
+A `.onKey(Keys.<CONSTANT>)` join needs none of this: it names a catalog constant and is type-blind
+by construction. So is any comparison whose two operands take their type from the *same*
+`ColumnRef`, which is most of the generator's `eq` sites and the reason the mint has as few callers
+as it does.
+
 [#dto-parent-batching]
 == DTO-parent batching
 

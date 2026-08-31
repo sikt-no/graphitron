@@ -444,7 +444,7 @@ public final class ProjectionUnitRenderer {
             if (i > 0) correlation.add(".and(");
             var target = pm.correlation().targetSideColumns().get(i);
             var source = pm.correlation().sourceSideColumns().get(i);
-            correlation.add("$L.$L.eq(table.$L)", aliasVar, target.javaName(), source.javaName());
+            correlation.add("$L", ColumnComparison.equality(aliasVar, target, "table", source));
             if (i > 0) correlation.add(")");
         }
         // Uniform multiset envelope (single row: the aggregate over the correlated set

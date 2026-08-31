@@ -354,6 +354,12 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.ConverterOrgSummaryService",
             method: "converterOrgSummaries"
         })
+    # Execution-tier root for the converter-diverged foreign key fixtures below. The two ends of
+    # the diverged_ref_child -> converter_org key carry different Java types (Field<Long> and
+    # Field<String>), so every emitted column-to-column comparison over that key must reconcile
+    # them without changing the SQL it renders.
+    divergedRefChildren: [DivergedRefChild!]! @defaultOrder(primaryKey: true)
+    divergedRefOrgs: [DivergedRefOrg!]! @defaultOrder(primaryKey: true)
     filmsConnection(
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
@@ -1794,6 +1800,76 @@ type ConverterCampus @table(name: "converter_campus") {
     # keyed on the converter-backed FK column.
     organisation: ConverterOrg @splitQuery
         @reference(path: [{key: "converter_campus_org_code_fkey"}])
+}
+
+# Converter-diverged foreign key fixtures. diverged_ref_child.org_code is declared as plain bigint
+# while the converter_org.org_code it references is the org_code_domain the fixture's forcedType
+# converts to String, so jOOQ types the two ends of one foreign key as Field<Long> and
+# Field<String>. Every generated comparison over that key is a Java type mismatch that stops the
+# whole generated module from compiling, even though the SQL it expresses (bigint = bigint) was
+# always correct. Reported by a consumer whose own codegen selected a converter by column path.
+#
+# The reported shape is the plain single-cardinality reference below: no @splitQuery and no
+# @reference, resolved off the unambiguous foreign key, which reaches the correlated subquery's
+# WHERE. The @splitQuery siblings reach the DataLoader parent-input predicates instead, and the
+# list direction on DivergedRefOrg reaches the same emitters from the other end of the key.
+type DivergedRefChild @table(name: "diverged_ref_child") {
+    childId:   Int!    @field(name: "CHILD_ID")
+    childName: String! @field(name: "CHILD_NAME")
+    # The reported shape: correlated subquery, no directives on the reference at all.
+    organisation: DivergedRefOrg
+    # The same key resolved through a DataLoader instead, so the parent-input comparison sites
+    # see the divergence too.
+    splitOrganisation: DivergedRefOrg @splitQuery
+    # The single-cardinality MULTI-TABLE polymorphic reference over the diverged key, parent-holds-FK.
+    # This is the one arm whose right operand is a value read out of the parent record rather than a
+    # column or a VALUES cell, so its reconciliation rests on a bind and not on a column reference.
+    # DivergedLabelSide keeps the field multi-table by auto-discovering its own single foreign key
+    # back to diverged_ref_child, and matches DivergedOrgSide's 1-column PK arity.
+    polyOrg: DivergedChildSide
+        @referenceFor(type: "DivergedOrgSide", path: [{key: "diverged_ref_child_org_code_fkey"}])
+}
+
+# The interface projects only the varchar name column the two participants have in common. Both
+# participants' primary keys are single org_code_domain columns, which the emitter's stage-1 union
+# requires on both axes at once: it projects each branch's key as __pk0__, so the branches must
+# agree on the Java type to compile and on the SQL type for PostgreSQL to accept the union. They
+# are still different columns, and neither is an interface field.
+interface DivergedChildSide { title: String }
+
+type DivergedOrgSide implements DivergedChildSide @table(name: "converter_org") {
+    title: String @field(name: "org_name")
+}
+
+type DivergedLabelSide implements DivergedChildSide @table(name: "diverged_child_label") {
+    title: String @field(name: "label")
+}
+
+type DivergedRefOrg @table(name: "converter_org") {
+    orgCode: String! @field(name: "ORG_CODE")
+    orgName: String! @field(name: "ORG_NAME")
+    # The list direction over the same diverged key, correlated and split.
+    children: [DivergedRefChild!]! @defaultOrder(primaryKey: true)
+    splitChildren: [DivergedRefChild!]! @splitQuery @defaultOrder(primaryKey: true)
+    # The same diverged key under a MULTI-TABLE polymorphic child field, which is the one topology
+    # the plain reference above cannot reach: the polymorphic emitter spells its own parent
+    # correlation twice, once against a batch's parent-input cells and once against a value read
+    # out of the parent record. DivergedCampusRef keeps the field multi-table by auto-discovering
+    # its own single foreign key to converter_org, and matches DivergedChildRef's 1-column PK arity.
+    polyChildren: [DivergedRef!]!
+        @referenceFor(type: "DivergedChildRef", path: [{key: "diverged_ref_child_org_code_fkey"}])
+}
+
+interface DivergedRef { rowId: Int }
+
+type DivergedChildRef implements DivergedRef @table(name: "diverged_ref_child") {
+    rowId: Int    @field(name: "child_id")
+    label: String @field(name: "child_name")
+}
+
+type DivergedCampusRef implements DivergedRef @table(name: "converter_campus") {
+    rowId: Int    @field(name: "campus_id")
+    label: String @field(name: "campus_name")
 }
 
 # R413 fixture: @sourceRow lifter whose lifted key column is converter-backed. The backing class

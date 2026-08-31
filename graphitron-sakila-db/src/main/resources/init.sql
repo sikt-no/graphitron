@@ -1102,6 +1102,63 @@ INSERT INTO converter_campus (campus_id, campus_name, org_code) VALUES
     (2, 'Trondheim', 1120),
     (3, 'Gjøvik',    1120);
 
+-- Converter-diverged foreign key fixture. The converter above is selected by type
+-- (`includeTypes: org_code_domain`), so it lands on both ends of the converter_campus FK at once
+-- and both sides generate as Field<String>. A consumer whose jOOQ codegen selects by column path
+-- instead gets a converter on one end only, and the two ends of the foreign key then *diverge*:
+-- the referencing column stays raw and the referenced column carries the converted user type.
+--
+-- The table below reproduces that divergence with no build-configuration change. Its org_code is
+-- declared as plain `bigint` rather than as org_code_domain, so it escapes the type-selected
+-- forcedType and generates as Field<Long>, while the converter_org.org_code it references stays
+-- Field<String>. A generated `child.ORG_CODE.eq(parent.ORG_CODE)` therefore does not compile,
+-- which is the whole fault: a Converter is a client-side type mapping only, so both columns are
+-- the same SQL type and the emitted predicate was always valid SQL.
+--
+-- Kept as a second table rather than by re-pointing the forcedType at one column: narrowing the
+-- existing rule by path would convert converter_campus.org_code back to Long and destroy the
+-- both-ends-converted coverage that pins the split-query VALUES-cell bind. The two fixtures test
+-- different things and both are wanted.
+CREATE TABLE diverged_ref_child (
+    child_id    serial      PRIMARY KEY,
+    child_name  varchar(50) NOT NULL,
+    org_code    bigint      NOT NULL REFERENCES converter_org(org_code)
+);
+
+INSERT INTO diverged_ref_child (child_id, child_name, org_code) VALUES
+    (1, 'Diverged Tromsø',    186),
+    (2, 'Diverged Trondheim', 1120),
+    (3, 'Diverged Gjøvik',    1120);
+
+-- Second participant for the single-cardinality multi-table polymorphic reference that reaches the
+-- diverged key. That emitter arm compares the child column against a value read out of the parent
+-- record rather than against another column or a VALUES cell, which is the one comparison shape
+-- whose reconciliation rests on a bind, so it is the arm most worth proving against a real
+-- database. It needs a sibling participant that auto-discovers its own foreign key, exactly as the
+-- category_label fixture does for CategoryRef.
+--
+-- The sibling's primary key is a key of its own rather than the child_id it joins on, and its type
+-- is load-bearing twice over. The emitter's stage-1 statement unions one branch per participant and
+-- projects each branch's key as __pk0__, so the two keys must agree on the *Java* type or the
+-- generated module does not compile, and on the *SQL* type or PostgreSQL rejects the union. A
+-- converter makes those two demands pull apart: converter_org.org_code is a bigint that generates as
+-- String, so a varchar key satisfies the compiler and then fails at runtime with "UNION types
+-- character varying and bigint cannot be matched". Declaring the sibling's key on org_code_domain
+-- settles both at once, and is what a real schema keyed on a shared code domain looks like anyway.
+CREATE TABLE diverged_child_label (
+    label_code  org_code_domain PRIMARY KEY,
+    child_id    integer         NOT NULL UNIQUE REFERENCES diverged_ref_child(child_id),
+    label       varchar(50)     NOT NULL
+);
+
+-- Deliberately left empty, the way no category_label row shares the CategoryRef fixture's isolating
+-- category_id. The field it participates in is single-cardinality, so a populated sibling would make
+-- which participant answers depend on how the two key values happen to sort, and the execution-tier
+-- assertion would be reading a numeric accident rather than the correlation under test. The branch
+-- is still emitted and still executed as part of the union, which is what proves the two keys agree
+-- on their SQL type; a populated sibling beside a populated diverged branch is covered by the list
+-- field instead, whose second participant is converter_campus.
+
 -- R446 array-column fixture: a table carrying array-typed columns. jOOQ maps a PostgreSQL
 -- `boolean[]` to `Field<Boolean[]>`, whose `getType().getName()` is the JVM binary descriptor
 -- `[Ljava.lang.Boolean;` (not a source-form FQCN), which `ClassName.bestGuess` rejects. Before the

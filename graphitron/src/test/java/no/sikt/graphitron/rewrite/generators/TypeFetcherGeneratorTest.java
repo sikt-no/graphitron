@@ -2185,6 +2185,22 @@ class TypeFetcherGeneratorTest {
             List.of(new ColumnRef("last_update", "LAST_UPDATE", "java.sql.Timestamp")));
     }
 
+    /**
+     * The per-branch {@code parentInput} JOIN predicate for the fixture above, spelled once because
+     * it carries a {@code coerce} that needs explaining. The fixture invents a single-column
+     * {@code Timestamp} primary key on {@code film_actor} to reach the arity-1 DataLoader path,
+     * while the participant columns it is compared against are {@code Integer}. Those two types
+     * disagree, so {@code ColumnComparison} reconciles them exactly as it would for a
+     * converter-diverged key. That is the mint working, not the fixture drifting: a real catalog
+     * cannot produce this pair, because both ends of a foreign key share a SQL type.
+     */
+    private static String parentInputJoinOn(String branchAlias, String participantColumn) {
+        String receiver = branchAlias + "." + participantColumn;
+        return receiver + ".eq(parentInput.field(\"last_update\", "
+            + "no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE.getDataType())"
+            + ".coerce(" + receiver + "))";
+    }
+
     @Test
     void childInterfaceField_connection_emitsDataLoaderRegisteringFetcher() {
         // Child connection fetcher registers a DataLoader keyed on the parent table's
@@ -2252,12 +2268,10 @@ class TypeFetcherGeneratorTest {
         var rows = method(spec, "rowsRelatedConnection").code().toString();
         assertThat(rows)
             .as("Film branch JOINs parentInput on FILM_ID")
-            .contains("stage1_Film.FILM_ID.eq(parentInput.field(\"last_update\", "
-                + "no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE.getDataType()))");
+            .contains(parentInputJoinOn("stage1_Film", "FILM_ID"));
         assertThat(rows)
             .as("Actor branch JOINs parentInput on ACTOR_ID")
-            .contains("stage1_Actor.ACTOR_ID.eq(parentInput.field(\"last_update\", "
-                + "no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE.getDataType()))");
+            .contains(parentInputJoinOn("stage1_Actor", "ACTOR_ID"));
         assertThat(rows)
             .as("each branch projects parentInput.field(0) as __idx__")
             .contains("parentInput.field(0, java.lang.Integer.class).as(\"__idx__\")");
@@ -2326,10 +2340,8 @@ class TypeFetcherGeneratorTest {
             .contains("loader.load(key, env)");
         assertThat(rows)
             .as("union variant: same JOIN parentInput per branch")
-            .contains("stage1_Film.FILM_ID.eq(parentInput.field(\"last_update\", "
-                + "no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE.getDataType()))")
-            .contains("stage1_Actor.ACTOR_ID.eq(parentInput.field(\"last_update\", "
-                + "no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE.getDataType()))");
+            .contains(parentInputJoinOn("stage1_Film", "FILM_ID"))
+            .contains(parentInputJoinOn("stage1_Actor", "ACTOR_ID"));
         assertThat(rows)
             .as("union variant: same per-parent ConnectionResult with idxField.eq(i)")
             .contains(".util.ConnectionResult(buckets.get(i), page, pagesTable, idxField.eq(i))");

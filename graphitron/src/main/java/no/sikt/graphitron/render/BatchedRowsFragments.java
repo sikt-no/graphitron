@@ -196,9 +196,9 @@ public final class BatchedRowsFragments {
         var onCond = CodeBlock.builder();
         for (int i = 0; i < targetCols.size(); i++) {
             if (i > 0) onCond.add(".and(");
-            onCond.add("$L.$L.eq($L)",
-                pivotAlias, targetCols.get(i).javaName(),
-                parentInputFieldLookup(sourceCols.get(i), ownerTable));
+            onCond.add("$L", ColumnComparison.equalityAgainstField(
+                pivotAlias, targetCols.get(i), sourceCols.get(i),
+                parentInputFieldLookup(sourceCols.get(i), ownerTable)));
             if (i > 0) onCond.add(")");
         }
 
@@ -686,10 +686,9 @@ public final class BatchedRowsFragments {
         var onCond = CodeBlock.builder();
         for (int i = 0; i < joinOnCols.size(); i++) {
             if (i > 0) onCond.add(".and(");
-            onCond.add("$L.$L.eq($L)",
-                joinOnAlias,
-                joinOnCols.get(i).javaName(),
-                parentInputFieldLookup(joinOnParentCols.get(i), ownerTable));
+            onCond.add("$L", ColumnComparison.equalityAgainstField(
+                joinOnAlias, joinOnCols.get(i), joinOnParentCols.get(i),
+                parentInputFieldLookup(joinOnParentCols.get(i), ownerTable)));
             if (i > 0) onCond.add(")");
         }
         sel.add(".from(parentInput)\n");
