@@ -1,7 +1,7 @@
 ---
 id: R880
 title: "An explicit null clears a nullable reference on UPDATE, and a straddler is admitted when its identity half is pinned"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 2
 theme: mutation-write
@@ -75,7 +75,7 @@ The fact deliberately does *not* ride on `SetColumn` or on the emitter's `SetGro
 - `intent_mutation_write_destination` gains the carrier's null rule beside its `destination` verdict, so a facts-reading emitter is not left able to say which columns a statement assigns but not what an explicit null on them means. Coordinate with R682, which is In Progress over these relations; the diff here is two views, two table columns, and their comments.
 - Every view and column comment touched carries argued prose in this file, and the retired MATCH SIMPLE premise (see Retired vocabulary) appears in `intent_mutation_write_refusal`'s comment verbatim.
 
-**Fixture (`graphitron-sakila-db/src/main/resources/init.sql`, `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`).** The existing straddle fixture is the *reject-a-clear* case and stays: `catalogue_item.catalog_code` is NOT NULL, so nothing there can exercise an admitted clear. Add a sibling optional reference on the same table: a `catalogue_shelf` table keyed `(tenant_id, shelf_code)`, a nullable `catalogue_item.shelf_code` column, and a foreign key on `(tenant_id, shelf_code)`, which is a straddler over the same tenant column and whose out-of-key half is nullable. `UpdateCatalogueItemInput` gains `shelfId: ID @nodeId(typeName: "CatalogueShelf")` and `CatalogueItem` a `shelfCode` field for read-back. Adding an optional input field changes no existing emitted statement, because both arms decide SET membership by presence.
+**Fixture (`graphitron-sakila-db/src/main/resources/init.sql`, `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`).** The existing straddle fixture is the *reject-a-clear* case and stays: `catalogue_item.catalog_code` is NOT NULL, so nothing there can exercise an admitted clear. Add a sibling optional reference on the same table: a `catalogue_shelf` table keyed `(tenant_id, shelf_code)`, a nullable `catalogue_item.shelf_code` column, and a foreign key on `(tenant_id, shelf_code)`, which is a straddler over the same tenant column and whose out-of-key half is nullable. The optional reference is spelled `shelfId: ID @nodeId(typeName: "CatalogueShelf")` on its own `ShelveCatalogueItemInput`, driving `shelve*` mutations, rather than beside `catalogueId` on `UpdateCatalogueItemInput`: that input's `catalogueId` is `ID!` and so mandatory on every call, and an input carrying both would make every clearing call resend the catalogue, which is the cost this shape exists to remove. `CatalogueItem` gains a `shelfCode` field for read-back. Adding an input changes no existing emitted statement.
 
 Add the payload-returning single-row and bulk `updateCatalogueItem` mutations to the same schema. That is the fixture R829 asks for; this item needs it because the clear routes through all four arms and two of them have no execution-tier coverage at all. Whether R829 then closes is R829's own call.
 
@@ -84,9 +84,9 @@ Add the payload-returning single-row and bulk `updateCatalogueItem` mutations to
 Behaviour is pinned at the pipeline tier and above, and no test asserts on generated source strings.
 
 - *Unit* (`UpdateRowsWalkerTest`): `nullableStraddlingReference_rejectsWithCarriedKeyAndWriteTarget` inverts. Its input already has `actorId` and `filmId` pinning the whole key, so the nullable straddler on `(actor_id, last_update)` is now admitted; assert the partition, the slot, the obligation and a *clears* rule. Add the unpinned sibling (the straddler as sole contributor of `actor_id`) as the surviving reject, asserting the named unpinned columns. Add the case that pins the identity-contributor definition itself, because it is the one where a narrower reading (whole carriers pin, straddlers do not) would answer differently: the `twoStraddlersSharingAnInKeyColumn_firstInInputOrderPinsIt` shape with `second` spelled nullable, where `actor_id` is in the matched key and no whole carrier supplies it. Assert admission, `first` still pinning `actor_id`, and the nullable carrier holding the agreement obligation and a *clears* rule. Add a self-FK overlapping the matched key, asserting *refused as identity*, and a nullable non-straddling reference, asserting *clears*.
-- *Pipeline* (`MutationDmlNodeIdClassificationTest`): `nullableStraddlingReference_update_rejectsAtBuildTime` inverts for the same reason. Extend `straddlingReference_update_allFourCarrierConsumers_seeTheSamePartitionAndObligations` to assert the null rule on all four carriers, which is what stops a consumer dropping it silently. `FetcherPipelineTest` gains the structural pin that a *clears* carrier emits a null branch distinct from its decode branch on the single-row and VALUES-join arms.
+- *Pipeline* (`MutationDmlNodeIdClassificationTest`): `nullableStraddlingReference_update_rejectsAtBuildTime` inverts for the same reason. Extend `straddlingReference_update_allFourCarrierConsumers_seeTheSamePartitionAndObligations` to assert the null rule on all four carriers, which is what stops a consumer dropping it silently. The fact that a *clears* carrier keeps a failed decode distinct from an explicit null is pinned at the execution tier rather than on the emitted source: an id that does not decode still throws and writes nothing, on the single-row and VALUES-join arms alike. Only the database distinguishes the two outcomes, and a source-shape assertion would pin javapoet's rendering rather than the behaviour.
 - *Derived facts*: `MutationWriteRefusalTest`'s `aNullableStraddlingReferenceIsRefused` narrows to the unpinned case and gains two admitted siblings, one per arm of `identity_pinned`: pinned by a whole carrier, and pinned by a non-null straddler alone; `MutationWriteDestinationTest` gains the null-rule rows. Add the missing shadow leg for this family under `graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/` (the `ColumnMatchShadowTest` / `DemandShadowTest` / `InputOccurrenceShadowTest` pattern: every document of `CorpusDocuments.documents()` captured as its own graph through `CapturedStore.ofCatalog`, then the walker's answer and the store's compared per graph; `MaterializedRegistryFixture` is the statistics tests' fixture and no shadow test's), scoped to the write-refusal causes: per corpus document, the set of `UpdateRowsError` values the walker returns must equal the set of `intent_mutation_write_refusal` rows, by coordinate and cause. The sweep proves nothing about this rule unless the corpus carries the shapes that discriminate it, and today it carries no straddling UPDATE at all, so the corpus gains a document with the two-straddler shape (an UPDATE input with two cross-table straddlers on one in-key column no whole carrier supplies, one of them nullable: admitted, both sides silent) and the surviving reject (a nullable straddler as a key column's sole supplier). That first shape is exactly the one where the walker rule and the SQL rule diverged in this item's own round-1 draft, which is what the shadow leg is for. Without it the walker rule and the SQL rule agree only by hand, and a re-seeded expectation goes green while the two have diverged.
-- *Execution* (`StraddlingReferenceUpdateExecutionTest`, extended or a sibling class on the shelf fixture): an explicit null clears `shelf_code` and leaves `tenant_id`, the row's location and `catalog_code` untouched; the foreign key stays satisfied afterwards, which is the MATCH SIMPLE claim this item rests on, so assert it by reading the row back rather than by trusting the absence of an error; an omitted `shelfId` leaves the existing value; a cross-tenant shelf still throws with nothing written. All four arms, single-row and bulk, direct-return and payload.
+- *Execution* (`StraddlingReferenceUpdateExecutionTest`, extended or a sibling class on the shelf fixture): an explicit null clears `shelf_code` and leaves `tenant_id`, the row's location and `catalog_code` untouched; the foreign key stays satisfied afterwards, which is the MATCH SIMPLE claim this item rests on, so assert it by reading the row back rather than by trusting the absence of an error; an omitted `shelfId` leaves the existing value; a cross-tenant shelf still throws with nothing written; a well-formed id of the wrong type throws too, and leaves the column at its old value rather than clearing it. All four arms, single-row and bulk, direct-return and payload.
 - *Emitted SQL* (`DmlSqlBaselineTest`): the clear's statement on the single-row and bulk arms, so a regression that stops binding the null, or that moves a `v(...)` column, fails on the statement rather than on a value.
 - *Permit coverage*: `RejectionSeverityCoverageTest`'s sample construction follows `NullableStraddlingReference`'s components, and `SealedHierarchyDocCoverageTest` pins the permit-to-documentation mapping, so the arm's javadoc rewrite is build-visible. `RejectionResidueDrainageTest` keeps the permit named.
 
@@ -346,6 +346,19 @@ the item nothing, which is the point: the behaviour is already pinned by
 tests on the database, and by the null-rule assertions at the model tier. This finding is about the
 mechanism, not about a hole in the coverage.
 
+*Implementer response (2026-08-31):* Test dropped, and the claim it was reaching for restated
+behaviourally instead of derived on the source. The finding is right that the fragments assert
+javapoet's rendering rather than the split, and right that dropping costs the item nothing; what the
+drop does lose is the only statement anywhere that a *failed decode* on a clearing carrier is still
+a refusal rather than a clear, which is the hazard the three-statement split exists for and the one
+the listed coverage does not reach (the statement baselines and the four execution tests all send
+either a valid id or an explicit null). That distinction is observable at the tier that can see it:
+`StraddlingReferenceUpdateExecutionTest` gains `wrongTypeShelfId_throwsRatherThanClearing` and its
+bulk sibling, which send a well-formed `Catalogue` id into `shelfId`, assert the call errors, and
+assert the column still holds its old value rather than the null a collapsed branch would have
+written. Both arms that declare their own decode local are covered. The Tests section's
+`FetcherPipelineTest` sentence is replaced by that, and says why the tier moved.
+
 **Finding 2 (the refusal view's comment states the rule backwards in its defining sentence).**
 `intent_mutation_write_refusal`'s comment now reads "NULLABLE_STRADDLING_REFERENCE is a cross-table
 reference in the same position, where the split itself is legitimate and the spelling is, but only
@@ -358,6 +371,10 @@ currently opens its account of this cause with the rule reversed. Repair the cla
 "...the split itself is legitimate and so is the spelling, except where the reference is the sole
 supplier of one of the key's columns").
 
+*Implementer response (2026-08-31):* Taken as suggested; the clause now reads "the split itself is
+legitimate and so is the spelling, except where the reference is the sole supplier of one of the
+key''s columns", which is the rule the sentences after it already stated.
+
 **Finding 3 (`UpdateRows.java` ships a raw NUL byte and is no longer a text file).**
 `UpdateRows.Identified`'s duplicate-rule guard keys its `HashSet` on
 `r.sdlFieldName() + "<U+0000>" + r.extraction()`, written as a literal NUL character in the source
@@ -366,6 +383,10 @@ file as binary: `git diff` on it prints "Binary files differ" instead of a diff,
 stops seeing it. That is a durable cost on a carrier file every future reader of this area opens,
 and it was invisible to this gate's own review of the change. Write the separator as `"\0"` (or any
 ordinary delimiter) so the file is text again.
+
+*Implementer response (2026-08-31):* Separator written as the escape `"\0"`, so the source is ASCII
+again and `git diff` prints a diff. The behaviour is unchanged: the separator is still a character no
+SDL field name can carry.
 
 *Non-blocking.* The fixture deviates from the plan and deviates well: instead of adding `shelfId` to
 `UpdateCatalogueItemInput` and payload-returning `updateCatalogueItem` mutations, it adds a separate
@@ -376,3 +397,6 @@ and in the commit message, so it is noted rather than charged; the delivery cove
 plan's fixture asked for and adds the two payload arms it named. The Implementation section's
 "`UpdateCatalogueItemInput` gains `shelfId`" sentence is the one line of the spec body that no longer
 describes the tree.
+
+*Implementer response (2026-08-31):* That sentence now describes the delivered fixture and carries
+the argument for the separate input, so the spec body and the tree agree again.
