@@ -228,3 +228,81 @@ dissolves the middle either way, and this decides where the line is rather than 
   completes, and the shared file is untouched.
 * **The full verification build is green with no generated-output diff in
   `graphitron-sakila-example`.** A move that changes an emitted file did something else too.
+
+## Reviewer findings
+
+### Round 1 (2026-08-31, Spec -> Ready, reviewer session 018HhYy8H1gBKaAXg17ZbvmS)
+
+Verdict: withhold. One blocking finding on question one. Question two is clean.
+
+*What was checked and holds.* Every symbol the plan names exists under the name it gives.
+`FactCapture.runInternal`, `captureWithRetry`, `reconciles` and `ownsGraph` are all there and do
+what the plan says they do, including the fallback to a private in-memory store and the per-attempt
+`reconciles` call. `GraphQLRewriteGenerator.captureAndRead` and `captureFacts` take
+`ctx.storeDirectory()`, `RewriteContext` carries `storeDirectory` as a component, and `Projection` is
+a private record with exactly four constants (`GENERATE`, `VALIDATE`, `BUILD_OUTPUT`, `PASS`), so
+"a fifth `Projection`, not a second pipeline body" is both available and the thing the class javadoc
+already asks for in those words. The stage-order claim checks out against `runPipeline`:
+`withLintFindings` is computed above the capture and does need a switch, `CatalogBuilder.build` is
+already projection-gated, and `GraphitronSchemaValidator` runs inside the capture window's
+continuation where a capture-only projection can return ahead of it. `ValidateMojo` is 34 lines over
+one `runGenerator` call with `packagesRequired()` returning false, and `AbstractRewriteMojo.runGenerator`
+owns the context build, so the `CaptureMojo` sketch is the shape claimed. `DevMojo` opens `sessionStore`
+at line 299. `CatalogBuilder.buildExternalReferences` and `projectTypesByName`/`TypeBackingShape` exist
+and split as described, with the live callers named. `StoreClientBoundaryTest` is main-sources-only with
+an artifact-and-scope allowlist carrying `graphitron` at test and test-jar, so "tightens to all scopes"
+is a real edit to a real guard. `PackageImportDirectionTest` has the `facts` arm and the borrow dial the
+plan writes the new arm against. `ModelCodegenDriver` and `GraphitronModelStore.open`/`openAt` are the
+two openers the guard must be scoped around. The move and stay line counts are in the neighbourhood
+claimed. Every roadmap item cited exists: R870 (Spec), R876 (In Progress), R857 (Spec), R682
+(In Progress), R899 (Backlog). The mcp import census is accurate.
+
+The diagnosis is good and the shape is right. Three deliverables that are one ownership inversion,
+sequenced so each step shrinks the next, extending mechanisms already in the tree (a projection, a
+mojo shape, a package-rule arm, a sealed outcome) rather than standing anything parallel beside them.
+The "one module, not two" decision is argued from the DDL rather than from taste, and the write
+direction is correctly scoped out with a reason rather than an omission. I would hand this to an
+implementer once the finding below is settled.
+
+**Finding 1 (question one: is the stated outcome reachable). The plan promises that `graphitron-lsp`
+drops its `graphitron` edge in every scope, and its own splits keep that edge alive.** The promise
+appears twice, as the second of the three costs under "Why now" ("Remove that requirement and both
+modules drop the dependency in every scope") and as a delivery criterion ("`graphitron-lsp` and
+`graphitron-mcp` declare no dependency on `graphitron` in any scope"). Both rest on a census of what
+`graphitron-mcp` imports. No equivalent census is offered for `graphitron-lsp`, and the one in the
+tree does not support the claim.
+
+Ten test files under `graphitron-lsp/src/test` import types this plan explicitly leaves above the
+line. `LintQuickFixTest` imports `no.sikt.graphitron.rewrite.lint.LintRule` and `LintFix`, and
+`SdlDeprecations` imports `DeprecationRecognizer`: that is the lint rule engine, which the census in
+step 1 decides "stays above as analysis over a read schema". `FixtureCatalogTest` imports
+`no.sikt.graphitron.rewrite.catalog.CatalogBuilder`, and `R157PipelineTest` imports `CatalogBuilder`
+and `TypeBackingShape`: those are the half of `rewrite/catalog` that step 1 keeps above, and step 1
+names `R157PipelineTest` itself as the live caller that is the reason not to delete them now. Also
+above, or unassigned by the plan either way: `GraphitronSchemaBuilder` (`R157PipelineTest`),
+`ValidationReport` (`DiagnosticsTest`, `FixtureCatalogTest`), `BuildWarning` (`StoreFixture`,
+`LintQuickFixTest`) and `GraphQLRewriteGenerator`.
+
+So this is an internal contradiction rather than an unchecked claim: step 1 argues for keeping symbols
+above the line partly because `graphitron-lsp` calls them, and the delivery section then asserts that
+`graphitron-lsp` will name nothing in `graphitron`. An implementer reaching the last two criteria has
+to choose between moving the lint rule engine down (which step 1 forbids), relocating or deleting those
+`graphitron-lsp` tests (which the plan never mentions and which is scope of its own), and weakening the
+criterion. That choice is design, and it is the author's rather than the implementer's.
+
+What would satisfy the finding: run the same census over `graphitron-lsp` that "What changes when this
+lands" runs over `graphitron-mcp`, and state the outcome. Either name the additional work that makes the
+edge droppable, or say plainly that `graphitron-lsp` keeps a test-scope edge for the tests that read the
+lint engine and the type-backing projection, revise the second "Why now" cost to the mcp half plus
+whatever the lsp census actually yields, and reword the delivery criterion to what the item will deliver.
+Any of those is fine. What cannot stand is the criterion as written, since it is a gate the item fails on
+its own terms.
+
+*Non-blocking, question one, traceability only.* The mcp import list under "Both store clients drop
+`graphitron` entirely" omits three of the imports actually present in `graphitron-mcp/src/test`:
+`no.sikt.graphitron.rewrite.FactWriters`, `rewrite.model.Rejection` and `rewrite.ValidationError`.
+The latter two are covered in substance by the step 1 census gap on the rejection vocabulary, so they
+are a wording matter. `FactWriters` is not named anywhere in the plan and is not obviously inside any
+of the move-list packages, which makes it one more file whose side of the line is unsettled. It is
+also imported by `graphitron-lsp`'s `StoreFixture`, so it will surface again when the census above is
+run.
