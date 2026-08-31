@@ -321,6 +321,58 @@ class LauncherCommandsPipelineTest {
     }
 
     @Test
+    void batchedChildLists_bothArmsProjectTheCoordinatesOrdering() {
+        // The two batched list arms over one leaf type: the plain @splitQuery child and the
+        // @lookupKey-narrowed one. Both project the coordinate's ordering into the list shape,
+        // so a declared sort survives the model-to-command boundary that used to hand a literal
+        // null; the fetch strategy is not an axis the field's contract turns on. The
+        // single-record-per-key sibling is the honest unordered shape and rides its own arm.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Actor @table(name: "actor") { actorId: Int @field(name: "actor_id") }
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                title: String
+                actorsSplit: [Actor!]! @splitQuery @defaultOrder(primaryKey: true)
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+                actorsByLookup(actor_id: [Int!] @lookupKey): [Actor!]! @splitQuery
+                    @defaultOrder(primaryKey: true)
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+                languageSplit: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { films: [Film!]! }
+            """);
+
+        var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
+
+        var plain = relation.rowFor("Film", "actorsSplit").orElseThrow();
+        assertThat(plain.invocation()).isInstanceOf(no.sikt.graphitron.command.Invocation.Batched.class);
+        assertThat(((ResultShape.RecordList) plain.result()).ordering())
+            .as("the plain batched list arm's ordering slot")
+            .isInstanceOf(Ordering.Columns.class);
+        var plainOrdering = (Ordering.Columns) ((ResultShape.RecordList) plain.result()).ordering();
+        assertThat(plainOrdering.spec().columns())
+            .extracting(c -> c.column().sqlName())
+            .containsExactly("actor_id");
+
+        var lookup = relation.rowFor("Film", "actorsByLookup").orElseThrow();
+        assertThat(lookup.source())
+            .isInstanceOf(no.sikt.graphitron.command.LaunchSource.CorrelatedLookupChain.class);
+        assertThat(((ResultShape.RecordList) lookup.result()).ordering())
+            .as("the @lookupKey batched list arm's ordering slot")
+            .isInstanceOf(Ordering.Columns.class);
+        var lookupOrdering = (Ordering.Columns) ((ResultShape.RecordList) lookup.result()).ordering();
+        assertThat(lookupOrdering.spec().columns())
+            .extracting(c -> c.column().sqlName())
+            .containsExactly("actor_id");
+
+        // One record per key carries no ordering: there is nothing to sort, and the arm says so
+        // rather than resolving a spec the emission would have no place to render.
+        assertThat(relation.rowFor("Film", "languageSplit").orElseThrow().result())
+            .isInstanceOf(ResultShape.SingleRecord.class);
+    }
+
+    @Test
     void interfaceRoot_joinedParticipants_baseSliceAndDetailFieldsRideTheArm() {
         var schema = TestSchemaHelper.buildSchema("""
             interface Party @table(name: "party") @discriminate(on: "party_kind") {

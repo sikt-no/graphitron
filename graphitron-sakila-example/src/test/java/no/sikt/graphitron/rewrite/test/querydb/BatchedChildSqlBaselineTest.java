@@ -24,6 +24,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * body moves from an opaque emitter composition onto command rows and a renderer), SQL may not.
  * Editing an expected string during the child-family fold is a defect being papered over.
  *
+ * <p>One deliberate widening has since landed on top of that baseline, and it is the exception
+ * that states the rule: the list-shaped batched arms (plain and {@code @lookupKey}) gained the
+ * batch-wide {@code ORDER BY} their coordinate's ordering always resolved and the emission used
+ * to discard, so a {@code @splitQuery} child list obeys the same {@code @defaultOrder} its
+ * inline twin obeys. Those three expected strings were edited because the SQL was intended to
+ * change; every other string here still holds the fold's promise, and a diff to one of them is
+ * still the defect this file exists to catch.
+ *
  * <p>The shapes: the list batched child ({@code SplitParent.tags}, the parent-input VALUES
  * derived table joined through the FK chain with the {@code __idx__} scatter key), the
  * single-cardinality batched child ({@code Customer.addressSplit}, one key row, the
@@ -98,9 +106,10 @@ class BatchedChildSqlBaselineTest {
         execute("{ splitParents { label tags { tag } } }");
         assertThat(SQL_LOG)
             .as("list batched child: the parent statement, then one batch statement joining the "
-                + "parent-input VALUES derived table through the FK chain, idx-keyed for scatter "
-                + "(and, as pinned current behaviour, no ORDER BY on the batch: the list-shaped "
-                + "batched child renders no ordering)")
+                + "parent-input VALUES derived table through the FK chain, idx-keyed for scatter, "
+                + "with the coordinate's own ORDER BY over the whole batch (the scatter appends "
+                + "each row to its key's bucket in fetch order, so one global sort reproduces "
+                + "the inline twin's per-parent ordering)")
             .containsExactly(
                 "select \"public\".\"split_parent\".\"label\", \"public\".\"split_parent\".\"parent_code\" "
                     + "from \"public\".\"split_parent\" "
@@ -108,7 +117,8 @@ class BatchedChildSqlBaselineTest {
                 "select \"tags_s0\".\"tag\", \"parentinput\".\"idx\" as \"__idx__\" "
                     + "from (values (0, ?), (1, ?)) as \"parentinput\" (\"idx\", \"parent_code\") "
                     + "join \"public\".\"split_parent_tag\" as \"tags_s0\" "
-                    + "on \"tags_s0\".\"parent_code\" = \"parentinput\".\"parent_code\"");
+                    + "on \"tags_s0\".\"parent_code\" = \"parentinput\".\"parent_code\" "
+                    + "order by \"tags_s0\".\"tag_id\" asc");
     }
 
     @Test
@@ -213,8 +223,9 @@ class BatchedChildSqlBaselineTest {
         assertThat(SQL_LOG)
             .as("table-arm batched lookup child: the parent (lookup) statement, then one batch "
                 + "statement with both VALUES derived tables, the parent-input keyed for scatter "
-                + "and the lookup-input narrowing on the @lookupKey columns (and, as pinned "
-                + "current behaviour, no ORDER BY on the batch)")
+                + "and the lookup-input narrowing on the @lookupKey columns, carrying the same "
+                + "batch-wide ORDER BY the plain batched sibling carries (@lookupKey is a "
+                + "narrowing, not an axis a declared sort turns on)")
             .containsExactly(
                 "select \"public\".\"film\".\"film_id\", \"filmbyidinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"film\" "
@@ -226,7 +237,8 @@ class BatchedChildSqlBaselineTest {
                     + "join \"public\".\"actor\" as \"actorsbysplitlookup_a1\" "
                     + "on \"actorsbysplitlookup_f0\".\"actor_id\" = \"actorsbysplitlookup_a1\".\"actor_id\" "
                     + "join (values (0, ?), (1, ?)) as \"actorsbysplitlookupinput\" (\"idx\", \"actor_id\") "
-                    + "on \"actorsbysplitlookup_a1\".\"actor_id\" = \"actorsbysplitlookupinput\".\"actor_id\"");
+                    + "on \"actorsbysplitlookup_a1\".\"actor_id\" = \"actorsbysplitlookupinput\".\"actor_id\" "
+                    + "order by \"actorsbysplitlookup_a1\".\"actor_id\" asc");
     }
 
     @Test
@@ -254,7 +266,8 @@ class BatchedChildSqlBaselineTest {
                     + "join \"public\".\"actor\" as \"actorsbylookup_a1\" "
                     + "on \"actorsbylookup_f0\".\"actor_id\" = \"actorsbylookup_a1\".\"actor_id\" "
                     + "join (values (0, ?), (1, ?)) as \"actorsbylookupinput\" (\"idx\", \"actor_id\") "
-                    + "on \"actorsbylookup_a1\".\"actor_id\" = \"actorsbylookupinput\".\"actor_id\"");
+                    + "on \"actorsbylookup_a1\".\"actor_id\" = \"actorsbylookupinput\".\"actor_id\" "
+                    + "order by \"actorsbylookup_a1\".\"actor_id\" asc");
     }
 
     @Test

@@ -1666,3 +1666,40 @@ INSERT INTO film_price (film_id, currency_code, amount) VALUES
 
 INSERT INTO pivot_nesting_host (host_id, nn, nb, se, en) VALUES
     (1, 'nn-vert', 'nb-vert', NULL, 'en-host');
+
+-- Execution-tier fixture for the ordering contract on a @splitQuery child list whose target has
+-- NO PRIMARY KEY. A consumer reported this shape: a batched child list over a keyless relation,
+-- ordered by @defaultOrder(fields:), whose rows came back in raw storage order. The reported
+-- target was a database view; what actually drives the case is the missing primary key, not the
+-- view, so a keyless table reproduces it exactly and costs no synthetic-key codegen config.
+--
+-- Why this population cannot opt out: with no primary key on the target, the deterministic-order
+-- validator has no key to fall back on, so it *compels* an explicit @defaultOrder on any list
+-- field returning this table ("add a primary key to the target table, or use @defaultOrder or
+-- @orderBy"), and a keyless relation has no primary key to add. The author is therefore required
+-- to declare exactly the ordering contract the batched emission used to discard.
+CREATE TABLE role_holder (
+    holder_id   integer     PRIMARY KEY,
+    holder_name varchar(64) NOT NULL
+);
+
+CREATE TABLE role_assignment (
+    holder_id integer     NOT NULL REFERENCES role_holder(holder_id),
+    role_code varchar(16) NOT NULL,
+    role_name varchar(64) NOT NULL
+);
+
+INSERT INTO role_holder (holder_id, holder_name) VALUES
+    (1, 'Holder One'),
+    (2, 'Holder Two');
+
+-- Insertion order contradicts role_code order for BOTH holders, deliberately: an unordered fetch
+-- returns each holder's rows in storage order (ZETA, ALFA, MIKE), so an assertion on the declared
+-- sort fails against an emission that drops it. A fixture seeded in sort order would pass
+-- vacuously and pin nothing.
+INSERT INTO role_assignment (holder_id, role_code, role_name) VALUES
+    (1, 'ZETA',  'Zeta role'),
+    (1, 'ALFA',  'Alfa role'),
+    (1, 'MIKE',  'Mike role'),
+    (2, 'YOTA',  'Yota role'),
+    (2, 'BRAVO', 'Bravo role');

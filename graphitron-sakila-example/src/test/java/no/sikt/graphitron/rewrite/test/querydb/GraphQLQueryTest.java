@@ -2388,12 +2388,61 @@ class GraphQLQueryTest {
             .singleElement(as(MAP))
             .extractingByKey("tags", as(list(Map.class)))
             .extracting(t -> t.get("tag"))
-            .containsExactlyInAnyOrder("a-one", "a-two");
+            // Order-sensitive now that the batched list carries its @defaultOrder, but this seed
+            // stores the tags in key order, so it cannot fail on the sort alone; the biting
+            // proof of the ordering contract is splitTableFieldList_honoursDefaultOrder_*.
+            .containsExactly("a-one", "a-two");
         parents.filteredOn(p -> "BETA".equals(p.get("parentCode")))
             .singleElement(as(MAP))
             .extractingByKey("tags", as(list(Map.class)))
             .extracting(t -> t.get("tag"))
             .containsExactly("b-one");
+    }
+
+    @Test
+    void splitTableFieldList_honoursDefaultOrder_onAKeylessTarget() {
+        // The declared order of a list field holds wherever the rows are fetched from.
+        // @splitQuery decides whether a child's rows ride the parent's statement or a batch of
+        // their own; it is a fetch-strategy directive and does not change what the field returns.
+        //
+        // RoleHolder.roles is the population that cannot opt out: role_assignment has no primary
+        // key, so the deterministic-order validator has no key to fall back on and compels
+        // @defaultOrder on the field. The batch statement must therefore carry the sort. One
+        // global ORDER BY suffices because the __idx__ scatter appends each row to its key's
+        // bucket in fetch order, so the batch-wide sort reproduces the per-parent sort.
+        //
+        // The assertion can fail: the seed stores each holder's rows contradicting role_code
+        // (holder 1 as ZETA, ALFA, MIKE), so an emission that drops the sort returns storage
+        // order and these expectations reject it.
+        Map<String, Object> data = execute("{ roleHolders { holderName roles { roleCode } } }");
+
+        var holders = assertThat(data).extractingByKey("roleHolders", as(list(Map.class)));
+        holders.element(0, as(MAP)).extractingByKey("roles", as(list(Map.class)))
+            .extracting(r -> r.get("roleCode"))
+            .containsExactly("ALFA", "MIKE", "ZETA");
+        holders.element(1, as(MAP)).extractingByKey("roles", as(list(Map.class)))
+            .extracting(r -> r.get("roleCode"))
+            .containsExactly("BRAVO", "YOTA");
+    }
+
+    @Test
+    void splitTableFieldList_honoursDefaultOrder_underALookupKeyNarrowing() {
+        // The @lookupKey arm of the same coordinate family. @lookupKey narrows which rows the
+        // batch returns; it is not an axis on which a declared sort may turn, so the narrowed
+        // batch carries the same ORDER BY its plain sibling carries. Both holders keep rows
+        // after the narrowing, and both are stored contradicting the sort, so each element list
+        // is an independent proof.
+        Map<String, Object> data = execute(
+            "{ roleHolders { holderName "
+                + "rolesByCode(role_code: [\"ZETA\", \"ALFA\", \"YOTA\", \"BRAVO\"]) { roleCode } } }");
+
+        var holders = assertThat(data).extractingByKey("roleHolders", as(list(Map.class)));
+        holders.element(0, as(MAP)).extractingByKey("rolesByCode", as(list(Map.class)))
+            .extracting(r -> r.get("roleCode"))
+            .containsExactly("ALFA", "ZETA");
+        holders.element(1, as(MAP)).extractingByKey("rolesByCode", as(list(Map.class)))
+            .extracting(r -> r.get("roleCode"))
+            .containsExactly("BRAVO", "YOTA");
     }
 
     @SuppressWarnings("unchecked")

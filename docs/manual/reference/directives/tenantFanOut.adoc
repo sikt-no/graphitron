@@ -28,7 +28,7 @@ With `[Resultat]`, a tenant whose database is unreachable or times out contribut
 
 == Ordering
 
-Results keep each tenant's xref:orderBy.adoc[`@orderBy`] ordering within that tenant's rows and concatenate tenants in a stable order; they are not re-sorted globally. Fields below the fanned field need nothing extra: each row remembers its tenant, and nested selections (including xref:splitQuery.adoc[`@splitQuery`] children) read and route against the right database automatically.
+Results keep each tenant's declared ordering (xref:defaultOrder.adoc[`@defaultOrder`] or xref:orderBy.adoc[`@orderBy`]) within that tenant's rows and concatenate tenants in a stable order; they are not re-sorted globally. Fields below the fanned field need nothing extra: each row remembers its tenant, and nested selections (including xref:splitQuery.adoc[`@splitQuery`] children) read and route against the right database automatically.
 
 == Build-time rejections
 

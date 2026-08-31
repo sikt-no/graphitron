@@ -916,6 +916,10 @@ public final class LauncherCommands {
      * with a list-shaped rows method there, which does not compile), so production fails loud
      * on it rather than asserting a shape the model contradicts; the validator accepts that
      * schema today, a recorded mirror gap.
+     *
+     * <p>The list shape carries the coordinate's ordering, the same projection
+     * {@link #batchedResultOf} performs for the plain batched sibling: the two are one leaf type
+     * rendered by one method, so {@code @lookupKey} is not an axis a declared sort may turn on.
      */
     private static LauncherCommand batchedLookupRow(
             no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField blf,
@@ -942,7 +946,8 @@ public final class LauncherCommands {
             where,
             new Invocation.Batched(blf.sourceKey(), blf.loaderRegistration()),
             tenancy,
-            new ResultShape.RecordList(null));
+            new ResultShape.RecordList(
+                orderingOf(blf.orderBy(), blf.parentTypeName(), blf.name(), units)));
     }
 
     /**
@@ -1041,8 +1046,11 @@ public final class LauncherCommands {
      * there, validator-enforced), the wrapper's default page size and the connection runtime's
      * refs, exactly the root connection's derivation minus facets (facet synthesis is a
      * directive-driven root-carrier concern); otherwise the per-key cardinality fact decides
-     * between the single and list shapes, both unordered (the batched non-connection emission
-     * renders no ordering, a pinned current behaviour).
+     * between the single and list shapes. The list shape carries the coordinate's own ordering,
+     * the same projection the connection arm above performs: how a child's rows are fetched
+     * does not change what the field returns, so a batched list obeys the {@code @defaultOrder}
+     * or {@code @orderBy} its inline twin obeys. The single-record-per-key shape stays
+     * unordered, where "no ordering" is the honest shape for one row.
      */
     private static ResultShape batchedResultOf(
             no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf, GeneratedUnits units) {
@@ -1054,7 +1062,8 @@ public final class LauncherCommands {
         }
         return btf.emitsSingleRecordPerKey()
             ? new ResultShape.SingleRecord()
-            : new ResultShape.RecordList(null);
+            : new ResultShape.RecordList(
+                orderingOf(btf.orderBy(), btf.parentTypeName(), btf.name(), units));
     }
 
     /**

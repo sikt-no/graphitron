@@ -335,6 +335,8 @@ type Query {
     stores: [Store!]! @asConnection @defaultOrder(primaryKey: true)
     # R338 execution-tier root for the non-PK-referenced-FK @splitQuery fixture below.
     splitParents: [SplitParent!]! @defaultOrder(primaryKey: true)
+    # Execution-tier root for the keyless-target @splitQuery ordering fixture below (RoleHolder).
+    roleHolders: [RoleHolder!]! @defaultOrder(primaryKey: true)
     # R450 execution-tier root for the hop-0-filter grain-proof fixture below. Returns both parents
     # in one list so their single-cardinality targetSplit fields batch through one DataLoader.
     splitFilterParents: [SplitFilterParent!]! @defaultOrder(primaryKey: true)
@@ -1739,6 +1741,29 @@ type SplitParent @table(name: "split_parent") {
 type SplitParentTag @table(name: "split_parent_tag") {
     tagId: Int!    @field(name: "TAG_ID")
     tag:   String! @field(name: "TAG")
+}
+
+# Execution-tier fixture for the ordering contract on a @splitQuery child list over a target with
+# NO primary key, the shape a consumer reported. A keyless target leaves the deterministic-order
+# validator no key to fall back on, so it compels an explicit @defaultOrder on any list field
+# returning role_assignment and the author cannot opt out of the contract; the batched emission
+# then has to honour it. Two coordinates over the same target so both batched list arms are
+# covered: `roles` is the plain batched child, `rolesByCode` the @lookupKey-narrowed one. The seed
+# stores each holder's rows in an order that contradicts role_code, so the assertions can fail.
+type RoleHolder @table(name: "role_holder") {
+    holderId:   Int!    @field(name: "HOLDER_ID")
+    holderName: String! @field(name: "HOLDER_NAME")
+    roles: [RoleAssignment!]! @splitQuery
+        @reference(path: [{key: "role_assignment_holder_id_fkey"}])
+        @defaultOrder(fields: [{name: "ROLE_CODE"}])
+    rolesByCode(role_code: [String!] @lookupKey): [RoleAssignment!]! @splitQuery
+        @reference(path: [{key: "role_assignment_holder_id_fkey"}])
+        @defaultOrder(fields: [{name: "ROLE_CODE"}])
+}
+
+type RoleAssignment @table(name: "role_assignment") {
+    roleCode: String! @field(name: "ROLE_CODE")
+    roleName: String! @field(name: "ROLE_NAME")
 }
 
 # R450 execution-tier fixture: the grain proof for a hop-0 {key:, condition:} filter on a

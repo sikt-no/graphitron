@@ -55,6 +55,15 @@ public final class BatchedRowsFragments {
      * argument assembly handed in by the shell (the tenancy binding's declaration form is
      * classification-side emission); it is ignored under fanned tenancy, whose {@code dsl} is
      * the scatter lambda's parameter.
+     *
+     * <p>The list arm's ordering is the coordinate's own, applied to the whole batch, the same
+     * shape {@link #discriminatedBody} renders one arm over. One global ORDER BY plus the
+     * {@code __idx__} scatter reproduces the unbatched twin's per-parent ordering, because the
+     * scatter appends rows to their key's bucket in fetch order. Under
+     * {@link TenantStrategy.Fanned} the statement runs once per tenant and the merge concatenates
+     * each tenant's rows in domain order, so the sort holds within a tenant's block rather than
+     * across blocks; that is the contract
+     * {@code docs/manual/reference/directives/tenantFanOut.adoc} publishes.
      */
     static CodeBlock body(LauncherCommand row, LaunchSource.Correlated.Projected chain,
             CodeBlock dslDeclaration, no.sikt.graphitron.command.CarrierDsl carrierDsl,
@@ -107,6 +116,19 @@ public final class BatchedRowsFragments {
                 LookupRows.aliasArgs(lookup.mapping(), LookupRows.inputTableAlias(fieldName), diagnostic));
         }
 
+        // The list arm's declared sort, one global ORDER BY over the whole batch. The
+        // declaration goes here rather than inside the fanned lambda below: the prelude declared
+        // the terminal alias outside it and never reassigns it, so one declaration serves the
+        // single-tenant and fanned forms alike and the per-tenant statement picks it up by
+        // closure.
+        boolean single = row.result() instanceof no.sikt.graphitron.command.ResultShape.SingleRecord;
+        var ordering = row.result() instanceof no.sikt.graphitron.command.ResultShape.RecordList list
+            ? list.ordering()
+            : null;
+        if (ordering != null) {
+            body.add(OrderingBlock.declareSortView(ordering, prelude.terminalAlias()));
+        }
+
         var sel = CodeBlock.builder();
         sel.add("$T<$T> flat = dsl\n", RESULT, RECORD);
         sel.indent();
@@ -118,10 +140,12 @@ public final class BatchedRowsFragments {
                 lookupJoinCondition(lookup, prelude.terminalAlias()));
         }
         sel.add(".where($L)\n", whereCondition(row, chain, prelude));
+        if (ordering != null) {
+            sel.add(".orderBy(orderBy)\n");
+        }
         sel.add(".fetch();\n");
         sel.unindent();
 
-        boolean single = row.result() instanceof no.sikt.graphitron.command.ResultShape.SingleRecord;
         if (row.tenancy() instanceof TenantStrategy.Fanned fanned) {
             // The fanned batched form: the same batch statement, one execution per domain
             // tenant through the scatter helper; per-key groups merge across tenants with

@@ -30,7 +30,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * End-to-end execution proof of {@code @tenantFanOut} over the multi-tenant fixture package and
  * real database-per-tenant PostgreSQL: the fanned root field unions rows from every domain tenant
  * in domain order with per-tenant ORDER BY intact; the batched form fans a child of an untenanted
- * parent out per parent batch; the projected subtree inherits the tenant within one statement; a
+ * parent out per parent batch, tenant-blocked (each tenant's rows sorted by the field's own
+ * ordering, blocks concatenated in domain order, never re-sorted globally, because the rows come
+ * from different databases and one execution's ORDER BY cannot span them); the projected subtree
+ * inherits the tenant within one statement; a
  * claimed-but-unmapped tenant fails the request before any SQL; a downed tenant yields partial
  * data with an appended null element and a path-bearing redacted error under {@code [Film]} and a
  * bubbled null field under {@code [Film!]}; the authorization pre-filter never queries a hosted
@@ -90,7 +93,14 @@ class TenantFanOutExecutionTest {
             }
         }
         try (var t1 = DSL.using(tenantUrl("fanout_t1"), jdbcUser, jdbcPassword)) {
-            t1.execute("insert into film values (11, 'T1 Beta', 901), (10, 'T1 Alpha', 901)");
+            // Inserted in reverse film_id order on purpose, and every tenant's films point at
+            // ONE shared language (901) whose id ranges interleave across tenants: t1 holds 10
+            // and 30, t2 holds 20. That makes the batched child's ordering assertion able to
+            // fail three ways. An emission that drops the declared sort returns insertion order
+            // (Beta before Alpha); a globally re-sorted merge returns Alpha, Gamma, Beta; only
+            // the published contract (sorted within each tenant's block, blocks concatenated in
+            // domain order) returns Alpha, Beta, Gamma.
+            t1.execute("insert into film values (30, 'T1 Beta', 901), (10, 'T1 Alpha', 901)");
             t1.execute("insert into inventory (film_id, store_id) values (10, 1), (10, 2)");
             t1.execute("insert into film_actor values (100, 10)");
             // Disjoint per-tenant handle-sequence ranges, so a $session read's session number
@@ -98,7 +108,7 @@ class TenantFanOutExecutionTest {
             t1.execute("alter sequence session_handle_seq restart with 1000");
         }
         try (var t2 = DSL.using(tenantUrl("fanout_t2"), jdbcUser, jdbcPassword)) {
-            t2.execute("insert into film values (20, 'T2 Gamma', 902)");
+            t2.execute("insert into film values (20, 'T2 Gamma', 901)");
             t2.execute("insert into inventory (film_id, store_id) values (20, 7)");
             t2.execute("insert into film_actor values (200, 20)");
             t2.execute("alter sequence session_handle_seq restart with 2000");
@@ -237,19 +247,26 @@ class TenantFanOutExecutionTest {
     }
 
     @Test
-    void fannedChildOfUntenantedParent_runsTheBatchedFormAcrossTenants() {
+    void fannedChildOfUntenantedParent_isTenantBlockedAndSortedWithinEachBlock() {
         // The untenanted parents come from the default source; the fanned child fans each parent
         // batch out per tenant, and each language's films land under the right parent (the
-        // per-key merge) from the right database (language 901's film lives only in tenant 1).
+        // per-key merge) from the right database.
         var result = execute("{ languages { name films { title } } }", List.of(1, 2));
 
         assertThat(result.getErrors()).isEmpty();
         Map<String, Object> data = result.getData();
         var languages = (List<Map<String, Object>>) data.get("languages");
-        // Order within one parent's list is unspecified here (the batched child declares no
-        // @orderBy); the routing proof is which rows arrived, from which database.
-        assertThat(filmsOf(languages, "FanOutLangA")).containsExactlyInAnyOrder("T1 Alpha", "T1 Beta");
-        assertThat(filmsOf(languages, "FanOutLangB")).containsExactly("T2 Gamma");
+        // The published contract for a fanned list, and the whole of it: rows are sorted by the
+        // field's ordering (default: primary key) WITHIN each tenant's block, and the blocks
+        // concatenate in domain order. The rows come from different databases, so one execution's
+        // ORDER BY cannot span them and the merge deliberately does not re-sort. The seed makes
+        // all three readings distinguishable: insertion order is Beta, Alpha, Gamma; a global
+        // re-sort by film_id is Alpha, Gamma, Beta; the contract is Alpha, Beta, Gamma.
+        assertThat(filmsOf(languages, "FanOutLangA"))
+            .as("tenant 1's block sorted, then tenant 2's block sorted; no global re-sort")
+            .containsExactly("T1 Alpha", "T1 Beta", "T2 Gamma");
+        // A parent with rows in no tenant still gets its bucket, empty.
+        assertThat(filmsOf(languages, "FanOutLangB")).isEmpty();
     }
 
     @Test
