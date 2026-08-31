@@ -14,8 +14,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R865` | Obtaining a fact store means running a generation, and capture welds in a refresh cadence no caller can decline | Spec | 2026-08-27 | [plan](capture-without-the-materialization-refresh.md) |
 | `R870` | The fact tier reads its consumer: capture writes a relation from the classification walk, and the comparison that relation serves never needed a store-side copy | Spec | 2026-08-28 | [plan](capture-stops-reading-the-walk.md) |
+| `R865` | The generator creates its own fact store, and nothing but a run that consumes a store can fill one | Spec | 2026-08-31 <sub>created 2026-08-27</sub> | [plan](capture-without-the-materialization-refresh.md) |
 | `R876` | Expensive derived reads are a modelling defect: capture writes the subtypes and omits the supertype, and materialization has been the first lever reached for instead of the last | In Progress | 2026-08-31 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows <sub>blocked by: [capture-moves-below-the-generator](capture-moves-below-the-generator.md), [capture-without-the-materialization-refresh](capture-without-the-materialization-refresh.md), [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-08-28 <sub>created 2026-08-27</sub> | [plan](dev-start-refreshes-the-register-twice.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
@@ -674,8 +674,8 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### tooling
 
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
-- `R865` [**Obtaining a fact store means running a generation, and capture welds in a refresh cadence no caller can decline**](capture-without-the-materialization-refresh.md) — Spec, dx
 - `R768` [**The build boots the fact schema 1051 times, and a reset costs a fraction of a boot**](store-boots-once-per-test-not-once-per-build.md) — Backlog, dx
+- `R865` [**The generator creates its own fact store, and nothing but a run that consumes a store can fill one**](capture-without-the-materialization-refresh.md) — Spec, dx
 - `R857` [**A dev start evaluates the whole materialization register twice, the second pass producing identical rows**](dev-start-refreshes-the-register-twice.md) — Spec, dx, blocked by [capture-moves-below-the-generator](capture-moves-below-the-generator.md), [capture-without-the-materialization-refresh](capture-without-the-materialization-refresh.md), [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)
 - `R872` [**A warm capture empties four source-keyed catalog relations for every source, having partitioned only the ten it lists**](warm-capture-empties-unpartitioned-catalog-relations.md) — Backlog, bug
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
