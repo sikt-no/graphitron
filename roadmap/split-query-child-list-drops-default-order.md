@@ -1,7 +1,7 @@
 ---
 id: R663
 title: "@defaultOrder on a @splitQuery child list is dropped at emit"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: codegen-correctness
