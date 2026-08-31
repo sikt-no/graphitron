@@ -1,7 +1,7 @@
 ---
 id: R874
 title: "A @condition that owns a @nodeId predicate must hand-roll the wire format, because NodeIdEncoder is generated downstream of it"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 3
 theme: nodeid
