@@ -30,9 +30,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R874` | A @condition that owns a @nodeId predicate must hand-roll the wire format, because NodeIdEncoder is generated downstream of it | In Progress | 2026-08-31 <sub>created 2026-08-28</sub> | [plan](nodeid-decode-helper-for-condition-methods.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-27 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
+| `R874` | A @condition that owns a @nodeId predicate must hand-roll the wire format, because NodeIdEncoder is generated downstream of it | In Review | 2026-08-31 <sub>created 2026-08-28</sub> | [plan](nodeid-decode-helper-for-condition-methods.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -454,7 +454,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### nodeid
 
 - `R615` [**init.sql documents the live idreffixture DDL as serving deleted shim tests**](idreffixture-purpose-comment-stale.md) — Backlog, tech-debt
-- `R874` [**A @condition that owns a @nodeId predicate must hand-roll the wire format, because NodeIdEncoder is generated downstream of it**](nodeid-decode-helper-for-condition-methods.md) — In Progress, dx
+- `R874` [**A @condition that owns a @nodeId predicate must hand-roll the wire format, because NodeIdEncoder is generated downstream of it**](nodeid-decode-helper-for-condition-methods.md) — In Review, dx
 - `R884` [**A field-level @condition parameter whose argMapping descends to a @nodeId input field still receives the wire string**](condition-argmapping-descent-to-nodeid-input-field.md) — Backlog, dx
 - `R588` [**Diagnostics for `implements Node @table` over a table with no node metadata**](node-without-metadata-diagnostics.md) — Backlog, dx
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
