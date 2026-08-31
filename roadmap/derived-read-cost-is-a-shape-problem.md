@@ -2565,17 +2565,69 @@ document. The derivation gatherer gains the matching edge, and the one declared 
 relation is repointed from the SDL gatherer to its own. Enforcement stays out of scope: the edges are
 a declaration of what the order has to satisfy, and nothing yet fails a build when it does not.
 
-**One correction to slice 23, and it is a real one.** That slice ended by putting `@node`'s defaulted
-key columns among the things that become a captured fact. They cannot be, and the reason is the rule
-this schema already states beside `meta_gatherer_corpus`: a crawler is a transcription pass whose
-rows about its own corpus may not vary with any other corpus's contents. The graphitron gatherer is a
-crawler over the SDL. Resolving a defaulted `keyColumns` means reading `sql_primary_key`, so a
-`graphitron_` relation holding the resolved columns would be a crawler's rows varying with the
-catalog, which `CaptureCorpusIsolationTest` exists to refuse and would refuse. So the edge to the
-catalog was drafted and then not declared. What capture can and should write is the fact the SDL
-actually carries, which is whether the author wrote a column list at all; the resolution of the
-default against the primary key crosses two families and belongs where every other crossing does.
-That is a smaller claim than slice 23 made and it is the one the charter supports.
+**A correction this slice made and then had to withdraw, which is worth keeping because the mistake
+is an easy one.** The first draft read the graphitron gatherer as a crawler over the SDL, and drew
+from that the conclusion that `@node`'s defaulted key columns cannot be a captured fact: a crawler's
+rows about its own corpus may not vary with any other corpus's contents, so reading `sql_primary_key`
+to resolve a default would be out of bounds. The premise is wrong. The graphitron gatherer reads no
+corpus. Its family's own charter in this schema says so in as many words, that a `graphitron_` row is
+a decode of a captured application and therefore a derivation whose producer runs at capture cadence
+rather than a second transcription. A gatherer that reads captured rows instead of a corpus is
+exactly the kind that may cross, which the schema already said of the derivation gatherer and now
+says of this one too. So the edges are `graphitron` on `sdl` and on `catalog`, the two crawlers
+depend on nothing, and the defaulted key columns resolve in the decode.
+
+That in turn narrows `CaptureCorpusIsolationTest` to `graphql_`. Not a concession: "does not vary
+with the catalog" was never a property the decode should have, and the historic defect that gate was
+built for was a synthesized `@key` appearing as a row in `graphql_type_directive`, a transcription of
+a directive nobody wrote, which still fails the gate on the relation where it is actually wrong.
+
+### Slice 25: the decode stops being a visitor of the SDL walk
+
+`GraphitronFactCapture` was a field of `SdlFactCapture`, driven by five
+`decode.captureXDirective(...)` callbacks from inside the walk. That is the shape slice 23 named as
+the cause of four charter arguments, and it is now gone: the decode is a gatherer with its own entry
+point, running after both crawlers have flushed, reading the applications back out of the store.
+
+**The store already held the applications losslessly, which is why this was smaller than it looked.**
+A coordinate, a directive name and an ordinal are columns; the application's own position is three
+more; and each authored argument is a row on a `_directive_arg` relation holding the literal exactly
+as `AstPrinter` rendered it. And the decode asks a directive for two things only, an argument by name
+and its own source location, which a census of the class confirms rather than a reading of it: one
+`getArgument(name)` helper and five uses of `getSourceLocation()`, no iteration over the argument
+list and no use of a position below the directive. So the input is rebuilt by parsing each stored
+literal back to the value it was printed from, and the eleven hundred lines of decoding underneath
+did not have to change at all. The round trip is the same one the applied-directive emitter already
+ships into generated sources, so it is not a new trust either.
+
+**What that made it: an adapter, not a rewrite.** Five readers, one per application grain, each
+fetching its arguments in a single grouped query rather than one query per application, since a
+consumer schema carries tens of thousands. One of the five reads a second relation: whether a field
+is an input field used to be a boolean the walk carried down through two call frames, and is now
+`graphql_type.kind`, read once for the whole graph. That substitution is the change in miniature. The
+walk knew it because it was standing there; the gatherer knows it because it can ask.
+
+**Three properties are better after the move rather than merely preserved.** The decode sees exactly
+the applications that won their coordinate claim, where before it ran ahead of the claim and could
+decode one the transcription then quarantined. Its ordinals are the ones the transcription recorded,
+rather than a second count that has to agree with them. And a literal that will not parse back now
+lands on the quarantine relation that already existed for a literal that does not fit its declared
+shape, which is the same tolerance rule reaching one step further out.
+
+**What is pinned.** `DirectiveLiteralRoundTripTest` asserts print-then-parse idempotence over every
+literal a capture stores, on a fixture reaching the shapes that could plausibly fail: escapes and a
+block string, a negative and an exponent, an enum against a string of the same spelling, and a list
+of objects nested two deep, all authored on an undeclared directive because that is the population a
+round trip has no schema to lean on for. The existing suite carried the rest: 4117 tests over the
+generator's tiers pass with the decode moved, which is the fidelity claim measured rather than
+argued.
+
+**What is still on the SDL walk and should not be.** `MacroCapture` and the walk itself write three
+`graphitron_` relations between them, the two synthesis-provenance relations and
+`graphitron_field_navigation`. Those are the expansion's record of what it did while it was doing it,
+so they are not reconstructible after the fact the way a directive application is, and moving them is
+a different question from this one. The gatherer roster says the graphitron gatherer owns that
+family; today it owns all of it but those three.
 
 ### Deferred: the registration precondition
 
